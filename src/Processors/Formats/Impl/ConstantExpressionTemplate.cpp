@@ -402,7 +402,7 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
     /// Allows distinguish expression in the last column in Values format
     hash_state.update(salt);
 
-    const auto res128 = getSipHash128AsLoHi(hash_state);
+    const auto res128 = getSipHash128AsPair(hash_state);
     size_t res = 0;
     boost::hash_combine(res, res128.low64);
     boost::hash_combine(res, res128.high64);

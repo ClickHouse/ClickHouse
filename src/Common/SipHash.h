@@ -249,7 +249,7 @@ inline std::array<char, 16> getSipHash128AsArray(SipHash & sip_hash)
     return arr;
 }
 
-inline CityHash_v1_0_2::uint128 getSipHash128AsLoHi(SipHash & sip_hash)
+inline CityHash_v1_0_2::uint128 getSipHash128AsPair(SipHash & sip_hash)
 {
     CityHash_v1_0_2::uint128 result;
     sip_hash.get128(result.low64, result.high64);

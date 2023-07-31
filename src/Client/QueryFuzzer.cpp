@@ -521,7 +521,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     if (create.storage)
         create.storage->updateTreeHash(sip_hash);
 
-    const auto hash = getSipHash128AsLoHi(sip_hash);
+    const auto hash = getSipHash128AsPair(sip_hash);
 
     /// Save only tables with unique definition.
     if (created_tables_hashes.insert(hash).second)
