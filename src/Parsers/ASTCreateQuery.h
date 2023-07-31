@@ -56,7 +56,6 @@ public:
     ASTExpressionList * constraints = nullptr;
     ASTExpressionList * projections = nullptr;
     IAST              * primary_key = nullptr;
-    IAST              * primary_key_from_columns = nullptr;
 
     String getID(char) const override { return "Columns definition"; }
 
@@ -77,7 +76,7 @@ public:
         f(reinterpret_cast<void **>(&primary_key));
         f(reinterpret_cast<void **>(&constraints));
         f(reinterpret_cast<void **>(&projections));
-        f(reinterpret_cast<void **>(&primary_key_from_columns));
+        f(reinterpret_cast<void **>(&primary_key));
     }
 };
 

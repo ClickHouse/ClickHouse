@@ -8,6 +8,8 @@
 #include <Common/Elf.h>
 #include <boost/noncopyable.hpp>
 
+#include <Common/MultiVersion.h>
+
 namespace DB
 {
 
@@ -18,10 +20,11 @@ namespace DB
 class SymbolIndex : private boost::noncopyable
 {
 protected:
-    SymbolIndex() { load(); }
+    SymbolIndex() { update(); }
 
 public:
-    static const SymbolIndex & instance();
+    static MultiVersion<SymbolIndex>::Version instance();
+    static void reload();
 
     struct Symbol
     {
@@ -87,7 +90,8 @@ public:
 private:
     Data data;
 
-    void load();
+    void update();
+    static MultiVersion<SymbolIndex> & instanceImpl();
 };
 
 }

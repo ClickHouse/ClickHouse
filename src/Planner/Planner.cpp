@@ -1,15 +1,11 @@
 #include <Planner/Planner.h>
 
 #include <Core/ProtocolDefines.h>
-#include <Common/logger_useful.h>
-#include <Common/ProfileEvents.h>
-#include <Columns/ColumnSet.h>
 
 #include <DataTypes/DataTypeString.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/CastOverloadResolver.h>
-#include <Functions/indexHint.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -37,15 +33,11 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/StorageID.h>
 
-#include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/StorageDummy.h>
 #include <Storages/IStorage.h>
 
 #include <Analyzer/Utils.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/SortNode.h>
@@ -77,12 +69,6 @@
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/PlannerQueryProcessingInfo.h>
 
-namespace ProfileEvents
-{
-    extern const Event SelectQueriesWithSubqueries;
-    extern const Event QueriesWithSubqueries;
-}
-
 namespace DB
 {
 
@@ -93,7 +79,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int NOT_IMPLEMENTED;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 /** ClickHouse query planner.
@@ -633,14 +618,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         interpolate_description = std::make_shared<InterpolateDescription>(std::move(interpolate_actions_dag), empty_aliases);
     }
 
-    const auto & query_context = planner_context->getQueryContext();
-    const Settings & settings = query_context->getSettingsRef();
-    auto filling_step = std::make_unique<FillingStep>(
-        query_plan.getCurrentDataStream(),
-        sort_description,
-        std::move(fill_description),
-        interpolate_description,
-        settings.use_with_fill_by_sorting_prefix);
+    auto filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_description), interpolate_description);
     query_plan.addStep(std::move(filling_step));
 }
 
@@ -896,112 +874,41 @@ void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_ana
     query_plan.addStep(std::move(offsets_step));
 }
 
-void collectSetsFromActionsDAG(const ActionsDAGPtr & dag, std::unordered_set<const FutureSet *> & useful_sets)
-{
-    for (const auto & node : dag->getNodes())
-    {
-        if (node.column)
-        {
-            const IColumn * column = node.column.get();
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
-                column = &column_const->getDataColumn();
-
-            if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
-                useful_sets.insert(column_set->getData().get());
-        }
-
-        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->getName() == "indexHint")
-        {
-            ActionsDAG::NodeRawConstPtrs children;
-            if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get()))
-            {
-                if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
-                {
-                    collectSetsFromActionsDAG(index_hint->getActions(), useful_sets);
-                }
-            }
-        }
-    }
-}
-
-void addBuildSubqueriesForSetsStepIfNeeded(
-    QueryPlan & query_plan,
+void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
     const SelectQueryOptions & select_query_options,
     const PlannerContextPtr & planner_context,
     const std::vector<ActionsDAGPtr> & result_actions_to_execute)
 {
-    auto subqueries = planner_context->getPreparedSets().getSubqueries();
-    std::unordered_set<const FutureSet *> useful_sets;
+    PreparedSets::SubqueriesForSets subqueries_for_sets;
 
     for (const auto & actions_to_execute : result_actions_to_execute)
-        collectSetsFromActionsDAG(actions_to_execute, useful_sets);
-
-    auto predicate = [&useful_sets](const auto & set) { return !useful_sets.contains(set.get()); };
-    auto it = std::remove_if(subqueries.begin(), subqueries.end(), std::move(predicate));
-    subqueries.erase(it, subqueries.end());
-
-    for (auto & subquery : subqueries)
     {
-        auto query_tree = subquery->detachQueryTree();
-        auto subquery_options = select_query_options.subquery();
-        Planner subquery_planner(
-            query_tree,
-            subquery_options,
-            planner_context->getGlobalPlannerContext());
-        subquery_planner.buildQueryPlanIfNeeded();
+        for (const auto & node : actions_to_execute->getNodes())
+        {
+            const auto & set_key = node.result_name;
+            const auto * planner_set = planner_context->getSetOrNull(set_key);
+            if (!planner_set)
+                continue;
 
-        subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
+            if (planner_set->getSet()->isCreated() || !planner_set->getSubqueryNode())
+                continue;
+
+            auto subquery_options = select_query_options.subquery();
+            Planner subquery_planner(
+                planner_set->getSubqueryNode(),
+                subquery_options,
+                planner_context->getGlobalPlannerContext());
+            subquery_planner.buildQueryPlanIfNeeded();
+
+            SubqueryForSet subquery_for_set;
+            subquery_for_set.set = planner_set->getSet();
+            subquery_for_set.source = std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan());
+
+            subqueries_for_sets.emplace(set_key, std::move(subquery_for_set));
+        }
     }
 
-    if (!subqueries.empty())
-    {
-        auto step = std::make_unique<DelayedCreatingSetsStep>(
-            query_plan.getCurrentDataStream(),
-            std::move(subqueries),
-            planner_context->getQueryContext());
-
-        query_plan.addStep(std::move(step));
-    }
-}
-
-/// Support for `additional_result_filter` setting
-void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
-    const QueryNode & query_node,
-    const SelectQueryOptions & select_query_options,
-    PlannerContextPtr & planner_context
-)
-{
-    if (select_query_options.subquery_depth != 0)
-        return;
-
-    const auto & query_context = planner_context->getQueryContext();
-    const auto & settings = query_context->getSettingsRef();
-
-    auto additional_result_filter_ast = parseAdditionalResultFilter(settings);
-    if (!additional_result_filter_ast)
-        return;
-
-    ColumnsDescription fake_column_descriptions;
-    NameSet fake_name_set;
-    for (const auto & column : query_node.getProjectionColumns())
-    {
-        fake_column_descriptions.add(ColumnDescription(column.name, column.type));
-        fake_name_set.emplace(column.name);
-    }
-
-    auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
-    auto fake_table_expression = std::make_shared<TableNode>(std::move(storage), query_context);
-
-    auto filter_info = buildFilterInfo(additional_result_filter_ast, fake_table_expression, planner_context, std::move(fake_name_set));
-    if (!filter_info.actions || !query_plan.isInitialized())
-        return;
-
-    auto filter_step = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(),
-        filter_info.actions,
-        filter_info.column_name,
-        filter_info.do_remove_column);
-    filter_step->setStepDescription("additional result filter");
-    query_plan.addStep(std::move(filter_step));
+    addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), planner_context->getQueryContext());
 }
 
 }
@@ -1188,9 +1095,6 @@ void Planner::buildPlanForUnionNode()
 
 void Planner::buildPlanForQueryNode()
 {
-    ProfileEvents::increment(ProfileEvents::SelectQueriesWithSubqueries);
-    ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
-
     auto & query_node = query_tree->as<QueryNode &>();
     const auto & query_context = planner_context->getQueryContext();
 
@@ -1225,29 +1129,6 @@ void Planner::buildPlanForQueryNode()
     checkStoragesSupportTransactions(planner_context);
     collectSets(query_tree, *planner_context);
     collectTableExpressionData(query_tree, planner_context);
-
-    const auto & settings = query_context->getSettingsRef();
-
-    /// Check support for JOIN for parallel replicas with custom key
-    if (planner_context->getTableExpressionNodeToData().size() > 1)
-    {
-        if (settings.allow_experimental_parallel_reading_from_replicas == 1 || !settings.parallel_replicas_custom_key.value.empty())
-        {
-            LOG_WARNING(
-                &Poco::Logger::get("Planner"),
-                "JOINs are not supported with parallel replicas. Query will be executed without using them.");
-
-            auto & mutable_context = planner_context->getMutableQueryContext();
-            mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-            mutable_context->setSetting("parallel_replicas_custom_key", String{""});
-        }
-        else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
-        {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
-        }
-    }
-
-    /// TODO: Also disable parallel replicas in case of FINAL
 
     auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
     auto join_tree_query_plan = buildJoinTreeQueryPlan(query_tree,
@@ -1486,8 +1367,7 @@ void Planner::buildPlanForQueryNode()
             addLimitByStep(query_plan, limit_by_analysis_result, query_node);
         }
 
-        if (query_node.hasOrderBy())
-            addWithFillStepIfNeeded(query_plan, query_analysis_result, planner_context, query_node);
+        addWithFillStepIfNeeded(query_plan, query_analysis_result, planner_context, query_node);
 
         bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
@@ -1516,9 +1396,6 @@ void Planner::buildPlanForQueryNode()
             const auto & projection_analysis_result = expression_analysis_result.getProjection();
             addExpressionStep(query_plan, projection_analysis_result.project_names_actions, "Project names", result_actions_to_execute);
         }
-
-        // For additional_result_filter setting
-        addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
 
     if (!select_query_options.only_analyze)

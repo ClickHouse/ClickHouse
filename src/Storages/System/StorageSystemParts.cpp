@@ -57,7 +57,6 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"bytes_on_disk",                               std::make_shared<DataTypeUInt64>()},
         {"data_compressed_bytes",                       std::make_shared<DataTypeUInt64>()},
         {"data_uncompressed_bytes",                     std::make_shared<DataTypeUInt64>()},
-        {"primary_key_size",                            std::make_shared<DataTypeUInt64>()},
         {"marks_bytes",                                 std::make_shared<DataTypeUInt64>()},
         {"secondary_indices_compressed_bytes",          std::make_shared<DataTypeUInt64>()},
         {"secondary_indices_uncompressed_bytes",        std::make_shared<DataTypeUInt64>()},
@@ -170,8 +169,6 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(columns_size.data_uncompressed);
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->getIndexSizeFromFile());
-        if (columns_mask[src_index++])
             columns[res_index++]->insert(columns_size.marks);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(secondary_indexes_size.data_compressed);
@@ -255,17 +252,17 @@ void StorageSystemParts::processNextStorage(
             if (columns_mask[src_index++])
             {
                 auto checksum = helper.hash_of_all_files;
-                columns[res_index++]->insert(getHexUIntLowercase(checksum));
+                columns[res_index++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
             }
             if (columns_mask[src_index++])
             {
                 auto checksum = helper.hash_of_uncompressed_files;
-                columns[res_index++]->insert(getHexUIntLowercase(checksum));
+                columns[res_index++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
             }
             if (columns_mask[src_index++])
             {
                 auto checksum = helper.uncompressed_hash_of_compressed_files;
-                columns[res_index++]->insert(getHexUIntLowercase(checksum));
+                columns[res_index++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
             }
         }
 

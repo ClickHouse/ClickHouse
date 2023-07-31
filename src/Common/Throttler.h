@@ -34,15 +34,15 @@ public:
               const std::shared_ptr<Throttler> & parent_ = nullptr);
 
     /// Use `amount` tokens, sleeps if required or throws exception on limit overflow.
-    /// Returns duration of sleep in nanoseconds (to distinguish sleeping on different kinds of throttlers for metrics)
+    /// Returns duration of sleep in microseconds (to distinguish sleeping on different kinds of throttlers for metrics)
     UInt64 add(size_t amount);
 
     UInt64 add(size_t amount, ProfileEvents::Event event_amount, ProfileEvents::Event event_sleep_us)
     {
-        UInt64 sleep_ns = add(amount);
+        UInt64 sleep_us = add(amount);
         ProfileEvents::increment(event_amount, amount);
-        ProfileEvents::increment(event_sleep_us, sleep_ns / 1000UL);
-        return sleep_ns;
+        ProfileEvents::increment(event_sleep_us, sleep_us);
+        return sleep_us;
     }
 
     /// Not thread safe

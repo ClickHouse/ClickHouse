@@ -25,7 +25,7 @@ def start_cluster():
 
 
 def test_concurrent_backups(start_cluster):
-    node.query("DROP TABLE IF EXISTS s3_test SYNC")
+    node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
     columns = [f"column_{i} UInt64" for i in range(1000)]
     columns_str = ", ".join(columns)
     node.query(

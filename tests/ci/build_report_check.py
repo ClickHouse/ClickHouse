@@ -23,7 +23,6 @@ from get_robot_token import get_best_robot_token
 from pr_info import NeedsDataType, PRInfo
 from commit_status_helper import (
     RerunHelper,
-    format_description,
     get_commit,
     post_commit_status,
     update_mergeable_check,
@@ -74,7 +73,6 @@ def get_failed_report(
         sanitizer="unknown",
         status=message,
         elapsed_seconds=0,
-        comment="",
     )
     return [build_result], [[""]], [GITHUB_RUN_URL]
 
@@ -89,7 +87,6 @@ def process_report(
         sanitizer=build_config["sanitizer"],
         status="success" if build_report["status"] else "failure",
         elapsed_seconds=build_report["elapsed_seconds"],
-        comment=build_config["comment"],
     )
     build_results = []
     build_urls = []
@@ -270,20 +267,14 @@ def main():
         if build_result.status == "success":
             ok_groups += 1
 
-    # Check if there are no builds at all, do not override bad status
-    if summary_status == "success":
-        if some_builds_are_missing:
-            summary_status = "pending"
-        elif ok_groups == 0:
-            summary_status = "error"
+    if ok_groups == 0 or some_builds_are_missing:
+        summary_status = "error"
 
     addition = ""
     if some_builds_are_missing:
-        addition = f" ({len(build_reports)} of {required_builds} builds are OK)"
+        addition = f"({len(build_reports)} of {required_builds} builds are OK)"
 
-    description = format_description(
-        f"{ok_groups}/{total_groups} artifact groups are OK{addition}"
-    )
+    description = f"{ok_groups}/{total_groups} artifact groups are OK {addition}"
 
     post_commit_status(
         commit, summary_status, url, description, build_check_name, pr_info

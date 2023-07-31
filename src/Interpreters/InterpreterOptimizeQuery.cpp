@@ -34,7 +34,7 @@ BlockIO InterpreterOptimizeQuery::execute()
 
     getContext()->checkAccess(getRequiredAccess());
 
-    auto table_id = getContext()->resolveStorageID(ast);
+    auto table_id = getContext()->resolveStorageID(ast, Context::ResolveOrdinary);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr();

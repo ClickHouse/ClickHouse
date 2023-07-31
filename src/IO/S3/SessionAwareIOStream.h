@@ -18,10 +18,6 @@ public:
     {
     }
 
-    Session & getSession() { return session; }
-
-    const Session & getSession() const { return session; }
-
 private:
     /// Poco HTTP session is holder of response stream.
     Session session;

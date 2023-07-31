@@ -1,3 +1,4 @@
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 #include <gtest/gtest.h>
 
 #include <IO/ReadHelpers.h>
@@ -59,9 +60,8 @@ TEST_P(DateTime64StringWriteTest, WriteText)
 
     PaddedPODArray<char> actual_string(param.string.size() * 2, '\0'); // TODO: detect overflows
 
-    WriteBufferFromPointer write_buffer(actual_string.data(), actual_string.size());
+    WriteBuffer write_buffer(actual_string.data(), actual_string.size());
     EXPECT_NO_THROW(writeDateTimeText(param.dt64, param.scale, write_buffer, param.timezone));
-    write_buffer.finalize();
 
     EXPECT_STREQ(param.string.data(), actual_string.data());
 }

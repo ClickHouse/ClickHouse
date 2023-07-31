@@ -1,11 +1,12 @@
 #pragma once
 
+#include <Common/HashTable/Hash.h>
+
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/Set.h>
-#include <Interpreters/PreparedSets.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 
@@ -43,6 +44,45 @@ private:
 };
 
 using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;
+
+/** PlannerSet is wrapper around Set that is used during query planning.
+  *
+  * If subquery node is null, such set is already prepared for execution.
+  *
+  * If subquery node is not null, then set must be build from the result of the subquery.
+  * If subquery node is not null, it must have QUERY or UNION type.
+  */
+class PlannerSet
+{
+public:
+    /// Construct planner set that is ready for execution
+    explicit PlannerSet(SetPtr set_)
+        : set(std::move(set_))
+    {}
+
+    /// Construct planner set with set and subquery node
+    explicit PlannerSet(SetPtr set_, QueryTreeNodePtr subquery_node_)
+        : set(std::move(set_))
+        , subquery_node(std::move(subquery_node_))
+    {}
+
+    /// Get set
+    const SetPtr & getSet() const
+    {
+        return set;
+    }
+
+    /// Get subquery node
+    const QueryTreeNodePtr & getSubqueryNode() const
+    {
+        return subquery_node;
+    }
+
+private:
+    SetPtr set;
+
+    QueryTreeNodePtr subquery_node;
+};
 
 class PlannerContext
 {
@@ -131,10 +171,28 @@ public:
 
     using SetKey = std::string;
 
+    using SetKeyToSet = std::unordered_map<String, PlannerSet>;
+
     /// Create set key for set source node
     static SetKey createSetKey(const QueryTreeNodePtr & set_source_node);
 
-    PreparedSets & getPreparedSets() { return prepared_sets; }
+    /// Register set for set key
+    void registerSet(const SetKey & key, PlannerSet planner_set);
+
+    /// Returns true if set is registered for key, false otherwise
+    bool hasSet(const SetKey & key) const;
+
+    /// Get set for key, if no set is registered logical exception is thrown
+    const PlannerSet & getSetOrThrow(const SetKey & key) const;
+
+    /// Get set for key, if no set is registered null is returned
+    const PlannerSet * getSetOrNull(const SetKey & key) const;
+
+    /// Get registered sets
+    const SetKeyToSet & getRegisteredSets() const
+    {
+        return set_key_to_set;
+    }
 
 private:
     /// Query context
@@ -150,7 +208,8 @@ private:
     std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
 
     /// Set key to set
-    PreparedSets prepared_sets;
+    SetKeyToSet set_key_to_set;
+
 };
 
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;

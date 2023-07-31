@@ -11,7 +11,6 @@
 #include <Storages/extractKeyExpressionList.h>
 
 #include <Core/Defines.h>
-#include "Common/Exception.h"
 
 
 namespace DB
@@ -90,16 +89,8 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     result.type = Poco::toLower(index_definition->type->name);
     result.granularity = index_definition->granularity;
 
-    ASTPtr expr_list;
-    if (index_definition->expr)
-    {
-        expr_list = extractKeyExpressionList(index_definition->expr->clone());
-        result.expression_list_ast = expr_list->clone();
-    }
-    else
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
-    }
+    ASTPtr expr_list = extractKeyExpressionList(index_definition->expr->clone());
+    result.expression_list_ast = expr_list->clone();
 
     auto syntax = TreeRewriter(context).analyze(expr_list, columns.getAllPhysical());
     result.expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);

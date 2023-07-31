@@ -1,0 +1,34 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root2/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+                <send_metadata>true</send_metadata>
+                <list_object_keys_size>1</list_object_keys_size> <!-- To effectively test restore parallelism -->
+            </s3>
+            <hdd>
+                <type>local</type>
+                <path>/</path>
+            </hdd>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                    <external>
+                        <disk>hdd</disk>
+                    </external>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+
+    <merge_tree>
+        <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
+    </merge_tree>
+</clickhouse>

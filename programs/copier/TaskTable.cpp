@@ -4,10 +4,8 @@
 #include "TaskCluster.h"
 
 #include <Parsers/ASTFunction.h>
-#include <Common/escapeForFileName.h>
 
 #include <boost/algorithm/string/join.hpp>
-
 
 namespace DB
 {

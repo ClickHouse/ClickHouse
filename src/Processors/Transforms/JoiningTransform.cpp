@@ -305,7 +305,7 @@ void FillingRightJoinSideTransform::work()
     if (for_totals)
         join->setTotals(block);
     else
-        stop_reading = !join->addBlockToJoin(block);
+        stop_reading = !join->addJoinedBlock(block);
 
     set_totals = for_totals;
 }

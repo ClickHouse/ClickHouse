@@ -69,7 +69,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
         projection.query_ast,
         context,
         Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock())),
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreASTOptimizations().ignoreSettingConstraints());
+        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreASTOptimizations());
 
     const auto & analysis_result = interpreter.getAnalysisResult();
     const auto & query_analyzer = interpreter.getQueryAnalyzer();
@@ -433,8 +433,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
     QueryPlan::Node & node,
     AggregatingStep & aggregating,
     ReadFromMergeTree & reading,
-    const std::shared_ptr<PartitionIdToMaxBlock> & max_added_blocks,
-    bool allow_implicit_projections)
+    const std::shared_ptr<PartitionIdToMaxBlock> & max_added_blocks)
 {
     const auto & keys = aggregating.getParams().keys;
     const auto & aggregates = aggregating.getParams().aggregates;
@@ -454,8 +453,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         if (projection.type == ProjectionDescription::Type::Aggregate)
             agg_projections.push_back(&projection);
 
-    bool can_use_minmax_projection = allow_implicit_projections && metadata->minmax_count_projection
-        && !reading.getMergeTreeData().has_lightweight_delete_parts.load();
+    bool can_use_minmax_projection = metadata->minmax_count_projection && !reading.getMergeTreeData().has_lightweight_delete_parts.load();
 
     if (!can_use_minmax_projection && agg_projections.empty())
         return candidates;
@@ -545,7 +543,7 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
     return nullptr;
 }
 
-bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool allow_implicit_projections)
+bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 {
     if (node.children.size() != 1)
         return false;
@@ -570,7 +568,7 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
 
     std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks = getMaxAddedBlocks(reading);
 
-    auto candidates = getAggregateProjectionCandidates(node, *aggregating, *reading, max_added_blocks, allow_implicit_projections);
+    auto candidates = getAggregateProjectionCandidates(node, *aggregating, *reading, max_added_blocks);
 
     AggregateProjectionCandidate * best_candidate = nullptr;
     if (candidates.minmax_projection)
@@ -583,9 +581,6 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
     const auto metadata = reading->getStorageMetadata();
     ContextPtr context = reading->getContext();
     MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
-
-    auto ordinary_reading_select_result = reading->selectRangesToRead(parts, /* alter_conversions = */ {});
-    size_t ordinary_reading_marks = ordinary_reading_select_result->marks();
 
     /// Selecting best candidate.
     for (auto & candidate : candidates.real)
@@ -602,18 +597,12 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         if (!analyzed)
             continue;
 
-        if (candidate.sum_marks > ordinary_reading_marks)
-            continue;
-
         if (best_candidate == nullptr || best_candidate->sum_marks > candidate.sum_marks)
             best_candidate = &candidate;
     }
 
     if (!best_candidate)
-    {
-        reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
         return false;
-    }
 
     QueryPlanStepPtr projection_reading;
     bool has_ordinary_parts;
@@ -642,8 +631,7 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         query_info_copy.prewhere_info = nullptr;
 
         projection_reading = reader.readFromParts(
-            /* parts = */ {},
-            /* alter_conversions = */ {},
+            {},
             best_candidate->dag->getRequiredColumnsNames(),
             proj_snapshot,
             query_info_copy,

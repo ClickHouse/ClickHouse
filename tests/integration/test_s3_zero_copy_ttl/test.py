@@ -35,7 +35,7 @@ def test_ttl_move_and_s3(started_cluster):
             ORDER BY id
             PARTITION BY id
             TTL date TO DISK 's3_disk'
-            SETTINGS storage_policy='s3_and_default', temporary_directories_lifetime=1
+            SETTINGS storage_policy='s3_and_default'
             """.format(
                 i
             )
@@ -86,9 +86,9 @@ def test_ttl_move_and_s3(started_cluster):
 
         print(f"Total objects: {counter}")
 
-        if counter == 330:
+        if counter == 300:
             break
 
         print(f"Attempts remaining: {attempt}")
 
-    assert counter == 330
+    assert counter == 300

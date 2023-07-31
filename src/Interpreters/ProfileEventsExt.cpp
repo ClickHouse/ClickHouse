@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDateTime.h>
 
 namespace ProfileEvents
 {

@@ -4,8 +4,8 @@
 
 SET insert_keeper_fault_injection_probability=0; -- disable fault injection; part ids are non-deterministic in case of insert retries
 
-DROP TABLE IF EXISTS execute_on_single_replica_r1 SYNC;
-DROP TABLE IF EXISTS execute_on_single_replica_r2 SYNC;
+DROP TABLE IF EXISTS execute_on_single_replica_r1 NO DELAY;
+DROP TABLE IF EXISTS execute_on_single_replica_r2 NO DELAY;
 
 /* that test requires fixed zookeeper path, so we cannot use ReplicatedMergeTree({database}) */
 CREATE TABLE execute_on_single_replica_r1 (x UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test_01532/execute_on_single_replica', 'r1') ORDER BY tuple() SETTINGS execute_merges_on_single_replica_time_threshold=10;
@@ -130,5 +130,5 @@ GROUP BY part_name
 ORDER BY part_name
 FORMAT Vertical;
 
-DROP TABLE execute_on_single_replica_r1 SYNC;
-DROP TABLE execute_on_single_replica_r2 SYNC;
+DROP TABLE execute_on_single_replica_r1 NO DELAY;
+DROP TABLE execute_on_single_replica_r2 NO DELAY;

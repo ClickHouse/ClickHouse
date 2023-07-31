@@ -4,7 +4,6 @@
 0	1	2	200
   Aggregating
   Order: a ASC, c ASC
+    Sorting (Stream): a ASC, b ASC, c ASC
       ReadFromMergeTree (default.tab)
-  Aggregating
-  Order: a_0 ASC, c_2 ASC
-        ReadFromMergeTree (default.tab)
+      Sorting (Stream): a ASC, b ASC, c ASC
