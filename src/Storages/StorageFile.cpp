@@ -380,11 +380,11 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     int table_fd,
     const String & compression_method,
     ContextPtr context,
-    const String & path_to_archive = "auto")
+    const String & path_to_archive = "")
 {
     CompressionMethod method;
 
-    if (path_to_archive != "auto")
+    if (!path_to_archive.empty())
     {
         auto reader = createArchiveReader(path_to_archive);
         std::unique_ptr<ReadBuffer> in = reader->readFile(current_path);
@@ -591,7 +591,7 @@ StorageFile::StorageFile(int table_fd_, CommonArguments args)
 StorageFile::StorageFile(const std::string & table_path_, const std::string & user_files_path, CommonArguments args)
     : StorageFile(args)
 {
-    if (args.path_to_archive != "auto")
+    if (!args.path_to_archive.empty())
     {
         paths_to_archive = getPathsList(args.path_to_archive, user_files_path, args.getContext(), total_bytes_to_read);
         paths = {table_path_};
@@ -600,6 +600,7 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
     {
         paths = getPathsList(table_path_, user_files_path, args.getContext(), total_bytes_to_read);
     }
+
     is_db_table = false;
     is_path_with_globs = paths.size() > 1;
     if (!paths.empty())
@@ -822,8 +823,11 @@ public:
                 if (!storage->use_table_fd)
                 {
                     size_t current_file = 0, current_archive = 0;
-                    if (files_info->files.size() == 1 && !files_info->paths_to_archive.empty())
+                    if (!files_info->paths_to_archive.empty())
                     {
+                        if (files_info->files.size() != 1)
+                            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Can only read a single file from archive");
+
                         current_archive = files_info->next_archive_to_read.fetch_add(1);
                         if (current_archive >= files_info->paths_to_archive.size())
                             return {};
@@ -1478,6 +1482,7 @@ void registerStorageFile(StorageFactory & factory)
                 factory_args.constraints,
                 factory_args.comment,
                 {},
+                {},
             };
 
             ASTs & engine_args_ast = factory_args.engine_args;
@@ -1548,7 +1553,7 @@ void registerStorageFile(StorageFactory & factory)
                 else if (type == Field::Types::UInt64)
                     source_fd = static_cast<int>(literal->value.get<UInt64>());
                 else if (type == Field::Types::String)
-                    source_path = literal->value.get<String>();
+                    StorageFile::parseFileSource(literal->value.get<String>(), source_path, storage_args.path_to_archive);
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be path or file descriptor");
             }
@@ -1618,6 +1623,34 @@ void StorageFile::addColumnsToCache(
     auto & schema_cache = getSchemaCache(context);
     auto cache_keys = getKeysForSchemaCache(paths, format_name, format_settings, context);
     schema_cache.addMany(cache_keys, columns);
+}
+
+void StorageFile::parseFileSource(String source, String & filename, String & path_to_archive)
+{
+    size_t pos = source.find("::");
+    if (pos == String::npos)
+    {
+        filename = std::move(source);
+        return;
+    }
+
+    std::string_view path_to_archive_view = std::string_view{source}.substr(0, pos);
+    while (path_to_archive_view.back() == ' ')
+        path_to_archive_view.remove_suffix(1);
+
+    if (path_to_archive_view.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path to archive is empty");
+
+    path_to_archive = path_to_archive_view;
+
+    std::string_view filename_view = std::string_view{source}.substr(pos + 2);
+    while (filename_view.front() == ' ')
+        filename_view.remove_prefix(1);
+
+    if (filename_view.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filename is empty");
+
+    filename = filename_view;
 }
 
 }
