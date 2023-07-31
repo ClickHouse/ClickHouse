@@ -95,7 +95,7 @@ OPTIMIZE TABLE t_sparse_full FINAL;
 SELECT '======';
 
 SELECT column, serialization_kind
-FROM system.parts_columns WHERE table = 't_sparse_full' AND database = currentDatabase() AND column != '_block_number' AND active
+FROM system.parts_columns WHERE table = 't_sparse_full' AND database = currentDatabase() AND active
 ORDER BY name, column;
 
 SELECT '======';

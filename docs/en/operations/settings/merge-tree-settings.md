@@ -841,3 +841,9 @@ Possible values:
 - `Always` or `Never`.
 
 Default value: `Never`
+
+## allow_experimental_block_number_column
+
+Persists virtual column `_block_number` on merges.
+
+Default value: false.

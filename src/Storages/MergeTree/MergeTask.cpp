@@ -256,7 +256,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     if (local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
         ctx->need_remove_expired_values = true;
 
-    if (global_ctx->context->getSettingsRef().allow_experimental_block_number_column
+    if (global_ctx->data->getSettings()->allow_experimental_block_number_column
         && !ctx->need_remove_expired_values && global_ctx->metadata_snapshot->getProjections().empty()
         && !global_ctx->storage_columns.contains(BlockNumberColumn.name))
     {
@@ -901,7 +901,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     global_ctx->horizontal_stage_progress = std::make_unique<MergeStageProgress>(
         ctx->column_sizes ? ctx->column_sizes->keyColumnsWeight() : 1.0);
 
-    if (global_ctx->context->getSettingsRef().allow_experimental_block_number_column
+    if (data_settings->allow_experimental_block_number_column
         && !ctx->need_remove_expired_values && global_ctx->metadata_snapshot->getProjections().empty()
         && std::find(global_ctx->merging_column_names.begin(), global_ctx->merging_column_names.end(), BlockNumberColumn.name)
             == global_ctx->merging_column_names.end())
@@ -1016,8 +1016,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     if (global_ctx->deduplicate)
     {
-        if (global_ctx->context->getSettingsRef().allow_experimental_block_number_column &&
-            global_ctx->deduplicate_by_columns.empty() && global_ctx->metadata_snapshot->getProjections().empty())
+        if (data_settings->allow_experimental_block_number_column
+            && global_ctx->deduplicate_by_columns.empty()
+            && global_ctx->metadata_snapshot->getProjections().empty())
         {
             for (const auto & col : global_ctx->merging_column_names)
             {
