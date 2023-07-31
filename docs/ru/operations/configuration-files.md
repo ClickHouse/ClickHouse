@@ -87,7 +87,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 
 ## Шифрование {#encryption}
 
-Вы можете использовать симметричное шифрование для зашифровки элемента конфигурации, например, поля password. Чтобы это сделать, сначала настройте [кодек шифрования](../sql-reference/statements/create/table.md#encryption-codecs), затем добавьте аттибут`encryption_codec` с именем кодека шифрования как значение к элементу, который надо зашифровать.
+Вы можете использовать симметричное шифрование для зашифровки элемента конфигурации, например, поля password. Чтобы это сделать, сначала настройте [кодек шифрования](../sql-reference/statements/create/table.md#encryption-codecs), затем добавьте аттибут`encrypted_by` с именем кодека шифрования как значение к элементу, который надо зашифровать.
 
 В отличии от аттрибутов `from_zk`, `from_env` и `incl` (или элемента `include`), подстановка, т.е. расшифровка зашифрованного значения, не выподняется в файле предобработки. Расшифровка происходит только во время исполнения в серверном процессе.
 
@@ -95,15 +95,18 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 
 ```xml
 <clickhouse>
+
     <encryption_codecs>
         <aes_128_gcm_siv>
             <key_hex>00112233445566778899aabbccddeeff</key_hex>
         </aes_128_gcm_siv>
     </encryption_codecs>
+
     <interserver_http_credentials>
         <user>admin</user>
-        <password encryption_codec="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
+        <password encrypted_by="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
     </interserver_http_credentials>
+
 </clickhouse>
 ```
 

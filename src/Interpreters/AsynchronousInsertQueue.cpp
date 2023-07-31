@@ -438,7 +438,7 @@ try
         elem.flush_query_id = flush_query_id;
         elem.exception = flush_exception;
         elem.status = flush_exception.empty() ? Status::Ok : Status::FlushError;
-        log.add(elem);
+        log.add(std::move(elem));
     }
 }
 catch (...)
@@ -608,7 +608,7 @@ try
             if (!elem.exception.empty())
             {
                 elem.status = AsynchronousInsertLogElement::ParsingError;
-                insert_log->add(elem);
+                insert_log->add(std::move(elem));
             }
             else
             {

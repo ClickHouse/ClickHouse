@@ -64,7 +64,7 @@ then
     ninja $NINJA_FLAGS clickhouse-keeper
 
     ls -la ./programs/
-    ldd ./programs/clickhouse-keeper
+    ldd ./programs/clickhouse-keeper ||:
 
     if [ -n "$MAKE_DEB" ]; then
       # No quotes because I want it to expand to nothing if empty.
@@ -80,19 +80,9 @@ else
     cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
 fi
 
-if [ "coverity" == "$COMBINED_OUTPUT" ]
-then
-    mkdir -p /workdir/cov-analysis
-
-    wget --post-data "token=$COVERITY_TOKEN&project=ClickHouse%2FClickHouse" -qO- https://scan.coverity.com/download/linux64 | tar xz -C /workdir/cov-analysis --strip-components 1
-    export PATH=$PATH:/workdir/cov-analysis/bin
-    cov-configure --config ./coverity.config --template --comptype clangcc --compiler "$CC"
-    SCAN_WRAPPER="cov-build --config ./coverity.config --dir cov-int"
-fi
-
 # No quotes because I want it to expand to nothing if empty.
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
-$SCAN_WRAPPER ninja $NINJA_FLAGS $BUILD_TARGET
+ninja $NINJA_FLAGS $BUILD_TARGET
 
 ls -la ./programs
 
@@ -173,13 +163,6 @@ then
     tar -cv --zstd -f "$COMBINED_OUTPUT.tar.zst" /output
     rm -r /output/*
     mv "$COMBINED_OUTPUT.tar.zst" /output
-fi
-
-if [ "coverity" == "$COMBINED_OUTPUT" ]
-then
-    # Coverity does not understand ZSTD.
-    tar -cvz -f "coverity-scan.tar.gz" cov-int
-    mv "coverity-scan.tar.gz" /output
 fi
 
 ccache_status
