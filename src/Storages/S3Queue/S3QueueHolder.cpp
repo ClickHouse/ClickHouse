@@ -22,6 +22,8 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
+/// TODO: update zk session if expired
+
 void S3QueueHolder::S3QueueCollection::read(ReadBuffer & in)
 {
     files = {};
