@@ -434,6 +434,8 @@ public:
 
     bool areAsynchronousInsertsEnabled() const override { return getSettings()->async_insert; }
 
+    bool supportsTrivialCountOptimization() const override { return !hasLightweightDeletedMask(); }
+
     NamesAndTypesList getVirtuals() const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr, const StorageMetadataPtr & metadata_snapshot) const override;

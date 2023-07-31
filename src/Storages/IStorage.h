@@ -254,6 +254,9 @@ public:
     /// because those are internally translated into 'ALTER UDPATE' mutations.
     virtual bool supportsDelete() const { return false; }
 
+    /// Return true if the trivial count query could be optimized without reading the data at all.
+    virtual bool supportsTrivialCountOptimization() const { return false; }
+
 private:
 
     StorageID storage_id;
@@ -550,15 +553,15 @@ public:
     /**
       * If the storage requires some complicated work on destroying,
       * then you have two virtual methods:
-      * - flush()
+      * - flushAndPrepareForShutdown()
       * - shutdown()
       *
       * @see shutdown()
-      * @see flush()
+      * @see flushAndPrepareForShutdown()
       */
     void flushAndShutdown()
     {
-        flush();
+        flushAndPrepareForShutdown();
         shutdown();
     }
 
@@ -571,7 +574,7 @@ public:
 
     /// Called before shutdown() to flush data to underlying storage
     /// Data in memory need to be persistent
-    virtual void flush() {}
+    virtual void flushAndPrepareForShutdown() {}
 
     /// Asks table to stop executing some action identified by action_type
     /// If table does not support such type of lock, and empty lock is returned
