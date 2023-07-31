@@ -51,7 +51,7 @@ def test_restore_table(policy):
     n = 20
     sum_n = int((n * (n - 1)) / 2)
     expected = f"{n}\t{sum_n}\n"
-    
+
     create_and_fill_table(n)
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == expected
