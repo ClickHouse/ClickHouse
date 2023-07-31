@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 
@@ -10,7 +11,6 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 
@@ -112,6 +112,12 @@ void MergeTreeReaderCompact::initialize()
             compressed_data_buffer = non_cached_buffer.get();
         }
     }
+    catch (const Exception & e)
+    {
+        if (!isRetryableException(e))
+            data_part_info_for_read->reportBroken();
+        throw;
+    }
     catch (...)
     {
         data_part_info_for_read->reportBroken();
@@ -207,11 +213,11 @@ size_t MergeTreeReaderCompact::readRows(
             }
             catch (Exception & e)
             {
-                if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+                if (!isRetryableException(e))
                     data_part_info_for_read->reportBroken();
 
                 /// Better diagnostics.
-                e.addMessage("(while reading column " + columns_to_read[pos].name + ")");
+                e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
                 throw;
             }
             catch (...)
@@ -315,6 +321,7 @@ void MergeTreeReaderCompact::readData(
 }
 
 void MergeTreeReaderCompact::prefetchBeginOfRange(Priority priority)
+try
 {
     if (!initialized)
     {
@@ -325,6 +332,17 @@ void MergeTreeReaderCompact::prefetchBeginOfRange(Priority priority)
     adjustUpperBound(all_mark_ranges.back().end);
     seekToMark(all_mark_ranges.front().begin, 0);
     data_buffer->prefetch(priority);
+}
+catch (const Exception & e)
+{
+    if (!isRetryableException(e))
+        data_part_info_for_read->reportBroken();
+    throw;
+}
+catch (...)
+{
+    data_part_info_for_read->reportBroken();
+    throw;
 }
 
 void MergeTreeReaderCompact::seekToMark(size_t row_index, size_t column_index)

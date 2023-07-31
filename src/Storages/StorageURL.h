@@ -19,6 +19,7 @@ namespace DB
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
+class IInputFormat;
 struct ConnectionTimeouts;
 class NamedCollection;
 class PullingPipelineExecutor;
@@ -183,7 +184,7 @@ public:
 
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
-    static std::tuple<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> getFirstAvailableURIAndReadBuffer(
+    static std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> getFirstAvailableURIAndReadBuffer(
         std::vector<String>::const_iterator & option,
         const std::vector<String>::const_iterator & end,
         ContextPtr context,
@@ -197,7 +198,7 @@ public:
         bool delay_initialization);
 
 private:
-    using InitializeFunc = std::function<void(const FailoverOptions &)>;
+    using InitializeFunc = std::function<bool()>;
     InitializeFunc initialize;
 
     String name;
@@ -206,15 +207,11 @@ private:
     Poco::URI curr_uri;
 
     std::unique_ptr<ReadBuffer> read_buf;
+    std::shared_ptr<IInputFormat> input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
 
     Poco::Net::HTTPBasicCredentials credentials;
-
-    size_t total_size = 0;
-    UInt64 total_rows_approx_max = 0;
-    size_t total_rows_count_times = 0;
-    UInt64 total_rows_approx_accumulated = 0;
 };
 
 class StorageURLSink : public SinkToStorage
@@ -234,11 +231,12 @@ public:
     std::string getName() const override { return "StorageURLSink"; }
     void consume(Chunk chunk) override;
     void onCancel() override;
-    void onException() override;
+    void onException(std::exception_ptr exception) override;
     void onFinish() override;
 
 private:
     void finalize();
+    void release();
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
     std::mutex cancel_mutex;

@@ -29,6 +29,8 @@ public:
 
     const BlockMissingValues & getMissingValues() const override;
 
+    size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
+
 protected:
     Chunk generate() override;
 
@@ -50,6 +52,7 @@ private:
     std::vector<int> include_indices;
 
     BlockMissingValues block_missing_values;
+    size_t approx_bytes_read_for_chunk = 0;
 
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_stripes;

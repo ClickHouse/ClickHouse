@@ -1,6 +1,7 @@
 #include "ConnectionString.h"
 
 #include <Common/Exception.h>
+#include <Client/ConnectionParameters.h>
 #include <Poco/Exception.h>
 #include <Poco/URI.h>
 
@@ -201,8 +202,8 @@ bool tryParseConnectionString(
                 else
                 {
                     // in case of user_info == 'user:', ':' is specified, but password is empty
-                    // then add password argument "\n" which means: Ask user for a password.
-                    common_arguments.push_back("\n");
+                    // then ask user for a password.
+                    common_arguments.emplace_back(ConnectionParameters::ASK_PASSWORD);
                 }
             }
             else

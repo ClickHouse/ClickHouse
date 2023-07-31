@@ -1,4 +1,5 @@
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/Operators.h>
 
@@ -25,8 +26,12 @@ namespace ErrorCodes
 
 namespace
 {
-    void checkBadDelimiter(char delimiter)
+    void checkBadDelimiter(char delimiter, bool allow_whitespace_or_tab_as_delimiter)
     {
+        if ((delimiter == ' ' || delimiter == '\t') && allow_whitespace_or_tab_as_delimiter)
+        {
+            return;
+        }
         constexpr std::string_view bad_delimiters = " \t\"'.UL";
         if (bad_delimiters.find(delimiter) != std::string_view::npos)
             throw Exception(
@@ -68,7 +73,7 @@ CSVRowInputFormat::CSVRowInputFormat(
         format_settings_.csv.try_detect_header),
     buf(std::move(in_))
 {
-    checkBadDelimiter(format_settings_.csv.delimiter);
+    checkBadDelimiter(format_settings_.csv.delimiter, format_settings_.csv.allow_whitespace_or_tab_as_delimiter);
 }
 
 CSVRowInputFormat::CSVRowInputFormat(
@@ -90,7 +95,7 @@ CSVRowInputFormat::CSVRowInputFormat(
         format_settings_.csv.try_detect_header),
     buf(std::move(in_))
 {
-    checkBadDelimiter(format_settings_.csv.delimiter);
+    checkBadDelimiter(format_settings_.csv.delimiter, format_settings_.csv.allow_whitespace_or_tab_as_delimiter);
 }
 
 void CSVRowInputFormat::syncAfterError()
@@ -134,8 +139,12 @@ static void skipEndOfLine(ReadBuffer & in)
 }
 
 /// Skip `whitespace` symbols allowed in CSV.
-static inline void skipWhitespacesAndTabs(ReadBuffer & in)
+static inline void skipWhitespacesAndTabs(ReadBuffer & in, const bool & allow_whitespace_or_tab_as_delimiter)
 {
+    if (allow_whitespace_or_tab_as_delimiter)
+    {
+        return;
+    }
     while (!in.eof() && (*in.position() == ' ' || *in.position() == '\t'))
         ++in.position();
 }
@@ -146,7 +155,7 @@ CSVFormatReader::CSVFormatReader(PeekableReadBuffer & buf_, const FormatSettings
 
 void CSVFormatReader::skipFieldDelimiter()
 {
-    skipWhitespacesAndTabs(*buf);
+    skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
     assertChar(format_settings.csv.delimiter, *buf);
 }
 
@@ -154,7 +163,7 @@ template <bool read_string>
 String CSVFormatReader::readCSVFieldIntoString()
 {
     if (format_settings.csv.trim_whitespaces) [[likely]]
-        skipWhitespacesAndTabs(*buf);
+        skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
 
     String field;
     if constexpr (read_string)
@@ -166,14 +175,14 @@ String CSVFormatReader::readCSVFieldIntoString()
 
 void CSVFormatReader::skipField()
 {
-    skipWhitespacesAndTabs(*buf);
+    skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
     NullOutput out;
     readCSVStringInto(out, *buf, format_settings.csv);
 }
 
 void CSVFormatReader::skipRowEndDelimiter()
 {
-    skipWhitespacesAndTabs(*buf);
+    skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
 
     if (buf->eof())
         return;
@@ -182,7 +191,7 @@ void CSVFormatReader::skipRowEndDelimiter()
     if (*buf->position() == format_settings.csv.delimiter)
         ++buf->position();
 
-    skipWhitespacesAndTabs(*buf);
+    skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
     if (buf->eof())
         return;
 
@@ -194,7 +203,7 @@ void CSVFormatReader::skipHeaderRow()
     do
     {
         skipField();
-        skipWhitespacesAndTabs(*buf);
+        skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
     } while (checkChar(format_settings.csv.delimiter, *buf));
 
     skipRowEndDelimiter();
@@ -207,7 +216,7 @@ std::vector<String> CSVFormatReader::readRowImpl()
     do
     {
         fields.push_back(readCSVFieldIntoString<is_header>());
-        skipWhitespacesAndTabs(*buf);
+        skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
     } while (checkChar(format_settings.csv.delimiter, *buf));
 
     skipRowEndDelimiter();
@@ -220,7 +229,7 @@ bool CSVFormatReader::parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out)
 
     try
     {
-        skipWhitespacesAndTabs(*buf);
+        skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
         assertChar(delimiter, *buf);
     }
     catch (const DB::Exception &)
@@ -246,7 +255,7 @@ bool CSVFormatReader::parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out)
 
 bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
 {
-    skipWhitespacesAndTabs(*buf);
+    skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
 
     if (buf->eof())
         return true;
@@ -255,7 +264,7 @@ bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
     if (*buf->position() == format_settings.csv.delimiter)
     {
         ++buf->position();
-        skipWhitespacesAndTabs(*buf);
+        skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
         if (buf->eof())
             return true;
     }
@@ -275,6 +284,11 @@ bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
     return true;
 }
 
+bool CSVFormatReader::allowVariableNumberOfColumns()
+{
+    return format_settings.csv.allow_variable_number_of_columns;
+}
+
 bool CSVFormatReader::readField(
     IColumn & column,
     const DataTypePtr & type,
@@ -283,7 +297,7 @@ bool CSVFormatReader::readField(
     const String & /*column_name*/)
 {
     if (format_settings.csv.trim_whitespaces || !isStringOrFixedString(removeNullable(type))) [[likely]]
-        skipWhitespacesAndTabs(*buf);
+        skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
 
     const bool at_delimiter = !buf->eof() && *buf->position() == format_settings.csv.delimiter;
     const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n' || *buf->position() == '\r');
@@ -302,15 +316,52 @@ bool CSVFormatReader::readField(
         return false;
     }
 
+    if (format_settings.csv.use_default_on_bad_values)
+        return readFieldOrDefault(column, type, serialization);
+    return readFieldImpl(*buf, column, type, serialization);
+}
+
+bool CSVFormatReader::readFieldImpl(ReadBuffer & istr, DB::IColumn & column, const DB::DataTypePtr & type, const DB::SerializationPtr & serialization)
+{
     if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
     {
         /// If value is null but type is not nullable then use default value instead.
-        return SerializationNullable::deserializeTextCSVImpl(column, *buf, format_settings, serialization);
+        return SerializationNullable::deserializeTextCSVImpl(column, istr, format_settings, serialization);
     }
 
     /// Read the column normally.
-    serialization->deserializeTextCSV(column, *buf, format_settings);
+    serialization->deserializeTextCSV(column, istr, format_settings);
     return true;
+}
+
+bool CSVFormatReader::readFieldOrDefault(DB::IColumn & column, const DB::DataTypePtr & type, const DB::SerializationPtr & serialization)
+{
+    String field;
+    readCSVField(field, *buf, format_settings.csv);
+    ReadBufferFromString tmp_buf(field);
+    bool is_bad_value = false;
+    bool res = false;
+
+    size_t col_size = column.size();
+    try
+    {
+        res = readFieldImpl(tmp_buf, column, type, serialization);
+        /// Check if we parsed the whole field successfully.
+        if (!field.empty() && !tmp_buf.eof())
+            is_bad_value = true;
+    }
+    catch (const Exception &)
+    {
+        is_bad_value = true;
+    }
+
+    if (!is_bad_value)
+        return res;
+
+    if (column.size() == col_size + 1)
+        column.popBack(1);
+    column.insertDefault();
+    return false;
 }
 
 void CSVFormatReader::skipPrefixBeforeHeader()
@@ -337,6 +388,12 @@ bool CSVFormatReader::checkForSuffix()
 
     buf->rollbackToCheckpoint();
     return false;
+}
+
+bool CSVFormatReader::checkForEndOfRow()
+{
+    skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
+    return buf->eof() || *buf->position() == '\n' || *buf->position() == '\r';
 }
 
 CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)

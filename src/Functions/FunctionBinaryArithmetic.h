@@ -1919,25 +1919,6 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             return executeAggregateAddition(arguments, result_type, input_rows_count);
         }
 
-        /// Special case - one or both arguments are IPv4
-        if (isIPv4(arguments[0].type) || isIPv4(arguments[1].type))
-        {
-            ColumnsWithTypeAndName new_arguments {
-                {
-                    isIPv4(arguments[0].type) ? castColumn(arguments[0], std::make_shared<DataTypeUInt32>()) : arguments[0].column,
-                    isIPv4(arguments[0].type) ? std::make_shared<DataTypeUInt32>() : arguments[0].type,
-                    arguments[0].name,
-                },
-                {
-                    isIPv4(arguments[1].type) ? castColumn(arguments[1], std::make_shared<DataTypeUInt32>()) : arguments[1].column,
-                    isIPv4(arguments[1].type) ? std::make_shared<DataTypeUInt32>() : arguments[1].type,
-                    arguments[1].name
-                }
-            };
-
-            return executeImpl(new_arguments, result_type, input_rows_count);
-        }
-
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0].type, arguments[1].type, context))
         {
@@ -1989,6 +1970,25 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             const auto & null_bytemap = nullable_column->getNullMapData();
             auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap);
             return wrapInNullable(res, arguments, result_type, input_rows_count);
+        }
+
+        /// Special case - one or both arguments are IPv4
+        if (isIPv4(arguments[0].type) || isIPv4(arguments[1].type))
+        {
+            ColumnsWithTypeAndName new_arguments {
+                {
+                    isIPv4(arguments[0].type) ? castColumn(arguments[0], std::make_shared<DataTypeUInt32>()) : arguments[0].column,
+                    isIPv4(arguments[0].type) ? std::make_shared<DataTypeUInt32>() : arguments[0].type,
+                    arguments[0].name,
+                },
+                {
+                    isIPv4(arguments[1].type) ? castColumn(arguments[1], std::make_shared<DataTypeUInt32>()) : arguments[1].column,
+                    isIPv4(arguments[1].type) ? std::make_shared<DataTypeUInt32>() : arguments[1].type,
+                    arguments[1].name
+                }
+            };
+
+            return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap);
         }
 
         const auto * const left_generic = left_argument.type.get();
@@ -2046,51 +2046,68 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
     }
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & arguments) const override
+    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & result_type) const override
     {
         if (2 != arguments.size())
+            return false;
+
+        if (!canBeNativeType(*arguments[0]) || !canBeNativeType(*arguments[1]) || !canBeNativeType(*result_type))
+            return false;
+
+        WhichDataType data_type_lhs(arguments[0]);
+        WhichDataType data_type_rhs(arguments[1]);
+        if ((data_type_lhs.isDateOrDate32() || data_type_lhs.isDateTime()) ||
+            (data_type_rhs.isDateOrDate32() || data_type_rhs.isDateTime()))
             return false;
 
         return castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
         {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
-            if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType> || std::is_same_v<DataTypeFixedString, RightDataType> || std::is_same_v<DataTypeString, LeftDataType> || std::is_same_v<DataTypeString, RightDataType>)
-                return false;
-            else
+            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> &&
+                !std::is_same_v<DataTypeFixedString, RightDataType> &&
+                !std::is_same_v<DataTypeString, LeftDataType> &&
+                !std::is_same_v<DataTypeString, RightDataType>)
             {
                 using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
                 using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-                return !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable;
+                if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable)
+                    return true;
             }
+            return false;
         });
     }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
     {
-        assert(2 == types.size() && 2 == values.size());
+        assert(2 == arguments.size());
 
         llvm::Value * result = nullptr;
-        castBothTypes(types[0].get(), types[1].get(), [&](const auto & left, const auto & right)
+        castBothTypes(arguments[0].type.get(), arguments[1].type.get(), [&](const auto & left, const auto & right)
         {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
-            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType> && !std::is_same_v<DataTypeString, LeftDataType> && !std::is_same_v<DataTypeString, RightDataType>)
+            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> &&
+                !std::is_same_v<DataTypeFixedString, RightDataType> &&
+                !std::is_same_v<DataTypeString, LeftDataType> &&
+                !std::is_same_v<DataTypeString, RightDataType>)
             {
                 using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
                 using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
                 if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable)
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                    auto type = std::make_shared<ResultDataType>();
-                    auto * lval = nativeCast(b, types[0], values[0], type);
-                    auto * rval = nativeCast(b, types[1], values[1], type);
+                    auto * lval = nativeCast(b, arguments[0], result_type);
+                    auto * rval = nativeCast(b, arguments[1], result_type);
                     result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
+
                     return true;
                 }
             }
+
             return false;
         });
+
         return result;
     }
 #endif

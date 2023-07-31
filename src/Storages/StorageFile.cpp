@@ -5,7 +5,6 @@
 #include <Storages/PartitionedSink.h>
 #include <Storages/Distributed/DistributedAsyncInsertSource.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/ReadFromStorageProgress.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -23,6 +22,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -92,6 +92,65 @@ namespace ErrorCodes
 namespace
 {
 
+/// Forward-declare to use in listFilesWithFoldedRegexpMatchingImpl()
+void listFilesWithRegexpMatchingImpl(
+    const std::string & path_for_ls,
+    const std::string & for_match,
+    size_t & total_bytes_to_read,
+    std::vector<std::string> & result,
+    bool recursive = false);
+
+/*
+ * When `{...}` has any `/`s, it must be processed in a different way:
+ * Basically, a path with globs is processed by listFilesWithRegexpMatchingImpl. In case it detects multi-dir glob {.../..., .../...},
+ * listFilesWithFoldedRegexpMatchingImpl is in charge from now on.
+ * It works a bit different: it still recursively goes through subdirectories, but does not match every directory to glob.
+ * Instead, it goes many levels down (until the approximate max_depth is reached) and compares this multi-dir path to a glob.
+ * StorageHDFS.cpp has the same logic.
+*/
+void listFilesWithFoldedRegexpMatchingImpl(const std::string & path_for_ls,
+                                           const std::string & processed_suffix,
+                                           const std::string & suffix_with_globs,
+                                           re2::RE2 & matcher,
+                                           size_t & total_bytes_to_read,
+                                           const size_t max_depth,
+                                           const size_t next_slash_after_glob_pos,
+                                           std::vector<std::string> & result)
+{
+    if (!max_depth)
+        return;
+
+    const fs::directory_iterator end;
+    for (fs::directory_iterator it(path_for_ls); it != end; ++it)
+    {
+        const std::string full_path = it->path().string();
+        const size_t last_slash = full_path.rfind('/');
+        const String dir_or_file_name = full_path.substr(last_slash);
+
+        if (re2::RE2::FullMatch(processed_suffix + dir_or_file_name, matcher))
+        {
+            if (next_slash_after_glob_pos == std::string::npos)
+            {
+                total_bytes_to_read += it->file_size();
+                result.push_back(it->path().string());
+            }
+            else
+            {
+                listFilesWithRegexpMatchingImpl(fs::path(full_path) / "" ,
+                                                suffix_with_globs.substr(next_slash_after_glob_pos),
+                                                total_bytes_to_read, result);
+            }
+        }
+        else if (it->is_directory())
+        {
+            listFilesWithFoldedRegexpMatchingImpl(fs::path(full_path), processed_suffix + dir_or_file_name,
+                                                  suffix_with_globs, matcher, total_bytes_to_read,
+                                                  max_depth - 1, next_slash_after_glob_pos, result);
+        }
+
+    }
+}
+
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageHDFS.
  */
@@ -100,15 +159,42 @@ void listFilesWithRegexpMatchingImpl(
     const std::string & for_match,
     size_t & total_bytes_to_read,
     std::vector<std::string> & result,
-    bool recursive = false)
+    bool recursive)
 {
-    const size_t first_glob = for_match.find_first_of("*?{");
+    const size_t first_glob_pos = for_match.find_first_of("*?{");
+    const bool has_glob = first_glob_pos != std::string::npos;
 
-    const size_t end_of_path_without_globs = for_match.substr(0, first_glob).rfind('/');
+    const size_t end_of_path_without_globs = for_match.substr(0, first_glob_pos).rfind('/');
     const std::string suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
 
-    const size_t next_slash = suffix_with_globs.find('/', 1);
-    const std::string current_glob = suffix_with_globs.substr(0, next_slash);
+    /// slashes_in_glob counter is a upper-bound estimate of recursion depth
+    /// needed to process complex cases when `/` is included into glob, e.g. /pa{th1/a,th2/b}.csv
+    size_t slashes_in_glob = 0;
+    const size_t next_slash_after_glob_pos = [&]()
+    {
+        if (!has_glob)
+            return suffix_with_globs.find('/', 1);
+
+        size_t in_curly = 0;
+        for (std::string::const_iterator it = ++suffix_with_globs.begin(); it != suffix_with_globs.end(); it++)
+        {
+            if (*it == '{')
+                ++in_curly;
+            else if (*it == '/')
+            {
+                if (in_curly)
+                    ++slashes_in_glob;
+                else
+                    return size_t(std::distance(suffix_with_globs.begin(), it));
+            }
+            else if (*it == '}')
+                --in_curly;
+        }
+        return std::string::npos;
+    }();
+
+    const std::string current_glob = suffix_with_globs.substr(0, next_slash_after_glob_pos);
+
     auto regexp = makeRegexpPatternFromGlobs(current_glob);
 
     re2::RE2 matcher(regexp);
@@ -125,13 +211,22 @@ void listFilesWithRegexpMatchingImpl(
     if (!fs::exists(prefix_without_globs))
         return;
 
+    const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
+
+    if (slashes_in_glob)
+    {
+        listFilesWithFoldedRegexpMatchingImpl(fs::path(prefix_without_globs), "", suffix_with_globs,
+                                              matcher, total_bytes_to_read, slashes_in_glob,
+                                              next_slash_after_glob_pos, result);
+        return;
+    }
+
     const fs::directory_iterator end;
     for (fs::directory_iterator it(prefix_without_globs); it != end; ++it)
     {
         const std::string full_path = it->path().string();
         const size_t last_slash = full_path.rfind('/');
         const String file_name = full_path.substr(last_slash);
-        const bool looking_for_directory = next_slash != std::string::npos;
 
         /// Condition is_directory means what kind of path is it in current iteration of ls
         if (!it->is_directory() && !looking_for_directory)
@@ -146,15 +241,13 @@ void listFilesWithRegexpMatchingImpl(
         {
             if (recursive)
             {
-                listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "" ,
-                                                looking_for_directory ? suffix_with_globs.substr(next_slash) : current_glob ,
+                listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
+                                                looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
                                                 total_bytes_to_read, result, recursive);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
-            {
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
-                listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash), total_bytes_to_read, result);
-            }
+                listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos), total_bytes_to_read, result);
         }
     }
 }
@@ -205,7 +298,7 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
 {
     auto read_method = context->getSettingsRef().storage_file_read_method;
 
-    /** But using mmap on server-side is unsafe for the following reasons:
+    /** Using mmap on server-side is unsafe for the following reasons:
       * - concurrent modifications of a file will result in SIGBUS;
       * - IO error from the device will result in SIGBUS;
       * - recovery from this signal is not feasible even with the usage of siglongjmp,
@@ -214,10 +307,10 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
       *
       * But we keep this mode for clickhouse-local as it is not so bad for a command line tool.
       */
+    if (context->getApplicationType() == Context::ApplicationType::SERVER && read_method == LocalFSReadMethod::mmap)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Using storage_file_read_method=mmap is not safe in server mode. Consider using pread.");
 
-    if (S_ISREG(file_stat.st_mode)
-        && context->getApplicationType() != Context::ApplicationType::SERVER
-        && read_method == LocalFSReadMethod::mmap)
+    if (S_ISREG(file_stat.st_mode) && read_method == LocalFSReadMethod::mmap)
     {
         try
         {
@@ -259,44 +352,41 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     return res;
 }
 
-std::unique_ptr<ReadBuffer> createReadBuffer(
-    const String & current_path,
-    bool use_table_fd,
-    const String & storage_name,
-    int table_fd,
-    const String & compression_method,
-    ContextPtr context)
+struct stat getFileStat(const String & current_path, bool use_table_fd, int table_fd, const String & storage_name)
 {
-    CompressionMethod method;
-
     struct stat file_stat{};
-
     if (use_table_fd)
     {
         /// Check if file descriptor allows random reads (and reading it twice).
         if (0 != fstat(table_fd, &file_stat))
             throwFromErrno("Cannot stat table file descriptor, inside " + storage_name, ErrorCodes::CANNOT_STAT);
-
-        method = chooseCompressionMethod("", compression_method);
     }
     else
     {
         /// Check if file descriptor allows random reads (and reading it twice).
         if (0 != stat(current_path.c_str(), &file_stat))
             throwFromErrno("Cannot stat file " + current_path, ErrorCodes::CANNOT_STAT);
-
-        method = chooseCompressionMethod(current_path, compression_method);
     }
+
+    return file_stat;
+}
+
+std::unique_ptr<ReadBuffer> createReadBuffer(
+    const String & current_path,
+    const struct stat & file_stat,
+    bool use_table_fd,
+    int table_fd,
+    const String & compression_method,
+    ContextPtr context)
+{
+    CompressionMethod method;
+
+    if (use_table_fd)
+        method = chooseCompressionMethod("", compression_method);
+    else
+        method = chooseCompressionMethod(current_path, compression_method);
 
     std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context);
-
-    /// For clickhouse-local and clickhouse-client add progress callback to display progress bar.
-    if (context->getApplicationType() == Context::ApplicationType::LOCAL
-        || context->getApplicationType() == Context::ApplicationType::CLIENT)
-    {
-        auto & in = static_cast<ReadBufferFromFileBase &>(*nested_buffer);
-        in.setProgressCallback(context);
-    }
 
     int zstd_window_log_max = static_cast<int>(context->getSettingsRef().zstd_window_log_max);
     return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
@@ -357,7 +447,8 @@ ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr c
     {
         /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
         /// where we can store the original read buffer.
-        read_buffer_from_fd = createReadBuffer("", true, getName(), table_fd, compression_method, context);
+        auto file_stat = getFileStat("", true, table_fd, getName());
+        read_buffer_from_fd = createReadBuffer("", file_stat, true, table_fd, compression_method, context);
         auto read_buf = std::make_unique<PeekableReadBuffer>(*read_buffer_from_fd);
         read_buf->setCheckpoint();
         return read_buf;
@@ -398,12 +489,29 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     if (context->getSettingsRef().schema_inference_use_cache_for_file)
         columns_from_cache = tryGetColumnsFromCache(paths, format, format_settings, context);
 
-    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
+    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin(), first = true](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
-        if (it == paths.end())
-            return nullptr;
+        String path;
+        struct stat file_stat;
+        do
+        {
+            if (it == paths.end())
+            {
+                if (first)
+                    throw Exception(
+                        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                        "Cannot extract table structure from {} format file, because all files are empty. You must specify table structure manually",
+                        format);
+                return nullptr;
+            }
 
-        return createReadBuffer(*it++, false, "File", -1, compression_method, context);
+            path = *it++;
+            file_stat = getFileStat(path, false, -1, "File");
+        }
+        while (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0);
+
+        first = false;
+        return createReadBuffer(path, file_stat, false, -1, compression_method, context);
     };
 
     ColumnsDescription columns;
@@ -584,7 +692,7 @@ public:
         ColumnsDescription columns_description_,
         const Block & block_for_format_,
         std::unique_ptr<ReadBuffer> read_buf_)
-        : ISource(getBlockForSource(block_for_format_, files_info_))
+        : ISource(getBlockForSource(block_for_format_, files_info_), false)
         , storage(std::move(storage_))
         , storage_snapshot(storage_snapshot_)
         , files_info(std::move(files_info_))
@@ -692,22 +800,26 @@ public:
                 }
 
                 if (!read_buf)
-                    read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->getName(), storage->table_fd, storage->compression_method, context);
+                {
+                    auto file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
+                    if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
+                        continue;
+                    read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, context);
+                }
 
                 const Settings & settings = context->getSettingsRef();
                 chassert(!storage->paths.empty());
                 const auto max_parsing_threads = std::max<size_t>(settings.max_threads/ storage->paths.size(), 1UL);
-                auto format
-                    = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, max_parsing_threads);
+                input_format = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, max_parsing_threads);
 
                 QueryPipelineBuilder builder;
-                builder.init(Pipe(format));
+                builder.init(Pipe(input_format));
 
                 if (columns_description.hasDefaults())
                 {
                     builder.addSimpleTransform([&](const Block & header)
                     {
-                        return std::make_shared<AddingDefaultsTransform>(header, columns_description, *format, context);
+                        return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, context);
                     });
                 }
 
@@ -720,6 +832,10 @@ public:
             if (reader->pull(chunk))
             {
                 UInt64 num_rows = chunk.getNumRows();
+                size_t chunk_size = 0;
+                if (storage->format_name != "Distributed")
+                    chunk_size = input_format->getApproxBytesReadForChunk();
+                progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
                 /// Enrich with virtual columns.
                 if (files_info->need_path_column)
@@ -737,11 +853,6 @@ public:
                     chunk.addColumn(column->convertToFullColumnIfConst());
                 }
 
-                if (num_rows)
-                {
-                    updateRowsProgressApprox(
-                        *this, chunk, files_info->total_bytes_to_read, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
-                }
                 return chunk;
             }
 
@@ -752,6 +863,7 @@ public:
             /// Close file prematurely if stream was ended.
             reader.reset();
             pipeline.reset();
+            input_format.reset();
             read_buf.reset();
         }
 
@@ -766,6 +878,7 @@ private:
     String current_path;
     Block sample_block;
     std::unique_ptr<ReadBuffer> read_buf;
+    InputFormatPtr input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
 
@@ -778,10 +891,6 @@ private:
     bool finished_generate = false;
 
     std::shared_lock<std::shared_timed_mutex> shared_lock;
-
-    UInt64 total_rows_approx_accumulated = 0;
-    size_t total_rows_count_times = 0;
-    UInt64 total_rows_approx_max = 0;
 };
 
 
@@ -991,10 +1100,18 @@ public:
         cancelled = true;
     }
 
-    void onException() override
+    void onException(std::exception_ptr exception) override
     {
         std::lock_guard cancel_lock(cancel_mutex);
-        finalize();
+        try
+        {
+            std::rethrow_exception(exception);
+        }
+        catch (...)
+        {
+            /// An exception context is needed to proper delete write buffers without finalization
+            release();
+        }
     }
 
     void onFinish() override
@@ -1018,10 +1135,15 @@ private:
         catch (...)
         {
             /// Stop ParallelFormattingOutputFormat correctly.
-            writer.reset();
-            write_buf->finalize();
+            release();
             throw;
         }
+    }
+
+    void release()
+    {
+        writer.reset();
+        write_buf->finalize();
     }
 
     StorageMetadataPtr metadata_snapshot;

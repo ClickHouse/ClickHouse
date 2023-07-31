@@ -123,6 +123,7 @@ private:
     bool quorum_parallel = false;
     const bool deduplicate = true;
     bool last_block_is_duplicate = false;
+    UInt64 num_blocks_processed = 0;
 
     using Logger = Poco::Logger;
     Poco::Logger * log;
