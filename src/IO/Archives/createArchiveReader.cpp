@@ -32,7 +32,7 @@ std::shared_ptr<IArchiveReader> createArchiveReader(
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "minizip library is disabled");
 #endif
     }
-    else if (path_to_archive.ends_with(".tar"))
+    else if (path_to_archive.ends_with(".tar") || path_to_archive.ends_with("tar.gz"))
     {
 #if USE_LIBARCHIVE
         return std::make_shared<TarArchiveReader>(path_to_archive, archive_read_function);

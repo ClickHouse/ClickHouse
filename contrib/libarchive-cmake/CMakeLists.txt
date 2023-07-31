@@ -146,4 +146,6 @@ target_compile_definitions(_libarchive PUBLIC
 
 target_compile_options(_libarchive PRIVATE "-Wno-reserved-macro-identifier")
 
+target_link_libraries(_libarchive PRIVATE ch_contrib::zlib ch_contrib::xz)
+
 add_library(ch_contrib::libarchive ALIAS _libarchive)

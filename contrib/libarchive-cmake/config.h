@@ -843,7 +843,7 @@ typedef uint64_t uintmax_t;
 /* #undef HAVE_LZMADEC_H */
 
 /* Define to 1 if you have the <lzma.h> header file. */
-/* #undef HAVE_LZMA_H */
+#define HAVE_LZMA_H 1
 
 /* Define to 1 if you have a working `lzma_stream_encoder_mt' function. */
 /* #undef HAVE_LZMA_STREAM_ENCODER_MT */
@@ -909,7 +909,7 @@ typedef uint64_t uintmax_t;
 /* #undef HAVE_NETTLE_SHA_H */
 
 /* Define to 1 if you have the `nl_langinfo' function. */
-#define HAVE_NL_LANGINFO 1
+/* #undef HAVE_NL_LANGINFO */
 
 /* Define to 1 if you have the `openat' function. */
 #define HAVE_OPENAT 1
@@ -1249,7 +1249,7 @@ typedef uint64_t uintmax_t;
 #define HAVE_WORKING_FS_IOC_GETFLAGS 1
 
 /* Define to 1 if you have the <zlib.h> header file. */
-/* #undef HAVE_ZLIB_H */
+#define HAVE_ZLIB_H 1
 
 /* Define to 1 if you have the <zstd.h> header file. */
 /* #undef HAVE_ZSTD_H */

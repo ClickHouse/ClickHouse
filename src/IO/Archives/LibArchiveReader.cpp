@@ -116,6 +116,9 @@ private:
     {
         auto bytes_read = archive_read_data(handle.archive, internal_buffer.begin(), static_cast<int>(internal_buffer.size()));
 
+        if (bytes_read < 0)
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to read file {} from {}: {}", filename, path_to_archive, archive_error_string(handle.archive));
+
         if (!bytes_read)
             return false;
 
@@ -123,6 +126,7 @@ private:
         working_buffer.resize(bytes_read);
         return true;
     }
+
     Handle handle;
     const String path_to_archive;
     const String filename;
@@ -166,7 +170,7 @@ LibArchiveReader<ArchiveInfo>::FileInfo LibArchiveReader<ArchiveInfo>::getFileIn
 template <typename ArchiveInfo>
 std::unique_ptr<typename LibArchiveReader<ArchiveInfo>::FileEnumerator> LibArchiveReader<ArchiveInfo>::firstFile()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iterating files not implementaed for {} archives", ArchiveInfo::name);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iterating files not implemented for {} archives", ArchiveInfo::name);
 }
 
 template <typename ArchiveInfo>
@@ -181,14 +185,14 @@ std::unique_ptr<ReadBufferFromFileBase> LibArchiveReader<ArchiveInfo>::readFile(
 template <typename ArchiveInfo>
 std::unique_ptr<ReadBufferFromFileBase> LibArchiveReader<ArchiveInfo>::readFile(std::unique_ptr<FileEnumerator> /*enumerator*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iterating files not implementaed for {} archives", ArchiveInfo::name);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iterating files not implemented for {} archives", ArchiveInfo::name);
 }
 
 template <typename ArchiveInfo>
 std::unique_ptr<typename LibArchiveReader<ArchiveInfo>::FileEnumerator>
 LibArchiveReader<ArchiveInfo>::nextFile(std::unique_ptr<ReadBuffer> /*read_buffer*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iterating files not implementaed for {} archives", ArchiveInfo::name);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iterating files not implemented for {} archives", ArchiveInfo::name);
 }
 
 
