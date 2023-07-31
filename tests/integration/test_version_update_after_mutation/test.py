@@ -74,7 +74,14 @@ def test_mutate_and_upgrade(start_cluster):
     node2.query("DETACH TABLE mt")  # stop being leader
     node1.query("DETACH TABLE mt")  # stop being leader
 
+    # Flush logs before restart to avoid trash from system tables which are on database ordindary
+    # (We could be in process of creating some system table, which will leave empty directory on restart,
+    # so when we start moving system tables from ordinary to atomic db, it will complain about some undeleted files)
+    node1.query("SYSTEM STOP MERGES")
+    node1.query("SYSTEM FLUSH LOGS")
     restart_node(node1)
+    node2.query("SYSTEM STOP MERGES")
+    node2.query("SYSTEM FLUSH LOGS")
     restart_node(node2)
 
     # After hard restart table can be in readonly mode
@@ -130,6 +137,7 @@ def test_upgrade_while_mutation(start_cluster):
     # Flush logs before restart to avoid trash from system tables which are on database ordindary
     # (We could be in process of creating some system table, which will leave empty directory on restart,
     # so when we start moving system tables from ordinary to atomic db, it will complain about some undeleted files)
+    node3.query("SYSTEM STOP MERGES")
     node3.query("SYSTEM FLUSH LOGS")
     restart_node(node3)
 
