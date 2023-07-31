@@ -1035,6 +1035,11 @@ try
     /// Initialize merge tree metadata cache
     if (config().has("merge_tree_metadata_cache"))
     {
+        global_context->addWarningMessage("The setting 'merge_tree_metadata_cache' is enabled."
+            " But the feature of 'metadata cache in RocksDB' is experimental and is not ready for production."
+            " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production."
+            " See the corresponding report at https://github.com/ClickHouse/ClickHouse/issues/51182");
+
         fs::create_directories(path / "rocksdb/");
         size_t size = config().getUInt64("merge_tree_metadata_cache.lru_cache_size", 256 << 20);
         bool continue_if_corrupted = config().getBool("merge_tree_metadata_cache.continue_if_corrupted", false);
@@ -1686,17 +1691,26 @@ try
         global_context->initializeTraceCollector();
 
         /// Set up server-wide memory profiler (for total memory tracker).
-        UInt64 total_memory_profiler_step = config().getUInt64("total_memory_profiler_step", 0);
-        if (total_memory_profiler_step)
+        if (server_settings.total_memory_profiler_step)
         {
-            total_memory_tracker.setProfilerStep(total_memory_profiler_step);
+            total_memory_tracker.setProfilerStep(server_settings.total_memory_profiler_step);
         }
 
-        double total_memory_tracker_sample_probability = config().getDouble("total_memory_tracker_sample_probability", 0);
-        if (total_memory_tracker_sample_probability > 0.0)
+        if (server_settings.total_memory_tracker_sample_probability > 0.0)
         {
-            total_memory_tracker.setSampleProbability(total_memory_tracker_sample_probability);
+            total_memory_tracker.setSampleProbability(server_settings.total_memory_tracker_sample_probability);
         }
+
+        if (server_settings.total_memory_profiler_sample_min_allocation_size)
+        {
+            total_memory_tracker.setSampleMinAllocationSize(server_settings.total_memory_profiler_sample_min_allocation_size);
+        }
+
+        if (server_settings.total_memory_profiler_sample_max_allocation_size)
+        {
+            total_memory_tracker.setSampleMaxAllocationSize(server_settings.total_memory_profiler_sample_max_allocation_size);
+        }
+
     }
 #endif
 
