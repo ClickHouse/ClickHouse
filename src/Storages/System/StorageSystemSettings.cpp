@@ -21,6 +21,7 @@ NamesAndTypesList StorageSystemSettings::getNamesAndTypes()
         {"type", std::make_shared<DataTypeString>()},
         {"default", std::make_shared<DataTypeString>()},
         {"alias_for", std::make_shared<DataTypeString>()},
+        {"is_obsolete", std::make_shared<DataTypeUInt8>()},
     };
 }
 
@@ -51,6 +52,7 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr co
         res_columns[6]->insert(writability == SettingConstraintWritability::CONST);
         res_columns[7]->insert(setting.getTypeName());
         res_columns[8]->insert(setting.getDefaultValueString());
+        res_columns[10]->insert(setting.isObsolete());
     };
 
     const auto & settings_to_aliases = Settings::Traits::settingsToAliases();

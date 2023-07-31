@@ -85,6 +85,32 @@ def test_read_write_storage_with_globs(started_cluster):
         assert "in readonly mode" in str(ex)
 
 
+def test_storage_with_multidirectory_glob(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+    for i in ["1", "2"]:
+        hdfs_api.write_data(
+            f"/multiglob/p{i}/path{i}/postfix/data{i}", f"File{i}\t{i}{i}\n"
+        )
+        assert (
+            hdfs_api.read_data(f"/multiglob/p{i}/path{i}/postfix/data{i}")
+            == f"File{i}\t{i}{i}\n"
+        )
+
+    r = node1.query(
+        "SELECT * FROM hdfs('hdfs://hdfs1:9000/multiglob/{p1/path1,p2/path2}/postfix/data{1,2}', TSV)"
+    )
+    assert (r == f"File1\t11\nFile2\t22\n") or (r == f"File2\t22\nFile1\t11\n")
+
+    try:
+        node1.query(
+            "SELECT * FROM hdfs('hdfs://hdfs1:9000/multiglob/{p4/path1,p2/path3}/postfix/data{1,2}.nonexist', TSV)"
+        )
+        assert False, "Exception have to be thrown"
+    except Exception as ex:
+        print(ex)
+        assert "no files" in str(ex)
+
+
 def test_read_write_table(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 

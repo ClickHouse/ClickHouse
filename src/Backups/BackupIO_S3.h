@@ -17,7 +17,7 @@ namespace DB
 class BackupReaderS3 : public BackupReaderDefault
 {
 public:
-    BackupReaderS3(const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, const ContextPtr & context_);
+    BackupReaderS3(const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, bool allow_s3_native_copy, const ContextPtr & context_);
     ~BackupReaderS3() override;
 
     bool fileExists(const String & file_name) override;
@@ -38,7 +38,7 @@ private:
 class BackupWriterS3 : public BackupWriterDefault
 {
 public:
-    BackupWriterS3(const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, const ContextPtr & context_);
+    BackupWriterS3(const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, bool allow_s3_native_copy, const ContextPtr & context_);
     ~BackupWriterS3() override;
 
     bool fileExists(const String & file_name) override;

@@ -470,6 +470,7 @@ TEST_F(FileCacheTest, get)
 
                 auto & file_segment2 = get(holder2, 2);
                 ASSERT_TRUE(file_segment2.getOrSetDownloader() != FileSegment::getCallerId());
+                ASSERT_EQ(file_segment2.state(), State::DOWNLOADING);
 
                 {
                     std::lock_guard lock(mutex);
@@ -478,8 +479,7 @@ TEST_F(FileCacheTest, get)
                 cv.notify_one();
 
                 file_segment2.wait(file_segment2.range().right);
-                file_segment2.complete();
-                ASSERT_TRUE(file_segment2.state() == State::DOWNLOADED);
+                ASSERT_EQ(file_segment2.getDownloadedSize(false), file_segment2.range().size());
             });
 
             {
@@ -488,7 +488,7 @@ TEST_F(FileCacheTest, get)
             }
 
             download(file_segment);
-            ASSERT_TRUE(file_segment.state() == State::DOWNLOADED);
+            ASSERT_EQ(file_segment.state(), State::DOWNLOADED);
 
             other_1.join();
 

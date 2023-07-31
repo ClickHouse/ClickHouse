@@ -1,6 +1,8 @@
 #include <limits>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Common/PODArray.h>
+#include <Common/checkStackSize.h>
 #include <Common/OptimizedRegularExpression.h>
 
 #define MIN_LENGTH_FOR_STRSTR 3
@@ -50,6 +52,8 @@ const char * analyzeImpl(
     bool & is_trivial,
     Literals & global_alternatives)
 {
+    checkStackSize();
+
     /** The expression is trivial if all the metacharacters in it are escaped.
       * The non-alternative string is
       *  a string outside parentheses,
@@ -420,6 +424,7 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
         bool & is_trivial,
         bool & required_substring_is_prefix,
         std::vector<std::string> & alternatives)
+try
 {
     Literals alternative_literals;
     Literal required_literal;
@@ -429,12 +434,20 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
     for (auto & lit : alternative_literals)
         alternatives.push_back(std::move(lit.literal));
 }
+catch (...)
+{
+    required_substring = "";
+    is_trivial = false;
+    required_substring_is_prefix = false;
+    alternatives.clear();
+    LOG_ERROR(&Poco::Logger::get("OptimizeRegularExpression"), "Analyze RegularExpression failed, got error: {}", DB::getCurrentExceptionMessage(false));
+}
 
 template <bool thread_safe>
 OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(const std::string & regexp_, int options)
 {
-    std::vector<std::string> alternativesDummy; /// this vector extracts patterns a,b,c from pattern (a|b|c). for now it's not used.
-    analyze(regexp_, required_substring, is_trivial, required_substring_is_prefix, alternativesDummy);
+    std::vector<std::string> alternatives_dummy; /// this vector extracts patterns a,b,c from pattern (a|b|c). for now it's not used.
+    analyze(regexp_, required_substring, is_trivial, required_substring_is_prefix, alternatives_dummy);
 
 
     /// Just three following options are supported
@@ -540,7 +553,7 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
             }
         }
 
-        return re2->Match(StringPieceType(subject, subject_size), 0, subject_size, RegexType::UNANCHORED, nullptr, 0);
+        return re2->Match({subject, subject_size}, 0, subject_size, RegexType::UNANCHORED, nullptr, 0);
     }
 }
 
@@ -585,9 +598,9 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
                 return false;
         }
 
-        StringPieceType piece;
+        std::string_view piece;
 
-        if (!RegexType::PartialMatch(StringPieceType(subject, subject_size), *re2, &piece))
+        if (!RegexType::PartialMatch({subject, subject_size}, *re2, &piece))
             return false;
         else
         {
@@ -652,10 +665,10 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
                 return 0;
         }
 
-        DB::PODArrayWithStackMemory<StringPieceType, 128> pieces(limit);
+        DB::PODArrayWithStackMemory<std::string_view, 128> pieces(limit);
 
         if (!re2->Match(
-            StringPieceType(subject, subject_size),
+            {subject, subject_size},
             0,
             subject_size,
             RegexType::UNANCHORED,

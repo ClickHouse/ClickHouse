@@ -106,7 +106,6 @@ public:
     enum class KeyNotFoundPolicy
     {
         THROW,
-        THROW_LOGICAL,
         CREATE_EMPTY,
         RETURN_NULL,
     };
@@ -170,7 +169,7 @@ struct LockedKey : private boost::noncopyable
     std::shared_ptr<const KeyMetadata> getKeyMetadata() const { return key_metadata; }
     std::shared_ptr<KeyMetadata> getKeyMetadata() { return key_metadata; }
 
-    void removeAll(bool if_releasable = true);
+    void removeAllReleasable();
 
     KeyMetadata::iterator removeFileSegment(size_t offset, const FileSegmentGuard::Lock &, bool allow_throw = true);
     KeyMetadata::iterator removeFileSegment(size_t offset, bool allow_throw = true);

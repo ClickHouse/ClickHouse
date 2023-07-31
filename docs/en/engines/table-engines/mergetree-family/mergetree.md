@@ -37,8 +37,8 @@ The [Merge](/docs/en/engines/table-engines/special/merge.md/#merge) engine does 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [TTL expr1] [CODEC(codec1)] [[NOT] NULL|PRIMARY KEY],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [TTL expr2] [CODEC(codec2)] [[NOT] NULL|PRIMARY KEY],
     ...
     INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1],
     INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2],
@@ -439,41 +439,41 @@ Syntax: `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, 
 - `number_of_hash_functions` — The number of hash functions used in the Bloom filter.
 - `random_seed` — The seed for Bloom filter hash functions.
 
-Users can create [UDF](/docs/en/sql-reference/statements/create/function.md) to estimate the parameters set of `ngrambf_v1`. Query statements are as follows:  
+Users can create [UDF](/docs/en/sql-reference/statements/create/function.md) to estimate the parameters set of `ngrambf_v1`. Query statements are as follows:
 
 ```sql
-CREATE FUNCTION bfEstimateFunctions [ON CLUSTER cluster]   
-AS  
-(total_nubmer_of_all_grams, size_of_bloom_filter_in_bits) -> round((size_of_bloom_filter_in_bits / total_nubmer_of_all_grams) * log(2));   
-  
-CREATE FUNCTION bfEstimateBmSize [ON CLUSTER cluster]   
-AS  
-(total_nubmer_of_all_grams,  probability_of_false_positives) -> ceil((total_nubmer_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));  
-    
-CREATE FUNCTION bfEstimateFalsePositive [ON CLUSTER cluster]  
-AS   
-(total_nubmer_of_all_grams, number_of_hash_functions, size_of_bloom_filter_in_bytes) -> pow(1 - exp(-number_of_hash_functions/ (size_of_bloom_filter_in_bytes / total_nubmer_of_all_grams)), number_of_hash_functions);  
-  
-CREATE FUNCTION bfEstimateGramNumber [ON CLUSTER cluster]   
-AS  
+CREATE FUNCTION bfEstimateFunctions [ON CLUSTER cluster]
+AS
+(total_nubmer_of_all_grams, size_of_bloom_filter_in_bits) -> round((size_of_bloom_filter_in_bits / total_nubmer_of_all_grams) * log(2));
+
+CREATE FUNCTION bfEstimateBmSize [ON CLUSTER cluster]
+AS
+(total_nubmer_of_all_grams,  probability_of_false_positives) -> ceil((total_nubmer_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));
+
+CREATE FUNCTION bfEstimateFalsePositive [ON CLUSTER cluster]
+AS
+(total_nubmer_of_all_grams, number_of_hash_functions, size_of_bloom_filter_in_bytes) -> pow(1 - exp(-number_of_hash_functions/ (size_of_bloom_filter_in_bytes / total_nubmer_of_all_grams)), number_of_hash_functions);
+
+CREATE FUNCTION bfEstimateGramNumber [ON CLUSTER cluster]
+AS
 (number_of_hash_functions, probability_of_false_positives, size_of_bloom_filter_in_bytes) -> ceil(size_of_bloom_filter_in_bytes / (-number_of_hash_functions / log(1 - exp(log(probability_of_false_positives) / number_of_hash_functions))))
 
-```  
+```
 To use those functions,we need to specify two parameter at least.
-For example, if there 4300 ngrams in the granule and we expect false positives to be less than 0.0001. The other parameters can be estimated by executing following queries:   
-  
+For example, if there 4300 ngrams in the granule and we expect false positives to be less than 0.0001. The other parameters can be estimated by executing following queries:
+
 
 ```sql
 --- estimate number of bits in the filter
-SELECT bfEstimateBmSize(4300, 0.0001) / 8 as size_of_bloom_filter_in_bytes;  
+SELECT bfEstimateBmSize(4300, 0.0001) / 8 as size_of_bloom_filter_in_bytes;
 
 ┌─size_of_bloom_filter_in_bytes─┐
 │                         10304 │
 └───────────────────────────────┘
-  
+
 --- estimate number of hash functions
 SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) as number_of_hash_functions
-  
+
 ┌─number_of_hash_functions─┐
 │                       13 │
 └──────────────────────────┘
@@ -991,7 +991,7 @@ use a local disk to cache data from a table stored at a URL. Neither the cache d
 nor the web storage is configured in the ClickHouse configuration files; both are
 configured in the CREATE/ATTACH query settings.
 
-In the settings highlighted below notice that the disk of `type=web` is nested within 
+In the settings highlighted below notice that the disk of `type=web` is nested within
 the disk of `type=cache`.
 
 ```sql
@@ -1308,7 +1308,7 @@ configuration file.
 In this sample configuration:
 - the disk is of type `web`
 - the data is hosted at `http://nginx:80/test1/`
-- a cache on local storage is used 
+- a cache on local storage is used
 
 ```xml
 <clickhouse>

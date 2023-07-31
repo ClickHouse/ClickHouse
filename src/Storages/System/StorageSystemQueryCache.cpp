@@ -44,7 +44,7 @@ void StorageSystemQueryCache::fillData(MutableColumns & res_columns, ContextPtr 
         if (!key.is_shared && key.user_name != user_name)
             continue;
 
-        res_columns[0]->insert(key.queryStringFromAst()); /// approximates the original query string
+        res_columns[0]->insert(key.query_string); /// approximates the original query string
         res_columns[1]->insert(QueryCache::QueryCacheEntryWeight()(*query_result));
         res_columns[2]->insert(key.expires_at < std::chrono::system_clock::now());
         res_columns[3]->insert(key.is_shared);

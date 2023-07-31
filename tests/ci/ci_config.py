@@ -19,16 +19,6 @@ CI_CONFIG = {
             "with_coverage": False,
             "comment": "",
         },
-        "coverity": {
-            "compiler": "clang-16",
-            "build_type": "",
-            "sanitizer": "",
-            "package_type": "coverity",
-            "tidy": "disable",
-            "with_coverage": False,
-            "official": False,
-            "comment": "A special build for coverity",
-        },
         "package_aarch64": {
             "compiler": "clang-16-aarch64",
             "build_type": "",
@@ -173,11 +163,20 @@ CI_CONFIG = {
             "with_coverage": False,
             "comment": "SSE2-only build",
         },
+        "binary_riscv64": {
+            "compiler": "clang-16-riscv64",
+            "build_type": "",
+            "sanitizer": "",
+            "package_type": "binary",
+            "static_binary_name": "riscv64",
+            "tidy": "disable",
+            "with_coverage": False,
+            "comment": "",
+        },
     },
     "builds_report_config": {
         "ClickHouse build check": [
             "package_release",
-            "coverity",
             "package_aarch64",
             "package_asan",
             "package_ubsan",
@@ -194,6 +193,7 @@ CI_CONFIG = {
             "binary_freebsd",
             "binary_darwin_aarch64",
             "binary_ppc64le",
+            "binary_riscv64",
             "binary_amd64_compat",
         ],
     },
@@ -325,6 +325,9 @@ CI_CONFIG = {
         "Integration tests (asan)": {
             "required_build": "package_asan",
         },
+        "Integration tests (asan, analyzer)": {
+            "required_build": "package_asan",
+        },
         "Integration tests (tsan)": {
             "required_build": "package_tsan",
         },
@@ -343,7 +346,7 @@ CI_CONFIG = {
         "Compatibility check (aarch64)": {
             "required_build": "package_aarch64",
         },
-        "Unit tests (release-clang)": {
+        "Unit tests (release)": {
             "required_build": "binary_release",
         },
         "Unit tests (asan)": {
@@ -506,7 +509,7 @@ REQUIRED_CHECKS = [
     "Style Check",
     "Unit tests (asan)",
     "Unit tests (msan)",
-    "Unit tests (release-clang)",
+    "Unit tests (release)",
     "Unit tests (tsan)",
     "Unit tests (ubsan)",
 ]

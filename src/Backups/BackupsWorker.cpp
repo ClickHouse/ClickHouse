@@ -348,6 +348,7 @@ void BackupsWorker::doBackup(
         backup_create_params.backup_coordination = backup_coordination;
         backup_create_params.backup_uuid = backup_settings.backup_uuid;
         backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
+        backup_create_params.allow_s3_native_copy = backup_settings.allow_s3_native_copy;
         BackupMutablePtr backup = BackupFactory::instance().createBackup(backup_create_params);
 
         /// Write the backup.
@@ -647,6 +648,7 @@ void BackupsWorker::doRestore(
         backup_open_params.backup_info = backup_info;
         backup_open_params.base_backup_info = restore_settings.base_backup_info;
         backup_open_params.password = restore_settings.password;
+        backup_open_params.allow_s3_native_copy = restore_settings.allow_s3_native_copy;
         BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
 
         String current_database = context->getCurrentDatabase();
