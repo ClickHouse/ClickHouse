@@ -889,7 +889,6 @@ public:
     void setClientProtocolVersion(UInt64 version);
 
 #if USE_ROCKSDB
-    MergeTreeMetadataCachePtr getMergeTreeMetadataCache() const;
     MergeTreeMetadataCachePtr tryGetMergeTreeMetadataCache() const;
 #endif
 
@@ -997,6 +996,9 @@ public:
 #if USE_ROCKSDB
     void initializeMergeTreeMetadataCache(const String & dir, size_t size);
 #endif
+
+    /// Call after unexpected crash happen.
+    void handleCrash() const;
 
     bool hasTraceCollector() const;
 
