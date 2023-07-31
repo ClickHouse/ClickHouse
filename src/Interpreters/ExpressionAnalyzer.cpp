@@ -327,9 +327,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                         if (getContext()->getClientInfo().distributed_depth == 0 || settings.distributed_group_by_no_merge > 0)
                         {
                             /// Constant expressions have non-null column pointer at this stage.
-                            /// Exclude functions with constant result. If we process them here, we lost column names, while SELECT analalysis
-                            /// extracts column names from functions, as result error DB::Exception: Column `..` is not under aggregate function
-                            if (node->type != ActionsDAG::ActionType::FUNCTION && node->column && isColumnConst(*node->column))
+                            if (node->column && isColumnConst(*node->column))
                             {
                                 select_query->group_by_with_constant_keys = true;
 
@@ -383,7 +381,9 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                     if (getContext()->getClientInfo().distributed_depth == 0 || settings.distributed_group_by_no_merge > 0)
                     {
                         /// Constant expressions have non-null column pointer at this stage.
-                        if (node->column && isColumnConst(*node->column))
+                        /// Exclude functions with constant result. If we process them here, we lost column names, while SELECT analalysis
+                        /// extracts column names from functions, as result error DB::Exception: Column `..` is not under aggregate function
+                        if (node->type != ActionsDAG::ActionType::FUNCTION && node->column && isColumnConst(*node->column))
                         {
                             select_query->group_by_with_constant_keys = true;
 
