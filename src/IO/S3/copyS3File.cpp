@@ -822,8 +822,19 @@ void copyS3File(
     ThreadPoolCallbackRunner<void> schedule,
     bool for_disk_s3)
 {
-    CopyFileHelper helper{s3_client, src_bucket, src_key, src_offset, src_size, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3};
-    helper.performCopy();
+    if (settings.allow_native_copy)
+    {
+        CopyFileHelper helper{s3_client, src_bucket, src_key, src_offset, src_size, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3};
+        helper.performCopy();
+    }
+    else
+    {
+        auto create_read_buffer = [&]
+        {
+            return std::make_unique<ReadBufferFromS3>(s3_client, src_bucket, src_key, "", settings, Context::getGlobalContextInstance()->getReadSettings());
+        };
+        copyDataToS3File(create_read_buffer, src_offset, src_size, s3_client, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3);
+    }
 }
 
 }

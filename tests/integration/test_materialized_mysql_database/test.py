@@ -1,17 +1,11 @@
-import os
-import os.path as p
 import time
-import pwd
-import re
 import pymysql.cursors
 import pytest
 from helpers.cluster import (
     ClickHouseCluster,
     ClickHouseInstance,
     get_docker_compose_path,
-    run_and_check,
 )
-import docker
 import logging
 
 from . import materialized_with_ddl
@@ -52,6 +46,7 @@ def started_cluster():
         cluster.start()
         yield cluster
     finally:
+        node_db.stop_clickhouse()  # ensures that coverage report is written to disk, even if cluster.shutdown() times out.
         cluster.shutdown()
 
 
@@ -62,8 +57,6 @@ class MySQLConnection:
         user="root",
         password="clickhouse",
         ip_address=None,
-        docker_compose=None,
-        project_name=cluster.project_name,
     ):
         self.user = user
         self.port = port
@@ -86,7 +79,7 @@ class MySQLConnection:
                 else:
                     self.mysql_connection.ping(reconnect=True)
                 logging.debug(
-                    "MySQL Connection establised: {}:{}".format(
+                    "MySQL Connection established: {}:{}".format(
                         self.ip_address, self.port
                     )
                 )
@@ -94,7 +87,7 @@ class MySQLConnection:
             except Exception as e:
                 errors += [str(e)]
                 time.sleep(1)
-        raise Exception("Connection not establised, {}".format(errors))
+        raise Exception("Connection not established, {}".format(errors))
 
     def query(self, execution_query):
         with self.alloc_connection().cursor() as cursor:
@@ -118,9 +111,9 @@ class MySQLConnection:
             if result is not None:
                 print(cursor.fetchall())
 
-    def query_and_get_data(self, executio_query):
+    def query_and_get_data(self, execution_query):
         with self.alloc_connection().cursor() as cursor:
-            cursor.execute(executio_query)
+            cursor.execute(execution_query)
             return cursor.fetchall()
 
     def close(self):
@@ -262,6 +255,12 @@ def test_materialized_database_ddl_with_empty_transaction_8_0(
     )
 
 
+def test_text_blob_charset(started_cluster, started_mysql_8_0, clickhouse_node):
+    materialized_with_ddl.text_blob_with_charset_test(
+        clickhouse_node, started_mysql_8_0, "mysql80"
+    )
+
+
 def test_select_without_columns_5_7(
     started_cluster, started_mysql_5_7, clickhouse_node
 ):
@@ -375,6 +374,12 @@ def test_utf8mb4(
 ):
     materialized_with_ddl.utf8mb4_test(clickhouse_node, started_mysql_5_7, "mysql57")
     materialized_with_ddl.utf8mb4_test(clickhouse_node, started_mysql_8_0, "mysql80")
+    materialized_with_ddl.utf8mb4_column_test(
+        clickhouse_node, started_mysql_8_0, "mysql80"
+    )
+    materialized_with_ddl.utf8mb4_name_test(
+        clickhouse_node, started_mysql_8_0, "mysql80"
+    )
 
 
 def test_system_parts_table(started_cluster, started_mysql_8_0, clickhouse_node):
@@ -412,6 +417,12 @@ def test_materialized_with_column_comments(
         clickhouse_node, started_mysql_5_7, "mysql57"
     )
     materialized_with_ddl.materialized_with_column_comments_test(
+        clickhouse_node, started_mysql_8_0, "mysql80"
+    )
+
+
+def test_double_quoted_comment(started_cluster, started_mysql_8_0, clickhouse_node):
+    materialized_with_ddl.double_quoted_comment(
         clickhouse_node, started_mysql_8_0, "mysql80"
     )
 
@@ -527,5 +538,11 @@ def test_materialized_database_mysql_drop_ddl(
 
 def test_named_collections(started_cluster, started_mysql_8_0, clickhouse_node):
     materialized_with_ddl.named_collections(
+        clickhouse_node, started_mysql_8_0, "mysql80"
+    )
+
+
+def test_create_table_as_select(started_cluster, started_mysql_8_0, clickhouse_node):
+    materialized_with_ddl.create_table_as_select(
         clickhouse_node, started_mysql_8_0, "mysql80"
     )

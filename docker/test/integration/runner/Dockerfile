@@ -98,6 +98,7 @@ RUN python3 -m pip install --no-cache-dir \
     redis \
     requests-kerberos \
     tzlocal==2.1 \
+    retry \
     urllib3
 
 # Hudi supports only spark 3.3.*, not 3.4
@@ -134,4 +135,5 @@ ENV MSAN_OPTIONS='abort_on_error=1 poison_in_dtor=1'
 
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
-CMD ["sh", "-c", "pytest $PYTEST_OPTS"]
+# To pass additional arguments (i.e. list of tests) use PYTEST_ADDOPTS
+CMD ["sh", "-c", "pytest"]
