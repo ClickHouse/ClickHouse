@@ -542,7 +542,8 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
     if (!table_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
         return;
 
-    if (auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage); storage_dictionary)
+    if (auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage);
+        storage_dictionary && storage_dictionary->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
         table_join->setStorageJoin(std::dynamic_pointer_cast<const IKeyValueEntity>(storage_dictionary->getDictionary()));
     else if (auto storage_key_value = std::dynamic_pointer_cast<IKeyValueEntity>(storage); storage_key_value)
         table_join->setStorageJoin(storage_key_value);

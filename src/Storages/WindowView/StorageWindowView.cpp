@@ -992,7 +992,7 @@ void StorageWindowView::cleanup()
     auto cleanup_context = Context::createCopy(getContext());
     cleanup_context->makeQueryContext();
     cleanup_context->setCurrentQueryId("");
-    cleanup_context->getClientInfo().is_replicated_database_internal = true;
+    cleanup_context->setQueryKindReplicatedDatabaseInternal();
     InterpreterAlterQuery interpreter_alter(alter_query, cleanup_context);
     interpreter_alter.execute();
 

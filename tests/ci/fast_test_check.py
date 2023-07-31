@@ -14,7 +14,6 @@ from github import Github
 from build_check import get_release_or_pr
 from clickhouse_helper import (
     ClickHouseHelper,
-    mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
@@ -190,7 +189,6 @@ def main():
         state, description, test_results, additional_logs = process_results(output_path)
 
     ch_helper = ClickHouseHelper()
-    mark_flaky_tests(ch_helper, NAME, test_results)
     s3_path_prefix = os.path.join(
         get_release_or_pr(pr_info, get_version_from_repo())[0],
         pr_info.sha,

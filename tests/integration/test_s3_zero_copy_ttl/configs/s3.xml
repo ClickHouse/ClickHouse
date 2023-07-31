@@ -32,5 +32,8 @@
 
   <merge_tree>
     <allow_remote_fs_zero_copy_replication>true</allow_remote_fs_zero_copy_replication>
+    <ratio_of_defaults_for_sparse_serialization>1.0</ratio_of_defaults_for_sparse_serialization>
   </merge_tree>
+
+  <allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
 </clickhouse>

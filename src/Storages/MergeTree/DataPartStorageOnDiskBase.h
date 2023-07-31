@@ -68,7 +68,7 @@ public:
     MutableDataPartStoragePtr clonePart(
         const std::string & to,
         const std::string & dir_path,
-        const DiskPtr & disk,
+        const DiskPtr & dst_disk,
         Poco::Logger * log) const override;
 
     void rename(

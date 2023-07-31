@@ -492,7 +492,7 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldBlocks(const String & blocks_di
         }
         else
         {
-            LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", path, Coordination::errorMessage(rc));
+            LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", path, rc);
         }
         first_outdated_block++;
     }

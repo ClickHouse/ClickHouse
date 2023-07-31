@@ -80,6 +80,7 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
 void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     setThreadName("IntersrvHandler");
+    ThreadStatus thread_status;
 
     /// In order to work keep-alive.
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)

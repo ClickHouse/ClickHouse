@@ -78,7 +78,7 @@ struct ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk
               unmerged_block_with_partition(std::move(unmerged_block_with_partition_)),
               part_counters(std::move(part_counters_))
         {
-                initBlockIDMap();
+            initBlockIDMap();
         }
 
         void initBlockIDMap()
@@ -209,8 +209,8 @@ std::vector<Int64> testSelfDeduplicate(std::vector<Int64> data, std::vector<size
         column->insert(datum);
     }
     Block block({ColumnWithTypeAndName(std::move(column), DataTypePtr(new DataTypeInt64()), "a")});
-
-    BlockWithPartition block1(std::move(block), Row(), std::move(offsets));
+    std::vector<String> tokens(offsets.size());
+    BlockWithPartition block1(std::move(block), Row(), std::move(offsets), std::move(tokens));
     ProfileEvents::Counters profile_counters;
     ReplicatedMergeTreeSinkImpl<true>::DelayedChunk::Partition part(
         &Poco::Logger::get("testSelfDeduplicate"), MergeTreeDataWriter::TemporaryPart(), 0, std::move(hashes), std::move(block1), std::nullopt, std::move(profile_counters));
@@ -242,22 +242,29 @@ namespace
         size_t start = 0;
         auto cols = block.block.getColumns();
         std::vector<String> block_id_vec;
-        for (auto offset : block.offsets)
+        for (size_t i = 0; i < block.offsets.size(); ++i)
         {
-            SipHash hash;
-            for (size_t i = start; i < offset; ++i)
+            size_t offset = block.offsets[i];
+            std::string_view token = block.tokens[i];
+            if (token.empty())
             {
-                for (const auto & col : cols)
-                    col->updateHashWithValue(i, hash);
-            }
-            union
-            {
-                char bytes[16];
-                UInt64 words[2];
-            } hash_value;
-            hash.get128(hash_value.bytes);
+                SipHash hash;
+                for (size_t j = start; j < offset; ++j)
+                {
+                    for (const auto & col : cols)
+                        col->updateHashWithValue(j, hash);
+                }
+                union
+                {
+                    char bytes[16];
+                    UInt64 words[2];
+                } hash_value;
+                hash.get128(hash_value.bytes);
 
-            block_id_vec.push_back(partition_id + "_" + DB::toString(hash_value.words[0]) + "_" + DB::toString(hash_value.words[1]));
+                block_id_vec.push_back(partition_id + "_" + DB::toString(hash_value.words[0]) + "_" + DB::toString(hash_value.words[1]));
+            }
+            else
+                block_id_vec.push_back(partition_id + "_" + std::string(token));
 
             start = offset;
         }
@@ -418,18 +425,18 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         convertDynamicColumnsToTuples(block, storage_snapshot);
 
 
-    ChunkOffsetsPtr chunk_offsets;
+    AsyncInsertInfoPtr async_insert_info;
 
     if constexpr (async_insert)
     {
         const auto & chunk_info = chunk.getChunkInfo();
-        if (const auto * chunk_offsets_ptr = typeid_cast<const ChunkOffsets *>(chunk_info.get()))
-            chunk_offsets = std::make_shared<ChunkOffsets>(chunk_offsets_ptr->offsets);
+        if (const auto * async_insert_info_ptr = typeid_cast<const AsyncInsertInfo *>(chunk_info.get()))
+            async_insert_info = std::make_shared<AsyncInsertInfo>(async_insert_info_ptr->offsets, async_insert_info_ptr->tokens);
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No chunk info for async inserts");
     }
 
-    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context, chunk_offsets);
+    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context, async_insert_info);
 
     using DelayedPartition = typename ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk::Partition;
     using DelayedPartitions = std::vector<DelayedPartition>;
@@ -453,7 +460,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         {
             /// we copy everything but offsets which we move because they are only used by async insert
             if (settings.optimize_on_insert && storage.writer.getMergingMode() != MergeTreeData::MergingParams::Mode::Ordinary)
-                unmerged_block.emplace(Block(current_block.block), Row(current_block.partition), std::move(current_block.offsets));
+                unmerged_block.emplace(Block(current_block.block), Row(current_block.partition), std::move(current_block.offsets), std::move(current_block.tokens));
         }
 
         /// Write part to the filesystem under temporary name. Calculate a checksum.
@@ -468,7 +475,6 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 
         if constexpr (async_insert)
         {
-            /// TODO consider insert_deduplication_token
             block_id = getHashesForBlocks(unmerged_block.has_value() ? *unmerged_block : current_block, temp_part.part->info.partition_id);
             LOG_TRACE(log, "async insert part, part id {}, block id {}, offsets {}, size {}", temp_part.part->info.partition_id, toString(block_id), toString(current_block.offsets), current_block.offsets.size());
         }
@@ -723,7 +729,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                     retries_ctl.setUserError(
                         ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
                         "Insert failed due to zookeeper error. Please retry. Reason: {}",
-                        Coordination::errorMessage(write_part_info_keeper_error));
+                        write_part_info_keeper_error);
                 }
 
                 retries_ctl.stopRetries();
@@ -788,7 +794,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             part->info.level = 0;
             part->info.mutation = 0;
 
-            part->name = part->getNewName(part->info);
+            part->setName(part->getNewName(part->info));
 
             StorageReplicatedMergeTree::LogEntry log_entry;
 
@@ -914,7 +920,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             /// Note that it may also appear on filesystem right now in PreActive state due to concurrent inserts of the same data.
             /// It will be checked when we will try to rename directory.
 
-            part->name = existing_part_name;
+            part->setName(existing_part_name);
             part->info = MergeTreePartInfo::fromPartName(existing_part_name, storage.format_version);
             /// Used only for exception messages.
             block_number = part->info.min_block;
@@ -1033,7 +1039,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             retries_ctl.setUserError(
                 ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
                 "Unknown status, client must retry. Reason: {}",
-                Coordination::errorMessage(multi_code));
+                multi_code);
             return;
         }
         else if (Coordination::isUserError(multi_code))
@@ -1109,7 +1115,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                     "Unexpected logical error while adding block {} with ID '{}': {}, path {}",
                     block_number,
                     toString(block_id),
-                    Coordination::errorMessage(multi_code),
+                    multi_code,
                     failed_op_path);
             }
         }
@@ -1122,7 +1128,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                 "Unexpected ZooKeeper error while adding block {} with ID '{}': {}",
                 block_number,
                 toString(block_id),
-                Coordination::errorMessage(multi_code));
+                multi_code);
         }
     },
     [&zookeeper]() { zookeeper->cleanupEphemeralNodes(); });
