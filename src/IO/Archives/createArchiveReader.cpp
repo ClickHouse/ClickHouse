@@ -1,7 +1,6 @@
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/ZipArchiveReader.h>
-#include <IO/Archives/TarArchiveReader.h>
-#include <IO/Archives/SevenZipArchiveReader.h>
+#include <IO/Archives/LibArchiveReader.h>
 #include <Common/Exception.h>
 
 

@@ -4,6 +4,7 @@
 
 #include <IO/Archives/IArchiveReader.h>
 
+#include <iostream>
 
 namespace DB
 {
@@ -14,18 +15,19 @@ class ReadBuffer;
 class ReadBufferFromFileBase;
 class SeekableReadBuffer;
 
-/// Implementation of IArchiveReader for reading tar archives.
-class TarArchiveReader : public IArchiveReader
+/// Implementation of IArchiveReader for reading archives using libarchive.
+template <typename ArchiveInfo>
+class LibArchiveReader : public IArchiveReader
 {
 public:
     /// Constructs an archive's reader that will read from a file in the local filesystem.
-    explicit TarArchiveReader(const String & path_to_archive_);
+    explicit LibArchiveReader(const String & path_to_archive_);
 
     /// Constructs an archive's reader that will read by making a read buffer by using
     /// a specified function.
-    TarArchiveReader(const String & path_to_archive_, const ReadArchiveFunction & archive_read_function_);
+    LibArchiveReader(const String & path_to_archive_, const ReadArchiveFunction & archive_read_function_);
 
-    ~TarArchiveReader() override;
+    ~LibArchiveReader() override;
 
     /// Returns true if there is a specified file in the archive.
     bool fileExists(const String & filename) override;
@@ -49,12 +51,17 @@ public:
     void setPassword(const String & password_) override;
 
 private:
-    class ReadBufferFromTarArchive;
+    class ReadBufferFromLibArchive;
     class Handle;
 
     const String path_to_archive;
     const ReadArchiveFunction archive_read_function;
 };
+
+struct TarArchiveInfo { static constexpr std::string_view name = "tar"; };
+using TarArchiveReader = LibArchiveReader<TarArchiveInfo>;
+struct SevenZipArchiveInfo { static constexpr std::string_view name = "7z"; };
+using SevenZipArchiveReader = LibArchiveReader<SevenZipArchiveInfo>;
 
 #endif
 
