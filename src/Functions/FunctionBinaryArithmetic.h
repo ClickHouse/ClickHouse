@@ -1201,7 +1201,7 @@ class FunctionBinaryArithmetic : public IFunction
         }
 
         /// Unpacking non-const arrays and checking sizes of them.
-        if (*typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsets().data() != 
+        if (*typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsets().data() !=
             *typeid_cast<const ColumnArray *>(arguments[1].column.get())->getOffsets().data())
         {
             throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
@@ -1217,7 +1217,7 @@ class FunctionBinaryArithmetic : public IFunction
         a = typeid_cast<const ColumnArray *>(arguments[1].column.get())->getData().getPtr();
         t = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
         new_arguments[1] = {a, t, arguments[1].name};
-        
+
         auto res = executeImpl(new_arguments, t, input_rows_count);
         return ColumnArray::create(res, typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
     }
