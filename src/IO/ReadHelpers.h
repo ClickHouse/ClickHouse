@@ -535,7 +535,6 @@ template <typename T> void readFloatTextFast(T & x, ReadBuffer & in);
 template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in);
 
 
-
 /// simple: all until '\n' or '\t'
 void readString(String & s, ReadBuffer & buf);
 
