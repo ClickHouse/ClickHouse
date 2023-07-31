@@ -1,4 +1,3 @@
-#include "Common/typeid_cast.h"
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
