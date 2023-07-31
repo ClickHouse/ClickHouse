@@ -19,8 +19,6 @@ RUN apt-get update \
         unixodbc \
         pv \
         zstd \
-        zip \
-        p7zip-full \
     --yes --no-install-recommends
 
 RUN pip3 install numpy scipy pandas Jinja2
