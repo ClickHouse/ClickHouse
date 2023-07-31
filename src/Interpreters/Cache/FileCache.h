@@ -106,7 +106,7 @@ public:
 
     FileSegments getSnapshot(const Key & key);
 
-    FileSegmentsHolderPtr dumpQueue();
+    FileSegments dumpQueue();
 
     void cleanup();
 
