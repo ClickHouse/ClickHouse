@@ -41,6 +41,8 @@ RUN apt-get update -y \
             zstd \
             file \
             pv \
+            zip \
+            p7zip-full \
     && apt-get clean
 
 RUN pip3 install numpy scipy pandas Jinja2
