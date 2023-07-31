@@ -1440,7 +1440,7 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
             elem.thread_id = request->thread_id;
             elem.query_id = request->query_id;
         }
-        maybe_zk_log->add(elem);
+        maybe_zk_log->add(std::move(elem));
     }
 }
 #else
