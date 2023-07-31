@@ -300,7 +300,7 @@ SELECT groupArrayResample(30, 75, 30)(name, age) FROM people
 
 Consider the results.
 
-`Jonh` is out of the sample because he’s too young. Other people are distributed according to the specified age intervals.
+`John` is out of the sample because he’s too young. Other people are distributed according to the specified age intervals.
 
 Now let’s count the total number of people and their average wage in the specified age intervals.
 

@@ -138,7 +138,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     const Columns & default_values_columns) const
 {
     /**
-    * Flow of getColumsImpl
+    * Flow of getColumnsImpl
     * 1. Get fetch result from storage
     * 2. If all keys are found in storage and not expired
     *   2.1. If storage returns fetched columns in order of keys then result is returned to client.
@@ -549,16 +549,17 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
 
     for (size_t i = 0; i < key_index_to_state_from_storage.size(); ++i)
     {
-        if (key_index_to_state_from_storage[i].isExpired()
-            || key_index_to_state_from_storage[i].isNotFound())
+        if (key_index_to_state_from_storage[i].isExpired() || key_index_to_state_from_storage[i].isNotFound())
         {
-            if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-                requested_keys_vector.emplace_back(requested_keys[i]);
-            else
-                requested_complex_key_rows.emplace_back(i);
-
             auto requested_key = requested_keys[i];
-            not_found_keys.insert(requested_key);
+            auto [_, inserted] = not_found_keys.insert(requested_key);
+            if (inserted)
+            {
+                if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+                    requested_keys_vector.emplace_back(requested_keys[i]);
+                else
+                    requested_complex_key_rows.emplace_back(i);
+            }
         }
     }
 

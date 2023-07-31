@@ -11,6 +11,7 @@ import subprocess
 import sys
 import string
 import random
+import shlex
 
 
 def random_str(length=6):
@@ -135,9 +136,7 @@ def check_args_and_update_paths(args):
 
 def docker_kill_handler_handler(signum, frame):
     subprocess.check_call(
-        'docker ps --all --quiet --filter name={name} --format="{{{{.ID}}}}"'.format(
-            name=CONTAINER_NAME
-        ),
+        "docker ps --all --quiet --filter name={name}".format(name=CONTAINER_NAME),
         shell=True,
     )
     raise KeyboardInterrupt("Killed by Ctrl+C")
@@ -284,6 +283,14 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--analyzer",
+        action="store_true",
+        default=False,
+        dest="analyzer",
+        help="Use new analyzer infrastructure",
+    )
+
+    parser.add_argument(
         "--cleanup-containers",
         action="store_true",
         default=False,
@@ -395,8 +402,18 @@ if __name__ == "__main__":
     if args.keyword_expression:
         args.pytest_args += ["-k", args.keyword_expression]
 
-    pytest_opts = " ".join(args.pytest_args).replace("'", "\\'")
-    tests_list = " ".join(args.tests_list)
+    use_analyzer = ""
+    if args.analyzer:
+        use_analyzer = "-e CLICKHOUSE_USE_NEW_ANALYZER=1"
+
+    # NOTE: since pytest options is in the argument value already we need to additionally escape '"'
+    pytest_opts = " ".join(
+        map(lambda x: shlex.quote(x).replace('"', '\\"'), args.pytest_args)
+    )
+    tests_list = " ".join(
+        map(lambda x: shlex.quote(x).replace('"', '\\"'), args.tests_list)
+    )
+
     cmd_base = (
         f"docker run {net} {tty} --rm --name {CONTAINER_NAME} "
         "--privileged --dns-search='.' "  # since recent dns search leaks from host
@@ -407,8 +424,8 @@ if __name__ == "__main__":
         f"--volume={args.cases_dir}:/ClickHouse/tests/integration "
         f"--volume={args.src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos "
         f"--volume=/run:/run/host:ro {dockerd_internal_volume} {env_tags} {env_cleanup} "
-        "-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 -e PYTHONUNBUFFERED=1 "
-        f"-e PYTEST_OPTS='{parallel_args} {pytest_opts} {tests_list} {rand_args} -vvv'"
+        f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_analyzer} -e PYTHONUNBUFFERED=1 "
+        f'-e PYTEST_ADDOPTS="{parallel_args} {pytest_opts} {tests_list} {rand_args} -vvv"'
         f" {DIND_INTEGRATION_TESTS_IMAGE_NAME}:{args.docker_image_version}"
     )
 
@@ -419,7 +436,7 @@ if __name__ == "__main__":
     )
 
     containers = subprocess.check_output(
-        f"docker ps --all --quiet --filter name={CONTAINER_NAME} --format={{{{.ID}}}}",
+        f"docker ps --all --quiet --filter name={CONTAINER_NAME}",
         shell=True,
         universal_newlines=True,
     ).splitlines()

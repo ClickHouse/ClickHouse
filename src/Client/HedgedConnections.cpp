@@ -353,6 +353,8 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
 
     if (replica_state.packet_receiver->isPacketReady())
     {
+        /// Reset the socket timeout after some packet received
+        replica_state.packet_receiver->setTimeout(hedged_connections_factory.getConnectionTimeouts().receive_timeout);
         last_received_packet = replica_state.packet_receiver->getPacket();
         return true;
     }

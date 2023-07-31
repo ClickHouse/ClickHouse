@@ -60,7 +60,7 @@ ClientConfigurationPerRequest ProxyResolverConfiguration::getConfiguration(const
         {
             auto resolved_endpoint = endpoint;
             resolved_endpoint.setHost(resolved_hosts[i].toString());
-            session = makeHTTPSession(resolved_endpoint, timeouts, false);
+            session = makeHTTPSession(resolved_endpoint, timeouts);
 
             try
             {

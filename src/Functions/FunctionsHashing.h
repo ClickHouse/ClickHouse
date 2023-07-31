@@ -81,7 +81,7 @@ namespace impl
 
     static SipHashKey parseSipHashKey(const ColumnWithTypeAndName & key)
     {
-        SipHashKey ret;
+        SipHashKey ret{};
 
         const auto * tuple = checkAndGetColumn<ColumnTuple>(key.column.get());
         if (!tuple)
@@ -89,6 +89,9 @@ namespace impl
 
         if (tuple->tupleSize() != 2)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "wrong tuple size: key must be a tuple of 2 UInt64");
+
+        if (tuple->empty())
+            return ret;
 
         if (const auto * key0col = checkAndGetColumn<ColumnUInt64>(&(tuple->getColumn(0))))
             ret.key0 = key0col->get64(0);
@@ -1421,7 +1424,10 @@ public:
         if constexpr (std::is_same_v<ToType, UInt128>) /// backward-compatible
         {
             auto col_to_fixed_string = ColumnFixedString::create(sizeof(UInt128));
-            col_to_fixed_string->getChars() = std::move(*reinterpret_cast<ColumnFixedString::Chars *>(&col_to->getData()));
+            const auto & data = col_to->getData();
+            auto & chars = col_to_fixed_string->getChars();
+            chars.resize(data.size() * sizeof(UInt128));
+            memcpy(chars.data(), data.data(), data.size() * sizeof(UInt128));
             return col_to_fixed_string;
         }
 

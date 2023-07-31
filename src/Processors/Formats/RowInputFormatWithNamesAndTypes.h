@@ -119,6 +119,10 @@ public:
     /// Check suffix.
     virtual bool checkForSuffix() { return in->eof(); }
 
+    virtual bool checkForEndOfRow() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method checkForEndOfRow is not implemented"); }
+
+    virtual bool allowVariableNumberOfColumns() { return false; }
+
     const FormatSettings & getFormatSettings() const { return format_settings; }
 
     virtual void setReadBuffer(ReadBuffer & in_) { in = &in_; }

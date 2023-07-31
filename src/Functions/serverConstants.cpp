@@ -27,7 +27,7 @@ namespace
     public:
         static constexpr auto name = "buildId";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionBuildId>(context); }
-        explicit FunctionBuildId(ContextPtr context) : FunctionConstantBase(SymbolIndex::instance()->getBuildIDHex(), context->isDistributed()) {}
+        explicit FunctionBuildId(ContextPtr context) : FunctionConstantBase(SymbolIndex::instance().getBuildIDHex(), context->isDistributed()) {}
     };
 #endif
 
