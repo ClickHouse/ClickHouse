@@ -590,19 +590,7 @@ template <typename T> bool tryReadFloatTextSimple(T & x, ReadBuffer & in) { retu
 
 /// Implementation that is selected as default.
 
-template <bool precise_float_parsing, typename T> void readFloatText(T & x, ReadBuffer & in)
-{
-    if constexpr (precise_float_parsing)
-        readFloatTextPrecise(x, in);
-    else
-        readFloatTextFast(x, in);
-}
-template <bool precise_float_parsing, typename T> bool tryReadFloatText(T & x, ReadBuffer & in)
-{
-    if constexpr (precise_float_parsing)
-        return tryReadFloatTextPrecise(x, in);
-    else
-        return tryReadFloatTextFast(x, in);
-}
+template <typename T> void readFloatText(T & x, ReadBuffer & in) { readFloatTextFast(x, in); }
+template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in) { return tryReadFloatTextFast(x, in); }
 
 }
