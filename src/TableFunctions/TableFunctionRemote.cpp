@@ -175,7 +175,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
                 {
                     if (arg_num >= args.size())
                     {
-                        throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table name was not found in function arguments. {}", help_message);
                     }
                     else
                     {
@@ -228,7 +228,16 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         }
 
         if (arg_num < args.size())
-            throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        {
+            if (is_cluster_function)
+            {
+                throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "user and password should be string literal (in single quotes)");
+            }
+        }
     }
 
     if (!cluster_name.empty())
