@@ -530,15 +530,14 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     }
     else
     {
-        read_buffer_iterator = [&, it = paths_to_archive.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
+        read_buffer_iterator = [&, path_it = paths.begin(), archive_it = paths_to_archive.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
         {
-            if (it == paths_to_archive.end())
+            if (archive_it == paths_to_archive.end())
                 return nullptr;
 
-            const auto & path = *it;
-            auto file_stat = getFileStat(path, false, -1, "File");
+            auto file_stat = getFileStat(*archive_it, false, -1, "File");
 
-            return createReadBuffer(path, file_stat, false, -1, compression_method, context, *it);
+            return createReadBuffer(*path_it, file_stat, false, -1, compression_method, context, *archive_it);
         };
     }
 
@@ -851,7 +850,12 @@ public:
 
                 if (!read_buf)
                 {
-                    auto file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
+                    struct stat file_stat;
+                    if (files_info->paths_to_archive.empty())
+                        file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
+                    else
+                        file_stat = getFileStat(current_archive_path, storage->use_table_fd, storage->table_fd, storage->getName());
+
                     if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
                         continue;
 

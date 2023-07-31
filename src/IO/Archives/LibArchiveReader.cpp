@@ -1,4 +1,4 @@
-#include <IO/Archives/SevenZipArchiveReader.h>
+#include <IO/Archives/LibArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/quoteString.h>
 
@@ -17,7 +17,10 @@ namespace ErrorCodes
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int NOT_IMPLEMENTED;
 }
-class SevenZipArchiveReader::Handle
+
+
+template <typename ArchiveInfo>
+class LibArchiveReader<ArchiveInfo>::Handle
 {
 public:
     explicit Handle(const String & path_to_archive_) : path_to_archive(path_to_archive_)
@@ -27,10 +30,11 @@ public:
         archive_read_support_format_all(archive);
         if (archive_read_open_filename(archive, path_to_archive.c_str(), 10240) != ARCHIVE_OK)
         {
-            throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't open 7z archive {}", quoteString(path_to_archive));
+            throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't open {} archive: {}", ArchiveInfo::name, quoteString(path_to_archive));
         }
         entry = archive_entry_new();
     }
+
     ~Handle()
     {
         archive_read_close(archive);
@@ -54,10 +58,11 @@ private:
     const String path_to_archive;
 };
 
-class SevenZipArchiveReader::ReadBufferFromSevenZipArchive : public ReadBufferFromFileBase
+template <typename ArchiveInfo>
+class LibArchiveReader<ArchiveInfo>::ReadBufferFromLibArchive : public ReadBufferFromFileBase
 {
 public:
-    explicit ReadBufferFromSevenZipArchive(const String & path_to_archive_, const String & filename_)
+    explicit ReadBufferFromLibArchive(const String & path_to_archive_, const String & filename_)
         : ReadBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0)
         , handle(path_to_archive_)
         , path_to_archive(path_to_archive_)
@@ -123,24 +128,29 @@ private:
     const String filename;
 };
 
-SevenZipArchiveReader::SevenZipArchiveReader(const String & path_to_archive_) : path_to_archive(path_to_archive_)
+template <typename ArchiveInfo>
+LibArchiveReader<ArchiveInfo>::LibArchiveReader(const String & path_to_archive_) : path_to_archive(path_to_archive_)
 {
 }
 
-SevenZipArchiveReader::SevenZipArchiveReader(const String & path_to_archive_, const ReadArchiveFunction & archive_read_function_)
+template <typename ArchiveInfo>
+LibArchiveReader<ArchiveInfo>::LibArchiveReader(const String & path_to_archive_, const ReadArchiveFunction & archive_read_function_)
     : path_to_archive(path_to_archive_), archive_read_function(archive_read_function_)
 {
 }
 
-SevenZipArchiveReader::~SevenZipArchiveReader() = default;
+template <typename ArchiveInfo>
+LibArchiveReader<ArchiveInfo>::~LibArchiveReader() = default;
 
-bool SevenZipArchiveReader::fileExists(const String & filename)
+template <typename ArchiveInfo>
+bool LibArchiveReader<ArchiveInfo>::fileExists(const String & filename)
 {
     Handle handle(path_to_archive);
     return handle.locateFile(filename);
 }
 
-SevenZipArchiveReader::FileInfo SevenZipArchiveReader::getFileInfo(const String & filename)
+template <typename ArchiveInfo>
+LibArchiveReader<ArchiveInfo>::FileInfo LibArchiveReader<ArchiveInfo>::getFileInfo(const String & filename)
 {
     Handle handle(path_to_archive);
 
@@ -153,35 +163,43 @@ SevenZipArchiveReader::FileInfo SevenZipArchiveReader::getFileInfo(const String 
     return info;
 }
 
-std::unique_ptr<SevenZipArchiveReader::FileEnumerator> SevenZipArchiveReader::firstFile()
+template <typename ArchiveInfo>
+std::unique_ptr<typename LibArchiveReader<ArchiveInfo>::FileEnumerator> LibArchiveReader<ArchiveInfo>::firstFile()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iterating files not implementaed for 7z archives");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iterating files not implementaed for {} archives", ArchiveInfo::name);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> SevenZipArchiveReader::readFile(const String & filename)
+template <typename ArchiveInfo>
+std::unique_ptr<ReadBufferFromFileBase> LibArchiveReader<ArchiveInfo>::readFile(const String & filename)
 {
     Handle handle(path_to_archive);
     handle.locateFile(filename);
 
-    return std::make_unique<ReadBufferFromSevenZipArchive>(path_to_archive, filename);
+    return std::make_unique<ReadBufferFromLibArchive>(path_to_archive, filename);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> SevenZipArchiveReader::readFile(std::unique_ptr<FileEnumerator> /*enumerator*/)
+template <typename ArchiveInfo>
+std::unique_ptr<ReadBufferFromFileBase> LibArchiveReader<ArchiveInfo>::readFile(std::unique_ptr<FileEnumerator> /*enumerator*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iterating files not implementaed for 7z archives");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iterating files not implementaed for {} archives", ArchiveInfo::name);
 }
 
-std::unique_ptr<SevenZipArchiveReader::FileEnumerator>
-SevenZipArchiveReader::nextFile(std::unique_ptr<ReadBuffer> /*read_buffer*/)
+template <typename ArchiveInfo>
+std::unique_ptr<typename LibArchiveReader<ArchiveInfo>::FileEnumerator>
+LibArchiveReader<ArchiveInfo>::nextFile(std::unique_ptr<ReadBuffer> /*read_buffer*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iterating files not implementaed for 7z archives");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iterating files not implementaed for {} archives", ArchiveInfo::name);
 }
 
 
-void SevenZipArchiveReader::setPassword(const String & /*password_*/)
+template <typename ArchiveInfo>
+void LibArchiveReader<ArchiveInfo>::setPassword(const String & /*password_*/)
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not set password to 7z archive");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not set password to {} archive", ArchiveInfo::name);
 }
+
+template class LibArchiveReader<TarArchiveInfo>;
+template class LibArchiveReader<SevenZipArchiveInfo>;
 
 #endif
 

@@ -25,15 +25,30 @@ namespace ErrorCodes
 void ITableFunctionFileLike::parseFirstArguments(const ASTPtr & arg, const ContextPtr &)
 {
     String path = checkAndGetLiteralArgument<String>(arg, "source");
-    size_t pos = path.find(" :: ");
+    size_t pos = path.find("::");
     if (pos == String::npos)
     {
         filename = path;
     }
     else
     {
-        path_to_archive = path.substr(0, pos);
-        filename = path.substr(pos + 4, path.size() - pos - 3);
+        std::string_view path_to_archive_view = std::string_view{path}.substr(0, pos);
+        while (path_to_archive_view.back() == ' ')
+            path_to_archive_view.remove_suffix(1);
+
+        if (path_to_archive_view.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path to archive is empty");
+
+        path_to_archive = path_to_archive_view;
+
+        std::string_view filename_view = std::string_view{path}.substr(pos + 2);
+        while (filename_view.front() == ' ')
+            filename_view.remove_prefix(1);
+
+        if (filename_view.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filename is empty");
+
+        filename = filename_view;
     }
 }
 
