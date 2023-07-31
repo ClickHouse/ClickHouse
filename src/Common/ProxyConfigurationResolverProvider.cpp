@@ -178,7 +178,7 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
     const Poco::Util::AbstractConfiguration & configuration
 )
 {
-    auto proxy_prefix = config_prefix + ".proxy";
+    auto proxy_prefix = config_prefix.empty() ? "proxy" : config_prefix + ".proxy";
 
     if (configuration.has(proxy_prefix))
     {
