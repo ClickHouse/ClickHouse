@@ -124,6 +124,7 @@ void SelectStreamFactory::createForShard(
     {
         remote_shards.emplace_back(Shard{
             .query = query_ast,
+            .main_table = main_table,
             .header = header,
             .shard_info = shard_info,
             .lazy = lazy,

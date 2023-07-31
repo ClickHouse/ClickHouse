@@ -51,6 +51,12 @@ def start_cluster():
         cluster.shutdown()
 
 
+def restart_node(node):
+    # set force_remove_data_recursively_on_drop (cannot be done before, because the version is too old)
+    node.put_users_config("configs/force_remove_data_recursively_on_drop.xml")
+    node.restart_with_latest_version(signal=9, fix_metadata=True)
+
+
 def test_mutate_and_upgrade(start_cluster):
     for node in [node1, node2]:
         node.query("DROP TABLE IF EXISTS mt")
@@ -67,8 +73,9 @@ def test_mutate_and_upgrade(start_cluster):
 
     node2.query("DETACH TABLE mt")  # stop being leader
     node1.query("DETACH TABLE mt")  # stop being leader
-    node1.restart_with_latest_version(signal=9, fix_metadata=True)
-    node2.restart_with_latest_version(signal=9, fix_metadata=True)
+
+    restart_node(node1)
+    restart_node(node2)
 
     # After hard restart table can be in readonly mode
     exec_query_with_retry(
@@ -124,7 +131,7 @@ def test_upgrade_while_mutation(start_cluster):
     # (We could be in process of creating some system table, which will leave empty directory on restart,
     # so when we start moving system tables from ordinary to atomic db, it will complain about some undeleted files)
     node3.query("SYSTEM FLUSH LOGS")
-    node3.restart_with_latest_version(signal=9, fix_metadata=True)
+    restart_node(node3)
 
     # checks for readonly
     exec_query_with_retry(node3, "OPTIMIZE TABLE mt1", sleep_time=5, retry_count=60)
