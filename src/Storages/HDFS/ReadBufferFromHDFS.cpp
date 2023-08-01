@@ -88,7 +88,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         hdfsCloseFile(fs.get(), fin);
     }
 
-    size_t getFileSize()
+    size_t getFileSize() const
     {
         return file_size;
     }
