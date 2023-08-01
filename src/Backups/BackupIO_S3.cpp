@@ -88,7 +88,7 @@ namespace
         request.SetMaxKeys(1);
         auto outcome = client.ListObjects(request);
         if (!outcome.IsSuccess())
-            throw Exception::createDeprecated(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+            throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
         return outcome.GetResult().GetContents();
     }
 
@@ -272,7 +272,7 @@ void BackupWriterS3::removeFile(const String & file_name)
     request.SetKey(fs::path(s3_uri.key) / file_name);
     auto outcome = client->DeleteObject(request);
     if (!outcome.IsSuccess() && !isNotFoundError(outcome.GetError().GetErrorType()))
-        throw Exception::createDeprecated(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+        throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
 }
 
 void BackupWriterS3::removeFiles(const Strings & file_names)
@@ -330,7 +330,7 @@ void BackupWriterS3::removeFilesBatch(const Strings & file_names)
 
         auto outcome = client->DeleteObjects(request);
         if (!outcome.IsSuccess() && !isNotFoundError(outcome.GetError().GetErrorType()))
-            throw Exception::createDeprecated(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+            throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
     }
 }
 
