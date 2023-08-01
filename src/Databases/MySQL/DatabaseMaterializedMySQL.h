@@ -11,6 +11,7 @@
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/MySQL/MaterializedMySQLSettings.h>
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
