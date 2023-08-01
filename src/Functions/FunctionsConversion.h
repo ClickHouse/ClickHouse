@@ -1371,8 +1371,8 @@ struct ConvertThroughParsing
                 precise_float_parsing = query_context->getSettingsRef().precise_float_parsing;
         }
 
-        std::function<void(typename ToDataType::FieldType &, DB::ReadBuffer &, const DateLUTImpl *)> parseFunction;
-        std::function<bool(typename ToDataType::FieldType &, DB::ReadBuffer &, const DateLUTImpl *)> tryParseFunction;
+        std::function<void(typename ToDataType::FieldType &, DB::ReadBuffer &, const DateLUTImpl *)> parseFunction = nullptr;
+        std::function<bool(typename ToDataType::FieldType &, DB::ReadBuffer &, const DateLUTImpl *)> tryParseFunction = nullptr;
 
         if constexpr (!(parsing_mode == ConvertFromStringParsingMode::BestEffort ||
               parsing_mode == ConvertFromStringParsingMode::BestEffortUS ||
