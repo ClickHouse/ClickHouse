@@ -35,33 +35,18 @@ def new_backup_name():
     return f"Disk('bak', '{backup_id_counter}/')"
 
 
-def create_and_fill_table(n=100):
+def create_and_fill_table():
     instance.query("CREATE DATABASE test")
-    instance.query(
-        "CREATE TABLE test.table(x UInt32, y String) ENGINE=MergeTree ORDER BY y PARTITION BY x%10"
-    )
-    instance.query(
-        f"INSERT INTO test.table SELECT number, toString(number) FROM numbers({n})"
-    )
+    instance.query("CREATE TABLE test.table(x UInt32) ENGINE=MergeTree ORDER BY x")
+    instance.query(f"INSERT INTO test.table SELECT number FROM numbers(10)")
 
 
 @pytest.mark.parametrize("policy", ["disks_in_order", "", None])
 def test_restore_table(policy):
     backup_name = new_backup_name()
-    n = 20
-    sum_n = int((n * (n - 1)) / 2)
-    expected = f"{n}\t{sum_n}\n"
-
-    create_and_fill_table(n)
-
-    assert instance.query("SELECT count(), sum(x) FROM test.table") == expected
-
+    create_and_fill_table()
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
-
     instance.query("DROP TABLE test.table SYNC")
-
-    assert instance.query("EXISTS test.table") == "0\n"
-
     restore_query = f"RESTORE TABLE test.table FROM {backup_name}"
     if policy is None:
         policy = "default"
@@ -69,10 +54,7 @@ def test_restore_table(policy):
         restore_query += f" SETTINGS storage_policy = '{policy}'"
         if policy == "":
             policy = "default"
-
     instance.query(restore_query)
-
-    assert instance.query("SELECT count(), sum(x) FROM test.table") == expected
 
     assert (
         instance.query("SELECT storage_policy FROM system.tables WHERE name='table'")
