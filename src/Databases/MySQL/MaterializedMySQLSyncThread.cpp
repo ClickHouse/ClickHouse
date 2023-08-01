@@ -1,9 +1,11 @@
+#include "Common/logger_useful.h"
 #include "config.h"
 
 #if USE_MYSQL
 
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
 #include <Databases/MySQL/tryParseTableIDFromDDL.h>
+#include <Databases/MySQL/tryQuoteUnrecognizedTokens.h>
 #include <cstdlib>
 #include <random>
 #include <string_view>
@@ -60,7 +62,7 @@ static ContextMutablePtr createQueryContext(ContextPtr context)
     query_context->setSettings(new_query_settings);
     query_context->setInternalQuery(true);
 
-    query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
     query_context->setCurrentQueryId(""); // generate random query_id
     return query_context;
 }
@@ -342,9 +344,8 @@ static inline String rewriteMysqlQueryColumn(mysqlxx::Pool::Entry & connection, 
                     { std::make_shared<DataTypeString>(),   "column_type" }
             };
 
-    const String & query =  "SELECT COLUMN_NAME AS column_name, COLUMN_TYPE AS column_type FROM INFORMATION_SCHEMA.COLUMNS"
-                            " WHERE TABLE_SCHEMA = '"  + backQuoteIfNeed(database_name) +
-                            "' AND TABLE_NAME = '" + backQuoteIfNeed(table_name) +  "' ORDER BY ORDINAL_POSITION";
+    String query = "SELECT COLUMN_NAME AS column_name, COLUMN_TYPE AS column_type FROM INFORMATION_SCHEMA.COLUMNS"
+                   " WHERE TABLE_SCHEMA = '" + database_name + "' AND TABLE_NAME = '" + table_name + "' ORDER BY ORDINAL_POSITION";
 
     StreamSettings mysql_input_stream_settings(global_settings, false, true);
     auto mysql_source = std::make_unique<MySQLSource>(connection, query, tables_columns_sample_block, mysql_input_stream_settings);
@@ -499,7 +500,10 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
             {
                 throw;
             }
-            catch (const mysqlxx::ConnectionFailed &) {}
+            catch (const mysqlxx::ConnectionFailed & ex)
+            {
+                LOG_TRACE(log, "Connection to MySQL failed {}", ex.displayText());
+            }
             catch (const mysqlxx::BadQuery & e)
             {
                 // Lost connection to MySQL server during query
@@ -812,6 +816,7 @@ void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_even
         CurrentThread::QueryScope query_scope(query_context);
 
         String query = query_event.query;
+        tryQuoteUnrecognizedTokens(query, query);
         if (!materialized_tables_list.empty())
         {
             auto table_id = tryParseTableIDFromDDL(query, query_event.schema);

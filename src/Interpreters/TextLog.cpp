@@ -80,15 +80,10 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(message_format_string);
 }
 
-TextLog::TextLog(ContextPtr context_, const String & database_name_,
-        const String & table_name_, const String & storage_def_,
-        size_t flush_interval_milliseconds_)
-  : SystemLog<TextLogElement>(context_, database_name_, table_name_,
-        storage_def_, flush_interval_milliseconds_)
+TextLog::TextLog(ContextPtr context_,
+                 const SystemLogSettings & settings)
+    : SystemLog<TextLogElement>(context_, settings, getLogQueue(settings.queue_settings))
 {
-    // SystemLog methods may write text logs, so we disable logging for the text
-    // log table to avoid recursion.
-    log->setLevel(0);
 }
 
 }

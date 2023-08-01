@@ -45,6 +45,7 @@
     M(MMappedFileCacheMisses, "Number of times a file has not been found in the MMap cache (for the 'mmap' read_method), so we had to mmap it again.") \
     M(OpenedFileCacheHits, "Number of times a file has been found in the opened file cache, so we didn't have to open it again.") \
     M(OpenedFileCacheMisses, "Number of times a file has been found in the opened file cache, so we had to open it again.") \
+    M(OpenedFileCacheMicroseconds, "Amount of time spent executing OpenedFileCache methods.") \
     M(AIOWrite, "Number of writes with Linux or FreeBSD AIO interface") \
     M(AIOWriteBytes, "Number of bytes written with Linux or FreeBSD AIO interface") \
     M(AIORead, "Number of reads with Linux or FreeBSD AIO interface") \
@@ -57,8 +58,8 @@
     M(TableFunctionExecute, "Number of table function calls.") \
     M(MarkCacheHits, "Number of times an entry has been found in the mark cache, so we didn't have to load a mark file.") \
     M(MarkCacheMisses, "Number of times an entry has not been found in the mark cache, so we had to load a mark file in memory, which is a costly operation, adding to query latency.") \
-    M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided).") \
-    M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation).") \
+    M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.") \
+    M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation). Only updated for SELECT queries with SETTING use_query_cache = 1.") \
     M(CreatedReadBufferOrdinary, "Number of times ordinary read buffer was created for reading data (while choosing among other read methods).") \
     M(CreatedReadBufferDirectIO, "Number of times a read buffer with O_DIRECT was created for reading data (while choosing among other read methods).") \
     M(CreatedReadBufferDirectIOFailed, "Number of times a read buffer with O_DIRECT was attempted to be created for reading data (while choosing among other read methods), but the OS did not allow it (due to lack of filesystem support or other reasons) and we fallen back to the ordinary reading method.") \
@@ -125,6 +126,7 @@
     M(ZooKeeperMulti, "Number of 'multi' requests to ZooKeeper (compound transactions).") \
     M(ZooKeeperCheck, "Number of 'check' requests to ZooKeeper. Usually they don't make sense in isolation, only as part of a complex transaction.") \
     M(ZooKeeperSync, "Number of 'sync' requests to ZooKeeper. These requests are rarely needed or usable.") \
+    M(ZooKeeperReconfig, "Number of 'reconfig' requests to ZooKeeper.") \
     M(ZooKeeperClose, "Number of times connection with ZooKeeper has been closed voluntary.") \
     M(ZooKeeperWatchResponse, "Number of times watch notification has been received from ZooKeeper.") \
     M(ZooKeeperUserExceptions, "Number of exceptions while working with ZooKeeper related to the data (no node, bad version or similar).") \
@@ -503,6 +505,7 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperCreateRequest, "Number of create requests")\
     M(KeeperRemoveRequest, "Number of remove requests")\
     M(KeeperSetRequest, "Number of set requests")\
+    M(KeeperReconfigRequest, "Number of reconfig requests")\
     M(KeeperCheckRequest, "Number of check requests")\
     M(KeeperMultiRequest, "Number of multi requests")\
     M(KeeperMultiReadRequest, "Number of multi read requests")\

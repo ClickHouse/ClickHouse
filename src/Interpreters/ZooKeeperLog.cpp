@@ -73,6 +73,7 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
                 {"Create",              static_cast<Int16>(Coordination::OpNum::Create)},
                 {"Remove",              static_cast<Int16>(Coordination::OpNum::Remove)},
                 {"Exists",              static_cast<Int16>(Coordination::OpNum::Exists)},
+                {"Reconfig",            static_cast<Int16>(Coordination::OpNum::Reconfig)},
                 {"Get",                 static_cast<Int16>(Coordination::OpNum::Get)},
                 {"Set",                 static_cast<Int16>(Coordination::OpNum::Set)},
                 {"GetACL",              static_cast<Int16>(Coordination::OpNum::GetACL)},

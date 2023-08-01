@@ -67,6 +67,7 @@ def cluster():
                 "configs/config.d/storage_conf.xml",
                 "configs/config.d/instant_moves.xml",
                 "configs/config.d/part_log.xml",
+                "configs/config.d/merge_tree.xml",
             ],
             with_minio=True,
         )
