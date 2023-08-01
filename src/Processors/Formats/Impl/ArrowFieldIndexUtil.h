@@ -35,7 +35,7 @@ public:
     ///   - key: field name with full path. eg. a struct field's name is like a.x.i
     ///   - value: a pair, first value refers to this field's start index, second value refers to how many
     ///   indices this field take. eg.
-    /// For a parquet schema {x: int , y: {i: int, j: int}}, the return will be
+    /// For a parquet schema {x: int, y: {i: int, j: int}}, the return will be
     /// - x: (0, 1)
     /// - y: (1, 2)
     /// - y.i: (1, 1)

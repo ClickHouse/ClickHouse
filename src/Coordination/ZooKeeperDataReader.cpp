@@ -40,7 +40,7 @@ void deserializeSnapshotMagic(ReadBuffer & in)
     Coordination::read(dbid, in);
     static constexpr int32_t SNP_HEADER = 1514885966; /// "ZKSN"
     if (magic_header != SNP_HEADER)
-        throw Exception(ErrorCodes::CORRUPTED_DATA ,"Incorrect magic header in file, expected {}, got {}", SNP_HEADER, magic_header);
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Incorrect magic header in file, expected {}, got {}", SNP_HEADER, magic_header);
 }
 
 int64_t deserializeSessionAndTimeout(KeeperStorage & storage, ReadBuffer & in)
