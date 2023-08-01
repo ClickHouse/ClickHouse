@@ -6,7 +6,7 @@ namespace DB
 PeekableWriteBuffer::PeekableWriteBuffer(DB::WriteBuffer & sub_buf_) : BufferWithOwnMemory(0), sub_buf(sub_buf_)
 {
     Buffer & sub_working = sub_buf.buffer();
-    BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf.offset());
+    BufferBase::set(sub_working.begin() + sub_buf.offset(), sub_working.size() - sub_buf.offset(), 0);
 }
 
 void PeekableWriteBuffer::nextImpl()

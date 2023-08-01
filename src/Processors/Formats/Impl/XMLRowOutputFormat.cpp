@@ -8,7 +8,7 @@ namespace DB
 {
 
 XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>(header_, out_, true, format_settings_.xml.valid_output_on_exception), fields(header_.getNamesAndTypes()), format_settings(format_settings_)
+    : RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>(header_, out_, format_settings_.xml.valid_output_on_exception, true), fields(header_.getNamesAndTypes()), format_settings(format_settings_)
 {
     ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
     const auto & sample = getPort(PortKind::Main).getHeader();
@@ -203,7 +203,8 @@ void XMLRowOutputFormat::finalizeImpl()
 
 void XMLRowOutputFormat::resetFormatterImpl()
 {
-    RowOutputFormatWithUTF8ValidationAdaptor::resetFormatterImpl();
+    RowOutputFormatWithExceptionHandlerAdaptor::resetFormatterImpl();
+    ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
     row_count = 0;
     statistics = Statistics();
 }

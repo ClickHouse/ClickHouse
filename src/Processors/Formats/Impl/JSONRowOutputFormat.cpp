@@ -135,6 +135,7 @@ void JSONRowOutputFormat::finalizeImpl()
 void JSONRowOutputFormat::resetFormatterImpl()
 {
     RowOutputFormatWithExceptionHandlerAdaptor::resetFormatterImpl();
+    ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
     row_count = 0;
     statistics = Statistics();
 }

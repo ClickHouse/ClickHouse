@@ -36,6 +36,8 @@ private:
     void writeRowEndDelimiter() override;
     void writeSuffix() override;
 
+    void resetFormatterImpl() override;
+
     bool supportTotals() const override { return true; }
     void consumeTotals(Chunk) override;
 

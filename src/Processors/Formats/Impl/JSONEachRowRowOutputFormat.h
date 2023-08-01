@@ -39,6 +39,8 @@ protected:
     void writePrefix() override;
     void writeSuffix() override;
 
+    void resetFormatterImpl() override;
+
     size_t field_number = 0;
     bool pretty_json;
 

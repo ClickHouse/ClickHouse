@@ -68,7 +68,7 @@ void JSONObjectEachRowRowOutputFormat::writeSuffix()
             writeRowBetweenDelimiter();
         JSONUtils::writeException(exception_message, *ostr, settings, 1);
     }
-    
+
     JSONUtils::writeObjectEnd(*ostr);
     writeChar('\n', *ostr);
 }

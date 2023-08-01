@@ -116,6 +116,12 @@ void JSONCompactEachRowRowOutputFormat::writeSuffix()
     }
 }
 
+void JSONCompactEachRowRowOutputFormat::resetFormatterImpl()
+{
+    RowOutputFormatWithExceptionHandlerAdaptor::resetFormatterImpl();
+    ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
+}
+
 void registerOutputFormatJSONCompactEachRow(FormatFactory & factory)
 {
     for (bool yield_strings : {false, true})
