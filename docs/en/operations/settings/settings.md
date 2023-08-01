@@ -3468,6 +3468,12 @@ Possible values:
 
 Default value: `0`.
 
+## enable_url_encoding {#enable_url_encoding}
+
+Allows to enable/disable decoding/encoding path in uri in [URL](../../engines/table-engines/special/url.md) engine tables.
+
+Enabled by default.
+
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
 Adds a modifier `SYNC` to all `DROP` and `DETACH` queries.

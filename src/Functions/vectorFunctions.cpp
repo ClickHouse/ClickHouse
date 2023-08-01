@@ -95,7 +95,7 @@ public:
                 auto elem_func = func->build(ColumnsWithTypeAndName{left, right});
                 types[i] = elem_func->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -181,7 +181,7 @@ public:
                 auto elem_negate = negate->build(ColumnsWithTypeAndName{cur});
                 types[i] = elem_negate->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -258,7 +258,7 @@ public:
                 auto elem_func = func->build(ColumnsWithTypeAndName{cur, p_column});
                 types[i] = elem_func->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -363,7 +363,7 @@ public:
                 auto plus_elem = plus->build({left_type, right_type});
                 res_type = plus_elem->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -467,7 +467,7 @@ public:
                 auto plus_elem = plus->build({left, right});
                 res_type = plus_elem->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -740,7 +740,7 @@ public:
                 auto plus_elem = plus->build({left_type, right_type});
                 res_type = plus_elem->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -842,7 +842,7 @@ public:
                 auto plus_elem = plus->build({left_type, right_type});
                 res_type = plus_elem->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -993,7 +993,7 @@ public:
                 auto max_elem = max->build({left_type, right_type});
                 res_type = max_elem->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -1103,7 +1103,7 @@ public:
                 auto plus_elem = plus->build({left_type, right_type});
                 res_type = plus_elem->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;

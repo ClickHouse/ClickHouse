@@ -457,8 +457,10 @@ try
     const std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
 
     std::vector<std::string> extra_paths = {include_from_path};
-    if (!cert_path.empty()) extra_paths.emplace_back(cert_path);
-    if (!key_path.empty()) extra_paths.emplace_back(key_path);
+    if (!cert_path.empty())
+        extra_paths.emplace_back(cert_path);
+    if (!key_path.empty())
+        extra_paths.emplace_back(key_path);
 
     /// ConfigReloader have to strict parameters which are redundant in our case
     auto main_config_reloader = std::make_unique<ConfigReloader>(

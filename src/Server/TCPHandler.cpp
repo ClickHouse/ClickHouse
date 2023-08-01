@@ -184,14 +184,17 @@ void TCPHandler::runImpl()
     try
     {
         receiveHello();
+
+        /// In interserver mode queries are executed without a session context.
+        if (!is_interserver_mode)
+            session->makeSessionContext();
+
         sendHello();
         if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             receiveAddendum();
 
-        if (!is_interserver_mode) /// In interserver mode queries are executed without a session context.
+        if (!is_interserver_mode)
         {
-            session->makeSessionContext();
-
             /// If session created, then settings in session context has been updated.
             /// So it's better to update the connection settings for flexibility.
             extractConnectionSettingsFromContext(session->sessionContext());
@@ -1181,7 +1184,6 @@ std::unique_ptr<Session> TCPHandler::makeSession()
     res->setClientName(client_name);
     res->setClientVersion(client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
     res->setConnectionClientVersion(client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
-    res->setQuotaClientKey(quota_key);
     res->setClientInterface(interface);
 
     return res;
@@ -1274,11 +1276,10 @@ void TCPHandler::receiveHello()
 void TCPHandler::receiveAddendum()
 {
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY)
-    {
         readStringBinary(quota_key, *in);
-        if (!is_interserver_mode)
-            session->setQuotaClientKey(quota_key);
-    }
+
+    if (!is_interserver_mode)
+        session->setQuotaClientKey(quota_key);
 }
 
 
@@ -1591,12 +1592,12 @@ void TCPHandler::receiveQuery()
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         /// Throw an exception if the passed settings violate the constraints.
-        query_context->checkSettingsConstraints(settings_changes);
+        query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     }
     else
     {
         /// Quietly clamp to the constraints if it's not an initial query.
-        query_context->clampToSettingsConstraints(settings_changes);
+        query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
     }
     query_context->applySettingsChanges(settings_changes);
 
