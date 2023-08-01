@@ -53,7 +53,7 @@ DatabaseOrdinary::DatabaseOrdinary(
 {
 }
 
-void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel, bool)
+void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel)
 {
     // Because it supportsLoadingInTopologicalOrder, we don't need this loading method.
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
