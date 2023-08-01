@@ -194,7 +194,7 @@ def test_information_schema():
         node.query(
             "SELECT count() FROM information_schema.TABLES WHERE table_name='TABLES'"
         )
-        == "3\n"
+        == "2\n"
     )
     assert (
         node.query(
