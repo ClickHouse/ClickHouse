@@ -30,6 +30,7 @@ public:
         String compression_method;
         int compression_level = -1;
         String password;
+        String s3_storage_class;
         ContextPtr context;
         bool is_internal_backup = false;
         std::shared_ptr<IBackupCoordination> backup_coordination;
