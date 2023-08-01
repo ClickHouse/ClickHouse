@@ -165,5 +165,9 @@
     "docker/test/sqltest": {
         "name": "clickhouse/sqltest",
         "dependent": []
+    },
+    "docker/test/integration/nginx_dav": {
+        "name": "clickhouse/nginx-dav",
+        "dependent": []
     }
 }
