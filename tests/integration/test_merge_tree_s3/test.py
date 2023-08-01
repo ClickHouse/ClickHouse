@@ -252,7 +252,8 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
     )
     wait_for_delete_s3_objects(
         cluster,
-        FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD, timeout=45,
+        FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD,
+        timeout=45,
     )
 
     check_no_objects_after_drop(cluster)
