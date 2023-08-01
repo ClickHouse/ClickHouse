@@ -80,6 +80,8 @@ public:
         UNFREEZE,
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
+        STOP_PULLING_REPLICATION_LOG,
+        START_PULLING_REPLICATION_LOG,
         END
     };
 
