@@ -9,8 +9,6 @@
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Context.h>
 #include <base/hex.h>
-#include <pcg-random/pcg_random.hpp>
-#include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 
@@ -21,6 +19,7 @@ namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
+    extern const Event FilesystemCacheLoadMetadataMicroseconds;
     extern const Event FilesystemCacheEvictedBytes;
     extern const Event FilesystemCacheEvictedFileSegments;
     extern const Event FilesystemCacheLockCacheMicroseconds;
@@ -57,6 +56,7 @@ FileCache::FileCache(const FileCacheSettings & settings)
     , delayed_cleanup_interval_ms(settings.delayed_cleanup_interval_ms)
     , boundary_alignment(settings.boundary_alignment)
     , background_download_threads(settings.background_download_threads)
+    , metadata_download_threads(settings.load_metadata_threads)
     , log(&Poco::Logger::get("FileCache"))
     , metadata(settings.base_path)
 {
@@ -292,7 +292,7 @@ FileSegments FileCache::splitRangeIntoFileSegments(
         remaining_size -= current_file_segment_size;
 
         auto file_segment_metadata_it = addFileSegment(
-            locked_key, current_pos, current_file_segment_size, state, settings, nullptr);
+            locked_key, current_pos, current_file_segment_size, state, settings, nullptr, nullptr);
         file_segments.push_back(file_segment_metadata_it->second->file_segment);
 
         current_pos += current_file_segment_size;
@@ -415,7 +415,7 @@ FileSegmentsHolderPtr FileCache::set(
     {
         /// If the file is unbounded, we can create a single file_segment_metadata for it.
         auto file_segment_metadata_it = addFileSegment(
-            *locked_key, offset, size, FileSegment::State::EMPTY, settings, nullptr);
+            *locked_key, offset, size, FileSegment::State::EMPTY, settings, nullptr, nullptr);
         file_segments = {file_segment_metadata_it->second->file_segment};
     }
     else
@@ -501,6 +501,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
     size_t size,
     FileSegment::State state,
     const CreateFileSegmentSettings & settings,
+    PriorityIterator cache_it,
     const CacheGuard::Lock * lock)
 {
     /// Create a file_segment_metadata and put it in `files` map by [key][offset].
@@ -554,8 +555,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
         result_state = state;
     }
 
-    PriorityIterator cache_it;
-    if (state == FileSegment::State::DOWNLOADED)
+    if (cache_it == nullptr && state == FileSegment::State::DOWNLOADED)
     {
         cache_it = main_priority->add(locked_key.getKeyMetadata(), offset, size, *lock);
     }
@@ -853,13 +853,8 @@ void FileCache::removeAllReleasable()
 
 void FileCache::loadMetadata()
 {
-    auto lock = lockCache();
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLoadMetadataMicroseconds);
 
-    UInt64 offset = 0;
-    size_t size = 0;
-    std::vector<std::pair<PriorityIterator, std::weak_ptr<FileSegment>>> queue_entries;
-
-    /// cache_base_path / key_prefix / key / offset
     if (!metadata.empty())
     {
         throw Exception(
@@ -869,148 +864,202 @@ void FileCache::loadMetadata()
             "Please, check log for error messages");
     }
 
-    size_t total_size = 0;
-    for (auto key_prefix_it = fs::directory_iterator{metadata.getBaseDirectory()}; key_prefix_it != fs::directory_iterator();
-         key_prefix_it++)
+    loadMetadataImpl();
+
+    /// Shuffle file_segment_metadatas to have random order in LRUQueue
+    /// as at startup all file_segment_metadatas have the same priority.
+    main_priority->shuffle(lockCache());
+}
+
+void FileCache::loadMetadataImpl()
+{
+    auto get_keys_dir_to_process = [
+        &, key_prefix_it = fs::directory_iterator{metadata.getBaseDirectory()}, get_key_mutex = std::mutex()]
+        () mutable -> std::optional<fs::path>
     {
-        const fs::path key_prefix_directory = key_prefix_it->path();
-
-        if (!key_prefix_it->is_directory())
+        std::lock_guard lk(get_key_mutex);
+        while (true)
         {
-            if (key_prefix_directory.filename() != "status")
+            if (key_prefix_it == fs::directory_iterator())
+                return std::nullopt;
+
+            auto path = key_prefix_it->path();
+            if (key_prefix_it->is_directory())
             {
-                LOG_WARNING(
-                    log, "Unexpected file {} (not a directory), will skip it",
-                    key_prefix_directory.string());
+                key_prefix_it++;
+                return path;
             }
+
+            if (key_prefix_it->path().filename() != "status")
+            {
+                LOG_WARNING(log, "Unexpected file {} (not a directory), will skip it", path.string());
+            }
+            key_prefix_it++;
+        }
+    };
+
+    std::vector<ThreadFromGlobalPool> loading_threads;
+    std::exception_ptr first_exception;
+    std::mutex set_exception_mutex;
+    std::atomic<bool> stop_loading = false;
+
+    LOG_INFO(log, "Loading filesystem cache with {} threads", metadata_download_threads);
+
+    for (size_t i = 0; i < metadata_download_threads; ++i)
+    {
+         loading_threads.emplace_back([&]
+         {
+             while (!stop_loading)
+             {
+                 try
+                 {
+                     auto path = get_keys_dir_to_process();
+                     if (!path.has_value())
+                         return;
+
+                     loadMetadataForKeys(path.value());
+                 }
+                 catch (...)
+                 {
+                     {
+                        std::lock_guard exception_lock(set_exception_mutex);
+                        if (!first_exception)
+                            first_exception = std::current_exception();
+                     }
+                     stop_loading = true;
+                     return;
+                 }
+             }
+         });
+    }
+
+    for (auto & thread : loading_threads)
+        if (thread.joinable())
+            thread.join();
+
+    if (first_exception)
+        std::rethrow_exception(first_exception);
+}
+
+void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
+{
+    fs::directory_iterator key_it{keys_dir};
+    if (key_it == fs::directory_iterator{})
+    {
+        LOG_DEBUG(log, "Removing empty key prefix directory: {}", keys_dir.string());
+        fs::remove(keys_dir);
+        return;
+    }
+
+    size_t offset = 0, size = 0;
+    for (; key_it != fs::directory_iterator(); key_it++)
+    {
+        const fs::path key_directory = key_it->path();
+
+        if (!key_it->is_directory())
+        {
+            LOG_DEBUG(
+                log,
+                "Unexpected file: {} (not a directory). Expected a directory",
+                key_directory.string());
             continue;
         }
 
-        fs::directory_iterator key_it{key_prefix_directory};
-        if (key_it == fs::directory_iterator{})
+        if (fs::directory_iterator{key_directory} == fs::directory_iterator{})
         {
-            LOG_DEBUG(log, "Removing empty key prefix directory: {}", key_prefix_directory.string());
-            fs::remove(key_prefix_directory);
+            LOG_DEBUG(log, "Removing empty key directory: {}", key_directory.string());
+            fs::remove(key_directory);
             continue;
         }
 
-        for (/* key_it already initialized to verify emptiness */; key_it != fs::directory_iterator(); key_it++)
+        const auto key = Key(unhexUInt<UInt128>(key_directory.filename().string().data()));
+        auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY, /* is_initial_load */true);
+
+        for (fs::directory_iterator offset_it{key_directory}; offset_it != fs::directory_iterator(); ++offset_it)
         {
-            const fs::path key_directory = key_it->path();
+            auto offset_with_suffix = offset_it->path().filename().string();
+            auto delim_pos = offset_with_suffix.find('_');
+            bool parsed;
+            FileSegmentKind segment_kind = FileSegmentKind::Regular;
 
-            if (!key_it->is_directory())
+            if (delim_pos == std::string::npos)
+                parsed = tryParse<UInt64>(offset, offset_with_suffix);
+            else
             {
-                LOG_DEBUG(
-                    log,
-                    "Unexpected file: {} (not a directory). Expected a directory",
-                    key_directory.string());
-                continue;
-            }
-
-            if (fs::directory_iterator{key_directory} == fs::directory_iterator{})
-            {
-                LOG_DEBUG(log, "Removing empty key directory: {}", key_directory.string());
-                fs::remove(key_directory);
-                continue;
-            }
-
-            const auto key = Key(unhexUInt<UInt128>(key_directory.filename().string().data()));
-            auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY, /* is_initial_load */true);
-
-            for (fs::directory_iterator offset_it{key_directory}; offset_it != fs::directory_iterator(); ++offset_it)
-            {
-                auto offset_with_suffix = offset_it->path().filename().string();
-                auto delim_pos = offset_with_suffix.find('_');
-                bool parsed;
-                FileSegmentKind segment_kind = FileSegmentKind::Regular;
-
-                if (delim_pos == std::string::npos)
-                    parsed = tryParse<UInt64>(offset, offset_with_suffix);
-                else
+                parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos));
+                if (offset_with_suffix.substr(delim_pos+1) == "persistent")
                 {
-                    parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos));
-                    if (offset_with_suffix.substr(delim_pos+1) == "persistent")
-                    {
-                        /// For compatibility. Persistent files are no longer supported.
-                        fs::remove(offset_it->path());
-                        continue;
-                    }
-                    if (offset_with_suffix.substr(delim_pos+1) == "temporary")
-                    {
-                        fs::remove(offset_it->path());
-                        continue;
-                    }
+                    /// For compatibility. Persistent files are no longer supported.
+                    fs::remove(offset_it->path());
+                    continue;
                 }
-
-                if (!parsed)
-                {
-                    LOG_WARNING(log, "Unexpected file: {}", offset_it->path().string());
-                    continue; /// Or just remove? Some unexpected file.
-                }
-
-                size = offset_it->file_size();
-                if (!size)
+                if (offset_with_suffix.substr(delim_pos+1) == "temporary")
                 {
                     fs::remove(offset_it->path());
                     continue;
                 }
+            }
 
-                if ((main_priority->getSizeLimit() == 0 || main_priority->getSize(lock) + size <= main_priority->getSizeLimit())
-                    && (main_priority->getElementsLimit() == 0 || main_priority->getElementsCount(lock) + 1 <= main_priority->getElementsLimit()))
+            if (!parsed)
+            {
+                LOG_WARNING(log, "Unexpected file: {}", offset_it->path().string());
+                continue; /// Or just remove? Some unexpected file.
+            }
+
+            size = offset_it->file_size();
+            if (!size)
+            {
+                fs::remove(offset_it->path());
+                continue;
+            }
+
+            bool limits_satisfied;
+            IFileCachePriority::Iterator cache_it;
+            {
+                auto lock = lockCache();
+                limits_satisfied = (main_priority->getSizeLimit() == 0
+                                            || main_priority->getSize(lock) + size <= main_priority->getSizeLimit())
+                    && (main_priority->getElementsLimit() == 0
+                        || main_priority->getElementsCount(lock) + 1 <= main_priority->getElementsLimit());
+
+                if (limits_satisfied)
+                    cache_it = main_priority->add(locked_key->getKeyMetadata(), offset, size, lock);
+            }
+
+            if (limits_satisfied)
+            {
+                KeyMetadata::iterator file_segment_metadata_it;
+                try
                 {
-                    KeyMetadata::iterator file_segment_metadata_it;
-                    try
-                    {
-                        file_segment_metadata_it = addFileSegment(
-                            *locked_key, offset, size, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings(segment_kind), &lock);
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(__PRETTY_FUNCTION__);
-                        chassert(false);
-
-                        fs::remove(offset_it->path());
-                        continue;
-                    }
-
-                    const auto & file_segment_metadata = file_segment_metadata_it->second;
-                    chassert(file_segment_metadata->file_segment->assertCorrectness());
-                    total_size += size;
-
-                    queue_entries.emplace_back(
-                        file_segment_metadata->getQueueIterator(),
-                        file_segment_metadata->file_segment);
+                    file_segment_metadata_it = addFileSegment(
+                        *locked_key, offset, size, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings(segment_kind), cache_it, nullptr);
                 }
-                else
+                catch (...)
                 {
-                    LOG_WARNING(
-                        log,
-                        "Cache capacity changed (max size: {}, used: {}), "
-                        "cached file `{}` does not fit in cache anymore (size: {})",
-                        main_priority->getSizeLimit(), main_priority->getSize(lock), key_directory.string(), size);
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                    chassert(false);
+
+                    if (cache_it)
+                        cache_it->remove(lockCache());
 
                     fs::remove(offset_it->path());
+                    continue;
                 }
+
+                [[maybe_unused]] const auto & file_segment_metadata = file_segment_metadata_it->second;
+                chassert(file_segment_metadata->file_segment->assertCorrectness());
+            }
+            else
+            {
+                LOG_WARNING(
+                    log,
+                    "Cache capacity changed (max size: {}), "
+                    "cached file `{}` does not fit in cache anymore (size: {})",
+                    main_priority->getSizeLimit(), key_directory.string(), size);
+
+                fs::remove(offset_it->path());
             }
         }
-    }
-
-    chassert(total_size == main_priority->getSize(lock));
-    chassert(total_size <= main_priority->getSizeLimit());
-
-    /// Shuffle file_segment_metadatas to have random order in LRUQueue
-    /// as at startup all file_segment_metadatas have the same priority.
-    pcg64 generator(randomSeed());
-    std::shuffle(queue_entries.begin(), queue_entries.end(), generator);
-    for (auto & [it, file_segment] : queue_entries)
-    {
-        /// Cache size changed and, for example, 1st file segment fits into cache
-        /// and 2nd file segment will fit only if first was evicted, then first will be removed and
-        /// file_segment_metadata is nullptr here.
-        if (file_segment.expired())
-            continue;
-
-        it->use(lock);
     }
 }
 

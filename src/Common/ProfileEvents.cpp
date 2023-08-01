@@ -391,6 +391,7 @@ The server successfully detected this situation and will download merged part fr
     M(CachedWriteBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache") \
     M(CachedWriteBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache") \
     \
+    M(FilesystemCacheLoadMetadataMicroseconds, "Time spent loading filesystem cache metadata") \
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache") \
     M(FilesystemCacheEvictedFileSegments, "Number of file segments evicted from filesystem cache") \
     M(FilesystemCacheLockKeyMicroseconds, "Lock cache key time") \

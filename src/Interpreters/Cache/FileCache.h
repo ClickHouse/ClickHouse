@@ -138,6 +138,7 @@ private:
     const size_t delayed_cleanup_interval_ms;
     const size_t boundary_alignment;
     const size_t background_download_threads;
+    const size_t metadata_download_threads;
 
     Poco::Logger * log;
 
@@ -189,6 +190,8 @@ private:
     void assertCacheCorrectness();
 
     void loadMetadata();
+    void loadMetadataImpl();
+    void loadMetadataForKeys(const std::filesystem::path & keys_dir);
 
     FileSegments getImpl(const LockedKey & locked_key, const FileSegment::Range & range) const;
 
@@ -212,6 +215,7 @@ private:
         size_t size,
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
+        PriorityIterator cache_it,
         const CacheGuard::Lock *);
 
     void cleanupThreadFunc();
