@@ -1,7 +1,6 @@
 #include <Formats/FormatFactory.h>
 
 #include <algorithm>
-//#include <Core/Settings.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
