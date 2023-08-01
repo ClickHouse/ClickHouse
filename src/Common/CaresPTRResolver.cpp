@@ -41,9 +41,25 @@ namespace DB
         }
     }
 
-    std::mutex CaresPTRResolver::mutex;
+    struct AresChannelRAII
+    {
+        AresChannelRAII()
+        {
+            if (ares_init(&channel) != ARES_SUCCESS)
+            {
+                throw DB::Exception(DB::ErrorCodes::DNS_ERROR, "Failed to initialize c-ares channel");
+            }
+        }
 
-    CaresPTRResolver::CaresPTRResolver(CaresPTRResolver::provider_token) : channel(nullptr)
+        ~AresChannelRAII()
+        {
+            ares_destroy(channel);
+        }
+
+        ares_channel channel;
+    };
+
+    CaresPTRResolver::CaresPTRResolver(CaresPTRResolver::provider_token)
     {
         /*
          * ares_library_init is not thread safe. Currently, the only other usage of c-ares seems to be in grpc.
@@ -57,34 +73,22 @@ namespace DB
          * */
         static const auto library_init_result = ares_library_init(ARES_LIB_INIT_ALL);
 
-        if (library_init_result != ARES_SUCCESS || ares_init(&channel) != ARES_SUCCESS)
+        if (library_init_result != ARES_SUCCESS)
         {
             throw DB::Exception(DB::ErrorCodes::DNS_ERROR, "Failed to initialize c-ares");
         }
     }
 
-    CaresPTRResolver::~CaresPTRResolver()
-    {
-        ares_destroy(channel);
-        /*
-         * Library initialization is currently done only once in the constructor. Multiple instances of CaresPTRResolver
-         * will be used in the lifetime of ClickHouse, thus it's problematic to have de-init here.
-         * In a practical view, it makes little to no sense to de-init a DNS library since DNS requests will happen
-         * until the end of the program. Hence, ares_library_cleanup() will not be called.
-         * */
-    }
-
     std::unordered_set<std::string> CaresPTRResolver::resolve(const std::string & ip)
     {
-        std::lock_guard guard(mutex);
+        AresChannelRAII channel_raii;
 
         std::unordered_set<std::string> ptr_records;
 
-        resolve(ip, ptr_records);
+        resolve(ip, ptr_records, channel_raii.channel);
 
-        if (!wait_and_process())
+        if (!wait_and_process(channel_raii.channel))
         {
-            cancel_requests();
             throw DB::Exception(DB::ErrorCodes::DNS_ERROR, "Failed to complete reverse DNS query for IP {}", ip);
         }
 
@@ -93,22 +97,21 @@ namespace DB
 
     std::unordered_set<std::string> CaresPTRResolver::resolve_v6(const std::string & ip)
     {
-        std::lock_guard guard(mutex);
+        AresChannelRAII channel_raii;
 
         std::unordered_set<std::string> ptr_records;
 
-        resolve_v6(ip, ptr_records);
+        resolve_v6(ip, ptr_records, channel_raii.channel);
 
-        if (!wait_and_process())
+        if (!wait_and_process(channel_raii.channel))
         {
-            cancel_requests();
             throw DB::Exception(DB::ErrorCodes::DNS_ERROR, "Failed to complete reverse DNS query for IP {}", ip);
         }
 
         return ptr_records;
     }
 
-    void CaresPTRResolver::resolve(const std::string & ip, std::unordered_set<std::string> & response)
+    void CaresPTRResolver::resolve(const std::string & ip, std::unordered_set<std::string> & response, ares_channel channel)
     {
         in_addr addr;
 
@@ -117,7 +120,7 @@ namespace DB
         ares_gethostbyaddr(channel, reinterpret_cast<const void*>(&addr), sizeof(addr), AF_INET, callback, &response);
     }
 
-    void CaresPTRResolver::resolve_v6(const std::string & ip, std::unordered_set<std::string> & response)
+    void CaresPTRResolver::resolve_v6(const std::string & ip, std::unordered_set<std::string> & response, ares_channel channel)
     {
         in6_addr addr;
         inet_pton(AF_INET6, ip.c_str(), &addr);
@@ -125,15 +128,15 @@ namespace DB
         ares_gethostbyaddr(channel, reinterpret_cast<const void*>(&addr), sizeof(addr), AF_INET6, callback, &response);
     }
 
-    bool CaresPTRResolver::wait_and_process()
+    bool CaresPTRResolver::wait_and_process(ares_channel channel)
     {
         int sockets[ARES_GETSOCK_MAXNUM];
         pollfd pollfd[ARES_GETSOCK_MAXNUM];
 
         while (true)
         {
-            auto readable_sockets = get_readable_sockets(sockets, pollfd);
-            auto timeout = calculate_timeout();
+            auto readable_sockets = get_readable_sockets(sockets, pollfd, channel);
+            auto timeout = calculate_timeout(channel);
 
             int number_of_fds_ready = 0;
             if (!readable_sockets.empty())
@@ -158,11 +161,11 @@ namespace DB
 
             if (number_of_fds_ready > 0)
             {
-                process_readable_sockets(readable_sockets);
+                process_readable_sockets(readable_sockets, channel);
             }
             else
             {
-                process_possible_timeout();
+                process_possible_timeout(channel);
                 break;
             }
         }
@@ -170,12 +173,12 @@ namespace DB
         return true;
     }
 
-    void CaresPTRResolver::cancel_requests()
+    void CaresPTRResolver::cancel_requests(ares_channel channel)
     {
         ares_cancel(channel);
     }
 
-    std::span<pollfd> CaresPTRResolver::get_readable_sockets(int * sockets, pollfd * pollfd)
+    std::span<pollfd> CaresPTRResolver::get_readable_sockets(int * sockets, pollfd * pollfd, ares_channel channel)
     {
         int sockets_bitmask = ares_getsock(channel, sockets, ARES_GETSOCK_MAXNUM);
 
@@ -205,7 +208,7 @@ namespace DB
         return std::span<struct pollfd>(pollfd, number_of_sockets_to_poll);
     }
 
-    int64_t CaresPTRResolver::calculate_timeout()
+    int64_t CaresPTRResolver::calculate_timeout(ares_channel channel)
     {
         timeval tv;
         if (auto * tvp = ares_timeout(channel, nullptr, &tv))
@@ -218,14 +221,14 @@ namespace DB
         return 0;
     }
 
-    void CaresPTRResolver::process_possible_timeout()
+    void CaresPTRResolver::process_possible_timeout(ares_channel channel)
     {
         /* Call ares_process() unconditonally here, even if we simply timed out
         above, as otherwise the ares name resolve won't timeout! */
         ares_process_fd(channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
     }
 
-    void CaresPTRResolver::process_readable_sockets(std::span<pollfd> readable_sockets)
+    void CaresPTRResolver::process_readable_sockets(std::span<pollfd> readable_sockets, ares_channel channel)
     {
         for (auto readable_socket : readable_sockets)
         {

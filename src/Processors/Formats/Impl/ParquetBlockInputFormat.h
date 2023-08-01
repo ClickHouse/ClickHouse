@@ -273,7 +273,7 @@ private:
     std::unique_ptr<ThreadPool> pool;
 
     BlockMissingValues previous_block_missing_values;
-    size_t previous_approx_bytes_read_for_chunk;
+    size_t previous_approx_bytes_read_for_chunk = 0;
 
     std::exception_ptr background_exception = nullptr;
     std::atomic<int> is_stopped{0};

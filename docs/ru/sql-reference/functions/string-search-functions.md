@@ -801,3 +801,55 @@ SELECT countSubstringsCaseInsensitiveUTF8('аБв__АбВ__абв', 'Абв');
 │                                                          3 │
 └────────────────────────────────────────────────────────────┘
 ```
+
+## hasSubsequence(haystack, needle) {#hasSubsequence}
+
+Возвращает 1 если needle является подпоследовательностью haystack, иначе 0.
+
+
+**Синтаксис**
+
+``` sql
+hasSubsequence(haystack, needle)
+```
+
+**Аргументы**
+
+-   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
+-   `needle` — подпоследовательность, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+
+**Возвращаемые значения**
+
+-   1, если 
+-   0, если подстрока не найдена.
+
+Тип: `UInt8`.
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT hasSubsequence('garbage', 'arg') ;
+```
+
+Результат:
+
+``` text
+┌─hasSubsequence('garbage', 'arg')─┐
+│                                1 │
+└──────────────────────────────────┘
+```
+
+
+## hasSubsequenceCaseInsensitive
+
+Такая же, как и [hasSubsequence](#hasSubsequence), но работает без учета регистра.
+
+## hasSubsequenceUTF8
+
+Такая же, как и [hasSubsequence](#hasSubsequence) при допущении что `haystack` и `needle` содержат набор кодовых точек, представляющий текст в кодировке UTF-8.
+
+## hasSubsequenceCaseInsensitiveUTF8
+
+Такая же, как и [hasSubsequenceUTF8](#hasSubsequenceUTF8), но работает без учета регистра.

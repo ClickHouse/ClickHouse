@@ -1381,7 +1381,10 @@ public:
                 std::ranges::for_each(col_to->getData(), transformEndianness<std::endian::little, ToType>);
 
             auto col_to_fixed_string = ColumnFixedString::create(sizeof(UInt128));
-            col_to_fixed_string->getChars() = std::move(*reinterpret_cast<ColumnFixedString::Chars *>(&col_to->getData()));
+            const auto & data = col_to->getData();
+            auto & chars = col_to_fixed_string->getChars();
+            chars.resize(data.size() * sizeof(UInt128));
+            memcpy(chars.data(), data.data(), data.size() * sizeof(UInt128));
             return col_to_fixed_string;
         }
 

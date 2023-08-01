@@ -1138,6 +1138,8 @@ Result:
 
 Returns the current date and time at the moment of query analysis. The function is a constant expression.
 
+Alias: `current_timestamp`.
+
 **Syntax**
 
 ``` sql
@@ -1267,6 +1269,8 @@ Result:
 
 Accepts zero arguments and returns the current date at one of the moments of query analysis.
 The same as ‘toDate(now())’.
+
+Aliases: `curdate`, `current_date`.
 
 ## yesterday
 
@@ -1445,7 +1449,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %n       | new-line character (‘’)                                 |            |
 | %p       | AM or PM designation                                    | PM         |
 | %Q       | Quarter (1-4)                                           | 1          |
-| %r       | 12-hour HH:MM AM/PM time, equivalent to %H:%i %p        | 10:30 PM   |
+| %r       | 12-hour HH:MM AM/PM time, equivalent to %h:%i %p        | 10:30 PM   |
 | %R       | 24-hour HH:MM time, equivalent to %H:%i                 | 22:33      |
 | %s       | second (00-59)                                          | 44         |
 | %S       | second (00-59)                                          | 44         |

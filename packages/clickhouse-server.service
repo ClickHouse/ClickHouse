@@ -29,6 +29,7 @@ EnvironmentFile=-/etc/default/clickhouse
 LimitCORE=infinity
 LimitNOFILE=500000
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_IPC_LOCK CAP_SYS_NICE CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_ADMIN CAP_IPC_LOCK CAP_SYS_NICE CAP_NET_BIND_SERVICE
 
 [Install]
 # ClickHouse should not start from the rescue shell (rescue.target).
