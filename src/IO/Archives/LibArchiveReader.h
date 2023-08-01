@@ -23,11 +23,9 @@ public:
     /// Constructs an archive's reader that will read from a file in the local filesystem.
     explicit LibArchiveReader(const String & path_to_archive_);
 
-    /// Constructs an archive's reader that will read by making a read buffer by using
-    /// a specified function.
-    LibArchiveReader(const String & path_to_archive_, const ReadArchiveFunction & archive_read_function_);
-
     ~LibArchiveReader() override;
+
+    const std::string & getPath() const override;
 
     /// Returns true if there is a specified file in the archive.
     bool fileExists(const String & filename) override;
@@ -47,15 +45,17 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(std::unique_ptr<FileEnumerator> enumerator) override;
     std::unique_ptr<FileEnumerator> nextFile(std::unique_ptr<ReadBuffer> read_buffer) override;
 
+    std::vector<std::string> getAllFiles() override;
+
     /// Sets password used to decrypt the contents of the files in the archive.
     void setPassword(const String & password_) override;
 
 private:
     class ReadBufferFromLibArchive;
     class Handle;
+    class FileEnumeratorImpl;
 
     const String path_to_archive;
-    const ReadArchiveFunction archive_read_function;
 };
 
 struct TarArchiveInfo { static constexpr std::string_view name = "tar"; };

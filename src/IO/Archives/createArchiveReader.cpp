@@ -35,7 +35,7 @@ std::shared_ptr<IArchiveReader> createArchiveReader(
     else if (path_to_archive.ends_with(".tar") || path_to_archive.ends_with("tar.gz"))
     {
 #if USE_LIBARCHIVE
-        return std::make_shared<TarArchiveReader>(path_to_archive, archive_read_function);
+        return std::make_shared<TarArchiveReader>(path_to_archive);
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "libarchive library is disabled");
 #endif
@@ -43,7 +43,7 @@ std::shared_ptr<IArchiveReader> createArchiveReader(
     else if (path_to_archive.ends_with(".7z"))
     {
 #if USE_LIBARCHIVE
-        return std::make_shared<SevenZipArchiveReader>(path_to_archive, archive_read_function);
+        return std::make_shared<SevenZipArchiveReader>(path_to_archive);
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "libarchive library is disabled");
 #endif
