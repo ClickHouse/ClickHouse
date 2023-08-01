@@ -76,8 +76,10 @@ public:
 
     void resetFormatterImpl() override
     {
+        LOG_DEBUG(&Poco::Logger::get("RowOutputFormatWithExceptionHandlerAdaptor"), "resetFormatterImpl");
         Base::resetFormatterImpl();
-        peekable_out = std::make_unique<PeekableWriteBuffer>(*Base::getWriteBufferPtr());
+        if (peekable_out)
+            peekable_out = std::make_unique<PeekableWriteBuffer>(*Base::getWriteBufferPtr());
     }
 
     bool supportsWritingException() const override { return true; }

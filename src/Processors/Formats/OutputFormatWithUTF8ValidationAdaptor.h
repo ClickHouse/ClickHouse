@@ -6,6 +6,8 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferValidUTF8.h>
 
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 
@@ -43,8 +45,10 @@ public:
 
     void resetFormatterImpl() override
     {
+        LOG_DEBUG(&Poco::Logger::get("RowOutputFormatWithExceptionHandlerAdaptor"), "resetFormatterImpl");
         Base::resetFormatterImpl();
-        validating_ostr = std::make_unique<WriteBufferValidUTF8>(*Base::getWriteBufferPtr());
+        if (validating_ostr)
+            validating_ostr = std::make_unique<WriteBufferValidUTF8>(*Base::getWriteBufferPtr());
     }
 
 protected:

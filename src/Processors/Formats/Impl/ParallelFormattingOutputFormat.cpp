@@ -36,10 +36,10 @@ namespace DB
         formatter->setRowsReadBefore(rows_collected);
         formatter->setException(exception_message);
 
-        if (!collected_prefix)
+        if (!collected_prefix && (need_write_prefix || started_prefix))
             formatter->writePrefix();
 
-        if (!collected_suffix)
+        if (!collected_suffix && (need_write_suffix || started_suffix))
             formatter->writeSuffix();
 
         if (!collected_finalize)

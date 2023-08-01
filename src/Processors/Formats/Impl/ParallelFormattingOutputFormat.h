@@ -118,6 +118,7 @@ public:
     void writePrefix() override
     {
         addChunk(Chunk{}, ProcessingUnitType::START, /*can_throw_exception*/ true);
+        started_prefix = true;
     }
 
     void onCancel() override
@@ -134,6 +135,7 @@ public:
     void writeSuffix() override
     {
         addChunk(Chunk{}, ProcessingUnitType::PLAIN_FINISH, /*can_throw_exception*/ true);
+        started_suffix = true;
     }
 
     String getContentType() const override
@@ -259,7 +261,9 @@ private:
 
     String exception_message;
     bool exception_is_rethrown = false;
+    bool started_prefix = false;
     bool collected_prefix = false;
+    bool started_suffix = false;
     bool collected_suffix = false;
     bool collected_finalize = false;
 

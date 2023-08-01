@@ -92,6 +92,11 @@ void JSONEachRowRowOutputFormat::writeSuffix()
         writeCString("\n]\n", *ostr);
 }
 
+void JSONEachRowRowOutputFormat::resetFormatterImpl()
+{
+    RowOutputFormatWithExceptionHandlerAdaptor::resetFormatterImpl();
+    ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
+}
 
 void registerOutputFormatJSONEachRow(FormatFactory & factory)
 {
