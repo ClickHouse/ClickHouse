@@ -9,8 +9,6 @@ FAIL="\tFAIL\t\\N\t"
 FAILURE_CONTEXT_LINES=100
 FAILURE_CONTEXT_MAX_LINE_WIDTH=300
 
-source attach_gdb.lib
-
 function escaped()
 {
     # That's the simplest way I found to escape a string in bash. Yep, bash is the most convenient programming language.
@@ -243,7 +241,7 @@ function check_logs_for_critical_errors()
     # Remove file fatal_messages.txt if it's empty
     [ -s /test_output/fatal_messages.txt ] || rm /test_output/fatal_messages.txt
 
-    rg -Fa "########################################" /test_output/* > /dev/null \
+    rg -Faz "########################################" /test_output/* > /dev/null \
       && echo -e "Killed by signal (output files)$FAIL" >> /test_output/test_results.tsv
 
     function get_gdb_log_context()

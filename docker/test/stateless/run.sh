@@ -4,6 +4,9 @@
 set -e -x -a
 
 # Choose random timezone for this test run.
+#
+# NOTE: that clickhouse-test will randomize session_timezone by itself as well
+# (it will choose between default server timezone and something specific).
 TZ="$(rg -v '#' /usr/share/zoneinfo/zone.tab  | awk '{print $3}' | shuf | head -n1)"
 echo "Choosen random timezone $TZ"
 ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone

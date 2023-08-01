@@ -11,7 +11,8 @@ Supported platforms:
 
 - x86_64
 - AArch64
-- Power9 (experimental)
+- PowerPC 64 LE (experimental)
+- RISC-V 64 (experimental)
 
 ## Building on Ubuntu
 
@@ -42,7 +43,7 @@ sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
 
 For other Linux distribution - check the availability of LLVM's [prebuild packages](https://releases.llvm.org/download.html).
 
-As of April 2023, any version of Clang >= 15 will work.
+As of April 2023, clang-16 or higher will work.
 GCC as a compiler is not supported.
 To build with a specific Clang version:
 
@@ -86,8 +87,8 @@ The build requires the following components:
 
 - Git (used to checkout the sources, not needed for the build)
 - CMake 3.20 or newer
-- Compiler: Clang 15 or newer
-- Linker: lld 15 or newer
+- Compiler: clang-16 or newer
+- Linker: lld-16 or newer
 - Ninja
 - Yasm
 - Gawk

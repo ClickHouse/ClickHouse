@@ -8,9 +8,14 @@ import logging
 
 DICTS = ["configs/dictionaries/mysql_dict1.xml", "configs/dictionaries/mysql_dict2.xml"]
 CONFIG_FILES = ["configs/remote_servers.xml", "configs/named_collections.xml"]
+USER_CONFIGS = ["configs/users.xml"]
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
-    "instance", main_configs=CONFIG_FILES, with_mysql=True, dictionaries=DICTS
+    "instance",
+    main_configs=CONFIG_FILES,
+    user_configs=USER_CONFIGS,
+    with_mysql=True,
+    dictionaries=DICTS,
 )
 
 create_table_mysql_template = """
