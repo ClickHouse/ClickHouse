@@ -377,7 +377,6 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                     exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist. Maybe you meant {}?", table_id.getNameForLogs(), backQuoteIfNeed(names[0])));
                 }
                 else exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs()));
-            
             }
             return {};
         }
