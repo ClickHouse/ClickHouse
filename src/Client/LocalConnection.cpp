@@ -37,7 +37,16 @@ LocalConnection::~LocalConnection()
 {
     /// Last query may not have been finished or cancelled due to exception on client side.
     if (state && !state->is_finished && !state->is_cancelled)
-       sendCancel();
+    {
+        try
+        {
+            LocalConnection::sendCancel();
+        }
+        catch (...)
+        {
+            /// Just ignore any exception.
+        }
+    }
     state.reset();
 }
 
