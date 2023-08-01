@@ -18,7 +18,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NO_ZOOKEEPER;
     extern const int TIMEOUT_EXCEEDED;
 }
 
