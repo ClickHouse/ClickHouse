@@ -32,8 +32,9 @@ KeeperContext::KeeperContext(bool standalone_keeper_)
     system_nodes_with_data[keeper_api_version_path] = toString(static_cast<uint8_t>(KeeperApiVersion::WITH_MULTI_READ));
 }
 
-void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config)
+void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_)
 {
+    dispatcher = dispatcher_;
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
     ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
 
