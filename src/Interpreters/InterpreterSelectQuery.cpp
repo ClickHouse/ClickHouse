@@ -610,27 +610,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
-        NameToNameMap parameter_types;
         if (view)
         {
             query_info.is_parameterized_view = view->isParameterizedView();
-            /// We need to fetch the parameters set for SELECT ... FROM parameterized_view(<params>) before the query is replaced.
-            /// replaceWithSubquery replaces the function child and adds the subquery in its place.
-            /// the parameters are children of function child, if function (which corresponds to parametrised view and has
-            /// parameters in its arguments: `parametrised_view(<params>)`) is replaced the parameters are also gone from tree
-            /// So we need to get the parameters before they are removed from the tree
-            /// and after query is replaced, we use these parameters to substitute in the parameterized view query
-            if (query_info.is_parameterized_view)
-            {
-                query_info.parameterized_view_values = analyzeFunctionParamValues(query_ptr);
-                parameter_types = view->getParameterTypes();
-            }
             view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
-            if (query_info.is_parameterized_view)
-            {
-                view->replaceQueryParametersIfParametrizedView(query_ptr, query_info.parameterized_view_values);
-            }
-
         }
 
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(
@@ -639,10 +622,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             options,
             joined_tables.tablesWithColumns(),
             required_result_column_names,
-            table_join,
-            query_info.is_parameterized_view,
-            query_info.parameterized_view_values,
-            parameter_types);
+            table_join);
 
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
@@ -793,7 +773,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 query_info.filter_asts.push_back(parallel_replicas_custom_filter_ast);
             }
 
-            source_header = storage_snapshot->getSampleBlockForColumns(required_columns, query_info.parameterized_view_values);
+            source_header = storage_snapshot->getSampleBlockForColumns(required_columns);
         }
 
         /// Calculate structure of the result.
