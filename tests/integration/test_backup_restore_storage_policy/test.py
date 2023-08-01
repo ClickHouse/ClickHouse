@@ -32,7 +32,7 @@ def cleanup_after_test():
 def new_backup_name():
     global backup_id_counter
     backup_id_counter += 1
-    return f"Disk('bak', '{backup_id_counter}/')"
+    return f"File('/backups/{backup_id_counter}/')"
 
 
 def create_and_fill_table():
