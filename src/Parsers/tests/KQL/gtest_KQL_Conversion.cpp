@@ -4,7 +4,7 @@
 
 INSTANTIATE_TEST_SUITE_P(
     ParserKQLQuery_Conversion,
-    ParserTest,
+    ParserKQLTest,
     ::testing::Combine(
         ::testing::Values(std::make_shared<DB::ParserKQLQuery>()),
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{

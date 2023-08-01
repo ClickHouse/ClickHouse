@@ -1,7 +1,6 @@
 #include <Parsers/TokenIterator.h>
-#include <unordered_set>
-#include <base/types.h>
-#include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
+
+
 namespace DB
 {
 
@@ -21,64 +20,13 @@ Tokens::Tokens(const char * begin, const char * end, size_t max_query_size, bool
 
 UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin)
 {
-    std::unordered_set<String> valid_kql_negative_suffix(
-        {
-         "between",
-         "contains",
-         "contains_cs",
-         "endswith",
-         "endswith_cs",
-         "~",
-         "=",
-         "has",
-         "has_cs",
-         "hasprefix",
-         "hasprefix_cs",
-         "hassuffix",
-         "hassuffix_cs",
-         "in",
-         "startswith",
-         "startswith_cs"});
     /// We have just two kind of parentheses: () and [].
     UnmatchedParentheses stack;
 
     /// We have to iterate through all tokens until the end to avoid false positive "Unmatched parentheses" error
     /// when parser failed in the middle of the query.
-    bool inside_kql = false;
-    for (TokenIterator it = begin; !it->isEnd(); ++it)
+    for (TokenIterator it = begin; it.isValid(); ++it)
     {
-        TokenIterator it_prev = it;
-        if (it != begin)
-            --it_prev;
-        if (it != begin && it->type == TokenType::OpeningRoundBracket && String(it_prev.get().begin, it_prev.get().end) == "kql")
-            inside_kql = true;
-
-        if (!it.isValid() && inside_kql) // allow negative operators inside kql table function
-        {
-            if (it->type == TokenType::ErrorSingleExclamationMark)
-            {
-                ++it;
-                if (!valid_kql_negative_suffix.contains(String(it.get().begin, it.get().end)))
-                    break;
-                --it;
-            }
-            else if (it->type == TokenType::ErrorWrongNumber)
-            {
-                if (!ParserKQLDateTypeTimespan().parseConstKQLTimespan(String(it.get().begin, it.get().end)))
-                    break;
-            }
-            else
-            {
-                if (String(it.get().begin, it.get().end) == "~")
-                {
-                    if (const auto prev = String(it_prev.get().begin, it_prev.get().end); prev != "!" && prev != "=" && prev != "in")
-                        break;
-                }
-                else
-                    break;
-            }
-        }
-
         if (it->type == TokenType::OpeningRoundBracket || it->type == TokenType::OpeningSquareBracket)
         {
             stack.push_back(*it);
@@ -91,8 +39,7 @@ UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin)
                 stack.push_back(*it);
                 return stack;
             }
-            else if (
-                (stack.back().type == TokenType::OpeningRoundBracket && it->type == TokenType::ClosingRoundBracket)
+            else if ((stack.back().type == TokenType::OpeningRoundBracket && it->type == TokenType::ClosingRoundBracket)
                 || (stack.back().type == TokenType::OpeningSquareBracket && it->type == TokenType::ClosingSquareBracket))
             {
                 /// Valid match.

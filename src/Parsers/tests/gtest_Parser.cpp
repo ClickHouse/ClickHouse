@@ -293,7 +293,7 @@ INSTANTIATE_TEST_SUITE_P(ParserAttachUserQuery, ParserTest,
         }
 })));
 
-INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
+INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserKQLTest,
     ::testing::Combine(
         ::testing::Values(std::make_shared<ParserKQLQuery>()),
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
