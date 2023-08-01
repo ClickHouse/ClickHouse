@@ -11,139 +11,133 @@
 #include <Interpreters/ProcessList.h>
 #include <algorithm>
 
+#include <Columns/IColumn.h>
+
+#include <Processors/ResizeProcessor.h>
+#include <Processors/IAccumulatingTransform.h>
+
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
 
-Block getBlockFromCheckResult(const CheckResults & check_results, bool check_query_single_value_result)
+Block getSingleValueBlock(UInt8 value)
 {
-    if (check_query_single_value_result)
-    {
-        bool result = std::all_of(check_results.begin(), check_results.end(), [] (const CheckResult & res) { return res.success; });
-        return Block{{ColumnUInt8::create(1, static_cast<UInt8>(result)), std::make_shared<DataTypeUInt8>(), "result"}};
-    }
+    return Block{{ColumnUInt8::create(1, value), std::make_shared<DataTypeUInt8>(), "result"}};
+}
 
-    NamesAndTypes block_structure = NamesAndTypes{
+Block getHeaderForCheckResult()
+{
+    auto names_and_types = NamesAndTypes{
         {"part_path", std::make_shared<DataTypeString>()},
         {"is_passed", std::make_shared<DataTypeUInt8>()},
         {"message", std::make_shared<DataTypeString>()},
     };
-    auto path_column = block_structure[0].type->createColumn();
-    auto is_passed_column = block_structure[1].type->createColumn();
-    auto message_column = block_structure[2].type->createColumn();
-
-    for (const auto & check_result : check_results)
-    {
-        path_column->insert(check_result.fs_path);
-        is_passed_column->insert(static_cast<UInt8>(check_result.success));
-        message_column->insert(check_result.failure_message);
-    }
 
     return Block({
-        {std::move(path_column), block_structure[0].type, block_structure[0].name},
-        {std::move(is_passed_column), block_structure[1].type, block_structure[1].name},
-        {std::move(message_column), block_structure[2].type, block_structure[2].name},
+        {names_and_types[0].type->createColumn(), names_and_types[0].type, names_and_types[0].name},
+        {names_and_types[1].type->createColumn(), names_and_types[1].type, names_and_types[1].name},
+        {names_and_types[2].type->createColumn(), names_and_types[2].type, names_and_types[2].name},
     });
 }
 
-class TableCheckResultSource : public ISource
+Chunk getChunkFromCheckResult(const CheckResult & check_result)
+{
+    MutableColumns columns = getHeaderForCheckResult().cloneEmptyColumns();
+    columns[0]->insert(check_result.fs_path);
+    columns[1]->insert(static_cast<UInt8>(check_result.success));
+    columns[2]->insert(check_result.failure_message);
+    return Chunk(std::move(columns), 1);
+}
+
+class TableCheckWorkerProcessor : public ISource
 {
 
 public:
-    explicit TableCheckResultSource(const ASTPtr & query_ptr_, StoragePtr table_, bool check_query_single_value_result_, ContextPtr context_)
-        : ISource(getBlockFromCheckResult({}, check_query_single_value_result_).cloneEmpty())
-        , query_ptr(query_ptr_)
+    TableCheckWorkerProcessor(IStorage::DataValidationTasksPtr check_data_tasks_, StoragePtr table_)
+        : ISource(getHeaderForCheckResult())
         , table(table_)
-        , context(context_)
-        , check_query_single_value_result(check_query_single_value_result_)
+        , check_data_tasks(check_data_tasks_)
     {
-        worker_result = std::async(std::launch::async, [this]{ worker(); });
     }
 
-    String getName() const override { return "TableCheckResultSource"; }
+    String getName() const override { return "TableCheckWorkerProcessor"; }
 
 protected:
 
     std::optional<Chunk> tryGenerate() override
     {
-
-        if (is_check_completed)
+        bool has_nothing_to_do = false;
+        auto check_result = table->checkDataNext(check_data_tasks, has_nothing_to_do);
+        if (has_nothing_to_do)
             return {};
 
-        auto status = worker_result.wait_for(std::chrono::milliseconds(100));
-        is_check_completed = (status == std::future_status::ready);
+        /// We can omit manual `progess` call, ISource will may count it automatically by returned chunk
+        /// However, we want to report only rows in progress
+        progress(1, 0);
 
-        if (is_check_completed)
+        if (!check_result.success)
         {
-            worker_result.get();
-            auto result_block = getBlockFromCheckResult(check_results, check_query_single_value_result);
-            check_results.clear();
-            return Chunk(result_block.getColumns(), result_block.rows());
+            LOG_WARNING(&Poco::Logger::get("InterpreterCheckQuery"),
+                "Check query for table {} failed, path {}, reason: {}",
+                table->getStorageID().getNameForLogs(),
+                check_result.fs_path,
+                check_result.failure_message);
         }
 
-        std::lock_guard lock(mutex);
-        progress(progress_rows, 0);
-        progress_rows = 0;
-
-        if (check_query_single_value_result || check_results.empty())
-        {
-            return Chunk();
-        }
-
-        auto result_block = getBlockFromCheckResult(check_results, check_query_single_value_result);
-        check_results.clear();
-        return Chunk(result_block.getColumns(), result_block.rows());
+        return getChunkFromCheckResult(check_result);
     }
 
 private:
-    void worker()
+    StoragePtr table;
+    IStorage::DataValidationTasksPtr check_data_tasks;
+};
+
+class TableCheckResultEmitter : public IAccumulatingTransform
+{
+public:
+    TableCheckResultEmitter() : IAccumulatingTransform(getHeaderForCheckResult(), getSingleValueBlock(1).cloneEmpty()) {}
+
+    String getName() const override { return "TableCheckResultEmitter"; }
+
+    void consume(Chunk chunk) override
     {
-        table->checkData(query_ptr, context,
-            [this](const CheckResult & check_result, size_t new_total_rows)
+        if (result_value == 0)
+            return;
+
+        auto columns = chunk.getColumns();
+        if (columns.size() != 3)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of columns: {}", columns.size());
+
+        const auto * col = checkAndGetColumn<ColumnUInt8>(columns[1].get());
+        for (size_t i = 0; i < col->size(); ++i)
+        {
+            if (col->getElement(i) == 0)
             {
-                if (isCancelled())
-                    return false;
-
-                std::lock_guard lock(mutex);
-                if (new_total_rows > total_rows)
-                {
-                    addTotalRowsApprox(new_total_rows - total_rows);
-                    total_rows = new_total_rows;
-                }
-                progress_rows++;
-
-                if (!check_result.success)
-                {
-                    LOG_WARNING(&Poco::Logger::get("InterpreterCheckQuery"),
-                        "Check query for table {} failed, path {}, reason: {}",
-                        table->getStorageID().getNameForLogs(),
-                        check_result.fs_path,
-                        check_result.failure_message);
-                }
-
-                check_results.push_back(check_result);
-
-                bool should_continue = check_result.success || !check_query_single_value_result;
-                return should_continue;
-            });
+                result_value = 0;
+                return;
+            }
+        }
     }
 
-    ASTPtr query_ptr;
-    StoragePtr table;
-    ContextPtr context;
-    bool check_query_single_value_result;
+    Chunk generate() override
+    {
+        if (is_valuer_emitted.exchange(true))
+            return {};
+        auto block = getSingleValueBlock(result_value);
+        return Chunk(block.getColumns(), block.rows());
+    }
 
-    std::future<void> worker_result;
-
-    std::mutex mutex;
-    CheckResults check_results;
-    size_t progress_rows = 0;
-    size_t total_rows = 0;
-
-    bool is_check_completed = false;
+private:
+    std::atomic<UInt8> result_value{1};
+    std::atomic_bool is_valuer_emitted{false};
 };
 
 }
@@ -154,7 +148,6 @@ InterpreterCheckQuery::InterpreterCheckQuery(const ASTPtr & query_ptr_, ContextP
 {
 }
 
-
 BlockIO InterpreterCheckQuery::execute()
 {
     const auto & check = query_ptr->as<ASTCheckQuery &>();
@@ -164,11 +157,51 @@ BlockIO InterpreterCheckQuery::execute()
     context->checkAccess(AccessType::SHOW_TABLES, table_id);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
 
+    auto check_data_tasks = table->getCheckTaskList(query_ptr, context);
+
+    const auto & settings = context->getSettingsRef();
+
     BlockIO res;
     {
-        bool check_query_single_value_result = context->getSettingsRef().check_query_single_value_result;
-        auto result_source = std::make_shared<TableCheckResultSource>(query_ptr, table, check_query_single_value_result, context);
-        res.pipeline = QueryPipeline(result_source);
+        auto processors = std::make_shared<Processors>();
+
+        std::vector<OutputPort *> worker_ports;
+
+        size_t num_streams = std::max<size_t>(1, settings.max_threads);
+
+        for (size_t i = 0; i < num_streams; ++i)
+        {
+            auto worker_processor = std::make_shared<TableCheckWorkerProcessor>(check_data_tasks, table);
+            if (i == 0)
+                worker_processor->addTotalRowsApprox(check_data_tasks->size());
+            worker_ports.emplace_back(&worker_processor->getPort());
+            processors->emplace_back(worker_processor);
+        }
+
+        OutputPort * resize_outport;
+        {
+            auto resize_processor = std::make_shared<ResizeProcessor>(getHeaderForCheckResult(), worker_ports.size(), 1);
+
+            auto & resize_inputs = resize_processor->getInputs();
+            auto resize_inport_it = resize_inputs.begin();
+            for (size_t i = 0; i < worker_ports.size(); ++i, ++resize_inport_it)
+                connect(*worker_ports[i], *resize_inport_it);
+
+            resize_outport = &resize_processor->getOutputs().front();
+            processors->emplace_back(resize_processor);
+        }
+
+        if (settings.check_query_single_value_result)
+        {
+            auto emitter_processor = std::make_shared<TableCheckResultEmitter>();
+            auto input_port = &emitter_processor->getInputPort();
+            processors->emplace_back(emitter_processor);
+
+            connect(*resize_outport, *input_port);
+        }
+
+        res.pipeline = QueryPipeline(Pipe(std::move(processors)));
+        res.pipeline.setNumThreads(num_streams);
     }
     return res;
 }

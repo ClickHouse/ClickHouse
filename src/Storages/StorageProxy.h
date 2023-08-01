@@ -149,7 +149,8 @@ public:
         return getNested()->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
     }
 
-    void checkData(const ASTPtr & query, ContextPtr context, CheckDataCallback check_callback) override { getNested()->checkData(query, context, check_callback); }
+    DataValidationTasksPtr getCheckTaskList(const ASTPtr & query, ContextPtr context) override { return getNested()->getCheckTaskList(query, context); }
+    CheckResult checkDataNext(DataValidationTasksPtr & check_task_list, bool & has_nothing_to_do) override { return getNested()->checkDataNext(check_task_list, has_nothing_to_do); }
 
     void checkTableCanBeDropped() const override { getNested()->checkTableCanBeDropped(); }
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }

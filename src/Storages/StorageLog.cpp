@@ -866,15 +866,18 @@ SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetada
     return std::make_shared<LogSink>(*this, metadata_snapshot, std::move(lock));
 }
 
-void StorageLog::checkData(const ASTPtr & /* query */, ContextPtr local_context, CheckDataCallback check_callback)
+IStorage::DataValidationTasksPtr StorageLog::getCheckTaskList(const ASTPtr & /* query */, ContextPtr local_context)
 {
     ReadLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
-
-    file_checker.check(check_callback);
+    return std::make_unique<DataValidationTasks>(file_checker.getDataValidationTasks(), std::move(lock));
 }
 
+CheckResult StorageLog::checkDataNext(DataValidationTasksPtr & check_task_list, bool & has_nothing_to_do)
+{
+    return file_checker.checkNextEntry(static_cast<DataValidationTasks *>(check_task_list.get())->file_checker_tasks, has_nothing_to_do);
+}
 
 IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
 {
