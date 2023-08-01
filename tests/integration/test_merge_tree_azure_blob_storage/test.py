@@ -44,6 +44,7 @@ def cluster():
 # But it is better to retry anyway because connection related errors
 # happens in fact only for inserts because reads already have build-in retries in code.
 
+
 def create_table(node, table_name, **additional_settings):
     settings = {
         "storage_policy": "blob_storage_policy",
