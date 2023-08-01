@@ -11,7 +11,7 @@
 
 #    include <Core/BackgroundSchedulePool.h>
 #    include <Storages/IStorage.h>
-#    include <Storages/S3Queue/S3QueueHolder.h>
+#    include <Storages/S3Queue/S3QueueFilesMetadata.h>
 #    include <Storages/S3Queue/S3QueueSettings.h>
 #    include <Storages/S3Queue/S3QueueSource.h>
 #    include <Storages/StorageS3Settings.h>
@@ -41,6 +41,7 @@ class StorageS3Queue : public IStorage, WithContext
 {
 public:
     using Configuration = typename StorageS3::Configuration;
+
     StorageS3Queue(
         std::unique_ptr<S3QueueSettings> s3queue_settings_,
         const Configuration & configuration_,
@@ -79,35 +80,39 @@ public:
 
     bool supportsPartitionBy() const override;
 
-    const auto & getFormatName() const { return format_name; }
+    const auto & getFormatName() const { return configuration.format; }
+
+    const String & getZooKeeperPath() const { return zk_path; }
+
+    zkutil::ZooKeeperPtr getZooKeeper() const;
 
 private:
-    std::unique_ptr<S3QueueSettings> s3queue_settings;
-    std::shared_ptr<S3QueueHolder> queue_holder;
-    Configuration s3_configuration;
-    std::vector<String> keys;
+    const std::unique_ptr<S3QueueSettings> s3queue_settings;
+    const S3QueueAction after_processing;
+
+    std::shared_ptr<S3QueueFilesMetadata> files_metadata;
+    Configuration configuration;
     NamesAndTypesList virtual_columns;
     Block virtual_block;
-    S3QueueMode mode;
-    S3QueueAction after_processing;
-    uint64_t milliseconds_to_wait = 10000;
-
-    String format_name;
-    String compression_method;
-    String name;
+    UInt64 reschedule_processing_interval_ms;
 
     std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
 
+    String zk_path;
+    mutable zkutil::ZooKeeperPtr zk_client;
+    mutable std::mutex zk_mutex;
+
+    std::atomic<bool> mv_attached = false;
+    std::atomic<bool> shutdown_called{false};
+    Poco::Logger * log;
+
     bool supportsSubcolumns() const override;
-    bool withGlobs() const { return s3_configuration.url.key.find_first_of("*?{") != std::string::npos; }
+    bool withGlobs() const { return configuration.url.key.find_first_of("*?{") != std::string::npos; }
 
     void threadFunc();
     size_t getTableDependentCount() const;
-    std::atomic<bool> mv_attached = false;
     bool hasDependencies(const StorageID & table_id);
-    std::atomic<bool> shutdown_called{false};
-    Poco::Logger * log;
 
     void startup() override;
     void shutdown() override;
@@ -122,19 +127,10 @@ private:
     std::shared_ptr<TaskContext> task;
 
     bool supportsSubsetOfColumns() const override;
-    String zookeeper_path;
-
-    zkutil::ZooKeeperPtr current_zookeeper;
-    mutable std::mutex current_zookeeper_mutex;
-
-    void setZooKeeper();
-    zkutil::ZooKeeperPtr tryGetZooKeeper() const;
-    zkutil::ZooKeeperPtr getZooKeeper() const;
 
     const UInt32 zk_create_table_retries = 1000;
     bool createTableIfNotExists(const StorageMetadataPtr & metadata_snapshot);
     void checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot);
-    const String & getZooKeeperPath() const { return zookeeper_path; }
 
     using KeysWithInfo = StorageS3QueueSource::KeysWithInfo;
 

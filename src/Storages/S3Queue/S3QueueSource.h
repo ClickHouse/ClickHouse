@@ -8,7 +8,7 @@
 #    include <Compression/CompressionInfo.h>
 
 #    include <Storages/IStorage.h>
-#    include <Storages/S3Queue/S3QueueHolder.h>
+#    include <Storages/S3Queue/S3QueueFilesMetadata.h>
 #    include <Storages/StorageS3.h>
 #    include <Storages/StorageS3Settings.h>
 
@@ -81,7 +81,7 @@ public:
         const String & bucket,
         const String & version_id,
         std::shared_ptr<IIterator> file_iterator_,
-        std::shared_ptr<S3QueueHolder> queue_holder_,
+        std::shared_ptr<S3QueueFilesMetadata> files_metadata_,
         const S3QueueAction & action_,
         size_t download_thread_num);
 
@@ -101,7 +101,7 @@ private:
     S3Settings::RequestSettings request_settings;
     std::shared_ptr<const S3::Client> client;
 
-    std::shared_ptr<S3QueueHolder> queue_holder;
+    std::shared_ptr<S3QueueFilesMetadata> files_metadata;
     using ReaderHolder = StorageS3Source::ReaderHolder;
     ReaderHolder reader;
 

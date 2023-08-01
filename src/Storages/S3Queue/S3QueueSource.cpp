@@ -171,7 +171,7 @@ StorageS3QueueSource::StorageS3QueueSource(
     const String & bucket_,
     const String & version_id_,
     std::shared_ptr<IIterator> file_iterator_,
-    std::shared_ptr<S3QueueHolder> queue_holder_,
+    std::shared_ptr<S3QueueFilesMetadata> files_metadata_,
     const S3QueueAction & action_,
     const size_t download_thread_num_)
     : ISource(getHeader(sample_block_, requested_virtual_columns_))
@@ -183,7 +183,7 @@ StorageS3QueueSource::StorageS3QueueSource(
     , columns_desc(columns_)
     , request_settings(request_settings_)
     , client(client_)
-    , queue_holder(queue_holder_)
+    , files_metadata(files_metadata_)
     , requested_virtual_columns(requested_virtual_columns_)
     , file_iterator(file_iterator_)
     , action(action_)
@@ -259,13 +259,13 @@ Chunk StorageS3QueueSource::generate()
         catch (const Exception & e)
         {
             LOG_ERROR(log, "Exception in chunk pulling: {} ", e.displayText());
-            queue_holder->setFileFailed(reader.getFile(), e.message());
+            files_metadata->setFileFailed(reader.getFile(), e.message());
             success_in_pulling = false;
         }
         if (success_in_pulling)
         {
             applyActionAfterProcessing(reader.getFile());
-            queue_holder->setFileProcessed(reader.getFile());
+            files_metadata->setFileProcessed(reader.getFile());
             return chunk;
         }
 
