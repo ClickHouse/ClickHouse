@@ -80,6 +80,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
                 throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", hdfs_file_path);
             }
             file_size = static_cast<size_t>(file_info->mSize);
+            hdfsFreeFileInfo(file_info, 1);
         }
     }
 
