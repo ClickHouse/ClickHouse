@@ -188,20 +188,6 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ++pos;
         return true;
     }
-    else if (pos->type == TokenType::StringLiteral)
-    {
-        ReadBufferFromMemory buf(pos->begin, pos->size());
-        String s;
-
-        readQuotedStringWithSQLStyle(s, buf);
-
-        if (s.empty())    /// Identifiers "empty string" are not allowed.
-            return false;
-
-        node = std::make_shared<ASTIdentifier>(s);
-        ++pos;
-        return true;
-    }
     else if (pos->type == TokenType::BareWord)
     {
         node = std::make_shared<ASTIdentifier>(String(pos->begin, pos->end));
@@ -254,6 +240,42 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return true;
     }
     return false;
+}
+
+
+bool ParserTableAsStringLiteralIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (pos->type != TokenType::StringLiteral)
+        return false;
+
+    ReadBufferFromMemory in(pos->begin, pos->size());
+    String s;
+
+    try
+    {
+        readQuotedStringWithSQLStyle(s, in);
+    }
+    catch (const Exception &)
+    {
+        expected.add(pos, "string literal");
+        return false;
+    }
+
+    if (in.count() != pos->size())
+    {
+        expected.add(pos, "string literal");
+        return false;
+    }
+
+    if (s.empty())
+    {
+        expected.add(pos, "non-empty string literal");
+        return false;
+    }
+
+    node = std::make_shared<ASTTableIdentifier>(s);
+    ++pos;
+    return true;
 }
 
 
