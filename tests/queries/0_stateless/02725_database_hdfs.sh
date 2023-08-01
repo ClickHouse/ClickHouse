@@ -36,19 +36,19 @@ echo "Test 2: check exceptions"
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 DROP DATABASE IF EXISTS test3;
 CREATE DATABASE test3 ENGINE = HDFS('abacaba');
-""" 2>&1| grep -F "BAD_ARGUMENTS" > /dev/null && echo "OK0"
+""" | tr '\n' ' ' | grep -oF "BAD_ARGUMENTS"
 
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 DROP DATABASE IF EXISTS test4;
 CREATE DATABASE test4 ENGINE = HDFS;
 USE test4;
 SELECT * FROM \"abacaba/file.tsv\"
-""" 2>&1| grep -F "FILE_DOESNT_EXIST" > /dev/null && echo "OK1"
+""" | tr '\n' ' ' | grep -oF "CANNOT_EXTRACT_TABLE_STRUCTURE"
 
-${CLICKHOUSE_CLIENT} -q "SELECT * FROM test4.\`http://localhost:11111/test/a.tsv\`" 2>&1 | tr '\n' ' ' #| grep -oF "FILE_DOESNT_EXIST"
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222/file.myext\`" 2>&1 | tr '\n' ' ' #| grep -oF "FILE_DOESNT_EXIST"
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222/test_02725_3.tsv\`" 2>&1 | tr '\n' ' ' #| grep -oF "FILE_DOESNT_EXIST"
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222\`" 2>&1 | tr '\n' ' ' #| grep -oF "FILE_DOESNT_EXIST"
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM test4.\`http://localhost:11111/test/a.tsv\`" 2>&1 | tr '\n' ' ' | grep -oF "BAD_ARGUMENTS"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222/file.myext\`" 2>&1 | tr '\n' ' ' | grep -oF "BAD_ARGUMENTS"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222/test_02725_3.tsv\`" 2>&1 | tr '\n' ' ' | grep -oF "CANNOT_EXTRACT_TABLE_STRUCTURE"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222\`" 2>&1 | tr '\n' ' ' | grep -oF "BAD_ARGUMENTS"
 
 
 # Cleanup

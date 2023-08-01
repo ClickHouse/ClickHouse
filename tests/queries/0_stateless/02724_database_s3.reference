@@ -17,5 +17,5 @@ test1
 16	17	18
 0	0	0
 Test 2: check exceptions
-OK
-OK
+BAD_ARGUMENTS
+BAD_ARGUMENTS
