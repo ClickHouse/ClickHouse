@@ -8,8 +8,9 @@ namespace DB
 {
 
 XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : RowOutputFormatWithUTF8ValidationAdaptor(true, header_, out_), fields(header_.getNamesAndTypes()), format_settings(format_settings_)
+    : RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>(header_, out_, true, format_settings_.xml.valid_output_on_exception), fields(header_.getNamesAndTypes()), format_settings(format_settings_)
 {
+    ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
     const auto & sample = getPort(PortKind::Main).getHeader();
     field_tag_names.resize(sample.columns());
 
@@ -191,7 +192,9 @@ void XMLRowOutputFormat::finalizeImpl()
 
     writeRowsBeforeLimitAtLeast();
 
-    if (format_settings.write_statistics)
+    if (!exception_message.empty())
+        writeException();
+    else if (format_settings.write_statistics)
         writeStatistics();
 
     writeCString("</result>\n", *ostr);
@@ -230,6 +233,12 @@ void XMLRowOutputFormat::writeStatistics()
     writeCString("\t</statistics>\n", *ostr);
 }
 
+void XMLRowOutputFormat::writeException()
+{
+    writeCString("\t<exception>", *ostr);
+    writeXMLStringForTextElement(exception_message, *ostr);
+    writeCString("</exception>\n", *ostr);
+}
 
 void registerOutputFormatXML(FormatFactory & factory)
 {

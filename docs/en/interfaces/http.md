@@ -697,3 +697,16 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 <html><body>Relative Path File</body></html>
 * Connection #0 to host localhost left intact
 ```
+
+## Valid JSON/XML response on exception during HTTP streaming {valid-output-on-exception-http-streaming} 
+
+While query execution over HTTP an exception can happen when part of the data has already been sent. Usually an exception is sent to the client in plain text
+even if some specific data format was used to output data and the output may become invalid in terms of specified data format.
+To prevent it, you can use setting `http_write_exception_in_output_format` (enabled by default) that will tell ClickHouse to write an exception in specified format (currently supported for XML and JSON* formats).
+
+Examples:
+
+```bash
+
+```
+

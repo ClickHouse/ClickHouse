@@ -3,6 +3,7 @@
 #include <Processors/Formats/Impl/JSONEachRowRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -14,10 +15,12 @@ JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(
     const Block & header_,
     const FormatSettings & settings_,
     bool pretty_json_)
-        : RowOutputFormatWithUTF8ValidationAdaptor(settings_.json.validate_utf8, header_, out_),
-        pretty_json(pretty_json_),
-        settings(settings_)
+    : RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>(
+        header_, out_, settings_.json.valid_output_on_exception, settings_.json.validate_utf8)
+    , pretty_json(pretty_json_)
+    , settings(settings_)
 {
+    ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
     fields = JSONUtils::makeNamesValidJSONStrings(getPort(PortKind::Main).getHeader().getNames(), settings, settings.json.validate_utf8);
 }
 
@@ -76,6 +79,15 @@ void JSONEachRowRowOutputFormat::writePrefix()
 
 void JSONEachRowRowOutputFormat::writeSuffix()
 {
+    if (!exception_message.empty())
+    {
+        if (haveWrittenData())
+            writeRowBetweenDelimiter();
+        writeRowStartDelimiter();
+        JSONUtils::writeException(exception_message, *ostr, settings, pretty_json ? 1 : 0);
+        writeRowEndDelimiter();
+    }
+
     if (settings.json.array_of_rows)
         writeCString("\n]\n", *ostr);
 }
