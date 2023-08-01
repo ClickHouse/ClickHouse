@@ -40,6 +40,8 @@ public:
         virtual bool nextFile() = 0;
     };
 
+    virtual const std::string & getPath() const = 0;
+
     /// Starts enumerating files in the archive.
     virtual std::unique_ptr<FileEnumerator> firstFile() = 0;
 
@@ -51,6 +53,8 @@ public:
     /// It's possible to convert a file enumerator to a read buffer and vice versa.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(std::unique_ptr<FileEnumerator> enumerator) = 0;
     virtual std::unique_ptr<FileEnumerator> nextFile(std::unique_ptr<ReadBuffer> read_buffer) = 0;
+
+    virtual std::vector<std::string> getAllFiles() = 0;
 
     /// Sets password used to decrypt files in the archive.
     virtual void setPassword(const String & /* password */) {}

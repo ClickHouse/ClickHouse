@@ -1,4 +1,5 @@
 #include <IO/Archives/ZipArchiveReader.h>
+#include "mz_compat.h"
 
 #if USE_MINIZIP
 #include <IO/Archives/ZipArchiveWriter.h>
@@ -129,6 +130,26 @@ public:
         if (!file_info)
             retrieveFileInfo();
         return *file_info;
+    }
+
+    std::vector<std::string> getAllFiles()
+    {
+        std::vector<std::string> files;
+        resetFileInfo();
+        int err = unzGoToFirstFile(raw_handle);
+        if (err == UNZ_END_OF_LIST_OF_FILE)
+            return files;
+
+        do
+        {
+            checkResult(err);
+            resetFileInfo();
+            retrieveFileInfo();
+            files.push_back(*file_name);
+            err = unzGoToNextFile(raw_handle);
+        } while (err != UNZ_END_OF_LIST_OF_FILE);
+
+        return files;
     }
 
     void closeFile()
@@ -459,6 +480,11 @@ ZipArchiveReader::~ZipArchiveReader()
     }
 }
 
+const std::string & ZipArchiveReader::getPath() const
+{
+    return path_to_archive;
+}
+
 bool ZipArchiveReader::fileExists(const String & filename)
 {
     return acquireHandle().tryLocateFile(filename);
@@ -504,6 +530,12 @@ std::unique_ptr<ZipArchiveReader::FileEnumerator> ZipArchiveReader::nextFile(std
     if (!handle.nextFile())
         return nullptr;
     return std::make_unique<FileEnumeratorImpl>(std::move(handle));
+}
+
+std::vector<std::string> ZipArchiveReader::getAllFiles()
+{
+    auto handle = acquireHandle();
+    return handle.getAllFiles();
 }
 
 void ZipArchiveReader::setPassword(const String & password_)

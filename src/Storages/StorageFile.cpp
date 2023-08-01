@@ -387,8 +387,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     if (!path_to_archive.empty())
     {
         auto reader = createArchiveReader(path_to_archive);
-        std::unique_ptr<ReadBuffer> in = reader->readFile(current_path);
-        return in;
+        return reader->readFile(current_path);
     }
 
     if (use_table_fd)
@@ -688,7 +687,9 @@ public:
     struct FilesInfo
     {
         std::vector<std::string> files;
-        std::vector<std::string> paths_to_archive;
+
+        std::vector<std::string> archives;
+        std::vector<std::pair<uint64_t, std::string>> files_in_archive;
 
         std::atomic<size_t> next_file_to_read = 0;
         std::atomic<size_t> next_archive_to_read = 0;
@@ -822,17 +823,31 @@ public:
             {
                 if (!storage->use_table_fd)
                 {
-                    size_t current_file = 0, current_archive = 0;
-                    if (!files_info->paths_to_archive.empty())
+                    size_t current_file = 0, current_file_in_archive = 0;
+                    if (!files_info->files_in_archive.empty())
                     {
-                        if (files_info->files.size() != 1)
-                            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Can only read a single file from archive");
-
-                        current_archive = files_info->next_archive_to_read.fetch_add(1);
-                        if (current_archive >= files_info->paths_to_archive.size())
+                        current_file_in_archive = files_info->next_archive_to_read.fetch_add(1);
+                        if (current_file_in_archive >= files_info->files_in_archive.size())
                             return {};
-                        current_path = files_info->files[current_file];
-                        current_archive_path = files_info->paths_to_archive[current_archive];
+
+                        const auto & [archive_index, filename] = files_info->files_in_archive[current_file_in_archive];
+                        const auto & archive = files_info->archives[archive_index];
+                        current_path = filename;
+
+                        if (!archive_reader || archive_reader->getPath() != archive)
+                        {
+                            archive_reader = createArchiveReader(archive);
+                            file_enumerator = archive_reader->firstFile();
+                        }
+
+                        if (file_enumerator == nullptr)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a file in archive {}", archive);
+
+                        while (file_enumerator->getFileName() != filename)
+                        {
+                            if (!file_enumerator->nextFile())
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected file {} is missing from archive {}", filename, archive);
+                        }
                     }
                     else
                     {
@@ -855,25 +870,23 @@ public:
                 if (!read_buf)
                 {
                     struct stat file_stat;
-                    if (files_info->paths_to_archive.empty())
+                    if (archive_reader == nullptr)
+                    {
                         file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
-                    else
-                        file_stat = getFileStat(current_archive_path, storage->use_table_fd, storage->table_fd, storage->getName());
 
-                    if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
-                        continue;
+                        if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
+                            continue;
+                    }
 
-                    if (files_info->paths_to_archive.empty())
+                    if (archive_reader == nullptr)
+                    {
                         read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, context);
+                    }
                     else
-                        read_buf = createReadBuffer(
-                            current_path,
-                            file_stat,
-                            storage->use_table_fd,
-                            storage->table_fd,
-                            storage->compression_method,
-                            context,
-                            current_archive_path);
+                    {
+                        chassert(file_enumerator);
+                        read_buf = archive_reader->readFile(std::move(file_enumerator));
+                    }
                 }
 
                 const Settings & settings = context->getSettingsRef();
@@ -933,7 +946,11 @@ public:
             reader.reset();
             pipeline.reset();
             input_format.reset();
-            read_buf.reset();
+
+            if (archive_reader != nullptr)
+                file_enumerator = archive_reader->nextFile(std::move(read_buf));
+            else
+                read_buf.reset();
         }
 
         return {};
@@ -945,12 +962,14 @@ private:
     StorageSnapshotPtr storage_snapshot;
     FilesInfoPtr files_info;
     String current_path;
-    String current_archive_path;
     Block sample_block;
     std::unique_ptr<ReadBuffer> read_buf;
     InputFormatPtr input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
+
+    std::shared_ptr<IArchiveReader> archive_reader;
+    std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator = nullptr;
 
     ColumnsDescription columns_description;
     Block block_for_format;
@@ -979,18 +998,34 @@ Pipe StorageFile::read(
     }
     else
     {
-        if (paths.size() == 1 && paths_to_archive.empty() && !fs::exists(paths[0]))
+        const auto & p = paths_to_archive.empty() ? paths : paths_to_archive;
+        if (p.size() == 1 && !fs::exists(p[0]))
         {
             if (context->getSettingsRef().engine_file_empty_if_not_exists)
                 return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
             else
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", paths[0]);
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", p[0]);
+        }
+    }
+
+    std::vector<std::pair<uint64_t, std::string>> files_in_archive;
+
+    if (!paths_to_archive.empty())
+    {
+        for (size_t i = 0; i < paths_to_archive.size(); ++i)
+        {
+            const auto & path_to_archive = paths_to_archive[i];
+            auto archive_reader = createArchiveReader(path_to_archive);
+            auto files = archive_reader->getAllFiles();
+            for (auto & file : files)
+                files_in_archive.push_back({i, std::move(file)});
         }
     }
 
     auto files_info = std::make_shared<StorageFileSource::FilesInfo>();
     files_info->files = paths;
-    files_info->paths_to_archive = paths_to_archive;
+    files_info->archives = paths_to_archive;
+    files_info->files_in_archive = std::move(files_in_archive);
     files_info->total_bytes_to_read = total_bytes_to_read;
 
     for (const auto & column : column_names)
@@ -1004,8 +1039,10 @@ Pipe StorageFile::read(
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
     size_t num_streams = max_num_streams;
-    if (max_num_streams > paths.size())
-        num_streams = paths.size();
+
+    auto files_to_read = std::max(files_info->files_in_archive.size(), paths.size());
+    if (max_num_streams > files_to_read)
+        num_streams = files_to_read;
 
     Pipes pipes;
     pipes.reserve(num_streams);
