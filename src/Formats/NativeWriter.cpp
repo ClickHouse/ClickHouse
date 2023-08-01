@@ -132,12 +132,22 @@ size_t NativeWriter::write(const Block & block)
 
         /// Serialization. Dynamic, if client supports it.
         SerializationPtr serialization;
-        if (client_revision >= DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION)
+        if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
             auto info = column.type->getSerializationInfo(*column.column);
-            serialization = column.type->getSerialization(*info);
+            bool has_custom = false;
 
-            bool has_custom = info->hasCustomSerialization();
+            if (client_revision >= DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION)
+            {
+                serialization = column.type->getSerialization(*info);
+                has_custom = info->hasCustomSerialization();
+            }
+            else
+            {
+                serialization = column.type->getDefaultSerialization();
+                column.column = recursiveRemoveSparse(column.column);
+            }
+
             writeBinary(static_cast<UInt8>(has_custom), ostr);
             if (has_custom)
                 info->serialializeKindBinary(ostr);
