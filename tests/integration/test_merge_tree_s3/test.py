@@ -739,6 +739,49 @@ def test_cache_with_full_disk_space(cluster, node_name):
 
 
 @pytest.mark.parametrize("node_name", ["node"])
+def test_parallel_cache_loading_on_startup(cluster, node_name):
+    node = cluster.instances[node_name]
+    node.query(
+        """
+        DROP TABLE IF EXISTS test SYNC;
+
+        CREATE TABLE test (key UInt32, value String)
+        Engine=MergeTree()
+        ORDER BY value
+        SETTINGS disk = disk(
+            type = cache,
+            path = 'paralel_loading_test',
+            disk = 'hdd_blob',
+            max_file_segment_size = '1Ki',
+            boundary_alignemt = '1Ki',
+            max_size = '1Gi',
+            max_elements = 10000000,
+            load_metadata_threads = 30);
+
+        SYSTEM DROP FILESYSTEM CACHE;
+        INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
+        SELECT * FROM test FORMAT Null;
+        """
+    )
+    assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
+    assert int(node.query("SELECT max(size) FROM system.filesystem_cache")) == 1024
+
+    node.restart_clickhouse()
+    assert node.contains_in_log("Loading filesystem cache with 30 threads")
+    assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
+    assert int(node.query("SELECT max(size) FROM system.filesystem_cache")) == 1024
+    assert (
+        int(
+            node.query(
+                "SELECT value FROM system.events WHERE event = 'FilesystemCacheLoadMetadataMicroseconds'"
+            )
+        )
+        > 0
+    )
+    node.query("SELECT * FROM test FORMAT Null")
+
+
+@pytest.mark.parametrize("node_name", ["node"])
 def test_merge_canceled_by_drop(cluster, node_name):
     node = cluster.instances[node_name]
     node.query("DROP TABLE IF EXISTS test_merge_canceled_by_drop NO DELAY")
