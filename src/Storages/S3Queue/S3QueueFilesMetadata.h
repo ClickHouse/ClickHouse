@@ -9,7 +9,10 @@
 
 namespace DB
 {
-class S3QueueHolder : public WithContext
+class StorageS3Queue;
+struct S3QueueSettings;
+
+class S3QueueFilesMetadata
 {
 public:
     struct TrackedCollectionItem
@@ -23,27 +26,21 @@ public:
     using S3FilesCollection = std::unordered_set<String>;
     using TrackedFiles = std::deque<TrackedCollectionItem>;
 
-    S3QueueHolder(
-        const String & zookeeper_path_,
-        const S3QueueMode & mode_,
-        ContextPtr context_,
-        UInt64 & max_set_size_,
-        UInt64 & max_set_age_sec_,
-        UInt64 & max_loading_retries_);
+    S3QueueFilesMetadata(const StorageS3Queue * storage_, const S3QueueSettings & settings_);
 
+    void setFilesProcessing(const Strings & file_paths);
     void setFileProcessed(const String & file_path);
     bool setFileFailed(const String & file_path, const String & exception_message);
-    void setFilesProcessing(Strings & file_paths);
-    S3FilesCollection getProcessedAndFailedFiles();
-    String getMaxProcessedFile();
 
-    std::shared_ptr<zkutil::EphemeralNodeHolder> acquireLock();
+    S3FilesCollection getProcessedFailedAndProcessingFiles();
+    String getMaxProcessedFile();
+    std::shared_ptr<zkutil::EphemeralNodeHolder> acquireLock(zkutil::ZooKeeperPtr zookeeper);
 
     struct S3QueueCollection
     {
     public:
         virtual ~S3QueueCollection() = default;
-        String toString() const;
+        virtual String toString() const;
         S3FilesCollection getFileNames();
 
         virtual void parse(const String & collection_str) = 0;
@@ -82,30 +79,42 @@ public:
         UInt64 max_retries_count;
     };
 
+    struct S3QueueProcessingCollection
+    {
+    public:
+        S3QueueProcessingCollection() = default;
+
+        void parse(const String & collection_str);
+        void add(const Strings & file_names);
+        void remove(const String & file_name);
+
+        String toString() const;
+        const S3FilesCollection & getFileNames() const { return files; }
+
+    private:
+        S3FilesCollection files;
+    };
 
 private:
+    const StorageS3Queue * storage;
+    const S3QueueMode mode;
     const UInt64 max_set_size;
     const UInt64 max_set_age_sec;
     const UInt64 max_loading_retries;
 
-    zkutil::ZooKeeperPtr zk_client;
-    mutable std::mutex current_zookeeper_mutex;
-    mutable std::mutex mutex;
-    const String zookeeper_path;
-    const String zookeeper_failed_path;
     const String zookeeper_processing_path;
     const String zookeeper_processed_path;
+    const String zookeeper_failed_path;
     const String zookeeper_lock_path;
-    const S3QueueMode mode;
-    const UUID table_uuid;
+
+    mutable std::mutex mutex;
     Poco::Logger * log;
 
     S3FilesCollection getFailedFiles();
     S3FilesCollection getProcessingFiles();
     S3FilesCollection getUnorderedProcessedFiles();
-    void removeProcessingFile(const String & file_path);
 
-    S3FilesCollection parseCollection(const String & collection_str);
+    void removeProcessingFile(const String & file_path);
 };
 
 
