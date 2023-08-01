@@ -96,7 +96,7 @@ private:
     Serializations serializations;
 
     BlockMissingValues block_missing_values;
-    size_t approx_bytes_read_for_chunk;
+    size_t approx_bytes_read_for_chunk = 0;
 };
 
 class ValuesSchemaReader : public IRowSchemaReader

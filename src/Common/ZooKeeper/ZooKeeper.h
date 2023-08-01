@@ -521,6 +521,7 @@ public:
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
     UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
+    bool hasReachedDeadline() const { return impl->hasReachedDeadline(); }
 
     void setServerCompletelyStarted();
 

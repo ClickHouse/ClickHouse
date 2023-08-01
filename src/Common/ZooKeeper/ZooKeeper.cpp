@@ -15,6 +15,7 @@
 #include <base/sort.h>
 #include <base/getFQDNOrHostName.h>
 #include "Common/ZooKeeper/IKeeper.h"
+#include <Common/DNSResolver.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -82,6 +83,9 @@ void ZooKeeper::init(ZooKeeperArgs args_)
                 if (secure)
                     host_string.erase(0, strlen("secure://"));
 
+                /// We want to resolve all hosts without DNS cache for keeper connection.
+                Coordination::DNSResolver::instance().removeHostFromCache(host_string);
+
                 const Poco::Net::SocketAddress host_socket_addr{host_string};
                 LOG_TEST(log, "Adding ZooKeeper host {} ({})", host_string, host_socket_addr.toString());
                 nodes.emplace_back(Coordination::ZooKeeper::Node{host_socket_addr, secure});
@@ -108,31 +112,17 @@ void ZooKeeper::init(ZooKeeperArgs args_)
                 throw KeeperException("Cannot use any of provided ZooKeeper nodes", Coordination::Error::ZCONNECTIONLOSS);
         }
 
-        impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
+        impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log, [this](size_t node_idx, const Coordination::ZooKeeper::Node & node)
+        {
+            connected_zk_host = node.address.host().toString();
+            connected_zk_port = node.address.port();
+            connected_zk_index = node_idx;
+        });
 
         if (args.chroot.empty())
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
         else
             LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", fmt::join(args.hosts, ","), args.chroot);
-
-        Poco::Net::SocketAddress address = impl->getConnectedAddress();
-
-        connected_zk_host = address.host().toString();
-        connected_zk_port = address.port();
-
-        connected_zk_index = 0;
-
-        if (args.hosts.size() > 1)
-        {
-            for (size_t i = 0; i < args.hosts.size(); i++)
-            {
-                if (args.hosts[i] == address.toString())
-                {
-                    connected_zk_index = i;
-                    break;
-                }
-            }
-        }
     }
     else if (args.implementation == "testkeeper")
     {
