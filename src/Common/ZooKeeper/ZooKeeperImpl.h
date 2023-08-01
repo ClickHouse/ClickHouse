@@ -107,6 +107,7 @@ public:
     };
 
     using Nodes = std::vector<Node>;
+    using ConnectedCallback = std::function<void(size_t, const Node&)>;
 
     /** Connection to nodes is performed in order. If you want, shuffle them manually.
       * Operation timeout couldn't be greater than session timeout.
@@ -115,7 +116,8 @@ public:
     ZooKeeper(
         const Nodes & nodes,
         const zkutil::ZooKeeperArgs & args_,
-        std::shared_ptr<ZooKeeperLog> zk_log_);
+        std::shared_ptr<ZooKeeperLog> zk_log_,
+        std::optional<ConnectedCallback> && connected_callback_ = {});
 
     ~ZooKeeper() override;
 
@@ -123,10 +125,12 @@ public:
     /// If expired, you can only destroy the object. All other methods will throw exception.
     bool isExpired() const override { return requests_queue.isFinished(); }
 
+    /// A ZooKeeper session can have an optional deadline set on it.
+    /// After it has been reached, the session needs to be finalized.
+    bool hasReachedDeadline() const override;
+
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
-
-    Poco::Net::SocketAddress getConnectedAddress() const override { return connected_zk_address; }
 
     void executeGenericRequest(
         const ZooKeeperRequestPtr & request,
@@ -213,9 +217,9 @@ public:
 
 private:
     ACLs default_acls;
-    Poco::Net::SocketAddress connected_zk_address;
 
     zkutil::ZooKeeperArgs args;
+    std::optional<ConnectedCallback> connected_callback = {};
 
     /// Fault injection
     void maybeInjectSendFault();
@@ -252,6 +256,7 @@ private:
         clock::time_point time;
     };
 
+    std::optional<clock::time_point> client_session_deadline {};
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
     RequestsQueue requests_queue{1024};
@@ -323,6 +328,8 @@ private:
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_ms = 0);
 
     void initFeatureFlags();
+
+    void checkSessionDeadline() const;
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;
