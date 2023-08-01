@@ -61,6 +61,7 @@ KafkaConsumer::KafkaConsumer(
     , stopped(stopped_)
     , current(messages.begin())
     , topics(_topics)
+    , exceptions_buffer(EXCEPTIONS_DEPTH)
 {
     // called (synchronously, during poll) when we enter the consumer group
     consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
@@ -128,6 +129,7 @@ KafkaConsumer::KafkaConsumer(
     {
         LOG_ERROR(log, "Rebalance error: {}", err);
         ProfileEvents::increment(ProfileEvents::KafkaRebalanceErrors);
+        setExceptionInfo(err);
     });
 }
 
@@ -181,6 +183,7 @@ void KafkaConsumer::drain()
             else
             {
                 LOG_ERROR(log, "Error during draining: {}", error);
+                setExceptionInfo(error);
             }
         }
 
@@ -265,7 +268,10 @@ void KafkaConsumer::commit()
                 if (e.get_error() == RD_KAFKA_RESP_ERR__NO_OFFSET)
                     committed = true;
                 else
+                {
                     LOG_ERROR(log, "Exception during commit attempt: {}", e.what());
+                    setExceptionInfo(e.what());
+                }
             }
             --max_retries;
         }
@@ -503,6 +509,7 @@ size_t KafkaConsumer::filterMessageErrors()
         {
             ProfileEvents::increment(ProfileEvents::KafkaConsumerErrors);
             LOG_ERROR(log, "Consumer error: {}", error);
+            setExceptionInfo(error);
             return true;
         }
         return false;
@@ -535,12 +542,15 @@ void KafkaConsumer::storeLastReadMessageOffset()
     }
 }
 
+void KafkaConsumer::setExceptionInfo(const cppkafka::Error & err)
+{
+    setExceptionInfo(err.to_string());
+}
+
 void KafkaConsumer::setExceptionInfo(const String & text)
 {
-    last_exception_timestamp_usec = static_cast<Int64>(Poco::Timestamp().epochTime());
-
     std::lock_guard<std::mutex> lock(exception_mutex);
-    last_exception_text = text;
+    exceptions_buffer.push_back({text, static_cast<UInt64>(Poco::Timestamp().epochTime())});
 }
 
 /*
@@ -576,9 +586,6 @@ KafkaConsumer::Stat KafkaConsumer::getStat()
     return {
         .consumer_id = getMemberId() /* consumer->get_member_id() */ ,
         .assignments = std::move(assignments),
-        .last_exception = [&](){std::lock_guard<std::mutex> lock(exception_mutex);
-            return last_exception_text;}(),
-        .last_exception_time = last_exception_timestamp_usec.load(),
         .last_poll_time = last_poll_timestamp_usec.load(),
         .num_messages_read = num_messages_read.load(),
 
@@ -587,6 +594,8 @@ KafkaConsumer::Stat KafkaConsumer::getStat()
         .num_commits = num_commits.load(),
         .num_rebalance_assignments = num_rebalance_assignments.load(),
         .num_rebalance_revocations = num_rebalance_revocations.load(),
+        .exceptions_buffer = [&](){std::lock_guard<std::mutex> lock(exception_mutex);
+            return exceptions_buffer;}(),
         .in_use = in_use.load()
     };
 }

@@ -90,7 +90,7 @@ def producer_serializer(x):
     return x.encode() if isinstance(x, str) else x
 
 
-def kafka_produce(kafka_cluster, topic, messages, timestamp=None, retries=15):
+def kafka_produce(kafka_cluster, topic, messages, timestamp=None, retries=15, partition=None):
     logging.debug(
         "kafka_produce server:{}:{} topic:{}".format(
             "localhost", kafka_cluster.kafka_port, topic
@@ -100,7 +100,7 @@ def kafka_produce(kafka_cluster, topic, messages, timestamp=None, retries=15):
         kafka_cluster.kafka_port, producer_serializer, retries
     )
     for message in messages:
-        producer.send(topic=topic, value=message, timestamp_ms=timestamp)
+        producer.send(topic=topic, value=message, timestamp_ms=timestamp, partition=partition)
         producer.flush()
 
 
@@ -115,7 +115,7 @@ def kafka_cluster():
         cluster.shutdown()
 
 
-def test_bad_messages_parsing(kafka_cluster):
+def test_bad_messages_parsing_stream(kafka_cluster):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
@@ -227,6 +227,13 @@ message Message {
 
         assert rows == len(messages)
 
+        result_system_kafka_consumers = instance.query(
+            """
+            SELECT last_exception, last_exception_time, database, table FROM system.kafka_consumers
+            """
+        )
+        logging.debug(f"result_system_kafka_consumers (test_bad_messages_parsing 2): {result_system_kafka_consumers}")
+
         kafka_delete_topic(admin_client, f"{format_name}_err")
 
     capn_proto_schema = """
@@ -244,7 +251,7 @@ struct Message
         f"""
             DROP TABLE IF EXISTS view;
             DROP TABLE IF EXISTS kafka;
-    
+
             CREATE TABLE kafka (key UInt64, value UInt64)
                 ENGINE = Kafka
                 SETTINGS kafka_broker_list = 'kafka1:19092',
@@ -253,9 +260,9 @@ struct Message
                          kafka_format = 'CapnProto',
                          kafka_handle_error_mode='stream',
                          kafka_schema='schema_test_errors:Message';
-    
+
             CREATE MATERIALIZED VIEW view Engine=Log AS
-                SELECT _error FROM kafka WHERE length(_error) != 0 ;                
+                SELECT _error FROM kafka WHERE length(_error) != 0 ;
         """
     )
 
@@ -277,6 +284,113 @@ struct Message
     assert rows == len(messages)
 
     kafka_delete_topic(admin_client, "CapnProto_err")
+
+def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    for format_name in [
+        "Avro",
+        "JSONEachRow",
+    ]:
+        print(format_name)
+
+        kafka_create_topic(admin_client, f"{format_name}_err", num_partitions=2)
+
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS view_{format_name};
+            DROP TABLE IF EXISTS kafka_{format_name};
+
+            CREATE TABLE kafka_{format_name} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{format_name}_err',
+                         kafka_group_name = '{format_name}',
+                         kafka_format = '{format_name}',
+                        kafka_num_consumers = 2;
+
+            CREATE MATERIALIZED VIEW view_{format_name} Engine=Log AS
+                SELECT * FROM kafka_{format_name};
+        """
+        )
+
+        kafka_produce(kafka_cluster, f"{format_name}_err", ["qwertyuiop"], partition=0)
+        kafka_produce(kafka_cluster, f"{format_name}_err", ["asdfghjkl"], partition=1)
+        kafka_produce(kafka_cluster, f"{format_name}_err", ["zxcvbnm"], partition=0)
+
+    time.sleep(6)
+
+    result_system_kafka_consumers = instance.query(
+        # """
+        # SELECT exceptions.text[1], length(exceptions.text) > 3 AND length(exceptions.text) < 10, length(exceptions.time) > 3 AND length(exceptions.time) < 10, abs(dateDiff('second', exceptions.time[1], now())) < 30, database, table FROM system.kafka_consumers ORDER BY table, assignments.partition_id[1]
+        # """
+        """
+        SELECT length(exceptions.text), length(exceptions.time), exceptions.time[1], database, table FROM system.kafka_consumers ORDER BY table, assignments.partition_id[1]
+        """
+    )
+    logging.debug(f"result_system_kafka_consumers (test_bad_messages_parsing_exception 1): {result_system_kafka_consumers}")
+    
+
+    logging.debug(f"result_system_kafka_consumers (test_bad_messages_parsing_exception 2): {result_system_kafka_consumers}")
+    expected_result = """1|1|1|default|kafka_Avro
+1|1|1|default|kafka_Avro
+1|1|1|default|kafka_JSONEachRow
+1|1|1|default|kafka_JSONEachRow
+"""
+    retries = 0
+    result_system_kafka_consumers = ""
+    while True:
+        result_system_kafka_consumers = instance.query(
+            # """
+            # SELECT exceptions.text[1], length(exceptions.text) > 3 AND length(exceptions.text) < 10, length(exceptions.time) > 3 AND length(exceptions.time) < 10, abs(dateDiff('second', exceptions.time[1], now())) < 30, database, table FROM system.kafka_consumers ORDER BY table, assignments.partition_id[1]
+            # """
+            # """
+            # SELECT CONCAT((length(exceptions.text) > 2 AND length(exceptions.text) < 15)::String, '_', (length(exceptions.time) > 2 AND length(exceptions.time) < 15)::String, '_', (abs(dateDiff('second', exceptions.time[1], now())) < 40)::String, '_', database, '_', table) FROM system.kafka_consumers ORDER BY table, assignments.partition_id[1] format PrettySpaceNoEscapesMonoBlock
+            # """
+            """
+            SELECT length(exceptions.text) > 1 AND length(exceptions.text) < 15, length(exceptions.time) > 1 AND length(exceptions.time) < 15, abs(dateDiff('second', exceptions.time[1], now())) < 40, database, table FROM system.kafka_consumers ORDER BY table, assignments.partition_id[1]
+            """
+        )
+        result_system_kafka_consumers = result_system_kafka_consumers.replace('\t', '|')
+        if result_system_kafka_consumers == expected_result or retries > max_retries:
+            break
+        retries += 1
+        time.sleep(1)
+
+#     assert result_system_kafka_consumers == """    avro::Exception: Invalid data file. Magic does not match: : while parsing Kafka message (topic: Avro_err, partition: 0, offset: 0)'     1       1       1       default kafka_Avro
+# avro::Exception: Invalid data file. Magic does not match: : while parsing Kafka message (topic: Avro_err, partition: 1, offset: 0)'    1        1       1       default kafka_Avro
+# Cannot parse input: expected '{' before: 'qwertyuiop': while parsing Kafka message (topic: JSONEachRow_err, partition: 0, offset: 0)'        1       1       1       default kafka_JSONEachRow
+# Cannot parse input: expected '{' before: 'asdfghjkl': while parsing Kafka message (topic: JSONEachRow_err, partition: 1, offset: 0)'        1       1       1       default kafka_JSONEachRow"""
+
+    
+    assert result_system_kafka_consumers == expected_result
+
+    # for format_name in [
+    #     "TSV",
+    #     "TSKV",
+    #     "JSONEachRow",
+    #     "CSV",
+    #     "Values",
+    #     "JSON",
+    #     "JSONCompactEachRow",
+    #     "JSONObjectEachRow",
+    #     "Avro",
+    #     "RowBinary",
+    #     "JSONColumns",
+    #     "JSONColumnsWithMetadata",
+    #     "Native",
+    #     "Arrow",
+    #     "ArrowStream",
+    #     "Parquet",
+    #     "ORC",
+    #     "JSONCompactColumns",
+    #     "BSONEachRow",
+    #     "MySQLDump",
+    # ]:
+    #     kafka_delete_topic(admin_client, f"{format_name}_err")
+
 
 
 if __name__ == "__main__":

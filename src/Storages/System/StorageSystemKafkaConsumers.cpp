@@ -31,8 +31,8 @@ NamesAndTypesList StorageSystemKafkaConsumers::getNamesAndTypes()
         {"assignments.topic", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"assignments.partition_id", std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt32>())},
         {"assignments.current_offset", std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>())},
-        {"last_exception_time", std::make_shared<DataTypeDateTime>()},
-        {"last_exception", std::make_shared<DataTypeString>()},
+        {"exceptions.time", std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+        {"exceptions.text", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"last_poll_time", std::make_shared<DataTypeDateTime>()},
         {"num_messages_read", std::make_shared<DataTypeUInt64>()},
         {"last_commit_time", std::make_shared<DataTypeDateTime>()},
@@ -66,8 +66,10 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
     auto & assigments_current_offset = assert_cast<ColumnInt64 &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
     auto & assigments_current_offset_offsets = assert_cast<ColumnArray &>(*res_columns[index++]).getOffsets();
 
-    auto & last_exception_time = assert_cast<ColumnDateTime &>(*res_columns[index++]);
-    auto & last_exception = assert_cast<ColumnString &>(*res_columns[index++]);
+    auto & exceptions_time = assert_cast<ColumnDateTime &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
+    auto & exceptions_time_offset = assert_cast<ColumnArray &>(*res_columns[index++]).getOffsets();
+    auto & exceptions_text = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[index]).getData());
+    auto & exceptions_text_offset = assert_cast<ColumnArray &>(*res_columns[index++]).getOffsets();
     auto & last_poll_time = assert_cast<ColumnDateTime &>(*res_columns[index++]);
     auto & num_messages_read = assert_cast<ColumnUInt64 &>(*res_columns[index++]);
     auto & last_commit_time = assert_cast<ColumnDateTime &>(*res_columns[index++]);
@@ -80,6 +82,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 
     const auto access = context->getAccess();
     size_t last_assignment_num = 0;
+    size_t exceptions_num = 0;
 
     auto add_row = [&](const DatabaseTablesIteratorPtr & it, StorageKafka * storage_kafka_ptr)
     {
@@ -121,8 +124,19 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
                 assigments_partition_id_offsets.push_back(last_assignment_num);
                 assigments_current_offset_offsets.push_back(last_assignment_num);
 
-                last_exception.insertData(consumer_stat.last_exception.data(), consumer_stat.last_exception.size());
-                last_exception_time.insert(consumer_stat.last_exception_time);
+                // last_exception.insertData(consumer_stat.last_exception.data(), consumer_stat.last_exception.size());
+                // last_exception_time.insert(consumer_stat.last_exception_time);
+                for (auto excit = consumer_stat.exceptions_buffer.begin();
+                     excit != consumer_stat.exceptions_buffer.end();
+                     ++excit)
+                {
+                    exceptions_text.insertData(excit->text.data(), excit->text.size());
+                    exceptions_time.insert(excit->timestamp_usec);
+                }
+                exceptions_num += consumer_stat.exceptions_buffer.size();
+                exceptions_text_offset.push_back(exceptions_num);
+                exceptions_time_offset.push_back(exceptions_num);
+
 
                 last_poll_time.insert(consumer_stat.last_poll_time);
                 num_messages_read.insert(consumer_stat.num_messages_read);
