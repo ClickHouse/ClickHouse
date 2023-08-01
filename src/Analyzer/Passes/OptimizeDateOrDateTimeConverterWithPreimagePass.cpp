@@ -48,7 +48,7 @@ public:
         return true;
     }
 
-    void visitImpl(QueryTreeNodePtr & node) const
+    void enterImpl(QueryTreeNodePtr & node) const
     {
         const static std::unordered_map<String, String> swap_relations = {
             {"equals", "equals"},
