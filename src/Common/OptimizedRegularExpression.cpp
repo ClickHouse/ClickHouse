@@ -266,7 +266,7 @@ const char * analyzeImpl(
                                 break;
                         }
                     }
-                    /// (?regex) means non-capturing parentheses group
+                    /// (?:regex) means non-capturing parentheses group
                     if (pos + 2 < end && pos[1] == '?' && pos[2] == ':')
                     {
                         pos += 2;
