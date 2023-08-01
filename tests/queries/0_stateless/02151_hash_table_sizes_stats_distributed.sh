@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, distributed, no-tsan
+# Tags: long, distributed, no-tsan, no-debug
 
 # These tests don't use `current_database = currentDatabase()` condition, because database name isn't propagated during remote queries.
 
