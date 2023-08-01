@@ -173,7 +173,7 @@ Block NativeReader::read()
         setVersionToAggregateFunctions(column.type, true, server_revision);
 
         SerializationPtr serialization;
-        if (server_revision >= DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION)
+        if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
             auto info = column.type->createSerializationInfo({});
 
