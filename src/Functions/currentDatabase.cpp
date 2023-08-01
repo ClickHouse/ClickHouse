@@ -54,7 +54,8 @@ public:
 REGISTER_FUNCTION(CurrentDatabase)
 {
     factory.registerFunction<FunctionCurrentDatabase>();
-    factory.registerAlias("DATABASE", "currentDatabase", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("DATABASE", FunctionCurrentDatabase::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("current_database", FunctionCurrentDatabase::name, FunctionFactory::CaseInsensitive);
 }
 
 }

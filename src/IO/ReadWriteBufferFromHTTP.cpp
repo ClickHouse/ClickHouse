@@ -305,12 +305,12 @@ void ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::callWithRedirects(Poco::N
         current_session = session;
 
     call(current_session, response, method_, throw_on_all_errors, for_object_info);
-    Poco::URI prev_uri = uri;
+    saved_uri_redirect = uri;
 
     while (isRedirect(response.getStatus()))
     {
-        Poco::URI uri_redirect = getUriAfterRedirect(prev_uri, response);
-        prev_uri = uri_redirect;
+        Poco::URI uri_redirect = getUriAfterRedirect(*saved_uri_redirect, response);
+        saved_uri_redirect = uri_redirect;
         if (remote_host_filter)
             remote_host_filter->checkURL(uri_redirect);
 
