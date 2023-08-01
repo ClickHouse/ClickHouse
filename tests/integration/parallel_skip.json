@@ -82,5 +82,15 @@
   "test_system_flush_logs/test.py::test_log_buffer_size_rows_flush_threshold",
   "test_system_flush_logs/test.py::test_log_max_size",
   "test_crash_log/test.py::test_pkill_query_log",
-  "test_crash_log/test.py::test_pkill"
+  "test_crash_log/test.py::test_pkill",
+
+  "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_tcp",
+  "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_postgres",
+  "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_mysql",
+  "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_http",
+  "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_http_named_session",
+  "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_grpc",
+  "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_tcp_and_others",
+  "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_tcp",
+  "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_end_session"
 ]
