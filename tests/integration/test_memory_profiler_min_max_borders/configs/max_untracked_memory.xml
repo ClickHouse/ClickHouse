@@ -1,7 +1,7 @@
 <clickhouse>
     <profiles>
         <default>
-            <force_remove_data_recursively_on_drop>1</force_remove_data_recursively_on_drop>
+            <max_untracked_memory>1</max_untracked_memory>
         </default>
     </profiles>
 </clickhouse>
