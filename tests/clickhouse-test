@@ -608,6 +608,9 @@ class SettingsRandomizer:
         "enable_memory_bound_merging_of_aggregation_results": lambda: random.randint(
             0, 1
         ),
+        "min_count_to_compile_expression": lambda: random.choice([0, 3]),
+        "min_count_to_compile_aggregate_expression": lambda: random.choice([0, 3]),
+        "min_count_to_compile_sort_description": lambda: random.choice([0, 3]),
         "session_timezone": lambda: random.choice(
             [
                 # special non-deterministic around 1970 timezone, see [1].

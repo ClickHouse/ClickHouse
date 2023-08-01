@@ -28,7 +28,6 @@ using LogElements = std::vector<ZooKeeperLogElement>;
 struct ZooKeeperResponse : virtual Response
 {
     XID xid = 0;
-    int64_t zxid = 0;
 
     UInt64 response_created_time_ns = 0;
 
