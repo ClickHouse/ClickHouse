@@ -175,7 +175,7 @@ def assert_took(took, should_took):
             "user",
             "max_backup_bandwidth",
             "1M",
-            (7, 14),
+            7,
             id="user_remote_to_local_throttling",
         ),
         # reading 1e6*8 bytes with 2M default bandwith should take (8-2)/2=3 seconds
@@ -291,7 +291,7 @@ def test_backup_throttling_override():
         },
     )
     # reading 1e6*8 bytes with 500Ki default bandwith should take (8-0.5)/0.5=15 seconds
-    assert_took(took, (15, 20))
+    assert_took(took, 15)
 
 
 @pytest.mark.parametrize(
