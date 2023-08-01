@@ -43,6 +43,8 @@ def azure_query(node, query, try_num=10, settings={}):
             retriable_errors = [
                 "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response",
                 "DB::Exception: Azure::Core::Http::TransportException: Connection closed before getting full response or response is less than expected",
+                "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response",
+                "DB::Exception: Azure::Core::Http::TransportException: Error while polling for socket ready read",
             ]
             retry = False
             for error in retriable_errors:
