@@ -17,6 +17,13 @@ NamesAndTypesList StorageSystemMetrics::getNamesAndTypes()
     };
 }
 
+NamesAndAliases StorageSystemMetrics::getNamesAndAliases()
+{
+    return {
+        {"name", std::make_shared<DataTypeString>(), "metric"}
+    };
+}
+
 void StorageSystemMetrics::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
