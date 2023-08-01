@@ -1,6 +1,7 @@
 ---
-toc_priority: 20
-toc_title: New York Taxi Data
+slug: /zh/getting-started/example-datasets/nyc-taxi
+sidebar_position: 20
+sidebar_label: New York Taxi Data
 ---
 
 # 纽约出租车数据 {#niu-yue-shi-chu-zu-che-shu-ju}
@@ -383,5 +384,3 @@ Q4：0.072秒。
 | 1      | 0.490 | 1.224 | 2.104 | 3.593 |
 | 3      | 0.212 | 0.438 | 0.733 | 1.241 |
 | 140    | 0.028 | 0.043 | 0.051 | 0.072 |
-
-[原始文章](https://clickhouse.com/docs/en/getting_started/example_datasets/nyc_taxi/) <!--hide-->

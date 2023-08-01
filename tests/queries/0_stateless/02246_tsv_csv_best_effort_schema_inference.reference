@@ -1,8 +1,8 @@
 TSV
-c1	Nullable(Float64)					
+c1	Nullable(Int64)					
 c2	Nullable(String)					
-c3	Array(Nullable(Float64))					
-c4	Tuple(Nullable(Float64), Nullable(Float64), Nullable(Float64))					
+c3	Array(Nullable(Int64))					
+c4	Tuple(Nullable(Int64), Nullable(Int64), Nullable(Int64))					
 42	Some string	[1,2,3,4]	(1,2,3)
 42	abcd	[]	(4,5,6)
 c1	Nullable(String)					
@@ -70,8 +70,8 @@ c1	Nullable(String)
 CSV
 c1	Nullable(String)					
 c2	Nullable(String)					
-c3	Array(Nullable(Float64))					
-c4	Array(Tuple(Nullable(Float64), Nullable(Float64), Nullable(Float64)))					
+c3	Array(Nullable(Int64))					
+c4	Array(Tuple(Nullable(Int64), Nullable(Int64), Nullable(Int64)))					
 42	Some string	[1,2,3,4]	[(1,2,3)]
 42\\	abcd	[]	[(4,5,6)]
 c1	Nullable(String)					
@@ -101,7 +101,7 @@ c1	Nullable(String)
 (1, 2, 3)
 c1	Nullable(String)					
 123.123
-c1	Array(Tuple(Nullable(Float64), Nullable(Float64), Nullable(Float64)))					
+c1	Array(Tuple(Nullable(Int64), Nullable(Int64), Nullable(Int64)))					
 [(1,2,3)]
-c1	Array(Tuple(Nullable(Float64), Nullable(Float64), Nullable(Float64)))					
+c1	Array(Tuple(Nullable(Int64), Nullable(Int64), Nullable(Int64)))					
 [(1,2,3)]

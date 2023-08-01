@@ -1,6 +1,7 @@
 ---
-toc_priority: 64
-toc_title: "Функции машинного обучения"
+slug: /ru/sql-reference/functions/machine-learning-functions
+sidebar_position: 64
+sidebar_label: "Функции машинного обучения"
 ---
 
 # Функции машинного обучения {#funktsii-mashinnogo-obucheniia}

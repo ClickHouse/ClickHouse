@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-backward-compatibility-check
+# Tags: no-upgrade-check
 
 set -eu
 
@@ -20,23 +20,25 @@ done
 ${CLICKHOUSE_CLIENT} --query "drop table if exists file_log;"
 ${CLICKHOUSE_CLIENT} --query "create table file_log(k UInt8, v UInt8) engine=FileLog('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}.txt', 'CSV');"
 
-${CLICKHOUSE_CLIENT} --query "select * from file_log order by k;"
+${CLICKHOUSE_CLIENT} --query "select * from file_log order by k settings stream_like_engine_allow_direct_select=1;"
 
 for i in {100..120}
 do
 	echo $i, $i >> ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}.txt
 done
 
-${CLICKHOUSE_CLIENT} --query "select * from file_log order by k;"
+${CLICKHOUSE_CLIENT} --query "select * from file_log order by k settings stream_like_engine_allow_direct_select=1;"
 
 # touch does not change file content, no event
 touch ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}.txt
-${CLICKHOUSE_CLIENT} --query "select * from file_log order by k;"
+${CLICKHOUSE_CLIENT} --query "select * from file_log order by k settings stream_like_engine_allow_direct_select=1;"
 
 ${CLICKHOUSE_CLIENT} --query "detach table file_log;"
 ${CLICKHOUSE_CLIENT} --query "attach table file_log;"
 
 # should no records return
-${CLICKHOUSE_CLIENT} --query "select * from file_log order by k;"
+${CLICKHOUSE_CLIENT} --query "select * from file_log order by k settings stream_like_engine_allow_direct_select=1;"
+
+${CLICKHOUSE_CLIENT} --query "drop table file_log;"
 
 rm -rf ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}.txt

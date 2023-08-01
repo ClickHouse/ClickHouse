@@ -92,27 +92,25 @@ public:
         const auto needle = typeid_cast<const ColumnConst &>(*column_needle).getValue<String>();
 
         if (needle.empty())
-            throw Exception("Length of 'needle' argument must be greater than 0.", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Length of 'needle' argument must be greater than 0.");
 
-        using StringPiece = typename Regexps::Regexp::StringPieceType;
-        auto holder = Regexps::get<false, false>(needle);
-        const auto & regexp = holder->getRE2();
+        const Regexps::Regexp holder = Regexps::createRegexp<false, false, false>(needle);
+        const auto & regexp = holder.getRE2();
 
         if (!regexp)
-            throw Exception("There are no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", needle);
 
         const size_t groups_count = regexp->NumberOfCapturingGroups();
 
         if (!groups_count)
-            throw Exception("There are no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", needle);
 
         if (groups_count > MAX_GROUPS_COUNT - 1)
-            throw Exception("Too many groups in regexp: " + std::to_string(groups_count)
-                            + ", max: " + std::to_string(MAX_GROUPS_COUNT - 1),
-                            ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too many groups in regexp: {}, max: {}",
+                            groups_count, std::to_string(MAX_GROUPS_COUNT - 1));
 
         // Including 0-group, which is the whole regexp.
-        PODArrayWithStackMemory<StringPiece, MAX_GROUPS_COUNT> matched_groups(groups_count + 1);
+        PODArrayWithStackMemory<std::string_view, MAX_GROUPS_COUNT> matched_groups(groups_count + 1);
 
         ColumnArray::ColumnOffsets::MutablePtr root_offsets_col = ColumnArray::ColumnOffsets::create();
         ColumnArray::ColumnOffsets::MutablePtr nested_offsets_col = ColumnArray::ColumnOffsets::create();
@@ -129,14 +127,15 @@ public:
             root_offsets_data.resize(input_rows_count);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                StringRef current_row = column_haystack->getDataAt(i);
+                std::string_view current_row = column_haystack->getDataAt(i).toView();
 
                 // Extract all non-intersecting matches from haystack except group #0.
-                const auto * pos = current_row.data;
-                const auto * end = pos + current_row.size;
+                const auto * pos = current_row.data();
+                const auto * end = pos + current_row.size();
                 while (pos < end
                     && regexp->Match({pos, static_cast<size_t>(end - pos)},
-                        0, end - pos, regexp->UNANCHORED, matched_groups.data(), matched_groups.size()))
+                        0, end - pos, regexp->UNANCHORED,
+                        matched_groups.data(), static_cast<int>(matched_groups.size())))
                 {
                     // 1 is to exclude group #0 which is whole re match.
                     for (size_t group = 1; group <= groups_count; ++group)
@@ -160,7 +159,7 @@ public:
             /// Additional limit to fail fast on supposedly incorrect usage.
             const auto max_matches_per_row = context->getSettingsRef().regexp_max_matches_per_row;
 
-            PODArray<StringPiece, 0> all_matches;
+            PODArray<std::string_view, 0> all_matches;
             /// Number of times RE matched on each row of haystack column.
             PODArray<size_t, 0> number_of_matches_per_row;
 
@@ -179,7 +178,8 @@ public:
                 const auto * end = pos + current_row.size;
                 while (pos < end
                     && regexp->Match({pos, static_cast<size_t>(end - pos)},
-                        0, end - pos, regexp->UNANCHORED, matched_groups.data(), matched_groups.size()))
+                        0, end - pos, regexp->UNANCHORED, matched_groups.data(),
+                        static_cast<int>(matched_groups.size())))
                 {
                     // 1 is to exclude group #0 which is whole re match.
                     for (size_t group = 1; group <= groups_count; ++group)

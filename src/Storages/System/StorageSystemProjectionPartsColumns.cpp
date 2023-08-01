@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
@@ -66,7 +67,8 @@ StorageSystemProjectionPartsColumns::StorageSystemProjectionPartsColumns(const S
         {"column_bytes_on_disk",                       std::make_shared<DataTypeUInt64>()},
         {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>()},
         {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>()},
-        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>()}
+        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>()},
+        {"column_modification_time",                   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
     }
     )
 {
@@ -100,14 +102,15 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
         }
     }
 
-    /// Go through the list of parts.
+    /// Go through the list of projection parts.
     MergeTreeData::DataPartStateVector all_parts_state;
-    MergeTreeData::DataPartsVector all_parts;
-    all_parts = info.getParts(all_parts_state, has_state_column, true /* require_projection_parts */);
-    for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
+    MergeTreeData::ProjectionPartsVector all_parts = info.getProjectionParts(all_parts_state, has_state_column);
+    for (size_t part_number = 0; part_number < all_parts.projection_parts.size(); ++part_number)
     {
-        const auto & part = all_parts[part_number];
+        const auto & part = all_parts.projection_parts[part_number];
         const auto * parent_part = part->getParentPart();
+        chassert(parent_part);
+
         auto part_state = all_parts_state[part_number];
         auto columns_size = part->getTotalColumnsSize();
         auto parent_columns_size = parent_part->getTotalColumnsSize();
@@ -121,7 +124,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
         auto index_size_in_bytes = part->getIndexSizeInBytes();
         auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
 
-        using State = IMergeTreeDataPart::State;
+        using State = MergeTreeDataPartState;
 
         size_t column_position = 0;
         auto & columns_info = projection_columns_info[part->name];
@@ -210,9 +213,9 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(info.engine);
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->volume->getDisk()->getName());
+                columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getFullPath());
+                columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column.name);
@@ -246,6 +249,13 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
                 columns[res_index++]->insert(column_size.data_uncompressed);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column_size.marks);
+            if (columns_mask[src_index++])
+            {
+                if (auto column_modification_time = part->getColumnModificationTime(column.name))
+                    columns[res_index++]->insert(UInt64(column_modification_time.value()));
+                else
+                    columns[res_index++]->insertDefault();
+            }
 
             if (has_state_column)
                 columns[res_index++]->insert(part->stateString());

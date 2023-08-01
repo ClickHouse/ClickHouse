@@ -9,7 +9,8 @@
 #include <Common/assert_cast.h>
 #include <base/sleep.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
+
 
 namespace ProfileEvents
 {
@@ -40,11 +41,17 @@ enum class FunctionSleepVariant
 template <FunctionSleepVariant variant>
 class FunctionSleep : public IFunction
 {
+private:
+    UInt64 max_microseconds;
 public:
     static constexpr auto name = variant == FunctionSleepVariant::PerBlock ? "sleep" : "sleepEachRow";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionSleep<variant>>();
+        return std::make_shared<FunctionSleep<variant>>(context->getSettingsRef().function_sleep_max_microseconds_per_block);
+    }
+
+    FunctionSleep(UInt64 max_microseconds_) : max_microseconds(max_microseconds_)
+    {
     }
 
     /// Get the name of the function.
@@ -72,23 +79,32 @@ public:
 
         if (!which.isFloat()
             && !which.isNativeUInt())
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected Float64",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, expected Float64",
+                arguments[0]->getName(), getName());
 
         return std::make_shared<DataTypeUInt8>();
+    }
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    {
+        return execute(arguments, result_type, true);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
+        return execute(arguments, result_type, false);
+    }
+
+    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, bool dry_run) const
+    {
         const IColumn * col = arguments[0].column.get();
 
         if (!isColumnConst(*col))
-            throw Exception("The argument of function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be constant.", getName());
 
         Float64 seconds = applyVisitor(FieldVisitorConvertToNumber<Float64>(), assert_cast<const ColumnConst &>(*col).getField());
 
         if (seconds < 0 || !std::isfinite(seconds))
-            throw Exception("Cannot sleep infinite or negative amount of time (not implemented)", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot sleep infinite or negative amount of time (not implemented)");
 
         size_t size = col->size();
 
@@ -96,14 +112,23 @@ public:
         if (size > 0)
         {
             /// When sleeping, the query cannot be cancelled. For ability to cancel query, we limit sleep time.
-            if (seconds > 3.0)   /// The choice is arbitrary
-                throw Exception("The maximum sleep time is 3 seconds. Requested: " + toString(seconds), ErrorCodes::TOO_SLOW);
+            if (max_microseconds && seconds * 1e6 > max_microseconds)
+                throw Exception(ErrorCodes::TOO_SLOW, "The maximum sleep time is {} microseconds. Requested: {}", max_microseconds, seconds);
 
-            UInt64 count = (variant == FunctionSleepVariant::PerBlock ? 1 : size);
-            UInt64 microseconds = seconds * count * 1e6;
-            sleepForMicroseconds(microseconds);
-            ProfileEvents::increment(ProfileEvents::SleepFunctionCalls, count);
-            ProfileEvents::increment(ProfileEvents::SleepFunctionMicroseconds, microseconds);
+            if (!dry_run)
+            {
+                UInt64 count = (variant == FunctionSleepVariant::PerBlock ? 1 : size);
+                UInt64 microseconds = static_cast<UInt64>(seconds * count * 1e6);
+
+                if (max_microseconds && microseconds > max_microseconds)
+                    throw Exception(ErrorCodes::TOO_SLOW,
+                        "The maximum sleep time is {} microseconds. Requested: {} microseconds per block (of size {})",
+                        max_microseconds, microseconds, size);
+
+                sleepForMicroseconds(microseconds);
+                ProfileEvents::increment(ProfileEvents::SleepFunctionCalls, count);
+                ProfileEvents::increment(ProfileEvents::SleepFunctionMicroseconds, microseconds);
+            }
         }
 
         /// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each columns.

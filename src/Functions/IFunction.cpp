@@ -2,13 +2,14 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/LRUCache.h>
 #include <Common/SipHash.h>
+#include <Core/Block.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnNothing.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Native.h>
@@ -17,14 +18,12 @@
 #include <cstdlib>
 #include <memory>
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
-#    pragma GCC diagnostic push
-#    pragma GCC diagnostic ignored "-Wunused-parameter"
 #    include <llvm/IR/IRBuilder.h>
-#    pragma GCC diagnostic pop
 #endif
+
 
 namespace DB
 {
@@ -66,12 +65,12 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
 
             if (!low_cardinality_type)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Incompatible type for low cardinality column: {}",
+                    "Incompatible type for LowCardinality column: {}",
                     column.type->getName());
 
             if (can_be_executed_on_default_arguments)
             {
-                /// Normal case, when function can be executed on values's default.
+                /// Normal case, when function can be executed on values' default.
                 column.column = low_cardinality_column->getDictionary().getNestedColumn();
                 indexes = low_cardinality_column->getIndexesPtr();
             }
@@ -123,7 +122,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
         if (arg_num < args.size() && !isColumnConst(*args[arg_num].column))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Argument at index {} for function {} must be constant",
-                toString(arg_num),
+                arg_num,
                 getName());
 
     if (args.empty() || !useDefaultImplementationForConstants() || !allArgumentsAreConstants(args))
@@ -203,9 +202,38 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
     return nullptr;
 }
 
+ColumnPtr IExecutableFunction::defaultImplementationForNothing(
+    const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
+{
+    if (!useDefaultImplementationForNothing())
+        return nullptr;
+
+    bool is_nothing_type_presented = false;
+    for (const auto & arg : args)
+        is_nothing_type_presented |= isNothing(arg.type);
+
+    if (!is_nothing_type_presented)
+        return nullptr;
+
+    if (!isNothing(result_type))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Function {} with argument with type Nothing and default implementation for Nothing "
+            "is expected to return result with type Nothing, got {}",
+            getName(),
+            result_type->getName());
+
+    if (input_rows_count > 0)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot create non-empty column with type Nothing");
+    return ColumnNothing::create(0);
+}
+
 ColumnPtr IExecutableFunction::executeWithoutLowCardinalityColumns(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
+    if (auto res = defaultImplementationForNothing(args, result_type, input_rows_count))
+        return res;
+
     if (auto res = defaultImplementationForConstantArguments(args, result_type, input_rows_count, dry_run))
         return res;
 
@@ -250,16 +278,23 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithType
                                         : columns_without_low_cardinality.front().column->size();
 
             auto res = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, dictionary_type, new_input_rows_count, dry_run);
-            auto keys = res->convertToFullColumnIfConst();
+            bool res_is_constant = isColumnConst(*res);
+
+            auto keys = res_is_constant
+                ? res->cloneResized(1)->convertToFullColumnIfConst()
+                : res;
 
             auto res_mut_dictionary = DataTypeLowCardinality::createColumnUnique(*res_low_cardinality_type->getDictionaryType());
             ColumnPtr res_indexes = res_mut_dictionary->uniqueInsertRangeFrom(*keys, 0, keys->size());
             ColumnUniquePtr res_dictionary = std::move(res_mut_dictionary);
 
-            if (indexes)
+            if (indexes && !res_is_constant)
                 result = ColumnLowCardinality::create(res_dictionary, res_indexes->index(*indexes, 0));
             else
                 result = ColumnLowCardinality::create(res_dictionary, res_indexes);
+
+            if (res_is_constant)
+                result = ColumnConst::create(std::move(result), input_rows_count);
         }
         else
         {
@@ -286,7 +321,7 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
             const auto * column_sparse = checkAndGetColumn<ColumnSparse>(arguments[i].column.get());
             /// In rare case, when sparse column doesn't have default values,
             /// it's more convenient to convert it to full before execution of function.
-            if (column_sparse && column_sparse->getNumberOfDefaults())
+            if (column_sparse && column_sparse->getNumberOfDefaultRows())
             {
                 sparse_column_position = i;
                 ++num_sparse_columns;
@@ -324,7 +359,9 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
                 return res->cloneResized(input_rows_count);
 
             /// If default of sparse column is changed after execution of function, convert to full column.
-            if (!result_type->supportsSparseSerialization() || !res->isDefaultAt(0))
+            /// If there are any default in non-zero position after execution of function, convert to full column.
+            /// Currently there is no easy way to rebuild sparse column with new offsets.
+            if (!result_type->canBeInsideSparseColumns() || !res->isDefaultAt(0) || res->getNumberOfDefaultRows() != 1)
             {
                 const auto & offsets_data = assert_cast<const ColumnVector<UInt64> &>(*sparse_offsets).getData();
                 return res->createWithOffsets(offsets_data, (*res)[0], input_rows_count, /*shift=*/ 1);
@@ -351,8 +388,8 @@ void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_argument
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Number of arguments for function {} doesn't match: passed {}, should be {}",
             getName(),
-            toString(number_of_arguments),
-            toString(expected_number_of_arguments));
+            number_of_arguments,
+            expected_number_of_arguments);
 }
 
 DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndName & arguments) const
@@ -414,6 +451,15 @@ DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const 
 {
     checkNumberOfArguments(arguments.size());
 
+    if (!arguments.empty() && useDefaultImplementationForNothing())
+    {
+        for (const auto & arg : arguments)
+        {
+            if (isNothing(arg.type))
+                return std::make_shared<DataTypeNothing>();
+        }
+    }
+
     if (!arguments.empty() && useDefaultImplementationForNulls())
     {
         NullPresence null_presence = getNullPresense(arguments);
@@ -438,59 +484,74 @@ DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const 
 
 static std::optional<DataTypes> removeNullables(const DataTypes & types)
 {
+    bool has_nullable = false;
     for (const auto & type : types)
     {
         if (!typeid_cast<const DataTypeNullable *>(type.get()))
             continue;
+
+        has_nullable = true;
+        break;
+    }
+
+    if (has_nullable)
+    {
         DataTypes filtered;
+        filtered.reserve(types.size());
+
         for (const auto & sub_type : types)
             filtered.emplace_back(removeNullable(sub_type));
+
         return filtered;
     }
+
     return {};
 }
 
-bool IFunction::isCompilable(const DataTypes & arguments) const
+bool IFunction::isCompilable(const DataTypes & arguments, const DataTypePtr & result_type) const
 {
-
     if (useDefaultImplementationForNulls())
-        if (auto denulled = removeNullables(arguments))
-            return isCompilableImpl(*denulled);
-    return isCompilableImpl(arguments);
+        if (auto denulled_arguments = removeNullables(arguments))
+            return isCompilableImpl(*denulled_arguments, result_type);
+
+    return isCompilableImpl(arguments, result_type);
 }
 
-llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes & arguments, Values values) const
+llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const
 {
-    auto denulled_arguments = removeNullables(arguments);
-    if (useDefaultImplementationForNulls() && denulled_arguments)
+    DataTypes arguments_types;
+    arguments_types.reserve(arguments.size());
+
+    for (const auto & argument : arguments)
+        arguments_types.push_back(argument.type);
+
+    auto denulled_arguments_types = removeNullables(arguments_types);
+    if (useDefaultImplementationForNulls() && denulled_arguments_types)
     {
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        std::vector<llvm::Value*> unwrapped_values;
-        std::vector<llvm::Value*> is_null_values;
+        ValuesWithType unwrapped_arguments;
+        unwrapped_arguments.reserve(arguments.size());
 
-        unwrapped_values.reserve(arguments.size());
-        is_null_values.reserve(arguments.size());
+        std::vector<llvm::Value*> is_null_values;
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            auto * value = values[i];
+            const auto & argument = arguments[i];
+            llvm::Value * unwrapped_value = argument.value;
 
-            WhichDataType data_type(arguments[i]);
-            if (data_type.isNullable())
+            if (argument.type->isNullable())
             {
-                unwrapped_values.emplace_back(b.CreateExtractValue(value, {0}));
-                is_null_values.emplace_back(b.CreateExtractValue(value, {1}));
+                unwrapped_value = b.CreateExtractValue(argument.value, {0});
+                is_null_values.emplace_back(b.CreateExtractValue(argument.value, {1}));
             }
-            else
-            {
-                unwrapped_values.emplace_back(value);
-            }
+
+            unwrapped_arguments.emplace_back(unwrapped_value, (*denulled_arguments_types)[i]);
         }
 
-        auto * result = compileImpl(builder, *denulled_arguments, unwrapped_values);
+        auto * result = compileImpl(builder, unwrapped_arguments, removeNullable(result_type));
 
-        auto * nullable_structure_type = toNativeType(b, makeNullable(getReturnTypeImpl(*denulled_arguments)));
+        auto * nullable_structure_type = toNativeType(b, makeNullable(getReturnTypeImpl(*denulled_arguments_types)));
         auto * nullable_structure_value = llvm::Constant::getNullValue(nullable_structure_type);
 
         auto * nullable_structure_with_result_value = b.CreateInsertValue(nullable_structure_value, result, {0});
@@ -502,7 +563,7 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes 
         return b.CreateInsertValue(nullable_structure_with_result_value, nullable_structure_result_null, {1});
     }
 
-    return compileImpl(builder, arguments, std::move(values));
+    return compileImpl(builder, arguments, result_type);
 }
 
 #endif

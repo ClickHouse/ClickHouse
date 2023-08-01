@@ -10,22 +10,34 @@
 namespace DB
 {
 
-ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_, const FormatSchemaInfo & schema_info_, bool with_length_delimiter_)
+ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_,
+    const FormatSchemaInfo & schema_info_, bool with_length_delimiter_, bool flatten_google_wrappers_)
     : IRowInputFormat(header_, in_, params_)
-    , reader(std::make_unique<ProtobufReader>(in_))
-    , serializer(ProtobufSerializer::create(
-          header_.getNames(),
-          header_.getDataTypes(),
-          missing_column_indices,
-          *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_, ProtobufSchemas::WithEnvelope::No),
-          with_length_delimiter_,
-          /* with_envelope = */ false,
-         *reader))
+    , message_descriptor(ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_, ProtobufSchemas::WithEnvelope::No))
+    , with_length_delimiter(with_length_delimiter_)
+    , flatten_google_wrappers(flatten_google_wrappers_)
 {
+}
+
+void ProtobufRowInputFormat::createReaderAndSerializer()
+{
+    reader = std::make_unique<ProtobufReader>(*in);
+    serializer = ProtobufSerializer::create(
+        getPort().getHeader().getNames(),
+        getPort().getHeader().getDataTypes(),
+        missing_column_indices,
+        *message_descriptor,
+        with_length_delimiter,
+        /* with_envelope = */ false,
+        flatten_google_wrappers,
+        *reader);
 }
 
 bool ProtobufRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)
 {
+    if (!reader)
+        createReaderAndSerializer();
+
     if (reader->eof())
         return false;
 
@@ -42,6 +54,13 @@ bool ProtobufRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
     return true;
 }
 
+void ProtobufRowInputFormat::setReadBuffer(ReadBuffer & in_)
+{
+    if (reader)
+        reader->setReadBuffer(in_);
+    IRowInputFormat::setReadBuffer(in_);
+}
+
 bool ProtobufRowInputFormat::allowSyncAfterError() const
 {
     return true;
@@ -50,6 +69,13 @@ bool ProtobufRowInputFormat::allowSyncAfterError() const
 void ProtobufRowInputFormat::syncAfterError()
 {
     reader->endMessage(true);
+}
+
+void ProtobufRowInputFormat::resetParser()
+{
+    IRowInputFormat::resetParser();
+    serializer.reset();
+    reader.reset();
 }
 
 void registerInputFormatProtobuf(FormatFactory & factory)
@@ -64,8 +90,10 @@ void registerInputFormatProtobuf(FormatFactory & factory)
         {
             return std::make_shared<ProtobufRowInputFormat>(buf, sample, std::move(params),
                 FormatSchemaInfo(settings, "Protobuf", true),
-                with_length_delimiter);
+                with_length_delimiter,
+                settings.protobuf.input_flatten_google_wrappers);
         });
+        factory.markFormatSupportsSubsetOfColumns(with_length_delimiter ? "Protobuf" : "ProtobufSingle");
     }
 }
 
@@ -74,15 +102,15 @@ ProtobufSchemaReader::ProtobufSchemaReader(const FormatSettings & format_setting
           format_settings.schema.format_schema,
           "Protobuf",
           true,
-          format_settings.schema.is_server,
-          format_settings.schema.format_schema_path)
+          format_settings.schema.is_server, format_settings.schema.format_schema_path)
+    , skip_unsupported_fields(format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference)
 {
 }
 
 NamesAndTypesList ProtobufSchemaReader::readSchema()
 {
     const auto * message_descriptor = ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info, ProtobufSchemas::WithEnvelope::No);
-    return protobufSchemaToCHSchema(message_descriptor);
+    return protobufSchemaToCHSchema(message_descriptor, skip_unsupported_fields);
 }
 
 void registerProtobufSchemaReader(FormatFactory & factory)
@@ -97,6 +125,17 @@ void registerProtobufSchemaReader(FormatFactory & factory)
     {
         return std::make_shared<ProtobufSchemaReader>(settings);
     });
+
+    for (const auto & name : {"Protobuf", "ProtobufSingle"})
+        factory.registerAdditionalInfoForSchemaCacheGetter(
+            name,
+            [](const FormatSettings & settings)
+            {
+                return fmt::format(
+                    "format_schema={}, skip_fields_with_unsupported_types_in_schema_inference={}",
+                    settings.schema.format_schema,
+                    settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference);
+            });
 }
 
 }

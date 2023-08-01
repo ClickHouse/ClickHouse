@@ -1,16 +1,26 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 import time
 import socket
 import struct
 
 from kazoo.client import KazooClient
+from kazoo.exceptions import NoNodeError
 
 # from kazoo.protocol.serialization import Connect, read_buffer, write_buffer
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
-    "node1", main_configs=["configs/keeper_config.xml"], stay_alive=True
+    "node1", main_configs=["configs/keeper_config1.xml"], stay_alive=True
+)
+
+node2 = cluster.add_instance(
+    "node2", main_configs=["configs/keeper_config2.xml"], stay_alive=True
+)
+
+node3 = cluster.add_instance(
+    "node3", main_configs=["configs/keeper_config3.xml"], stay_alive=True
 )
 
 bool_struct = struct.Struct("B")
@@ -44,25 +54,8 @@ def destroy_zk_client(zk):
         pass
 
 
-def wait_node(node):
-    for _ in range(100):
-        zk = None
-        try:
-            zk = get_fake_zk(node.name, timeout=30.0)
-            print("node", node.name, "ready")
-            break
-        except Exception as ex:
-            time.sleep(0.2)
-            print("Waiting until", node.name, "will be ready, exception", ex)
-        finally:
-            destroy_zk_client(zk)
-    else:
-        raise Exception("Can't wait node", node.name, "to become ready")
-
-
 def wait_nodes():
-    for n in [node1]:
-        wait_node(n)
+    keeper_utils.wait_nodes(cluster, [node1, node2, node3])
 
 
 def get_fake_zk(nodename, timeout=30.0):
@@ -165,3 +158,45 @@ def test_session_timeout(started_cluster):
 
     negotiated_timeout, _ = handshake(node1.name, session_timeout=20000, session_id=0)
     assert negotiated_timeout == 10000
+
+
+def test_session_close_shutdown(started_cluster):
+    wait_nodes()
+
+    node1_zk = None
+    node2_zk = None
+    for i in range(20):
+        node1_zk = get_fake_zk(node1.name)
+        node2_zk = get_fake_zk(node2.name)
+
+        eph_node = "/test_node"
+        node2_zk.create(eph_node, ephemeral=True)
+        node1_zk.sync(eph_node)
+
+        node1_zk.exists(eph_node) != None
+
+        # restart while session is active so it's closed during shutdown
+        node2.restart_clickhouse()
+
+        if node1_zk.exists(eph_node) == None:
+            break
+
+        assert node2.contains_in_log(
+            "Sessions cannot be closed during shutdown because there is no active leader"
+        )
+
+        try:
+            node1_zk.delete(eph_node)
+        except NoNodeError:
+            pass
+
+        assert node1_zk.exists(eph_node) == None
+
+        destroy_zk_client(node1_zk)
+        node1_zk = None
+        destroy_zk_client(node2_zk)
+        node2_zk = None
+
+        time.sleep(1)
+    else:
+        assert False, "Session wasn't properly cleaned up on shutdown"

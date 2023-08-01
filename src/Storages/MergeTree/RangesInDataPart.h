@@ -1,42 +1,77 @@
 #pragma once
 
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <vector>
+
+#include <IO/WriteBuffer.h>
+#include <IO/ReadBuffer.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include "Storages/MergeTree/AlterConversions.h"
+#include "Storages/MergeTree/MergeTreePartInfo.h"
 
 
 namespace DB
 {
 
+class IMergeTreeDataPart;
+using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
+
+/// The only purpose of this struct is that serialize and deserialize methods
+/// they look natural here because we can fully serialize and then deserialize original DataPart class.
+struct RangesInDataPartDescription
+{
+    MergeTreePartInfo info;
+    MarkRanges ranges;
+
+    void serialize(WriteBuffer & out) const;
+    String describe() const;
+    void deserialize(ReadBuffer & in);
+};
+
+struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescription>
+{
+    using std::deque<RangesInDataPartDescription>::deque;
+
+    void serialize(WriteBuffer & out) const;
+    String describe() const;
+    void deserialize(ReadBuffer & in);
+
+    void merge(RangesInDataPartsDescription & other);
+};
 
 struct RangesInDataPart
 {
-    MergeTreeData::DataPartPtr data_part;
+    DataPartPtr data_part;
+    AlterConversionsPtr alter_conversions;
     size_t part_index_in_query;
     MarkRanges ranges;
 
     RangesInDataPart() = default;
 
-    RangesInDataPart(const MergeTreeData::DataPartPtr & data_part_, const size_t part_index_in_query_,
-                     const MarkRanges & ranges_ = MarkRanges{})
-        : data_part{data_part_}, part_index_in_query{part_index_in_query_}, ranges{ranges_}
-    {
-    }
+    RangesInDataPart(
+        const DataPartPtr & data_part_,
+        const AlterConversionsPtr & alter_conversions_,
+        const size_t part_index_in_query_,
+        const MarkRanges & ranges_ = MarkRanges{})
+        : data_part{data_part_}
+        , alter_conversions{alter_conversions_}
+        , part_index_in_query{part_index_in_query_}
+        , ranges{ranges_}
+    {}
 
-    size_t getMarksCount() const
-    {
-        size_t total = 0;
-        for (const auto & range : ranges)
-            total += range.end - range.begin;
+    RangesInDataPartDescription getDescription() const;
 
-        return total;
-    }
-
-    size_t getRowsCount() const
-    {
-        return data_part->index_granularity.getRowsCountInRanges(ranges);
-    }
+    size_t getMarksCount() const;
+    size_t getRowsCount() const;
 };
 
-using RangesInDataParts = std::vector<RangesInDataPart>;
+struct RangesInDataParts: public std::vector<RangesInDataPart>
+{
+    using std::vector<RangesInDataPart>::vector;
+
+    RangesInDataPartsDescription getDescriptions() const;
+
+    size_t getMarksCountAllParts() const;
+    size_t getRowsCountAllParts() const;
+};
 
 }

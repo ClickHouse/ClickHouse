@@ -1,7 +1,8 @@
 #pragma once
 
+#include <absl/container/inlined_vector.h>
+#include <algorithm>
 #include <memory>
-#include <vector>
 
 #include <Core/Defines.h>
 #include <Parsers/IAST_fwd.h>
@@ -24,8 +25,8 @@ namespace ErrorCodes
   */
 struct Expected
 {
+    absl::InlinedVector<const char *, 7> variants;
     const char * max_parsed_pos = nullptr;
-    std::vector<const char *> variants;
 
     /// 'description' should be statically allocated string.
     ALWAYS_INLINE void add(const char * current_pos, const char * description)
@@ -38,7 +39,7 @@ struct Expected
             return;
         }
 
-        if ((current_pos == max_parsed_pos) && (find(variants.begin(), variants.end(), description) == variants.end()))
+        if ((current_pos == max_parsed_pos) && (std::find(variants.begin(), variants.end(), description) == variants.end()))
             variants.push_back(description);
     }
 
@@ -64,19 +65,20 @@ public:
         {
         }
 
+        Pos(TokenIterator token_iterator_, uint32_t max_depth_) : TokenIterator(token_iterator_), max_depth(max_depth_) { }
+
         ALWAYS_INLINE void increaseDepth()
         {
             ++depth;
             if (unlikely(max_depth > 0 && depth > max_depth))
-                throw Exception(
-                    "Maximum parse depth (" + std::to_string(max_depth) + ") exceeded. Consider rising max_parser_depth parameter.",
-                    ErrorCodes::TOO_DEEP_RECURSION);
+                throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Maximum parse depth ({}) exceeded. "
+                    "Consider rising max_parser_depth parameter.", max_depth);
         }
 
         ALWAYS_INLINE void decreaseDepth()
         {
             if (unlikely(depth == 0))
-                throw Exception("Logical error in parser: incorrect calculation of parse depth", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in parser: incorrect calculation of parse depth");
             --depth;
         }
     };
@@ -94,13 +96,13 @@ public:
       */
     virtual bool parse(Pos & pos, ASTPtr & node, Expected & expected) = 0;
 
-    bool ignore(Pos & pos, Expected & expected)  // -V1071
+    bool ignore(Pos & pos, Expected & expected)
     {
         ASTPtr ignore_node;
         return parse(pos, ignore_node, expected);
     }
 
-    bool ignore(Pos & pos)  // -V1071
+    bool ignore(Pos & pos)
     {
         Expected expected;
         return ignore(pos, expected);

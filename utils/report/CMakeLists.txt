@@ -1,1 +1,1 @@
-install (PROGRAMS clickhouse-report DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+install (PROGRAMS "${CMAKE_CURRENT_LIST_DIR}/clickhouse-report" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)

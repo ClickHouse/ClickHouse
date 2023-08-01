@@ -1,5 +1,6 @@
 ---
-toc_title: HAVING
+slug: /zh/sql-reference/statements/select/having
+sidebar_label: HAVING
 ---
 
 # HAVING 子句 {#having-clause}

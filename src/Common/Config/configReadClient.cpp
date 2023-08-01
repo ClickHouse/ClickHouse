@@ -4,6 +4,7 @@
 #include "ConfigProcessor.h"
 #include <filesystem>
 #include <iostream>
+#include <base/types.h>
 
 namespace fs = std::filesystem;
 
@@ -14,7 +15,7 @@ bool safeFsExists(const String & path)
 {
     std::error_code ec;
     return fs::exists(path, ec);
-};
+}
 
 bool configReadClient(Poco::Util::LayeredConfiguration & config, const std::string & home_path)
 {

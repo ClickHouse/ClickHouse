@@ -2,6 +2,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include "Core/ProtocolDefines.h"
 
 namespace DB
 {
@@ -10,6 +11,7 @@ namespace ErrorCodes
 {
     extern const int BAD_DATA_PART_NAME;
     extern const int INVALID_PARTITION_VALUE;
+    extern const int UNKNOWN_FORMAT_VERSION;
 }
 
 
@@ -18,7 +20,7 @@ MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & part_name, Merg
     if (auto part_opt = tryParsePartName(part_name, format_version))
         return *part_opt;
     else
-        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {}", part_name);
+        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {} for format version: {}", part_name, format_version);
 }
 
 void MergeTreePartInfo::validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version)
@@ -143,10 +145,10 @@ void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & part_name, D
         || !checkChar('_', in)
         || !tryReadIntText(max_yyyymmdd, in))
     {
-        throw Exception("Unexpected part name: " + part_name, ErrorCodes::BAD_DATA_PART_NAME);
+        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {}", part_name);
     }
 
-    const auto & date_lut = DateLUT::instance();
+    const auto & date_lut = DateLUT::serverTimezoneInstance();
 
     min_date = date_lut.YYYYMMDDToDayNum(min_yyyymmdd);
     max_date = date_lut.YYYYMMDDToDayNum(max_yyyymmdd);
@@ -155,7 +157,7 @@ void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & part_name, D
     auto max_month = date_lut.toNumYYYYMM(max_date);
 
     if (min_month != max_month)
-        throw Exception("Part name " + part_name + " contains different months", ErrorCodes::BAD_DATA_PART_NAME);
+        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Part name {} contains different months", part_name);
 }
 
 
@@ -167,7 +169,25 @@ bool MergeTreePartInfo::contains(const String & outer_part_name, const String & 
 }
 
 
-String MergeTreePartInfo::getPartName() const
+String MergeTreePartInfo::getPartNameAndCheckFormat(MergeTreeDataFormatVersion format_version) const
+{
+    if (format_version == MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+        return getPartNameV1();
+
+    /// We cannot just call getPartNameV0 because it requires extra arguments, but at least we can warn about it.
+    chassert(false);  /// Catch it in CI. Feel free to remove this line.
+    throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Trying to get part name in new format for old format version. "
+                    "Either some new feature is incompatible with deprecated *MergeTree definition syntax or it's a bug.");
+}
+
+
+String MergeTreePartInfo::getPartNameForLogs() const
+{
+    /// We don't care about format version here
+    return getPartNameV1();
+}
+
+String MergeTreePartInfo::getPartNameV1() const
 {
     WriteBufferFromOwnString wb;
 
@@ -199,7 +219,7 @@ String MergeTreePartInfo::getPartName() const
 
 String MergeTreePartInfo::getPartNameV0(DayNum left_date, DayNum right_date) const
 {
-    const auto & date_lut = DateLUT::instance();
+    const auto & date_lut = DateLUT::serverTimezoneInstance();
 
     /// Directory name for the part has form: `YYYYMMDD_YYYYMMDD_N_N_L`.
 
@@ -233,6 +253,43 @@ String MergeTreePartInfo::getPartNameV0(DayNum left_date, DayNum right_date) con
     }
 
     return wb.str();
+}
+
+void MergeTreePartInfo::serialize(WriteBuffer & out) const
+{
+    UInt64 version = DBMS_MERGE_TREE_PART_INFO_VERSION;
+    /// Must be the first
+    writeIntBinary(version, out);
+
+    writeStringBinary(partition_id, out);
+    writeIntBinary(min_block, out);
+    writeIntBinary(max_block, out);
+    writeIntBinary(level, out);
+    writeIntBinary(mutation, out);
+    writeBoolText(use_leagcy_max_level, out);
+}
+
+
+String MergeTreePartInfo::describe() const
+{
+    return getPartNameV1();
+}
+
+
+void MergeTreePartInfo::deserialize(ReadBuffer & in)
+{
+    UInt64 version;
+    readIntBinary(version, in);
+    if (version != DBMS_MERGE_TREE_PART_INFO_VERSION)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Version for MergeTreePart info mismatched. Got: {}, supported version: {}",
+            version, DBMS_MERGE_TREE_PART_INFO_VERSION);
+
+    readStringBinary(partition_id, in);
+    readIntBinary(min_block, in);
+    readIntBinary(max_block, in);
+    readIntBinary(level, in);
+    readIntBinary(mutation, in);
+    readBoolText(use_leagcy_max_level, in);
 }
 
 DetachedPartInfo DetachedPartInfo::parseDetachedPartName(

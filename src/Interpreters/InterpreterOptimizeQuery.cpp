@@ -6,6 +6,7 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Interpreters/processColumnTransformers.h>
 
@@ -25,11 +26,15 @@ BlockIO InterpreterOptimizeQuery::execute()
     const auto & ast = query_ptr->as<ASTOptimizeQuery &>();
 
     if (!ast.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccess());
+    {
+        DDLQueryOnClusterParams params;
+        params.access_to_check = getRequiredAccess();
+        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+    }
 
     getContext()->checkAccess(getRequiredAccess());
 
-    auto table_id = getContext()->resolveStorageID(ast, Context::ResolveOrdinary);
+    auto table_id = getContext()->resolveStorageID(ast);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
@@ -71,7 +76,10 @@ BlockIO InterpreterOptimizeQuery::execute()
         }
     }
 
-    table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, getContext());
+    if (auto * snapshot_data = dynamic_cast<MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
+        snapshot_data->parts = {};
+
+    table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, ast.cleanup, getContext());
 
     return {};
 }

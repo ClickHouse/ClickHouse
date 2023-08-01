@@ -1,5 +1,6 @@
 ---
-toc_title: ARRAY JOIN
+slug: /zh/sql-reference/statements/select/array-join
+sidebar_label: ARRAY JOIN
 ---
 
 # ARRAY JOIN子句 {#select-array-join-clause}

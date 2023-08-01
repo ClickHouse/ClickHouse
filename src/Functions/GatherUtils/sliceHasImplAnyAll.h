@@ -4,18 +4,11 @@
 #include "Slices.h"
 #include "sliceEqualElements.h"
 
-#if defined(__SSE4_2__)
-    #include <emmintrin.h>
-    #include <smmintrin.h>
-    #include <nmmintrin.h>
-#endif
-
-#if defined(__AVX2__)
-    #include <immintrin.h>
-#endif
-
 #include <Common/TargetSpecific.h>
 
+#if USE_MULTITARGET_CODE
+#include <immintrin.h>
+#endif
 
 namespace DB::GatherUtils
 {
@@ -67,15 +60,14 @@ inline ALWAYS_INLINE bool hasAllIntegralLoopRemainder(
     return true;
 }
 
-
-#if defined(__AVX2__)
+#if USE_MULTITARGET_CODE
 
 DECLARE_AVX2_SPECIFIC_CODE (
 
 // AVX2 Int64, UInt64 specialization
 template<typename IntType>
 requires (std::is_same_v<IntType, Int64> || std::is_same_v<IntType, UInt64>)
-inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt64(
+bool sliceHasImplAnyAllImplInt64(
     const NumericArraySlice<IntType> & first,
     const NumericArraySlice<IntType> & second,
     const UInt8 * first_null_map,
@@ -165,7 +157,7 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt64(
 // AVX2 Int32, UInt32 specialization
 template<typename IntType>
 requires (std::is_same_v<IntType, Int32> || std::is_same_v<IntType, UInt32>)
-inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt32(
+bool sliceHasImplAnyAllImplInt32(
     const NumericArraySlice<IntType> & first,
     const NumericArraySlice<IntType> & second,
     const UInt8 * first_null_map,
@@ -278,7 +270,7 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt32(
 // AVX2 Int16, UInt16 specialization
 template<typename IntType>
 requires (std::is_same_v<IntType, Int16> || std::is_same_v<IntType, UInt16>)
-inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt16(
+bool sliceHasImplAnyAllImplInt16(
     const NumericArraySlice<IntType> & first,
     const NumericArraySlice<IntType> & second,
     const UInt8 * first_null_map,
@@ -383,14 +375,14 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt16(
                                     _mm256_or_si256(
                                         _mm256_andnot_si256(
                                             _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_nm_mask, first_nm_mask, 1), _mm256_set_epi8(7,6,5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8)),
-                                            _mm256_cmpeq_epi16(second_data, _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_data ,first_data, 1), _mm256_set_epi8(7,6,5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8)))),
+                                            _mm256_cmpeq_epi16(second_data, _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_data, first_data, 1), _mm256_set_epi8(7,6,5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8)))),
                                         _mm256_andnot_si256(
                                             _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_nm_mask, first_nm_mask, 1), _mm256_set_epi8(5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6)),
                                             _mm256_cmpeq_epi16(second_data, _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_data, first_data, 1), _mm256_set_epi8(5,4,3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6))))),
                                     _mm256_or_si256(
                                         _mm256_andnot_si256(
                                             _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_nm_mask, first_nm_mask, 1), _mm256_set_epi8(3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4)),
-                                            _mm256_cmpeq_epi16(second_data, _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_data ,first_data ,1), _mm256_set_epi8(3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4)))),
+                                            _mm256_cmpeq_epi16(second_data, _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_data, first_data, 1), _mm256_set_epi8(3,2,1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4)))),
                                         _mm256_andnot_si256(
                                             _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_nm_mask, first_nm_mask, 1), _mm256_set_epi8(1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2)),
                                             _mm256_cmpeq_epi16(second_data, _mm256_shuffle_epi8(_mm256_permute2x128_si256(first_data, first_data, 1), _mm256_set_epi8(1,0,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2))))))
@@ -421,10 +413,6 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt16(
 }
 
 )
-
-#endif
-
-#if defined(__SSE4_2__)
 
 DECLARE_SSE42_SPECIFIC_CODE (
 
@@ -895,8 +883,6 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll(const FirstSliceType & first, const
 #if USE_MULTITARGET_CODE
     if constexpr (search_type == ArraySearchType::All && std::is_same_v<FirstSliceType, SecondSliceType>)
     {
-
-#if defined(__AVX2__)
         if (isArchSupported(TargetArch::AVX2))
         {
             if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int16>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt16>>)
@@ -912,13 +898,12 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll(const FirstSliceType & first, const
                 return GatherUtils::TargetSpecific::AVX2::sliceHasImplAnyAllImplInt64(first, second, first_null_map, second_null_map);
             }
         }
-#endif
 
         if (isArchSupported(TargetArch::SSE42))
         {
             if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int8>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt8>>)
             {
-                return TargetSpecific::SSE42::sliceHasImplAnyAllImplInt8(first, second, first_null_map, second_null_map);
+                return GatherUtils::TargetSpecific::SSE42::sliceHasImplAnyAllImplInt8(first, second, first_null_map, second_null_map);
             }
             else if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int16>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt16>>)
             {

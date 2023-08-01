@@ -64,8 +64,8 @@ public:
 
         for (size_t i = 0; i < count; ++i)
         {
-            StringRef encoded_string = encoded->getDataAt(i);
-            geohashDecode(encoded_string.data, encoded_string.size, &lon_data[i], &lat_data[i]);
+            std::string_view encoded_string = encoded->getDataAt(i).toView();
+            geohashDecode(encoded_string.data(), encoded_string.size(), &lon_data[i], &lat_data[i]);
         }
 
         MutableColumns result;
@@ -85,15 +85,14 @@ public:
             tryExecute<ColumnFixedString>(encoded, res_column))
             return res_column;
 
-        throw Exception("Unsupported argument type:" + arguments[0].column->getName()
-                        + " of argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unsupported argument type:{} of argument of function {}",
+                        arguments[0].column->getName(), getName());
     }
 };
 
 }
 
-void registerFunctionGeohashDecode(FunctionFactory & factory)
+REGISTER_FUNCTION(GeohashDecode)
 {
     factory.registerFunction<FunctionGeohashDecode>();
 }

@@ -1,8 +1,8 @@
 #include <unistd.h>
-#include <stdlib.h>
+#include <cstdlib>
 #include <fcntl.h>
-#include <signal.h>
-#include <time.h>
+#include <csignal>
+#include <ctime>
 #include <iostream>
 #include <fstream>
 #include <iomanip>
@@ -26,7 +26,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/UseSSL.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Interpreters/Context.h>
@@ -35,6 +34,7 @@
 #include <Common/Config/configReadClient.h>
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
+#include <Common/CurrentMetrics.h>
 #include <filesystem>
 
 
@@ -43,6 +43,12 @@ namespace fs = std::filesystem;
 /** A tool for evaluating ClickHouse performance.
   * The tool emulates a case with fixed amount of simultaneously executing queries.
   */
+
+namespace CurrentMetrics
+{
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
+}
 
 namespace DB
 {
@@ -58,22 +64,53 @@ namespace ErrorCodes
 class Benchmark : public Poco::Util::Application
 {
 public:
-    Benchmark(unsigned concurrency_, double delay_,
-            Strings && hosts_, Ports && ports_, bool round_robin_,
-            bool cumulative_, bool secure_, const String & default_database_,
-            const String & user_, const String & password_, const String & stage,
-            bool randomize_, size_t max_iterations_, double max_time_,
-            const String & json_path_, size_t confidence_,
-            const String & query_id_, const String & query_to_execute_, bool continue_on_errors_,
-            bool reconnect_, bool print_stacktrace_, const Settings & settings_)
+    Benchmark(unsigned concurrency_,
+            double delay_,
+            Strings && hosts_,
+            Ports && ports_,
+            bool round_robin_,
+            bool cumulative_,
+            bool secure_,
+            const String & default_database_,
+            const String & user_,
+            const String & password_,
+            const String & quota_key_,
+            const String & stage,
+            bool randomize_,
+            size_t max_iterations_,
+            double max_time_,
+            const String & json_path_,
+            size_t confidence_,
+            const String & query_id_,
+            const String & query_to_execute_,
+            size_t max_consecutive_errors_,
+            bool continue_on_errors_,
+            bool reconnect_,
+            bool display_client_side_time_,
+            bool print_stacktrace_,
+            const Settings & settings_)
         :
-        round_robin(round_robin_), concurrency(concurrency_), delay(delay_), queue(concurrency), randomize(randomize_),
-        cumulative(cumulative_), max_iterations(max_iterations_), max_time(max_time_),
-        json_path(json_path_), confidence(confidence_), query_id(query_id_),
-        query_to_execute(query_to_execute_), continue_on_errors(continue_on_errors_), reconnect(reconnect_),
-        print_stacktrace(print_stacktrace_), settings(settings_),
-        shared_context(Context::createShared()), global_context(Context::createGlobal(shared_context.get())),
-        pool(concurrency)
+        round_robin(round_robin_),
+        concurrency(concurrency_),
+        delay(delay_),
+        queue(concurrency),
+        randomize(randomize_),
+        cumulative(cumulative_),
+        max_iterations(max_iterations_),
+        max_time(max_time_),
+        json_path(json_path_),
+        confidence(confidence_),
+        query_id(query_id_),
+        query_to_execute(query_to_execute_),
+        continue_on_errors(continue_on_errors_),
+        max_consecutive_errors(max_consecutive_errors_),
+        reconnect(reconnect_),
+        display_client_side_time(display_client_side_time_),
+        print_stacktrace(print_stacktrace_),
+        settings(settings_),
+        shared_context(Context::createShared()),
+        global_context(Context::createGlobal(shared_context.get())),
+        pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, concurrency)
     {
         const auto secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
         size_t connections_cnt = std::max(ports_.size(), hosts_.size());
@@ -90,7 +127,7 @@ public:
             connections.emplace_back(std::make_unique<ConnectionPool>(
                 concurrency,
                 cur_host, cur_port,
-                default_database_, user_, password_,
+                default_database_, user_, password_, quota_key_,
                 /* cluster_= */ "",
                 /* cluster_secret_= */ "",
                 /* client_name_= */ "benchmark",
@@ -119,7 +156,7 @@ public:
     void initialize(Poco::Util::Application & self [[maybe_unused]]) override
     {
         std::string home_path;
-        const char * home_path_cstr = getenv("HOME");
+        const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
         if (home_path_cstr)
             home_path = home_path_cstr;
 
@@ -165,12 +202,16 @@ private:
     String query_id;
     String query_to_execute;
     bool continue_on_errors;
+    size_t max_consecutive_errors;
     bool reconnect;
+    bool display_client_side_time;
     bool print_stacktrace;
     const Settings & settings;
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
     QueryProcessingStage::Enum query_processing_stage;
+
+    std::atomic<size_t> consecutive_errors{0};
 
     /// Don't execute new queries after timelimit or SIGINT or exception
     std::atomic<bool> shutdown{false};
@@ -242,7 +283,7 @@ private:
             }
 
             if (queries.empty())
-                throw Exception("Empty list of queries.", ErrorCodes::EMPTY_DATA_PASSED);
+                throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Empty list of queries.");
         }
         else
         {
@@ -391,13 +432,14 @@ private:
             try
             {
                 execute(connection_entries, query, connection_index);
+                consecutive_errors = 0;
             }
             catch (...)
             {
                 std::lock_guard lock(mutex);
                 std::cerr << "An error occurred while processing the query " << "'" << query << "'"
                           << ": " << getCurrentExceptionMessage(false) << std::endl;
-                if (!continue_on_errors)
+                if (!(continue_on_errors || max_consecutive_errors > ++consecutive_errors))
                 {
                     shutdown = true;
                     throw;
@@ -408,8 +450,8 @@ private:
                         true /*check embedded stack trace*/) << std::endl;
 
                     size_t info_index = round_robin ? 0 : connection_index;
-                    comparison_info_per_interval[info_index]->errors++;
-                    comparison_info_total[info_index]->errors++;
+                    ++comparison_info_per_interval[info_index]->errors;
+                    ++comparison_info_total[info_index]->errors;
                 }
             }
             // Count failed queries toward executed, so that we'd reach
@@ -438,12 +480,14 @@ private:
         executor.sendQuery(ClientInfo::QueryKind::INITIAL_QUERY);
 
         ProfileInfo info;
-        while (Block block = executor.read())
+        while (Block block = executor.readBlock())
             info.update(block);
 
         executor.finish();
 
-        double seconds = watch.elapsedSeconds();
+        double seconds = (display_client_side_time || progress.elapsed_ns == 0)
+            ? watch.elapsedSeconds()
+            : progress.elapsed_ns / 1e9;
 
         std::lock_guard lock(mutex);
 
@@ -548,11 +592,13 @@ private:
             json_out << double_quote << connections[i]->getDescription() << ": {\n";
             json_out << double_quote << "statistics" << ": {\n";
 
-            print_key_value("QPS", info->queries / info->work_time);
-            print_key_value("RPS", info->read_rows / info->work_time);
-            print_key_value("MiBPS", info->read_bytes / info->work_time);
-            print_key_value("RPS_result", info->result_rows / info->work_time);
-            print_key_value("MiBPS_result", info->result_bytes / info->work_time);
+            double seconds = info->work_time / concurrency;
+
+            print_key_value("QPS", info->queries.load() / seconds);
+            print_key_value("RPS", info->read_rows / seconds);
+            print_key_value("MiBPS", info->read_bytes / seconds / 1048576);
+            print_key_value("RPS_result", info->result_rows / seconds);
+            print_key_value("MiBPS_result", info->result_bytes / seconds / 1048576);
             print_key_value("num_queries", info->queries.load());
             print_key_value("num_errors", info->errors, false);
 
@@ -601,30 +647,51 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
     {
         using boost::program_options::value;
 
+        /// Note: according to the standard, subsequent calls to getenv can mangle previous result.
+        /// So we copy the results to std::string.
+        std::optional<std::string> env_user_str;
+        std::optional<std::string> env_password_str;
+        std::optional<std::string> env_quota_key_str;
+
+        const char * env_user = getenv("CLICKHOUSE_USER"); // NOLINT(concurrency-mt-unsafe)
+        if (env_user != nullptr)
+            env_user_str.emplace(std::string(env_user));
+
+        const char * env_password = getenv("CLICKHOUSE_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
+        if (env_password != nullptr)
+            env_password_str.emplace(std::string(env_password));
+
+        const char * env_quota_key = getenv("CLICKHOUSE_QUOTA_KEY"); // NOLINT(concurrency-mt-unsafe)
+        if (env_quota_key != nullptr)
+            env_quota_key_str.emplace(std::string(env_quota_key));
+
         boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
         desc.add_options()
             ("help",                                                            "produce help message")
-            ("query",      value<std::string>()->default_value(""),             "query to execute")
+            ("query,q",       value<std::string>()->default_value(""),          "query to execute")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
             ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
             ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
             ("iterations,i",  value<size_t>()->default_value(0),                "amount of queries to be executed")
             ("timelimit,t",   value<double>()->default_value(0.),               "stop launch of queries after specified time limit")
-            ("randomize,r",   value<bool>()->default_value(false),              "randomize order of execution")
+            ("randomize,r",                                                     "randomize order of execution")
             ("json",          value<std::string>()->default_value(""),          "write final report to specified file in JSON format")
             ("host,h",        value<Strings>()->multitoken(),                   "list of hosts")
-            ("port,p",        value<Ports>()->multitoken(),                     "list of ports")
-            ("roundrobin",                                                      "Instead of comparing queries for different --host/--port just pick one random --host/--port for every query and send query to it.")
-            ("cumulative",                                                      "prints cumulative data instead of data per interval")
-            ("secure,s",                                                        "Use TLS connection")
-            ("user",          value<std::string>()->default_value("default"),   "")
-            ("password",      value<std::string>()->default_value(""),          "")
-            ("database",      value<std::string>()->default_value("default"),   "")
-            ("stacktrace",                                                      "print stack traces of exceptions")
-            ("confidence",    value<size_t>()->default_value(5), "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
-            ("query_id",      value<std::string>()->default_value(""),         "")
-            ("continue_on_errors", "continue testing even if a query fails")
+            ("port",          value<Ports>()->multitoken(),                     "list of ports")
+            ("roundrobin",    "Instead of comparing queries for different --host/--port just pick one random --host/--port for every query and send query to it.")
+            ("cumulative",    "prints cumulative data instead of data per interval")
+            ("secure,s",      "Use TLS connection")
+            ("user,u",        value<std::string>()->default_value(env_user_str.value_or("default")), "")
+            ("password",      value<std::string>()->default_value(env_password_str.value_or("")), "")
+            ("quota_key",     value<std::string>()->default_value(env_quota_key_str.value_or("")), "")
+            ("database", value<std::string>()->default_value("default"), "")
+            ("stacktrace", "print stack traces of exceptions")
+            ("confidence", value<size_t>()->default_value(5), "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
+            ("query_id", value<std::string>()->default_value(""), "")
+            ("max-consecutive-errors", value<size_t>()->default_value(0), "set number of allowed consecutive errors")
+            ("ignore-error,continue_on_errors", "continue testing even if a query fails")
             ("reconnect", "establish new connection for every query")
+            ("client-side-time", "display the time including network communication instead of server-side time; note that for server versions before 22.8 we always display client-side time")
         ;
 
         Settings settings;
@@ -667,16 +734,19 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["database"].as<std::string>(),
             options["user"].as<std::string>(),
             options["password"].as<std::string>(),
+            options["quota_key"].as<std::string>(),
             options["stage"].as<std::string>(),
-            options["randomize"].as<bool>(),
+            options.count("randomize"),
             options["iterations"].as<size_t>(),
             options["timelimit"].as<double>(),
             options["json"].as<std::string>(),
             options["confidence"].as<size_t>(),
             options["query_id"].as<std::string>(),
             options["query"].as<std::string>(),
-            options.count("continue_on_errors"),
+            options["max-consecutive-errors"].as<size_t>(),
+            options.count("ignore-error"),
             options.count("reconnect"),
+            options.count("client-side-time"),
             print_stacktrace,
             settings);
         return benchmark.run();

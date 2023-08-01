@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <clickhouse>
     <logger>
         <!-- Possible levels: https://github.com/pocoproject/poco/blob/develop/Foundation/include/Poco/Logger.h#L105 -->
@@ -94,13 +93,6 @@
       -->
     <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 
-    <!-- Approximate size of mark cache, used in tables of MergeTree family.
-         In bytes. Cache is single for server. Memory is allocated only on demand.
-         You should not lower this value.
-      -->
-    <mark_cache_size>5368709120</mark_cache_size>
-
-
     <!-- Path to data directory, with trailing slash. -->
     <path>/var/lib/clickhouse/</path>
 
@@ -126,31 +118,6 @@
          Number is always parsed as octal. Default umask is 027 (other users cannot read logs, data files, etc; group can only read).
     -->
     <!-- <umask>022</umask> -->
-
-    <!-- Configuration of clusters that could be used in Distributed tables.
-         https://clickhouse.com/docs/en/table_engines/distributed/
-      -->
-    <remote_servers incl="clickhouse_remote_servers" >
-        <!-- Test only shard config for testing distributed storage -->
-        <test_shard_localhost>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-        </test_shard_localhost>
-        <test_shard_localhost_secure>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9440</port>
-                    <secure>1</secure>
-                </replica>
-            </shard>
-        </test_shard_localhost_secure>
-    </remote_servers>
-
 
     <!-- If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.
          By default, path to file with substitutions is /etc/metrika.xml. It could be changed in config in 'include_from' element.

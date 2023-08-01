@@ -49,7 +49,7 @@ void splitMultiLogic(ASTPtr & node)
     if (func && (func->name == "and" || func->name == "or"))
     {
         if (func->arguments->children.size() < 2)
-            throw Exception("Bad AND or OR function. Expected at least 2 arguments", ErrorCodes::INCORRECT_QUERY);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Bad AND or OR function. Expected at least 2 arguments");
 
         if (func->arguments->children.size() > 2)
         {
@@ -82,7 +82,7 @@ void traversePushNot(ASTPtr & node, bool add_negation)
         if (add_negation)
         {
             if (func->arguments->children.size() != 2)
-                throw Exception("Bad AND or OR function. Expected at least 2 arguments", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Bad AND or OR function. Expected at least 2 arguments");
 
             /// apply De Morgan's Law
             node = makeASTFunction(
@@ -98,7 +98,7 @@ void traversePushNot(ASTPtr & node, bool add_negation)
     else if (func && func->name == "not")
     {
         if (func->arguments->children.size() != 1)
-            throw Exception("Bad NOT function. Expected 1 argument", ErrorCodes::INCORRECT_QUERY);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Bad NOT function. Expected 1 argument");
         /// delete NOT
         node = func->arguments->children[0]->clone();
 
@@ -189,7 +189,7 @@ void traverseCNF(const ASTPtr & node, CNFQuery::AndGroup & and_group, CNFQuery::
     else if (func && func->name == "not")
     {
         if (func->arguments->children.size() != 1)
-            throw Exception("Bad NOT function. Expected 1 argument", ErrorCodes::INCORRECT_QUERY);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Bad NOT function. Expected 1 argument");
         or_group.insert(CNFQuery::AtomicFormula{true, func->arguments->children.front()});
     }
     else
@@ -349,7 +349,7 @@ CNFQuery & CNFQuery::pullNotOutFunctions()
     return *this;
 }
 
-CNFQuery & CNFQuery::pushNotInFuntions()
+CNFQuery & CNFQuery::pushNotInFunctions()
 {
     transformAtoms([](const AtomicFormula & atom) -> AtomicFormula
                    {
@@ -360,80 +360,14 @@ CNFQuery & CNFQuery::pushNotInFuntions()
     return *this;
 }
 
-namespace
-{
-    CNFQuery::AndGroup reduceOnce(const CNFQuery::AndGroup & groups)
-    {
-        CNFQuery::AndGroup result;
-        for (const CNFQuery::OrGroup & group : groups)
-        {
-            CNFQuery::OrGroup copy(group);
-            bool inserted = false;
-            for (const CNFQuery::AtomicFormula & atom : group)
-            {
-                copy.erase(atom);
-                CNFQuery::AtomicFormula negative_atom(atom);
-                negative_atom.negative = !atom.negative;
-                copy.insert(negative_atom);
-
-                if (groups.contains(copy))
-                {
-                    copy.erase(negative_atom);
-                    result.insert(copy);
-                    inserted = true;
-                    break;
-                }
-
-                copy.erase(negative_atom);
-                copy.insert(atom);
-            }
-            if (!inserted)
-                result.insert(group);
-        }
-        return result;
-    }
-
-    bool isSubset(const CNFQuery::OrGroup & left, const CNFQuery::OrGroup & right)
-    {
-        if (left.size() > right.size())
-            return false;
-        for (const auto & elem : left)
-            if (!right.contains(elem))
-                return false;
-        return true;
-    }
-
-    CNFQuery::AndGroup filterSubsets(const CNFQuery::AndGroup & groups)
-    {
-        CNFQuery::AndGroup result;
-        for (const CNFQuery::OrGroup & group : groups)
-        {
-            bool insert = true;
-
-            for (const CNFQuery::OrGroup & other_group : groups)
-            {
-                if (isSubset(other_group, group) && group != other_group)
-                {
-                    insert = false;
-                    break;
-                }
-            }
-
-            if (insert)
-                result.insert(group);
-        }
-        return result;
-    }
-}
-
 CNFQuery & CNFQuery::reduce()
 {
     while (true)
     {
-        AndGroup new_statements = reduceOnce(statements);
+        AndGroup new_statements = reduceOnceCNFStatements(statements);
         if (statements == new_statements)
         {
-            statements = filterSubsets(statements);
+            statements = filterCNFSubsets(statements);
             return *this;
         }
         else

@@ -1,7 +1,7 @@
 #include "ConfigReloader.h"
 
 #include <Poco/Util/Application.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include "ConfigProcessor.h"
 #include <filesystem>
@@ -13,17 +13,16 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-constexpr decltype(ConfigReloader::reload_interval) ConfigReloader::reload_interval;
-
 ConfigReloader::ConfigReloader(
-        const std::string & path_,
-        const std::string & include_from_path_,
+        std::string_view config_path_,
+        const std::vector<std::string>& extra_paths_,
         const std::string & preprocessed_dir_,
         zkutil::ZooKeeperNodeCache && zk_node_cache_,
         const zkutil::EventPtr & zk_changed_event_,
         Updater && updater_,
         bool already_loaded)
-    : path(path_), include_from_path(include_from_path_)
+    : config_path(config_path_)
+    , extra_paths(extra_paths_)
     , preprocessed_dir(preprocessed_dir_)
     , zk_node_cache(std::move(zk_node_cache_))
     , zk_changed_event(zk_changed_event_)
@@ -100,10 +99,10 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
     FilesChangesTracker new_files = getNewFileList();
     if (force || need_reload_from_zk || new_files.isDifferOrNewerThan(files))
     {
-        ConfigProcessor config_processor(path);
+        ConfigProcessor config_processor(config_path);
         ConfigProcessor::LoadedConfig loaded_config;
 
-        LOG_DEBUG(log, "Loading config '{}'", path);
+        LOG_DEBUG(log, "Loading config '{}'", config_path);
 
         try
         {
@@ -120,7 +119,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
             if (throw_on_error)
                 throw;
 
-            tryLogCurrentException(log, "ZooKeeper error when loading config from '" + path + "'");
+            tryLogCurrentException(log, "ZooKeeper error when loading config from '" + config_path + "'");
             return;
         }
         catch (...)
@@ -128,7 +127,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
             if (throw_on_error)
                 throw;
 
-            tryLogCurrentException(log, "Error loading config from '" + path + "'");
+            tryLogCurrentException(log, "Error loading config from '" + config_path + "'");
             return;
         }
         config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
@@ -144,7 +143,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
             need_reload_from_zk = false;
         }
 
-        LOG_DEBUG(log, "Loaded config '{}', performing update on configuration", path);
+        LOG_DEBUG(log, "Loaded config '{}', performing update on configuration", config_path);
 
         try
         {
@@ -154,11 +153,11 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
         {
             if (throw_on_error)
                 throw;
-            tryLogCurrentException(log, "Error updating configuration from '" + path + "' config.");
+            tryLogCurrentException(log, "Error updating configuration from '" + config_path + "' config.");
             return;
         }
 
-        LOG_DEBUG(log, "Loaded config '{}', performed update on configuration", path);
+        LOG_DEBUG(log, "Loaded config '{}', performed update on configuration", config_path);
     }
 }
 
@@ -198,10 +197,11 @@ ConfigReloader::FilesChangesTracker ConfigReloader::getNewFileList() const
 {
     FilesChangesTracker file_list;
 
-    file_list.addIfExists(path);
-    file_list.addIfExists(include_from_path);
+    file_list.addIfExists(config_path);
+    for (const std::string& path : extra_paths)
+        file_list.addIfExists(path);
 
-    for (const auto & merge_path : ConfigProcessor::getConfigMergeFiles(path))
+    for (const auto & merge_path : ConfigProcessor::getConfigMergeFiles(config_path))
         file_list.addIfExists(merge_path);
 
     return file_list;

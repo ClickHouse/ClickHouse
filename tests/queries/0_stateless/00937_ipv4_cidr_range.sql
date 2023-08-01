@@ -1,7 +1,3 @@
-SELECT 'check invalid params';
-SELECT IPv4CIDRToRange(1, 1); -- { serverError 43 }
-SELECT IPv4CIDRToRange(toUInt32(1), 512); -- { serverError 43 }
-
 SELECT 'tests';
 
 DROP TABLE IF EXISTS ipv4_range;

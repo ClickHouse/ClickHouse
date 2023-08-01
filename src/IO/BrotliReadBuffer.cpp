@@ -1,8 +1,9 @@
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_BROTLI
 #    include <brotli/decode.h>
 #    include "BrotliReadBuffer.h"
+#    include <IO/WithFileName.h>
 
 namespace DB
 {
@@ -32,14 +33,13 @@ public:
 };
 
 BrotliReadBuffer::BrotliReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char *existing_memory, size_t alignment)
-        : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment)
-        , in(std::move(in_))
-        , brotli(std::make_unique<BrotliStateWrapper>())
-        , in_available(0)
-        , in_data(nullptr)
-        , out_capacity(0)
-        , out_data(nullptr)
-        , eof_flag(false)
+    : CompressedReadBufferWrapper(std::move(in_), buf_size, existing_memory, alignment)
+    , brotli(std::make_unique<BrotliStateWrapper>())
+    , in_available(0)
+    , in_data(nullptr)
+    , out_capacity(0)
+    , out_data(nullptr)
+    , eof_flag(false)
 {
 }
 
@@ -61,7 +61,10 @@ bool BrotliReadBuffer::nextImpl()
 
         if (brotli->result == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT && (!in_available || in->eof()))
         {
-            throw Exception("brotli decode error", ErrorCodes::BROTLI_READ_FAILED);
+            throw Exception(
+                ErrorCodes::BROTLI_READ_FAILED,
+                "brotli decode error{}",
+                getExceptionEntryWithFileName(*in));
         }
 
         out_capacity = internal_buffer.size();
@@ -84,13 +87,19 @@ bool BrotliReadBuffer::nextImpl()
         }
         else
         {
-            throw Exception("brotli decode error", ErrorCodes::BROTLI_READ_FAILED);
+            throw Exception(
+                ErrorCodes::BROTLI_READ_FAILED,
+                "brotli decode error{}",
+                getExceptionEntryWithFileName(*in));
         }
     }
 
     if (brotli->result == BROTLI_DECODER_RESULT_ERROR)
     {
-        throw Exception("brotli decode error", ErrorCodes::BROTLI_READ_FAILED);
+        throw Exception(
+            ErrorCodes::BROTLI_READ_FAILED,
+            "brotli decode error{}",
+            getExceptionEntryWithFileName(*in));
     }
 
     return true;

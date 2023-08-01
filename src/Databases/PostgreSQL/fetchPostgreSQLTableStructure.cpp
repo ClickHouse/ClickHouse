@@ -39,9 +39,10 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
     std::set<std::string> tables;
     if (schemas.size() <= 1)
     {
-        std::string query = fmt::format("SELECT tablename FROM pg_catalog.pg_tables "
-                                        "WHERE schemaname != 'pg_catalog' AND {}",
-                                        postgres_schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteString(postgres_schema));
+        std::string query = fmt::format(
+            "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {}",
+            postgres_schema.empty() ? quoteString("public") : quoteString(postgres_schema));
+
         for (auto table_name : tx.template stream<std::string>(query))
             tables.insert(std::get<0>(table_name));
 
@@ -53,9 +54,10 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
     /// If we add schema to table name then table can be accessed only this way: database_name.`schema_name.table_name`
     for (const auto & schema : schemas)
     {
-        std::string query = fmt::format("SELECT tablename FROM pg_catalog.pg_tables "
-                                        "WHERE schemaname != 'pg_catalog' AND {}",
-                                        postgres_schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteString(schema));
+        std::string query = fmt::format(
+            "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {}",
+            quoteString(schema));
+
         for (auto table_name : tx.template stream<std::string>(query))
             tables.insert(schema + '.' + std::get<0>(table_name));
     }
@@ -113,11 +115,11 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
 
             if (precision <= DecimalUtils::max_precision<Decimal32>)
                 res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal64>) //-V547
+            else if (precision <= DecimalUtils::max_precision<Decimal64>)
                 res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal128>) //-V547
+            else if (precision <= DecimalUtils::max_precision<Decimal128>)
                 res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal256>) //-V547
+            else if (precision <= DecimalUtils::max_precision<Decimal256>)
                 res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Precision {} and scale {} are too big and not supported", precision, scale);
@@ -263,10 +265,11 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
            "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) "
            "AND NOT attisdropped AND attnum > 0", where);
 
-    table.physical_columns = readNamesAndTypesList(tx, postgres_table, query, use_nulls, false);
+    auto postgres_table_with_schema = postgres_schema.empty() ? postgres_table : doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(postgres_table);
+    table.physical_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, false);
 
     if (!table.physical_columns)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table_with_schema);
 
     if (with_primary_key)
     {
@@ -278,7 +281,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
                 "AND a.attnum = ANY(i.indkey) "
                 "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) AND i.indisprimary", where);
 
-        table.primary_key_columns = readNamesAndTypesList(tx, postgres_table, query, use_nulls, true);
+        table.primary_key_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);
     }
 
     if (with_replica_identity_index && !table.primary_key_columns)
@@ -299,11 +302,14 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "and a.attnum = ANY(ix.indkey) "
             "and t.relkind in ('r', 'p') " /// simple tables
             "and t.relname = {} " /// Connection is already done to a needed database, only table name is needed.
+            "and t.relnamespace = (select oid from pg_namespace where nspname = {}) "
             "and ix.indisreplident = 't' " /// index is is replica identity index
-            "ORDER BY a.attname", /// column names
-        quoteString(postgres_table));
+            "ORDER BY a.attname", /// column name
+            quoteString(postgres_table),
+            (postgres_schema.empty() ? quoteString("public") : quoteString(postgres_schema))
+        );
 
-        table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table, query, use_nulls, true);
+        table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);
     }
 
     return table;

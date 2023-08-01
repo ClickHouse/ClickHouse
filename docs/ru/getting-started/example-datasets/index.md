@@ -1,7 +1,7 @@
 ---
-toc_folder_title: "Тестовые массивы данных"
-toc_priority: 14
-toc_title: "Введение"
+slug: /ru/getting-started/example-datasets/
+sidebar_label: "Тестовые массивы данных"
+sidebar_position: 14
 ---
 
 # Тестовые массивы данных {#testovye-massivy-dannykh}
@@ -20,5 +20,3 @@ toc_title: "Введение"
 -   [Данные о стоимости недвижимости в Великобритании](../../getting-started/example-datasets/uk-price-paid.md)
 -   [OnTime](../../getting-started/example-datasets/ontime.md)
 -   [Вышки сотовой связи](../../getting-started/example-datasets/cell-towers.md)
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/example_datasets) <!--hide-->

@@ -10,9 +10,11 @@
 namespace mysqlxx
 {
 
-std::string errorMessage(MYSQL * driver)
+std::string errorMessage(MYSQL * driver, const std::string & query)
 {
-    return fmt::format("{} ({}:{})", mysql_error(driver), driver->host ? driver->host : "(nullptr)", driver->port);
+    return fmt::format("{}{} ({}:{})", mysql_error(driver),
+        query.empty() ? "" : " while executing query: '" + query + "'",
+        driver->host ? driver->host : "(nullptr)", driver->port);
 }
 
 void checkError(MYSQL * driver)

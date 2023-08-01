@@ -1,6 +1,7 @@
 ---
-toc_priority: 45
-toc_title: "监控"
+slug: /zh/operations/monitoring
+sidebar_position: 45
+sidebar_label: "监控"
 ---
 
 # 监控 {#jian-kong}

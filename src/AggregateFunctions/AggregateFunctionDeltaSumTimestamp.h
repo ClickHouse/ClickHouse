@@ -38,7 +38,7 @@ public:
         : IAggregateFunctionDataHelper<
             AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType>,
             AggregationFunctionDeltaSumTimestamp<ValueType, TimestampType>
-        >{arguments, params}
+        >{arguments, params, createResultType()}
     {}
 
     AggregationFunctionDeltaSumTimestamp()
@@ -52,7 +52,7 @@ public:
 
     String getName() const override { return "deltaSumTimestamp"; }
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<ValueType>>(); }
+    static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<ValueType>>(); }
 
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -144,22 +144,22 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        writeIntBinary(this->data(place).sum, buf);
-        writeIntBinary(this->data(place).first, buf);
-        writeIntBinary(this->data(place).first_ts, buf);
-        writeIntBinary(this->data(place).last, buf);
-        writeIntBinary(this->data(place).last_ts, buf);
-        writePODBinary<bool>(this->data(place).seen, buf);
+        writeBinaryLittleEndian(this->data(place).sum, buf);
+        writeBinaryLittleEndian(this->data(place).first, buf);
+        writeBinaryLittleEndian(this->data(place).first_ts, buf);
+        writeBinaryLittleEndian(this->data(place).last, buf);
+        writeBinaryLittleEndian(this->data(place).last_ts, buf);
+        writeBinaryLittleEndian(this->data(place).seen, buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        readIntBinary(this->data(place).sum, buf);
-        readIntBinary(this->data(place).first, buf);
-        readIntBinary(this->data(place).first_ts, buf);
-        readIntBinary(this->data(place).last, buf);
-        readIntBinary(this->data(place).last_ts, buf);
-        readPODBinary<bool>(this->data(place).seen, buf);
+        readBinaryLittleEndian(this->data(place).sum, buf);
+        readBinaryLittleEndian(this->data(place).first, buf);
+        readBinaryLittleEndian(this->data(place).first_ts, buf);
+        readBinaryLittleEndian(this->data(place).last, buf);
+        readBinaryLittleEndian(this->data(place).last_ts, buf);
+        readBinaryLittleEndian(this->data(place).seen, buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

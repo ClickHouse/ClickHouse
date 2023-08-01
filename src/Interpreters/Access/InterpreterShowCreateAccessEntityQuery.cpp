@@ -1,4 +1,5 @@
 #include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
@@ -62,10 +63,7 @@ namespace
         }
 
         if (user.auth_data.getType() != AuthenticationType::NO_PASSWORD)
-        {
-            query->auth_data = user.auth_data;
-            query->show_password = attach_mode; /// We don't show password unless it's an ATTACH statement.
-        }
+            query->auth_data = user.auth_data.toAST();
 
         if (!user.settings.empty())
         {
@@ -230,7 +228,7 @@ namespace
             return getCreateQueryImpl(*quota, access_control, attach_mode);
         if (const SettingsProfile * profile = typeid_cast<const SettingsProfile *>(&entity))
             return getCreateQueryImpl(*profile, access_control, attach_mode);
-        throw Exception(entity.formatTypeWithName() + ": type is not supported by SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by SHOW CREATE query", entity.formatTypeWithName());
     }
 }
 
@@ -256,19 +254,12 @@ QueryPipeline InterpreterShowCreateAccessEntityQuery::executeImpl()
 
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
-    WriteBufferFromOwnString create_query_buf;
     for (const auto & create_query : create_queries)
-    {
-        formatAST(*create_query, create_query_buf, false, true);
-        column->insert(create_query_buf.str());
-        create_query_buf.restart();
-    }
+        column->insert(format({getContext(), *create_query}));
 
     /// Prepare description of the result column.
-    WriteBufferFromOwnString desc_buf;
     const auto & show_query = query_ptr->as<const ASTShowCreateAccessEntityQuery &>();
-    formatAST(show_query, desc_buf, false, true);
-    String desc = desc_buf.str();
+    String desc = serializeAST(show_query);
     String prefix = "SHOW ";
     if (startsWith(desc, prefix))
         desc = desc.substr(prefix.length()); /// `desc` always starts with "SHOW ", so we can trim this prefix.
@@ -296,8 +287,7 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
     }
     else if (show_query.current_user)
     {
-        if (auto user = getContext()->getUser())
-            entities.push_back(user);
+        entities.push_back(getContext()->getUser());
     }
     else if (show_query.current_quota)
     {
@@ -420,6 +410,6 @@ AccessRightsElements InterpreterShowCreateAccessEntityQuery::getRequiredAccess()
         case AccessEntityType::MAX:
             break;
     }
-    throw Exception(toString(show_query.type) + ": type is not supported by SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by SHOW CREATE query", toString(show_query.type));
 }
 }

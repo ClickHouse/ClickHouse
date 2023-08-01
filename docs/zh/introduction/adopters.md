@@ -1,12 +1,14 @@
 ---
-toc_priority: 5
-toc_title: "ClickHouse用户"
+slug: /zh/introduction/adopters
+sidebar_position: 5
+sidebar_label: "ClickHouse用户"
 ---
 
 # ClickHouse用户 {#clickhouse-adopters}
 
-!!! warning "免责声明"
-    如下使用ClickHouse的公司和他们的成功案例来源于公开资源，因此和实际情况可能有所出入。如果您分享您公司使用ClickHouse的故事，我们将不胜感激 [将其添加到列表](https://github.com/ClickHouse/ClickHouse/edit/master/docs/en/introduction/adopters.md)，但请确保你这样做不会有任何保密协议的问题。也欢迎提供来自其他公司的出版物的更新。
+:::note 免责声明
+如下使用ClickHouse的公司和他们的成功案例来源于公开资源，因此和实际情况可能有所出入。如果您分享您公司使用ClickHouse的故事，我们将不胜感激 [将其添加到列表](https://github.com/ClickHouse/ClickHouse/edit/master/docs/zh/introduction/adopters.md)，但请确保你这样做不会有任何保密协议的问题。也欢迎提供来自其他公司的出版物的更新。
+:::
 
 | 公司简介                                                        | 行业             | 用例           | 群集大小                                          | (Un)压缩数据大小<abbr title="of single replica"><sup>\*</sup></abbr> | 参考资料                                                                                                                                                                                                          |
 |-----------------------------------------------------------------|------------------|----------------|---------------------------------------------------|----------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -83,5 +85,3 @@ toc_title: "ClickHouse用户"
 | [Wargaming](https://wargaming.com/en/)                          | 游戏             |                | —                                                 | —                                                                    | [采访](https://habr.com/en/post/496954/)                                                                                                                                                                          |
 | [Crazypanda](https://crazypanda.ru/en/)                         | 游戏             |                | —                                                 | —                                                                    | ClickHouse 社区会议                                                                                                                                                                                               |
 | [FunCorp](https://fun.co/rp)                                    | 游戏             |                | —                                                 | —                                                                    | [文章](https://www.altinity.com/blog/migrating-from-redshift-to-clickhouse)                                                                                                                                       |
-
-[原始文章](https://clickhouse.com/docs/en/introduction/adopters/) <!--hide-->

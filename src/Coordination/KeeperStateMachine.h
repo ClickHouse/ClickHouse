@@ -1,16 +1,17 @@
 #pragma once
 
-#include <Common/ConcurrentBoundedQueue.h>
-#include <Coordination/KeeperStorage.h>
-#include <libnuraft/nuraft.hxx>
-#include <base/logger_useful.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperSnapshotManager.h>
+#include <Coordination/KeeperSnapshotManagerS3.h>
+#include <Coordination/KeeperContext.h>
+#include <Coordination/KeeperStorage.h>
+
+#include <libnuraft/nuraft.hxx>
+#include <Common/ConcurrentBoundedQueue.h>
 
 
 namespace DB
 {
-
 using ResponsesQueue = ConcurrentBoundedQueue<KeeperStorage::ResponseForSession>;
 using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
@@ -19,24 +20,55 @@ using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 class KeeperStateMachine : public nuraft::state_machine
 {
 public:
+    using CommitCallback = std::function<void(const KeeperStorage::RequestForSession &)>;
+
     KeeperStateMachine(
-        ResponsesQueue & responses_queue_, SnapshotsQueue & snapshots_queue_,
-        const std::string & snapshots_path_, const CoordinationSettingsPtr & coordination_settings_,
+        ResponsesQueue & responses_queue_,
+        SnapshotsQueue & snapshots_queue_,
+        const CoordinationSettingsPtr & coordination_settings_,
+        const KeeperContextPtr & keeper_context_,
+        KeeperSnapshotManagerS3 * snapshot_manager_s3_,
+        CommitCallback commit_callback_ = {},
         const std::string & superdigest_ = "");
 
     /// Read state from the latest snapshot
     void init();
 
-    /// Currently not supported
-    nuraft::ptr<nuraft::buffer> pre_commit(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override { return nullptr; }
+    enum ZooKeeperLogSerializationVersion
+    {
+        INITIAL = 0,
+        WITH_TIME = 1,
+        WITH_ZXID_DIGEST = 2,
+    };
+
+    /// lifetime of a parsed request is:
+    /// [preprocess/PreAppendLog -> commit]
+    /// [preprocess/PreAppendLog -> rollback]
+    /// on events like commit and rollback we can remove the parsed request to keep the memory usage at minimum
+    /// request cache is also cleaned on session close in case something strange happened
+    ///
+    /// final - whether it's the final time we will fetch the request so we can safely remove it from cache
+    /// serialization_version - information about which fields were parsed from the buffer so we can modify the buffer accordingly
+    std::shared_ptr<KeeperStorage::RequestForSession> parseRequest(nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version = nullptr);
+
+    bool preprocess(const KeeperStorage::RequestForSession & request_for_session);
+
+    nuraft::ptr<nuraft::buffer> pre_commit(uint64_t log_idx, nuraft::buffer & data) override;
 
     nuraft::ptr<nuraft::buffer> commit(const uint64_t log_idx, nuraft::buffer & data) override; /// NOLINT
 
     /// Save new cluster config to our snapshot (copy of the config stored in StateManager)
     void commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf) override; /// NOLINT
 
-    /// Currently not supported
-    void rollback(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override {}
+    void rollback(uint64_t log_idx, nuraft::buffer & data) override;
+
+    // allow_missing - whether the transaction we want to rollback can be missing from storage
+    // (can happen in case of exception during preprocessing)
+    void rollbackRequest(const KeeperStorage::RequestForSession & request_for_session, bool allow_missing);
+
+    void rollbackRequestNoLock(
+        const KeeperStorage::RequestForSession & request_for_session,
+        bool allow_missing) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     uint64_t last_commit_index() override { return last_committed_idx; }
 
@@ -46,29 +78,20 @@ public:
     nuraft::ptr<nuraft::snapshot> last_snapshot() override;
 
     /// Create new snapshot from current state.
-    void create_snapshot(
-        nuraft::snapshot & s,
-        nuraft::async_result<bool>::handler_type & when_done) override;
+    void create_snapshot(nuraft::snapshot & s, nuraft::async_result<bool>::handler_type & when_done) override;
 
     /// Save snapshot which was send by leader to us. After that we will apply it in apply_snapshot.
-    void save_logical_snp_obj(
-        nuraft::snapshot & s,
-        uint64_t & obj_id,
-        nuraft::buffer & data,
-        bool is_first_obj,
-        bool is_last_obj) override;
+    void save_logical_snp_obj(nuraft::snapshot & s, uint64_t & obj_id, nuraft::buffer & data, bool is_first_obj, bool is_last_obj) override;
 
     /// Better name is `serialize snapshot` -- save existing snapshot (created by create_snapshot) into
     /// in-memory buffer data_out.
     int read_logical_snp_obj(
-        nuraft::snapshot & s,
-        void* & user_snp_ctx,
-        uint64_t obj_id,
-        nuraft::ptr<nuraft::buffer> & data_out,
-        bool & is_last_obj) override;
+        nuraft::snapshot & s, void *& user_snp_ctx, uint64_t obj_id, nuraft::ptr<nuraft::buffer> & data_out, bool & is_last_obj) override;
 
-    /// just for test
-    KeeperStorage & getStorage()
+    // This should be used only for tests or keeper-data-dumper because it violates
+    // TSA -- we can't acquire the lock outside of this class or return a storage under lock
+    // in a reasonable way.
+    KeeperStorage & getStorageUnsafe() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
         return *storage;
     }
@@ -81,6 +104,10 @@ public:
     void processReadRequest(const KeeperStorage::RequestForSession & request_for_session);
 
     std::vector<int64_t> getDeadSessions();
+
+    int64_t getNextZxid() const;
+
+    KeeperStorage::Digest getNodesDigest() const;
 
     /// Introspection functions for 4lw commands
     uint64_t getLastProcessedZxid() const;
@@ -100,18 +127,22 @@ public:
     uint64_t getKeyArenaSize() const;
     uint64_t getLatestSnapshotBufSize() const;
 
-private:
+    void recalculateStorageStats();
 
+    void reconfigure(const KeeperStorage::RequestForSession& request_for_session);
+
+private:
+    CommitCallback commit_callback;
     /// In our state machine we always have a single snapshot which is stored
     /// in memory in compressed (serialized) format.
     SnapshotMetadataPtr latest_snapshot_meta = nullptr;
-    std::string latest_snapshot_path;
+    SnapshotFileInfo latest_snapshot_info;
     nuraft::ptr<nuraft::buffer> latest_snapshot_buf = nullptr;
 
     CoordinationSettingsPtr coordination_settings;
 
     /// Main state machine logic
-    KeeperStoragePtr storage;
+    KeeperStoragePtr storage TSA_PT_GUARDED_BY(storage_and_responses_lock);
 
     /// Save/Load and Serialize/Deserialize logic for snapshots.
     KeeperSnapshotManager snapshot_manager;
@@ -132,6 +163,13 @@ private:
     /// for request.
     mutable std::mutex storage_and_responses_lock;
 
+    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, std::shared_ptr<KeeperStorage::RequestForSession>>> parsed_request_cache;
+    uint64_t min_request_size_to_cache{0};
+    /// we only need to protect the access to the map itself
+    /// requests can be modified from anywhere without lock because a single request
+    /// can be processed only in 1 thread at any point
+    std::mutex request_cache_mutex;
+
     /// Last committed Raft log number.
     std::atomic<uint64_t> last_committed_idx;
 
@@ -145,6 +183,13 @@ private:
 
     /// Special part of ACL system -- superdigest specified in server config.
     const std::string superdigest;
-};
 
+    KeeperContextPtr keeper_context;
+
+    KeeperSnapshotManagerS3 * snapshot_manager_s3;
+
+    KeeperStorage::ResponseForSession processReconfiguration(
+        const KeeperStorage::RequestForSession& request_for_session)
+        TSA_REQUIRES(storage_and_responses_lock);
+};
 }

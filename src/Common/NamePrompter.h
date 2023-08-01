@@ -12,6 +12,7 @@
 
 namespace DB
 {
+
 template <size_t MaxNumHints>
 class NamePrompter
 {
@@ -90,10 +91,9 @@ private:
     }
 };
 
-namespace detail
-{
-void appendHintsMessageImpl(String & message, const std::vector<String> & hints);
-}
+String getHintsErrorMessageSuffix(const std::vector<String> & hints);
+
+void appendHintsMessage(String & error_message, const std::vector<String> & hints);
 
 template <size_t MaxNumHints, typename Self>
 class IHints
@@ -106,10 +106,10 @@ public:
         return prompter.getHints(name, getAllRegisteredNames());
     }
 
-    void appendHintsMessage(String & message, const String & name) const
+    void appendHintsMessage(String & error_message, const String & name) const
     {
         auto hints = getHints(name);
-        detail::appendHintsMessageImpl(message, hints);
+        DB::appendHintsMessage(error_message, hints);
     }
 
     IHints() = default;

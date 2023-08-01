@@ -3,9 +3,9 @@
 #include <Storages/StorageXDBC.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Bridge/XDBCBridgeHelper.h>
+#include <BridgeHelper/XDBCBridgeHelper.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 namespace DB
 {
@@ -16,14 +16,15 @@ namespace DB
 class ITableFunctionXDBC : public ITableFunction
 {
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
     /* A factory method to create bridge helper, that will assist in remote interaction */
     virtual BridgeHelperPtr createBridgeHelper(ContextPtr context,
         Poco::Timespan http_timeout_,
-        const std::string & connection_string_) const = 0;
+        const std::string & connection_string_,
+        bool use_connection_pooling_) const = 0;
 
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
@@ -47,9 +48,10 @@ public:
 private:
     BridgeHelperPtr createBridgeHelper(ContextPtr context,
         Poco::Timespan http_timeout_,
-        const std::string & connection_string_) const override
+        const std::string & connection_string_,
+        bool use_connection_pooling_) const override
     {
-        return std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(context, http_timeout_, connection_string_);
+        return std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(context, http_timeout_, connection_string_, use_connection_pooling_);
     }
 
     const char * getStorageTypeName() const override { return "JDBC"; }
@@ -67,9 +69,10 @@ public:
 private:
     BridgeHelperPtr createBridgeHelper(ContextPtr context,
         Poco::Timespan http_timeout_,
-        const std::string & connection_string_) const override
+        const std::string & connection_string_,
+        bool use_connection_pooling_) const override
     {
-        return std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(context, http_timeout_, connection_string_);
+        return std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(context, http_timeout_, connection_string_, use_connection_pooling_);
     }
 
     const char * getStorageTypeName() const override { return "ODBC"; }

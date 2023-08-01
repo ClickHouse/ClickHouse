@@ -1,27 +1,28 @@
 ---
+slug: /en/engines/database-engines/
 toc_folder_title: Database Engines
 toc_priority: 27
 toc_title: Introduction
 ---
 
-# Database Engines {#database-engines}
+# Database Engines
 
-Database engines allow you to work with tables.
+Database engines allow you to work with tables. By default, ClickHouse uses the [Atomic](../../engines/database-engines/atomic.md) database engine, which provides configurable [table engines](../../engines/table-engines/index.md) and an [SQL dialect](../../sql-reference/syntax.md).
 
-By default, ClickHouse uses database engine [Atomic](../../engines/database-engines/atomic.md). It provides configurable [table engines](../../engines/table-engines/index.md) and an [SQL dialect](../../sql-reference/syntax.md).
+Here is a complete list of available database engines. Follow the links for more details:
 
-You can also use the following database engines:
+- [Atomic](../../engines/database-engines/atomic.md)
 
--   [MySQL](../../engines/database-engines/mysql.md)
+- [MySQL](../../engines/database-engines/mysql.md)
 
--   [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md)
+- [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md)
 
--   [Lazy](../../engines/database-engines/lazy.md)
+- [Lazy](../../engines/database-engines/lazy.md)
 
--   [Atomic](../../engines/database-engines/atomic.md)
+- [PostgreSQL](../../engines/database-engines/postgresql.md)
 
--   [PostgreSQL](../../engines/database-engines/postgresql.md)
+- [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md)
 
--   [Replicated](../../engines/database-engines/replicated.md)
+- [Replicated](../../engines/database-engines/replicated.md)
 
--   [SQLite](../../engines/database-engines/sqlite.md)
+- [SQLite](../../engines/database-engines/sqlite.md)

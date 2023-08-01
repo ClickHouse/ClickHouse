@@ -20,7 +20,9 @@ public:
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTDropFunctionQuery>(clone()); }
+    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTDropFunctionQuery>(clone()); }
+
+    QueryKind getQueryKind() const override { return QueryKind::Drop; }
 };
 
 }

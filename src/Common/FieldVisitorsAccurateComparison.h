@@ -45,20 +45,20 @@ public:
             if constexpr (std::is_same_v<T, U>)
                 return l == r;
 
-            if constexpr (std::is_arithmetic_v<T> && std::is_arithmetic_v<U>)
+            if constexpr (is_arithmetic_v<T> && is_arithmetic_v<U>)
                 return accurate::equalsOp(l, r);
 
             /// TODO This is wrong (does not respect scale).
             if constexpr (is_decimal_field<T> && is_decimal_field<U>)
                 return l == r;
 
-            if constexpr (is_decimal_field<T> && std::is_arithmetic_v<U>)
+            if constexpr (is_decimal_field<T> && is_arithmetic_v<U>)
                 return l == DecimalField<Decimal256>(Decimal256(r), 0);
 
-            if constexpr (std::is_arithmetic_v<T> && is_decimal_field<U>)
+            if constexpr (is_arithmetic_v<T> && is_decimal_field<U>)
                 return DecimalField<Decimal256>(Decimal256(l), 0) == r;
 
-            if constexpr (std::is_same_v<T, String> && std::is_arithmetic_v<U>)
+            if constexpr (std::is_same_v<T, String> && is_arithmetic_v<U>)
             {
                 ReadBufferFromString in(l);
                 U parsed;
@@ -66,7 +66,7 @@ public:
                 return operator()(parsed, r);
             }
 
-            if constexpr (std::is_same_v<U, String> && std::is_arithmetic_v<T>)
+            if constexpr (std::is_same_v<U, String> && is_arithmetic_v<T>)
             {
                 ReadBufferFromString in(r);
                 T parsed;
@@ -75,8 +75,8 @@ public:
             }
         }
 
-        throw Exception("Cannot compare " + demangle(typeid(T).name()) + " with " + demangle(typeid(U).name()),
-            ErrorCodes::BAD_TYPE_OF_FIELD);
+        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Cannot compare {} with {}",
+            demangle(typeid(T).name()), demangle(typeid(U).name()));
     }
 };
 
@@ -112,20 +112,20 @@ public:
             if constexpr (std::is_same_v<T, U>)
                 return l < r;
 
-            if constexpr (std::is_arithmetic_v<T> && std::is_arithmetic_v<U>)
+            if constexpr (is_arithmetic_v<T> && is_arithmetic_v<U>)
                 return accurate::lessOp(l, r);
 
             /// TODO This is wrong (does not respect scale).
             if constexpr (is_decimal_field<T> && is_decimal_field<U>)
                 return l < r;
 
-            if constexpr (is_decimal_field<T> && std::is_arithmetic_v<U>)
+            if constexpr (is_decimal_field<T> && is_arithmetic_v<U>)
                 return l < DecimalField<Decimal256>(Decimal256(r), 0);
 
-            if constexpr (std::is_arithmetic_v<T> && is_decimal_field<U>)
+            if constexpr (is_arithmetic_v<T> && is_decimal_field<U>)
                 return DecimalField<Decimal256>(Decimal256(l), 0) < r;
 
-            if constexpr (std::is_same_v<T, String> && std::is_arithmetic_v<U>)
+            if constexpr (std::is_same_v<T, String> && is_arithmetic_v<U>)
             {
                 ReadBufferFromString in(l);
                 U parsed;
@@ -133,7 +133,7 @@ public:
                 return operator()(parsed, r);
             }
 
-            if constexpr (std::is_same_v<U, String> && std::is_arithmetic_v<T>)
+            if constexpr (std::is_same_v<U, String> && is_arithmetic_v<T>)
             {
                 ReadBufferFromString in(r);
                 T parsed;
@@ -142,8 +142,8 @@ public:
             }
         }
 
-        throw Exception("Cannot compare " + demangle(typeid(T).name()) + " with " + demangle(typeid(U).name()),
-            ErrorCodes::BAD_TYPE_OF_FIELD);
+        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Cannot compare {} with {}",
+            demangle(typeid(T).name()), demangle(typeid(U).name()));
     }
 };
 

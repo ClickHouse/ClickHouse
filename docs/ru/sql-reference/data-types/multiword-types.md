@@ -1,6 +1,7 @@
 ---
-toc_priority: 61
-toc_title: Составные типы
+slug: /ru/sql-reference/data-types/multiword-types
+sidebar_position: 61
+sidebar_label: Составные типы
 ---
 
 # Составные типы {#multiword-types}
@@ -25,4 +26,3 @@ toc_title: Составные типы
 | NATIONAL CHAR                       | [String](../../sql-reference/data-types/string.md)        |
 | BINARY LARGE OBJECT                 | [String](../../sql-reference/data-types/string.md)        |
 | BINARY VARYING                      | [String](../../sql-reference/data-types/string.md)        |
-

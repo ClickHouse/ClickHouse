@@ -1,1 +1,0 @@
-../../../../en/sql-reference/functions/geo/geohash.md

@@ -3,7 +3,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <IO/ReadBuffer.h>
 #include <Server/HTTP/HTTPRequest.h>
-#include <Common/config.h>
+#include <Server/HTTP/HTTPContext.h>
+#include "config.h"
 
 #include <Poco/Net/HTTPServerSession.h>
 
@@ -18,7 +19,7 @@ class ReadBufferFromPocoSocket;
 class HTTPServerRequest : public HTTPRequest
 {
 public:
-    HTTPServerRequest(ContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session);
+    HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session);
 
     /// FIXME: it's a little bit inconvenient interface. The rationale is that all other ReadBuffer's wrap each other
     ///        via unique_ptr - but we can't inherit HTTPServerRequest from ReadBuffer and pass it around,

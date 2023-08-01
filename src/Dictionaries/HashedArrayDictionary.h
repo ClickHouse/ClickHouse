@@ -109,10 +109,15 @@ public:
         ColumnPtr in_key_column,
         const DataTypePtr & key_type) const override;
 
+    DictionaryHierarchicalParentToChildIndexPtr getHierarchicalIndex() const override;
+
+    size_t getHierarchicalIndexBytesAllocated() const override { return hierarchical_index_bytes_allocated; }
+
     ColumnPtr getDescendants(
         ColumnPtr key_column,
         const DataTypePtr & key_type,
-        size_t level) const override;
+        size_t level,
+        DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index) const override;
 
     Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
@@ -151,6 +156,8 @@ private:
             AttributeContainerType<Float32>,
             AttributeContainerType<Float64>,
             AttributeContainerType<UUID>,
+            AttributeContainerType<IPv4>,
+            AttributeContainerType<IPv6>,
             AttributeContainerType<StringRef>,
             AttributeContainerType<Array>>
             container;
@@ -172,6 +179,8 @@ private:
     void updateData();
 
     void loadData();
+
+    void buildHierarchyParentToChildIndexIfNeeded();
 
     void calculateBytesAllocated();
 
@@ -214,6 +223,7 @@ private:
     KeyAttribute key_attribute;
 
     size_t bytes_allocated = 0;
+    size_t hierarchical_index_bytes_allocated = 0;
     size_t element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
@@ -221,6 +231,7 @@ private:
 
     BlockPtr update_field_loaded_block;
     Arena string_arena;
+    DictionaryHierarchicalParentToChildIndexPtr hierarchical_index;
 };
 
 extern template class HashedArrayDictionary<DictionaryKeyType::Simple>;

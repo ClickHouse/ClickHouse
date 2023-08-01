@@ -1,6 +1,7 @@
 ---
-toc_priority: 46
-toc_title: "Устранение неисправностей"
+slug: /ru/operations/troubleshooting
+sidebar_position: 46
+sidebar_label: "Устранение неисправностей"
 ---
 
 # Устранение неисправностей {#ustranenie-neispravnostei}
@@ -103,7 +104,7 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
 -   Параметры endpoint.
 
-        Проверьте настройки [listen_host](server_configuration_parameters/settings.md#server_configuration_parameters-listen_host) и [tcp_port](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port).
+        Проверьте настройки [listen_host](./server-configuration-parameters//settings.md#server_configuration_parameters-listen_host) и [tcp_port](./server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port).
 
         По умолчанию, сервер ClickHouse принимает только локальные подключения.
 

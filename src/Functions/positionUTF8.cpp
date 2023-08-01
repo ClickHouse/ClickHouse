@@ -17,7 +17,7 @@ using FunctionPositionUTF8 = FunctionsStringSearch<PositionImpl<NamePositionUTF8
 
 }
 
-void registerFunctionPositionUTF8(FunctionFactory & factory)
+REGISTER_FUNCTION(PositionUTF8)
 {
     factory.registerFunction<FunctionPositionUTF8>();
 }

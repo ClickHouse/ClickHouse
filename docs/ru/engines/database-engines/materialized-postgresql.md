@@ -1,6 +1,7 @@
 ---
-toc_priority: 30
-toc_title: MaterializedPostgreSQL
+slug: /ru/engines/database-engines/materialized-postgresql
+sidebar_position: 30
+sidebar_label: MaterializedPostgreSQL
 ---
 
 # [экспериментальный] MaterializedPostgreSQL {#materialize-postgresql}
@@ -95,7 +96,7 @@ FROM pg_class
 WHERE oid = 'postgres_table'::regclass;
 ```
 
-!!! warning "Предупреждение"
+:::danger "Предупреждение"
     Репликация **TOAST**-значений не поддерживается. Для типа данных будет использоваться значение по умолчанию.
 	
 ## Пример использования {#example-of-use}

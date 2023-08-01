@@ -5,13 +5,11 @@
 #include <Disks/IDisk.h>
 #include <Disks/IVolume.h>
 #include <Disks/VolumeJBOD.h>
-#include <Disks/VolumeRAID1.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/WriteHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <base/logger_useful.h>
 
 #include <memory>
 #include <mutex>
@@ -69,7 +67,7 @@ public:
     ReservationPtr reserve(UInt64 bytes, size_t min_volume_index) const override;
 
     /// Find volume index, which contains disk
-    size_t getVolumeIndexByDisk(const DiskPtr & disk_ptr) const override;
+    std::optional<size_t> tryGetVolumeIndexByDiskName(const String & disk_name) const override;
 
     /// Reserves 0 bytes on disk with max available space
     /// Do not use this function when it is possible to predict size.
@@ -93,6 +91,7 @@ public:
     bool hasAnyVolumeWithDisabledMerges() const override;
 
     bool containsVolume(const String & volume_name) const override;
+
 private:
     Volumes volumes;
     const String name;
@@ -105,6 +104,8 @@ private:
     double move_factor = 0.1; /// by default move factor is 10%
 
     void buildVolumeIndices();
+
+    Poco::Logger * log;
 };
 
 
@@ -117,6 +118,8 @@ using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector
 {
 public:
+    static constexpr auto TMP_STORAGE_POLICY_PREFIX = "__";
+
     StoragePolicySelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks);
 
     StoragePolicySelectorPtr updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks) const;
@@ -124,8 +127,15 @@ public:
     /// Policy by name
     StoragePolicyPtr get(const String & name) const;
 
+    StoragePolicyPtr tryGet(const String & name) const;
+
     /// All policies
     const StoragePoliciesMap & getPoliciesMap() const { return policies; }
+
+    /// Add storage policy to StoragePolicySelector.
+    /// Used when storage policy needs to be created on the fly, not being present in config file.
+    /// Done by getOrSetStoragePolicyForSingleDisk.
+    void add(StoragePolicyPtr storage_policy);
 
 private:
     StoragePoliciesMap policies;

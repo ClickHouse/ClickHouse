@@ -73,6 +73,7 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
                 {"Create",              static_cast<Int16>(Coordination::OpNum::Create)},
                 {"Remove",              static_cast<Int16>(Coordination::OpNum::Remove)},
                 {"Exists",              static_cast<Int16>(Coordination::OpNum::Exists)},
+                {"Reconfig",            static_cast<Int16>(Coordination::OpNum::Reconfig)},
                 {"Get",                 static_cast<Int16>(Coordination::OpNum::Get)},
                 {"Set",                 static_cast<Int16>(Coordination::OpNum::Set)},
                 {"GetACL",              static_cast<Int16>(Coordination::OpNum::GetACL)},
@@ -83,8 +84,11 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
                 {"List",                static_cast<Int16>(Coordination::OpNum::List)},
                 {"Check",               static_cast<Int16>(Coordination::OpNum::Check)},
                 {"Multi",               static_cast<Int16>(Coordination::OpNum::Multi)},
+                {"MultiRead",           static_cast<Int16>(Coordination::OpNum::MultiRead)},
                 {"Auth",                static_cast<Int16>(Coordination::OpNum::Auth)},
                 {"SessionID",           static_cast<Int16>(Coordination::OpNum::SessionID)},
+                {"FilteredList",        static_cast<Int16>(Coordination::OpNum::FilteredList)},
+                {"CheckNotExists",      static_cast<Int16>(Coordination::OpNum::CheckNotExists)},
             });
 
     auto error_enum = getCoordinationErrorCodesEnumType();
@@ -121,6 +125,7 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
         {"address", DataTypeFactory::instance().get("IPv6")},
         {"port", std::make_shared<DataTypeUInt16>()},
         {"session_id", std::make_shared<DataTypeInt64>()},
+        {"duration_ms", std::make_shared<DataTypeUInt64>()},
 
         {"xid", std::make_shared<DataTypeInt32>()},
         {"has_watch", std::make_shared<DataTypeUInt8>()},
@@ -171,6 +176,7 @@ void ZooKeeperLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(IPv6ToBinary(address.host()).data(), 16);
     columns[i++]->insert(address.port());
     columns[i++]->insert(session_id);
+    columns[i++]->insert(duration_ms);
 
     columns[i++]->insert(xid);
     columns[i++]->insert(has_watch);
@@ -209,4 +215,4 @@ void ZooKeeperLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(children_array);
 }
 
-};
+}

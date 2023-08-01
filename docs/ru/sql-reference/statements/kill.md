@@ -1,6 +1,7 @@
 ---
-toc_priority: 46
-toc_title: KILL
+slug: /ru/sql-reference/statements/kill
+sidebar_position: 46
+sidebar_label: KILL
 ---
 
 # KILL {#kill-statements}
@@ -68,5 +69,3 @@ KILL MUTATION WHERE database = 'default' AND table = 'table' AND mutation_id = '
 Запрос полезен в случаях, когда мутация не может выполниться до конца (например, если функция в запросе мутации бросает исключение на данных таблицы).
 
 Данные, уже изменённые мутацией, остаются в таблице (отката на старую версию данных не происходит).
-
-

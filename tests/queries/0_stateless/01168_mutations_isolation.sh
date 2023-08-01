@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database
+# Tags: no-fasttest, no-replicated-database, no-ordinary-database
 # Looks like server does not listen https port in fasttest
 # FIXME Replicated database executes ALTERs in separate context, so transaction info is lost
 
@@ -53,6 +53,9 @@ tx 6                                            "alter table mt update n=n*10 wh
 tx 6                                            "insert into mt values (40)"
 tx 6                                            "commit"
 
+function accept_both_parts() {
+  sed 's/all_1_14_1_1/all_1_14_2_1/g'
+}
 
 tx 7 "begin transaction"
 tx 7 "select 7, n, _part from mt order by n"
@@ -61,7 +64,7 @@ tx_async 8                                      "alter table mt update n = 0 whe
 $CLICKHOUSE_CLIENT -q "kill mutation where database=currentDatabase() and mutation_id='mutation_15.txt' format Null" 2>&1| grep -Fv "probably it finished"
 tx_sync 8                                            "rollback"
 tx 7 "optimize table mt final"
-tx 7 "select 8, n, _part from mt order by n"
+tx 7 "select 8, n, _part from mt order by n" | accept_both_parts
 tx 10                                           "begin transaction"
 tx 10                                           "alter table mt update n = 0 where 1" | grep -Eo "Serialization error" | uniq
 tx 7 "alter table mt update n=n+1 where 1"
@@ -71,7 +74,7 @@ tx 7 "commit"
 
 
 tx_async 11 "begin transaction"
-tx_async 11 "select 9, n, _part from mt order by n"
+tx_async 11 "select 9, n, _part from mt order by n" | accept_both_parts
 tx_async 12                                           "begin transaction"
 tx_async 11 "alter table mt update n=n+1 where 1" >/dev/null
 tx_async 12                                           "alter table mt update n=n+1 where 1" >/dev/null
@@ -88,6 +91,6 @@ $CLICKHOUSE_CLIENT -q "kill transaction where tid=$tid_to_kill format Null"
 tx_sync 13                                            "rollback"
 
 tx 14 "begin transaction"
-tx 14 "select 10, n, _part from mt order by n"
+tx 14 "select 10, n, _part from mt order by n" | accept_both_parts
 
 $CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=0 -q "drop table mt"

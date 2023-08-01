@@ -1,5 +1,6 @@
 ---
-toc_title: ARRAY JOIN
+slug: /ru/sql-reference/statements/select/array-join
+sidebar_label: ARRAY JOIN
 ---
 
 # Секция ARRAY JOIN {#select-array-join-clause}

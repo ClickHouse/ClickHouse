@@ -1,8 +1,9 @@
 ---
+slug: /zh/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-toc_priority: 42
-toc_title: "\u5B57\u5178\u66F4\u65B0"
+sidebar_position: 42
+sidebar_label: "\u5B57\u5178\u66F4\u65B0"
 ---
 
 # 字典更新 {#dictionary-updates}
@@ -87,5 +88,3 @@ LIFETIME(MIN 300 MAX 360)
 SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source where id = 1'))
 ...
 ```
-
-[原始文章](https://clickhouse.com/docs/en/query_language/dicts/external_dicts_dict_lifetime/) <!--hide-->

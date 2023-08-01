@@ -108,27 +108,15 @@ public:
         return StringRef(&chars[offsetAt(n)], sizeAt(n) - 1);
     }
 
-    StringRef getDataAtWithTerminatingZero(size_t n) const override
-    {
-        assert(n < size());
-        return StringRef(&chars[offsetAt(n)], sizeAt(n));
-    }
-
     bool isDefaultAt(size_t n) const override
     {
         assert(n < size());
         return sizeAt(n) == 1;
     }
 
-/// Suppress gcc 7.3.1 warning: '*((void*)&<anonymous> +8)' may be used uninitialized in this function
-#if !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-
     void insert(const Field & x) override
     {
-        const String & s = DB::get<const String &>(x);
+        const String & s = x.get<const String &>();
         const size_t old_size = chars.size();
         const size_t size_to_append = s.size() + 1;
         const size_t new_size = old_size + size_to_append;
@@ -137,10 +125,6 @@ public:
         memcpy(chars.data() + old_size, s.c_str(), size_to_append);
         offsets.push_back(new_size);
     }
-
-#if !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
 
     void insertFrom(const IColumn & src_, size_t n) override
     {
@@ -177,17 +161,6 @@ public:
         offsets.push_back(new_size);
     }
 
-    /// Like getData, but inserting data should be zero-ending (i.e. length is 1 byte greater than real string size).
-    void insertDataWithTerminatingZero(const char * pos, size_t length)
-    {
-        const size_t old_size = chars.size();
-        const size_t new_size = old_size + length;
-
-        chars.resize(new_size);
-        memcpy(chars.data() + old_size, pos, length);
-        offsets.push_back(new_size);
-    }
-
     void popBack(size_t n) override
     {
         size_t nested_n = offsets.back() - offsetAt(offsets.size() - n);
@@ -214,8 +187,8 @@ public:
 
     void updateHashFast(SipHash & hash) const override
     {
-        hash.update(reinterpret_cast<const char *>(offsets.data()), size() * sizeof(offsets[0]));
-        hash.update(reinterpret_cast<const char *>(chars.data()), size() * sizeof(chars[0]));
+        hash.update(reinterpret_cast<const char *>(offsets.data()), offsets.size() * sizeof(offsets[0]));
+        hash.update(reinterpret_cast<const char *>(chars.data()), chars.size() * sizeof(chars[0]));
     }
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -237,7 +210,7 @@ public:
         offsets.push_back(offsets.back() + 1);
     }
 
-    virtual void insertManyDefaults(size_t length) override
+    void insertManyDefaults(size_t length) override
     {
         chars.resize_fill(chars.size() + length);
         for (size_t i = 0; i < length; ++i)
@@ -298,6 +271,11 @@ public:
     double getRatioOfDefaultRows(double sample_ratio) const override
     {
         return getRatioOfDefaultRowsImpl<ColumnString>(sample_ratio);
+    }
+
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        return getNumberOfDefaultRowsImpl<ColumnString>();
     }
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override

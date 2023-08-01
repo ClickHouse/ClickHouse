@@ -91,6 +91,8 @@ protected:
         settings.ostr << (settings.hilite ? hilite_keyword : "") << ASTExistsDatabaseQueryIDAndQueryNames::Query
                     << " " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(getDatabase());
     }
+
+    QueryKind getQueryKind() const override { return QueryKind::Exists; }
 };
 
 class ASTShowCreateDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTShowCreateDatabaseQueryIDAndQueryNames>
@@ -122,6 +124,8 @@ public:
         cloneOutputOptions(*res);
         return res;
     }
+
+    QueryKind getQueryKind() const override { return QueryKind::Describe; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override

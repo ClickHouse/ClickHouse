@@ -1,6 +1,7 @@
 ---
-toc_folder_title: 第三方工具
-toc_priority: 24
+slug: /zh/interfaces/third-party/
+sidebar_label: 第三方工具
+sidebar_position: 24
 ---
 
 # 第三方工具 {#third-party-interfaces}
@@ -12,5 +13,6 @@ toc_priority: 24
 -   [GUI](../../interfaces/third-party/gui.md)
 -   [Proxies](../../interfaces/third-party/proxy.md)
 
-!!! note "注意"
+:::note
 支持通用API的通用工具[ODBC](../../interfaces/odbc.md)或[JDBC](../../interfaces/jdbc.md)，通常也适用于ClickHouse，但这里没有列出，因为它们实在太多了。
+:::

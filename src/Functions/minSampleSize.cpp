@@ -282,7 +282,7 @@ struct ConversionImpl
 };
 
 
-void registerFunctionMinSampleSize(FunctionFactory & factory)
+REGISTER_FUNCTION(MinSampleSize)
 {
     factory.registerFunction<FunctionMinSampleSize<ContinousImpl>>();
     factory.registerFunction<FunctionMinSampleSize<ConversionImpl>>();

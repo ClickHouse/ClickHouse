@@ -1,6 +1,7 @@
 ---
-toc_priority: 29
-toc_title: "Прокси-серверы от сторонних разработчиков"
+slug: /ru/interfaces/third-party/proxy
+sidebar_position: 29
+sidebar_label: "Прокси-серверы от сторонних разработчиков"
 ---
 
 # Прокси-серверы от сторонних разработчиков {#proksi-servery-ot-storonnikh-razrabotchikov}
@@ -40,4 +41,3 @@ toc_title: "Прокси-серверы от сторонних разработ
 -   Базовая аутентификация.
 
 Реализован на Go.
-

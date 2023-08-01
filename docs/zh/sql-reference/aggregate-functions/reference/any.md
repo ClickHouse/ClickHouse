@@ -1,5 +1,6 @@
 ---
-toc_priority: 6
+slug: /zh/sql-reference/aggregate-functions/reference/any
+sidebar_position: 6
 ---
 
 # any {#agg_function-any}

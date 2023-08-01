@@ -44,6 +44,8 @@
 #define HAVE_SETJMP_H
 #define HAVE_SYS_STAT_H
 #define HAVE_UNISTD_H
+#define HAVE_POLL_H
+#define HAVE_PTHREAD_H
 
 #define ENABLE_IPV6
 #define USE_OPENSSL

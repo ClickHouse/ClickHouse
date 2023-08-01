@@ -1,5 +1,6 @@
 ---
-toc_priority: 1
+slug: /zh/sql-reference/aggregate-functions/reference/count
+sidebar_position: 1
 ---
 
 # count {#agg_function-count}

@@ -45,7 +45,6 @@ def start_cluster():
 
 
 def check_balance(node, table):
-
     partitions = node.query(
         """
         WITH
@@ -135,6 +134,7 @@ def test_replicated_balanced_merge_fetch(start_cluster):
                     old_parts_lifetime = 1,
                     cleanup_delay_period = 1,
                     cleanup_delay_period_random_add = 2,
+                    cleanup_thread_preferred_points_per_iteration=0,
                     min_bytes_to_rebalance_partition_over_jbod = 1024,
                     max_bytes_to_merge_at_max_space_in_pool = 4096
             """.format(
@@ -158,7 +158,7 @@ def test_replicated_balanced_merge_fetch(start_cluster):
             node.query("create table tmp2 as tmp1")
 
         node2.query("alter table tbl modify setting always_fetch_merged_part = 1")
-        p = Pool(20)
+        p = Pool(5)
 
         def task(i):
             print("Processing insert {}/{}".format(i, 200))
@@ -166,6 +166,8 @@ def test_replicated_balanced_merge_fetch(start_cluster):
             node1.query(
                 "insert into tbl select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
             )
+
+            # Fill jbod disks with garbage data
             node1.query(
                 "insert into tmp1 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
             )

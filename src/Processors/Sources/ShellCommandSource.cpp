@@ -1,6 +1,6 @@
 #include <Processors/Sources/ShellCommandSource.h>
 
-#include <sys/poll.h>
+#include <poll.h>
 
 #include <Common/Stopwatch.h>
 
@@ -71,28 +71,22 @@ static bool pollFd(int fd, size_t timeout_milliseconds, int events)
     pfd.events = events;
     pfd.revents = 0;
 
-    Stopwatch watch;
-
     int res;
 
     while (true)
     {
-        res = poll(&pfd, 1, timeout_milliseconds);
+        Stopwatch watch;
+        res = poll(&pfd, 1, static_cast<int>(timeout_milliseconds));
 
         if (res < 0)
         {
-            if (errno == EINTR)
-            {
-                watch.stop();
-                timeout_milliseconds -= watch.elapsedMilliseconds();
-                watch.start();
-
-                continue;
-            }
-            else
-            {
+            if (errno != EINTR)
                 throwFromErrno("Cannot poll", ErrorCodes::CANNOT_POLL);
-            }
+
+            const auto elapsed = watch.elapsedMilliseconds();
+            if (timeout_milliseconds <= elapsed)
+                break;
+            timeout_milliseconds -= elapsed;
         }
         else
         {
@@ -125,7 +119,7 @@ public:
             ssize_t res = ::read(fd, internal_buffer.begin(), internal_buffer.size());
 
             if (-1 == res && errno != EINTR)
-                throwFromErrno("Cannot read from pipe ", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+                throwFromErrno("Cannot read from pipe", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
 
             if (res == 0)
                 break;
@@ -187,7 +181,7 @@ public:
             ssize_t res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
 
             if ((-1 == res || 0 == res) && errno != EINTR)
-                throwFromErrno("Cannot write into pipe ", ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
+                throwFromErrno("Cannot write into pipe", ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
 
             if (res > 0)
                 bytes_written += res;
@@ -244,7 +238,7 @@ namespace
     *
     * If process_pool is passed in constructor then after source is destroyed process is returned to pool.
     */
-    class ShellCommandSource final : public SourceWithProgress
+    class ShellCommandSource final : public ISource
     {
     public:
 
@@ -260,7 +254,7 @@ namespace
             const ShellCommandSourceConfiguration & configuration_ = {},
             std::unique_ptr<ShellCommandHolder> && command_holder_ = nullptr,
             std::shared_ptr<ProcessPool> process_pool_ = nullptr)
-            : SourceWithProgress(sample_block_)
+            : ISource(sample_block_)
             , context(context_)
             , format(format_)
             , sample_block(sample_block_)
@@ -280,7 +274,7 @@ namespace
                     }
                     catch (...)
                     {
-                        std::lock_guard<std::mutex> lock(send_data_lock);
+                        std::lock_guard lock(send_data_lock);
                         exception_during_send_data = std::current_exception();
                     }
                 });
@@ -358,7 +352,11 @@ namespace
                 }
 
                 if (!executor->pull(chunk))
+                {
+                    if (configuration.check_exit_code)
+                        command->wait();
                     return {};
+                }
 
                 current_read_rows += chunk.getNumRows();
             }
@@ -373,7 +371,7 @@ namespace
 
         Status prepare() override
         {
-            auto status = SourceWithProgress::prepare();
+            auto status = ISource::prepare();
 
             if (status == Status::Finished)
             {
@@ -393,7 +391,7 @@ namespace
 
         void rethrowExceptionDuringSendDataIfNeeded()
         {
-            std::lock_guard<std::mutex> lock(send_data_lock);
+            std::lock_guard lock(send_data_lock);
             if (exception_during_send_data)
             {
                 command_is_invalid = true;
@@ -474,7 +472,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
     std::unique_ptr<ShellCommand> process;
     std::unique_ptr<ShellCommandHolder> process_holder;
 
-    auto destructor_strategy = ShellCommand::DestructorStrategy{true /*terminate_in_destructor*/, configuration.command_termination_timeout_seconds};
+    auto destructor_strategy = ShellCommand::DestructorStrategy{true /*terminate_in_destructor*/, SIGTERM, configuration.command_termination_timeout_seconds};
     command_config.terminate_in_destructor_strategy = destructor_strategy;
 
     bool is_executable_pool = (process_pool != nullptr);
@@ -527,7 +525,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         }
         else
         {
-            auto descriptor = i + 2;
+            int descriptor = static_cast<int>(i) + 2;
             auto it = process->write_fds.find(descriptor);
             if (it == process->write_fds.end())
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Process does not contain descriptor to write {}", descriptor);
@@ -556,11 +554,11 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             CompletedPipelineExecutor executor(*pipeline);
             executor.execute();
 
+            timeout_write_buffer->finalize();
+            timeout_write_buffer->reset();
+
             if (!is_executable_pool)
             {
-                timeout_write_buffer->next();
-                timeout_write_buffer->reset();
-
                 write_buffer->close();
             }
         };
@@ -578,9 +576,8 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         source_configuration,
         std::move(process_holder),
         process_pool);
-    auto pipe = Pipe(std::move(source));
 
-    return pipe;
+    return Pipe(std::move(source));
 }
 
 }

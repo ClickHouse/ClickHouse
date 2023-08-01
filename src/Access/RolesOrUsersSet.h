@@ -5,6 +5,7 @@
 #include <boost/container/flat_set.hpp>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 
 
 namespace DB
@@ -61,6 +62,9 @@ struct RolesOrUsersSet
 
     friend bool operator ==(const RolesOrUsersSet & lhs, const RolesOrUsersSet & rhs);
     friend bool operator !=(const RolesOrUsersSet & lhs, const RolesOrUsersSet & rhs) { return !(lhs == rhs); }
+
+    std::vector<UUID> findDependencies() const;
+    void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids);
 
     bool all = false;
     boost::container::flat_set<UUID> ids;

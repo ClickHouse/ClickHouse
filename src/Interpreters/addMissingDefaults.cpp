@@ -23,7 +23,7 @@ ActionsDAGPtr addMissingDefaults(
     bool null_as_default)
 {
     auto actions = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
-    auto & index = actions->getIndex();
+    auto & index = actions->getOutputs();
 
     /// For missing columns of nested structure, you need to create not a column of empty arrays, but a column of arrays of correct lengths.
     /// First, remember the offset columns for all arrays in the block.
@@ -59,7 +59,7 @@ ActionsDAGPtr addMissingDefaults(
 
         String offsets_name = Nested::extractTableName(column.name);
         const auto * array_type = typeid_cast<const DataTypeArray *>(column.type.get());
-        if (array_type && nested_groups.count(offsets_name))
+        if (array_type && nested_groups.contains(offsets_name))
         {
             const auto & nested_type = array_type->getNestedType();
             ColumnPtr nested_column = nested_type->createColumnConstWithDefaultValue(0);

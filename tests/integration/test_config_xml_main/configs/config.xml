@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <clickhouse>
     <logger>
         <level>trace</level>
@@ -60,8 +59,6 @@
 
     <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 
-    <mark_cache_size>5368709120</mark_cache_size>
-
     <mmap_cache_size>1000</mmap_cache_size>
 
     <path>./</path>
@@ -93,73 +90,6 @@
                 </replica>
             </shard>
         </test_shard_localhost>
-        <test_cluster_two_shards_localhost>
-             <shard>
-                 <replica>
-                     <host>localhost</host>
-                     <port>9000</port>
-                 </replica>
-             </shard>
-             <shard>
-                 <replica>
-                     <host>localhost</host>
-                     <port>9000</port>
-                 </replica>
-             </shard>
-        </test_cluster_two_shards_localhost>
-        <test_cluster_two_shards>
-            <shard>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <shard>
-                <replica>
-                    <host>127.0.0.2</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-        </test_cluster_two_shards>
-        <test_cluster_two_shards_internal_replication>
-            <shard>
-                <internal_replication>true</internal_replication>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <shard>
-                <internal_replication>true</internal_replication>
-                <replica>
-                    <host>127.0.0.2</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-        </test_cluster_two_shards_internal_replication>
-        <test_shard_localhost_secure>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9440</port>
-                    <secure>1</secure>
-                </replica>
-            </shard>
-        </test_shard_localhost_secure>
-        <test_unavailable_shard>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>1</port>
-                </replica>
-            </shard>
-        </test_unavailable_shard>
     </remote_servers>
 
     <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>

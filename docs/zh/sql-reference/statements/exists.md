@@ -1,6 +1,7 @@
 ---
-toc_priority: 45
-toc_title: EXISTS
+slug: /zh/sql-reference/statements/exists
+sidebar_position: 45
+sidebar_label: EXISTS
 ---
 
 # EXISTS 语句 {#exists-statement}

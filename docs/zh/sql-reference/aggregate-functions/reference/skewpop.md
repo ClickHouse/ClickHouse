@@ -1,5 +1,6 @@
 ---
-toc_priority: 150
+slug: /zh/sql-reference/aggregate-functions/reference/skewpop
+sidebar_position: 150
 ---
 
 # skewPop {#skewpop}

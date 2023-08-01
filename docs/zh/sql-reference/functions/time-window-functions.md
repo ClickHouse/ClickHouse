@@ -1,6 +1,7 @@
 ---
-toc_priority: 68
-toc_title: 时间窗口
+slug: /zh/sql-reference/functions/time-window-functions
+sidebar_position: 68
+sidebar_label: 时间窗口
 ---
 
 # 时间窗口函数 {#time-window-han-shu}

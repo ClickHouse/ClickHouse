@@ -5,14 +5,19 @@ import random
 import string
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))
-sys.path.insert(0, os.path.join(CURDIR, 'helpers'))
+sys.path.insert(0, os.path.join(CURDIR, "helpers"))
 
 from pure_http_client import ClickHouseClient
 
+
 def get_random_string(length):
-    return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(length))
+    return "".join(
+        random.choice(string.ascii_uppercase + string.digits) for _ in range(length)
+    )
+
 
 client = ClickHouseClient()
+
 
 def insert_block(table_name, block_granularity_rows, block_rows):
     global client
@@ -25,9 +30,12 @@ def insert_block(table_name, block_granularity_rows, block_rows):
     values_row = ", ".join("(1, '" + row + "')" for row in block_data)
     client.query("INSERT INTO {} VALUES {}".format(table_name, values_row))
 
+
 try:
     client.query("DROP TABLE IF EXISTS t")
-    client.query("CREATE TABLE t (v UInt8, data String) ENGINE = MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0")
+    client.query(
+        "CREATE TABLE t (v UInt8, data String) ENGINE = MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0"
+    )
 
     client.query("SYSTEM STOP MERGES t")
 
@@ -53,6 +61,10 @@ try:
     client.query("SYSTEM START MERGES t")
     client.query("OPTIMIZE TABLE t FINAL")
 
-    print(client.query_return_df("SELECT COUNT() as C FROM t FORMAT TabSeparatedWithNames")['C'][0])
+    print(
+        client.query_return_df(
+            "SELECT COUNT() as C FROM t FORMAT TabSeparatedWithNames"
+        )["C"][0]
+    )
 finally:
     client.query("DROP TABLE IF EXISTS t")

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/WriteBufferFromFileBase.h>
+#include <Common/Throttler_fwd.h>
 
 
 namespace DB
@@ -15,6 +16,7 @@ public:
         int fd_ = -1,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
+        ThrottlerPtr throttler_ = {},
         size_t alignment = 0,
         std::string file_name_ = "");
 
@@ -49,6 +51,7 @@ protected:
     void nextImpl() override;
 
     int fd;
+    ThrottlerPtr throttler;
 
     /// If file has name contains filename, otherwise contains string "(fd=...)"
     std::string file_name;

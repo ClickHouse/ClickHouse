@@ -26,8 +26,8 @@ public:
         // Explicit empty initializers are needed to make designated initializers
         // work on GCC 10.
         std::unordered_set<String> uniq_names {};
-        std::vector<const ASTFunction *> aggregates {};
-        std::vector<const ASTFunction *> window_functions {};
+        ASTs aggregates;
+        ASTs window_functions;
     };
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr & child)
@@ -61,33 +61,33 @@ public:
     }
 
 private:
-    static void visit(const ASTFunction & node, const ASTPtr &, Data & data)
+    static void visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
     {
         if (isAggregateFunction(node))
         {
             if (data.assert_no_aggregates)
-                throw Exception("Aggregate function " + node.getColumnName()  + " is found " + String(data.assert_no_aggregates) + " in query",
-                                ErrorCodes::ILLEGAL_AGGREGATION);
+                throw Exception(ErrorCodes::ILLEGAL_AGGREGATION, "Aggregate function {} is found {} in query",
+                                node.getColumnName(), String(data.assert_no_aggregates));
 
             String column_name = node.getColumnName();
             if (data.uniq_names.count(column_name))
                 return;
 
             data.uniq_names.insert(column_name);
-            data.aggregates.push_back(&node);
+            data.aggregates.push_back(ast);
         }
         else if (node.is_window_function)
         {
             if (data.assert_no_windows)
-                throw Exception("Window function " + node.getColumnName()  + " is found " + String(data.assert_no_windows) + " in query",
-                                ErrorCodes::ILLEGAL_AGGREGATION);
+                throw Exception(ErrorCodes::ILLEGAL_AGGREGATION, "Window function {} is found {} in query",
+                                node.getColumnName(), String(data.assert_no_windows));
 
             String column_name = node.getColumnName();
             if (data.uniq_names.count(column_name))
                 return;
 
             data.uniq_names.insert(column_name);
-            data.window_functions.push_back(&node);
+            data.window_functions.push_back(ast);
         }
     }
 
@@ -95,9 +95,7 @@ private:
     {
         // Aggregate functions can also be calculated as window functions, but
         // here we are interested in aggregate functions calculated in GROUP BY.
-        return !node.is_window_function
-            && AggregateFunctionFactory::instance().isAggregateFunctionName(
-                node.name);
+        return !node.is_window_function && AggregateUtils::isAggregateFunction(node);
     }
 };
 
@@ -115,5 +113,7 @@ inline void assertNoAggregates(const ASTPtr & ast, const char * description)
     GetAggregatesVisitor::Data data{.assert_no_aggregates = description};
     GetAggregatesVisitor(data).visit(ast);
 }
+
+ASTs getExpressionsWithWindowFunctions(ASTPtr & ast);
 
 }

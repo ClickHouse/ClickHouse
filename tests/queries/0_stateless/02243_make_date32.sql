@@ -39,14 +39,13 @@ select makeDate32(2150,1,1);
 select makeDate32(1969,1,1);
 select makeDate32(1969,12,1);
 select makeDate32(1969,12,31);
-select makeDate32(2282,1,1);
-select makeDate32(2283,1,1);
-select makeDate32(2283,11,11);
-select makeDate32(2283,11,12);
-select makeDate32(2284,1,1);
-select makeDate32(1924,1,1);
-select makeDate32(1924,12,1);
-select makeDate32(1924,12,31);
+select makeDate32(2298,1,1);
+select makeDate32(2299,1,1);
+select makeDate32(2299,12,31);
+select makeDate32(2300,1,1);
+select makeDate32(1899,1,1);
+select makeDate32(1899,12,1);
+select makeDate32(1899,12,31);
 select makeDate32(1970,0,0);
 select makeDate32(1970,0,1);
 select makeDate32(1970,1,0);
@@ -79,7 +78,6 @@ select makeDate32(1980, NULL, 4);
 select makeDate32(1980, 3, NULL);
 
 select makeDate32(1980); -- { serverError 42 }
-select makeDate32(1980, 1); -- { serverError 42 }
 select makeDate32(1980, 1, 1, 1); -- { serverError 42 }
 
 select makeDate32(year, month, day) from (select NULL as year, 2 as month, 3 as day union all select 1984 as year, 2 as month, 3 as day) order by year, month, day;

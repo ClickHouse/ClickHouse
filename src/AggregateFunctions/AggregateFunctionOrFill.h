@@ -30,16 +30,14 @@ private:
     AggregateFunctionPtr nested_function;
 
     size_t size_of_data;
-    DataTypePtr inner_type;
     bool inner_nullable;
 
 public:
     AggregateFunctionOrFill(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionHelper<AggregateFunctionOrFill>{arguments, params}
+        : IAggregateFunctionHelper<AggregateFunctionOrFill>{arguments, params, createResultType(nested_function_->getResultType())}
         , nested_function{nested_function_}
-        , size_of_data {nested_function->sizeOfData()}
-        , inner_type {nested_function->getReturnType()}
-        , inner_nullable {inner_type->isNullable()}
+        , size_of_data{nested_function->sizeOfData()}
+        , inner_nullable{nested_function->getResultType()->isNullable()}
     {
         // nothing
     }
@@ -98,8 +96,13 @@ public:
         nested_function->destroy(place);
     }
 
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        nested_function->destroyUpToState(place);
+    }
+
     void add(
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         size_t row_num,
         Arena * arena) const override
@@ -109,7 +112,8 @@ public:
     }
 
     void addBatch( /// NOLINT
-        size_t batch_size,
+        size_t row_begin,
+        size_t row_end,
         AggregateDataPtr * places,
         size_t place_offset,
         const IColumn ** columns,
@@ -119,7 +123,7 @@ public:
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t i = 0; i < batch_size; ++i)
+            for (size_t i = row_begin; i < row_end; ++i)
             {
                 if (flags[i] && places[i])
                     add(places[i] + place_offset, columns, i, arena);
@@ -127,21 +131,26 @@ public:
         }
         else
         {
-            nested_function->addBatch(batch_size, places, place_offset, columns, arena, if_argument_pos);
-            for (size_t i = 0; i < batch_size; ++i)
+            nested_function->addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+            for (size_t i = row_begin; i < row_end; ++i)
                 if (places[i])
                     (places[i] + place_offset)[size_of_data] = 1;
         }
     }
 
     void addBatchSinglePlace( /// NOLINT
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const override
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
     {
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            nested_function->addBatchSinglePlace(batch_size, place, columns, arena, if_argument_pos);
-            for (size_t i = 0; i < batch_size; ++i)
+            nested_function->addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
+            for (size_t i = row_begin; i < row_end; ++i)
             {
                 if (flags[i])
                 {
@@ -152,17 +161,18 @@ public:
         }
         else
         {
-            if (batch_size)
+            if (row_end != row_begin)
             {
-                nested_function->addBatchSinglePlace(batch_size, place, columns, arena, if_argument_pos);
+                nested_function->addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
                 place[size_of_data] = 1;
             }
         }
     }
 
     void addBatchSinglePlaceNotNull( /// NOLINT
-        size_t batch_size,
-        AggregateDataPtr place,
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena * arena,
@@ -171,8 +181,8 @@ public:
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            nested_function->addBatchSinglePlaceNotNull(batch_size, place, columns, null_map, arena, if_argument_pos);
-            for (size_t i = 0; i < batch_size; ++i)
+            nested_function->addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
+            for (size_t i = row_begin; i < row_end; ++i)
             {
                 if (flags[i] && !null_map[i])
                 {
@@ -183,10 +193,10 @@ public:
         }
         else
         {
-            if (batch_size)
+            if (row_end != row_begin)
             {
-                nested_function->addBatchSinglePlaceNotNull(batch_size, place, columns, null_map, arena, if_argument_pos);
-                for (size_t i = 0; i < batch_size; ++i)
+                nested_function->addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
+                for (size_t i = row_begin; i < row_end; ++i)
                 {
                     if (!null_map[i])
                     {
@@ -199,7 +209,7 @@ public:
     }
 
     void merge(
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         ConstAggregateDataPtr rhs,
         Arena * arena) const override
     {
@@ -208,54 +218,56 @@ public:
     }
 
     void mergeBatch(
-        size_t batch_size,
+        size_t row_begin,
+        size_t row_end,
         AggregateDataPtr * places,
         size_t place_offset,
         const AggregateDataPtr * rhs,
         Arena * arena) const override
     {
-        nested_function->mergeBatch(batch_size, places, place_offset, rhs, arena);
-        for (size_t i = 0; i < batch_size; ++i)
+        nested_function->mergeBatch(row_begin, row_end, places, place_offset, rhs, arena);
+        for (size_t i = row_begin; i < row_end; ++i)
             (places[i] + place_offset)[size_of_data] |= rhs[i][size_of_data];
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf, std::optional<size_t> version) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         nested_function->serialize(place, buf, version);
 
         writeChar(place[size_of_data], buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         nested_function->deserialize(place, buf, version, arena);
 
         readChar(place[size_of_data], buf);
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(const DataTypePtr & inner_type_)
     {
         if constexpr (UseNull)
         {
             // -OrNull
 
-            if (inner_nullable)
-                return inner_type;
+            if (inner_type_->isNullable())
+                return inner_type_;
 
-            return std::make_shared<DataTypeNullable>(inner_type);
+            return std::make_shared<DataTypeNullable>(inner_type_);
         }
         else
         {
             // -OrDefault
 
-            return inner_type;
+            return inner_type_;
         }
     }
 
-    void insertResultInto(
-        AggregateDataPtr place,
+    template <bool merge>
+    void insertResultIntoImpl(
+        AggregateDataPtr __restrict place,
         IColumn & to,
-        Arena * arena) const override
+        Arena * arena) const
     {
         if (place[size_of_data])
         {
@@ -264,7 +276,12 @@ public:
                 // -OrNull
 
                 if (inner_nullable)
-                    nested_function->insertResultInto(place, to, arena);
+                {
+                    if constexpr (merge)
+                        nested_function->insertMergeResultInto(place, to, arena);
+                    else
+                        nested_function->insertResultInto(place, to, arena);
+                }
                 else
                 {
                     ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
@@ -276,12 +293,24 @@ public:
             else
             {
                 // -OrDefault
-
-                nested_function->insertResultInto(place, to, arena);
+                if constexpr (merge)
+                    nested_function->insertMergeResultInto(place, to, arena);
+                else
+                    nested_function->insertResultInto(place, to, arena);
             }
         }
         else
             to.insertDefault();
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<false>(place, to, arena);
+    }
+
+    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<true>(place, to, arena);
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }

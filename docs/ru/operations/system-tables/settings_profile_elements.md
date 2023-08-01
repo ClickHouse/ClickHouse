@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/settings_profile_elements
+---
 # system.settings_profile_elements {#system_tables-settings_profile_elements}
 
 Описывает содержимое профиля настроек:
@@ -26,4 +29,3 @@
 -    `readonly` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges))) — Профиль разрешает только запросы на чтение.
 
 -    `inherit_profile` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Родительский профиль для данного профиля настроек. `NULL` если не задано. Профиль настроек может наследовать все значения и ограничения настроек (`min`, `max`, `readonly`) от своего родительского профиля.
-

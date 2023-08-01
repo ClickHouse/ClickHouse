@@ -1,5 +1,6 @@
 ---
-toc_priority: 110
+slug: /zh/sql-reference/aggregate-functions/reference/grouparray
+sidebar_position: 110
 ---
 
 # groupArray {#agg_function-grouparray}

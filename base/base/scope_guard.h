@@ -5,13 +5,13 @@
 #include <utility>
 
 template <class F>
-class [[nodiscard]] basic_scope_guard
+class [[nodiscard]] BasicScopeGuard
 {
 public:
-    constexpr basic_scope_guard() = default;
-    constexpr basic_scope_guard(basic_scope_guard && src) : function{src.release()} {}
+    constexpr BasicScopeGuard() = default;
+    constexpr BasicScopeGuard(BasicScopeGuard && src) : function{src.release()} {} // NOLINT(hicpp-noexcept-move, performance-noexcept-move-constructor)
 
-    constexpr basic_scope_guard & operator=(basic_scope_guard && src)
+    constexpr BasicScopeGuard & operator=(BasicScopeGuard && src) // NOLINT(hicpp-noexcept-move, performance-noexcept-move-constructor)
     {
         if (this != &src)
         {
@@ -21,11 +21,13 @@ public:
         return *this;
     }
 
-    template <typename G, typename = std::enable_if_t<std::is_convertible_v<G, F>, void>>
-    constexpr basic_scope_guard(basic_scope_guard<G> && src) : function{src.release()} {}
+    template <typename G>
+    requires std::is_convertible_v<G, F>
+    constexpr BasicScopeGuard(BasicScopeGuard<G> && src) : function{src.release()} {} // NOLINT(google-explicit-constructor)
 
-    template <typename G, typename = std::enable_if_t<std::is_convertible_v<G, F>, void>>
-    constexpr basic_scope_guard & operator=(basic_scope_guard<G> && src)
+    template <typename G>
+    requires std::is_convertible_v<G, F>
+    constexpr BasicScopeGuard & operator=(BasicScopeGuard<G> && src)
     {
         if (this != &src)
         {
@@ -35,13 +37,15 @@ public:
         return *this;
     }
 
-    template <typename G, typename = std::enable_if_t<std::is_convertible_v<G, F>, void>>
-    constexpr basic_scope_guard(const G & function_) : function{function_} {}
+    template <typename G>
+    requires std::is_convertible_v<G, F>
+    constexpr BasicScopeGuard(const G & function_) : function{function_} {} // NOLINT(google-explicit-constructor)
 
-    template <typename G, typename = std::enable_if_t<std::is_convertible_v<G, F>, void>>
-    constexpr basic_scope_guard(G && function_) : function{std::move(function_)} {}
+    template <typename G>
+    requires std::is_convertible_v<G, F>
+    constexpr BasicScopeGuard(G && function_) : function{std::move(function_)} {} // NOLINT(google-explicit-constructor, bugprone-forwarding-reference-overload, bugprone-move-forwarding-reference)
 
-    ~basic_scope_guard() { invoke(); }
+    ~BasicScopeGuard() { invoke(); }
 
     static constexpr bool is_nullable = std::is_constructible_v<bool, F>;
 
@@ -64,8 +68,9 @@ public:
         return std::exchange(function, {});
     }
 
-    template <typename G, typename = std::enable_if_t<std::is_convertible_v<G, F>, void>>
-    basic_scope_guard<F> & join(basic_scope_guard<G> && other)
+    template <typename G>
+    requires std::is_convertible_v<G, F>
+    BasicScopeGuard<F> & join(BasicScopeGuard<G> && other)
     {
         if (other.function)
         {
@@ -97,14 +102,13 @@ private:
     F function = F{};
 };
 
-using scope_guard = basic_scope_guard<std::function<void(void)>>;
+using scope_guard = BasicScopeGuard<std::function<void(void)>>;
 
 
 template <class F>
-inline basic_scope_guard<F> make_scope_guard(F && function_) { return std::forward<F>(function_); }
+inline BasicScopeGuard<F> make_scope_guard(F && function_) { return std::forward<F>(function_); }
 
 #define SCOPE_EXIT_CONCAT(n, ...) \
 const auto scope_exit##n = make_scope_guard([&] { __VA_ARGS__; })
 #define SCOPE_EXIT_FWD(n, ...) SCOPE_EXIT_CONCAT(n, __VA_ARGS__)
 #define SCOPE_EXIT(...) SCOPE_EXIT_FWD(__LINE__, __VA_ARGS__)
-

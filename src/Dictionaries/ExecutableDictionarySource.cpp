@@ -4,7 +4,7 @@
 
 #include <boost/algorithm/string/split.hpp>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/LocalDateTime.h>
 #include <Common/filesystemHelpers.h>
 
@@ -103,7 +103,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
 {
 }
 
-Pipe ExecutableDictionarySource::loadAll()
+QueryPipeline ExecutableDictionarySource::loadAll()
 {
     if (configuration.implicit_key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadAll method");
@@ -114,10 +114,13 @@ Pipe ExecutableDictionarySource::loadAll()
     auto command = configuration.command;
     updateCommandIfNeeded(command, coordinator_configuration.execute_direct, context);
 
-    return coordinator->createPipe(command, configuration.command_arguments, sample_block, context);
+    ShellCommandSourceConfiguration command_configuration {
+        .check_exit_code = true,
+    };
+    return QueryPipeline(coordinator->createPipe(command, configuration.command_arguments, {}, sample_block, context, command_configuration));
 }
 
-Pipe ExecutableDictionarySource::loadUpdatedAll()
+QueryPipeline ExecutableDictionarySource::loadUpdatedAll()
 {
     if (configuration.implicit_key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadUpdatedAll method");
@@ -148,10 +151,14 @@ Pipe ExecutableDictionarySource::loadUpdatedAll()
     update_time = new_update_time;
 
     LOG_TRACE(log, "loadUpdatedAll {}", command);
-    return coordinator->createPipe(command, command_arguments, sample_block, context);
+
+    ShellCommandSourceConfiguration command_configuration {
+        .check_exit_code = true,
+    };
+    return QueryPipeline(coordinator->createPipe(command, command_arguments, {}, sample_block, context, command_configuration));
 }
 
-Pipe ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -159,7 +166,7 @@ Pipe ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
     return getStreamForBlock(block);
 }
 
-Pipe ExecutableDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline ExecutableDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
@@ -167,7 +174,7 @@ Pipe ExecutableDictionarySource::loadKeys(const Columns & key_columns, const std
     return getStreamForBlock(block);
 }
 
-Pipe ExecutableDictionarySource::getStreamForBlock(const Block & block)
+QueryPipeline ExecutableDictionarySource::getStreamForBlock(const Block & block)
 {
     const auto & coordinator_configuration = coordinator->getConfiguration();
     String command = configuration.command;
@@ -179,12 +186,16 @@ Pipe ExecutableDictionarySource::getStreamForBlock(const Block & block)
     Pipes shell_input_pipes;
     shell_input_pipes.emplace_back(std::move(shell_input_pipe));
 
-    auto pipe = coordinator->createPipe(command, configuration.command_arguments, std::move(shell_input_pipes), sample_block, context);
+    ShellCommandSourceConfiguration command_configuration {
+        .check_exit_code = true,
+    };
+
+    auto pipe = coordinator->createPipe(command, configuration.command_arguments, std::move(shell_input_pipes), sample_block, context, command_configuration);
 
     if (configuration.implicit_key)
         pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
 
-    return pipe;
+    return QueryPipeline(std::move(pipe));
 }
 
 bool ExecutableDictionarySource::isModified() const
@@ -229,7 +240,9 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
         /// It's OK for dictionaries created by administrator from xml-file, but
         /// maybe dangerous for dictionaries created from DDL-queries.
         if (created_from_ddl && global_context->getApplicationType() != Context::ApplicationType::LOCAL)
-            throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED, "Dictionaries with executable dictionary source are not allowed to be created from DDL query");
+            throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED,
+                            "Dictionaries with executable dictionary source are not allowed "
+                            "to be created from DDL query");
 
         auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
 

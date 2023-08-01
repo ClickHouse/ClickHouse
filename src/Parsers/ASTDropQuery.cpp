@@ -21,7 +21,7 @@ String ASTDropQuery::getID(char delim) const
     else if (kind == ASTDropQuery::Kind::Truncate)
         return "TruncateQuery" + (delim + getDatabase()) + delim + getTable();
     else
-        throw Exception("Not supported kind of drop query.", ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Not supported kind of drop query.");
 }
 
 ASTPtr ASTDropQuery::clone() const
@@ -42,7 +42,7 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
     else if (kind == ASTDropQuery::Kind::Truncate)
         settings.ostr << "TRUNCATE ";
     else
-        throw Exception("Not supported kind of drop query.", ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Not supported kind of drop query.");
 
     if (temporary)
         settings.ostr << "TEMPORARY ";
@@ -72,8 +72,8 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
     if (permanently)
         settings.ostr << " PERMANENTLY";
 
-    if (no_delay)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " NO DELAY" << (settings.hilite ? hilite_none : "");
+    if (sync)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " SYNC" << (settings.hilite ? hilite_none : "");
 }
 
 }

@@ -1,5 +1,6 @@
 ---
-toc_priority: 126
+slug: /zh/sql-reference/aggregate-functions/reference/groupbitor
+sidebar_position: 126
 ---
 
 # groupBitOr {#groupbitor}
