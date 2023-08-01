@@ -3,7 +3,7 @@
 #include <Compression/CompressionCodecEncrypted.h>
 #include <iostream>
 
-/** This test program encrypts or decrypts text values using a symmetric encryption codec like AES_128_GCM_SIV or AES_256_GCM_SIV.
+/** This program encrypts or decrypts text values using a symmetric encryption codec like AES_128_GCM_SIV or AES_256_GCM_SIV.
   * Keys for codecs are loaded from <encryption_codecs> section of configuration file.
   *
   * How to use:
@@ -32,7 +32,7 @@ int main(int argc, char ** argv)
 
         DB::ConfigProcessor processor(argv[1], false, true);
         auto loaded_config = processor.loadConfig();
-        DB::CompressionCodecEncrypted::Configuration::instance().tryLoad(*loaded_config.configuration, "encryption_codecs");
+        DB::CompressionCodecEncrypted::Configuration::instance().load(*loaded_config.configuration, "encryption_codecs");
 
         if (action == "-e")
             std::cout << processor.encryptValue(codec_name, value) << std::endl;

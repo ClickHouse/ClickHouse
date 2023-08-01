@@ -23,14 +23,14 @@ namespace ErrorCodes
 
 
 template <bool multithreaded>
-ColumnsDescription TableFunctionNumbers<multithreaded>::getActualTableStructure(ContextPtr /*context*/) const
+ColumnsDescription TableFunctionNumbers<multithreaded>::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
 {
     /// NOTE: https://bugs.llvm.org/show_bug.cgi?id=47418
     return ColumnsDescription{{{"number", std::make_shared<DataTypeUInt64>()}}};
 }
 
 template <bool multithreaded>
-StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool /*is_insert_query*/) const
 {
     if (const auto * function = ast_function->as<ASTFunction>())
     {
