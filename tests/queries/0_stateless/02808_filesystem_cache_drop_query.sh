@@ -24,7 +24,7 @@ $CLICKHOUSE_CLIENT --query_id "$query_id" --query "SELECT * FROM test FORMAT Nul
 
 $CLICKHOUSE_CLIENT -nm --query """
 SYSTEM DROP FILESYSTEM CACHE '$disk_name' KEY kek;
-""" 2>&1 | grep -q "Invalid key: kek" && echo "OK" || echo "FAIL"
+""" 2>&1 | grep -q "Invalid cache key hex: kek" && echo "OK" || echo "FAIL"
 
 ${CLICKHOUSE_CLIENT} -q " system flush logs"
 
