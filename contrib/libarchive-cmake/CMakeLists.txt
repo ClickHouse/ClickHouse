@@ -146,6 +146,23 @@ target_compile_definitions(_libarchive PUBLIC
 
 target_compile_options(_libarchive PRIVATE "-Wno-reserved-macro-identifier")
 
-target_link_libraries(_libarchive PRIVATE ch_contrib::zlib ch_contrib::xz)
+if (TARGET ch_contrib::xz)
+    target_compile_definitions(_libarchive PUBLIC HAVE_LZMA_H=1)
+    target_link_libraries(_libarchive PRIVATE ch_contrib::xz)
+endif()
+
+if (TARGET ch_contrib::zlib)
+    target_compile_definitions(_libarchive PUBLIC HAVE_ZLIB_H=1)
+    target_link_libraries(_libarchive PRIVATE ch_contrib::zlib)
+endif()
+
+if (OS_LINUX)
+    target_compile_definitions(
+        _libarchive PUBLIC
+            MAJOR_IN_SYSMACROS=1
+            HAVE_LINUX_FS_H=1
+            HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC=1
+    )
+endif()
 
 add_library(ch_contrib::libarchive ALIAS _libarchive)
