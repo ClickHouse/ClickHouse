@@ -942,10 +942,14 @@ namespace MySQLReplication
         // MySQL UUID is big-endian.
         UInt64 high = 0UL;
         UInt64 low = 0UL;
-        readBigEndianStrict(payload, reinterpret_cast<char *>(&low), 8);
-        gtid.uuid.toUnderType().items[0] = low;
-
         readBigEndianStrict(payload, reinterpret_cast<char *>(&high), 8);
+        readBigEndianStrict(payload, reinterpret_cast<char *>(&low), 8);
+
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        std::swap(low, high);
+#endif
+
+        gtid.uuid.toUnderType().items[0] = low;
         gtid.uuid.toUnderType().items[1] = high;
 
         payload.readStrict(reinterpret_cast<char *>(&gtid.seq_no), 8);
