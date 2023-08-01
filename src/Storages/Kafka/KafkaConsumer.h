@@ -48,8 +48,6 @@ public:
 
         String consumer_id;
         Assignments assignments;
-        // String last_exception;
-        // UInt64 last_exception_time;
         UInt64 last_poll_time;
         UInt64 num_messages_read;
         UInt64 last_commit_timestamp_usec;
@@ -114,7 +112,6 @@ public:
     // For system.kafka_consumers
     Stat getStat();
 
-
 private:
     using Messages = std::vector<cppkafka::Message>;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaConsumers};
@@ -150,11 +147,10 @@ private:
     std::optional<cppkafka::TopicPartitionList> assignment;
     const Names topics;
 
-    /// system.kafka_consumers data is retrieved asynchronously,
+    /// system.kafka_consumers data is retrieved asynchronously
+    ///  so we have to protect exceptions_buffer
     mutable std::mutex exception_mutex;
-
     const size_t EXCEPTIONS_DEPTH = 10;
-
     ExceptionsBuffer exceptions_buffer;
 
     std::atomic<UInt64> last_exception_timestamp_usec = 0;

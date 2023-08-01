@@ -1929,15 +1929,6 @@ def test_kafka_flush_on_big_message(kafka_cluster):
         if int(result) == kafka_messages * batch_messages:
             break
 
-    result_system_kafka_consumers = instance.query(
-        """
-        SELECT last_exception, last_exception_time, database, table FROM system.kafka_consumers
-        """
-        )
-    logging.debug(f"result_system_kafka_consumers (test_kafka_flush_on_big_message): {result_system_kafka_consumers}")
-    assert (result_system_kafka_consumers == "fake string")
-
-
     instance.query(
         """
         DROP TABLE test.consumer;
@@ -3221,15 +3212,6 @@ def test_kafka_duplicates_when_commit_failed(kafka_cluster):
 
     result = instance.query("SELECT count(), uniqExact(key), max(key) FROM test.view")
     logging.debug(result)
-
-
-    result_system_kafka_consumers = instance.query(
-        """
-        SELECT last_exception, last_exception_time, database, table FROM system.kafka_consumers
-        """
-        )
-    logging.debug(f"result_system_kafka_consumers (test_kafka_duplicates_when_commit_failed): {result_system_kafka_consumers}")
-
 
     instance.query(
         """
@@ -4603,8 +4585,9 @@ def test_system_kafka_consumers(kafka_cluster):
           (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 30, 'now', toString(d));
 
         SELECT database, table, length(consumer_id), assignments.topic, assignments.partition_id,
-          assignments.current_offset, stable_timestamp(last_exception_time) as last_exception_time_,
-          if(length(last_exception)>0, last_exception, 'no exception') as last_exception_,
+          assignments.current_offset,
+          if(length(exceptions.time)>0, exceptions.time[1]::String, 'never') as last_exception_time_,
+          if(length(exceptions.text)>0, exceptions.text[1], 'no exception') as last_exception_,
           stable_timestamp(last_poll_time) as last_poll_time_, num_messages_read, stable_timestamp(last_commit_time) as last_commit_time_,
           num_commits, stable_timestamp(last_rebalance_time) as last_rebalance_time_,
           num_rebalance_revocations, num_rebalance_assignments, is_currently_used
@@ -4702,8 +4685,9 @@ def test_system_kafka_consumers_rebalance(kafka_cluster, max_retries=15):
         create or replace function stable_timestamp as
           (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 30, 'now', toString(d));
         SELECT database, table, length(consumer_id), assignments.topic, assignments.partition_id,
-          assignments.current_offset, stable_timestamp(last_exception_time) as last_exception_time_,
-          if(length(last_exception)>0, last_exception, 'no exception') as last_exception_,
+          assignments.current_offset,
+          if(length(exceptions.time)>0, exceptions.time[1]::String, 'never') as last_exception_time_,
+          if(length(exceptions.text)>0, exceptions.text[1], 'no exception') as last_exception_,
           stable_timestamp(last_poll_time) as last_poll_time_, num_messages_read, stable_timestamp(last_commit_time) as last_commit_time_,
           num_commits, stable_timestamp(last_rebalance_time) as last_rebalance_time_,
           num_rebalance_revocations, num_rebalance_assignments, is_currently_used

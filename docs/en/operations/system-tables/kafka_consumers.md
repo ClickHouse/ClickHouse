@@ -14,8 +14,8 @@ Columns:
 - `assignments.topic` (Array(String)) - Kafka topic.
 - `assignments.partition_id` (Array(Int32)) - Kafka partition id. Note, that only one consumer can be assigned to a partition.
 - `assignments.current_offset` (Array(Int64)) - current offset.
-- `last_exception_time`, (DateTime) - timestamp when the most recent exception was generated.
-- `last_exception`, (String) - text of the most recent exception.
+- `exceptions.time`, (Array(DateTime)) - timestamp when the 10 most recent exceptions were generated.
+- `exceptions.text`, (Array(String)) - text of 10 most recent exceptions.
 - `last_poll_time`, (DateTime) - timestamp of the most recent poll.
 - `num_messages_read`, (UInt64) - number of messages read by the consumer.
 - `last_commit_time`, (DateTime) - timestamp of the most recent poll.
@@ -43,8 +43,8 @@ consumer_id:                ClickHouse-instance-test-kafka-1caddc7f-f917-4bb1-ac
 assignments.topic:          ['system_kafka_cons']
 assignments.partition_id:   [0]
 assignments.current_offset: [18446744073709550615]
-last_exception_time:        1970-01-01 00:00:00
-last_exception:
+exceptions.time:            []
+exceptions.text:            []
 last_poll_time:             2006-11-09 18:47:47
 num_messages_read:          4
 last_commit_time:           2006-11-10 04:39:40
@@ -53,5 +53,6 @@ last_rebalance_time:        1970-01-01 00:00:00
 num_rebalance_revocations:  0
 num_rebalance_assignments:  1
 is_currently_used:          1
+rdkafka_stat:               {...}
 
 ```
