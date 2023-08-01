@@ -68,7 +68,7 @@ def test_distributed_directory_monitor_split_batch_on_failure_OFF(started_cluste
                 settings={
                     # max_memory_usage is the limit for the batch on the remote node
                     # (local query should not be affected since 30MB is enough for 100K rows)
-                    "max_memory_usage": "30Mi",
+                    "max_memory_usage": "20Mi",
                     "max_untracked_memory": "0",
                 },
             )

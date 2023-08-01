@@ -26,7 +26,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<RewriteAggregateFunctionWithIfVisitor>;
     using Base::Base;
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_rewrite_aggregate_function_with_if)
             return;

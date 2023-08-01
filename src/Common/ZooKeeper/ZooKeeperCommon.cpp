@@ -642,6 +642,8 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
 
         if (op_error == Error::ZOK || op_num == OpNum::Error)
             dynamic_cast<ZooKeeperResponse &>(*response).readImpl(in);
+
+        response->zxid = zxid;
     }
 
     /// Footer.
