@@ -367,30 +367,17 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             assert(!db_and_table.first && !db_and_table.second);
             if (exception)
             {
-                if (!db_and_table.first)
+                TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
+                std::vector<String> names = hints.getHints(table_id.getTableName());
+                if (!names.empty())
                 {
-                    DatabaseNameHints hints(*this);
-                    std::vector<String> names = hints.getHints(table_id.getDatabaseName());
-                    /// I also leave possibility to print several suggestions
-                    if (!names.empty())
-                    {
-                        exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist. Maybe you meant {}?", backQuoteIfNeed(table_id.getDatabaseName()), backQuoteIfNeed(names[0])));
-                    }
-                    else exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(table_id.getDatabaseName())));
-                }
-                else
-                {
-                    TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
-                    std::vector<String> names = hints.getHints(table_id.getTableName());
-                    if (!names.empty())
-                    {
                     /// There is two options: first is to print just the name of the table
                     /// and the second is to print the result in format: db_name.table_name. I'll comment out the second option below
                     /// I also leave possibility to print several suggestions
                     exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist. Maybe you meant {}?", table_id.getNameForLogs(), backQuoteIfNeed(names[0])));
-                    }
-                    else exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs()));
                 }
+                else exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs()));
+            
             }
             return {};
         }
