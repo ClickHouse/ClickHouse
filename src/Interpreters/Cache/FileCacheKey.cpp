@@ -35,7 +35,7 @@ FileCacheKey FileCacheKey::random()
 FileCacheKey FileCacheKey::fromKeyString(const std::string & key_str)
 {
     if (key_str.size() != 32)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key: {}", key_str);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid cache key hex: {}", key_str);
     return FileCacheKey(unhexUInt<UInt128>(key_str.data()));
 }
 
