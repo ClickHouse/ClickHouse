@@ -343,6 +343,7 @@ QueryPipeline::QueryPipeline(
 }
 
 QueryPipeline::QueryPipeline(Pipe pipe)
+    : partial_result_duration_ms(pipe.partial_result_duration_ms)
 {
     if (pipe.numOutputPorts() > 0)
     {

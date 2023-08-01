@@ -160,6 +160,9 @@ private:
 
     size_t num_threads = 0;
 
+    UInt64 partial_result_limit = 0;
+    UInt64 partial_result_duration_ms = 0;
+
     friend class PushingPipelineExecutor;
     friend class PullingPipelineExecutor;
     friend class PushingAsyncPipelineExecutor;

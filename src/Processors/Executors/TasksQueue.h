@@ -2,6 +2,7 @@
 #include <vector>
 #include <queue>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

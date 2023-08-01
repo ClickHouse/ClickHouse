@@ -411,12 +411,11 @@ void Pipe::addExtremesSource(ProcessorPtr source)
 void Pipe::activatePartialResult(UInt64 partial_result_limit_, UInt64 partial_result_duration_ms_)
 {
     if (!is_partial_result_active)
-    {
-        is_partial_result_active = true;
-        partial_result_limit = partial_result_limit_;
-        partial_result_duration_ms = partial_result_duration_ms_;
         partial_result_ports.assign(output_ports.size(), nullptr);
-    }
+
+    is_partial_result_active = true;
+    partial_result_limit = partial_result_limit_;
+    partial_result_duration_ms = partial_result_duration_ms_;
 }
 
 static void dropPort(OutputPort *& port, Processors & processors, Processors * collected_processors)
@@ -881,7 +880,9 @@ void Pipe::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
 
     add_transform(totals_port, StreamType::Totals);
     add_transform(extremes_port, StreamType::Extremes);
-    dropPartialResult();
+
+    for (auto & port : partial_result_ports)
+        add_transform(port, StreamType::PartialResult);
 
     output_ports.clear();
     header.clear();
@@ -891,6 +892,9 @@ void Pipe::transform(const Transformer & transformer, bool check_ports)
 {
     if (output_ports.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot transform empty Pipe");
+
+    /// TODO: Add functionality to work with partial result ports in transformer. 
+    dropPartialResult();
 
     auto new_processors = transformer(output_ports);
 

@@ -20,7 +20,7 @@ public:
         , offset(offset_)
         {}
 
-    String getName() const override { return "MergeSortingPartialResult"; }
+    String getName() const override { return "LimitPartialResultTransform"; }
 
     void transformPartialResult(Chunk & chunk) override
     {
