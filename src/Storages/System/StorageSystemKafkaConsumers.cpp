@@ -124,10 +124,8 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
                 assigments_partition_id_offsets.push_back(last_assignment_num);
                 assigments_current_offset_offsets.push_back(last_assignment_num);
 
-                // last_exception.insertData(consumer_stat.last_exception.data(), consumer_stat.last_exception.size());
-                // last_exception_time.insert(consumer_stat.last_exception_time);
-                for (auto excit = consumer_stat.exceptions_buffer.begin();
-                     excit != consumer_stat.exceptions_buffer.end();
+                for (auto excit = consumer_stat.exceptions_buffer.cbegin();
+                     excit != consumer_stat.exceptions_buffer.cend();
                      ++excit)
                 {
                     exceptions_text.insertData(excit->text.data(), excit->text.size());
