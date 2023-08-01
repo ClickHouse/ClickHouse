@@ -120,7 +120,7 @@ CompletedPipelineExecutor::~CompletedPipelineExecutor()
     }
     catch (...)
     {
-        tryLogCurrentException("PullingAsyncPipelineExecutor");
+        tryLogCurrentException("CompletedPipelineExecutor");
     }
 }
 

@@ -204,6 +204,14 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
                 throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown load balancing: {}", load_balancing_str);
             get_priority_load_balancing.load_balancing = *load_balancing;
         }
+        else if (key == "fallback_session_lifetime")
+        {
+            fallback_session_lifetime = SessionLifetimeConfiguration
+            {
+                .min_sec = config.getUInt(config_name + "." + key + ".min"),
+                .max_sec = config.getUInt(config_name + "." + key + ".max"),
+            };
+        }
         else
             throw KeeperException(std::string("Unknown key ") + key + " in config file", Coordination::Error::ZBADARGUMENTS);
     }

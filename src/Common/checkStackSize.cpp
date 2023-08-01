@@ -27,7 +27,7 @@ static thread_local size_t max_stack_size = 0;
  * @param out_address - if not nullptr, here the address of the stack will be written.
  * @return stack size
  */
-size_t getStackSize(void ** out_address)
+static size_t getStackSize(void ** out_address)
 {
     using namespace DB;
 
@@ -54,7 +54,15 @@ size_t getStackSize(void ** out_address)
         throwFromErrno("Cannot pthread_attr_get_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
 #   else
     if (0 != pthread_getattr_np(pthread_self(), &attr))
-        throwFromErrno("Cannot pthread_getattr_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
+    {
+        if (errno == ENOENT)
+        {
+            /// Most likely procfs is not mounted.
+            return 0;
+        }
+        else
+            throwFromErrno("Cannot pthread_getattr_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
+    }
 #   endif
 
     SCOPE_EXIT({ pthread_attr_destroy(&attr); });
@@ -82,6 +90,10 @@ __attribute__((__weak__)) void checkStackSize()
 
     if (!stack_address)
         max_stack_size = getStackSize(&stack_address);
+
+    /// The check is impossible.
+    if (!max_stack_size)
+        return;
 
     const void * frame_address = __builtin_frame_address(0);
     uintptr_t int_frame_address = reinterpret_cast<uintptr_t>(frame_address);

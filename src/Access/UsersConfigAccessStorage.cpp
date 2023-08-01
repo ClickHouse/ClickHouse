@@ -328,7 +328,7 @@ namespace
 
             if (!named_collection_control)
             {
-                user->access.revoke(AccessType::NAMED_COLLECTION_CONTROL);
+                user->access.revoke(AccessType::NAMED_COLLECTION_ADMIN);
             }
 
             if (!show_named_collections_secrets)
@@ -807,7 +807,7 @@ void UsersConfigAccessStorage::load(
     config_reloader.reset();
     config_reloader = std::make_unique<ConfigReloader>(
         users_config_path,
-        include_from_path,
+        std::vector{{include_from_path}},
         preprocessed_dir,
         zkutil::ZooKeeperNodeCache(get_zookeeper_function),
         std::make_shared<Poco::Event>(),
