@@ -5,7 +5,6 @@
 #include <IO/VarInt.h>
 #include <Core/Block.h>
 #include <base/EnumReflection.h>
-#include <Storages/BlockNumberColumn.h>
 
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>

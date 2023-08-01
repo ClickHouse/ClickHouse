@@ -24,7 +24,7 @@ ORDER BY column;
 OPTIMIZE TABLE t_sparse_columns_clear FINAL;
 
 SELECT column, serialization_kind FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_sparse_columns_clear' AND column != '_block_number' AND active
+WHERE database = currentDatabase() AND table = 't_sparse_columns_clear' AND active
 ORDER BY column;
 
 DROP TABLE t_sparse_columns_clear SYNC;

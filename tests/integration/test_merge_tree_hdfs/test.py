@@ -180,7 +180,7 @@ def test_alter_table_columns(cluster):
     )
     wait_for_delete_hdfs_objects(
         cluster,
-        FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + (FILES_OVERHEAD_PER_COLUMN + 3),
+        FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD_PER_COLUMN,
     )
 
     node.query(
