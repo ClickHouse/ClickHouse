@@ -300,7 +300,7 @@ def test_backup_throttling_override():
         #
         # Local
         #
-        pytest.param("default", None, None, None, (0, 3), id="no_local_throttling"),
+        pytest.param("default", None, None, None, 0, id="no_local_throttling"),
         # reading 1e6*8 bytes with 1M default bandwith should take (8-1)/1=7 seconds
         pytest.param(
             "default",
@@ -322,7 +322,7 @@ def test_backup_throttling_override():
         #
         # Remote
         #
-        pytest.param("s3", None, None, None, (0, 3), id="no_remote_throttling"),
+        pytest.param("s3", None, None, None, 0, id="no_remote_throttling"),
         # reading 1e6*8 bytes with 1M default bandwith should take (8-1)/1=7 seconds
         pytest.param(
             "s3",
@@ -362,7 +362,7 @@ def test_read_throttling(policy, mode, setting, value, should_took):
         #
         # Local
         #
-        pytest.param("default", None, None, None, (0, 3), id="no_local_throttling"),
+        pytest.param("default", None, None, None, 0, id="no_local_throttling"),
         # reading 1e6*8 bytes with 1M default bandwith should take (8-1)/1=7 seconds
         pytest.param(
             "default",
@@ -384,7 +384,7 @@ def test_read_throttling(policy, mode, setting, value, should_took):
         #
         # Remote
         #
-        pytest.param("s3", None, None, None, (0, 3), id="no_remote_throttling"),
+        pytest.param("s3", None, None, None, 0, id="no_remote_throttling"),
         # writing 1e6*8 bytes with 1M default bandwith should take (8-1)/1=7 seconds
         pytest.param(
             "s3",
