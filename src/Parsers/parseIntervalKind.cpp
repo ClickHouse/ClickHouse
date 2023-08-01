@@ -43,7 +43,7 @@ bool parseIntervalKind(IParser::Pos & pos, Expected & expected, IntervalKind & r
     }
 
     if (ParserKeyword("HOUR").ignore(pos, expected) || ParserKeyword("SQL_TSI_HOUR").ignore(pos, expected)
-        || ParserKeyword("HH").ignore(pos, expected))
+        || ParserKeyword("HH").ignore(pos, expected) || ParserKeyword("H").ignore(pos, expected))
     {
         result = IntervalKind::Hour;
         return true;

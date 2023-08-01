@@ -1,6 +1,7 @@
 ---
-toc_priority: 21
-toc_title: Меню
+slug: /ru/getting-started/example-datasets/menus
+sidebar_position: 21
+sidebar_label: Меню
 ---
 
 # Набор данных публичной библиотеки Нью-Йорка "Что в меню?" {#menus-dataset}

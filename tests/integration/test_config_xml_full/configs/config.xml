@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <!--
   NOTE: User and query level settings are set up in "users.xml" file.
   If you have accidentally specified user-level settings here, server won't start.
@@ -304,12 +303,6 @@
       -->
     <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 
-    <!-- Approximate size of mark cache, used in tables of MergeTree family.
-         In bytes. Cache is single for server. Memory is allocated only on demand.
-         You should not lower this value.
-      -->
-    <mark_cache_size>5368709120</mark_cache_size>
-
 
     <!-- If you enable the `min_bytes_to_use_mmap_io` setting,
          the data in MergeTree tables can be read with mmap to avoid copying from kernel to userspace.
@@ -572,91 +565,6 @@
                 </replica>
             </shard>
         </test_shard_localhost>
-        <test_cluster_two_shards_localhost>
-             <shard>
-                 <replica>
-                     <host>localhost</host>
-                     <port>9000</port>
-                 </replica>
-             </shard>
-             <shard>
-                 <replica>
-                     <host>localhost</host>
-                     <port>9000</port>
-                 </replica>
-             </shard>
-        </test_cluster_two_shards_localhost>
-        <test_cluster_two_shards>
-            <shard>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <shard>
-                <replica>
-                    <host>127.0.0.2</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-        </test_cluster_two_shards>
-        <test_cluster_two_shards_internal_replication>
-            <shard>
-                <internal_replication>true</internal_replication>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <shard>
-                <internal_replication>true</internal_replication>
-                <replica>
-                    <host>127.0.0.2</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-        </test_cluster_two_shards_internal_replication>
-        <test_shard_localhost_secure>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9440</port>
-                    <secure>1</secure>
-                </replica>
-            </shard>
-        </test_shard_localhost_secure>
-        <test_shard_localhost_secure_empty_tag>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9440</port>
-                    <secure></secure>
-                </replica>
-            </shard>
-        </test_shard_localhost_secure_empty_tag>
-        <test_shard_localhost_secure_empty_tag_2>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9440</port>
-                    <secure />
-                </replica>
-            </shard>
-        </test_shard_localhost_secure_empty_tag_2>
-        <test_unavailable_shard>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>1</port>
-                </replica>
-            </shard>
-        </test_unavailable_shard>
     </remote_servers>
 
     <!-- The list of hosts allowed to use in URL-related storage engines and table functions.

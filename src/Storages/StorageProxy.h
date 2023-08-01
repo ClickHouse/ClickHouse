@@ -50,26 +50,27 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override
+        size_t num_streams) override
     {
         return getNested()->watch(column_names, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override
+        size_t num_streams) override
     {
-        return getNested()->read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+        return getNested()->read(query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override
     {
-        return getNested()->write(query, metadata_snapshot, context);
+        return getNested()->write(query, metadata_snapshot, context, async_insert);
     }
 
     void drop() override { getNested()->drop(); }
@@ -126,9 +127,10 @@ public:
             bool final,
             bool deduplicate,
             const Names & deduplicate_by_columns,
+            bool cleanup,
             ContextPtr context) override
     {
-        return getNested()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, context);
+        return getNested()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, context);
     }
 
     void mutate(const MutationCommands & commands, ContextPtr context) override { getNested()->mutate(commands, context); }
@@ -137,7 +139,7 @@ public:
 
     void startup() override { getNested()->startup(); }
     void shutdown() override { getNested()->shutdown(); }
-    void flush() override { getNested()->flush(); }
+    void flushAndPrepareForShutdown() override { getNested()->flushAndPrepareForShutdown(); }
 
     ActionLock getActionLock(StorageActionBlockType action_type) override { return getNested()->getActionLock(action_type); }
 
@@ -147,7 +149,7 @@ public:
         return getNested()->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
     }
 
-    CheckResults checkData(const ASTPtr & query , ContextPtr context) override { return getNested()->checkData(query, context); }
+    CheckResults checkData(const ASTPtr & query, ContextPtr context) override { return getNested()->checkData(query, context); }
     void checkTableCanBeDropped() const override { getNested()->checkTableCanBeDropped(); }
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }
@@ -161,4 +163,3 @@ public:
 
 
 }
-

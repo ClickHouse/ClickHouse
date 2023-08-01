@@ -1,9 +1,9 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemDistributionQueue.h>
-#include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -57,7 +57,7 @@ std::string maskDataPath(const std::string & path)
         size_t user_pw_end = masked_path.find('@', node_pos);
         if (user_pw_end == std::string::npos)
         {
-            /// Likey new format (use_compact_format_in_distributed_parts_names=1)
+            /// Likely new format (use_compact_format_in_distributed_parts_names=1)
             return path;
         }
 
@@ -101,6 +101,7 @@ NamesAndTypesList StorageSystemDistributionQueue::getNamesAndTypes()
         { "broken_data_files",            std::make_shared<DataTypeUInt64>() },
         { "broken_data_compressed_bytes", std::make_shared<DataTypeUInt64>() },
         { "last_exception",        std::make_shared<DataTypeString>() },
+        { "last_exception_time",        std::make_shared<DataTypeDateTime>() },
     };
 }
 
@@ -173,7 +174,7 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, Cont
 
         auto & distributed_table = dynamic_cast<StorageDistributed &>(*tables[database][table]);
 
-        for (const auto & status : distributed_table.getDirectoryMonitorsStatuses())
+        for (const auto & status : distributed_table.getDirectoryQueueStatuses())
         {
             size_t col_num = 0;
             res_columns[col_num++]->insert(database);
@@ -190,6 +191,7 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, Cont
                 res_columns[col_num++]->insert(getExceptionMessage(status.last_exception, false));
             else
                 res_columns[col_num++]->insertDefault();
+            res_columns[col_num++]->insert(static_cast<UInt32>(std::chrono::system_clock::to_time_t(status.last_exception_time)));
         }
     }
 }

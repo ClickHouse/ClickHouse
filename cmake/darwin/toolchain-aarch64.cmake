@@ -1,3 +1,6 @@
+# See linux/toolchain-x86_64.cmake for details about multiple load of toolchain file.
+include_guard(GLOBAL)
+
 set (CMAKE_SYSTEM_NAME "Darwin")
 set (CMAKE_SYSTEM_PROCESSOR "aarch64")
 set (CMAKE_C_COMPILER_TARGET "aarch64-apple-darwin")

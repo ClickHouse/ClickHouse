@@ -1,4 +1,5 @@
 #include <IO/Lz4InflatingReadBuffer.h>
+#include <IO/WithFileName.h>
 
 namespace DB
 {
@@ -8,8 +9,7 @@ namespace ErrorCodes
 }
 
 Lz4InflatingReadBuffer::Lz4InflatingReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment)
-    : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment)
-    , in(std::move(in_))
+    : CompressedReadBufferWrapper(std::move(in_), buf_size, existing_memory, alignment)
     , in_data(nullptr)
     , out_data(nullptr)
     , in_available(0)
@@ -73,9 +73,10 @@ bool Lz4InflatingReadBuffer::nextImpl()
     if (LZ4F_isError(ret))
         throw Exception(
             ErrorCodes::LZ4_DECODER_FAILED,
-            "LZ4 decompression failed. LZ4F version: {}. Error: {}",
+            "LZ4 decompression failed. LZ4F version: {}. Error: {}{}",
             LZ4F_VERSION,
-            LZ4F_getErrorName(ret));
+            LZ4F_getErrorName(ret),
+            getExceptionEntryWithFileName(*in));
 
     if (in->eof())
     {

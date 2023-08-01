@@ -1,68 +1,50 @@
 #include <Interpreters/InterpreterBackupQuery.h>
-#include <Backups/IBackup.h>
-#include <Backups/IBackupEntry.h>
-#include <Backups/IRestoreTask.h>
-#include <Backups/BackupFactory.h>
-#include <Backups/BackupSettings.h>
-#include <Backups/BackupUtils.h>
-#include <Backups/RestoreSettings.h>
-#include <Backups/RestoreUtils.h>
+
+#include <Backups/BackupsWorker.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
 {
+
 namespace
 {
-    BackupMutablePtr createBackup(const BackupInfo & backup_info, const BackupSettings & backup_settings, const ContextPtr & context)
+    Block getResultRow(const BackupsWorker::Info & info)
     {
-        BackupFactory::CreateParams params;
-        params.open_mode = IBackup::OpenMode::WRITE;
-        params.context = context;
-        params.backup_info = backup_info;
-        params.base_backup_info = backup_settings.base_backup_info;
-        params.compression_method = backup_settings.compression_method;
-        params.compression_level = backup_settings.compression_level;
-        params.password = backup_settings.password;
-        return BackupFactory::instance().createBackup(params);
-    }
+        auto column_id = ColumnString::create();
+        auto column_status = ColumnInt8::create();
 
-    BackupMutablePtr openBackup(const BackupInfo & backup_info, const RestoreSettings & restore_settings, const ContextPtr & context)
-    {
-        BackupFactory::CreateParams params;
-        params.open_mode = IBackup::OpenMode::READ;
-        params.context = context;
-        params.backup_info = backup_info;
-        params.base_backup_info = restore_settings.base_backup_info;
-        params.password = restore_settings.password;
-        return BackupFactory::instance().createBackup(params);
-    }
+        column_id->insert(info.id);
+        column_status->insert(static_cast<Int8>(info.status));
 
-    void executeBackup(const ContextPtr & context, const ASTBackupQuery & query)
-    {
-        auto backup_settings = BackupSettings::fromBackupQuery(query);
-        auto backup_entries = makeBackupEntries(context, query.elements, backup_settings);
-        BackupMutablePtr backup = createBackup(BackupInfo::fromAST(*query.backup_name), backup_settings, context);
-        writeBackupEntries(backup, std::move(backup_entries), context->getSettingsRef().max_backup_threads);
-    }
+        Block res_columns;
+        res_columns.insert(0, {std::move(column_id), std::make_shared<DataTypeString>(), "id"});
+        res_columns.insert(1, {std::move(column_status), std::make_shared<DataTypeEnum8>(getBackupStatusEnumValues()), "status"});
 
-    void executeRestore(ContextMutablePtr context, const ASTBackupQuery & query)
-    {
-        auto restore_settings = RestoreSettings::fromRestoreQuery(query);
-        BackupPtr backup = openBackup(BackupInfo::fromAST(*query.backup_name), restore_settings, context);
-        auto restore_tasks = makeRestoreTasks(context, backup, query.elements, restore_settings);
-        executeRestoreTasks(std::move(restore_tasks), context->getSettingsRef().max_backup_threads);
+        return res_columns;
     }
 }
 
 BlockIO InterpreterBackupQuery::execute()
 {
-    const auto & query = query_ptr->as<const ASTBackupQuery &>();
-    if (query.kind == ASTBackupQuery::BACKUP)
-        executeBackup(context, query);
-    else if (query.kind == ASTBackupQuery::RESTORE)
-        executeRestore(context, query);
-    return {};
+    auto & backups_worker = context->getBackupsWorker();
+    auto id = backups_worker.start(query_ptr, context);
+
+    auto info = backups_worker.getInfo(id);
+    if (info.exception)
+        std::rethrow_exception(info.exception);
+
+    BlockIO res_io;
+    res_io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(getResultRow(info)));
+    return res_io;
 }
 
 }

@@ -42,18 +42,16 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
 {
     if (settings == nullptr || !settings->allow_experimental_funnel_functions)
     {
-        throw Exception(
-            "Aggregate function " + name + " is experimental. Set `allow_experimental_funnel_functions` setting to enable it",
-            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function {} is experimental. "
+            "Set `allow_experimental_funnel_functions` setting to enable it", name);
     }
 
     if (parameters.size() < 2)
-        throw Exception("Aggregate function '" + name + "' requires 2 parameters (direction, head)",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Aggregate function '{}' requires 2 parameters (direction, head)", name);
     auto expected_param_type = Field::Types::Which::String;
     if (parameters.at(0).getType() != expected_param_type || parameters.at(1).getType() != expected_param_type)
-        throw Exception("Aggregate function '" + name + "' requires 'String' parameters",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function '{}' requires 'String' parameters", name);
 
     String param_dir = parameters.at(0).safeGet<String>();
     std::unordered_map<std::string, SequenceDirection> seq_dir_mapping{
@@ -61,7 +59,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
         {"backward", SequenceDirection::Backward},
     };
     if (!seq_dir_mapping.contains(param_dir))
-        throw Exception{"Aggregate function " + name + " doesn't support a parameter: " + param_dir, ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} doesn't support a parameter: {}", name, param_dir);
     SequenceDirection direction = seq_dir_mapping[param_dir];
 
     String param_base = parameters.at(1).safeGet<String>();
@@ -72,45 +70,44 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
         {"last_match", SequenceBase::LastMatch},
     };
     if (!seq_base_mapping.contains(param_base))
-        throw Exception{"Aggregate function " + name + " doesn't support a parameter: " + param_base, ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} doesn't support a parameter: {}", name, param_base);
     SequenceBase base = seq_base_mapping[param_base];
 
     if ((base == SequenceBase::Head && direction == SequenceDirection::Backward) ||
         (base == SequenceBase::Tail && direction == SequenceDirection::Forward))
-        throw Exception(fmt::format(
-            "Invalid argument combination of '{}' with '{}'", param_base, param_dir), ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid argument combination of '{}' with '{}'", param_base, param_dir);
 
     if (argument_types.size() < min_required_args)
-        throw Exception("Aggregate function " + name + " requires at least " + toString(min_required_args) + " arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Aggregate function {} requires at least {} arguments.", name, toString(min_required_args));
 
     bool is_base_match_type = base == SequenceBase::FirstMatch || base == SequenceBase::LastMatch;
     if (is_base_match_type && argument_types.size() < min_required_args + 1)
-        throw Exception(
-            "Aggregate function " + name + " requires at least " + toString(min_required_args + 1) + " arguments when base is first_match or last_match.",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Aggregate function {} requires at least {} arguments when base is first_match or last_match.",
+            name, toString(min_required_args + 1));
 
     if (argument_types.size() > max_events_size + min_required_args)
-        throw Exception(fmt::format(
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Aggregate function '{}' requires at most {} (timestamp, value_column, ...{} events) arguments.",
-                name, max_events_size + min_required_args, max_events_size), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                name, max_events_size + min_required_args, max_events_size);
 
     if (const auto * cond_arg = argument_types[2].get(); cond_arg && !isUInt8(cond_arg))
-        throw Exception("Illegal type " + cond_arg->getName() + " of third argument of aggregate function "
-                + name + ", must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of aggregate function {}, "
+                        "must be UInt8", cond_arg->getName(), name);
 
     for (const auto i : collections::range(min_required_args, argument_types.size()))
     {
         const auto * cond_arg = argument_types[i].get();
         if (!isUInt8(cond_arg))
-            throw Exception(fmt::format(
-                "Illegal type '{}' of {} argument of aggregate function '{}', must be UInt8", cond_arg->getName(), i + 1, name),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type '{}' of {} argument of aggregate function '{}', must be UInt8", cond_arg->getName(), i + 1, name);
     }
 
     if (WhichDataType(argument_types[1].get()).idx != TypeIndex::String)
-        throw Exception{"Illegal type " + argument_types[1].get()->getName()
-                + " of second argument of aggregate function " + name + ", must be String",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of second argument of aggregate function {}, must be String",
+                        argument_types[1].get()->getName(), name);
 
     DataTypePtr data_type = makeNullable(argument_types[1]);
 
@@ -128,9 +125,9 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
     if (timestamp_type.isDateTime())
         return createAggregateFunctionSequenceNodeImpl<DataTypeDateTime::FieldType>(data_type, argument_types, parameters, direction, base);
 
-    throw Exception{"Illegal type " + argument_types.front().get()->getName()
-            + " of first argument of aggregate function " + name + ", must be Unsigned Number, Date, DateTime",
-        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of first argument of aggregate function {}, must "
+                    "be Unsigned Number, Date, DateTime", argument_types.front().get()->getName(), name);
 }
 
 }

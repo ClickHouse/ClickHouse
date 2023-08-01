@@ -9,7 +9,7 @@
 #include <Core/MySQL/PacketsProtocolText.h>
 #include "IServer.h"
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
@@ -31,7 +31,12 @@ class TCPServer;
 class MySQLHandler : public Poco::Net::TCPServerConnection
 {
 public:
-    MySQLHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool ssl_enabled, size_t connection_id_);
+    MySQLHandler(
+        IServer & server_,
+        TCPServer & tcp_server_,
+        const Poco::Net::StreamSocket & socket_,
+        bool ssl_enabled,
+        uint32_t connection_id_);
 
     void run() final;
 
@@ -57,7 +62,7 @@ protected:
     IServer & server;
     TCPServer & tcp_server;
     Poco::Logger * log;
-    UInt64 connection_id = 0;
+    uint32_t connection_id = 0;
 
     uint32_t server_capabilities = 0;
     uint32_t client_capabilities = 0;
@@ -81,7 +86,14 @@ protected:
 class MySQLHandlerSSL : public MySQLHandler
 {
 public:
-    MySQLHandlerSSL(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool ssl_enabled, size_t connection_id_, RSA & public_key_, RSA & private_key_);
+    MySQLHandlerSSL(
+        IServer & server_,
+        TCPServer & tcp_server_,
+        const Poco::Net::StreamSocket & socket_,
+        bool ssl_enabled,
+        uint32_t connection_id_,
+        RSA & public_key_,
+        RSA & private_key_);
 
 private:
     void authPluginSSL() override;

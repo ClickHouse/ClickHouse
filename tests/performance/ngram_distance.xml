@@ -1,18 +1,7 @@
 <test>
-
-    <tags>
-        <tag>search</tag>
-    </tags>
-
-    <preconditions>
-        <table_exists>hits_10m_single</table_exists>
-    </preconditions>
-
-
     <settings>
         <max_memory_usage>20000000000</max_memory_usage>
     </settings>
-
 
     <substitutions>
         <substitution>
@@ -23,7 +12,6 @@
                 </values>
         </substitution>
     </substitutions>
-
 
     <query>SELECT ngramDistance(Title, URL) AS distance FROM {small_table} FORMAT Null</query>
     <query>SELECT ngramDistance(Title, SearchPhrase) AS distance FROM {small_table} FORMAT Null</query>
@@ -42,5 +30,4 @@
     <query>SELECT ngramDistanceCaseInsensitiveUTF8(Title, 'Метрика') AS distance FROM hits_10m_single FORMAT Null</query>
     <query>SELECT ngramDistanceCaseInsensitiveUTF8(URL, 'как дЕлА') AS distance FROM {small_table} FORMAT Null</query>
     <query>SELECT ngramDistanceCaseInsensitiveUTF8(URL, 'Чем зАнимаешЬся') AS distance FROM {small_table} FORMAT Null</query>
-
 </test>

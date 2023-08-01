@@ -1,15 +1,17 @@
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_SNAPPY
 #include <fcntl.h>
 #include <sys/types.h>
 #include <memory>
 #include <string>
-#include <string.h>
+#include <cstring>
 
 #include <snappy-c.h>
 
 #include "HadoopSnappyReadBuffer.h"
+
+#include <IO/WithFileName.h>
 
 namespace DB
 {
@@ -26,7 +28,7 @@ inline bool HadoopSnappyDecoder::checkBufferLength(int max) const
 
 inline bool HadoopSnappyDecoder::checkAvailIn(size_t avail_in, int min)
 {
-    return avail_in >= size_t(min);
+    return avail_in >= static_cast<size_t>(min);
 }
 
 inline void HadoopSnappyDecoder::copyToBuffer(size_t * avail_in, const char ** next_in)
@@ -89,7 +91,8 @@ inline HadoopSnappyDecoder::Status HadoopSnappyDecoder::readCompressedLength(siz
     {
         auto status = readLength(avail_in, next_in, &compressed_length);
         if (unlikely(compressed_length > 0 && static_cast<size_t>(compressed_length) > sizeof(buffer)))
-            throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "Too large snappy compressed block. buffer size: {}, compressed block size: {}", sizeof(buffer), compressed_length);
+            return Status::TOO_LARGE_COMPRESSED_BLOCK;
+
         return status;
     }
     return Status::OK;
@@ -166,8 +169,7 @@ HadoopSnappyDecoder::Status HadoopSnappyDecoder::readBlock(size_t * avail_in, co
 }
 
 HadoopSnappyReadBuffer::HadoopSnappyReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment)
-    : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment)
-    , in(std::move(in_))
+    : CompressedReadBufferWrapper(std::move(in_), buf_size, existing_memory, alignment)
     , decoder(std::make_unique<HadoopSnappyDecoder>())
     , in_available(0)
     , in_data(nullptr)
@@ -184,23 +186,32 @@ bool HadoopSnappyReadBuffer::nextImpl()
     if (eof)
         return false;
 
-    if (!in_available)
+    do
     {
-        in->nextIfAtEnd();
-        in_available = in->buffer().end() - in->position();
-        in_data = in->position();
+        if (!in_available)
+        {
+            in->nextIfAtEnd();
+            in_available = in->buffer().end() - in->position();
+            in_data = in->position();
+        }
+
+        if (decoder->result == Status::NEEDS_MORE_INPUT && (!in_available || in->eof()))
+        {
+            throw Exception(
+                ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
+                "hadoop snappy decode error: {}{}",
+                statusToString(decoder->result),
+                getExceptionEntryWithFileName(*in));
+        }
+
+        out_capacity = internal_buffer.size();
+        out_data = internal_buffer.begin();
+        decoder->result = decoder->readBlock(&in_available, &in_data, &out_capacity, &out_data);
+
+        in->position() = in->buffer().end() - in_available;
     }
+    while (decoder->result == Status::NEEDS_MORE_INPUT);
 
-    if (decoder->result == Status::NEEDS_MORE_INPUT && (!in_available || in->eof()))
-    {
-        throw Exception(String("hadoop snappy decode error:") + statusToString(decoder->result), ErrorCodes::SNAPPY_UNCOMPRESS_FAILED);
-    }
-
-    out_capacity = internal_buffer.size();
-    out_data = internal_buffer.begin();
-    decoder->result = decoder->readBlock(&in_available, &in_data, &out_capacity, &out_data);
-
-    in->position() = in->buffer().end() - in_available;
     working_buffer.resize(internal_buffer.size() - out_capacity);
 
     if (decoder->result == Status::OK)
@@ -213,9 +224,13 @@ bool HadoopSnappyReadBuffer::nextImpl()
         }
         return true;
     }
-    else if (decoder->result == Status::INVALID_INPUT || decoder->result == Status::BUFFER_TOO_SMALL)
+    else if (decoder->result != Status::NEEDS_MORE_INPUT)
     {
-        throw Exception(String("hadoop snappy decode error:") + statusToString(decoder->result), ErrorCodes::SNAPPY_UNCOMPRESS_FAILED);
+        throw Exception(
+            ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
+            "hadoop snappy decode error: {}{}",
+            statusToString(decoder->result),
+            getExceptionEntryWithFileName(*in));
     }
     return true;
 }

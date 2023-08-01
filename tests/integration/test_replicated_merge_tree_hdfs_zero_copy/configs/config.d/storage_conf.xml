@@ -4,14 +4,20 @@
             <hdfs1>
                 <type>hdfs</type>
                 <endpoint>hdfs://hdfs1:9000/clickhouse1/</endpoint>
+                <!-- FIXME: chicken and egg problem with current cluster.py -->
+                <skip_access_check>true</skip_access_check>
             </hdfs1>
             <hdfs1_again>
                 <type>hdfs</type>
                 <endpoint>hdfs://hdfs1:9000/clickhouse1/</endpoint>
+                <!-- FIXME: chicken and egg problem with current cluster.py -->
+                <skip_access_check>true</skip_access_check>
             </hdfs1_again>
             <hdfs2>
                 <type>hdfs</type>
                 <endpoint>hdfs://hdfs1:9000/clickhouse2/</endpoint>
+                <!-- FIXME: chicken and egg problem with current cluster.py -->
+                <skip_access_check>true</skip_access_check>
             </hdfs2>
         </disks>
         <policies>
@@ -59,6 +65,7 @@
     <merge_tree>
         <min_bytes_for_wide_part>1024000</min_bytes_for_wide_part>
         <old_parts_lifetime>1</old_parts_lifetime>
+        <allow_remote_fs_zero_copy_replication>true</allow_remote_fs_zero_copy_replication>
     </merge_tree>
 
     <remote_servers>
@@ -82,4 +89,5 @@
         <cluster>test_cluster</cluster>
         <shard>1</shard>
     </macros>
+    <allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
 </clickhouse>

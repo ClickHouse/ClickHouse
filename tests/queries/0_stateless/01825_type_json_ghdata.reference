@@ -2,10 +2,11 @@
 839
 String	562
 Array	134
-UInt64	63
+UInt8	54
 Int32	47
 Int8	17
 Int16	15
+UInt64	9
 Int64	1
 leonardomso/33-js-concepts	3
 ytdl-org/youtube-dl	3

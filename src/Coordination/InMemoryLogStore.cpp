@@ -27,7 +27,7 @@ uint64_t InMemoryLogStore::start_index() const
 
 uint64_t InMemoryLogStore::next_slot() const
 {
-    std::lock_guard<std::mutex> l(logs_lock);
+    std::lock_guard l(logs_lock);
     // Exclude the dummy entry.
     return start_idx + logs.size() - 1;
 }
@@ -35,7 +35,7 @@ uint64_t InMemoryLogStore::next_slot() const
 nuraft::ptr<nuraft::log_entry> InMemoryLogStore::last_entry() const
 {
     uint64_t next_idx = next_slot();
-    std::lock_guard<std::mutex> lock(logs_lock);
+    std::lock_guard lock(logs_lock);
     auto entry = logs.find(next_idx - 1);
     if (entry == logs.end())
         entry = logs.find(0);
@@ -47,7 +47,7 @@ uint64_t InMemoryLogStore::append(nuraft::ptr<nuraft::log_entry> & entry)
 {
     ptr<log_entry> clone = makeClone(entry);
 
-    std::lock_guard<std::mutex> l(logs_lock);
+    std::lock_guard l(logs_lock);
     uint64_t idx = start_idx + logs.size() - 1;
     logs[idx] = clone;
     return idx;
@@ -58,7 +58,7 @@ void InMemoryLogStore::write_at(uint64_t index, nuraft::ptr<nuraft::log_entry> &
     nuraft::ptr<log_entry> clone = makeClone(entry);
 
     // Discard all logs equal to or greater than `index.
-    std::lock_guard<std::mutex> l(logs_lock);
+    std::lock_guard l(logs_lock);
     auto itr = logs.lower_bound(index);
     while (itr != logs.end())
         itr = logs.erase(itr);
@@ -76,7 +76,7 @@ nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> InMemoryLogStore::log_e
     {
         nuraft::ptr<nuraft::log_entry> src = nullptr;
         {
-            std::lock_guard<std::mutex> l(logs_lock);
+            std::lock_guard l(logs_lock);
             auto entry = logs.find(i);
             if (entry == logs.end())
             {
@@ -94,7 +94,7 @@ nuraft::ptr<nuraft::log_entry> InMemoryLogStore::entry_at(uint64_t index)
 {
     nuraft::ptr<nuraft::log_entry> src = nullptr;
     {
-        std::lock_guard<std::mutex> l(logs_lock);
+        std::lock_guard l(logs_lock);
         auto entry = logs.find(index);
         if (entry == logs.end())
             entry = logs.find(0);
@@ -107,7 +107,7 @@ uint64_t InMemoryLogStore::term_at(uint64_t index)
 {
     uint64_t term = 0;
     {
-        std::lock_guard<std::mutex> l(logs_lock);
+        std::lock_guard l(logs_lock);
         auto entry = logs.find(index);
         if (entry == logs.end())
             entry = logs.find(0);
@@ -125,7 +125,7 @@ nuraft::ptr<nuraft::buffer> InMemoryLogStore::pack(uint64_t index, Int32 cnt)
     {
         ptr<log_entry> le = nullptr;
         {
-            std::lock_guard<std::mutex> l(logs_lock);
+            std::lock_guard l(logs_lock);
             le = logs[ii];
         }
         assert(le.get());
@@ -162,13 +162,13 @@ void InMemoryLogStore::apply_pack(uint64_t index, nuraft::buffer & pack)
 
         nuraft::ptr<nuraft::log_entry> le = nuraft::log_entry::deserialize(*buf_local);
         {
-            std::lock_guard<std::mutex> l(logs_lock);
+            std::lock_guard l(logs_lock);
             logs[cur_idx] = le;
         }
     }
 
     {
-        std::lock_guard<std::mutex> l(logs_lock);
+        std::lock_guard l(logs_lock);
         auto entry = logs.upper_bound(0);
         if (entry != logs.end())
             start_idx = entry->first;
@@ -179,7 +179,7 @@ void InMemoryLogStore::apply_pack(uint64_t index, nuraft::buffer & pack)
 
 bool InMemoryLogStore::compact(uint64_t last_log_index)
 {
-    std::lock_guard<std::mutex> l(logs_lock);
+    std::lock_guard l(logs_lock);
     for (uint64_t ii = start_idx; ii <= last_log_index; ++ii)
     {
         auto entry = logs.find(ii);

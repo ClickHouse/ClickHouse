@@ -1,18 +1,25 @@
 import pytest
+from helpers.client import Client
 from helpers.cluster import ClickHouseCluster
+from helpers.ssl_context import WrapSSLContextWithSNI
 import urllib.request, urllib.parse
 import ssl
 import os.path
+from os import remove
+import logging
 
+
+# The test cluster is configured with certificate for that host name, see 'server-ext.cnf'.
+# The client have to verify server certificate against that name. Client uses SNI
+SSL_HOST = "integration-tests.clickhouse.com"
 HTTPS_PORT = 8443
-NODE_IP = "10.5.172.77"  # It's important for the node to work at this IP because 'server-cert.pem' requires that (see server-ext.cnf).
-NODE_IP_WITH_HTTPS_PORT = NODE_IP + ":" + str(HTTPS_PORT)
+# It's important for the node to work at this IP because 'server-cert.pem' requires that (see server-ext.cnf).
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+MAX_RETRY = 5
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "node",
-    ipv4_address=NODE_IP,
     main_configs=[
         "configs/ssl_config.xml",
         "certs/server-key.pem",
@@ -33,8 +40,118 @@ def started_cluster():
         cluster.shutdown()
 
 
+config = """<clickhouse>
+    <openSSL>
+        <client>
+            <verificationMode>none</verificationMode>
+
+            <certificateFile>{certificateFile}</certificateFile>
+            <privateKeyFile>{privateKeyFile}</privateKeyFile>
+            <caConfig>{caConfig}</caConfig>
+
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</clickhouse>"""
+
+
+def execute_query_native(node, query, user, cert_name, password=None):
+    config_path = f"{SCRIPT_DIR}/configs/client.xml"
+
+    formatted = config.format(
+        certificateFile=f"{SCRIPT_DIR}/certs/{cert_name}-cert.pem",
+        privateKeyFile=f"{SCRIPT_DIR}/certs/{cert_name}-key.pem",
+        caConfig=f"{SCRIPT_DIR}/certs/ca-cert.pem",
+    )
+
+    file = open(config_path, "w")
+    file.write(formatted)
+    file.close()
+
+    client = Client(
+        node.ip_address,
+        9440,
+        command=cluster.client_bin_path,
+        secure=True,
+        config=config_path,
+    )
+
+    try:
+        result = client.query(query, user=user, password=password)
+        remove(config_path)
+        return result
+    except:
+        remove(config_path)
+        raise
+
+
+def test_native():
+    assert (
+        execute_query_native(
+            instance, "SELECT currentUser()", user="john", cert_name="client1"
+        )
+        == "john\n"
+    )
+    assert (
+        execute_query_native(
+            instance, "SELECT currentUser()", user="lucy", cert_name="client2"
+        )
+        == "lucy\n"
+    )
+    assert (
+        execute_query_native(
+            instance, "SELECT currentUser()", user="lucy", cert_name="client3"
+        )
+        == "lucy\n"
+    )
+
+
+def test_native_wrong_cert():
+    # Wrong certificate: different user's certificate
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance, "SELECT currentUser()", user="john", cert_name="client2"
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+
+    # Wrong certificate: self-signed certificate.
+    # In this case clickhouse-client itself will throw an error
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance, "SELECT currentUser()", user="john", cert_name="wrong"
+        )
+    assert "UNKNOWN_CA" in str(err.value)
+
+
+def test_native_fallback_to_password():
+    # Unrelated certificate, correct password
+    assert (
+        execute_query_native(
+            instance,
+            "SELECT currentUser()",
+            user="jane",
+            cert_name="client2",
+            password="qwe123",
+        )
+        == "jane\n"
+    )
+
+    # Unrelated certificate, wrong password
+    with pytest.raises(Exception) as err:
+        execute_query_native(
+            instance,
+            "SELECT currentUser()",
+            user="jane",
+            cert_name="client2",
+            password="wrong",
+        )
+    assert "AUTHENTICATION_FAILED" in str(err.value)
+
+
 def get_ssl_context(cert_name):
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context = WrapSSLContextWithSNI(SSL_HOST, ssl.PROTOCOL_TLS_CLIENT)
     context.load_verify_locations(cafile=f"{SCRIPT_DIR}/certs/ca-cert.pem")
     if cert_name:
         context.load_cert_chain(
@@ -49,7 +166,9 @@ def get_ssl_context(cert_name):
 def execute_query_https(
     query, user, enable_ssl_auth=True, cert_name=None, password=None
 ):
-    url = f"https://{NODE_IP_WITH_HTTPS_PORT}/?query={urllib.parse.quote(query)}"
+    url = (
+        f"https://{instance.ip_address}:{HTTPS_PORT}/?query={urllib.parse.quote(query)}"
+    )
     request = urllib.request.Request(url)
     request.add_header("X-ClickHouse-User", user)
     if enable_ssl_auth:
@@ -81,17 +200,27 @@ def test_https_wrong_cert():
     # Wrong certificate: different user's certificate
     with pytest.raises(Exception) as err:
         execute_query_https("SELECT currentUser()", user="john", cert_name="client2")
-    assert "HTTP Error 403" in str(err.value)
+    assert "403" in str(err.value)
 
+    count = 0
     # Wrong certificate: self-signed certificate.
-    with pytest.raises(Exception) as err:
-        execute_query_https("SELECT currentUser()", user="john", cert_name="wrong")
-    assert "unknown ca" in str(err.value)
+    while count <= MAX_RETRY:
+        with pytest.raises(Exception) as err:
+            execute_query_https("SELECT currentUser()", user="john", cert_name="wrong")
+        err_str = str(err.value)
+        if count < MAX_RETRY and (
+            ("Broken pipe" in err_str) or ("EOF occurred" in err_str)
+        ):
+            count = count + 1
+            logging.warning(f"Failed attempt with wrong cert, err: {err_str}")
+            continue
+        assert "unknown ca" in err_str
+        break
 
     # No certificate.
     with pytest.raises(Exception) as err:
         execute_query_https("SELECT currentUser()", user="john")
-    assert "HTTP Error 403" in str(err.value)
+    assert "403" in str(err.value)
 
     # No header enabling SSL authentication.
     with pytest.raises(Exception) as err:
@@ -176,24 +305,49 @@ def test_https_non_ssl_auth():
         == "jane\n"
     )
 
+    count = 0
     # However if we send a certificate it must not be wrong.
-    with pytest.raises(Exception) as err:
-        execute_query_https(
-            "SELECT currentUser()",
-            user="peter",
-            enable_ssl_auth=False,
-            cert_name="wrong",
-        )
-    assert "unknown ca" in str(err.value)
-    with pytest.raises(Exception) as err:
-        execute_query_https(
-            "SELECT currentUser()",
-            user="jane",
-            enable_ssl_auth=False,
-            password="qwe123",
-            cert_name="wrong",
-        )
-    assert "unknown ca" in str(err.value)
+    while count <= MAX_RETRY:
+        with pytest.raises(Exception) as err:
+            execute_query_https(
+                "SELECT currentUser()",
+                user="peter",
+                enable_ssl_auth=False,
+                cert_name="wrong",
+            )
+        err_str = str(err.value)
+        if count < MAX_RETRY and (
+            ("Broken pipe" in err_str) or ("EOF occurred" in err_str)
+        ):
+            count = count + 1
+            logging.warning(
+                f"Failed attempt with wrong cert, user: peter, err: {err_str}"
+            )
+            continue
+        assert "unknown ca" in err_str
+        break
+
+    count = 0
+    while count <= MAX_RETRY:
+        with pytest.raises(Exception) as err:
+            execute_query_https(
+                "SELECT currentUser()",
+                user="jane",
+                enable_ssl_auth=False,
+                password="qwe123",
+                cert_name="wrong",
+            )
+        err_str = str(err.value)
+        if count < MAX_RETRY and (
+            ("Broken pipe" in err_str) or ("EOF occurred" in err_str)
+        ):
+            count = count + 1
+            logging.warning(
+                f"Failed attempt with wrong cert, user: jane, err: {err_str}"
+            )
+            continue
+        assert "unknown ca" in err_str
+        break
 
 
 def test_create_user():
@@ -219,7 +373,7 @@ def test_create_user():
 
     with pytest.raises(Exception) as err:
         execute_query_https("SELECT currentUser()", user="emma", cert_name="client3")
-    assert "HTTP Error 403" in str(err.value)
+    assert "403" in str(err.value)
 
     assert (
         instance.query("SHOW CREATE USER lucy")

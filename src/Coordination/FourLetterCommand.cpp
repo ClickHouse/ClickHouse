@@ -2,17 +2,36 @@
 
 #include <Coordination/KeeperDispatcher.h>
 #include <Server/KeeperTCPHandler.h>
-#include <base/logger_useful.h>
+#include <Common/ZooKeeper/IKeeper.h>
+#include <Common/logger_useful.h>
 #include <Poco/Environment.h>
 #include <Poco/Path.h>
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Common/StringUtils/StringUtils.h>
+#include "Coordination/KeeperFeatureFlags.h"
 #include <Coordination/Keeper4LWInfo.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <boost/algorithm/string.hpp>
 
 #include <unistd.h>
+#include <bit>
+
+namespace
+{
+
+String formatZxid(int64_t zxid)
+{
+    /// ZooKeeper print zxid in hex and
+    String hex = getHexUIntLowercase(zxid);
+    /// without leading zeros
+    trimLeft(hex, '0');
+    return "0x" + hex;
+}
+
+}
+
 
 namespace DB
 {
@@ -33,7 +52,7 @@ int32_t IFourLetterCommand::code()
 
 String IFourLetterCommand::toName(int32_t code)
 {
-    int reverted_code = __builtin_bswap32(code);
+    int reverted_code = std::byteswap(code);
     return String(reinterpret_cast<char *>(&reverted_code), 4);
 }
 
@@ -41,7 +60,7 @@ int32_t IFourLetterCommand::toCode(const String & name)
 {
     int32_t res = *reinterpret_cast<const int32_t *>(name.data());
     /// keep consistent with Coordination::read method by changing big endian to little endian.
-    return __builtin_bswap32(res);
+    return std::byteswap(res);
 }
 
 IFourLetterCommand::~IFourLetterCommand() = default;
@@ -55,7 +74,7 @@ FourLetterCommandFactory & FourLetterCommandFactory::instance()
 void FourLetterCommandFactory::checkInitialization() const
 {
     if (!initialized)
-        throw Exception("Four letter command  not initialized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Four letter command not initialized");
 }
 
 bool FourLetterCommandFactory::isKnown(int32_t code)
@@ -73,7 +92,7 @@ FourLetterCommandPtr FourLetterCommandFactory::get(int32_t code)
 void FourLetterCommandFactory::registerCommand(FourLetterCommandPtr & command)
 {
     if (commands.contains(command->code()))
-        throw Exception("Four letter command " + command->name() + " already registered", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Four letter command {} already registered", command->name());
 
     commands.emplace(command->code(), std::move(command));
 }
@@ -128,6 +147,30 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
 
         FourLetterCommandPtr watch_command = std::make_shared<WatchCommand>(keeper_dispatcher);
         factory.registerCommand(watch_command);
+
+        FourLetterCommandPtr recovery_command = std::make_shared<RecoveryCommand>(keeper_dispatcher);
+        factory.registerCommand(recovery_command);
+
+        FourLetterCommandPtr api_version_command = std::make_shared<ApiVersionCommand>(keeper_dispatcher);
+        factory.registerCommand(api_version_command);
+
+        FourLetterCommandPtr create_snapshot_command = std::make_shared<CreateSnapshotCommand>(keeper_dispatcher);
+        factory.registerCommand(create_snapshot_command);
+
+        FourLetterCommandPtr log_info_command = std::make_shared<LogInfoCommand>(keeper_dispatcher);
+        factory.registerCommand(log_info_command);
+
+        FourLetterCommandPtr request_leader_command = std::make_shared<RequestLeaderCommand>(keeper_dispatcher);
+        factory.registerCommand(request_leader_command);
+
+        FourLetterCommandPtr recalculate_command = std::make_shared<RecalculateCommand>(keeper_dispatcher);
+        factory.registerCommand(recalculate_command);
+
+        FourLetterCommandPtr clean_resources_command = std::make_shared<CleanResourcesCommand>(keeper_dispatcher);
+        factory.registerCommand(clean_resources_command);
+
+        FourLetterCommandPtr feature_flags_command = std::make_shared<FeatureFlagsCommand>(keeper_dispatcher);
+        factory.registerCommand(feature_flags_command);
 
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
@@ -198,15 +241,17 @@ void print(IFourLetterCommand::StringBuffer & buf, const String & key, uint64_t 
     print(buf, key, toString(value));
 }
 
+constexpr auto * SERVER_NOT_ACTIVE_MSG = "This instance is not currently serving requests";
+
 }
 
 String MonitorCommand::run()
 {
+    if (!keeper_dispatcher.isServerActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
-
-    if (!keeper_info.has_leader)
-        return "This instance is not currently serving requests";
 
     const auto & state_machine = keeper_dispatcher.getStateMachine();
 
@@ -231,7 +276,7 @@ String MonitorCommand::run()
     print(ret, "key_arena_size", state_machine.getKeyArenaSize());
     print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotBufSize());
 
-#if defined(__linux__) || defined(__APPLE__)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
     print(ret, "max_file_descriptor_count", getMaxFileDescriptorCount());
 #endif
@@ -247,6 +292,9 @@ String MonitorCommand::run()
 
 String StatResetCommand::run()
 {
+    if (!keeper_dispatcher.isServerActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     keeper_dispatcher.resetConnectionStats();
     return "Server stats reset.\n";
 }
@@ -258,13 +306,20 @@ String NopCommand::run()
 
 String ConfCommand::run()
 {
+    if (!keeper_dispatcher.isServerActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     StringBuffer buf;
     keeper_dispatcher.getKeeperConfigurationAndSettings()->dump(buf);
+    keeper_dispatcher.getKeeperContext()->dumpConfiguration(buf);
     return buf.str();
 }
 
 String ConsCommand::run()
 {
+    if (!keeper_dispatcher.isServerActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     StringBuffer buf;
     KeeperTCPHandler::dumpConnections(buf, false);
     return buf.str();
@@ -272,12 +327,18 @@ String ConsCommand::run()
 
 String RestConnStatsCommand::run()
 {
+    if (!keeper_dispatcher.isServerActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     KeeperTCPHandler::resetConnsStats();
     return "Connection stats reset.\n";
 }
 
 String ServerStatCommand::run()
 {
+    if (!keeper_dispatcher.isServerActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     StringBuffer buf;
 
     auto write = [&buf](const String & key, const String & value)
@@ -301,7 +362,7 @@ String ServerStatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", toString(keeper_info.last_zxid));
+    write("Zxid", formatZxid(keeper_info.last_zxid));
     write("Mode", keeper_info.getRole());
     write("Node count", toString(keeper_info.total_nodes_count));
 
@@ -310,6 +371,9 @@ String ServerStatCommand::run()
 
 String StatCommand::run()
 {
+    if (!keeper_dispatcher.isServerActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     StringBuffer buf;
 
     auto write = [&buf] (const String & key, const String & value) { buf << key << ": " << value << '\n'; };
@@ -331,7 +395,7 @@ String StatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", toString(keeper_info.last_zxid));
+    write("Zxid", formatZxid(keeper_info.last_zxid));
     write("Mode", keeper_info.getRole());
     write("Node count", toString(keeper_info.total_nodes_count));
 
@@ -340,6 +404,9 @@ String StatCommand::run()
 
 String BriefWatchCommand::run()
 {
+    if (!keeper_dispatcher.isServerActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     StringBuffer buf;
     const auto & state_machine = keeper_dispatcher.getStateMachine();
     buf << state_machine.getSessionsWithWatchesCount() << " connections watching "
@@ -350,6 +417,9 @@ String BriefWatchCommand::run()
 
 String WatchCommand::run()
 {
+    if (!keeper_dispatcher.isServerActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     StringBuffer buf;
     const auto & state_machine = keeper_dispatcher.getStateMachine();
     state_machine.dumpWatches(buf);
@@ -358,6 +428,9 @@ String WatchCommand::run()
 
 String WatchByPathCommand::run()
 {
+    if (!keeper_dispatcher.isServerActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     StringBuffer buf;
     const auto & state_machine = keeper_dispatcher.getStateMachine();
     state_machine.dumpWatchesByPath(buf);
@@ -366,6 +439,9 @@ String WatchByPathCommand::run()
 
 String DataSizeCommand::run()
 {
+    if (!keeper_dispatcher.isServerActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     StringBuffer buf;
     buf << "snapshot_dir_size: " << keeper_dispatcher.getSnapDirSize() << '\n';
     buf << "log_dir_size: " << keeper_dispatcher.getLogDirSize() << '\n';
@@ -374,6 +450,9 @@ String DataSizeCommand::run()
 
 String DumpCommand::run()
 {
+    if (!keeper_dispatcher.isServerActive())
+        return SERVER_NOT_ACTIVE_MSG;
+
     StringBuffer buf;
     const auto & state_machine = keeper_dispatcher.getStateMachine();
     state_machine.dumpSessionsAndEphemerals(buf);
@@ -417,6 +496,88 @@ String IsReadOnlyCommand::run()
         return "ro";
     else
         return "rw";
+}
+
+String RecoveryCommand::run()
+{
+    keeper_dispatcher.forceRecovery();
+    return "ok";
+}
+
+String ApiVersionCommand::run()
+{
+    return toString(static_cast<uint8_t>(KeeperApiVersion::WITH_MULTI_READ));
+}
+
+String CreateSnapshotCommand::run()
+{
+    auto log_index = keeper_dispatcher.createSnapshot();
+    return log_index > 0 ? std::to_string(log_index) : "Failed to schedule snapshot creation task.";
+}
+
+String LogInfoCommand::run()
+{
+    KeeperLogInfo log_info = keeper_dispatcher.getKeeperLogInfo();
+    StringBuffer ret;
+
+    auto append = [&ret] (String key, uint64_t value) -> void
+    {
+        writeText(key, ret);
+        writeText('\t', ret);
+        writeText(std::to_string(value), ret);
+        writeText('\n', ret);
+    };
+    append("first_log_idx", log_info.first_log_idx);
+    append("first_log_term", log_info.first_log_idx);
+    append("last_log_idx", log_info.last_log_idx);
+    append("last_log_term", log_info.last_log_term);
+    append("last_committed_log_idx", log_info.last_committed_log_idx);
+    append("leader_committed_log_idx", log_info.leader_committed_log_idx);
+    append("target_committed_log_idx", log_info.target_committed_log_idx);
+    append("last_snapshot_idx", log_info.last_snapshot_idx);
+    return ret.str();
+}
+
+String RequestLeaderCommand::run()
+{
+    return keeper_dispatcher.requestLeader() ? "Sent leadership request to leader." : "Failed to send leadership request to leader.";
+}
+
+String RecalculateCommand::run()
+{
+    keeper_dispatcher.recalculateStorageStats();
+    return "ok";
+}
+
+String CleanResourcesCommand::run()
+{
+    keeper_dispatcher.cleanResources();
+    return "ok";
+}
+
+String FeatureFlagsCommand::run()
+{
+    const auto & feature_flags = keeper_dispatcher.getKeeperContext()->getFeatureFlags();
+
+    StringBuffer ret;
+
+    auto append = [&ret] (const String & key, uint8_t value) -> void
+    {
+        writeText(key, ret);
+        writeText('\t', ret);
+        writeText(std::to_string(value), ret);
+        writeText('\n', ret);
+    };
+
+    for (const auto & [feature_flag, name] : magic_enum::enum_entries<KeeperFeatureFlag>())
+    {
+        std::string feature_flag_string(name);
+        boost::to_lower(feature_flag_string);
+        append(feature_flag_string, feature_flags.isEnabled(feature_flag));
+    }
+
+    return ret.str();
+
 }
 
 }

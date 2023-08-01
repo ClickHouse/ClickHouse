@@ -196,7 +196,7 @@ template void ProtobufWriter::writeFixed<UInt64>(int field_number, UInt64 value)
 template void ProtobufWriter::writeFixed<Float32>(int field_number, Float32 value);
 template void ProtobufWriter::writeFixed<Float64>(int field_number, Float64 value);
 
-void ProtobufWriter::writeString(int field_number, const std::string_view & str)
+void ProtobufWriter::writeString(int field_number, std::string_view str)
 {
     size_t length = str.length();
     size_t old_size = buffer.size();

@@ -25,7 +25,7 @@ TTLColumnAlgorithm::TTLColumnAlgorithm(
     }
 
     if (isMaxTTLExpired())
-        new_ttl_info.finished = true;
+        new_ttl_info.ttl_finished = true;
 }
 
 void TTLColumnAlgorithm::execute(Block & block)

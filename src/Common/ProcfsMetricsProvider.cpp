@@ -1,13 +1,14 @@
 #include "ProcfsMetricsProvider.h"
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 
 #include <Common/Exception.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
 #include <base/find_symbols.h>
-#include <base/logger_useful.h>
+#include <base/defines.h>
+#include <Common/logger_useful.h>
 
 #include <cassert>
 #include <sys/types.h>
@@ -102,7 +103,8 @@ ProcfsMetricsProvider::ProcfsMetricsProvider(pid_t /*tid*/)
     thread_stat_fd = ::open(thread_stat, O_RDONLY | O_CLOEXEC);
     if (-1 == thread_stat_fd)
     {
-        ::close(thread_schedstat_fd);
+        int err = ::close(thread_schedstat_fd);
+        chassert(!err || errno == EINTR);
         throwWithFailedToOpenFile(thread_stat);
     }
     thread_io_fd = ::open(thread_io, O_RDONLY | O_CLOEXEC);

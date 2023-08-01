@@ -1,8 +1,8 @@
--- Tags: no-s3-storage
--- FIXME this test fails with S3 due to a bug in DiskCacheWrapper
+-- Tags: no-ordinary-database
+
 drop table if exists txn_counters;
 
-create table txn_counters (n Int64, creation_tid DEFAULT transactionID()) engine=MergeTree order by n;
+create table txn_counters (n Int64, creation_tid DEFAULT transactionID()) engine=MergeTree order by n SETTINGS old_parts_lifetime=3600;
 
 insert into txn_counters(n) values (1);
 select transactionID();
@@ -31,7 +31,7 @@ attach table txn_counters;
 begin transaction;
 insert into txn_counters(n) values (4);
 select 6, system.parts.name, txn_counters.creation_tid = system.parts.creation_tid from txn_counters join system.parts on txn_counters._part = system.parts.name where database=currentDatabase() and table='txn_counters' order by system.parts.name;
-select 7, name, removal_tid, removal_csn from system.parts where database=currentDatabase() and table='txn_counters' order by system.parts.name;
+select 7, name, removal_tid, removal_csn from system.parts where database=currentDatabase() and table='txn_counters' and active order by system.parts.name;
 select 8, transactionID().3 == serverUUID();
 commit;
 
@@ -42,7 +42,13 @@ rollback;
 
 system flush logs;
 select indexOf((select arraySort(groupUniqArray(tid)) from system.transactions_info_log where database=currentDatabase() and table='txn_counters'), tid),
-       (toDecimal64(now64(6), 6) - toDecimal64(event_time, 6)) < 100, type, thread_id!=0, length(query_id)=length(queryID()), tid_hash!=0, csn=0, part
+       (toDecimal64(now64(6), 6) - toDecimal64(event_time, 6)) < 100,
+       type,
+       thread_id!=0,
+       length(query_id)=length(queryID()) or type='Commit' and query_id='',  -- ignore fault injection after commit
+       tid_hash!=0,
+       csn=0,
+       part
 from system.transactions_info_log
 where tid in (select tid from system.transactions_info_log where database=currentDatabase() and table='txn_counters' and not (tid.1=1 and tid.2=1))
 or (database=currentDatabase() and table='txn_counters') order by event_time;

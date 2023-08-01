@@ -2,14 +2,9 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
+#include <Common/ProfileEvents.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
-
-
-namespace ProfileEvents
-{
-    class Counters;
-}
 
 
 namespace DB
@@ -54,6 +49,7 @@ struct QueryThreadLogElement
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 
@@ -64,5 +60,3 @@ class QueryThreadLog : public SystemLog<QueryThreadLogElement>
 
 
 }
-
-

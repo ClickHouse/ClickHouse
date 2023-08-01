@@ -5,7 +5,7 @@
 #include <Core/ExternalResultDescription.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Interpreters/Context_fwd.h>
-#include "ODBCConnectionFactory.h"
+#include "ODBCPooledConnectionFactory.h"
 
 
 namespace DB

@@ -1,5 +1,6 @@
 ---
-toc_priority: 4
+slug: /zh/sql-reference/aggregate-functions/reference/sum
+sidebar_position: 4
 ---
 
 # sum {#agg_function-sum}

@@ -1,11 +1,12 @@
 ---
-toc_priority: 27
-toc_title: "Библиотеки для интеграции от сторонних разработчиков"
+slug: /ru/interfaces/third-party/integrations
+sidebar_position: 27
+sidebar_label: "Библиотеки для интеграции от сторонних разработчиков"
 ---
 
 # Библиотеки для интеграции от сторонних разработчиков {#biblioteki-dlia-integratsii-ot-storonnikh-razrabotchikov}
 
-!!! warning "Disclaimer"
+:::danger "Disclaimer"
     ClickHouse, Inc. не занимается поддержкой перечисленных ниже инструментов и библиотек и не проводит тщательного тестирования для проверки их качества.
 
 ## Инфраструктурные продукты {#infrastrukturnye-produkty}
@@ -107,4 +108,3 @@ toc_title: "Библиотеки для интеграции от сторонн
         -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord)
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
-

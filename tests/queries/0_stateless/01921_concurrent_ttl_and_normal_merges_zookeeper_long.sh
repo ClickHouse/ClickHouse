@@ -24,39 +24,44 @@ for i in $(seq 1 $NUM_REPLICAS); do
     ENGINE ReplicatedMergeTree('/test/01921_concurrent_ttl_and_normal_merges/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ttl_table', '$i')
     ORDER BY tuple()
     TTL key + INTERVAL 1 SECOND
-    SETTINGS merge_with_ttl_timeout=1, max_replicated_merges_with_ttl_in_queue=100, max_number_of_merges_with_ttl_in_pool=100, cleanup_delay_period=1, cleanup_delay_period_random_add=0;"
+    SETTINGS merge_with_ttl_timeout=1, max_replicated_merges_with_ttl_in_queue=100, max_number_of_merges_with_ttl_in_pool=100,
+    cleanup_delay_period=1, cleanup_delay_period_random_add=0, cleanup_thread_preferred_points_per_iteration=0;"
 done
 
 function optimize_thread
 {
-    REPLICA=$(($RANDOM % 5 + 1))
-    $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE ttl_table$REPLICA FINAl"
+    while true; do
+        REPLICA=$(($RANDOM % 5 + 1))
+        $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE ttl_table$REPLICA FINAl"
+    done
 }
 
 function insert_thread
 {
-    REPLICA=$(($RANDOM % 5 + 1))
-    $CLICKHOUSE_CLIENT --optimize_on_insert=0 --query "INSERT INTO ttl_table$REPLICA SELECT now() + rand() % 5 - rand() % 3 FROM numbers(5)"
-    $CLICKHOUSE_CLIENT --optimize_on_insert=0 --query "INSERT INTO ttl_table$REPLICA SELECT now() + rand() % 5 - rand() % 3 FROM numbers(5)"
-    $CLICKHOUSE_CLIENT --optimize_on_insert=0 --query "INSERT INTO ttl_table$REPLICA SELECT now() + rand() % 5 - rand() % 3 FROM numbers(5)"
+    while true; do
+        REPLICA=$(($RANDOM % 5 + 1))
+        $CLICKHOUSE_CLIENT --optimize_on_insert=0 --query "INSERT INTO ttl_table$REPLICA SELECT now() + rand() % 5 - rand() % 3 FROM numbers(5)"
+        $CLICKHOUSE_CLIENT --optimize_on_insert=0 --query "INSERT INTO ttl_table$REPLICA SELECT now() + rand() % 5 - rand() % 3 FROM numbers(5)"
+        $CLICKHOUSE_CLIENT --optimize_on_insert=0 --query "INSERT INTO ttl_table$REPLICA SELECT now() + rand() % 5 - rand() % 3 FROM numbers(5)"
+    done
 }
 
 
-export -f insert_thread
-export -f optimize_thread
+export -f insert_thread;
+export -f optimize_thread;
 
 TIMEOUT=30
 
-clickhouse_client_loop_timeout $TIMEOUT insert_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT insert_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT insert_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT insert_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT insert_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT optimize_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT optimize_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT optimize_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT optimize_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT optimize_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
+timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
+timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
+timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
+timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
 
 wait
 for i in $(seq 1 $NUM_REPLICAS); do

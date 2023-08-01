@@ -1,5 +1,6 @@
 ---
-toc_title: FROM
+slug: /zh/sql-reference/statements/select/from
+sidebar_label: FROM
 ---
 
 # FROM子句 {#select-from}

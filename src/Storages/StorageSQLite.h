@@ -1,9 +1,8 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_SQLITE
-#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
 #include <sqlite3.h>
@@ -16,10 +15,8 @@ class Logger;
 namespace DB
 {
 
-class StorageSQLite final : public shared_ptr_helper<StorageSQLite>, public IStorage, public WithContext
+class StorageSQLite final : public IStorage, public WithContext
 {
-friend struct shared_ptr_helper<StorageSQLite>;
-
 public:
     using SQLitePtr = std::shared_ptr<sqlite3>;
 
@@ -41,9 +38,13 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
+
+    static ColumnsDescription getTableStructureFromData(
+        const SQLitePtr & sqlite_db_,
+        const String & table);
 
 private:
     String remote_table_name;

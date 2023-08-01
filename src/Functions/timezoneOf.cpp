@@ -6,7 +6,6 @@
 #include <Common/DateLUTImpl.h>
 #include <Core/Field.h>
 
-
 namespace DB
 {
 
@@ -67,7 +66,7 @@ public:
 
 }
 
-void registerFunctionTimezoneOf(FunctionFactory & factory)
+REGISTER_FUNCTION(TimezoneOf)
 {
     factory.registerFunction<FunctionTimezoneOf>();
     factory.registerAlias("timeZoneOf", "timezoneOf");

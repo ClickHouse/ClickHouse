@@ -1,6 +1,7 @@
 ---
-toc_priority: 50
-toc_title: SET ROLE
+slug: /ru/sql-reference/statements/set-role
+sidebar_position: 50
+sidebar_label: SET ROLE
 ---
 
 # SET ROLE {#set-role-statement}
@@ -52,5 +53,3 @@ SET DEFAULT ROLE NONE TO user
 ```sql
 SET DEFAULT ROLE ALL EXCEPT role1, role2 TO user
 ```
-
-

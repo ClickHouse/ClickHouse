@@ -21,9 +21,10 @@
 #include <regex>
 #include <Common/setThreadName.h>
 #include <Core/MySQL/Authentication.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 #if USE_SSL
 #    include <Poco/Crypto/RSAKey.h>
@@ -63,8 +64,11 @@ static String showTableStatusReplacementQuery(const String & query);
 static String killConnectionIdReplacementQuery(const String & query);
 static String selectLimitReplacementQuery(const String & query);
 
-MySQLHandler::MySQLHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_,
-    bool ssl_enabled, size_t connection_id_)
+MySQLHandler::MySQLHandler(
+    IServer & server_,
+    TCPServer & tcp_server_,
+    const Poco::Net::StreamSocket & socket_,
+    bool ssl_enabled, uint32_t connection_id_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
@@ -90,11 +94,11 @@ void MySQLHandler::run()
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MYSQL);
     SCOPE_EXIT({ session.reset(); });
 
-    session->getClientInfo().connection_id = connection_id;
+    session->setClientConnectionId(connection_id);
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
-    packet_endpoint = MySQLProtocol::PacketEndpoint::create(*in, *out, sequence_id);
+    packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
 
     try
     {
@@ -120,7 +124,7 @@ void MySQLHandler::run()
             handshake_response.auth_plugin_name);
 
         if (!(client_capabilities & CLIENT_PROTOCOL_41))
-            throw Exception("Required capability: CLIENT_PROTOCOL_41.", ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES);
+            throw Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES, "Required capability: CLIENT_PROTOCOL_41.");
 
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
 
@@ -152,7 +156,7 @@ void MySQLHandler::run()
             payload.readStrict(command);
 
             // For commands which are executed without MemoryTracker.
-            LimitReadBuffer limited_payload(payload, 10000, true, "too long MySQL packet.");
+            LimitReadBuffer limited_payload(payload, 10000, /* trow_exception */ true, /* exact_limit */ {}, "too long MySQL packet.");
 
             LOG_DEBUG(log, "Received command: {}. Connection id: {}.",
                 static_cast<int>(static_cast<unsigned char>(command)), connection_id);
@@ -178,7 +182,7 @@ void MySQLHandler::run()
                         comPing();
                         break;
                     default:
-                        throw Exception(Poco::format("Command %d is not implemented.", command), ErrorCodes::NOT_IMPLEMENTED);
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Command {} is not implemented.", command);
                 }
             }
             catch (const NetException & exc)
@@ -215,10 +219,10 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     auto read_bytes = [this, &buf, &pos, &packet_size](size_t count) -> void {
         while (pos < count)
         {
-            int ret = socket().receiveBytes(buf + pos, packet_size - pos);
+            int ret = socket().receiveBytes(buf + pos, static_cast<uint32_t>(packet_size - pos));
             if (ret == 0)
             {
-                throw Exception("Cannot read all data. Bytes read: " + std::to_string(pos) + ". Bytes expected: 3", ErrorCodes::CANNOT_READ_ALL_DATA);
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data. Bytes read: {}. Bytes expected: 3", std::to_string(pos));
             }
             pos += ret;
         }
@@ -331,15 +335,15 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         ReadBufferFromString replacement(replacement_query);
 
         auto query_context = session->makeQueryContext();
-        query_context->setCurrentQueryId(Poco::format("mysql:%lu", connection_id));
+        query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
         CurrentThread::QueryScope query_scope{query_context};
 
         std::atomic<size_t> affected_rows {0};
         auto prev = query_context->getProgressCallback();
-        query_context->setProgressCallback([&, prev = prev](const Progress & progress)
+        query_context->setProgressCallback([&, my_prev = prev](const Progress & progress)
         {
-            if (prev)
-                prev(progress);
+            if (my_prev)
+                my_prev(progress);
 
             affected_rows += progress.written_rows;
         });
@@ -349,11 +353,15 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         format_settings.mysql_wire.max_packet_size = max_packet_size;
         format_settings.mysql_wire.sequence_id = &sequence_id;
 
-        auto set_result_details = [&with_output](const String &, const String &, const String &format, const String &)
+        auto set_result_details = [&with_output](const QueryResultDetails & details)
         {
-            if (format != "MySQLWire")
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
-            with_output = true;
+            if (details.format)
+            {
+                if (*details.format != "MySQLWire")
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
+
+                with_output = true;
+            }
         };
 
         executeQuery(should_replace ? replacement : payload, *out, false, query_context, set_result_details, format_settings);
@@ -365,18 +373,26 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 
 void MySQLHandler::authPluginSSL()
 {
-    throw Exception("ClickHouse was built without SSL support. Try specifying password using double SHA1 in users.xml.", ErrorCodes::SUPPORT_IS_DISABLED);
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ClickHouse was built without SSL support. Try specifying password using double SHA1 in users.xml.");
 }
 
 void MySQLHandler::finishHandshakeSSL(
     [[maybe_unused]] size_t packet_size, [[maybe_unused]] char * buf, [[maybe_unused]] size_t pos,
     [[maybe_unused]] std::function<void(size_t)> read_bytes, [[maybe_unused]] MySQLProtocol::ConnectionPhase::HandshakeResponse & packet)
 {
-    throw Exception("Client requested SSL, while it is disabled.", ErrorCodes::SUPPORT_IS_DISABLED);
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Client requested SSL, while it is disabled.");
 }
 
 #if USE_SSL
-MySQLHandlerSSL::MySQLHandlerSSL(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool ssl_enabled, size_t connection_id_, RSA & public_key_, RSA & private_key_)
+MySQLHandlerSSL::MySQLHandlerSSL(
+    IServer & server_,
+    TCPServer & tcp_server_,
+    const Poco::Net::StreamSocket & socket_,
+    bool ssl_enabled,
+    uint32_t connection_id_,
+    RSA & public_key_,
+    RSA & private_key_)
     : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_)
     , public_key(public_key_)
     , private_key(private_key_)
@@ -403,7 +419,7 @@ void MySQLHandlerSSL::finishHandshakeSSL(
     in = std::make_shared<ReadBufferFromPocoSocket>(*ss);
     out = std::make_shared<WriteBufferFromPocoSocket>(*ss);
     sequence_id = 2;
-    packet_endpoint = MySQLProtocol::PacketEndpoint::create(*in, *out, sequence_id);
+    packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
     packet_endpoint->receivePacket(packet); /// Reading HandshakeResponse from secure socket.
 }
 
@@ -472,7 +488,7 @@ static String selectLimitReplacementQuery(const String & query)
     return query;
 }
 
-/// Replace "KILL QUERY [connection_id]" into "KILL QUERY WHERE query_id = 'mysql:[connection_id]'".
+/// Replace "KILL QUERY [connection_id]" into "KILL QUERY WHERE query_id LIKE 'mysql:[connection_id]:xxx'".
 static String killConnectionIdReplacementQuery(const String & query)
 {
     const String prefix = "KILL QUERY ";
@@ -482,7 +498,7 @@ static String killConnectionIdReplacementQuery(const String & query)
         static const std::regex expr{"^[0-9]"};
         if (std::regex_match(suffix, expr))
         {
-            String replacement = Poco::format("KILL QUERY WHERE query_id = 'mysql:%s'", suffix);
+            String replacement = fmt::format("KILL QUERY WHERE query_id LIKE 'mysql:{}:%'", suffix);
             return replacement;
         }
     }

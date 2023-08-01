@@ -23,7 +23,7 @@ def started_cluster():
         for node in (node1, node2):
             node.query(
                 """
-CREATE TABLE local_table(date Date, val UInt64) ENGINE = MergeTree(date, (date, val), 8192);
+CREATE TABLE local_table(date Date, val UInt64) ENGINE = MergeTree() PARTITION BY toYYYYMM(date) ORDER BY (date, val);
 """
             )
 

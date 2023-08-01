@@ -1,5 +1,6 @@
 ---
-toc_priority: 150
+slug: /zh/sql-reference/aggregate-functions/reference/initializeAggregation
+sidebar_position: 150
 ---
 
 ## initializeAggregation {#initializeaggregation}

@@ -28,6 +28,7 @@ public:
     DataTypeDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_info);
 
     const char * getFamilyName() const override { return family_name; }
+    String getSQLCompatibleName() const override { return "DATETIME"; }
     std::string doGetName() const override;
     TypeIndex getTypeId() const override { return type_id; }
 
@@ -37,9 +38,13 @@ public:
 
     bool canBeUsedAsVersion() const override { return true; }
 
+    bool isSummable() const override { return false; }
+
 protected:
     SerializationPtr doGetDefaultSerialization() const override;
 };
+
+std::string getDateTimeTimezone(const IDataType & data_type);
 
 }
 

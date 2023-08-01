@@ -1,6 +1,7 @@
 ---
-toc_priority: 47
-toc_title: Date
+slug: /ru/sql-reference/data-types/date
+sidebar_position: 47
+sidebar_label: Date
 ---
 
 # Date {#data-type-date}
@@ -41,5 +42,3 @@ SELECT * FROM dt;
 -   [Функции для работы с датой и временем](../../sql-reference/functions/date-time-functions.md)
 -   [Операторы для работы с датой и временем](../../sql-reference/operators/index.md#operators-datetime)
 -   [Тип данных `DateTime`](../../sql-reference/data-types/datetime.md)
-
-

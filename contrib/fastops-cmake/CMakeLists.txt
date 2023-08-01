@@ -5,7 +5,7 @@ elseif(ENABLE_FASTOPS)
 endif()
 
 if(NOT ENABLE_FASTOPS)
-    message(STATUS "Not using fast vectorized mathematical functions library by Mikhail Parakhin")
+    message(STATUS "Not using fastops")
     return()
 endif()
 

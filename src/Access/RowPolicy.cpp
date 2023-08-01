@@ -45,7 +45,7 @@ void RowPolicy::setFullName(const RowPolicyName & full_name_)
 
 void RowPolicy::setName(const String &)
 {
-    throw Exception("RowPolicy::setName() is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RowPolicy::setName() is not implemented");
 }
 
 
@@ -56,6 +56,16 @@ bool RowPolicy::equal(const IAccessEntity & other) const
     const auto & other_policy = typeid_cast<const RowPolicy &>(other);
     return (full_name == other_policy.full_name) && boost::range::equal(filters, other_policy.filters)
         && restrictive == other_policy.restrictive && (to_roles == other_policy.to_roles);
+}
+
+std::vector<UUID> RowPolicy::findDependencies() const
+{
+    return to_roles.findDependencies();
+}
+
+void RowPolicy::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
+{
+    to_roles.replaceDependencies(old_to_new_ids);
 }
 
 }

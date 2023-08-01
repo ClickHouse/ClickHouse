@@ -23,7 +23,7 @@ class ASTWatchQuery : public ASTQueryWithTableAndOutput
 
 public:
     ASTPtr limit_length;
-    bool is_watch_events;
+    bool is_watch_events = false;
 
     ASTWatchQuery() = default;
     String getID(char) const override { return "WatchQuery_" + getDatabase() + "_" + getTable(); }
@@ -36,6 +36,8 @@ public:
         cloneTableOptions(*res);
         return res;
     }
+
+    QueryKind getQueryKind() const override { return QueryKind::Create; }
 
 protected:
     void formatQueryImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override

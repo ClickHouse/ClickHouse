@@ -1,56 +1,24 @@
 #pragma once
 
 #include <atomic>
-#include <base/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
+#include <base/scope_guard.h>
 
 
 namespace DB
 {
+
 struct DictionaryStructure;
 class TableFunctionDictionary;
+class IDictionary;
 
-class StorageDictionary final : public shared_ptr_helper<StorageDictionary>, public IStorage, public WithContext
+class StorageDictionary final : public IStorage, public WithContext
 {
-    friend struct shared_ptr_helper<StorageDictionary>;
-    friend class TableFunctionDictionary;
+friend class TableFunctionDictionary;
+
 public:
-    std::string getName() const override { return "Dictionary"; }
-
-    ~StorageDictionary() override;
-
-    void checkTableCanBeDropped() const override;
-    void checkTableCanBeDetached() const override;
-
-    Pipe read(
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        unsigned threads) override;
-
-    static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
-    static String generateNamesAndTypesDescription(const NamesAndTypesList & list);
-
-    bool isDictionary() const override { return true; }
-    void shutdown() override;
-    void startup() override;
-
-    void renameInMemory(const StorageID & new_table_id) override;
-
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const override;
-
-    void alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder &) override;
-
-    Poco::Timestamp getUpdateTime() const;
-    LoadablesConfigurationPtr getConfiguration() const;
-
-    String getDictionaryName() const { return dictionary_name; }
-
     /// Specifies where the table is located relative to the dictionary.
     enum class Location
     {
@@ -68,18 +36,6 @@ public:
         /// User chose the table's database and name and can drop that table.
         Custom,
     };
-
-private:
-    String dictionary_name;
-    const Location location;
-
-    mutable std::mutex dictionary_config_mutex;
-    Poco::Timestamp update_time;
-    LoadablesConfigurationPtr configuration;
-
-    scope_guard remove_repository_callback;
-
-    void removeDictionaryConfigurationFromRepository();
 
     StorageDictionary(
         const StorageID & table_id_,
@@ -101,6 +57,58 @@ private:
         const StorageID & table_id_,
         LoadablesConfigurationPtr dictionary_configuration_,
         ContextPtr context_);
+
+    std::string getName() const override { return "Dictionary"; }
+
+    ~StorageDictionary() override;
+
+    void checkTableCanBeDropped() const override;
+    void checkTableCanBeDetached() const override;
+
+    Pipe read(
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        size_t threads) override;
+
+    /// FIXME: processing after reading from dictionaries are not parallelized due to some bug:
+    /// count() can return wrong result, see test_dictionaries_redis/test_long.py::test_redis_dict_long
+    bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
+
+    std::shared_ptr<const IDictionary> getDictionary() const;
+
+    static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
+    static String generateNamesAndTypesDescription(const NamesAndTypesList & list);
+
+    bool isDictionary() const override { return true; }
+    void shutdown() override;
+    void startup() override;
+
+    void renameInMemory(const StorageID & new_table_id) override;
+
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const override;
+
+    void alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder &) override;
+
+    Poco::Timestamp getUpdateTime() const;
+    LoadablesConfigurationPtr getConfiguration() const;
+
+    String getDictionaryName() const { return dictionary_name; }
+
+private:
+    String dictionary_name;
+    const Location location;
+
+    mutable std::mutex dictionary_config_mutex;
+    Poco::Timestamp update_time;
+    LoadablesConfigurationPtr configuration;
+
+    scope_guard remove_repository_callback;
+
+    void removeDictionaryConfigurationFromRepository();
 };
 
 }

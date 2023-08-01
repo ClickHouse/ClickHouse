@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-random-merge-tree-settings
 
 #--------------------------------------------
 # Description of test result:

@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-tsan
 
 # shellcheck disable=SC2154
-
-unset CLICKHOUSE_LOG_COMMENT
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -11,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 # tests rely on that all the rows are unique and max_threads divides table_size
-table_size=10000
+table_size=1000005
 max_threads=5
 
 

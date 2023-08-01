@@ -34,7 +34,7 @@ void NO_INLINE bench(const std::vector<StringRef> & data, DB::Arena & pool, cons
         }
         watch.stop();
 
-        std::cerr << "arena-memory " << pool.size() + set.getBufferSizeInBytes() << std::endl;
+        std::cerr << "arena-memory " << pool.allocatedBytes() + set.getBufferSizeInBytes() << std::endl;
         std::cerr << "single-run " << std::setprecision(3)
                   << watch.elapsedSeconds() << std::endl;
     }

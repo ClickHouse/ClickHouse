@@ -7,13 +7,12 @@
 ExpressionTransform
   (Limit)
   Limit
-    (Expression)
-    ExpressionTransform
-      (Sorting)
-      MergingSortedTransform 2 → 1
-        (Expression)
-        ExpressionTransform × 2
-          (SettingQuotaAndLimits)
+    (Sorting)
+    FinishSortingTransform
+      PartialSortingTransform
+        MergingSortedTransform 2 → 1
+          (Expression)
+          ExpressionTransform × 2
             (ReadFromMergeTree)
             MergeTreeInOrder × 2 0 → 1
 2020-10-01	9
@@ -25,13 +24,12 @@ ExpressionTransform
 ExpressionTransform
   (Limit)
   Limit
-    (Expression)
-    ExpressionTransform
-      (Sorting)
-      MergingSortedTransform 2 → 1
-        (Expression)
-        ExpressionTransform × 2
-          (SettingQuotaAndLimits)
+    (Sorting)
+    FinishSortingTransform
+      PartialSortingTransform
+        MergingSortedTransform 2 → 1
+          (Expression)
+          ExpressionTransform × 2
             (ReadFromMergeTree)
             ReverseTransform
               MergeTreeReverse 0 → 1
@@ -46,17 +44,14 @@ ExpressionTransform
 ExpressionTransform
   (Limit)
   Limit
-    (Expression)
-    ExpressionTransform
-      (Sorting)
-      FinishSortingTransform
-        PartialSortingTransform
-          MergingSortedTransform 2 → 1
-            (Expression)
-            ExpressionTransform × 2
-              (SettingQuotaAndLimits)
-                (ReadFromMergeTree)
-                MergeTreeInOrder × 2 0 → 1
+    (Sorting)
+    FinishSortingTransform
+      PartialSortingTransform
+        MergingSortedTransform 2 → 1
+          (Expression)
+          ExpressionTransform × 2
+            (ReadFromMergeTree)
+            MergeTreeInOrder × 2 0 → 1
 2020-10-11	0
 2020-10-11	0
 2020-10-11	0
@@ -69,10 +64,19 @@ ExpressionTransform
     (Sorting)
       (Expression)
       ExpressionTransform
-        (Filter)
-        FilterTransform
-          (SettingQuotaAndLimits)
-            (ReadFromMergeTree)
+        (ReadFromMergeTree)
+        MergeTreeInOrder 0 → 1
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+      (Expression)
+      ExpressionTransform
+        (Expression)
+        ExpressionTransform
+          (ReadFromMergeTree)
+          ExpressionTransform
             MergeTreeInOrder 0 → 1
 2020-10-11	0	0
 2020-10-11	0	10
@@ -88,16 +92,34 @@ ExpressionTransform
       PartialSortingTransform
         (Expression)
         ExpressionTransform
-          (Filter)
-          FilterTransform
-            (SettingQuotaAndLimits)
-              (ReadFromMergeTree)
+          (ReadFromMergeTree)
+          MergeTreeInOrder 0 → 1
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+    FinishSortingTransform
+      PartialSortingTransform
+        (Expression)
+        ExpressionTransform
+          (Expression)
+          ExpressionTransform
+            (ReadFromMergeTree)
+            ExpressionTransform
               MergeTreeInOrder 0 → 1
 2020-10-12	0
 2020-10-12	1
 2020-10-12	2
 2020-10-12	3
 2020-10-12	4
+SELECT
+    date,
+    i
+FROM t_read_in_order
+PREWHERE date = \'2020-10-12\'
+ORDER BY i DESC
+LIMIT 5
 (Expression)
 ExpressionTransform
   (Limit)
@@ -105,10 +127,20 @@ ExpressionTransform
     (Sorting)
       (Expression)
       ExpressionTransform
-        (Filter)
-        FilterTransform
-          (SettingQuotaAndLimits)
-            (ReadFromMergeTree)
+        (ReadFromMergeTree)
+        ReverseTransform
+          MergeTreeReverse 0 → 1
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+      (Expression)
+      ExpressionTransform
+        (Expression)
+        ExpressionTransform
+          (ReadFromMergeTree)
+          ExpressionTransform
             ReverseTransform
               MergeTreeReverse 0 → 1
 2020-10-12	99999
@@ -136,9 +168,8 @@ ExpressionTransform
     (Sorting)
       (Expression)
       ExpressionTransform
-        (SettingQuotaAndLimits)
-          (ReadFromMergeTree)
-          MergeTreeInOrder 0 → 1
+        (ReadFromMergeTree)
+        MergeTreeInOrder 0 → 1
 2020-10-10 00:00:00	0.01
 2020-10-10 00:00:00	0.01
 2020-10-10 00:00:00	0.01
@@ -151,9 +182,8 @@ ExpressionTransform
     (Sorting)
       (Expression)
       ExpressionTransform
-        (SettingQuotaAndLimits)
-          (ReadFromMergeTree)
-          MergeTreeInOrder 0 → 1
+        (ReadFromMergeTree)
+        MergeTreeInOrder 0 → 1
 2020-10-10 00:00:00	0.01
 2020-10-10 00:00:00	0.01
 2020-10-10 00:00:00	0.01

@@ -1,33 +1,62 @@
 #!/bin/bash
+set -exu
+trap "exit" INT TERM
 
-set -e -x
+function wget_with_retry
+{
+    for _ in 1 2 3 4; do
+        if wget -nv -nd -c "$1";then
+            return 0
+        else
+            sleep 0.5
+        fi
+    done
+    return 1
+}
 
-dpkg -i package_folder/clickhouse-common-static_*.deb
-dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
-dpkg -i package_folder/clickhouse-server_*.deb
-dpkg -i package_folder/clickhouse-client_*.deb
+if [ -z ${BINARY_URL_TO_DOWNLOAD+x} ]
+then
+    echo "No BINARY_URL_TO_DOWNLOAD provided."
+else
+    wget_with_retry "$BINARY_URL_TO_DOWNLOAD"
+    chmod +x /clickhouse
+fi
 
-service clickhouse-server start && sleep 5
+if [[ -f "/clickhouse" ]]; then
+    echo "/clickhouse exists"
+else
+    exit 1
+fi
 
-cd /sqlancer/sqlancer-master
+cd /workspace
+/clickhouse server -P /workspace/clickhouse-server.pid -L /workspace/clickhouse-server.log -E /workspace/clickhouse-server.log.err --daemon
 
-export TIMEOUT=300
-export NUM_QUERIES=1000
+for _ in $(seq 1 60); do if [[ $(wget -q 'localhost:8123' -O-) == 'Ok.' ]]; then break ; else sleep 1; fi ; done
 
-( java -jar target/sqlancer-*.jar --num-threads 10 --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPWhere | tee /test_output/TLPWhere.out )  3>&1 1>&2 2>&3 | tee /test_output/TLPWhere.err
-( java -jar target/sqlancer-*.jar --num-threads 10 --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPGroupBy | tee /test_output/TLPGroupBy.out )  3>&1 1>&2 2>&3 | tee /test_output/TLPGroupBy.err
-( java -jar target/sqlancer-*.jar --num-threads 10 --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPHaving | tee /test_output/TLPHaving.out )  3>&1 1>&2 2>&3 | tee /test_output/TLPHaving.err
-( java -jar target/sqlancer-*.jar --num-threads 10 --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPWhere --oracle TLPGroupBy | tee /test_output/TLPWhereGroupBy.out )  3>&1 1>&2 2>&3 | tee /test_output/TLPWhereGroupBy.err
-( java -jar target/sqlancer-*.jar --num-threads 10 --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPDistinct | tee /test_output/TLPDistinct.out )  3>&1 1>&2 2>&3 | tee /test_output/TLPDistinct.err
-( java -jar target/sqlancer-*.jar --num-threads 10 --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPAggregate | tee /test_output/TLPAggregate.out )  3>&1 1>&2 2>&3 | tee /test_output/TLPAggregate.err
+cd /sqlancer/sqlancer-main
 
-service clickhouse-server stop && sleep 10
+TIMEOUT=300
+NUM_QUERIES=1000
+NUM_THREADS=10
+TESTS=( "TLPGroupBy" "TLPHaving" "TLPWhere" "TLPDistinct" "TLPAggregate" "NoREC" )
+echo "${TESTS[@]}"
 
-ls /var/log/clickhouse-server/
-tar czf /test_output/logs.tar.gz -C /var/log/clickhouse-server/ .
-tail -n 1000 /var/log/clickhouse-server/stderr.log > /test_output/stderr.log
-tail -n 1000 /var/log/clickhouse-server/stdout.log > /test_output/stdout.log
-tail -n 1000 /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log
+for TEST in "${TESTS[@]}"; do
+    echo "$TEST"
+    if [[ $(wget -q 'localhost:8123' -O-) == 'Ok.' ]]
+    then
+        echo "Server is OK"
+        ( java -jar target/sqlancer-*.jar --log-each-select true --print-failed false --num-threads "$NUM_THREADS" --timeout-seconds "$TIMEOUT" --num-queries "$NUM_QUERIES"  --username default --password "" clickhouse --oracle "$TEST" | tee "/workspace/$TEST.out" )  3>&1 1>&2 2>&3 | tee "/workspace/$TEST.err"
+    else
+        touch "/workspace/$TEST.err" "/workspace/$TEST.out"
+        echo "Server is not responding" | tee /workspace/server_crashed.log
+    fi
+done
 
-/process_sqlancer_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
-ls /test_output
+ls /workspace
+pkill -F /workspace/clickhouse-server.pid || true
+
+for _ in $(seq 1 60); do if [[ $(wget -q 'localhost:8123' -O-) == 'Ok.' ]]; then sleep 1 ; else break; fi ; done
+
+/process_sqlancer_result.py || echo -e "failure\tCannot parse results" > /workspace/check_status.tsv
+ls /workspace

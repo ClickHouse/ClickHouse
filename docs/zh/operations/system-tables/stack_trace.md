@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/stack_trace
+---
 # system.stack_trace {#system-tables_stack_trace}
 
 包含所有服务器线程的堆栈跟踪. 允许开发人员对服务器状态进行自省.

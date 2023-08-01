@@ -1,10 +1,15 @@
 #include <Coordination/KeeperStateManager.h>
 
-#include <Coordination/Defines.h>
-#include <Common/Exception.h>
 #include <filesystem>
-#include <Common/isLocalAddress.h>
+#include <Coordination/Defines.h>
 #include <Common/DNSResolver.h>
+#include <Common/Exception.h>
+#include <Common/isLocalAddress.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromFile.h>
+#include <Common/getMultipleKeysFromConfig.h>
+#include <Disks/DiskLocal.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -12,24 +17,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int RAFT_ERROR;
+    extern const int CORRUPTED_DATA;
 }
 
 namespace
 {
 
-bool isLoopback(const std::string & hostname)
-{
-    try
-    {
-        return DNSResolver::instance().resolveHost(hostname).isLoopback();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
-    return false;
-}
+const std::string copy_lock_file = "STATE_COPY_LOCK";
 
 bool isLocalhost(const std::string & hostname)
 {
@@ -47,18 +41,19 @@ bool isLocalhost(const std::string & hostname)
 
 std::unordered_map<UInt64, std::string> getClientPorts(const Poco::Util::AbstractConfiguration & config)
 {
-    static const char * config_port_names[] = {
-        "keeper_server.tcp_port",
-        "keeper_server.tcp_port_secure",
-        "interserver_http_port",
-        "interserver_https_port",
-        "tcp_port",
-        "tcp_with_proxy_port",
-        "tcp_port_secure",
-        "mysql_port",
-        "postgresql_port",
-        "grpc_port",
-        "prometheus.port",
+    using namespace std::string_literals;
+    static const std::array config_port_names = {
+        "keeper_server.tcp_port"s,
+        "keeper_server.tcp_port_secure"s,
+        "interserver_http_port"s,
+        "interserver_https_port"s,
+        "tcp_port"s,
+        "tcp_with_proxy_port"s,
+        "tcp_port_secure"s,
+        "mysql_port"s,
+        "postgresql_port"s,
+        "grpc_port"s,
+        "prometheus.port"s,
     };
 
     std::unordered_map<UInt64, std::string> ports;
@@ -78,8 +73,11 @@ std::unordered_map<UInt64, std::string> getClientPorts(const Poco::Util::Abstrac
 /// 3. Raft internal port is not equal to any other port for client
 /// 4. No duplicate IDs
 /// 5. Our ID present in hostnames list
-KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
+KeeperStateManager::KeeperConfigurationWrapper
+KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
 {
+    const bool hostname_checks_enabled = config.getBool(config_prefix + ".hostname_checks_enabled", true);
+
     KeeperConfigurationWrapper result;
     result.cluster_config = std::make_shared<nuraft::cluster_config>();
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -93,7 +91,7 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
     std::unordered_map<std::string, int> check_duplicated_hostnames;
 
     size_t total_servers = 0;
-    std::string loopback_hostname;
+    bool localhost_present = false;
     std::string non_local_hostname;
     size_t local_address_counter = 0;
     for (const auto & server_key : keys)
@@ -102,6 +100,14 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
             continue;
 
         std::string full_prefix = config_prefix + ".raft_configuration." + server_key;
+
+        if (getMultipleValuesFromConfig(config, full_prefix, "id").size() > 1
+            || getMultipleValuesFromConfig(config, full_prefix, "hostname").size() > 1
+            || getMultipleValuesFromConfig(config, full_prefix, "port").size() > 1)
+        {
+            throw Exception(ErrorCodes::RAFT_ERROR, "Multiple <id> or <hostname> or <port> specified for a single <server>");
+        }
+
         int new_server_id = config.getInt(full_prefix + ".id");
         std::string hostname = config.getString(full_prefix + ".hostname");
         int port = config.getInt(full_prefix + ".port");
@@ -109,35 +115,46 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
         int32_t priority = config.getInt(full_prefix + ".priority", 1);
         bool start_as_follower = config.getBool(full_prefix + ".start_as_follower", false);
 
-        if (client_ports.count(port) != 0)
+        if (client_ports.contains(port))
         {
-            throw Exception(ErrorCodes::RAFT_ERROR, "Raft configuration contains hostname '{}' with port '{}' which is equal to '{}' in server configuration",
-                            hostname, port, client_ports[port]);
+            throw Exception(
+                ErrorCodes::RAFT_ERROR,
+                "Raft configuration contains hostname '{}' with port '{}' which is equal to '{}' in server configuration",
+                hostname,
+                port,
+                client_ports[port]);
         }
 
-        if (isLoopback(hostname))
+        if (hostname_checks_enabled)
         {
-            loopback_hostname = hostname;
-            local_address_counter++;
-        }
-        else if (isLocalhost(hostname))
-        {
-            local_address_counter++;
-        }
-        else
-        {
-            non_local_hostname = hostname;
+            if (hostname == "localhost")
+            {
+                localhost_present = true;
+                local_address_counter++;
+            }
+            else if (isLocalhost(hostname))
+            {
+                local_address_counter++;
+            }
+            else
+            {
+                non_local_hostname = hostname;
+            }
         }
 
         if (start_as_follower)
             result.servers_start_as_followers.insert(new_server_id);
 
         auto endpoint = hostname + ":" + std::to_string(port);
-        if (check_duplicated_hostnames.count(endpoint))
+        if (check_duplicated_hostnames.contains(endpoint))
         {
-            throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contains duplicate endpoints: "
-                            "endpoint {} has been already added with id {}, but going to add it one more time with id {}",
-                            endpoint, check_duplicated_hostnames[endpoint], new_server_id);
+            throw Exception(
+                ErrorCodes::RAFT_ERROR,
+                "Raft config contains duplicate endpoints: "
+                "endpoint {} has been already added with id {}, but going to add it one more time with id {}",
+                endpoint,
+                check_duplicated_hostnames[endpoint],
+                new_server_id);
         }
         else
         {
@@ -145,8 +162,13 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
             for (const auto & [id_endpoint, id] : check_duplicated_hostnames)
             {
                 if (new_server_id == id)
-                    throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contains duplicate ids: id {} has been already added with endpoint {}, "
-                                    "but going to add it one more time with endpoint {}", id, id_endpoint, endpoint);
+                    throw Exception(
+                        ErrorCodes::RAFT_ERROR,
+                        "Raft config contains duplicate ids: id {} has been already added with endpoint {}, "
+                        "but going to add it one more time with endpoint {}",
+                        id,
+                        id_endpoint,
+                        endpoint);
             }
             check_duplicated_hostnames.emplace(endpoint, new_server_id);
         }
@@ -168,31 +190,40 @@ KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersC
     if (result.servers_start_as_followers.size() == total_servers)
         throw Exception(ErrorCodes::RAFT_ERROR, "At least one of servers should be able to start as leader (without <start_as_follower>)");
 
-    if (!loopback_hostname.empty() && !non_local_hostname.empty())
+    if (hostname_checks_enabled)
     {
-        throw Exception(
-            ErrorCodes::RAFT_ERROR,
-            "Mixing loopback and non-local hostnames ('{}' and '{}') in raft_configuration is not allowed. "
-            "Different hosts can resolve it to themselves so it's not allowed.",
-            loopback_hostname, non_local_hostname);
-    }
+        if (localhost_present && !non_local_hostname.empty())
+        {
+            throw Exception(
+                ErrorCodes::RAFT_ERROR,
+                "Mixing 'localhost' and non-local hostnames ('{}') in raft_configuration is not allowed. "
+                "Different hosts can resolve 'localhost' to themselves so it's not allowed.",
+                non_local_hostname);
+        }
 
-    if (!non_local_hostname.empty() && local_address_counter > 1)
-    {
-        throw Exception(
-            ErrorCodes::RAFT_ERROR,
-            "Local address specified more than once ({} times) and non-local hostnames also exists ('{}') in raft_configuration. "
-            "Such configuration is not allowed because single host can vote multiple times.",
-            local_address_counter, non_local_hostname);
+        if (!non_local_hostname.empty() && local_address_counter > 1)
+        {
+            throw Exception(
+                ErrorCodes::RAFT_ERROR,
+                "Local address specified more than once ({} times) and non-local hostnames also exists ('{}') in raft_configuration. "
+                "Such configuration is not allowed because single host can vote multiple times.",
+                local_address_counter,
+                non_local_hostname);
+        }
     }
 
     return result;
 }
 
-KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host, int port, const std::string & logs_path)
-: my_server_id(server_id_)
-, secure(false)
-, log_store(nuraft::cs_new<KeeperLogStore>(logs_path, 5000, false, false))
+KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host, int port, KeeperContextPtr keeper_context_)
+    : my_server_id(server_id_)
+    , secure(false)
+    , log_store(nuraft::cs_new<KeeperLogStore>(
+          LogFileSettings{.force_sync = false, .compress_logs = false, .rotate_interval = 5000},
+          keeper_context_))
+    , server_state_file_name("state")
+    , keeper_context(keeper_context_)
+    , logger(&Poco::Logger::get("KeeperStateManager"))
 {
     auto peer_config = nuraft::cs_new<nuraft::srv_config>(my_server_id, host + ":" + std::to_string(port));
     configuration_wrapper.cluster_config = nuraft::cs_new<nuraft::cluster_config>();
@@ -204,18 +235,27 @@ KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host,
 KeeperStateManager::KeeperStateManager(
     int my_server_id_,
     const std::string & config_prefix_,
-    const std::string & log_storage_path,
+    const std::string & server_state_file_name_,
     const Poco::Util::AbstractConfiguration & config,
-    const CoordinationSettingsPtr & coordination_settings)
+    const CoordinationSettingsPtr & coordination_settings,
+    KeeperContextPtr keeper_context_)
     : my_server_id(my_server_id_)
     , secure(config.getBool(config_prefix_ + ".raft_configuration.secure", false))
     , config_prefix(config_prefix_)
     , configuration_wrapper(parseServersConfiguration(config, false))
     , log_store(nuraft::cs_new<KeeperLogStore>(
-                    log_storage_path,
-                    coordination_settings->rotate_log_storage_interval,
-                    coordination_settings->force_sync,
-                    coordination_settings->compress_logs))
+          LogFileSettings
+          {
+            .force_sync = coordination_settings->force_sync,
+            .compress_logs = coordination_settings->compress_logs,
+            .rotate_interval = coordination_settings->rotate_log_storage_interval,
+            .max_size = coordination_settings->max_log_file_size,
+            .overallocate_size = coordination_settings->log_file_overallocate_size
+          },
+          keeper_context_))
+    , server_state_file_name(server_state_file_name_)
+    , keeper_context(keeper_context_)
+    , logger(&Poco::Logger::get("KeeperStateManager"))
 {
 }
 
@@ -241,9 +281,9 @@ ClusterConfigPtr KeeperStateManager::getLatestConfigFromLogStore() const
     return nullptr;
 }
 
-void KeeperStateManager::flushLogStore()
+void KeeperStateManager::flushAndShutDownLogStore()
 {
-    log_store->flush();
+    log_store->flushChangelogAndShutdown();
 }
 
 void KeeperStateManager::save_config(const nuraft::cluster_config & config)
@@ -253,13 +293,165 @@ void KeeperStateManager::save_config(const nuraft::cluster_config & config)
     configuration_wrapper.cluster_config = nuraft::cluster_config::deserialize(*buf);
 }
 
-void KeeperStateManager::save_state(const nuraft::srv_state & state)
+const String & KeeperStateManager::getOldServerStatePath()
 {
-    nuraft::ptr<nuraft::buffer> buf = state.serialize();
-    server_state = nuraft::srv_state::deserialize(*buf);
+    static auto old_path = [this]
+    {
+        return server_state_file_name + "-OLD";
+    }();
+
+    return old_path;
 }
 
-ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::AbstractConfiguration & config) const
+DiskPtr KeeperStateManager::getStateFileDisk() const
+{
+    return keeper_context->getStateFileDisk();
+}
+
+namespace
+{
+enum ServerStateVersion : uint8_t
+{
+    V1 = 0
+};
+
+constexpr auto current_server_state_version = ServerStateVersion::V1;
+
+}
+
+void KeeperStateManager::save_state(const nuraft::srv_state & state)
+{
+    const auto & old_path = getOldServerStatePath();
+
+    auto disk = getStateFileDisk();
+
+    if (disk->exists(server_state_file_name))
+    {
+        auto buf = disk->writeFile(copy_lock_file);
+        buf->finalize();
+        disk->copyFile(server_state_file_name, *disk, old_path);
+        disk->removeFile(copy_lock_file);
+        disk->removeFile(old_path);
+    }
+
+    auto server_state_file = disk->writeFile(server_state_file_name);
+    auto buf = state.serialize();
+
+    // calculate checksum
+    SipHash hash;
+    hash.update(current_server_state_version);
+    hash.update(reinterpret_cast<const char *>(buf->data_begin()), buf->size());
+    writeIntBinary(hash.get64(), *server_state_file);
+
+    writeIntBinary(static_cast<uint8_t>(current_server_state_version), *server_state_file);
+
+    server_state_file->write(reinterpret_cast<const char *>(buf->data_begin()), buf->size());
+    server_state_file->sync();
+    server_state_file->finalize();
+
+    disk->removeFileIfExists(old_path);
+}
+
+nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
+{
+    const auto & old_path = getOldServerStatePath();
+
+    auto disk = getStateFileDisk();
+
+    const auto try_read_file = [&](const auto & path) -> nuraft::ptr<nuraft::srv_state>
+    {
+        try
+        {
+            auto read_buf = disk->readFile(path);
+            auto content_size = read_buf->getFileSize();
+
+            if (content_size == 0)
+                return nullptr;
+
+            uint64_t read_checksum{0};
+            readIntBinary(read_checksum, *read_buf);
+
+            uint8_t version;
+            readIntBinary(version, *read_buf);
+
+            auto buffer_size = content_size - sizeof read_checksum - sizeof version;
+
+            auto state_buf = nuraft::buffer::alloc(buffer_size);
+            read_buf->readStrict(reinterpret_cast<char *>(state_buf->data_begin()), buffer_size);
+
+            SipHash hash;
+            hash.update(version);
+            hash.update(reinterpret_cast<const char *>(state_buf->data_begin()), state_buf->size());
+
+            if (read_checksum != hash.get64())
+            {
+                constexpr auto error_format = "Invalid checksum while reading state from {}. Got {}, expected {}";
+#ifdef NDEBUG
+                LOG_ERROR(logger, error_format, path, hash.get64(), read_checksum);
+                return nullptr;
+#else
+                throw Exception(ErrorCodes::CORRUPTED_DATA, error_format, disk->getPath() + path, hash.get64(), read_checksum);
+#endif
+            }
+
+            auto state = nuraft::srv_state::deserialize(*state_buf);
+            LOG_INFO(logger, "Read state from {}", fs::path(disk->getPath()) / path);
+            return state;
+        }
+        catch (const std::exception & e)
+        {
+            if (const auto * exception = dynamic_cast<const Exception *>(&e);
+                exception != nullptr && exception->code() == ErrorCodes::CORRUPTED_DATA)
+            {
+                throw;
+            }
+
+            LOG_ERROR(logger, "Failed to deserialize state from {}", disk->getPath() + path);
+            return nullptr;
+        }
+    };
+
+    if (disk->exists(server_state_file_name))
+    {
+        auto state = try_read_file(server_state_file_name);
+
+        if (state)
+        {
+            disk->removeFileIfExists(old_path);
+            return state;
+        }
+
+        disk->removeFile(server_state_file_name);
+    }
+
+    if (disk->exists(old_path))
+    {
+        if (disk->exists(copy_lock_file))
+        {
+            disk->removeFile(old_path);
+            disk->removeFile(copy_lock_file);
+        }
+        else
+        {
+            auto state = try_read_file(old_path);
+            if (state)
+            {
+                disk->moveFile(old_path, server_state_file_name);
+                return state;
+            }
+            disk->removeFile(old_path);
+        }
+    }
+    else if (disk->exists(copy_lock_file))
+    {
+        disk->removeFile(copy_lock_file);
+    }
+
+    LOG_WARNING(logger, "No state was read");
+    return nullptr;
+}
+
+ClusterUpdateActions KeeperStateManager::getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config) const
 {
     auto new_configuration_wrapper = parseServersConfiguration(config, true);
 
@@ -273,21 +465,34 @@ ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::A
             old_ids[old_server->get_id()] = old_server;
     }
 
-    ConfigUpdateActions result;
+    ClusterUpdateActions result;
 
     /// First of all add new servers
-    for (auto [new_id, server_config] : new_ids)
+    for (const auto & [new_id, server_config] : new_ids)
     {
-        if (!old_ids.count(new_id))
-            result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::AddServer, server_config});
+        auto old_server_it = old_ids.find(new_id);
+        if (old_server_it == old_ids.end())
+            result.emplace_back(AddRaftServer{RaftServerConfig{*server_config}});
+        else
+        {
+            const auto & old_endpoint = old_server_it->second->get_endpoint();
+            if (old_endpoint != server_config->get_endpoint())
+            {
+                LOG_WARNING(
+                    &Poco::Logger::get("RaftConfiguration"),
+                    "Config will be ignored because a server with ID {} is already present in the cluster on a different endpoint ({}). "
+                    "The endpoint of the current servers should not be changed. For servers on a new endpoint, please use a new ID.",
+                    new_id,
+                    old_endpoint);
+                return {};
+            }
+        }
     }
 
     /// After that remove old ones
     for (auto [old_id, server_config] : old_ids)
-    {
-        if (!new_ids.count(old_id))
-            result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::RemoveServer, server_config});
-    }
+        if (!new_ids.contains(old_id))
+            result.emplace_back(RemoveRaftServer{old_id});
 
     {
         std::lock_guard lock(configuration_wrapper_mutex);
@@ -300,7 +505,10 @@ ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::A
                 {
                     if (old_server->get_priority() != new_server->get_priority())
                     {
-                        result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::UpdatePriority, new_server});
+                        result.emplace_back(UpdateRaftServerPriority{
+                            .id = new_server->get_id(),
+                            .priority = new_server->get_priority()
+                        });
                     }
                     break;
                 }

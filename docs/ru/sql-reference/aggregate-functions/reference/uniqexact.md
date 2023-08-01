@@ -1,5 +1,6 @@
 ---
-toc_priority: 191
+slug: /ru/sql-reference/aggregate-functions/reference/uniqexact
+sidebar_position: 191
 ---
 
 # uniqExact {#agg_function-uniqexact}
@@ -23,4 +24,3 @@ uniqExact(x[, ...])
 -   [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
 -   [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqcombined)
 -   [uniqHLL12](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqhll12)
-

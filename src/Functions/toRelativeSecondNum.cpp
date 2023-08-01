@@ -7,9 +7,9 @@
 namespace DB
 {
 
-using FunctionToRelativeSecondNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeSecondNumImpl>;
+using FunctionToRelativeSecondNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeSecondNumImpl<ResultPrecision::Standard>>;
 
-void registerFunctionToRelativeSecondNum(FunctionFactory & factory)
+REGISTER_FUNCTION(ToRelativeSecondNum)
 {
     factory.registerFunction<FunctionToRelativeSecondNum>();
 }

@@ -12,6 +12,7 @@ cluster = ClickHouseCluster(__file__)
 clickhouse_node = cluster.add_instance(
     "node1",
     main_configs=["configs/remote_servers.xml", "configs/named_collections.xml"],
+    user_configs=["configs/users.xml"],
     with_mysql=True,
     stay_alive=True,
 )
@@ -75,6 +76,7 @@ def test_mysql_ddl_for_mysql_database(started_cluster):
         mysql_node.query("DROP DATABASE IF EXISTS test_database")
         mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
 
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(
             "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse')"
         )
@@ -122,11 +124,13 @@ def test_clickhouse_ddl_for_mysql_database(started_cluster):
             "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
         )
     ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_database")
         mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
         mysql_node.query(
             "CREATE TABLE `test_database`.`test_table` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;"
         )
 
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(
             "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse')"
         )
@@ -157,10 +161,13 @@ def test_clickhouse_dml_for_mysql_database(started_cluster):
             "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
         )
     ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_database")
         mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
         mysql_node.query(
             "CREATE TABLE `test_database`.`test_table` ( `i``d` int(11) NOT NULL, PRIMARY KEY (`i``d`)) ENGINE=InnoDB;"
         )
+
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(
             "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', test_database, 'root', 'clickhouse')"
         )
@@ -193,9 +200,8 @@ def test_clickhouse_join_for_mysql_database(started_cluster):
             "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
         )
     ) as mysql_node:
-        mysql_node.query(
-            "CREATE DATABASE IF NOT EXISTS test DEFAULT CHARACTER SET 'utf8'"
-        )
+        mysql_node.query("DROP DATABASE IF EXISTS test")
+        mysql_node.query("CREATE DATABASE test DEFAULT CHARACTER SET 'utf8'")
         mysql_node.query(
             "CREATE TABLE test.t1_mysql_local ("
             "pays    VARCHAR(55) DEFAULT 'FRA' NOT NULL,"
@@ -209,6 +215,8 @@ def test_clickhouse_join_for_mysql_database(started_cluster):
             "opco    VARCHAR(5) DEFAULT ''"
             ")"
         )
+        clickhouse_node.query("DROP TABLE IF EXISTS default.t1_remote_mysql SYNC")
+        clickhouse_node.query("DROP TABLE IF EXISTS default.t2_remote_mysql SYNC")
         clickhouse_node.query(
             "CREATE TABLE default.t1_remote_mysql AS mysql('mysql57:3306','test','t1_mysql_local','root','clickhouse')"
         )
@@ -266,6 +274,7 @@ def test_column_comments_for_mysql_database_engine(started_cluster):
         mysql_node.query("DROP DATABASE IF EXISTS test_database")
         mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
 
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(
             "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse')"
         )
@@ -298,9 +307,11 @@ def test_data_types_support_level_for_mysql_database_engine(started_cluster):
             "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
         )
     ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test")
         mysql_node.query(
             "CREATE DATABASE IF NOT EXISTS test DEFAULT CHARACTER SET 'utf8'"
         )
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(
             "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', test, 'root', 'clickhouse')",
             settings={"mysql_datatypes_support_level": "decimal,datetime64"},
@@ -343,9 +354,8 @@ def test_data_types_support_level_for_mysql_database_engine(started_cluster):
         mysql_node.query("DROP DATABASE test")
 
 
-# test tool cannot support null by now. TSV format returns \N for null, so cannot compare using == directly
-# float_values = ['NULL']
-# float_values = [0] mysql returns 0 while clickhouse returns 0.0, so cannot compare using == directly
+float_values = [0, "NULL"]
+clickhouse_float_values = [0, "\\N"]
 int32_values = [0, 1, -1, 2147483647, -2147483648]
 uint32_values = [
     0,
@@ -357,8 +367,8 @@ int16_values = [0, 1, -1, 32767, -32768]
 uint16_values = [0, 1, 65535]
 int8_values = [0, 1, -1, 127, -128]
 uint8_values = [0, 1, 255]
-# string_values = ["'ClickHouse'", 'NULL']
-string_values = ["'ClickHouse'"]
+string_values = ["'ClickHouse'", "NULL"]
+clickhouse_string_values = ["ClickHouse", "\\N"]
 date_values = ["'1970-01-01'"]
 date2Date32_values = ["'1925-01-01'", "'2283-11-11'"]
 date2String_values = ["'1000-01-01'", "'9999-12-31'"]
@@ -381,16 +391,37 @@ timestamp_values = ["'2015-05-18 07:40:01.123'", "'2019-09-16 19:20:11.123'"]
 timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'"]
 
 
+def arryToString(expected_clickhouse_values):
+    return "\n".join(str(value) for value in expected_clickhouse_values)
+
+
+#  if expected_clickhouse_values is "", compare MySQL and ClickHouse query results directly
 @pytest.mark.parametrize(
-    "case_name, mysql_type, expected_ch_type, mysql_values, setting_mysql_datatypes_support_level",
+    "case_name, mysql_type, expected_ch_type, mysql_values, expected_clickhouse_values, setting_mysql_datatypes_support_level",
     [
-        # test common type mapping
-        # ("common_types", "FLOAT", "Nullable(Float32)", float_values, ""),
-        # ("common_types", "FLOAT UNSIGNED", "Nullable(Float32)", float_values, ""),
+        pytest.param(
+            "common_types",
+            "FLOAT",
+            "Nullable(Float32)",
+            float_values,
+            clickhouse_float_values,
+            "",
+            id="float_1",
+        ),
+        pytest.param(
+            "common_types",
+            "FLOAT UNSIGNED",
+            "Nullable(Float32)",
+            float_values,
+            clickhouse_float_values,
+            "",
+            id="float_2",
+        ),
         pytest.param(
             "common_types",
             "INT",
             "Nullable(Int32)",
+            int32_values,
             int32_values,
             "",
             id="common_types_1",
@@ -400,6 +431,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "INT NOT NULL",
             "Int32",
             int32_values,
+            int32_values,
             "",
             id="common_types_2",
         ),
@@ -407,6 +439,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "common_types",
             "INT UNSIGNED NOT NULL",
             "UInt32",
+            uint32_values,
             uint32_values,
             "",
             id="common_types_3",
@@ -416,6 +449,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "INT UNSIGNED",
             "Nullable(UInt32)",
             uint32_values,
+            uint32_values,
             "",
             id="common_types_4",
         ),
@@ -423,6 +457,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "common_types",
             "INT UNSIGNED DEFAULT NULL",
             "Nullable(UInt32)",
+            uint32_values,
             uint32_values,
             "",
             id="common_types_5",
@@ -432,6 +467,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "INT UNSIGNED DEFAULT '1'",
             "Nullable(UInt32)",
             uint32_values,
+            uint32_values,
             "",
             id="common_types_6",
         ),
@@ -439,6 +475,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "common_types",
             "INT(10)",
             "Nullable(Int32)",
+            int32_values,
             int32_values,
             "",
             id="common_types_7",
@@ -448,6 +485,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "INT(10) NOT NULL",
             "Int32",
             int32_values,
+            int32_values,
             "",
             id="common_types_8",
         ),
@@ -455,6 +493,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "common_types",
             "INT(10) UNSIGNED NOT NULL",
             "UInt32",
+            uint32_values,
             uint32_values,
             "",
             id="common_types_8",
@@ -464,6 +503,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "INT(10) UNSIGNED",
             "Nullable(UInt32)",
             uint32_values,
+            uint32_values,
             "",
             id="common_types_9",
         ),
@@ -471,6 +511,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "common_types",
             "INT(10) UNSIGNED DEFAULT NULL",
             "Nullable(UInt32)",
+            uint32_values,
             uint32_values,
             "",
             id="common_types_10",
@@ -480,6 +521,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "INT(10) UNSIGNED DEFAULT '1'",
             "Nullable(UInt32)",
             uint32_values,
+            uint32_values,
             "",
             id="common_types_11",
         ),
@@ -487,6 +529,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "common_types",
             "INTEGER",
             "Nullable(Int32)",
+            int32_values,
             int32_values,
             "",
             id="common_types_12",
@@ -496,6 +539,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "INTEGER UNSIGNED",
             "Nullable(UInt32)",
             uint32_values,
+            uint32_values,
             "",
             id="common_types_13",
         ),
@@ -503,6 +547,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "common_types",
             "MEDIUMINT",
             "Nullable(Int32)",
+            mint_values,
             mint_values,
             "",
             id="common_types_14",
@@ -512,6 +557,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "MEDIUMINT UNSIGNED",
             "Nullable(UInt32)",
             umint_values,
+            umint_values,
             "",
             id="common_types_15",
         ),
@@ -519,6 +565,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "common_types",
             "SMALLINT",
             "Nullable(Int16)",
+            int16_values,
             int16_values,
             "",
             id="common_types_16",
@@ -528,6 +575,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "SMALLINT UNSIGNED",
             "Nullable(UInt16)",
             uint16_values,
+            uint16_values,
             "",
             id="common_types_17",
         ),
@@ -535,6 +583,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "common_types",
             "TINYINT",
             "Nullable(Int8)",
+            int8_values,
             int8_values,
             "",
             id="common_types_18",
@@ -544,6 +593,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "TINYINT UNSIGNED",
             "Nullable(UInt8)",
             uint8_values,
+            uint8_values,
             "",
             id="common_types_19",
         ),
@@ -552,6 +602,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "VARCHAR(10)",
             "Nullable(String)",
             string_values,
+            clickhouse_string_values,
             "",
             id="common_types_20",
         ),
@@ -561,6 +612,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "Nullable(Date)",
             date_values,
             "",
+            "",
             id="common_types_21",
         ),
         pytest.param(
@@ -568,6 +620,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "DATE",
             "Nullable(Date32)",
             date2Date32_values,
+            "",
             "date2Date32",
             id="common_types_22",
         ),
@@ -576,14 +629,34 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "DATE",
             "Nullable(String)",
             date2String_values,
+            "",
             "date2String",
             id="common_types_23",
+        ),
+        pytest.param(
+            "common_types",
+            "binary(1)",
+            "Nullable(FixedString(1))",
+            [1],
+            [1],
+            "",
+            id="common_types_24",
+        ),
+        pytest.param(
+            "common_types",
+            "binary(0)",
+            "Nullable(FixedString(1))",
+            ["NULL"],
+            ["\\N"],
+            "",
+            id="common_types_25",
         ),
         pytest.param(
             "decimal_default",
             "decimal NOT NULL",
             "Decimal(10, 0)",
             decimal_values,
+            "",
             "decimal,datetime64",
             id="decimal_1",
         ),
@@ -592,6 +665,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "decimal",
             "Nullable(Decimal(10, 0))",
             decimal_values,
+            "",
             "decimal,datetime64",
             id="decimal_2",
         ),
@@ -600,6 +674,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "decimal(18, 6) NOT NULL",
             "Decimal(18, 6)",
             decimal_values,
+            "",
             "decimal,datetime64",
             id="decimal_3",
         ),
@@ -608,6 +683,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "decimal(38, 6) NOT NULL",
             "Decimal(38, 6)",
             decimal_values,
+            "",
             "decimal,datetime64",
             id="decimal_4",
         ),
@@ -619,6 +695,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "timestamp",
             "DateTime",
             timestamp_values,
+            "",
             "decimal,datetime64",
             id="timestamp_default",
         ),
@@ -627,6 +704,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "timestamp(6)",
             "DateTime64(6)",
             timestamp_values,
+            "",
             "decimal,datetime64",
             id="timestamp_6",
         ),
@@ -635,6 +713,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "DATETIME NOT NULL",
             "DateTime64(0)",
             timestamp_values,
+            "",
             "decimal,datetime64",
             id="datetime_default",
         ),
@@ -643,15 +722,16 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "DATETIME(6) NOT NULL",
             "DateTime64(6)",
             timestamp_values,
+            "",
             "decimal,datetime64",
             id="datetime_6_1",
         ),
-        # right now precision bigger than 39 is not supported by ClickHouse's Decimal, hence fall back to String
         pytest.param(
             "decimal_40_6",
             "decimal(40, 6) NOT NULL",
-            "String",
+            "Decimal(40, 6)",
             decimal_values,
+            "",
             "decimal,datetime64",
             id="decimal_40_6",
         ),
@@ -660,6 +740,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "decimal(18, 6) NOT NULL",
             "String",
             decimal_values,
+            "",
             "datetime64",
             id="decimal_18_6_1",
         ),
@@ -669,6 +750,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "String",
             decimal_values,
             "",
+            "",
             id="decimal_18_6_2",
         ),
         pytest.param(
@@ -676,6 +758,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "DATETIME(6) NOT NULL",
             "DateTime",
             timestamp_values_no_subsecond,
+            "",
             "decimal",
             id="datetime_6_2",
         ),
@@ -684,6 +767,7 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
             "DATETIME(6) NOT NULL",
             "DateTime",
             timestamp_values_no_subsecond,
+            "",
             "",
             id="datetime_6_3",
         ),
@@ -695,6 +779,7 @@ def test_mysql_types(
     mysql_type,
     expected_ch_type,
     mysql_values,
+    expected_clickhouse_values,
     setting_mysql_datatypes_support_level,
 ):
     """Verify that values written to MySQL can be read on ClickHouse side via DB engine MySQL,
@@ -772,12 +857,18 @@ def test_mysql_types(
             == expected_ch_type
         )
 
+        expected_format_clickhouse_values = arryToString(expected_clickhouse_values)
+        if expected_format_clickhouse_values == "":
+            expected_format_clickhouse_values = execute_query(
+                mysql_node, "SELECT value FROM ${mysql_db}.${table_name}"
+            )
+
         # Validate values
-        assert execute_query(
+        assert expected_format_clickhouse_values == execute_query(
             clickhouse_node,
             "SELECT value FROM ${ch_mysql_table}",
             settings=clickhouse_query_settings,
-        ) == execute_query(mysql_node, "SELECT value FROM ${mysql_db}.${table_name}")
+        )
 
         # MySQL DATABASE ENGINE
         execute_query(
@@ -800,11 +891,11 @@ def test_mysql_types(
         )
 
         # Validate values
-        assert execute_query(
+        assert expected_format_clickhouse_values == execute_query(
             clickhouse_node,
             "SELECT value FROM ${ch_mysql_db}.${table_name}",
             settings=clickhouse_query_settings,
-        ) == execute_query(mysql_node, "SELECT value FROM ${mysql_db}.${table_name}")
+        )
 
         # MySQL TABLE FUNCTION
         # Validate type
@@ -818,9 +909,7 @@ def test_mysql_types(
         )
 
         # Validate values
-        assert execute_query(
-            mysql_node, "SELECT value FROM ${mysql_db}.${table_name}"
-        ) == execute_query(
+        assert expected_format_clickhouse_values == execute_query(
             clickhouse_node,
             "SELECT value FROM mysql('mysql57:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse')",
             settings=clickhouse_query_settings,
@@ -849,6 +938,12 @@ def test_predefined_connection_configuration(started_cluster):
                 "SELECT count() FROM `test_database`.`test_table`"
             ).rstrip()
             == "100"
+        )
+
+        result = clickhouse_node.query("show create table test_database.test_table")
+        assert (
+            result.strip()
+            == "CREATE TABLE test_database.test_table\\n(\\n    `id` Int32\\n)\\nENGINE = MySQL(mysql1, table = \\'test_table\\')"
         )
 
         clickhouse_node.query("DROP DATABASE test_database")
@@ -904,3 +999,25 @@ def test_restart_server(started_cluster):
             clickhouse_node.restart_clickhouse()
             clickhouse_node.query_and_get_error("SHOW TABLES FROM test_restart")
         assert "test_table" in clickhouse_node.query("SHOW TABLES FROM test_restart")
+
+
+def test_memory_leak(started_cluster):
+    with contextlib.closing(
+        MySQLNodeInstance(
+            "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
+        )
+    ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_database")
+        mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query(
+            "CREATE TABLE `test_database`.`test_table` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;"
+        )
+
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
+        clickhouse_node.query(
+            "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse') SETTINGS connection_auto_close = 1"
+        )
+        clickhouse_node.query("SELECT count() FROM `test_database`.`test_table`")
+
+        clickhouse_node.query("DROP DATABASE test_database")
+        clickhouse_node.restart_clickhouse()

@@ -2,6 +2,7 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DDLTask.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Core/ServerUUID.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -32,9 +33,17 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
     {
         try
         {
+            chassert(!database->is_probably_dropped);
             auto zookeeper = getAndSetZooKeeper();
             if (database->is_readonly)
-                database->tryConnectToZooKeeperAndInitDatabase(false);
+                database->tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel::ATTACH);
+            if (database->is_probably_dropped)
+            {
+                /// The flag was set in tryConnectToZooKeeperAndInitDatabase
+                LOG_WARNING(log, "Exiting main thread, because the database was probably dropped");
+                /// NOTE It will not stop cleanup thread until DDLWorker::shutdown() call (cleanup thread will just do nothing)
+                break;
+            }
             initializeReplication();
             initialized = true;
             return true;
@@ -61,12 +70,52 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     /// Invariant: replica is lost if it's log_ptr value is less then max_log_ptr - logs_to_keep.
 
     auto zookeeper = getAndSetZooKeeper();
+
+    /// Create "active" node (remove previous one if necessary)
+    String active_path = fs::path(database->replica_path) / "active";
+    String active_id = toString(ServerUUID::get());
+    zookeeper->handleEphemeralNodeExistence(active_path, active_id);
+    zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
+    active_node_holder.reset();
+    active_node_holder_zookeeper = zookeeper;
+    active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
+
     String log_ptr_str = zookeeper->get(database->replica_path + "/log_ptr");
     UInt32 our_log_ptr = parse<UInt32>(log_ptr_str);
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
     logs_to_keep = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
-    if (our_log_ptr == 0 || our_log_ptr + logs_to_keep < max_log_ptr)
+
+    UInt64 digest;
+    String digest_str;
+    UInt64 local_digest;
+    if (zookeeper->tryGet(database->replica_path + "/digest", digest_str))
     {
+        digest = parse<UInt64>(digest_str);
+        std::lock_guard lock{database->metadata_mutex};
+        local_digest = database->tables_metadata_digest;
+    }
+    else
+    {
+        LOG_WARNING(log, "Did not find digest in ZooKeeper, creating it");
+        /// Database was created by old ClickHouse versions, let's create the node
+        std::lock_guard lock{database->metadata_mutex};
+        digest = local_digest = database->tables_metadata_digest;
+        digest_str = toString(digest);
+        zookeeper->create(database->replica_path + "/digest", digest_str, zkutil::CreateMode::Persistent);
+    }
+
+    LOG_TRACE(log, "Trying to initialize replication: our_log_ptr={}, max_log_ptr={}, local_digest={}, zk_digest={}",
+              our_log_ptr, max_log_ptr, local_digest, digest);
+
+    bool is_new_replica = our_log_ptr == 0;
+    bool lost_according_to_log_ptr = our_log_ptr + logs_to_keep < max_log_ptr;
+    bool lost_according_to_digest = database->db_settings.check_consistency && local_digest != digest;
+
+    if (is_new_replica || lost_according_to_log_ptr || lost_according_to_digest)
+    {
+        if (!is_new_replica)
+            LOG_WARNING(log, "Replica seems to be lost: our_log_ptr={}, max_log_ptr={}, local_digest={}, zk_digest={}",
+                        our_log_ptr, max_log_ptr, local_digest, digest);
         database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr);
         zookeeper->set(database->replica_path + "/log_ptr", toString(max_log_ptr));
         initializeLogPointer(DDLTaskBase::getLogEntryName(max_log_ptr));
@@ -77,6 +126,10 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
         last_skipped_entry_name.emplace(log_entry_name);
         initializeLogPointer(log_entry_name);
     }
+
+    std::lock_guard lock{database->metadata_mutex};
+    if (!database->checkDigestValid(context))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent database metadata after reconnection to ZooKeeper");
 }
 
 String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry)
@@ -84,6 +137,48 @@ String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry)
     auto zookeeper = getAndSetZooKeeper();
     return enqueueQueryImpl(zookeeper, entry, database);
 }
+
+
+bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
+{
+    auto zookeeper = getAndSetZooKeeper();
+    const auto our_log_ptr_path = database->replica_path + "/log_ptr";
+    const auto max_log_ptr_path = database->zookeeper_path + "/max_log_ptr";
+    UInt32 our_log_ptr = parse<UInt32>(zookeeper->get(our_log_ptr_path));
+    UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(max_log_ptr_path));
+    chassert(our_log_ptr <= max_log_ptr);
+
+    /// max_log_ptr is the number of the last successfully executed request on the initiator
+    /// The log could contain other entries which are not committed yet
+    /// This equality is enough to say that current replicas is up-to-date
+    if (our_log_ptr == max_log_ptr)
+        return true;
+
+    auto max_log =  DDLTask::getLogEntryName(max_log_ptr);
+
+    {
+        std::unique_lock lock{mutex};
+        LOG_TRACE(log, "Waiting for worker thread to process all entries before {}, current task is {}", max_log, current_task);
+        bool processed = wait_current_task_change.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&]()
+        {
+            return zookeeper->expired() || current_task >= max_log || stop_flag;
+        });
+
+        if (!processed)
+            return false;
+    }
+
+    /// Lets now wait for max_log_ptr to be processed
+    Coordination::Stat stat;
+    auto event_ptr = std::make_shared<Poco::Event>();
+    auto new_log = zookeeper->get(our_log_ptr_path, &stat, event_ptr);
+
+    if (new_log == toString(max_log_ptr))
+        return true;
+
+    return event_ptr->tryWait(timeout_ms);
+}
+
 
 String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperPtr & zookeeper, DDLLogEntry & entry,
                                DatabaseReplicated * const database, bool committed)
@@ -136,6 +231,7 @@ String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperPtr & zookee
     /// Create status dirs
     ops.emplace_back(zkutil::makeCreateRequest(node_path + "/active", "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(node_path + "/finished", "", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(node_path + "/synced", "", zkutil::CreateMode::Persistent));
     zookeeper->multi(ops);
 
 
@@ -146,6 +242,10 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
 {
     /// NOTE Possibly it would be better to execute initial query on the most up-to-date node,
     /// but it requires more complex logic around /try node.
+
+    OpenTelemetry::SpanHolder span(__FUNCTION__);
+    span.addAttribute("clickhouse.cluster", database->getDatabaseName());
+    entry.tracing_context = OpenTelemetry::CurrentContext();
 
     auto zookeeper = getAndSetZooKeeper();
     UInt32 our_log_ptr = getLogPointer();
@@ -161,7 +261,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     auto task = std::make_unique<DatabaseReplicatedTask>(entry_name, entry_path, database);
     task->entry = entry;
     task->parseQueryFromEntry(context);
-    assert(!task->entry.query.empty());
+    chassert(!task->entry.query.empty());
     assert(!zookeeper->exists(task->getFinishedNodePath()));
     task->is_initial_query = true;
 

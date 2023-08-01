@@ -35,6 +35,9 @@ struct RowPolicy : public IAccessEntity
     void setPermissive(bool permissive_ = true) { setRestrictive(!permissive_); }
     bool isPermissive() const { return !isRestrictive(); }
 
+    /// Applied for entire database
+    bool isForDatabase() const { return full_name.table_name == RowPolicyName::ANY_TABLE_MARK; }
+
     /// Sets that the policy is restrictive.
     /// A row is only accessible if at least one of the permissive policies passes,
     /// in addition to all the restrictive policies.
@@ -45,6 +48,10 @@ struct RowPolicy : public IAccessEntity
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<RowPolicy>(); }
     static constexpr const auto TYPE = AccessEntityType::ROW_POLICY;
     AccessEntityType getType() const override { return TYPE; }
+
+    std::vector<UUID> findDependencies() const override;
+    void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids) override;
+    bool isBackupAllowed() const override { return true; }
 
     /// Which roles or users should use this row policy.
     RolesOrUsersSet to_roles;

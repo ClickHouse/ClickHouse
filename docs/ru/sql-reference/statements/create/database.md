@@ -1,6 +1,7 @@
 ---
-toc_priority: 35
-toc_title: "База данных"
+slug: /ru/sql-reference/statements/create/database
+sidebar_position: 35
+sidebar_label: "База данных"
 ---
 
 # CREATE DATABASE {#query-language-create-database}

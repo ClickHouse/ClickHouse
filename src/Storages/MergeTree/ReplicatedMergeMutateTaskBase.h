@@ -1,9 +1,9 @@
 #pragma once
 
-#include <base/logger_useful.h>
 
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+
 
 namespace DB
 {
@@ -16,23 +16,25 @@ class StorageReplicatedMergeTree;
 class ReplicatedMergeMutateTaskBase : public IExecutableTask
 {
 public:
-    template <class Callback>
     ReplicatedMergeMutateTaskBase(
         Poco::Logger * log_,
         StorageReplicatedMergeTree & storage_,
         ReplicatedMergeTreeQueue::SelectedEntryPtr & selected_entry_,
-        Callback && task_result_callback_)
-        : selected_entry(selected_entry_)
+        IExecutableTask::TaskResultCallback & task_result_callback_)
+        : storage(storage_)
+        , selected_entry(selected_entry_)
         , entry(*selected_entry->log_entry)
         , log(log_)
-        , storage(storage_)
         /// This is needed to ask an asssignee to assign a new merge/mutate operation
         /// It takes bool argument and true means that current task is successfully executed.
-        , task_result_callback(task_result_callback_) {}
+        , task_result_callback(task_result_callback_)
+    {
+    }
 
     ~ReplicatedMergeMutateTaskBase() override = default;
     void onCompleted() override;
-    StorageID getStorageID() override;
+    StorageID getStorageID() const override;
+    String getQueryId() const override { return getStorageID().getShortName() + "::" + selected_entry->log_entry->new_part_name; }
     bool executeStep() override;
 
 protected:
@@ -51,16 +53,23 @@ protected:
     /// Will execute a part of inner MergeTask or MutateTask
     virtual bool executeInnerTask() = 0;
 
+    StorageReplicatedMergeTree & storage;
+
+    /// A callback to reschedule merge_selecting_task after destroying merge_mutate_entry
+    /// The order is important, because merge_selecting_task may rely on the number of entries in MergeList
+    scope_guard finish_callback;
+
     /// This is important not to execute the same mutation in parallel
     /// selected_entry is a RAII class, so the time of living must be the same as for the whole task
     ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry;
     ReplicatedMergeTreeLogEntry & entry;
     MergeList::EntryPtr merge_mutate_entry{nullptr};
     Poco::Logger * log;
-    StorageReplicatedMergeTree & storage;
+    /// ProfileEvents for current part will be stored here
+    ProfileEvents::Counters profile_counters;
+    ContextMutablePtr task_context;
 
 private:
-
     enum class CheckExistingPartResult
     {
         PART_EXISTS,
@@ -68,7 +77,7 @@ private:
     };
 
     CheckExistingPartResult checkExistingPart();
-    bool executeImpl() ;
+    bool executeImpl();
 
     enum class State
     {

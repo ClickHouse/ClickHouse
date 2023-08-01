@@ -8,6 +8,7 @@
 #include <Common/assert_cast.h>
 #include <Common/PODArray_fwd.h>
 #include <base/types.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -16,10 +17,7 @@
 #include <IO/WriteHelpers.h>
 #include <limits>
 
-#include <DataTypes/DataTypeArray.h>
-
-#include <Common/ArenaAllocator.h>
-
+#include <boost/math/distributions/normal.hpp>
 
 namespace DB
 {
@@ -81,18 +79,21 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
             u = u2;
 
         Float64 z = (u - meanrank) / sd;
+
+        if (unlikely(!std::isfinite(z)))
+            return {std::numeric_limits<Float64>::quiet_NaN(), std::numeric_limits<Float64>::quiet_NaN()};
+
         if (alternative == Alternative::TwoSided)
             z = std::abs(z);
 
-        /// In fact cdf is a probability function, so it is intergral of density from (-inf, z].
-        /// But since standard normal distribution is symmetric, cdf(0) = 0.5 and we have to compute integral from [0, z].
-        const Float64 cdf = integrateSimpson(0, z, [] (Float64 t) { return std::pow(M_E, -0.5 * t * t) / std::sqrt(2 * M_PI);});
+        auto standard_normal_distribution = boost::math::normal_distribution<Float64>();
+        auto cdf = boost::math::cdf(standard_normal_distribution, z);
 
         Float64 p_value = 0;
         if (alternative == Alternative::TwoSided)
-            p_value = 1 - 2 * cdf;
+            p_value = 2 - 2 * cdf;
         else
-            p_value = 0.5 - cdf;
+            p_value = 1 - cdf;
 
         return {u2, p_value};
     }
@@ -135,10 +136,10 @@ private:
 
 public:
     explicit AggregateFunctionMannWhitney(const DataTypes & arguments, const Array & params)
-        :IAggregateFunctionDataHelper<MannWhitneyData, AggregateFunctionMannWhitney> ({arguments}, {})
+        : IAggregateFunctionDataHelper<MannWhitneyData, AggregateFunctionMannWhitney> ({arguments}, {}, createResultType())
     {
         if (params.size() > 2)
-            throw Exception("Aggregate function " + getName() + " require two parameter or less", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require two parameter or less", getName());
 
         if (params.empty())
         {
@@ -147,7 +148,7 @@ public:
         }
 
         if (params[0].getType() != Field::Types::String)
-            throw Exception("Aggregate function " + getName() + " require first parameter to be a String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require first parameter to be a String", getName());
 
         const auto & param = params[0].get<String>();
         if (param == "two-sided")
@@ -157,14 +158,14 @@ public:
         else if (param == "greater")
             alternative = Alternative::Greater;
         else
-            throw Exception("Unknown parameter in aggregate function " + getName() +
-                    ". It must be one of: 'two-sided', 'less', 'greater'", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown parameter in aggregate function {}. "
+                    "It must be one of: 'two-sided', 'less', 'greater'", getName());
 
         if (params.size() != 2)
             return;
 
         if (params[1].getType() != Field::Types::UInt64)
-                throw Exception("Aggregate function " + getName() + " require second parameter to be a UInt64", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require second parameter to be a UInt64", getName());
 
         continuity_correction = static_cast<bool>(params[1].get<UInt64>());
     }
@@ -176,7 +177,7 @@ public:
 
     bool allocatesMemoryInArena() const override { return true; }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         DataTypes types
         {
@@ -228,7 +229,7 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         if (!this->data(place).size_x || !this->data(place).size_y)
-            throw Exception("Aggregate function " + getName() + " require both samples to be non empty", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} require both samples to be non empty", getName());
 
         auto [u_statistic, p_value] = this->data(place).getResult(alternative, continuity_correction);
 
@@ -245,4 +246,4 @@ public:
 
 };
 
-};
+}

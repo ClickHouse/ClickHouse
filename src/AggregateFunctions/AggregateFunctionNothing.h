@@ -6,11 +6,17 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include "DataTypes/IDataType.h"
 
 
 namespace DB
 {
 struct Settings;
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 
 /** Aggregate function that takes arbitrary number of arbitrary arguments and does nothing.
@@ -18,26 +24,21 @@ struct Settings;
 class AggregateFunctionNothing final : public IAggregateFunctionHelper<AggregateFunctionNothing>
 {
 public:
-    AggregateFunctionNothing(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionHelper<AggregateFunctionNothing>(arguments, params) {}
+    AggregateFunctionNothing(const DataTypes & arguments, const Array & params, const DataTypePtr & result_type_)
+        : IAggregateFunctionHelper<AggregateFunctionNothing>(arguments, params, result_type_) {}
 
     String getName() const override
     {
         return "nothing";
     }
 
-    DataTypePtr getReturnType() const override
-    {
-        return argument_types.empty() ? std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>()) : argument_types.front();
-    }
-
     bool allocatesMemoryInArena() const override { return false; }
 
-    void create(AggregateDataPtr) const override
+    void create(AggregateDataPtr __restrict) const override
     {
     }
 
-    void destroy(AggregateDataPtr) const noexcept override
+    void destroy(AggregateDataPtr __restrict) const noexcept override
     {
     }
 
@@ -56,11 +57,11 @@ public:
         return 1;
     }
 
-    void add(AggregateDataPtr, const IColumn **, size_t, Arena *) const override
+    void add(AggregateDataPtr __restrict, const IColumn **, size_t, Arena *) const override
     {
     }
 
-    void merge(AggregateDataPtr, ConstAggregateDataPtr, Arena *) const override
+    void merge(AggregateDataPtr __restrict, ConstAggregateDataPtr, Arena *) const override
     {
     }
 
@@ -69,14 +70,15 @@ public:
         writeChar('\0', buf);
     }
 
-    void deserialize(AggregateDataPtr, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
     {
         [[maybe_unused]] char symbol;
         readChar(symbol, buf);
-        assert(symbol == '\0');
+        if (symbol != '\0')
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect state of aggregate function 'nothing', it should contain exactly one zero byte, while it is {}.", static_cast<UInt32>(symbol));
     }
 
-    void insertResultInto(AggregateDataPtr, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict, IColumn & to, Arena *) const override
     {
         to.insertDefault();
     }

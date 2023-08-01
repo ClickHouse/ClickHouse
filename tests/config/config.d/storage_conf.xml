@@ -1,16 +1,75 @@
 <clickhouse>
     <storage_configuration>
         <disks>
-            <s3_cache>
+            <s3_disk>
                 <type>s3</type>
-                <endpoint>http://localhost:11111/test/00170_test/</endpoint>
+                <path>s3_disk/</path>
+                <endpoint>http://localhost:11111/test/common/</endpoint>
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
-                <data_cache_enabled>1</data_cache_enabled>
-                <cache_enabled>0</cache_enabled>
-                <data_cache_max_size>22548578304</data_cache_max_size>
+                <request_timeout_ms>20000</request_timeout_ms>
+            </s3_disk>
+            <s3_cache>
+                <type>cache</type>
+                <disk>s3_disk</disk>
+                <path>s3_cache/</path>
+                <max_size>128Mi</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
             </s3_cache>
+            <!-- local disks -->
+            <local_disk>
+                <type>local_blob_storage</type>
+                <path>local_disk/</path>
+            </local_disk>
+            <local_disk_2>
+                <type>local_blob_storage</type>
+                <path>local_disk_2/</path>
+            </local_disk_2>
+            <local_disk_3>
+                <type>local_blob_storage</type>
+                <path>local_disk_3/</path>
+            </local_disk_3>
+            <!-- cache for local disks -->
+            <local_cache>
+                <type>cache</type>
+                <disk>local_disk</disk>
+                <path>local_cache/</path>
+                <max_size>22548578304</max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
+            </local_cache>
+            <local_cache_2>
+                <type>cache</type>
+                <disk>local_disk</disk>
+                <path>local_cache_2/</path>
+                <max_size>22548578304</max_size>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
+            </local_cache_2>
+            <local_cache_3>
+                <type>cache</type>
+                <disk>local_disk_3</disk>
+                <path>local_cache_3/</path>
+                <max_size>22548578304</max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <enable_cache_hits_threshold>1</enable_cache_hits_threshold>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
+            </local_cache_3>
+            <!-- multi layer cache -->
+            <s3_cache_multi>
+                <type>cache</type>
+                <disk>s3_cache</disk>
+                <path>s3_cache_multi/</path>
+                <max_size>22548578304</max_size>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
+            </s3_cache_multi>
+            <s3_cache_multi_2>
+                <type>cache</type>
+                <disk>s3_cache_multi</disk>
+                <path>s3_cache_multi_2/</path>
+                <max_size>22548578304</max_size>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
+            </s3_cache_multi_2>
         </disks>
         <policies>
             <s3_cache>
@@ -20,6 +79,34 @@
                     </main>
                 </volumes>
             </s3_cache>
+            <s3_cache_multi>
+                <volumes>
+                    <main>
+                        <disk>s3_cache_multi_2</disk>
+                    </main>
+                </volumes>
+            </s3_cache_multi>
+            <local_cache>
+                <volumes>
+                    <main>
+                        <disk>local_cache</disk>
+                    </main>
+                </volumes>
+            </local_cache>
+            <local_cache_2>
+                <volumes>
+                    <main>
+                        <disk>local_cache_2</disk>
+                    </main>
+                </volumes>
+            </local_cache_2>
+            <local_cache_3>
+                <volumes>
+                    <main>
+                        <disk>local_cache_3</disk>
+                    </main>
+                </volumes>
+            </local_cache_3>
         </policies>
     </storage_configuration>
 </clickhouse>

@@ -1,7 +1,7 @@
 ---
-toc_folder_title: "Словари"
-toc_priority: 35
-toc_title: "Введение"
+slug: /ru/sql-reference/dictionaries/
+sidebar_label: "Словари"
+sidebar_position: 35
 ---
 
 # Словари {#slovari}

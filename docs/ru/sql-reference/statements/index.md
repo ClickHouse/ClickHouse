@@ -1,6 +1,7 @@
 ---
-toc_folder_title: "Выражения"
-toc_priority: 31
+slug: /ru/sql-reference/statements/
+sidebar_label: "Выражения"
+sidebar_position: 31
 ---
 
 # SQL выражения в ClickHouse {#clickhouse-sql-statements}

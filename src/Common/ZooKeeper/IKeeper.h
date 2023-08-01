@@ -2,6 +2,8 @@
 
 #include <base/types.h>
 #include <Common/Exception.h>
+#include <Coordination/KeeperFeatureFlags.h>
+#include <Poco/Net/SocketAddress.h>
 
 #include <vector>
 #include <memory>
@@ -34,23 +36,31 @@ struct ACL
     int32_t permissions;
     String scheme;
     String id;
+
+    bool operator<(const ACL & other) const
+    {
+        return std::tuple(permissions, scheme, id)
+            < std::tuple(other.permissions, other.scheme, other.id);
+    }
 };
 
 using ACLs = std::vector<ACL>;
 
 struct Stat
 {
-    int64_t czxid;
-    int64_t mzxid;
-    int64_t ctime;
-    int64_t mtime;
-    int32_t version;
-    int32_t cversion;
-    int32_t aversion;
-    int64_t ephemeralOwner; /// NOLINT
-    int32_t dataLength; /// NOLINT
-    int32_t numChildren; /// NOLINT
-    int64_t pzxid;
+    int64_t czxid{0};
+    int64_t mzxid{0};
+    int64_t ctime{0};
+    int64_t mtime{0};
+    int32_t version{0};
+    int32_t cversion{0};
+    int32_t aversion{0};
+    int64_t ephemeralOwner{0}; /// NOLINT
+    int32_t dataLength{0}; /// NOLINT
+    int32_t numChildren{0}; /// NOLINT
+    int64_t pzxid{0};
+
+    bool operator==(const Stat &) const = default;
 };
 
 enum class Error : int32_t
@@ -71,7 +81,7 @@ enum class Error : int32_t
     ZUNIMPLEMENTED = -6,        /// Operation is unimplemented
     ZOPERATIONTIMEOUT = -7,     /// Operation timeout
     ZBADARGUMENTS = -8,         /// Invalid arguments
-    ZINVALIDSTATE = -9,         /// Invliad zhandle state
+    ZINVALIDSTATE = -9,         /// Invalid zhandle state
 
     /** API errors.
         * This is never thrown by the server, it shouldn't be used other than
@@ -103,7 +113,6 @@ bool isUserError(Error code);
 
 const char * errorMessage(Error code);
 
-
 struct Request;
 using RequestPtr = std::shared_ptr<Request>;
 using Requests = std::vector<RequestPtr>;
@@ -127,6 +136,8 @@ using ResponseCallback = std::function<void(const Response &)>;
 struct Response
 {
     Error error = Error::ZOK;
+    int64_t zxid = 0;
+
     Response() = default;
     Response(const Response &) = default;
     Response & operator=(const Response &) = default;
@@ -265,7 +276,7 @@ struct SetRequest : virtual Request
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
-    size_t bytesSize() const override { return data.size() + data.size() + sizeof(version); }
+    size_t bytesSize() const override { return path.size() + data.size() + sizeof(version); }
 };
 
 struct SetResponse : virtual Response
@@ -273,6 +284,13 @@ struct SetResponse : virtual Response
     Stat stat;
 
     size_t bytesSize() const override { return sizeof(stat); }
+};
+
+enum class ListRequestType : uint8_t
+{
+    ALL,
+    PERSISTENT_ONLY,
+    EPHEMERAL_ONLY
 };
 
 struct ListRequest : virtual Request
@@ -304,6 +322,9 @@ struct CheckRequest : virtual Request
     String path;
     int32_t version = -1;
 
+    /// should it check if a node DOES NOT exist
+    bool not_exists = false;
+
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
@@ -312,6 +333,46 @@ struct CheckRequest : virtual Request
 
 struct CheckResponse : virtual Response
 {
+};
+
+struct SyncRequest : virtual Request
+{
+    String path;
+
+    void addRootPath(const String & root_path) override;
+    String getPath() const override { return path; }
+
+    size_t bytesSize() const override { return path.size(); }
+};
+
+struct SyncResponse : virtual Response
+{
+    String path;
+
+    size_t bytesSize() const override { return path.size(); }
+};
+
+struct ReconfigRequest : virtual Request
+{
+    String joining;
+    String leaving;
+    String new_members;
+    int32_t version;
+
+    String getPath() const final { return keeper_config_path; }
+
+    size_t bytesSize() const final
+    {
+        return joining.size() + leaving.size() + new_members.size() + sizeof(version);
+    }
+};
+
+struct ReconfigResponse : virtual Response
+{
+    String value;
+    Stat stat;
+
+    size_t bytesSize() const override { return value.size() + sizeof(stat); }
 };
 
 struct MultiRequest : virtual Request
@@ -358,8 +419,9 @@ using GetCallback = std::function<void(const GetResponse &)>;
 using SetCallback = std::function<void(const SetResponse &)>;
 using ListCallback = std::function<void(const ListResponse &)>;
 using CheckCallback = std::function<void(const CheckResponse &)>;
+using SyncCallback = std::function<void(const SyncResponse &)>;
+using ReconfigCallback = std::function<void(const ReconfigResponse &)>;
 using MultiCallback = std::function<void(const MultiResponse &)>;
-
 
 /// For watches.
 enum State
@@ -395,8 +457,14 @@ public:
     Exception(const Error code_, const std::string & path); /// NOLINT
     Exception(const Exception & exc);
 
-    const char * name() const throw() override { return "Coordination::Exception"; }
-    const char * className() const throw() override { return "Coordination::Exception"; }
+    template <typename... Args>
+    Exception(const Error code_, fmt::format_string<Args...> fmt, Args &&... args)
+        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code_)
+    {
+    }
+
+    const char * name() const noexcept override { return "Coordination::Exception"; }
+    const char * className() const noexcept override { return "Coordination::Exception"; }
     Exception * clone() const override { return new Exception(*this); }
 
     const Error code;
@@ -406,7 +474,7 @@ public:
 /** Usage scenario:
   * - create an object and issue commands;
   * - you provide callbacks for your commands; callbacks are invoked in internal thread and must be cheap:
-  *   for example, just signal a condvar / fulfull a promise.
+  *   for example, just signal a condvar / fulfill a promise.
   * - you also may provide callbacks for watches; they are also invoked in internal thread and must be cheap.
   * - whenever you receive exception with ZSESSIONEXPIRED code or method isExpired returns true,
   *   the ZooKeeper instance is no longer usable - you may only destroy it and probably create another.
@@ -468,6 +536,7 @@ public:
 
     virtual void list(
         const String & path,
+        ListRequestType list_request_type,
         ListCallback callback,
         WatchCallback watch) = 0;
 
@@ -476,12 +545,39 @@ public:
         int32_t version,
         CheckCallback callback) = 0;
 
+    virtual void sync(
+        const String & path,
+        SyncCallback callback) = 0;
+
+    virtual void reconfig(
+        std::string_view joining,
+        std::string_view leaving,
+        std::string_view new_members,
+        int32_t version,
+        ReconfigCallback callback) = 0;
+
     virtual void multi(
         const Requests & requests,
         MultiCallback callback) = 0;
+
+    virtual bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const = 0;
+
+    virtual const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return nullptr; }
+
+    /// A ZooKeeper session can have an optional deadline set on it.
+    /// After it has been reached, the session needs to be finalized.
+    virtual bool hasReachedDeadline() const = 0;
 
     /// Expire session and finish all pending requests
     virtual void finalize(const String & reason) = 0;
 };
 
 }
+
+template <> struct fmt::formatter<Coordination::Error> : fmt::formatter<std::string_view>
+{
+    constexpr auto format(Coordination::Error code, auto & ctx)
+    {
+        return formatter<string_view>::format(Coordination::errorMessage(code), ctx);
+    }
+};

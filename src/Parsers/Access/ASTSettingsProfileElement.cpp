@@ -35,27 +35,41 @@ void ASTSettingsProfileElement::formatImpl(const FormatSettings & settings, Form
 
     formatSettingName(setting_name, settings.ostr);
 
-    if (!value.isNull())
+    if (value)
     {
-        settings.ostr << " = " << applyVisitor(FieldVisitorToString{}, value);
+        settings.ostr << " = " << applyVisitor(FieldVisitorToString{}, *value);
     }
 
-    if (!min_value.isNull())
+    if (min_value)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " MIN " << (settings.hilite ? IAST::hilite_none : "")
-                      << applyVisitor(FieldVisitorToString{}, min_value);
+                      << applyVisitor(FieldVisitorToString{}, *min_value);
     }
 
-    if (!max_value.isNull())
+    if (max_value)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " MAX " << (settings.hilite ? IAST::hilite_none : "")
-                      << applyVisitor(FieldVisitorToString{}, max_value);
+                      << applyVisitor(FieldVisitorToString{}, *max_value);
     }
 
-    if (readonly)
+    if (writability)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (*readonly ? " READONLY" : " WRITABLE")
-                      << (settings.hilite ? IAST::hilite_none : "");
+        switch (*writability)
+        {
+            case SettingConstraintWritability::WRITABLE:
+                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WRITABLE"
+                            << (settings.hilite ? IAST::hilite_none : "");
+                break;
+            case SettingConstraintWritability::CONST:
+                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " CONST"
+                            << (settings.hilite ? IAST::hilite_none : "");
+                break;
+            case SettingConstraintWritability::CHANGEABLE_IN_READONLY:
+                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " CHANGEABLE_IN_READONLY"
+                            << (settings.hilite ? IAST::hilite_none : "");
+                break;
+            case SettingConstraintWritability::MAX: break;
+        }
     }
 }
 

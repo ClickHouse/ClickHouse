@@ -1,4 +1,4 @@
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_S2_GEOMETRY
 
@@ -97,7 +97,7 @@ public:
             const auto id = S2CellId(data_id[row]);
 
             if (!id.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Point is not valid");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "CellId is invalid.");
 
             S2Point point = id.ToPoint();
             S2LatLng ll(point);
@@ -113,7 +113,7 @@ public:
 
 }
 
-void registerFunctionS2ToGeo(FunctionFactory & factory)
+REGISTER_FUNCTION(S2ToGeo)
 {
     factory.registerFunction<FunctionS2ToGeo>();
 }

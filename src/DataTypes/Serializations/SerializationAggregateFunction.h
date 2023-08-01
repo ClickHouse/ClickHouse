@@ -22,11 +22,11 @@ public:
         : function(function_), type_name(std::move(type_name_)), version(version_) {}
 
     /// NOTE These two functions for serializing single values are incompatible with the functions below.
-    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
-    void deserializeBinary(Field & field, ReadBuffer & istr) const override;
+    void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const override;
 
-    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
+    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;

@@ -7,6 +7,8 @@ GROUP BY number
     WITH TOTALS
 ORDER BY number DESC WITH FILL FROM 15;
 
+SET enable_positional_arguments = 0;
+
 SELECT
     number,
     sum(number)

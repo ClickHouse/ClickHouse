@@ -42,10 +42,10 @@ public:
 
     bool hasEqualValues() const override { return true; }
 
-    Field operator[](size_t) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-    void get(size_t, Field &) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-    void insert(const Field &) override { throw Exception("Cannot insert element into " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-    bool isDefaultAt(size_t) const override { throw Exception("isDefaultAt is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+    Field operator[](size_t) const override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName()); }
+    void get(size_t, Field &) const override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName()); }
+    void insert(const Field &) override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert element into {}", getName()); }
+    bool isDefaultAt(size_t) const override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "isDefaultAt is not implemented for {}", getName()); }
 
     StringRef getDataAt(size_t) const override
     {
@@ -115,7 +115,7 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
         if (s != perm.size())
-            throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation doesn't match size of column.");
 
         return cloneDummy(limit ? std::min(s, limit) : s);
     }
@@ -123,7 +123,7 @@ public:
     ColumnPtr index(const IColumn & indexes, size_t limit) const override
     {
         if (indexes.size() < limit)
-            throw Exception("Size of indexes is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes is less than required.");
 
         return cloneDummy(limit ? limit : s);
     }
@@ -142,7 +142,7 @@ public:
     ColumnPtr replicate(const Offsets & offsets) const override
     {
         if (s != offsets.size())
-            throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
         return cloneDummy(offsets.back());
     }
@@ -150,7 +150,7 @@ public:
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {
         if (s != selector.size())
-            throw Exception("Size of selector doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector doesn't match size of column.");
 
         std::vector<size_t> counts(num_columns);
         for (auto idx : selector)
@@ -165,17 +165,22 @@ public:
 
     double getRatioOfDefaultRows(double) const override
     {
-        throw Exception("Method getRatioOfDefaultRows is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getRatioOfDefaultRows is not supported for {}", getName());
+    }
+
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getNumberOfDefaultRows is not supported for {}", getName());
     }
 
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override
     {
-        throw Exception("Method getIndicesOfNonDefaultRows is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getIndicesOfNonDefaultRows is not supported for {}", getName());
     }
 
     void gather(ColumnGathererStream &) override
     {
-        throw Exception("Method gather is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method gather is not supported for {}", getName());
     }
 
     void getExtremes(Field &, Field &) const override

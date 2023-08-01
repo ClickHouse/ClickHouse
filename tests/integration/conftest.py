@@ -6,6 +6,28 @@ from helpers.test_tools import TSV
 from helpers.network import _NetworkManager
 
 
+# This is a workaround for a problem with logging in pytest [1].
+#
+#   [1]: https://github.com/pytest-dev/pytest/issues/5502
+logging.raiseExceptions = False
+
+
+@pytest.fixture(autouse=True, scope="session")
+def tune_local_port_range():
+    # Lots of services uses non privileged ports:
+    # - hdfs -- 50020/50070/...
+    # - minio
+    # - mysql
+    # - psql
+    #
+    # So instead of tuning all these thirdparty services, let's simply
+    # prohibit using such ports for outgoing connections, this should fix
+    # possible "Address already in use" errors.
+    #
+    # NOTE: 5K is not enough, and sometimes leads to EADDRNOTAVAIL error.
+    run_and_check(["sysctl net.ipv4.ip_local_port_range='55000 65535'"], shell=True)
+
+
 @pytest.fixture(autouse=True, scope="session")
 def cleanup_environment():
     try:
@@ -36,6 +58,13 @@ def cleanup_environment():
                 logging.debug(f"Docker ps before start:{r.stdout}")
         else:
             logging.debug(f"No running containers")
+
+        logging.debug("Pruning Docker networks")
+        run_and_check(
+            ["docker network prune --force"],
+            shell=True,
+            nothrow=True,
+        )
     except Exception as e:
         logging.exception(f"cleanup_environment:{str(e)}")
         pass

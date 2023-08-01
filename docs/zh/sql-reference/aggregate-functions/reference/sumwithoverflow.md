@@ -1,5 +1,6 @@
 ---
-toc_priority: 140
+slug: /zh/sql-reference/aggregate-functions/reference/sumwithoverflow
+sidebar_position: 140
 ---
 
 # sumWithOverflow {#sumwithoverflowx}

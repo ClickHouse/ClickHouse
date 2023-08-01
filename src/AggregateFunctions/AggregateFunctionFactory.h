@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/IFactoryWithAliases.h>
+#include <Parsers/ASTFunction.h>
 
 
 #include <functional>
@@ -76,9 +77,9 @@ public:
         AggregateFunctionProperties & out_properties) const;
 
     /// Get properties if the aggregate function exists.
-    std::optional<AggregateFunctionProperties> tryGetProperties(const String & name) const;
+    std::optional<AggregateFunctionProperties> tryGetProperties(String name) const;
 
-    bool isAggregateFunctionName(const String & name) const;
+    bool isAggregateFunctionName(String name) const;
 
 private:
     AggregateFunctionPtr getImpl(
@@ -87,8 +88,6 @@ private:
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
         bool has_null_arguments) const;
-
-    std::optional<AggregateFunctionProperties> tryGetPropertiesImpl(const String & name) const;
 
     using AggregateFunctions = std::unordered_map<String, Value>;
 
@@ -104,5 +103,15 @@ private:
     String getFactoryName() const override { return "AggregateFunctionFactory"; }
 
 };
+
+struct AggregateUtils
+{
+    static bool isAggregateFunction(const ASTFunction & node)
+    {
+        return AggregateFunctionFactory::instance().isAggregateFunctionName(node.name);
+    }
+};
+
+const String & getAggregateFunctionCanonicalNameIfAny(const String & name);
 
 }

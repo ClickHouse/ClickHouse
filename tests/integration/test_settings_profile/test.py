@@ -115,7 +115,7 @@ def test_smoke():
             "SELECT value FROM system.settings WHERE name = 'max_memory_usage'",
             user="robin",
         )
-        == "10000000000\n"
+        == "0\n"
     )
     instance.query("SET max_memory_usage = 80000000", user="robin")
     instance.query("SET max_memory_usage = 120000000", user="robin")
@@ -158,7 +158,7 @@ def test_smoke():
             "SELECT value FROM system.settings WHERE name = 'max_memory_usage'",
             user="robin",
         )
-        == "10000000000\n"
+        == "0\n"
     )
     instance.query("SET max_memory_usage = 80000000", user="robin")
     instance.query("SET max_memory_usage = 120000000", user="robin")
@@ -216,7 +216,18 @@ def test_settings_from_granted_role():
             "\\N",
             "\\N",
         ],
-        ["xyz", "\\N", "\\N", 1, "max_ast_depth", 2000, "\\N", "\\N", "\\N", "\\N"],
+        [
+            "xyz",
+            "\\N",
+            "\\N",
+            1,
+            "max_ast_depth",
+            2000,
+            "\\N",
+            "\\N",
+            "\\N",
+            "\\N",
+        ],
     ]
     assert system_settings_profile_elements(role_name="worker") == [
         ["\\N", "\\N", "worker", 0, "\\N", "\\N", "\\N", "\\N", "\\N", "xyz"]
@@ -228,7 +239,7 @@ def test_settings_from_granted_role():
             "SELECT value FROM system.settings WHERE name = 'max_memory_usage'",
             user="robin",
         )
-        == "10000000000\n"
+        == "0\n"
     )
     instance.query("SET max_memory_usage = 120000000", user="robin")
 
@@ -240,7 +251,7 @@ def test_settings_from_granted_role():
             "SELECT value FROM system.settings WHERE name = 'max_memory_usage'",
             user="robin",
         )
-        == "10000000000\n"
+        == "0\n"
     )
     instance.query("SET max_memory_usage = 120000000", user="robin")
     assert system_settings_profile_elements(role_name="worker") == []
@@ -278,7 +289,7 @@ def test_settings_from_granted_role():
             "SELECT value FROM system.settings WHERE name = 'max_memory_usage'",
             user="robin",
         )
-        == "10000000000\n"
+        == "0\n"
     )
     instance.query("SET max_memory_usage = 120000000", user="robin")
     assert system_settings_profile("xyz") == [
@@ -288,12 +299,12 @@ def test_settings_from_granted_role():
 
 def test_inheritance():
     instance.query(
-        "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000002 READONLY"
+        "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000002 CONST"
     )
     instance.query("CREATE SETTINGS PROFILE alpha SETTINGS PROFILE xyz TO robin")
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE xyz")
-        == "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000002 READONLY\n"
+        == "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000002 CONST\n"
     )
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE alpha")
@@ -315,7 +326,18 @@ def test_inheritance():
         ["xyz", "local directory", 1, 0, "[]", "[]"]
     ]
     assert system_settings_profile_elements(profile_name="xyz") == [
-        ["xyz", "\\N", "\\N", 0, "max_memory_usage", 100000002, "\\N", "\\N", 1, "\\N"]
+        [
+            "xyz",
+            "\\N",
+            "\\N",
+            0,
+            "max_memory_usage",
+            100000002,
+            "\\N",
+            "\\N",
+            "CONST",
+            "\\N",
+        ]
     ]
     assert system_settings_profile("alpha") == [
         ["alpha", "local directory", 1, 0, "['robin']", "[]"]
@@ -360,10 +382,70 @@ def test_alter_and_drop():
             "SELECT value FROM system.settings WHERE name = 'max_memory_usage'",
             user="robin",
         )
-        == "10000000000\n"
+        == "0\n"
     )
     instance.query("SET max_memory_usage = 80000000", user="robin")
     instance.query("SET max_memory_usage = 120000000", user="robin")
+
+
+def test_changeable_in_readonly():
+    instance.query(
+        "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000003 MIN 90000000 MAX 110000000 CHANGEABLE_IN_READONLY SETTINGS readonly = 1 TO robin"
+    )
+    assert (
+        instance.query(
+            "SELECT value FROM system.settings WHERE name = 'max_memory_usage'",
+            user="robin",
+        )
+        == "100000003\n"
+    )
+    assert (
+        instance.query(
+            "SELECT value FROM system.settings WHERE name = 'readonly'",
+            user="robin",
+        )
+        == "1\n"
+    )
+    assert (
+        "Setting max_memory_usage shouldn't be less than 90000000"
+        in instance.query_and_get_error("SET max_memory_usage = 80000000", user="robin")
+    )
+    assert (
+        "Setting max_memory_usage shouldn't be greater than 110000000"
+        in instance.query_and_get_error(
+            "SET max_memory_usage = 120000000", user="robin"
+        )
+    )
+
+    assert system_settings_profile_elements(profile_name="xyz") == [
+        [
+            "xyz",
+            "\\N",
+            "\\N",
+            0,
+            "max_memory_usage",
+            100000003,
+            90000000,
+            110000000,
+            "CHANGEABLE_IN_READONLY",
+            "\\N",
+        ],
+        [
+            "xyz",
+            "\\N",
+            "\\N",
+            1,
+            "readonly",
+            1,
+            "\\N",
+            "\\N",
+            "\\N",
+            "\\N",
+        ],
+    ]
+
+    instance.query("SET max_memory_usage = 90000000", user="robin")
+    instance.query("SET max_memory_usage = 110000000", user="robin")
 
 
 def test_show_profiles():
@@ -374,17 +456,16 @@ def test_show_profiles():
     assert instance.query("SHOW CREATE PROFILE xyz") == "CREATE SETTINGS PROFILE xyz\n"
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE default")
-        == "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, load_balancing = \\'random\\'\n"
+        == "CREATE SETTINGS PROFILE default\n"
     )
     assert (
-        instance.query("SHOW CREATE PROFILES")
-        == "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, load_balancing = \\'random\\'\n"
+        instance.query("SHOW CREATE PROFILES") == "CREATE SETTINGS PROFILE default\n"
         "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n"
         "CREATE SETTINGS PROFILE xyz\n"
     )
 
     expected_access = (
-        "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, load_balancing = \\'random\\'\n"
+        "CREATE SETTINGS PROFILE default\n"
         "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n"
         "CREATE SETTINGS PROFILE xyz\n"
     )
@@ -469,7 +550,7 @@ def test_function_current_profiles():
             user="robin",
             params={"session_id": session_id},
         )
-        == "['P1','P2']\t['P1','P2']\t['default','P3','P4','P5','P1','P2']\n"
+        == "['P1','P2']\t['default','P3','P5','P1','P2']\t['default','P3','P4','P5','P1','P2']\n"
     )
 
     instance.http_query(
@@ -580,4 +661,32 @@ def test_allow_introspection():
     )
     assert "it's necessary to have grant" in instance.query_and_get_error(
         "SELECT demangle('a')", user="robin"
+    )
+
+
+def test_settings_aliases():
+    instance.query(
+        "CREATE SETTINGS PROFILE P1 SETTINGS replication_alter_partitions_sync=2"
+    )
+    instance.query(
+        "CREATE SETTINGS PROFILE P2 SETTINGS replication_alter_partitions_sync=0"
+    )
+    instance.query("ALTER USER robin SETTINGS PROFILE P1")
+
+    assert (
+        instance.http_query(
+            "SELECT getSetting('alter_sync')",
+            user="robin",
+        )
+        == "2\n"
+    )
+
+    instance.query("ALTER USER robin SETTINGS PROFILE P2")
+
+    assert (
+        instance.http_query(
+            "SELECT getSetting('alter_sync')",
+            user="robin",
+        )
+        == "0\n"
     )

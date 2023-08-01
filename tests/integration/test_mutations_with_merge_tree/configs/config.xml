@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <clickhouse>
     <logger>
         <log>/var/log/clickhouse-server/log.log</log>

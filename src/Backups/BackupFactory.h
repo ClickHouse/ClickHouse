@@ -12,6 +12,7 @@
 
 namespace DB
 {
+class IBackupCoordination;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
@@ -29,7 +30,13 @@ public:
         String compression_method;
         int compression_level = -1;
         String password;
+        String s3_storage_class;
         ContextPtr context;
+        bool is_internal_backup = false;
+        std::shared_ptr<IBackupCoordination> backup_coordination;
+        std::optional<UUID> backup_uuid;
+        bool deduplicate_files = true;
+        bool allow_s3_native_copy = true;
     };
 
     static BackupFactory & instance();

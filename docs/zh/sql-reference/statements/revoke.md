@@ -1,6 +1,7 @@
 ---
-toc_priority: 40
-toc_title: REVOKE
+slug: /zh/sql-reference/statements/revoke
+sidebar_position: 40
+sidebar_label: REVOKE
 ---
 
 # 权限取消 {#revoke}

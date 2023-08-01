@@ -1,10 +1,11 @@
+#include <base/defines.h>
 #include <Core/SettingsQuirks.h>
 #include <Core/Settings.h>
 #include <Poco/Environment.h>
 #include <Poco/Platform.h>
 #include <Common/VersionNumber.h>
-#include <base/logger_useful.h>
-#include <cstdlib>
+#include <Common/logger_useful.h>
+
 
 namespace
 {
@@ -57,6 +58,12 @@ void applySettingsQuirks(Settings & settings, Poco::Logger * log)
             if (log)
                 LOG_WARNING(log, "async_socket_for_remote has been disabled (you can explicitly enable it still)");
         }
+        if (!settings.async_query_sending_for_remote.changed && settings.async_query_sending_for_remote)
+        {
+            settings.async_query_sending_for_remote = false;
+            if (log)
+                LOG_WARNING(log, "async_query_sending_for_remote has been disabled (you can explicitly enable it still)");
+        }
         if (!settings.use_hedged_requests.changed && settings.use_hedged_requests)
         {
             settings.use_hedged_requests = false;
@@ -64,6 +71,12 @@ void applySettingsQuirks(Settings & settings, Poco::Logger * log)
                 LOG_WARNING(log, "use_hedged_requests has been disabled (you can explicitly enable it still)");
         }
     }
+
+#if defined(THREAD_SANITIZER)
+    settings.use_hedged_requests.value = false;
+    if (log)
+        LOG_WARNING(log, "use_hedged_requests has been disabled for the build with Thread Sanitizer, because they are using fibers, leading to a failed assertion inside TSan");
+#endif
 
     if (!queryProfilerWorks())
     {

@@ -26,6 +26,7 @@
                 <id>3</id>
                 <hostname>node3</hostname>
                 <port>9234</port>
+                <start_as_follower>1</start_as_follower>
             </server>
         </raft_configuration>
     </keeper_server>

@@ -1,6 +1,7 @@
 ---
-toc_priority: 27
-toc_title: 第三方集成库
+slug: /zh/interfaces/third-party/integrations
+sidebar_position: 27
+sidebar_label: 第三方集成库
 ---
 
 # 第三方集成库 {#integration-libraries-from-third-party-developers}
@@ -104,5 +105,3 @@ toc_title: 第三方集成库
         -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord)
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
-
-[源文章](https://clickhouse.com/docs/en/interfaces/third-party/integrations/) <!--hide-->

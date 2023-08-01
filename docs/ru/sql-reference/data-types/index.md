@@ -1,7 +1,7 @@
 ---
-toc_folder_title: "Типы данных"
-toc_priority: 37
-toc_title: "Введение"
+slug: /ru/sql-reference/data-types/
+sidebar_label: "Типы данных"
+sidebar_position: 37
 ---
 
 # Типы данных {#data_types}

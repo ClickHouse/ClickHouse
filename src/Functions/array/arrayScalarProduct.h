@@ -6,6 +6,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
+#include <Core/TypeId.h>
 
 
 namespace DB
@@ -18,6 +19,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -29,29 +31,28 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayScalarProduct>(); }
 
 private:
-    using ResultColumnType = ColumnVector<typename Method::ResultType>;
 
-    template <typename T>
+    template <typename ResultType, typename T>
     ColumnPtr executeNumber(const ColumnsWithTypeAndName & arguments) const
     {
         ColumnPtr res;
-        if (   (res = executeNumberNumber<T, UInt8>(arguments))
-            || (res = executeNumberNumber<T, UInt16>(arguments))
-            || (res = executeNumberNumber<T, UInt32>(arguments))
-            || (res = executeNumberNumber<T, UInt64>(arguments))
-            || (res = executeNumberNumber<T, Int8>(arguments))
-            || (res = executeNumberNumber<T, Int16>(arguments))
-            || (res = executeNumberNumber<T, Int32>(arguments))
-            || (res = executeNumberNumber<T, Int64>(arguments))
-            || (res = executeNumberNumber<T, Float32>(arguments))
-            || (res = executeNumberNumber<T, Float64>(arguments)))
+        if (   (res = executeNumberNumber<ResultType, T, UInt8>(arguments))
+            || (res = executeNumberNumber<ResultType, T, UInt16>(arguments))
+            || (res = executeNumberNumber<ResultType, T, UInt32>(arguments))
+            || (res = executeNumberNumber<ResultType, T, UInt64>(arguments))
+            || (res = executeNumberNumber<ResultType, T, Int8>(arguments))
+            || (res = executeNumberNumber<ResultType, T, Int16>(arguments))
+            || (res = executeNumberNumber<ResultType, T, Int32>(arguments))
+            || (res = executeNumberNumber<ResultType, T, Int64>(arguments))
+            || (res = executeNumberNumber<ResultType, T, Float32>(arguments))
+            || (res = executeNumberNumber<ResultType, T, Float64>(arguments)))
             return res;
 
        return nullptr;
     }
 
 
-    template <typename T, typename U>
+    template <typename ResultType, typename T, typename U>
     ColumnPtr executeNumberNumber(const ColumnsWithTypeAndName & arguments) const
     {
         ColumnPtr col1 = arguments[0].column->convertToFullColumnIfConst();
@@ -65,14 +66,14 @@ private:
             return nullptr;
 
         if (!col_array1->hasEqualOffsets(*col_array2))
-            throw Exception("Array arguments for function " + getName() + " must have equal sizes", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Array arguments for function {} must have equal sizes", getName());
 
         const ColumnVector<T> * col_nested1 = checkAndGetColumn<ColumnVector<T>>(col_array1->getData());
         const ColumnVector<U> * col_nested2 = checkAndGetColumn<ColumnVector<U>>(col_array2->getData());
         if (!col_nested1 || !col_nested2)
             return nullptr;
 
-        auto col_res = ResultColumnType::create();
+        auto col_res = ColumnVector<ResultType>::create();
 
         vector(
             col_nested1->getData(),
@@ -83,12 +84,12 @@ private:
         return col_res;
     }
 
-    template <typename T, typename U>
+    template <typename ResultType, typename T, typename U>
     static NO_INLINE void vector(
         const PaddedPODArray<T> & data1,
         const PaddedPODArray<U> & data2,
         const ColumnArray::Offsets & offsets,
-        PaddedPODArray<typename Method::ResultType> & result)
+        PaddedPODArray<ResultType> & result)
     {
         size_t size = offsets.size();
         result.resize(size);
@@ -97,7 +98,7 @@ private:
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
-            result[i] = Method::apply(&data1[current_offset], &data2[current_offset], array_size);
+            result[i] = Method::template apply<ResultType, T, U>(&data1[current_offset], &data2[current_offset], array_size);
             current_offset = offsets[i];
         }
     }
@@ -117,12 +118,12 @@ public:
         {
             const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
             if (!array_type)
-                throw Exception("All arguments for function " + getName() + " must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All arguments for function {} must be an array.", getName());
 
             const auto & nested_type = array_type->getNestedType();
             if (!isNativeNumber(nested_type) && !isEnum(nested_type))
-                throw Exception(
-                    getName() + " cannot process values of type " + nested_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} cannot process values of type {}",
+                                getName(), nested_type->getName());
             nested_types[i] = nested_type;
         }
 
@@ -130,26 +131,50 @@ public:
         return Method::getReturnType(nested_types[0], nested_types[1]);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /* input_rows_count */) const override
+    template <typename ResultType>
+    ColumnPtr executeWithResultType(const ColumnsWithTypeAndName & arguments) const
     {
         ColumnPtr res;
-        if (!((res = executeNumber<UInt8>(arguments))
-            || (res = executeNumber<UInt16>(arguments))
-            || (res = executeNumber<UInt32>(arguments))
-            || (res = executeNumber<UInt64>(arguments))
-            || (res = executeNumber<Int8>(arguments))
-            || (res = executeNumber<Int16>(arguments))
-            || (res = executeNumber<Int32>(arguments))
-            || (res = executeNumber<Int64>(arguments))
-            || (res = executeNumber<Float32>(arguments))
-            || (res = executeNumber<Float64>(arguments))))
-            throw Exception
-            {
-                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN
-            };
+        if (!((res = executeNumber<ResultType, UInt8>(arguments))
+            || (res = executeNumber<ResultType, UInt16>(arguments))
+            || (res = executeNumber<ResultType, UInt32>(arguments))
+            || (res = executeNumber<ResultType, UInt64>(arguments))
+            || (res = executeNumber<ResultType, Int8>(arguments))
+            || (res = executeNumber<ResultType, Int16>(arguments))
+            || (res = executeNumber<ResultType, Int32>(arguments))
+            || (res = executeNumber<ResultType, Int64>(arguments))
+            || (res = executeNumber<ResultType, Float32>(arguments))
+            || (res = executeNumber<ResultType, Float64>(arguments))))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
 
         return res;
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /* input_rows_count */) const override
+    {
+        switch (result_type->getTypeId())
+        {
+        #define SUPPORTED_TYPE(type) \
+            case TypeIndex::type: \
+                return executeWithResultType<type>(arguments); \
+                break;
+
+            SUPPORTED_TYPE(UInt8)
+            SUPPORTED_TYPE(UInt16)
+            SUPPORTED_TYPE(UInt32)
+            SUPPORTED_TYPE(UInt64)
+            SUPPORTED_TYPE(Int8)
+            SUPPORTED_TYPE(Int16)
+            SUPPORTED_TYPE(Int32)
+            SUPPORTED_TYPE(Int64)
+            SUPPORTED_TYPE(Float32)
+            SUPPORTED_TYPE(Float64)
+        #undef SUPPORTED_TYPE
+
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type {}", result_type->getName());
+        }
     }
 };
 
