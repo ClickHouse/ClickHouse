@@ -294,7 +294,7 @@ try
     else if (config().has("keeper_server.snapshot_storage_path"))
         path = std::filesystem::path(config().getString("keeper_server.snapshot_storage_path")).parent_path();
     else
-        path = std::filesystem::path{KEEPER_DEFAULT_PATH};
+        path = config().getString("path", KEEPER_DEFAULT_PATH);
 
     std::filesystem::create_directories(path);
 
@@ -330,6 +330,7 @@ try
     auto global_context = Context::createGlobal(shared_context.get());
 
     global_context->makeGlobalContext();
+    global_context->setApplicationType(Context::ApplicationType::KEEPER);
     global_context->setPath(path);
     global_context->setRemoteHostFilter(config());
 
@@ -365,7 +366,7 @@ try
     }
 
     /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
-    global_context->initializeKeeperDispatcher(/* start_async = */ true);
+    global_context->initializeKeeperDispatcher(/* start_async = */ false);
     FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
 
     auto config_getter = [&] () -> const Poco::Util::AbstractConfiguration &
