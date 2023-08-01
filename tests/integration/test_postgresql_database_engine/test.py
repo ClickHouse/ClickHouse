@@ -81,6 +81,7 @@ def test_postgres_database_engine_with_postgres_ddl(started_cluster):
 
     drop_postgres_table(cursor, "test_table")
 
+
 def test_postgres_database_engine_with_postgres_ddl_with_settings(started_cluster):
     """
     issue-52343: PostgreSQL did not allow SETTINGS
