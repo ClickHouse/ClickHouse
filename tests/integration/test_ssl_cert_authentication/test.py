@@ -208,7 +208,9 @@ def test_https_wrong_cert():
         with pytest.raises(Exception) as err:
             execute_query_https("SELECT currentUser()", user="john", cert_name="wrong")
         err_str = str(err.value)
-        if count < MAX_RETRY and "Broken pipe" in err_str:
+        if count < MAX_RETRY and (
+            ("Broken pipe" in err_str) or ("EOF occurred" in err_str)
+        ):
             count = count + 1
             logging.warning(f"Failed attempt with wrong cert, err: {err_str}")
             continue
@@ -314,7 +316,9 @@ def test_https_non_ssl_auth():
                 cert_name="wrong",
             )
         err_str = str(err.value)
-        if count < MAX_RETRY and "Broken pipe" in err_str:
+        if count < MAX_RETRY and (
+            ("Broken pipe" in err_str) or ("EOF occurred" in err_str)
+        ):
             count = count + 1
             logging.warning(
                 f"Failed attempt with wrong cert, user: peter, err: {err_str}"
@@ -334,7 +338,9 @@ def test_https_non_ssl_auth():
                 cert_name="wrong",
             )
         err_str = str(err.value)
-        if count < MAX_RETRY and "Broken pipe" in err_str:
+        if count < MAX_RETRY and (
+            ("Broken pipe" in err_str) or ("EOF occurred" in err_str)
+        ):
             count = count + 1
             logging.warning(
                 f"Failed attempt with wrong cert, user: jane, err: {err_str}"

@@ -10,6 +10,7 @@
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -72,7 +73,17 @@ Block TableFunctionFormat::parseData(ColumnsDescription columns, ContextPtr cont
 
     auto read_buf = std::make_unique<ReadBufferFromString>(data);
     auto input_format = context->getInputFormat(format, *read_buf, block, context->getSettingsRef().max_block_size);
-    auto pipeline = std::make_unique<QueryPipeline>(input_format);
+    QueryPipelineBuilder builder;
+    builder.init(Pipe(input_format));
+    if (columns.hasDefaults())
+    {
+        builder.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<AddingDefaultsTransform>(header, columns, *input_format, context);
+        });
+    }
+
+    auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
     std::vector<Block> blocks;

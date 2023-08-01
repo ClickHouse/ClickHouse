@@ -22,6 +22,7 @@ using ThrottlerPtr = std::shared_ptr<Throttler>;
 class ReadFromRemote final : public ISourceStep
 {
 public:
+    /// @param main_table_ if Shards contains main_table then this parameter will be ignored
     ReadFromRemote(
         ClusterProxy::SelectStreamFactory::Shards shards_,
         Block header_,

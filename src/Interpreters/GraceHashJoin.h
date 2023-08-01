@@ -13,7 +13,6 @@
 
 namespace DB
 {
-
 class TableJoin;
 class HashJoin;
 
@@ -79,7 +78,7 @@ public:
     bool supportTotals() const override { return false; }
 
     IBlocksStreamPtr
-    getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
+    getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size) const override;
 
     /// Open iterator over joined blocks.
     /// Must be called after all @joinBlock calls.
