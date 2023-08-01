@@ -402,6 +402,9 @@ CI_CONFIG = {
         "Sqllogic test (release)": {
             "required_build": "package_release",
         },
+        "SQLTest": {
+            "required_build": "package_release",
+        },
     },
 }  # type: dict
 
