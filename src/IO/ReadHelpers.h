@@ -12,6 +12,7 @@
 
 #include <type_traits>
 
+#include <Common/StackTrace.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
@@ -63,6 +64,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
 }
 
 /// Helper functions for formatted input.
@@ -136,6 +138,19 @@ inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t max_strin
 
     s.resize(size);
     buf.readStrict(s.data(), size);
+}
+
+/// For historical reasons we store IPv6 as a String
+inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
+{
+    size_t size = 0;
+    readVarUInt(size, buf);
+
+    if (size != IPV6_BINARY_LENGTH)
+        throw Exception(ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH,
+                        "Size of the string {} doesn't match size of binary IPv6 {}", size, IPV6_BINARY_LENGTH);
+
+    buf.readStrict(reinterpret_cast<char*>(&ip.toUnderType()), size);
 }
 
 template <typename T>
@@ -990,8 +1005,8 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
             }
         }
     }
-    /// 9908870400 is time_t value for 2184-01-01 UTC (a bit over the last year supported by DateTime64)
-    else if (whole >= 9908870400LL)
+    /// 10413792000 is time_t value for 2300-01-01 UTC (a bit over the last year supported by DateTime64)
+    else if (whole >= 10413792000LL)
     {
         /// Unix timestamp with subsecond precision, already scaled to integer.
         /// For disambiguation we support only time since 2001-09-09 01:46:40 UTC and less than 30 000 years in future.
@@ -1092,6 +1107,8 @@ inline void readBinary(Decimal64 & x, ReadBuffer & buf) { readPODBinary(x, buf);
 inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readPODBinary(x.value, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+
+inline void readBinary(StackTrace::FramePointers & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 template <std::endian endian, typename T>
 inline void readBinaryEndian(T & x, ReadBuffer & buf)

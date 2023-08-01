@@ -32,8 +32,9 @@ public:
     using TaskResultCallback = std::function<void(bool)>;
     virtual bool executeStep() = 0;
     virtual void onCompleted() = 0;
-    virtual StorageID getStorageID() = 0;
-    virtual Priority getPriority() = 0;
+    virtual StorageID getStorageID() const = 0;
+    virtual String getQueryId() const = 0;
+    virtual Priority getPriority() const = 0;
     virtual ~IExecutableTask() = default;
 };
 
@@ -63,11 +64,13 @@ public:
     }
 
     void onCompleted() override { job_result_callback(!res); }
-    StorageID getStorageID() override { return id; }
-    Priority getPriority() override
+    StorageID getStorageID() const override { return id; }
+    Priority getPriority() const override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "getPriority() method is not supported by LambdaAdapter");
     }
+
+    String getQueryId() const override { return id.getShortName() + "::lambda"; }
 
 private:
     bool res = false;

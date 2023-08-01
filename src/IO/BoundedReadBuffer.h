@@ -31,7 +31,8 @@ public:
 
 private:
     std::optional<size_t> read_until_position;
-    size_t file_offset_of_buffer_end = 0;
+    /// atomic because can be used in log or exception messages while being updated.
+    std::atomic<size_t> file_offset_of_buffer_end = 0;
 };
 
 }

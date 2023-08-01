@@ -401,4 +401,16 @@ struct CleanResourcesCommand : public IFourLetterCommand
     ~CleanResourcesCommand() override = default;
 };
 
+struct FeatureFlagsCommand : public IFourLetterCommand
+{
+    explicit FeatureFlagsCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "ftfl"; }
+    String run() override;
+    ~FeatureFlagsCommand() override = default;
+};
+
 }

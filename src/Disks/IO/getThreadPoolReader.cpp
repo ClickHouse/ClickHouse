@@ -7,9 +7,7 @@
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/ThreadPoolReader.h>
 
-#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
 #include <Interpreters/Context.h>
-#endif
 
 namespace DB
 {
@@ -21,32 +19,10 @@ namespace ErrorCodes
 
 IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type)
 {
-#ifdef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
-    const auto & config = Poco::Util::Application::instance().config();
-    switch (type)
-    {
-        case FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER:
-        {
-            static auto asynchronous_remote_fs_reader = createThreadPoolReader(type, config);
-            return *asynchronous_remote_fs_reader;
-        }
-        case FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER:
-        {
-            static auto asynchronous_local_fs_reader = createThreadPoolReader(type, config);
-            return *asynchronous_local_fs_reader;
-        }
-        case FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER:
-        {
-            static auto synchronous_local_fs_reader = createThreadPoolReader(type, config);
-            return *synchronous_local_fs_reader;
-        }
-    }
-#else
     auto context = Context::getGlobalContextInstance();
     if (!context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
     return context->getThreadPoolReader(type);
-#endif
 }
 
 std::unique_ptr<IAsynchronousReader> createThreadPoolReader(

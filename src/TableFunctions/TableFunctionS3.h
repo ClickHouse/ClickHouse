@@ -64,15 +64,20 @@ protected:
         const ASTPtr & ast_function,
         ContextPtr context,
         const std::string & table_name,
-        ColumnsDescription cached_columns) const override;
+        ColumnsDescription cached_columns,
+        bool is_insert_query) const override;
 
     const char * getStorageTypeName() const override { return "S3"; }
 
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     mutable StorageS3::Configuration configuration;
     ColumnsDescription structure_hint;
+
+private:
+
+    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 };
 
 }

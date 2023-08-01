@@ -434,11 +434,13 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
     switch (packet.type)
     {
         case Protocol::Server::MergeTreeReadTaskRequest:
-            processMergeTreeReadTaskRequest(packet.request);
+            chassert(packet.request.has_value());
+            processMergeTreeReadTaskRequest(packet.request.value());
             return ReadResult(ReadResult::Type::ParallelReplicasToken);
 
         case Protocol::Server::MergeTreeAllRangesAnnounecement:
-            processMergeTreeInitialReadAnnounecement(packet.announcement);
+            chassert(packet.announcement.has_value());
+            processMergeTreeInitialReadAnnounecement(packet.announcement.value());
             return ReadResult(ReadResult::Type::ParallelReplicasToken);
 
         case Protocol::Server::ReadTaskRequest:
@@ -589,8 +591,8 @@ void RemoteQueryExecutor::finish()
     /// Send the request to abort the execution of the request, if not already sent.
     tryCancel("Cancelling query because enough data has been read");
 
-    /// If connections weren't created yet or query wasn't sent, nothing to do.
-    if (!connections || !sent_query)
+    /// If connections weren't created yet, query wasn't sent or was already finished, nothing to do.
+    if (!connections || !sent_query || finished)
         return;
 
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.

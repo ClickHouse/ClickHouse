@@ -23,10 +23,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_)
-    : TemporaryFileOnDisk(disk_, "")
-{}
-
 TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, CurrentMetrics::Metric metric_scope)
     : TemporaryFileOnDisk(disk_)
 {
@@ -58,7 +54,7 @@ TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & p
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary file name is empty");
 }
 
-String TemporaryFileOnDisk::getPath() const
+String TemporaryFileOnDisk::getAbsolutePath() const
 {
     return std::filesystem::path(disk->getPath()) / relative_path;
 }

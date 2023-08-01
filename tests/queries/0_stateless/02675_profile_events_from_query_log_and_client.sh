@@ -44,13 +44,13 @@ INSERT INTO times SELECT now() + INTERVAL 1 day SETTINGS optimize_on_insert = 0;
 
 echo "READ"
 $CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1  -nq "
-SELECT '1', min(t) FROM times;
+SELECT '1', min(t) FROM times SETTINGS optimize_use_implicit_projections = 1;
 " 2>&1 | grep -o -e '\ \[\ .*\ \]\ FileOpen:\ .*\ '
 
 echo "INSERT and READ INSERT"
 $CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1  -nq "
 INSERT INTO times SELECT now() + INTERVAL 2 day SETTINGS optimize_on_insert = 0;
-SELECT '2', min(t) FROM times;
+SELECT '2', min(t) FROM times SETTINGS optimize_use_implicit_projections = 1;
 INSERT INTO times SELECT now() + INTERVAL 3 day SETTINGS optimize_on_insert = 0;
 " 2>&1 | grep -o -e '\ \[\ .*\ \]\ FileOpen:\ .*\ '
 

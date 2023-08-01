@@ -9,6 +9,7 @@
 #include <Common/logger_useful.h>
 #include "libaccel_config.h"
 #include <Common/MemorySanitizer.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -34,6 +35,7 @@ DeflateQplJobHWPool::DeflateQplJobHWPool()
     // loop all configured workqueue size to get maximum job number.
     accfg_ctx * ctx_ptr = nullptr;
     auto ctx_status = accfg_new(&ctx_ptr);
+    SCOPE_EXIT({ accfg_unref(ctx_ptr); });
     if (ctx_status == 0)
     {
         auto * dev_ptr = accfg_device_get_first(ctx_ptr);
@@ -396,6 +398,14 @@ UInt32 CompressionCodecDeflateQpl::doCompressData(const char * source, UInt32 so
     return res;
 }
 
+inline void touchBufferWithZeroFilling(char * buffer, UInt32 buffer_size)
+{
+    for (char * p = buffer; p < buffer + buffer_size; p += ::getPageSize()/(sizeof(*p)))
+    {
+        *p = 0;
+    }
+}
+
 void CompressionCodecDeflateQpl::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
 /// QPL library is using AVX-512 with some shuffle operations.
@@ -403,6 +413,10 @@ void CompressionCodecDeflateQpl::doDecompressData(const char * source, UInt32 so
 #if defined(MEMORY_SANITIZER)
     __msan_unpoison(dest, uncompressed_size);
 #endif
+/// Device IOTLB miss has big perf. impact for IAA accelerators.
+/// To avoid page fault, we need touch buffers related to accelerator in advance.
+    touchBufferWithZeroFilling(dest, uncompressed_size);
+
     switch (getDecompressMode())
     {
         case CodecMode::Synchronous:

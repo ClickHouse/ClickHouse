@@ -67,7 +67,9 @@ static void splitAndModifyMutationCommands(
 
     if (!isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
     {
-        NameSet mutated_columns, dropped_columns;
+        NameSet mutated_columns;
+        NameSet dropped_columns;
+
         for (const auto & command : commands)
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
@@ -153,20 +155,22 @@ static void splitAndModifyMutationCommands(
                     /// But we don't know for sure what happened.
                     auto part_metadata_version = part->getMetadataVersion();
                     auto table_metadata_version = metadata_snapshot->getMetadataVersion();
-                    /// StorageMergeTree does not have metadata version
-                    if (table_metadata_version <= part_metadata_version && part->storage.supportsReplication())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
-                                        "in table {} with metadata version {}",
-                                        part->name, part_metadata_version, column.name,
-                                        part->storage.getStorageID().getNameForLogs(), table_metadata_version);
 
-                    if (part_metadata_version < table_metadata_version)
+                    bool allow_equal_versions = part_metadata_version == table_metadata_version && part->old_part_with_no_metadata_version_on_disk;
+                    if (part_metadata_version < table_metadata_version || allow_equal_versions)
                     {
                         LOG_WARNING(log, "Ignoring column {} from part {} with metadata version {} because there is no such column "
                                          "in table {} with metadata version {}. Assuming the column was dropped", column.name, part->name,
                                     part_metadata_version, part->storage.getStorageID().getNameForLogs(), table_metadata_version);
                         continue;
                     }
+
+                    /// StorageMergeTree does not have metadata version
+                    if (part->storage.supportsReplication())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
+                                        "in table {} with metadata version {}",
+                                        part->name, part_metadata_version, column.name,
+                                        part->storage.getStorageID().getNameForLogs(), table_metadata_version);
                 }
 
                 for_interpreter.emplace_back(
@@ -256,6 +260,10 @@ getColumnsForNewDataPart(
             storage_columns.emplace_back(column);
     }
 
+    NameSet storage_columns_set;
+    for (const auto & [name, _] : storage_columns)
+        storage_columns_set.insert(name);
+
     for (const auto & command : all_commands)
     {
         if (command.type == MutationCommand::UPDATE)
@@ -290,15 +298,19 @@ getColumnsForNewDataPart(
     SerializationInfoByName new_serialization_infos;
     for (const auto & [name, old_info] : serialization_infos)
     {
-        if (removed_columns.contains(name))
-            continue;
-
         auto it = renamed_columns_from_to.find(name);
         auto new_name = it == renamed_columns_from_to.end() ? name : it->second;
 
+        /// Column can be removed only in this data part by CLEAR COLUMN query.
+        if (!storage_columns_set.contains(new_name) || removed_columns.contains(new_name))
+            continue;
+
+        /// In compact part we read all columns and all of them are in @updated_header.
+        /// But in wide part we must keep serialization infos for columns that are not touched by mutation.
         if (!updated_header.has(new_name))
         {
-            new_serialization_infos.emplace(new_name, old_info);
+            if (isWidePart(source_part))
+                new_serialization_infos.emplace(new_name, old_info);
             continue;
         }
 
@@ -850,7 +862,7 @@ struct MutationContext
 
     MergeTreeTransactionPtr txn;
 
-    MergeTreeData::HardlinkedFiles hardlinked_files;
+    HardlinkedFiles hardlinked_files;
 
     bool need_prefix = true;
 
@@ -882,8 +894,9 @@ public:
         }
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    Priority getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
     bool executeStep() override
     {
@@ -915,7 +928,7 @@ public:
             {
                 LOG_DEBUG(log, "Merged a projection part in level {}", current_level);
                 selected_parts[0]->renameTo(projection.name + ".proj", true);
-                selected_parts[0]->name = projection.name;
+                selected_parts[0]->setName(projection.name);
                 selected_parts[0]->is_temp = false;
                 ctx->new_data_part->addProjectionPart(name, std::move(selected_parts[0]));
 
@@ -1204,8 +1217,9 @@ public:
     explicit MutateAllPartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    Priority getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
     bool executeStep() override
     {
@@ -1432,8 +1446,9 @@ public:
     explicit MutateSomePartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    Priority getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
     bool executeStep() override
     {
@@ -1801,7 +1816,12 @@ bool MutateTask::prepare()
         if (ctx->need_prefix)
             prefix = "tmp_clone_";
 
-        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false, files_to_copy_instead_of_hardlinks);
+        IDataPartStorage::ClonePartParams clone_params
+        {
+            .txn = ctx->txn, .hardlinked_files = &ctx->hardlinked_files,
+            .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks), .keep_metadata_version = true
+        };
+        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params);
         part->getDataPartStorage().beginTransaction();
 
         ctx->temporary_directory_lock = std::move(lock);
@@ -1930,7 +1950,7 @@ bool MutateTask::prepare()
     return true;
 }
 
-const MergeTreeData::HardlinkedFiles & MutateTask::getHardlinkedFiles() const
+const HardlinkedFiles & MutateTask::getHardlinkedFiles() const
 {
     return ctx->hardlinked_files;
 }
