@@ -148,7 +148,7 @@ void localBackup(
                 std::function<void()> cleaner;
                 if (disk->supportZeroCopyReplication())
                     /// Note: this code will create garbage on s3. We should always remove `copy_instead_of_hardlinks` files.
-                    /// The third agrument should be a list of excpetions, but (looks like) it is ignored for keep_all_shared_data = true.
+                    /// The third argument should be a list of exceptions, but (looks like) it is ignored for keep_all_shared_data = true.
                     cleaner = [disk, destination_path]() { disk->removeSharedRecursive(destination_path, /*keep_all_shared_data*/ true, {}); };
                 else
                     cleaner = [disk, destination_path]() { disk->removeRecursive(destination_path); };
