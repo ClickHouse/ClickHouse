@@ -11,14 +11,20 @@
             </two>
         </disks>
         <policies>
-            <disks_in_order>
+            <policy1>
                 <volumes>
                     <single>
                         <disk>one</disk>
+                    </single>
+                </volumes>
+            </policy1>
+            <policy2>
+                <volumes>
+                    <single>
                         <disk>two</disk>
                     </single>
                 </volumes>
-            </disks_in_order>
+            </policy2>
         </policies>
     </storage_configuration>
     <backups>
