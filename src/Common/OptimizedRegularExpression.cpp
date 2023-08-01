@@ -45,6 +45,25 @@ size_t shortest_literal_length(const Literals & literals)
     return shortest;
 }
 
+const char * skipNameCapturingGroup(const char * pos, size_t offset, const char * end)
+{
+    const char special = *(pos + offset) == '<' ? '>' : '\'';
+    offset ++;
+    while (pos + offset < end)
+    {
+        const char cur = *(pos + offset);
+        if (cur == special)
+        {
+            return pos + offset;
+        }
+        if (('0' <= cur && cur <= '9') || ('a' <= cur && cur <= 'z') || ('A' <= cur && cur <= 'Z'))
+            offset ++;
+        else
+            return pos;
+    }
+    return pos;
+}
+
 const char * analyzeImpl(
     std::string_view regexp,
     const char * pos,
@@ -247,9 +266,14 @@ const char * analyzeImpl(
                                 break;
                         }
                     }
+                    /// (?:regex) means non-capturing parentheses group
                     if (pos + 2 < end && pos[1] == '?' && pos[2] == ':')
                     {
                         pos += 2;
+                    }
+                    if (pos + 3 < end && pos[1] == '?' && (pos[2] == '<' || pos[2] == '\'' || (pos[2] == 'P' && pos[3] == '<')))
+                    {
+                        pos = skipNameCapturingGroup(pos, pos[2] == 'P' ? 3: 2, end);
                     }
                     Literal group_required_substr;
                     bool group_is_trival = true;
