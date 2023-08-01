@@ -100,6 +100,8 @@ struct FormatSettings
 
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
 
+    size_t max_threads = 1;
+
     enum class ArrowCompression
     {
         NONE,
@@ -152,6 +154,7 @@ struct FormatSettings
         bool trim_whitespaces = true;
         bool allow_whitespace_or_tab_as_delimiter = false;
         bool allow_variable_number_of_columns = false;
+        bool use_default_on_bad_values = false;
     } csv;
 
     struct HiveText
@@ -232,10 +235,14 @@ struct FormatSettings
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
         bool preserve_order = false;
+        bool use_custom_encoder = true;
+        bool parallel_encoding = true;
         UInt64 max_block_size = 8192;
         ParquetVersion output_version;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         bool output_compliant_nested_types = true;
+        size_t data_page_size = 1024 * 1024;
+        size_t write_batch_size = 1024;
     } parquet;
 
     struct Pretty

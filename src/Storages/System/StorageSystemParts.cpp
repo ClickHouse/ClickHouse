@@ -120,7 +120,7 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
 
         {"has_lightweight_delete",                      std::make_shared<DataTypeUInt8>()},
 
-        {"last_removal_attemp_time",                    std::make_shared<DataTypeDateTime>()},
+        {"last_removal_attempt_time",                    std::make_shared<DataTypeDateTime>()},
         {"removal_state",                               std::make_shared<DataTypeString>()},
     }
     )
@@ -346,7 +346,7 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->hasLightweightDelete());
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(static_cast<UInt64>(part->last_removal_attemp_time.load(std::memory_order_relaxed)));
+            columns[res_index++]->insert(static_cast<UInt64>(part->last_removal_attempt_time.load(std::memory_order_relaxed)));
         if (columns_mask[src_index++])
             columns[res_index++]->insert(getRemovalStateDescription(part->removal_state.load(std::memory_order_relaxed)));
 

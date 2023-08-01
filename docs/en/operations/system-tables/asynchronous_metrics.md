@@ -32,6 +32,10 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 └─────────────────────────────────────────┴────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+<!--- Unlike with system.events and system.metrics, the asynchronous metrics are not gathered in a simple list in a source code file - they
+      are mixed with logic in src/Interpreters/ServerAsynchronousMetrics.cpp.
+      Listing them here explicitly for reader convenience. --->
+
 ## Metric descriptions
 
 
@@ -482,6 +486,14 @@ The value is similar to `OSUserTime` but divided to the number of CPU cores to b
 ### PostgreSQLThreads
 
 Number of threads in the server of the PostgreSQL compatibility protocol.
+
+### QueryCacheBytes
+
+Total size of the query cache cache in bytes.
+
+### QueryCacheEntries
+
+Total number of entries in the query cache.
 
 ### ReplicasMaxAbsoluteDelay
 

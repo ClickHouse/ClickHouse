@@ -65,15 +65,7 @@ private:
         if (!arg_string)
             return argument.type;
 
-        try
-        {
-            DataTypePtr type = DataTypeFactory::instance().get(arg_string->getDataAt(0).toString());
-            return type;
-        }
-        catch (const DB::Exception &)
-        {
-            return argument.type;
-        }
+        return DataTypeFactory::instance().get(arg_string->getDataAt(0).toString());
     }
 };
 

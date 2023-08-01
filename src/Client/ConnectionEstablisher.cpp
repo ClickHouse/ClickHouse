@@ -179,7 +179,7 @@ bool ConnectionEstablisherAsync::checkTimeout()
             is_timeout_alarmed = true;
     }
 
-    if (is_timeout_alarmed && !is_socket_ready)
+    if (is_timeout_alarmed && !is_socket_ready && !haveMoreAddressesToConnect())
     {
         /// In not async case timeout exception would be thrown and caught in ConnectionEstablisher::run,
         /// but in async case we process timeout outside and cannot throw exception. So, we just save fail message.
@@ -223,6 +223,11 @@ void ConnectionEstablisherAsync::resetResult()
         result.entry->disconnect();
         result.reset();
     }
+}
+
+bool ConnectionEstablisherAsync::haveMoreAddressesToConnect()
+{
+    return !result.entry.isNull() && result.entry->haveMoreAddressesToConnect();
 }
 
 #endif

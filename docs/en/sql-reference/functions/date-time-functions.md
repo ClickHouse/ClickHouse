@@ -722,7 +722,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 ## age
 
-Returns the `unit` component of the difference between `startdate` and `enddate`. The difference is calculated using a precision of 1 second.
+Returns the `unit` component of the difference between `startdate` and `enddate`. The difference is calculated using a precision of 1 microsecond.
 E.g. the difference between `2021-12-29` and `2022-01-01` is 3 days for `day` unit, 0 months for `month` unit, 0 years for `year` unit.
 
 For an alternative to `age`, see function `date\_diff`.
@@ -738,6 +738,8 @@ age('unit', startdate, enddate, [timezone])
 - `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
+    - `microsecond` (possible abbreviations: `us`, `u`)
+    - `millisecond` (possible abbreviations: `ms`)
     - `second` (possible abbreviations: `ss`, `s`)
     - `minute` (possible abbreviations: `mi`, `n`)
     - `hour` (possible abbreviations: `hh`, `h`)
@@ -813,6 +815,8 @@ Aliases: `dateDiff`, `DATE_DIFF`, `timestampDiff`, `timestamp_diff`, `TIMESTAMP_
 - `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
+    - `microsecond` (possible abbreviations: `us`, `u`)
+    - `millisecond` (possible abbreviations: `ms`)
     - `second` (possible abbreviations: `ss`, `s`)
     - `minute` (possible abbreviations: `mi`, `n`)
     - `hour` (possible abbreviations: `hh`, `h`)
@@ -1134,6 +1138,8 @@ Result:
 
 Returns the current date and time at the moment of query analysis. The function is a constant expression.
 
+Alias: `current_timestamp`.
+
 **Syntax**
 
 ``` sql
@@ -1263,6 +1269,8 @@ Result:
 
 Accepts zero arguments and returns the current date at one of the moments of query analysis.
 The same as ‘toDate(now())’.
+
+Aliases: `curdate`, `current_date`.
 
 ## yesterday
 
@@ -1441,7 +1449,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %n       | new-line character (‘’)                                 |            |
 | %p       | AM or PM designation                                    | PM         |
 | %Q       | Quarter (1-4)                                           | 1          |
-| %r       | 12-hour HH:MM AM/PM time, equivalent to %H:%i %p        | 10:30 PM   |
+| %r       | 12-hour HH:MM AM/PM time, equivalent to %h:%i %p        | 10:30 PM   |
 | %R       | 24-hour HH:MM time, equivalent to %H:%i                 | 22:33      |
 | %s       | second (00-59)                                          | 44         |
 | %S       | second (00-59)                                          | 44         |
