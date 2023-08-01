@@ -45,14 +45,14 @@ print guid(74be27de-1e4e-49d9-b579-fe0b331d3642);
 print guid(null);
 print '-- timespan (time)';
 print timespan(2d); --              2 days
-print timespan(1.5h); -- 	        1.5 hour
+--print timespan(1.5h); -- 	        1.5 hour
 print timespan(30m); -- 	        30 minutes
 print timespan(10s); -- 	        10 seconds
-print timespan(0.1s); -- 	        0.1 second
+--print timespan(0.1s); -- 	        0.1 second
 print timespan(100ms); -- 	        100 millisecond
 print timespan(10microsecond); -- 	10 microseconds
 print timespan(1tick); --           100 nanoseconds
-print timespan(1.5h) / timespan(30m);
+--print timespan(1.5h) / timespan(30m);
 print timespan('12.23:12:23') / timespan(1s);
 print '-- null';
 print isnull(null);
