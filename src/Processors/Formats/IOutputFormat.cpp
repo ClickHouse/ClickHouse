@@ -1,5 +1,6 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

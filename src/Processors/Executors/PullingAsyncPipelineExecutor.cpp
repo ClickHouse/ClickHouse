@@ -41,14 +41,14 @@ struct PullingAsyncPipelineExecutor::Data
     }
 };
 
-PullingAsyncPipelineExecutor::PullingAsyncPipelineExecutor(QueryPipeline & pipeline_, bool /*has_partial_result_setting*/) : pipeline(pipeline_)
+PullingAsyncPipelineExecutor::PullingAsyncPipelineExecutor(QueryPipeline & pipeline_, bool has_partial_result_setting) : pipeline(pipeline_)
 {
     if (!pipeline.pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PullingAsyncPipelineExecutor must be pulling");
 
     lazy_format = std::make_shared<LazyOutputFormat>(pipeline.output->getHeader());
-    // if (has_partial_result_setting)
-    //     lazy_format->activatePartialResultProtocol();
+    if (has_partial_result_setting)
+        lazy_format->activatePartialResultProtocol();
 
     pipeline.complete(lazy_format);
 }
@@ -105,7 +105,7 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     if (!data)
     {
         data = std::make_unique<Data>();
-        data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
+        data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element, pipeline.partial_result_duration_ms);
         data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
         data->lazy_format = lazy_format.get();
 

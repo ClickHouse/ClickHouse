@@ -107,9 +107,18 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
 void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context)
 {
     context.setTask(nullptr);
+    // if (!queue.empty())
+    //     LOG_DEBUG(&Poco::Logger::get("ExecutorTasks::pushTasks"), "First task to add in queue. Processor id {}. Processor name {}", queue.front()->processors_id, queue.front()->processor->getName());
 
-    /// Take local task from queue if has one and it's not a processor which generates partial result.
-    if (!queue.empty() && !queue.front()->processor->isPartialResultProcessor() && !context.hasAsyncTasks())
+    /// If sending partial results is allowed and local tasks scheduling optimization is repeated longer than the limit
+    /// or new task need to send partial result later, skip optimization for this iteration.
+    /// Otherwise take local task from queue if has one.
+    if ((!queue.empty() && queue.front()->processor->isPartialResultProcessor())
+        || context.needWatchRestartForPartialResultProgress())
+    {
+        context.restartWatch();
+    }
+    else if (!queue.empty() && !context.hasAsyncTasks())
     {
         context.setTask(queue.front());
         queue.pop();
@@ -117,6 +126,8 @@ void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThrea
 
     if (!queue.empty() || !async_queue.empty())
     {
+        // LOG_DEBUG(&Poco::Logger::get("ExecutorTasks::pushTasks"), "After local optimizations push new tasks to queue");
+        // task_queue.print();
         std::unique_lock lock(mutex);
 
 #if defined(OS_LINUX)
@@ -137,9 +148,11 @@ void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThrea
         /// Wake up at least one thread that will wake up other threads if required
         tryWakeUpAnyOtherThreadWithTasks(context, lock);
     }
+    // LOG_DEBUG(&Poco::Logger::get("ExecutorTasks::pushTasks"), "After push new tasks to queue");
+    // task_queue.print();
 }
 
-void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback)
+void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback, UInt64 partial_result_duration_ms)
 {
     num_threads = num_threads_;
     use_threads = use_threads_;
@@ -151,7 +164,7 @@ void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, bool profile_
 
         executor_contexts.reserve(num_threads);
         for (size_t i = 0; i < num_threads; ++i)
-            executor_contexts.emplace_back(std::make_unique<ExecutionThreadContext>(i, profile_processors, trace_processors, callback));
+            executor_contexts.emplace_back(std::make_unique<ExecutionThreadContext>(i, profile_processors, trace_processors, callback, partial_result_duration_ms));
     }
 }
 

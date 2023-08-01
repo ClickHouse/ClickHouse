@@ -85,6 +85,7 @@ public:
         Main = 0, /// Stream for query data. There may be several streams of this type.
         Totals,  /// Stream for totals. No more than one.
         Extremes, /// Stream for extremes. No more than one.
+        PartialResult, /// Stream for partial result data. There may be several streams of this type.
     };
 
     using ProcessorGetter = std::function<ProcessorPtr(const Block & header)>;
