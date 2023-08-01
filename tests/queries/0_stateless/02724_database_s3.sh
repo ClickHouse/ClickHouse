@@ -46,12 +46,12 @@ DROP DATABASE IF EXISTS test3;
 CREATE DATABASE test3 ENGINE = S3;
 USE test3;
 SELECT * FROM \"http://localhost:11111/test/a.myext\"
-""" 2>&1| grep -F "FILE_DOESNT_EXIST" > /dev/null && echo "OK"
+""" 2>&1 | tr '\n' ' ' | grep -oF "FILE_DOESNT_EXIST"
 
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 USE test3;
 SELECT * FROM \"abacaba\"
-""" 2>&1| grep -F "FILE_DOESNT_EXIST" > /dev/null && echo "OK"
+""" 2>&1 | tr '\n' ' ' | grep -oF "FILE_DOESNT_EXIST"
 
 # Cleanup
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
