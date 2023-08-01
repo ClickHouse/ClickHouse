@@ -189,11 +189,11 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
 
         if (!columns_info)
             return StoragePtr{};
-
+        PostgreSQLSettings postgresql_settings;
         auto storage = std::make_shared<StoragePostgreSQL>(
                 StorageID(database_name, table_name), pool, table_name,
                 ColumnsDescription{columns_info->columns}, ConstraintsDescription{}, String{},
-                context_, configuration.schema, configuration.on_conflict);
+                context_, postgresql_settings, configuration.schema, configuration.on_conflict);
 
         if (cache_tables)
         {

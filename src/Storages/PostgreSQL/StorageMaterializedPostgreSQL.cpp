@@ -556,8 +556,8 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
         else
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.getContext());
-
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext());
+        PostgreSQLSettings postgresql_settings;
+        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext(), postgresql_settings);
         auto connection_info = postgres::formatConnectionString(
             configuration.database, configuration.host, configuration.port,
             configuration.username, configuration.password);

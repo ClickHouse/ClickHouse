@@ -64,12 +64,14 @@ StoragePostgreSQL::StoragePostgreSQL(
     const ConstraintsDescription & constraints_,
     const String & comment,
     ContextPtr context_,
+    const PostgreSQLSettings & postgresql_settings_,
     const String & remote_table_schema_,
     const String & on_conflict_)
     : IStorage(table_id_)
     , remote_table_name(remote_table_name_)
     , remote_table_schema(remote_table_schema_)
     , on_conflict(on_conflict_)
+    , postgresql_settings(postgresql_settings_)
     , pool(std::move(pool_))
     , log(&Poco::Logger::get("StoragePostgreSQL (" + table_id_.table_name + ")"))
 {
@@ -456,15 +458,20 @@ SinkToStoragePtr StoragePostgreSQL::write(
     return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema, on_conflict);
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, bool require_table)
+StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings& storage_settings, bool require_table)
 {
     StoragePostgreSQL::Configuration configuration;
+
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port"};
+    auto mysql_settings = storage_settings.all();
+    for (const auto & setting : mysql_settings)
+        optional_arguments.insert(setting.getName());
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
     if (require_table)
         required_arguments.insert("table");
 
     validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
-        named_collection, required_arguments, {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache"});
+        named_collection, required_arguments, optional_arguments);
 
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
     if (configuration.addresses_expr.empty())
@@ -485,12 +492,12 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     return configuration;
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context)
+StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings& storage_settings)
 {
     StoragePostgreSQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
     {
-        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection);
+        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings);
     }
     else
     {
@@ -537,7 +544,8 @@ void registerStoragePostgreSQL(StorageFactory & factory)
 {
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
     {
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext());
+        PostgreSQLSettings postgresql_settings; /// TODO: move some arguments from the arguments to the SETTINGS.
+        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), postgresql_settings);
         const auto & settings = args.getContext()->getSettingsRef();
         if (!settings.postgresql_connection_pool_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");
@@ -555,6 +563,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             args.constraints,
             args.comment,
             args.getContext(),
+            postgresql_settings,
             configuration.schema,
             configuration.on_conflict);
     },

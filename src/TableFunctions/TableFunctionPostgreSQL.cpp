@@ -22,6 +22,7 @@ namespace ErrorCodes
 StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
         ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool /*is_insert_query*/) const
 {
+    PostgreSQLSettings postgresql_settings;
     auto result = std::make_shared<StoragePostgreSQL>(
         StorageID(getDatabaseName(), table_name),
         connection_pool,
@@ -30,6 +31,7 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
         ConstraintsDescription{},
         String{},
         context,
+        postgresql_settings,
         configuration->schema,
         configuration->on_conflict);
 
@@ -50,7 +52,8 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
     if (!func_args.arguments)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'PostgreSQL' must have arguments.");
 
-    configuration.emplace(StoragePostgreSQL::getConfiguration(func_args.arguments->children, context));
+    PostgreSQLSettings postgresql_settings;
+    configuration.emplace(StoragePostgreSQL::getConfiguration(func_args.arguments->children, context, postgresql_settings));
     const auto & settings = context->getSettingsRef();
     connection_pool = std::make_shared<postgres::PoolWithFailover>(
         *configuration,

@@ -157,7 +157,8 @@ void registerStorageExternalDistributed(StorageFactory & factory)
 #if USE_LIBPQXX
         else if (engine_name == "PostgreSQL")
         {
-            auto configuration = StoragePostgreSQL::getConfiguration(inner_engine_args, context);
+            PostgreSQLSettings postgresql_settings;
+            auto configuration = StoragePostgreSQL::getConfiguration(inner_engine_args, context, postgresql_settings);
             auto shards_addresses = get_addresses(configuration.addresses_expr);
             for (const auto & shard_address : shards_addresses)
             {
@@ -170,7 +171,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                     POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
                     settings.postgresql_connection_pool_auto_close_connection);
                 shards.insert(std::make_shared<StoragePostgreSQL>(
-                    args.table_id, std::move(pool), configuration.table, args.columns, args.constraints, String{}, context));
+                    args.table_id, std::move(pool), configuration.table, args.columns, args.constraints, String{}, context, postgresql_settings));
             }
         }
 #endif

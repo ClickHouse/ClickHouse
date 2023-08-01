@@ -41,6 +41,7 @@
 #include <Databases/PostgreSQL/DatabasePostgreSQL.h>
 #include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
+#include <Storages/PostgreSQL/PostgreSQLSettings.h>
 #include <Storages/StoragePostgreSQL.h>
 #endif
 
@@ -323,7 +324,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, false);
+            PostgreSQLSettings postgresql_settings;
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, postgresql_settings, false);
             use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
         }
         else
@@ -386,7 +388,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, false);
+            PostgreSQLSettings postgresql_settings;
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, postgresql_settings, false);
         }
         else
         {

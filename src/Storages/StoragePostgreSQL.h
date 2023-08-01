@@ -4,6 +4,7 @@
 
 #if USE_LIBPQXX
 #include <Interpreters/Context.h>
+#include <Storages/PostgreSQL/PostgreSQLSettings.h>
 #include <Storages/IStorage.h>
 
 namespace Poco
@@ -32,6 +33,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
+        const PostgreSQLSettings & postgresql_settings_,
         const String & remote_table_schema_ = "",
         const String & on_conflict = "");
 
@@ -63,9 +65,9 @@ public:
         String addresses_expr;
     };
 
-    static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
+    static Configuration getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings & storage_settings);
 
-    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, bool require_table = true);
+    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings& storage_settings, bool require_table = true);
 
     static ColumnsDescription getTableStructureFromData(
         const postgres::PoolWithFailoverPtr & pool_,
@@ -77,6 +79,7 @@ private:
     String remote_table_name;
     String remote_table_schema;
     String on_conflict;
+    PostgreSQLSettings postgresql_settings;
     postgres::PoolWithFailoverPtr pool;
 
     Poco::Logger * log;
