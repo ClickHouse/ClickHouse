@@ -1929,6 +1929,15 @@ def test_kafka_flush_on_big_message(kafka_cluster):
         if int(result) == kafka_messages * batch_messages:
             break
 
+    result_system_kafka_consumers = instance.query(
+        """
+        SELECT last_exception, last_exception_time, database, table FROM system.kafka_consumers
+        """
+        )
+    logging.debug(f"result_system_kafka_consumers (test_kafka_flush_on_big_message): {result_system_kafka_consumers}")
+    assert (result_system_kafka_consumers == "fake string")
+
+
     instance.query(
         """
         DROP TABLE test.consumer;
@@ -3212,6 +3221,15 @@ def test_kafka_duplicates_when_commit_failed(kafka_cluster):
 
     result = instance.query("SELECT count(), uniqExact(key), max(key) FROM test.view")
     logging.debug(result)
+
+
+    result_system_kafka_consumers = instance.query(
+        """
+        SELECT last_exception, last_exception_time, database, table FROM system.kafka_consumers
+        """
+        )
+    logging.debug(f"result_system_kafka_consumers (test_kafka_duplicates_when_commit_failed): {result_system_kafka_consumers}")
+
 
     instance.query(
         """
@@ -4692,7 +4710,7 @@ def test_system_kafka_consumers_rebalance(kafka_cluster, max_retries=15):
           FROM system.kafka_consumers WHERE database='test' and table IN ('kafka', 'kafka2') format Vertical;
         """
     )
-    logging.debug(f"result_system_kafka_consumers (1): {result_system_kafka_consumers}")
+    logging.debug(f"result_system_kafka_consumers: {result_system_kafka_consumers}")
     assert (
         result_system_kafka_consumers
         == """Row 1:

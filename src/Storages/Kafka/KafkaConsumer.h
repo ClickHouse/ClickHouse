@@ -1,5 +1,7 @@
 #pragma once
 
+#include <boost/circular_buffer.hpp>
+
 #include <Core/Names.h>
 #include <base/types.h>
 #include <IO/ReadBuffer.h>
@@ -27,6 +29,13 @@ using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 class KafkaConsumer
 {
 public:
+    struct ExceptionInfo
+    {
+        String text;
+        UInt64 timestamp_usec;
+    };
+    using ExceptionsBuffer = boost::circular_buffer<ExceptionInfo>;
+
     struct Stat // system.kafka_consumers data
     {
         struct Assignment
@@ -39,8 +48,8 @@ public:
 
         String consumer_id;
         Assignments assignments;
-        String last_exception;
-        UInt64 last_exception_time;
+        // String last_exception;
+        // UInt64 last_exception_time;
         UInt64 last_poll_time;
         UInt64 num_messages_read;
         UInt64 last_commit_timestamp_usec;
@@ -48,6 +57,7 @@ public:
         UInt64 num_commits;
         UInt64 num_rebalance_assignments;
         UInt64 num_rebalance_revocations;
+        KafkaConsumer::ExceptionsBuffer exceptions_buffer;
         bool in_use;
     };
 
@@ -96,12 +106,14 @@ public:
     auto currentTimestamp() const { return current[-1].get_timestamp(); }
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
     String currentPayload() const { return current[-1].get_payload(); }
+    void setExceptionInfo(const cppkafka::Error & err);
     void setExceptionInfo(const String & text);
     void inUse() { in_use = true; }
     void notInUse() { in_use = false; }
 
     // For system.kafka_consumers
     Stat getStat();
+
 
 private:
     using Messages = std::vector<cppkafka::Message>;
@@ -140,7 +152,10 @@ private:
 
     /// system.kafka_consumers data is retrieved asynchronously,
     mutable std::mutex exception_mutex;
-    String last_exception_text;
+
+    const size_t EXCEPTIONS_DEPTH = 10;
+
+    ExceptionsBuffer exceptions_buffer;
 
     std::atomic<UInt64> last_exception_timestamp_usec = 0;
     std::atomic<UInt64> last_poll_timestamp_usec = 0;
