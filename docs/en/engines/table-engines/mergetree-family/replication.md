@@ -332,3 +332,30 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
 - [execute_merges_on_single_replica_time_threshold](/docs/en/operations/settings/settings.md/#execute-merges-on-single-replica-time-threshold)
 - [max_replicated_fetches_network_bandwidth](/docs/en/operations/settings/merge-tree-settings.md/#max_replicated_fetches_network_bandwidth)
 - [max_replicated_sends_network_bandwidth](/docs/en/operations/settings/merge-tree-settings.md/#max_replicated_sends_network_bandwidth)
+
+## Geo-location awareness during fetching {#geo-location-awareness-during-fetching}
+
+When you have a cross-ocean ClickHouse deployment and each region has multiple ClickHouse replicas, the cross-ocean network bandwidth could become expensive. For example, you have two replicas in `US` and two replicas in `APAC`, once you insert data to a replica in `APAC`, both `US` replica will try to fetch parts from the `APAC` node, which double the necessary cross-ocean network bandwidth.
+
+ClickHouse can group replicas into region to solve this issue. You can enable this feature by adding geo-location information to the server config:
+
+```xml
+<replicated_merge_tree_geo_replication>
+    <region>US</region> <!-- Region value is user defined -->
+</replicated_merge_tree_geo_replication>
+```
+
+Each region will have a regional leader and multiple followers. During replication, all replicas still pull log entries from ZooKeeper log queue to its queue, no matter which replica publish the entry. However, when replaying the log entries, if fetching needed, following constraints will apply:
+
+1. A region leader can fetch part from any replica (inside and outside of the region)
+2. A follower can only fetch part from the leader
+
+If the target part is not ready on the leader, followers will defer execution of the log entry (default 20 seconds). If a follower waits for a leader for too long (default 900 seconds), it will stop waiting and try to fetch on any replica (or check if the part is broken).
+
+The leader is per-table. After being elected, the leader will maintain a _lease_ in ZooKeeper, so other node know that there is a leader. All replicas within a region will run leader election if leader is absented (currently leader election is done with ZooKeeper).
+
+Additional ZooKeeper nodes per replicated table:
+- `/path_to_table/regions/{region}`
+- `/path_to_table/regions/{region}/leader_election`: leader election node for the region `region`
+- `/path_to_table/regions/{region}/leader_lease`: ephemeral node, current leader of the region
+- `/path_to_table/replicas/{replica}/{$REGION}`: ephemeral node, ZooKeeper information about the region of current replica

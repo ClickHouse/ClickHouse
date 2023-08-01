@@ -26,6 +26,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ReplicatedTableStatus.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeGeoReplicationController.h>
 #include <Storages/RenamingRestrictions.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
@@ -398,6 +399,7 @@ private:
     friend class MergeFromLogEntryTask;
     friend class MutateFromLogEntryTask;
     friend class ReplicatedMergeMutateTaskBase;
+    friend class ReplicatedMergeTreeGeoReplicationController;
 
     using MergeStrategyPicker = ReplicatedMergeTreeMergeStrategyPicker;
     using LogEntry = ReplicatedMergeTreeLogEntry;
@@ -546,6 +548,9 @@ private:
     std::set<String> last_broken_disks;
 
     std::mutex existing_zero_copy_locks_mutex;
+
+    /// For geo-aware fetching
+    ReplicatedMergeTreeGeoReplicationController geo_replication_controller;
 
     struct ZeroCopyLockDescription
     {
@@ -759,9 +764,8 @@ private:
 
     /** Returns an empty string if no one has a part.
       */
+    String findReplicaHavingPart(LogEntry & entry, bool active);
     String findReplicaHavingPart(const String & part_name, bool active);
-    static String findReplicaHavingPart(const String & part_name, const String & zookeeper_path_, zkutil::ZooKeeper::Ptr zookeeper_);
-
     bool checkReplicaHavePart(const String & replica, const String & part_name);
     bool checkIfDetachedPartExists(const String & part_name);
     bool checkIfDetachedPartitionExists(const String & partition_name);
@@ -966,6 +970,12 @@ private:
         int32_t mode = zkutil::CreateMode::Persistent, bool replace_existing_lock = false,
         const String & path_to_set_hardlinked_files = "", const NameSet & hardlinked_files = {});
 
+    static Strings getAllReplicasPossiblyWithRegionAwareness(
+        const ReplicatedMergeTreeGeoReplicationController & geo_replication_controller,
+        zkutil::ZooKeeperPtr zookeeper,
+        const String & zookeeper_path,
+        const String & current_replica_name,
+        bool follower_prefer_leader = true);
 
     bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name) override;
 

@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Interpreters/Context.h>
+#include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/randomSeed.h>
 #include <Core/ServerUUID.h>
@@ -136,6 +137,13 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     }
 
     setNotReadonly();
+
+    /// Start regional election if needed
+    if (storage.geo_replication_controller.isValid())
+    {
+        storage.getZooKeeper()->createOrUpdate(fs::path(storage.getZooKeeperPath()) / "replicas" / storage.getReplicaName() / "region", storage.geo_replication_controller.getRegion(), zkutil::CreateMode::Persistent);
+        storage.geo_replication_controller.startLeaderElection();
+    }
 
     /// Start queue processing
     storage.background_operations_assignee.start();

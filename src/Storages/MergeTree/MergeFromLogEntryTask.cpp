@@ -145,7 +145,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
         if (sum_parts_bytes_on_disk >= storage_settings_ptr->prefer_fetch_merged_part_size_threshold)
         {
-            String replica = storage.findReplicaHavingPart(entry.new_part_name, true);    /// NOTE excessive ZK requests for same data later, may remove.
+            String replica = storage.findReplicaHavingPart(entry, true);    /// NOTE excessive ZK requests for same data later, may remove.
             if (!replica.empty())
             {
                 LOG_DEBUG(log, "Prefer to fetch {} from replica {}", entry.new_part_name, replica);

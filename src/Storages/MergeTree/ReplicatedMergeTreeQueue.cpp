@@ -8,6 +8,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/CurrentMetrics.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeGeoReplicationController.h>
 #include <Parsers/formatAST.h>
 #include <base/sort.h>
 
@@ -1548,6 +1549,18 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     return false;
                 }
             }
+        }
+    }
+
+    if (entry.waiting_for_region_leader > 0)
+    {
+        auto extra_wait = entry.last_attempt_time + ReplicatedMergeTreeGeoReplicationController::DBMS_DEFAULT_WAIT_FOR_REGION_LEADER - time(nullptr);
+        if (extra_wait > 0)
+        {
+            constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} "
+                    "because the region leader may not be ready yet (waiting for more {} second)";
+            LOG_TRACE(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name, extra_wait);
+            return false;
         }
     }
 
