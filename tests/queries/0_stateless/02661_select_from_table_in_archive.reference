@@ -1,9 +1,8 @@
-Reading 02661_select_from_table_in_archive_test_archive1.zip :: 02661_select_from_table_in_archive_test_data.csv
+Running for zip files
 1	2
 3	4
 1	2
 3	4
-Reading 02661_select_from_table_in_archive_test_archive{1..2}.zip :: 02661_select_from_table_in_archive_test_data.csv
 1
 3
 1
@@ -12,12 +11,11 @@ Reading 02661_select_from_table_in_archive_test_archive{1..2}.zip :: 02661_selec
 3
 1
 3
-Reading 02661_select_from_table_in_archive_test_archive1.tar.gz :: 02661_select_from_table_in_archive_test_data.csv
+Running for tar.gz files
 1	2
 3	4
 1	2
 3	4
-Reading 02661_select_from_table_in_archive_test_archive{1..2}.tar.gz :: 02661_select_from_table_in_archive_test_data.csv
 1
 3
 1
@@ -26,12 +24,11 @@ Reading 02661_select_from_table_in_archive_test_archive{1..2}.tar.gz :: 02661_se
 3
 1
 3
-Reading 02661_select_from_table_in_archive_test_archive1.tar :: 02661_select_from_table_in_archive_test_data.csv
+Running for tar files
 1	2
 3	4
 1	2
 3	4
-Reading 02661_select_from_table_in_archive_test_archive{1..2}.tar :: 02661_select_from_table_in_archive_test_data.csv
 1
 3
 1
@@ -40,12 +37,11 @@ Reading 02661_select_from_table_in_archive_test_archive{1..2}.tar :: 02661_selec
 3
 1
 3
-Reading 02661_select_from_table_in_archive_test_archive1.7z :: 02661_select_from_table_in_archive_test_data.csv
+Running for 7z files
 1	2
 3	4
 1	2
 3	4
-Reading 02661_select_from_table_in_archive_test_archive{1..2}.7z :: 02661_select_from_table_in_archive_test_data.csv
 1
 3
 1

@@ -782,7 +782,7 @@ typedef uint64_t uintmax_t;
 /* #undef HAVE_LINUX_FIEMAP_H */
 
 /* Define to 1 if you have the <linux/fs.h> header file. */
-#define HAVE_LINUX_FS_H 1
+/* #undef HAVE_LINUX_FS_H */
 
 /* Define to 1 if you have the <linux/magic.h> header file. */
 /* #undef HAVE_LINUX_MAGIC_H */
@@ -843,7 +843,7 @@ typedef uint64_t uintmax_t;
 /* #undef HAVE_LZMADEC_H */
 
 /* Define to 1 if you have the <lzma.h> header file. */
-#define HAVE_LZMA_H 1
+/* #undef HAVE_LZMA_H */
 
 /* Define to 1 if you have a working `lzma_stream_encoder_mt' function. */
 /* #undef HAVE_LZMA_STREAM_ENCODER_MT */
@@ -1057,7 +1057,7 @@ typedef uint64_t uintmax_t;
 /* #undef HAVE_STRUCT_STAT_ST_MTIME_USEC */
 
 /* Define to 1 if `st_mtim.tv_nsec' is a member of `struct stat'. */
-#define HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC 1
+/* #undef HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC */
 
 /* Define to 1 if `st_umtime' is a member of `struct stat'. */
 /* #undef HAVE_STRUCT_STAT_ST_UMTIME */
@@ -1249,7 +1249,7 @@ typedef uint64_t uintmax_t;
 #define HAVE_WORKING_FS_IOC_GETFLAGS 1
 
 /* Define to 1 if you have the <zlib.h> header file. */
-#define HAVE_ZLIB_H 1
+/* #undef HAVE_ZLIB_H */
 
 /* Define to 1 if you have the <zstd.h> header file. */
 /* #undef HAVE_ZSTD_H */
@@ -1291,7 +1291,7 @@ typedef uint64_t uintmax_t;
 
 /* Define to 1 if `major', `minor', and `makedev' are declared in
    <sysmacros.h>. */
-#define MAJOR_IN_SYSMACROS 1
+/* #undef MAJOR_IN_SYSMACROS */
 
 /* Define to 1 if your C compiler doesn't accept -c and -o together. */
 /* #undef NO_MINUS_C_MINUS_O */

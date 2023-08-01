@@ -12,7 +12,6 @@ user_files_path=$(clickhouse-client --query "select _path,_file from file('nonex
 echo -e "1,2\n3,4" > ${CLICKHOUSE_TEST_UNIQUE_NAME}_data.csv
 
 function read_archive_file() {
-    echo "Reading $2"
     $CLICKHOUSE_LOCAL --query "SELECT $1 FROM file('${user_files_path}/$2')"
     $CLICKHOUSE_CLIENT --query "CREATE TABLE 02661_archive_table Engine=File('CSV', '${user_files_path}/$2')"
     $CLICKHOUSE_CLIENT --query "SELECT $1 FROM 02661_archive_table"
@@ -20,10 +19,9 @@ function read_archive_file() {
 }
 
 function run_archive_test() {
+    echo "Running for $1 files"
     read_archive_file "*" "${CLICKHOUSE_TEST_UNIQUE_NAME}_archive1.$1 :: ${CLICKHOUSE_TEST_UNIQUE_NAME}_data.csv"
     read_archive_file "c1" "${CLICKHOUSE_TEST_UNIQUE_NAME}_archive{1..2}.$1 :: ${CLICKHOUSE_TEST_UNIQUE_NAME}_data.csv"
-
-
 }
 
 zip ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_archive1.zip ${CLICKHOUSE_TEST_UNIQUE_NAME}_data.csv > /dev/null
