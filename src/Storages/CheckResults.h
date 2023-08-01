@@ -22,11 +22,4 @@ struct CheckResult
     {}
 };
 
-/// Process single result of checkData
-/// Second argument is an estimated number of check results
-/// Return true to continue checking, false to stop
-using CheckDataCallback = std::function<bool(const CheckResult &, size_t)>;
-
-using CheckResults = std::vector<CheckResult>;
-
 }
