@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Tags: long, no-parallel, no-fasttest
-# Tag no-fasttest: Accesses CH via mysql table function (which is unavailable)
 
 ##################################################################################################
 # Verify that login, logout, and login failure events are properly stored in system.session_log
@@ -11,9 +10,8 @@
 # Using multiple protocols
 # * native TCP protocol with CH client
 # * HTTP with CURL
-# * MySQL - CH server accesses itself via mysql table function, query typically fails (unrelated)
-#   but auth should be performed properly.
-# * PostgreSQL - CH server accesses itself via postgresql table function (currently out of order).
+# * MySQL - CH server accesses itself via mysql table function.
+# * PostgreSQL - CH server accesses itself via postgresql table function, but can't execute query (No LOGIN SUCCESS entry).
 # * gRPC - not done yet
 #
 # There is way to control how many time a query (e.g. via mysql table function) is retried
@@ -53,7 +51,7 @@ function reportError()
 
 function executeQuery()
 {
-    ## Execute query (provided via heredoc or herestring) and print query in case of error.
+    # Execute query (provided via heredoc or herestring) and print query in case of error.
     trap 'rm -f ${TMP_QUERY_FILE}; trap - ERR RETURN' RETURN
     # Since we want to report with current values supplied to this function call
     # shellcheck disable=SC2064
@@ -82,7 +80,7 @@ trap "cleanup" EXIT
 function executeQueryExpectError()
 {
     cat - > "${TMP_QUERY_FILE}"
-    ! ${CLICKHOUSE_CLIENT} "${@}" --multiquery --queries-file "${TMP_QUERY_FILE}" 2>&1 | tee -a ${TMP_QUERY_FILE}
+    ! ${CLICKHOUSE_CLIENT} --multiquery --queries-file "${TMP_QUERY_FILE}" "${@}"  2>&1 | tee -a ${TMP_QUERY_FILE}
 }
 
 function createUser()
@@ -121,6 +119,8 @@ function createUser()
     executeQuery <<EOF
 DROP USER IF EXISTS '${username}';
 CREATE USER '${username}' IDENTIFIED WITH ${auth_type} ${password};
+GRANT SELECT ON system.one TO ${username};
+GRANT SELECT ON INFORMATION_SCHEMA.* TO ${username};
 EOF
     ALL_USERNAMES+=("${username}")
 }
@@ -144,7 +144,7 @@ function testTCP()
     # Wrong username
     executeQueryExpectError -u "invalid_${username}" \
         <<< "SELECT 1 Format Null" \
-        | grep -Eq "Code: 516. .+ invalid_${username}: Authentication failed: password is incorrect or there is no user with such name"
+        | grep -Eq "Code: 516. .+ invalid_${username}: Authentication failed*"
 
     # Wrong password
     if [[ "${auth_type}" == "no_password" ]]
@@ -153,11 +153,11 @@ function testTCP()
     else
         # user with `no_password` user is able to login with any password, so it makes sense to skip this testcase.
         executeQueryExpectError -u "${username}" --password  "invalid_${password}" \
-            <<< "SELECT 1 Format Null" \
-            | grep -Eq "Code: 516. .+ ${username}: Authentication failed: password is incorrect or there is no user with such name"
+            <<< "SELECT 1 Format Null"  \
+            | grep -Eq "Code: 516. .+ ${username}: Authentication failed: password is incorrect, or there is no user with such name" 
     fi
 }
-
+   
 function testHTTPWithURL()
 {
     local auth_type="${1}"
@@ -173,8 +173,7 @@ function testHTTPWithURL()
     # Wrong username
     ${CLICKHOUSE_CURL} -sS "${clickhouse_url}" \
         -H "X-ClickHouse-User: invalid_${username}" -H "X-ClickHouse-Key: ${password}" \
-        -d 'SELECT 1 Format Null' \
-        | grep -Eq "Code: 516. .+ invalid_${username}: Authentication failed: password is incorrect or there is no user with such name"
+        -d 'SELECT 1 Format Null' | grep -Eq "Code: 516. DB::Exception: invalid_${username}: Authentication failed: password is incorrect, or there is no user with such name"
 
     # Wrong password
     if [[ "${auth_type}" == "no_password" ]]
@@ -185,7 +184,7 @@ function testHTTPWithURL()
         ${CLICKHOUSE_CURL} -sS "${clickhouse_url}" \
             -H "X-ClickHouse-User: ${username}" -H "X-ClickHouse-Key: invalid_${password}" \
             -d 'SELECT 1 Format Null' \
-            | grep -Eq "Code: 516. .+ ${username}: Authentication failed: password is incorrect or there is no user with such name"
+            | grep -Eq "Code: 516. .+ ${username}: Authentication failed: password is incorrect, or there is no user with such name"
     fi
 }
 
@@ -197,7 +196,7 @@ function testHTTP()
 
 function testHTTPNamedSession()
 {
-    # echo "HTTP endpoint with named session"
+    echo "HTTP endpoint with named session"
     local HTTP_SESSION_ID
     HTTP_SESSION_ID="session_id_$(cat /dev/urandom | tr -cd 'a-f0-9' | head -c 32)"
     if [ -v CLICKHOUSE_URL_PARAMS ]
@@ -212,7 +211,7 @@ function testHTTPNamedSession()
 
 function testMySQL()
 {
-    echo "MySQL endpoint"
+    echo "MySQL endpoint ${auth_type}"
     local auth_type="${1}"
     local username="${2}"
     local password="${3}"
@@ -225,58 +224,64 @@ function testMySQL()
     then
         echo "MySQL 'successful login' case is skipped for ${auth_type}."
     else
-        # CH is able to log into itself via MySQL protocol but query fails.
-        executeQueryExpectError \
-            <<< "SELECT 1 FROM mysql('127.0.0.1:9004', 'system', 'numbers', '${username}', '${password}') LIMIT 1 \
-            FORMAT NUll" \
-            | grep -Eq "Code: 1000\. DB::Exception: .*"
+        executeQuery \
+            <<< "SELECT 1 FROM mysql('127.0.0.1:9004', 'system', 'one', '${username}', '${password}') LIMIT 1 \
+            FORMAT Null"
     fi
 
-    # echo 'Wrong username'
+    echo 'Wrong username'
     executeQueryExpectError \
-        <<< "SELECT 1 FROM mysql('127.0.0.1:9004', 'system', 'numbers', 'invalid_${username}', '${password}') LIMIT 1 \
-        FORMAT NUll" \
+        <<< "SELECT 1 FROM mysql('127.0.0.1:9004', 'system', 'one', 'invalid_${username}', '${password}') LIMIT 1 \
+        FORMAT Null" \
         | grep -Eq "Code: 1000\. DB::Exception: .* invalid_${username}"
 
-    # echo 'Wrong password'
+
+    echo 'Wrong password'
     if [[ "${auth_type}" == "no_password" ]]
     then
+        # user with `no_password` is able to login with any password, so it makes sense to skip this testcase.
         echo "MySQL 'wrong password' case is skipped for ${auth_type}."
     else
-        # user with `no_password` is able to login with any password, so it makes sense to skip this testcase.
         executeQueryExpectError \
-            <<< "SELECT 1 FROM mysql('127.0.0.1:9004', 'system', 'numbers', '${username}', 'invalid_${password}') LIMIT 1 \
-            FORMAT NUll" \
-            | grep -Eq "Code: 1000\. DB::Exception: .* ${username}"
+            <<< "SELECT 1 FROM mysql('127.0.0.1:9004', 'system', 'one', '${username}', 'invalid_${password}') LIMIT 1 \
+            FORMAT Null" | grep -Eq "Code: 1000\. DB::Exception: .* ${username}"
     fi
 }
 
-# function testPostgreSQL()
-# {
-#     local auth_type="${1}"
-#
-#     # Right now it is impossible to log into CH via PostgreSQL protocol without a password.
-#     if [[ "${auth_type}" == "no_password" ]]
-#     then
-#         return 0
-#     fi
-#
-#     # Loging\Logout
-#     # CH is being able to log into itself via PostgreSQL protocol but query fails.
-#     executeQueryExpectError \
-#         <<< "SELECT 1 FROM postgresql('localhost:9005', 'system', 'numbers', '${username}', '${password}') LIMIT 1 FORMAT NUll" \
-#         | grep -Eq "Code: 1001. DB::Exception: .* pqxx::broken_connection: .*"
-#
-#     # Wrong username
-#     executeQueryExpectError \
-#         <<< "SELECT 1 FROM postgresql('localhost:9005', 'system', 'numbers', 'invalid_${username}', '${password}') LIMIT 1 FORMAT NUll" \
-#         | grep -Eq "Code: 1001. DB::Exception: .* pqxx::broken_connection: .*"
-#
-#     # Wrong password
-#     executeQueryExpectError \
-#         <<< "SELECT 1 FROM postgresql('localhost:9005', 'system', 'numbers', '${username}', 'invalid_${password}') LIMIT 1 FORMAT NUll" \
-#         | grep -Eq "Code: 1001. DB::Exception: .* pqxx::broken_connection: .*"
-# }
+ function testPostgreSQL()
+ {
+    echo "PostrgreSQL endpoint"
+    local auth_type="${1}"
+
+    if [[ "${auth_type}" == "sha256_password" || "${auth_type}" == "double_sha1_password" ]]
+    then
+        echo "PostgreSQL tests are skipped for ${auth_type}"
+        return 0
+    fi
+
+    # TODO: Uncomment this case after implementation of postgresql function
+    # Connecting to ClickHouse server
+    ## Loging\Logout
+    ## CH is being able to log into itself via PostgreSQL protocol but query fails.
+    #executeQueryExpectError \
+    #    <<< "SELECT 1 FROM postgresql('localhost:9005', 'system', 'one', '${username}', '${password}') LIMIT 1 FORMAT Null" \
+
+    # Wrong username
+    executeQueryExpectError \
+        <<< "SELECT 1 FROM postgresql('localhost:9005', 'system', 'one', 'invalid_${username}', '${password}') LIMIT 1 FORMAT Null" \
+        | grep -Eq "Invalid user or password"
+
+    if [[ "${auth_type}" == "no_password" ]]
+    then
+        # user with `no_password` is able to login with any password, so it makes sense to skip this testcase.
+        echo "PostgreSQL 'wrong password' case is skipped for ${auth_type}."
+    else
+        # Wrong password
+        executeQueryExpectError \
+            <<< "SELECT 1 FROM postgresql('localhost:9005', 'system', 'one', '${username}', 'invalid_${password}') LIMIT 1 FORMAT Null" \
+            | grep -Eq "Invalid user or password"
+    fi
+ }
 
 function runEndpointTests()
 {
@@ -288,7 +293,7 @@ function runEndpointTests()
     local password="${3}"
     local setup_queries="${4:-}"
 
-    echo 
+    echo
     echo "#  ${auth_type} - ${case_name} "
 
     ${CLICKHOUSE_CLIENT} -q "SET log_comment='${username} ${auth_type} - ${case_name}';"
@@ -301,9 +306,9 @@ function runEndpointTests()
     testTCP "${auth_type}" "${username}" "${password}"
     testHTTP "${auth_type}" "${username}" "${password}"
 
-    # testHTTPNamedSession "${auth_type}" "${username}" "${password}"
+    testHTTPNamedSession "${auth_type}" "${username}" "${password}"
     testMySQL "${auth_type}" "${username}" "${password}"
-    # testPostgreSQL "${auth_type}" "${username}" "${password}"
+    testPostgreSQL "${auth_type}" "${username}" "${password}"
 }
 
 function testAsUserIdentifiedBy()
