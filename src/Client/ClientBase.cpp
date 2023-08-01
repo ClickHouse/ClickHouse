@@ -1037,7 +1037,9 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
         }
         catch (const LocalFormatError &)
         {
-            local_format_error = std::current_exception();
+            /// Remember the first exception.
+            if (!local_format_error)
+                local_format_error = std::current_exception();
             connection->sendCancel();
         }
     }
