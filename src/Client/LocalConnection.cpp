@@ -35,6 +35,9 @@ LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_, bool 
 
 LocalConnection::~LocalConnection()
 {
+    /// Last query can be not finished or cancelled due to exception on client side.
+    if (state && !state->is_finished && !state->is_cancelled)
+       sendCancel();
     state.reset();
 }
 
@@ -73,6 +76,10 @@ void LocalConnection::sendQuery(
     bool,
     std::function<void(const Progress &)> process_progress_callback)
 {
+    /// Last query can be not finished or cancelled due to exception on client side.
+    if (state && !state->is_finished && !state->is_cancelled)
+        sendCancel();
+
     /// Suggestion comes without client_info.
     if (client_info)
         query_context = session.makeQueryContext(*client_info);
@@ -204,6 +211,10 @@ void LocalConnection::sendCancel()
     state->is_cancelled = true;
     if (state->executor)
         state->executor->cancel();
+    if (state->pushing_executor)
+        state->pushing_executor->cancel();
+    if (state->pushing_async_executor)
+        state->pushing_async_executor->cancel();
 }
 
 bool LocalConnection::pullBlock(Block & block)
