@@ -43,7 +43,7 @@ class TestDockerImageCheck(unittest.TestCase):
                 di.DockerImage(
                     "docker/test/sqltest",
                     "clickhouse/sqltest",
-                    True,
+                    False,
                     "clickhouse/test-base",  # type: ignore
                 ),
                 di.DockerImage(
