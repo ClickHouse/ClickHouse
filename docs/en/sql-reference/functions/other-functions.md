@@ -2552,3 +2552,187 @@ Result:
 
 This function can be used together with [generateRandom](../../sql-reference/table-functions/generate.md) to generate completely random tables.
 
+## structureToCapnProtoSchema {#structure_to_capn_proto_schema}
+
+Converts ClickHouse table structure to CapnProto schema.
+
+**Syntax**
+
+``` sql
+structureToCapnProtoSchema(structure)
+```
+
+**Arguments**
+
+- `structure` — Table structure in a format `column1_name column1_type, column2_name column2_type, ...`.
+- `root_struct_name` — Name for root struct in CapnProto schema. Default value - `Message`;
+
+**Returned value**
+
+- CapnProto schema 
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT structureToCapnProtoSchema('column1 String, column2 UInt32, column3 Array(String)') FORMAT RawBLOB
+```
+
+Result:
+
+``` text
+@0xf96402dd754d0eb7;
+
+struct Message
+{
+    column1 @0 : Data;
+    column2 @1 : UInt32;
+    column3 @2 : List(Data);
+}
+```
+
+Query:
+
+``` sql
+SELECT structureToCapnProtoSchema('column1 Nullable(String), column2 Tuple(element1 UInt32, element2 Array(String)), column3 Map(String, String)') FORMAT RawBLOB
+```
+
+Result:
+
+``` text
+@0xd1c8320fecad2b7f;
+
+struct Message
+{
+    struct Column1
+    {
+        union
+        {
+            value @0 : Data;
+            null @1 : Void;
+        }
+    }
+    column1 @0 : Column1;
+    struct Column2
+    {
+        element1 @0 : UInt32;
+        element2 @1 : List(Data);
+    }
+    column2 @1 : Column2;
+    struct Column3
+    {
+        struct Entry
+        {
+            key @0 : Data;
+            value @1 : Data;
+        }
+        entries @0 : List(Entry);
+    }
+    column3 @2 : Column3;
+}
+```
+
+Query:
+
+``` sql
+SELECT structureToCapnProtoSchema('column1 String, column2 UInt32', 'Root') FORMAT RawBLOB
+```
+
+Result:
+
+``` text
+@0x96ab2d4ab133c6e1;
+
+struct Root
+{
+    column1 @0 : Data;
+    column2 @1 : UInt32;
+}
+```
+
+## structureToProtobufSchema {#structure_to_protobuf_schema}
+
+Converts ClickHouse table structure to Protobuf schema.
+
+**Syntax**
+
+``` sql
+structureToProtobufSchema(structure)
+```
+
+**Arguments**
+
+- `structure` — Table structure in a format `column1_name column1_type, column2_name column2_type, ...`.
+- `root_message_name` — Name for root message in Protobuf schema. Default value - `Message`;
+
+**Returned value**
+
+- Protobuf schema
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT structureToProtobufSchema('column1 String, column2 UInt32, column3 Array(String)') FORMAT RawBLOB
+```
+
+Result:
+
+``` text
+syntax = "proto3";
+
+message Message
+{
+    bytes column1 = 1;
+    uint32 column2 = 2;
+    repeated bytes column3 = 3;
+}
+```
+
+Query:
+
+``` sql
+SELECT structureToProtobufSchema('column1 Nullable(String), column2 Tuple(element1 UInt32, element2 Array(String)), column3 Map(String, String)') FORMAT RawBLOB
+```
+
+Result:
+
+``` text
+syntax = "proto3";
+
+message Message
+{
+    bytes column1 = 1;
+    message Column2
+    {
+        uint32 element1 = 1;
+        repeated bytes element2 = 2;
+    }
+    Column2 column2 = 2;
+    map<string, bytes> column3 = 3;
+}
+```
+
+Query:
+
+``` sql
+SELECT structureToProtobufSchema('column1 String, column2 UInt32', 'Root') FORMAT RawBLOB
+```
+
+Result:
+
+``` text
+syntax = "proto3";
+
+message Root
+{
+    bytes column1 = 1;
+    uint32 column2 = 2;
+}
+```

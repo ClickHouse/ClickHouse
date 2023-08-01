@@ -28,6 +28,10 @@ struct ConnectionParameters
     ConnectionParameters(const Poco::Util::AbstractConfiguration & config, std::string host, std::optional<UInt16> port);
 
     static UInt16 getPortFromConfig(const Poco::Util::AbstractConfiguration & config);
+
+    /// Ask to enter the user's password if password option contains this value.
+    /// "\n" is used because there is hardly a chance that a user would use '\n' as password.
+    static constexpr std::string_view ASK_PASSWORD = "\n";
 };
 
 }

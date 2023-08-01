@@ -53,6 +53,13 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     ThrottlerPtr put_request_throttler;
     HTTPHeaderEntries extra_headers;
 
+    /// Not a client parameter in terms of HTTP and we won't send it to the server. Used internally to determine when connection have to be re-established.
+    uint32_t http_keep_alive_timeout_ms = 0;
+    /// Zero means pooling will not be used.
+    size_t http_connection_pool_size = 0;
+    /// See PoolBase::BehaviourOnLimit
+    bool wait_on_pool_size_limit = true;
+
     void updateSchemeAndRegion();
 
     std::function<void(const ClientConfigurationPerRequest &)> error_report;
@@ -88,6 +95,12 @@ public:
         body_stream = Aws::Utils::Stream::ResponseStream(
             Aws::New<SessionAwareIOStream<SessionPtr>>("http result streambuf", session_, incoming_stream.rdbuf())
         );
+    }
+
+    void SetResponseBody(Aws::IStream & incoming_stream, PooledHTTPSessionPtr & session_) /// NOLINT
+    {
+        body_stream = Aws::Utils::Stream::ResponseStream(
+            Aws::New<SessionAwareIOStream<PooledHTTPSessionPtr>>("http result streambuf", session_, incoming_stream.rdbuf()));
     }
 
     void SetResponseBody(std::string & response_body) /// NOLINT
@@ -149,6 +162,15 @@ private:
         EnumSize,
     };
 
+    template <bool pooled>
+    void makeRequestInternalImpl(
+        Aws::Http::HttpRequest & request,
+        const ClientConfigurationPerRequest & per_request_configuration,
+        std::shared_ptr<PocoHTTPResponse> & response,
+        Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
+        Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
+
+protected:
     static S3MetricKind getMetricKind(const Aws::Http::HttpRequest & request);
     void addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount = 1) const;
 
@@ -170,6 +192,9 @@ private:
     ThrottlerPtr put_request_throttler;
 
     const HTTPHeaderEntries extra_headers;
+
+    size_t http_connection_pool_size = 0;
+    bool wait_on_pool_size_limit = true;
 };
 
 }

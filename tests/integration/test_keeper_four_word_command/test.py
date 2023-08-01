@@ -183,8 +183,8 @@ def test_cmd_mntr(started_cluster):
         # contains:
         #   10 nodes created by test
         #   3 nodes created by clickhouse "/clickhouse/task_queue/ddl"
-        #   1 root node, 2 keeper system nodes
-        assert int(result["zk_znode_count"]) == 13
+        #   1 root node, 3 keeper system nodes
+        assert int(result["zk_znode_count"]) == 14
         assert int(result["zk_watch_count"]) == 2
         assert int(result["zk_ephemerals_count"]) == 2
         assert int(result["zk_approximate_data_size"]) > 0
@@ -252,10 +252,12 @@ def test_cmd_conf(started_cluster):
 
         assert result["four_letter_word_allow_list"] == "*"
         assert result["log_storage_path"] == "/var/lib/clickhouse/coordination/log"
+        assert result["log_storage_disk"] == "LocalLogDisk"
         assert (
             result["snapshot_storage_path"]
             == "/var/lib/clickhouse/coordination/snapshots"
         )
+        assert result["snapshot_storage_disk"] == "LocalSnapshotDisk"
 
         assert result["session_timeout_ms"] == "30000"
         assert result["min_session_timeout_ms"] == "10000"
@@ -327,9 +329,9 @@ def test_cmd_srvr(started_cluster):
         assert result["Received"] == "10"
         assert result["Sent"] == "10"
         assert int(result["Connections"]) == 1
-        assert int(result["Zxid"]) > 10
+        assert int(result["Zxid"], 16) > 10
         assert result["Mode"] == "leader"
-        assert result["Node count"] == "13"
+        assert result["Node count"] == "14"
 
     finally:
         destroy_zk_client(zk)
@@ -367,9 +369,9 @@ def test_cmd_stat(started_cluster):
         assert result["Received"] == "10"
         assert result["Sent"] == "10"
         assert int(result["Connections"]) == 1
-        assert int(result["Zxid"]) >= 10
+        assert int(result["Zxid"], 16) >= 10
         assert result["Mode"] == "leader"
-        assert result["Node count"] == "13"
+        assert result["Node count"] == "14"
 
         # filter connection statistics
         cons = [n for n in data.split("\n") if "=" in n]

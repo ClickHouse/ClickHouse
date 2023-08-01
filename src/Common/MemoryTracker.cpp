@@ -212,6 +212,9 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
     if (_sample_probability < 0)
         _sample_probability = sample_probability;
 
+    if (!isSizeOkForSampling(size))
+        _sample_probability = 0;
+
     if (MemoryTrackerBlockerInThread::isBlocked(level))
     {
         if (level == VariableContext::Global)
@@ -423,6 +426,9 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
     if (_sample_probability < 0)
         _sample_probability = sample_probability;
 
+    if (!isSizeOkForSampling(size))
+        _sample_probability = 0;
+
     if (MemoryTrackerBlockerInThread::isBlocked(level))
     {
         if (level == VariableContext::Global)
@@ -471,7 +477,6 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
     if (metric_loaded != CurrentMetrics::end())
         CurrentMetrics::sub(metric_loaded, accounted_size);
 
-    AllocationTrace res(_sample_probability);
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
         return loaded_next->free(size, _sample_probability);
 
@@ -569,6 +574,12 @@ double MemoryTracker::getSampleProbability()
         return loaded_next->getSampleProbability();
 
     return 0;
+}
+
+bool MemoryTracker::isSizeOkForSampling(UInt64 size) const
+{
+    /// We can avoid comparison min_allocation_size_bytes with zero, because we cannot have 0 bytes allocation/deallocation
+    return ((max_allocation_size_bytes == 0 || size <= max_allocation_size_bytes) && size >= min_allocation_size_bytes);
 }
 
 bool canEnqueueBackgroundTask()
