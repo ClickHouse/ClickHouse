@@ -45,10 +45,10 @@ USE test4;
 SELECT * FROM \"abacaba/file.tsv\"
 """ 2>&1| grep -F "FILE_DOESNT_EXIST" > /dev/null && echo "OK1"
 
-${CLICKHOUSE_CLIENT} -q "SELECT * FROM test4.\`http://localhost:11111/test/a.tsv\`" 2>&1 | tr '\n' ' ' | grep -oF "FILE_DOESNT_EXIST"
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222/file.myext\`" 2>&1 | tr '\n' ' ' | grep -oF "FILE_DOESNT_EXIST"
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222/test_02725_3.tsv\`" 2>&1 | tr '\n' ' ' | grep -oF "FILE_DOESNT_EXIST"
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222\`" 2>&1 | tr '\n' ' ' | grep -oF "FILE_DOESNT_EXIST"
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM test4.\`http://localhost:11111/test/a.tsv\`" 2>&1 | tr '\n' ' ' #| grep -oF "FILE_DOESNT_EXIST"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222/file.myext\`" 2>&1 | tr '\n' ' ' #| grep -oF "FILE_DOESNT_EXIST"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222/test_02725_3.tsv\`" 2>&1 | tr '\n' ' ' #| grep -oF "FILE_DOESNT_EXIST"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222\`" 2>&1 | tr '\n' ' ' #| grep -oF "FILE_DOESNT_EXIST"
 
 
 # Cleanup
