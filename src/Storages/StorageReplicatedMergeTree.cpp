@@ -3311,7 +3311,7 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
     auto job_type = selected_entry->log_entry->type;
 
     /// Depending on entry type execute in fetches (small) pool or big merge_mutate pool
-    if (job_type == LogEntry::GET_PART)
+    if (job_type == LogEntry::GET_PART || job_type == LogEntry::ATTACH_PART)
     {
         assignee.scheduleFetchTask(std::make_shared<ExecutableLambdaAdapter>(
             [this, selected_entry] () mutable

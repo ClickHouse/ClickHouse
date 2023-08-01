@@ -328,7 +328,7 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
     }
 }
 
-void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
+bool ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
 {
     Node * config_root = getRootNode(config.get());
     Node * with_root = getRootNode(with.get());
@@ -343,11 +343,15 @@ void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
         && !((config_root_node_name == "yandex" || config_root_node_name == "clickhouse")
             && (merged_root_node_name == "yandex" || merged_root_node_name == "clickhouse")))
     {
+        if (config_root_node_name != "clickhouse" && config_root_node_name != "yandex")
+            return false;
+
         throw Poco::Exception("Root element doesn't have the corresponding root element as the config file."
             " It must be <" + config_root->nodeName() + ">");
     }
 
     mergeRecursive(config, config_root, with_root);
+    return true;
 }
 
 void ConfigProcessor::doIncludesRecursive(
@@ -645,7 +649,12 @@ XMLDocumentPtr ConfigProcessor::processConfig(
                 with = dom_parser.parse(merge_file);
             }
 
-            merge(config, with);
+            if (!merge(config, with))
+            {
+                LOG_DEBUG(log, "Merging bypassed - configuration file '{}' doesn't belong to configuration '{}' - merging root node name '{}' doesn't match '{}'",
+                               merge_file, path, getRootNode(with.get())->nodeName(), getRootNode(config.get())->nodeName());
+                continue;
+            }
 
             contributing_files.push_back(merge_file);
         }

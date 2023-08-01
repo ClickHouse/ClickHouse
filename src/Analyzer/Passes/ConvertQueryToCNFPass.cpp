@@ -688,7 +688,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<ConvertQueryToCNFVisitor>;
     using Base::Base;
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         auto * query_node = node->as<QueryNode>();
         if (!query_node)

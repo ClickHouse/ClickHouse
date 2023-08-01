@@ -242,7 +242,7 @@ bool PartLog::addNewParts(
 
             elem.profile_counters = part_log_entry.profile_counters;
 
-            part_log->add(elem);
+            part_log->add(std::move(elem));
         }
     }
     catch (...)

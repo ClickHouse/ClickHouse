@@ -1168,7 +1168,7 @@ Enabled by default.
 
 Compression method used in output Arrow format. Supported codecs: `lz4_frame`, `zstd`, `none` (uncompressed)
 
-Default value: `none`.
+Default value: `lz4_frame`.
 
 ## ORC format settings {#orc-format-settings}
 
