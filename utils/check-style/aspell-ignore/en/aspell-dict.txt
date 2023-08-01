@@ -41,6 +41,7 @@ AsynchronousMetricsUpdateInterval
 AsynchronousReadWait
 Authenticator
 Authenticators
+AutoFDO
 AutoML
 Autocompletion
 AvroConfluent
@@ -146,6 +147,7 @@ ChannelID
 Cidr
 Ciphertext
 CityHash
+ClickBench
 ClickCat
 ClickHouse
 ClickHouse's
