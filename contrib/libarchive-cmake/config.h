@@ -628,7 +628,7 @@ typedef uint64_t uintmax_t;
 #define HAVE_FUTIMES 1
 
 /* Define to 1 if you have the `futimesat' function. */
-#define HAVE_FUTIMESAT 1
+/* #undef HAVE_FUTIMESAT */
 
 /* Define to 1 if you have the `getea' function. */
 /* #undef HAVE_GETEA */
@@ -667,7 +667,7 @@ typedef uint64_t uintmax_t;
 #define HAVE_GRP_H 1
 
 /* Define to 1 if you have the `iconv' function. */
-#define HAVE_ICONV 1
+/* #undef HAVE_ICONV */
 
 /* Define to 1 if you have the <iconv.h> header file. */
 #define HAVE_ICONV_H 1
@@ -788,7 +788,7 @@ typedef uint64_t uintmax_t;
 /* #undef HAVE_LINUX_MAGIC_H */
 
 /* Define to 1 if you have the <linux/types.h> header file. */
-#define HAVE_LINUX_TYPES_H 1
+/* #undef HAVE_LINUX_TYPES_H */
 
 /* Define to 1 if you have the `listea' function. */
 /* #undef HAVE_LISTEA */
@@ -1081,7 +1081,7 @@ typedef uint64_t uintmax_t;
 /* #undef HAVE_SYS_ACL_H */
 
 /* Define to 1 if you have the <sys/cdefs.h> header file. */
-#define HAVE_SYS_CDEFS_H 1
+/* #undef HAVE_SYS_CDEFS_H */
 
 /* Define to 1 if you have the <sys/dir.h> header file, and it defines `DIR'.
    */
@@ -1122,7 +1122,7 @@ typedef uint64_t uintmax_t;
 #define HAVE_SYS_SELECT_H 1
 
 /* Define to 1 if you have the <sys/statfs.h> header file. */
-#define HAVE_SYS_STATFS_H 1
+/* #undef HAVE_SYS_STATFS_H */
 
 /* Define to 1 if you have the <sys/statvfs.h> header file. */
 #define HAVE_SYS_STATVFS_H 1

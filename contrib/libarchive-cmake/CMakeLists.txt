@@ -162,6 +162,10 @@ if (OS_LINUX)
             MAJOR_IN_SYSMACROS=1
             HAVE_LINUX_FS_H=1
             HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC=1
+            HAVE_LINUX_TYPES_H=1
+            HAVE_SYS_STATFS_H=1
+            HAVE_FUTIMESAT=1
+            HAVE_ICONV=1
     )
 endif()
 

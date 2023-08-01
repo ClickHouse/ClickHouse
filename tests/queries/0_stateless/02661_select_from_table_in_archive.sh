@@ -32,23 +32,23 @@ run_archive_test "zip"
 rm ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_archive1.zip
 rm ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_archive2.zip
 
-tar -cvzf ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_archive1.tar.gz ${CLICKHOUSE_TEST_UNIQUE_NAME}_data.csv > /dev/null
-tar -cvzf ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_archive2.tar.gz ${CLICKHOUSE_TEST_UNIQUE_NAME}_data.csv > /dev/null
+tar -cvzf ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_archive1.tar.gz ${CLICKHOUSE_TEST_UNIQUE_NAME}_data.csv &> /dev/null
+tar -cvzf ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_archive2.tar.gz ${CLICKHOUSE_TEST_UNIQUE_NAME}_data.csv &> /dev/null
 
 run_archive_test "tar.gz"
 
 rm ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_archive1.tar.gz
 rm ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_archive2.tar.gz
 
-tar -cvf ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_archive1.tar ${CLICKHOUSE_TEST_UNIQUE_NAME}_data.csv > /dev/null
-tar -cvf ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_archive2.tar ${CLICKHOUSE_TEST_UNIQUE_NAME}_data.csv > /dev/null
+tar -cvf ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_archive1.tar ${CLICKHOUSE_TEST_UNIQUE_NAME}_data.csv &> /dev/null
+tar -cvf ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_archive2.tar ${CLICKHOUSE_TEST_UNIQUE_NAME}_data.csv &> /dev/null
 
 run_archive_test "tar"
 
 rm ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_archive1.tar
 rm ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_archive2.tar
 
-7z a ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_archive1.7z ${CLICKHOUSE_TEST_UNIQUE_NAME}_data.csv > /dev/null 
+7z a ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_archive1.7z ${CLICKHOUSE_TEST_UNIQUE_NAME}_data.csv > /dev/null
 7z a ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_archive2.7z ${CLICKHOUSE_TEST_UNIQUE_NAME}_data.csv > /dev/null 
 
 run_archive_test "7z"
