@@ -112,7 +112,7 @@ void registerBackupEngineS3(BackupFactory & factory)
         }
         else
         {
-            auto writer = std::make_shared<BackupWriterS3>(S3::URI{s3_uri}, access_key_id, secret_access_key, params.allow_s3_native_copy, params.context);
+            auto writer = std::make_shared<BackupWriterS3>(S3::URI{s3_uri}, access_key_id, secret_access_key, params.allow_s3_native_copy, params.s3_storage_class, params.context);
             return std::make_unique<BackupImpl>(
                 backup_name_for_logging,
                 archive_params,

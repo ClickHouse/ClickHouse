@@ -463,7 +463,6 @@ LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, Loa
         {
             if (mode < LoadingStrictnessLevel::FORCE_RESTORE)
                 return;
-
             NameToPathMap table_names;
             {
                 std::lock_guard lock2{mutex};

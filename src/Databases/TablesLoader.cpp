@@ -43,7 +43,7 @@ LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
         if (need_resolve_dependencies && database.second->supportsLoadingInTopologicalOrder())
             databases_to_load.push_back(database.first);
         else
-            database.second->loadStoredObjects(global_context, strictness_mode, /* skip_startup_tables */ true);
+            database.second->loadStoredObjects(global_context, strictness_mode);
     }
 
     if (databases_to_load.empty())

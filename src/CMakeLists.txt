@@ -210,7 +210,7 @@ if (TARGET ch_contrib::jemalloc)
     target_link_libraries (clickhouse_storages_system PRIVATE ch_contrib::jemalloc)
 endif()
 
-target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash)
+target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash ch_contrib::incbin)
 
 add_subdirectory(Access/Common)
 add_subdirectory(Common/ZooKeeper)
@@ -266,6 +266,10 @@ add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Alg
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
 add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
+
+if (USE_PARQUET)
+    add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
+endif()
 
 if (TARGET ch_contrib::nuraft)
     add_object_library(clickhouse_coordination Coordination)
@@ -561,7 +565,6 @@ if (ENABLE_NLP)
     dbms_target_link_libraries (PUBLIC ch_contrib::stemmer)
     dbms_target_link_libraries (PUBLIC ch_contrib::wnb)
     dbms_target_link_libraries (PUBLIC ch_contrib::lemmagen)
-    dbms_target_link_libraries (PUBLIC ch_contrib::nlp_data)
 endif()
 
 if (TARGET ch_contrib::ulid)

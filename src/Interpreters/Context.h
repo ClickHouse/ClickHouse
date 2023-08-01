@@ -9,6 +9,7 @@
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Throttler_fwd.h>
+#include <Common/SettingSource.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -134,6 +135,7 @@ using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
+class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 class AsyncLoader;
@@ -201,6 +203,8 @@ using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
+
+class SessionTracker;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -539,8 +543,6 @@ public:
 
     String getUserName() const;
 
-    void setQuotaKey(String quota_key_);
-
     void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();
     boost::container::flat_set<UUID> getCurrentRoles() const;
@@ -659,6 +661,14 @@ public:
         const String & view_name = {});
     void addQueryAccessInfo(const Names & partition_names);
 
+    struct QualifiedProjectionName
+    {
+        StorageID storage_id = StorageID::createEmpty();
+        String projection_name;
+        explicit operator bool() const { return !projection_name.empty(); }
+    };
+    void addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name);
+
 
     /// Supported factories for records in query_log
     enum class QueryLogFactories
@@ -727,11 +737,11 @@ public:
     void applySettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
-    void checkSettingsConstraints(const SettingsProfileElements & profile_elements) const;
-    void checkSettingsConstraints(const SettingChange & change) const;
-    void checkSettingsConstraints(const SettingsChanges & changes) const;
-    void checkSettingsConstraints(SettingsChanges & changes) const;
-    void clampToSettingsConstraints(SettingsChanges & changes) const;
+    void checkSettingsConstraints(const SettingsProfileElements & profile_elements, SettingSource source) const;
+    void checkSettingsConstraints(const SettingChange & change, SettingSource source) const;
+    void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source) const;
+    void checkSettingsConstraints(SettingsChanges & changes, SettingSource source) const;
+    void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source) const;
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to default value
@@ -855,6 +865,8 @@ public:
 
     OvercommitTracker * getGlobalOvercommitTracker() const;
 
+    SessionTracker & getSessionTracker();
+
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
 
@@ -883,7 +895,6 @@ public:
     void setClientProtocolVersion(UInt64 version);
 
 #if USE_ROCKSDB
-    MergeTreeMetadataCachePtr getMergeTreeMetadataCache() const;
     MergeTreeMetadataCachePtr tryGetMergeTreeMetadataCache() const;
 #endif
 
@@ -992,6 +1003,9 @@ public:
     void initializeMergeTreeMetadataCache(const String & dir, size_t size);
 #endif
 
+    /// Call after unexpected crash happen.
+    void handleCrash() const;
+
     bool hasTraceCollector() const;
 
     /// Nullptr if the query log is not ready for this moment.
@@ -1051,6 +1065,13 @@ public:
     using ConfigReloadCallback = std::function<void()>;
     void setConfigReloadCallback(ConfigReloadCallback && callback);
     void reloadConfig() const;
+
+    using StartStopServersCallback = std::function<void(const ServerType &)>;
+    void setStartServersCallback(StartStopServersCallback && callback);
+    void setStopServersCallback(StartStopServersCallback && callback);
+
+    void startServers(const ServerType & server_type) const;
+    void stopServers(const ServerType & server_type) const;
 
     void shutdown();
 

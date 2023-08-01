@@ -1033,6 +1033,14 @@
 
         <!-- Interval of flushing data. -->
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <!-- Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk. -->
+        <max_size_rows>1048576</max_size_rows>
+        <!-- Pre-allocated size in lines for the logs. -->
+        <reserved_size_rows>8192</reserved_size_rows>
+        <!-- Lines amount threshold, reaching it launches flushing logs to the disk in background. -->
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <!-- Indication whether logs should be dumped to the disk in case of a crash -->
+        <flush_on_crash>false</flush_on_crash>
 
         <!-- example of using a different storage policy for a system table -->
         <!-- storage_policy>local_ssd</storage_policy -->
@@ -1046,6 +1054,11 @@
 
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <!-- Indication whether logs should be dumped to the disk in case of a crash -->
+        <flush_on_crash>false</flush_on_crash>
     </trace_log>
 
     <!-- Query thread log. Has information about all threads participated in query execution.
@@ -1055,6 +1068,10 @@
         <table>query_thread_log</table>
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </query_thread_log>
 
     <!-- Query views log. Has information about all dependent views associated with a query.
@@ -1073,6 +1090,10 @@
         <table>part_log</table>
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </part_log>
 
     <!-- Uncomment to write text log into table.
@@ -1082,6 +1103,10 @@
         <database>system</database>
         <table>text_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
         <level></level>
     </text_log>
     -->
@@ -1091,7 +1116,11 @@
         <database>system</database>
         <table>metric_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <flush_on_crash>false</flush_on_crash>
     </metric_log>
 
     <!--
@@ -1102,6 +1131,10 @@
         <database>system</database>
         <table>asynchronous_metric_log</table>
         <flush_interval_milliseconds>7000</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </asynchronous_metric_log>
 
     <!--
@@ -1126,6 +1159,10 @@
         <database>system</database>
         <table>opentelemetry_span_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </opentelemetry_span_log>
 
 
@@ -1137,6 +1174,10 @@
 
         <partition_by />
         <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+        <max_size_rows>1024</max_size_rows>
+        <reserved_size_rows>1024</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>512</buffer_size_rows_flush_threshold>
+        <flush_on_crash>true</flush_on_crash>
     </crash_log>
 
     <!-- Session log. Stores user log in (successful or not) and log out events.
@@ -1149,6 +1190,10 @@
 
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </session_log> -->
 
     <!-- Profiling on Processors level. -->
@@ -1158,6 +1203,10 @@
 
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </processors_profile_log>
 
     <!-- Log of asynchronous inserts. It allows to check status
@@ -1168,6 +1217,10 @@
         <table>asynchronous_insert_log</table>
 
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
         <partition_by>event_date</partition_by>
         <ttl>event_date + INTERVAL 3 DAY</ttl>
     </asynchronous_insert_log>
@@ -1424,12 +1477,6 @@
         <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
         <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
     </query_cache>
-
-    <!-- Uncomment if enable merge tree metadata cache -->
-    <!--merge_tree_metadata_cache>
-        <lru_cache_size>268435456</lru_cache_size>
-        <continue_if_corrupted>true</continue_if_corrupted>
-    </merge_tree_metadata_cache-->
 
     <!-- This allows to disable exposing addresses in stack traces for security reasons.
          Please be aware that it does not improve security much, but makes debugging much harder.

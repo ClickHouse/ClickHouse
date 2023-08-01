@@ -21,7 +21,7 @@ public:
 
     String getEngineName() const override { return "Ordinary"; }
 
-    void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel mode, bool skip_startup_tables) override;
+    void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
 
     bool supportsLoadingInTopologicalOrder() const override { return true; }
 

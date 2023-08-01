@@ -74,6 +74,7 @@ LoadTaskPtr DatabaseMaterializedMySQL::startupDatabaseAsync(AsyncLoader & async_
         fmt::format("startup MaterializedMySQL database {}", database_name),
         [this, mode] (AsyncLoader &, const LoadJobPtr &)
         {
+            LOG_TRACE(log, "Starting MaterializeMySQL database");
             if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
                 materialize_thread.assertMySQLAvailable();
 
@@ -131,6 +132,7 @@ void DatabaseMaterializedMySQL::alterTable(ContextPtr context_, const StorageID 
 
 void DatabaseMaterializedMySQL::drop(ContextPtr context_)
 {
+    LOG_TRACE(log, "Dropping MaterializeMySQL database");
     /// Remove metadata info
     fs::path metadata(getMetadataPath() + "/.metadata");
 

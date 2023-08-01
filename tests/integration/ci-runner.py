@@ -7,9 +7,11 @@ import json
 import logging
 import os
 import random
+import re
 import shutil
 import subprocess
 import time
+import shlex
 import zlib  # for crc32
 
 
@@ -110,16 +112,36 @@ def get_counters(fname):
             if not (".py::" in line and " " in line):
                 continue
 
-            line_arr = line.strip().split(" ")
+            line = line.strip()
+            # [gw0] [  7%] ERROR test_mysql_protocol/test.py::test_golang_client
+            # ^^^^^^^^^^^^^
+            if line.strip().startswith("["):
+                line = re.sub("^\[[^\[\]]*\] \[[^\[\]]*\] ", "", line)
+
+            line_arr = line.split(" ")
             if len(line_arr) < 2:
                 logging.debug("Strange line %s", line)
                 continue
 
             # Lines like:
-            #     [gw0] [  7%] ERROR test_mysql_protocol/test.py::test_golang_client
-            #     [gw3] [ 40%] PASSED test_replicated_users/test.py::test_rename_replicated[QUOTA]
-            state = line_arr[-2]
-            test_name = line_arr[-1]
+            #
+            #     ERROR test_mysql_protocol/test.py::test_golang_client
+            #     PASSED test_replicated_users/test.py::test_rename_replicated[QUOTA]
+            #     PASSED test_drop_is_lock_free/test.py::test_query_is_lock_free[detach part]
+            #
+            state = line_arr.pop(0)
+            test_name = " ".join(line_arr)
+
+            # Normalize test names for lines like this:
+            #
+            #    FAILED test_storage_s3/test.py::test_url_reconnect_in_the_middle - Exception
+            #    FAILED test_distributed_ddl/test.py::test_default_database[configs] - AssertionError: assert ...
+            #
+            test_name = re.sub(
+                r"^(?P<test_name>[^\[\] ]+)(?P<test_param>\[[^\[\]]*\]|)(?P<test_error> - .*|)$",
+                r"\g<test_name>\g<test_param>",
+                test_name,
+            )
 
             if state in counters:
                 counters[state].add(test_name)
@@ -168,7 +190,7 @@ def clear_ip_tables_and_restart_daemons():
     try:
         logging.info("Killing all alive docker containers")
         subprocess.check_output(
-            "timeout -s 9 10m docker ps --quiet | xargs --no-run-if-empty docker kill",
+            "timeout --signal=KILL 10m docker ps --quiet | xargs --no-run-if-empty docker kill",
             shell=True,
         )
     except subprocess.CalledProcessError as err:
@@ -177,7 +199,7 @@ def clear_ip_tables_and_restart_daemons():
     try:
         logging.info("Removing all docker containers")
         subprocess.check_output(
-            "timeout -s 9 10m docker ps --all --quiet | xargs --no-run-if-empty docker rm --force",
+            "timeout --signal=KILL 10m docker ps --all --quiet | xargs --no-run-if-empty docker rm --force",
             shell=True,
         )
     except subprocess.CalledProcessError as err:
@@ -291,6 +313,7 @@ class ClickhouseIntegrationTestsRunner:
             "clickhouse/mysql-java-client",
             "clickhouse/mysql-js-client",
             "clickhouse/mysql-php-client",
+            "clickhouse/nginx-dav",
             "clickhouse/postgresql-java-client",
         ]
 
@@ -299,7 +322,7 @@ class ClickhouseIntegrationTestsRunner:
 
         cmd = (
             "cd {repo_path}/tests/integration && "
-            "timeout -s 9 1h ./runner {runner_opts} {image_cmd} --pre-pull --command '{command}' ".format(
+            "timeout --signal=KILL 1h ./runner {runner_opts} {image_cmd} --pre-pull --command '{command}' ".format(
                 repo_path=repo_path,
                 runner_opts=self._get_runner_opts(),
                 image_cmd=image_cmd,
@@ -411,9 +434,9 @@ class ClickhouseIntegrationTestsRunner:
         out_file_full = os.path.join(self.result_path, "runner_get_all_tests.log")
         cmd = (
             "cd {repo_path}/tests/integration && "
-            "timeout -s 9 1h ./runner {runner_opts} {image_cmd} ' --setup-plan' "
-            "| tee {out_file_full} | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' | sed 's/ *$//g' "
-            "| grep -v 'SKIPPED' | sort -u  > {out_file}".format(
+            "timeout --signal=KILL 1h ./runner {runner_opts} {image_cmd} -- --setup-plan "
+            "| tee '{out_file_full}' | grep -F '::' | sed -r 's/ \(fixtures used:.*//g; s/^ *//g; s/ *$//g' "
+            "| grep -v -F 'SKIPPED' | sort --unique > {out_file}".format(
                 repo_path=repo_path,
                 runner_opts=self._get_runner_opts(),
                 image_cmd=image_cmd,
@@ -646,7 +669,7 @@ class ClickhouseIntegrationTestsRunner:
             info_basename = test_group_str + "_" + str(i) + ".nfo"
             info_path = os.path.join(repo_path, "tests/integration", info_basename)
 
-            test_cmd = " ".join([test for test in sorted(test_names)])
+            test_cmd = " ".join([shlex.quote(test) for test in sorted(test_names)])
             parallel_cmd = (
                 " --parallel {} ".format(num_workers) if num_workers > 0 else ""
             )
@@ -655,7 +678,7 @@ class ClickhouseIntegrationTestsRunner:
             # -E -- (E)rror
             # -p -- (p)assed
             # -s -- (s)kipped
-            cmd = "cd {}/tests/integration && timeout -s 9 1h ./runner {} {} -t {} {} '-rfEps --run-id={} --color=no --durations=0 {}' | tee {}".format(
+            cmd = "cd {}/tests/integration && timeout --signal=KILL 1h ./runner {} {} -t {} {} -- -rfEps --run-id={} --color=no --durations=0 {} | tee {}".format(
                 repo_path,
                 self._get_runner_opts(),
                 image_cmd,
@@ -766,6 +789,7 @@ class ClickhouseIntegrationTestsRunner:
                     and test not in counters["ERROR"]
                     and test not in counters["SKIPPED"]
                     and test not in counters["FAILED"]
+                    and test not in counters["BROKEN"]
                     and "::" in test
                 ):
                     counters["ERROR"].append(test)
@@ -998,16 +1022,6 @@ class ClickhouseIntegrationTestsRunner:
 
         if "(memory)" in self.params["context_name"]:
             result_state = "success"
-
-        for res in test_result:
-            # It's not easy to parse output of pytest
-            # Especially when test names may contain spaces
-            # Do not allow it to avoid obscure failures
-            if " " not in res[0]:
-                continue
-            logging.warning("Found invalid test name with space: %s", res[0])
-            status_text = "Found test with invalid name, see main log"
-            result_state = "failure"
 
         return result_state, status_text, test_result, []
 
