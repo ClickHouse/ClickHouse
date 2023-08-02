@@ -32,7 +32,7 @@ ENV MSAN_OPTIONS='abort_on_error=1 poison_in_dtor=1'
 RUN echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen en_US.UTF-8
 ENV LC_ALL en_US.UTF-8
 
-ENV TZ=Europe/Moscow
+ENV TZ=Europe/Amsterdam
 RUN ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
 
 CMD sleep 1
