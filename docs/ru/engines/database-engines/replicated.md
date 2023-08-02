@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/database-engines/replicated
 sidebar_position: 36
 sidebar_label: Replicated
 ---

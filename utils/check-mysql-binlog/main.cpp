@@ -17,8 +17,7 @@ static DB::MySQLReplication::BinlogEventPtr parseSingleEventBody(
     std::shared_ptr<DB::MySQLReplication::TableMapEvent> & last_table_map_event, bool exist_checksum)
 {
     DB::MySQLReplication::BinlogEventPtr event;
-    DB::ReadBufferPtr limit_read_buffer = std::make_shared<DB::LimitReadBuffer>(payload, header.event_size - 19,
-                                                                                /* trow_exception */ false, /* exact_limit */ std::nullopt);
+    DB::ReadBufferPtr limit_read_buffer = std::make_shared<DB::LimitReadBuffer>(payload, header.event_size - 19, false);
     DB::ReadBufferPtr event_payload = std::make_shared<DB::MySQLBinlogEventReadBuffer>(*limit_read_buffer, exist_checksum ? 4 : 0);
 
     switch (header.type)

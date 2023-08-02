@@ -1,6 +1,3 @@
----
-slug: /zh/operations/system-tables/replicated_fetches
----
 # system.replicated_fetches {#system_tables-replicated_fetches}
 
 包含当前正在运行的后台提取的信息.
@@ -68,4 +65,6 @@ thread_id:                   54
 
 **另请参阅**
 
--   [管理 ReplicatedMergeTree 表](../../sql-reference/statements/system.md#query-language-system-replicated)
+-   [管理 ReplicatedMergeTree 表](../../sql-reference/statements/system/#query-language-system-replicated)
+
+[原始文章](https://clickhouse.com/docs/en/operations/system_tables/replicated_fetches) <!--hide-->

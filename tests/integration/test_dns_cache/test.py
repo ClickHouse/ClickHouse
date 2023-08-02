@@ -301,10 +301,7 @@ def test_host_is_drop_from_cache_after_consecutive_failures(
         "Cannot resolve host \\(InvalidHostThatDoesNotExist\\), error 0: Host not found."
     )
     assert node4.wait_for_log_line(
-        "Cached hosts not found:.*InvalidHostThatDoesNotExist**",
-        repetitions=6,
-        timeout=60,
-        look_behind_lines=500,
+        "Cached hosts not found:.*InvalidHostThatDoesNotExist**", repetitions=6
     )
     assert node4.wait_for_log_line(
         "Cached hosts dropped:.*InvalidHostThatDoesNotExist.*"

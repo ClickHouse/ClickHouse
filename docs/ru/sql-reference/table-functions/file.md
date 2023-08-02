@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/table-functions/file
 sidebar_position: 37
 sidebar_label: file
 ---
@@ -13,7 +12,7 @@ sidebar_label: file
 **Синтаксис**
 
 ``` sql
-file(path [,format] [,structure])
+file(path, format, structure)
 ```
 
 **Параметры**
@@ -126,4 +125,4 @@ SELECT count(*) FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String,
 **Смотрите также**
 
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
--   [Переименование файлов после обработки](/docs/ru/operations/settings/settings.md#rename_files_after_processing)
+

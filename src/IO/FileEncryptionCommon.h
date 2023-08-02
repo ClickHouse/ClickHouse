@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_SSL
 #include <Core/Types.h>
@@ -23,14 +23,13 @@ enum class Algorithm
     AES_128_CTR, /// Size of key is 16 bytes.
     AES_192_CTR, /// Size of key is 24 bytes.
     AES_256_CTR, /// Size of key is 32 bytes.
-    MAX
 };
 
 String toString(Algorithm algorithm);
-Algorithm parseAlgorithmFromString(const String & str);
+void parseFromString(Algorithm & algorithm, const String & str);
 
 /// Throws an exception if a specified key size doesn't correspond a specified encryption algorithm.
-void checkKeySize(size_t key_size, Algorithm algorithm);
+void checkKeySize(Algorithm algorithm, size_t key_size);
 
 
 /// Initialization vector. Its size is always 16 bytes.
@@ -104,34 +103,15 @@ private:
 
 
 /// File header which is stored at the beginning of encrypted files.
-///
-/// The format of that header is following:
-/// +--------+------+--------------------------------------------------------------------------+
-/// | offset | size | description                                                              |
-/// +--------+------+--------------------------------------------------------------------------+
-/// |      0 |    3 | 'E', 'N', 'C' (file's signature)                                         |
-/// |      3 |    2 | version of this header (1..2)                                            |
-/// |      5 |    2 | encryption algorithm (0..2, 0=AES_128_CTR, 1=AES_192_CTR, 2=AES_256_CTR) |
-/// |      7 |   16 | fingerprint of encryption key (SipHash)                                  |
-/// |     23 |   16 | initialization vector (randomly generated)                               |
-/// |     39 |   25 | reserved for future use                                                  |
-/// +--------+------+--------------------------------------------------------------------------+
-///
 struct Header
 {
-    /// Versions:
-    /// 1 - Initial version
-    /// 2 - The header of an encrypted file contains the fingerprint of a used encryption key instead of a pair {key_id, very_small_hash(key)}.
-    ///     The header is always stored in little endian.
-    static constexpr const UInt16 kCurrentVersion = 2;
-
-    UInt16 version = kCurrentVersion;
-
-    /// Encryption algorithm.
     Algorithm algorithm = Algorithm::AES_128_CTR;
 
-    /// Fingerprint of a key.
-    UInt128 key_fingerprint = 0;
+    /// Identifier of the key to encrypt or decrypt this file.
+    UInt64 key_id = 0;
+
+    /// Hash of the key to encrypt or decrypt this file.
+    UInt8 key_hash = 0;
 
     InitVector init_vector;
 
@@ -142,11 +122,9 @@ struct Header
     void write(WriteBuffer & out) const;
 };
 
-/// Calculates the fingerprint of a passed encryption key.
-UInt128 calculateKeyFingerprint(const String & key);
-
-/// Calculates kind of the fingerprint of a passed encryption key & key ID as it was implemented in version 1.
-UInt128 calculateV1KeyFingerprint(const String & key, UInt64 key_id);
+/// Calculates the hash of a passed key.
+/// 1 byte is enough because this hash is used only for the first check.
+UInt8 calculateKeyHash(const String & key);
 
 }
 }

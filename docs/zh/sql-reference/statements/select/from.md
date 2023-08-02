@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/statements/select/from
 sidebar_label: FROM
 ---
 

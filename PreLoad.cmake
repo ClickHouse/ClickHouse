@@ -7,8 +7,12 @@
 # How to install Ninja on Ubuntu:
 #  sudo apt-get install ninja-build
 
+# CLion does not support Ninja
+# You can add your vote on CLion task tracker:
+# https://youtrack.jetbrains.com/issue/CPP-2659
+# https://youtrack.jetbrains.com/issue/CPP-870
 
-if (NOT DEFINED ENV{XCODE_IDE})
+if (NOT DEFINED ENV{CLION_IDE} AND NOT DEFINED ENV{XCODE_IDE})
     find_program(NINJA_PATH ninja)
     if (NINJA_PATH)
         set(CMAKE_GENERATOR "Ninja" CACHE INTERNAL "")
@@ -19,8 +23,8 @@ endif()
 if (NOT "$ENV{CFLAGS}" STREQUAL ""
     OR NOT "$ENV{CXXFLAGS}" STREQUAL ""
     OR NOT "$ENV{LDFLAGS}" STREQUAL ""
-    OR CMAKE_C_FLAGS OR CMAKE_CXX_FLAGS OR CMAKE_EXE_LINKER_FLAGS OR CMAKE_MODULE_LINKER_FLAGS
-    OR CMAKE_C_FLAGS_INIT OR CMAKE_CXX_FLAGS_INIT OR CMAKE_EXE_LINKER_FLAGS_INIT OR CMAKE_MODULE_LINKER_FLAGS_INIT)
+    OR CMAKE_C_FLAGS OR CMAKE_CXX_FLAGS OR CMAKE_EXE_LINKER_FLAGS OR CMAKE_SHARED_LINKER_FLAGS OR CMAKE_MODULE_LINKER_FLAGS
+    OR CMAKE_C_FLAGS_INIT OR CMAKE_CXX_FLAGS_INIT OR CMAKE_EXE_LINKER_FLAGS_INIT OR CMAKE_SHARED_LINKER_FLAGS_INIT OR CMAKE_MODULE_LINKER_FLAGS_INIT)
 
     # if $ENV
     message("CFLAGS: $ENV{CFLAGS}")
@@ -36,6 +40,7 @@ if (NOT "$ENV{CFLAGS}" STREQUAL ""
     message("CMAKE_C_FLAGS_INIT: ${CMAKE_C_FLAGS_INIT}")
     message("CMAKE_CXX_FLAGS_INIT: ${CMAKE_CXX_FLAGS_INIT}")
     message("CMAKE_EXE_LINKER_FLAGS_INIT: ${CMAKE_EXE_LINKER_FLAGS_INIT}")
+    message("CMAKE_SHARED_LINKER_FLAGS_INIT: ${CMAKE_SHARED_LINKER_FLAGS_INIT}")
     message("CMAKE_MODULE_LINKER_FLAGS_INIT: ${CMAKE_MODULE_LINKER_FLAGS_INIT}")
 
     message(FATAL_ERROR "
@@ -83,10 +88,7 @@ if (OS MATCHES "Linux"
         set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-aarch64.cmake" CACHE INTERNAL "")
     elseif (ARCH MATCHES "^(ppc64le.*|PPC64LE.*)")
         set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-ppc64le.cmake" CACHE INTERNAL "")
-    elseif (ARCH MATCHES "^(s390x.*|S390X.*)")
-        set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-s390x.cmake" CACHE INTERNAL "")
     else ()
         message (FATAL_ERROR "Unsupported architecture: ${ARCH}")
     endif ()
-
 endif()

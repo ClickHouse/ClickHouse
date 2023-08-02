@@ -82,13 +82,13 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams) override;
+        unsigned num_streams) override;
 
     bool supportsParallelInsert() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool /*async_insert*/) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.
@@ -100,7 +100,6 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
-        bool cleanup,
         ContextPtr context) override;
 
     bool supportsSampling() const override { return true; }
@@ -169,8 +168,6 @@ private:
 
     void backgroundFlush();
     void reschedule();
-
-    StoragePtr getDestinationTable() const;
 
     BackgroundSchedulePool & bg_pool;
     BackgroundSchedulePoolTaskHolder flush_handle;

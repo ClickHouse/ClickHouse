@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/table-engines/special/set
 sidebar_position: 60
 sidebar_label: Set
 ---
@@ -19,15 +18,5 @@ For a rough server restart, the block of data on the disk might be lost or damag
 
 When creating a table, the following settings are applied:
 
-#### persistent
+-   [persistent](../../../operations/settings/settings.md#persistent)
 
-Disables persistency for the Set and [Join](/docs/en/engines/table-engines/special/join.md/#join) table engines.
-
-Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
-
-Possible values:
-
-- 1 — Enabled.
-- 0 — Disabled.
-
-Default value: `1`.

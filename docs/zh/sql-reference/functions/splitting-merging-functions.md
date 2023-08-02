@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/functions/splitting-merging-functions
----
 # 字符串拆分合并函数 {#zi-fu-chuan-chai-fen-he-bing-han-shu}
 
 ## splitByChar（分隔符，s) {#splitbycharseparator-s}
@@ -28,3 +25,5 @@ slug: /zh/sql-reference/functions/splitting-merging-functions
     ┌─alphaTokens('abca1abc')─┐
     │ ['abca','abc']          │
     └─────────────────────────┘
+
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/splitting_merging_functions/) <!--hide-->

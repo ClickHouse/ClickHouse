@@ -4,23 +4,20 @@
 #include <IO/Progress.h>
 #include <mutex>
 
-
 namespace DB
 {
 
 class QueryStatus;
-using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 class EnabledQuota;
 
 struct StorageLimits;
 using StorageLimitsList = std::list<StorageLimits>;
 
-
 class ReadProgressCallback
 {
 public:
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota_) { quota = quota_; }
-    void setProcessListElement(QueryStatusPtr elem);
+    void setProcessListElement(QueryStatus * elem);
     void setProgressCallback(const ProgressCallback & callback) { progress_callback = callback; }
     void addTotalRowsApprox(size_t value) { total_rows_approx += value; }
 
@@ -33,13 +30,15 @@ public:
 private:
     std::shared_ptr<const EnabledQuota> quota;
     ProgressCallback progress_callback;
-    QueryStatusPtr process_list_elem;
+    QueryStatus * process_list_elem = nullptr;
 
     /// The approximate total number of rows to read. For progress bar.
     std::atomic_size_t total_rows_approx = 0;
 
-    std::mutex limits_and_quotas_mutex;
-    Stopwatch total_stopwatch{CLOCK_MONOTONIC_COARSE};  /// Including waiting time
+    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};    /// Time with waiting time.
+    /// According to total_stopwatch in microseconds.
+    UInt64 last_profile_events_update_time = 0;
+    std::mutex last_profile_events_update_time_mutex;
 
     bool update_profile_events = true;
 };

@@ -3,8 +3,3 @@
 < Access-Control-Allow-Headers: origin, x-requested-with
 < Access-Control-Allow-Methods: POST, GET, OPTIONS
 < Access-Control-Max-Age: 86400
-< HTTP/1.1 403 Forbidden
-< Access-Control-Allow-Origin: *
-< Access-Control-Allow-Headers: origin, x-requested-with
-< Access-Control-Allow-Methods: POST, GET, OPTIONS
-< Access-Control-Max-Age: 86400

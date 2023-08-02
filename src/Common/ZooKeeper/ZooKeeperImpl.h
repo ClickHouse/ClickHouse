@@ -7,9 +7,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Coordination/KeeperConstants.h>
-#include <Coordination/KeeperFeatureFlags.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -29,7 +27,6 @@
 #include <cstdint>
 #include <optional>
 #include <functional>
-#include <random>
 
 
 /** ZooKeeper C++ library, a replacement for libzookeeper.
@@ -114,7 +111,12 @@ public:
       */
     ZooKeeper(
         const Nodes & nodes,
-        const zkutil::ZooKeeperArgs & args_,
+        const String & root_path,
+        const String & auth_scheme,
+        const String & auth_data,
+        Poco::Timespan session_timeout_,
+        Poco::Timespan connection_timeout,
+        Poco::Timespan operation_timeout_,
         std::shared_ptr<ZooKeeperLog> zk_log_);
 
     ~ZooKeeper() override;
@@ -125,8 +127,6 @@ public:
 
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
-
-    Poco::Net::SocketAddress getConnectedAddress() const override { return connected_zk_address; }
 
     void executeGenericRequest(
         const ZooKeeperRequestPtr & request,
@@ -182,7 +182,7 @@ public:
         const Requests & requests,
         MultiCallback callback) override;
 
-    bool isFeatureEnabled(KeeperFeatureFlag feature_flag) const override;
+    DB::KeeperApiVersion getApiVersion() override;
 
     /// Without forcefully invalidating (finalizing) ZooKeeper session before
     /// establishing a new one, there was a possibility that server is using
@@ -200,27 +200,12 @@ public:
 
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
-    void setServerCompletelyStarted();
-
-    const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
-
 private:
+    String root_path;
     ACLs default_acls;
-    Poco::Net::SocketAddress connected_zk_address;
 
-    zkutil::ZooKeeperArgs args;
-
-    /// Fault injection
-    void maybeInjectSendFault();
-    void maybeInjectRecvFault();
-    void maybeInjectSendSleep();
-    void maybeInjectRecvSleep();
-    void setupFaultDistributions();
-    std::atomic_flag inject_setup = ATOMIC_FLAG_INIT;
-    std::optional<std::bernoulli_distribution> send_inject_fault;
-    std::optional<std::bernoulli_distribution> recv_inject_fault;
-    std::optional<std::bernoulli_distribution> send_inject_sleep;
-    std::optional<std::bernoulli_distribution> recv_inject_sleep;
+    Poco::Timespan session_timeout;
+    Poco::Timespan operation_timeout;
 
     Poco::Net::StreamSocket socket;
     /// To avoid excessive getpeername(2) calls.
@@ -261,30 +246,8 @@ private:
     Watches watches TSA_GUARDED_BY(watches_mutex);
     std::mutex watches_mutex;
 
-    /// A wrapper around ThreadFromGlobalPool that allows to call join() on it from multiple threads.
-    class ThreadReference
-    {
-    public:
-        const ThreadReference & operator = (ThreadFromGlobalPool && thread_)
-        {
-            std::lock_guard<std::mutex> l(lock);
-            thread = std::move(thread_);
-            return *this;
-        }
-
-        void join()
-        {
-            std::lock_guard<std::mutex> l(lock);
-            if (thread.joinable())
-                thread.join();
-        }
-    private:
-        std::mutex lock;
-        ThreadFromGlobalPool thread;
-    };
-
-    ThreadReference send_thread;
-    ThreadReference receive_thread;
+    ThreadFromGlobalPool send_thread;
+    ThreadFromGlobalPool receive_thread;
 
     Poco::Logger * log;
 
@@ -315,12 +278,12 @@ private:
 
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_ms = 0);
 
-    void initFeatureFlags();
+    void initApiVersion();
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;
 
-    DB::KeeperFeatureFlags keeper_feature_flags;
+    DB::KeeperApiVersion keeper_api_version{DB::KeeperApiVersion::ZOOKEEPER_COMPATIBLE};
 };
 
 }

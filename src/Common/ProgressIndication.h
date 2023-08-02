@@ -9,11 +9,11 @@
 #include <Common/Stopwatch.h>
 #include <Common/EventRateMeter.h>
 
+/// http://en.wikipedia.org/wiki/ANSI_escape_code
+#define CLEAR_TO_END_OF_LINE "\033[K"
 
 namespace DB
 {
-
-class WriteBufferFromFileDescriptor;
 
 struct ThreadEventData
 {
@@ -24,17 +24,19 @@ struct ThreadEventData
     UInt64 memory_usage = 0;
 };
 
-using HostToTimesMap = std::unordered_map<String, ThreadEventData>;
+using ThreadIdToTimeMap = std::unordered_map<UInt64, ThreadEventData>;
+using HostToThreadTimesMap = std::unordered_map<String, ThreadIdToTimeMap>;
 
 class ProgressIndication
 {
 public:
-    /// Write progress bar.
-    void writeProgress(WriteBufferFromFileDescriptor & message);
-    void clearProgressOutput(WriteBufferFromFileDescriptor & message);
+    /// Write progress to stderr.
+    void writeProgress();
 
-    /// Write summary.
     void writeFinalProgress();
+
+    /// Clear stderr output.
+    void clearProgressOutput();
 
     /// Reset progress values.
     void resetProgress();
@@ -50,14 +52,18 @@ public:
     /// In some cases there is a need to update progress value, when there is no access to progress_inidcation object.
     /// In this case it is added via context.
     /// `write_progress_on_update` is needed to write progress for loading files data via pipe in non-interactive mode.
-    void setFileProgressCallback(ContextMutablePtr context, WriteBufferFromFileDescriptor & message);
+    void setFileProgressCallback(ContextMutablePtr context, bool write_progress_on_update = false);
 
     /// How much seconds passed since query execution start.
     double elapsedSeconds() const { return getElapsedNanoseconds() / 1e9; }
 
-    void updateThreadEventData(HostToTimesMap & new_hosts_data);
+    void addThreadIdToList(String const & host, UInt64 thread_id);
+
+    void updateThreadEventData(HostToThreadTimesMap & new_thread_data);
 
 private:
+    size_t getUsedThreadsCount() const;
+
     double getCPUUsage();
 
     struct MemoryUsage
@@ -87,8 +93,8 @@ private:
 
     bool write_progress_on_update = false;
 
-    EventRateMeter cpu_usage_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/}; // average cpu utilization last 2 second
-    HostToTimesMap hosts_data;
+    EventRateMeter cpu_usage_meter{static_cast<double>(clock_gettime_ns()), 3'000'000'000 /*ns*/}; // average cpu utilization last 3 second
+    HostToThreadTimesMap thread_data;
     /// In case of all of the above:
     /// - clickhouse-local
     /// - input_format_parallel_parsing=true
@@ -96,7 +102,7 @@ private:
     ///
     /// It is possible concurrent access to the following:
     /// - writeProgress() (class properties) (guarded with progress_mutex)
-    /// - hosts_data/cpu_usage_meter (guarded with profile_events_mutex)
+    /// - thread_data/cpu_usage_meter (guarded with profile_events_mutex)
     mutable std::mutex profile_events_mutex;
     mutable std::mutex progress_mutex;
 };

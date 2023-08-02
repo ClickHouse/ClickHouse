@@ -1,3 +1,0 @@
-<clickhouse>
-    <user_defined_zookeeper_path>/clickhouse/udf</user_defined_zookeeper_path>
-</clickhouse>

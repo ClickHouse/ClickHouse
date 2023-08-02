@@ -12,7 +12,6 @@
 #include <Common/NetException.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
-#include <base/defines.h>
 #include <chrono>
 #include <Common/PipeFDs.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -20,7 +19,7 @@
 #include <queue>
 #include <mutex>
 #include <Coordination/FourLetterCommand.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 
 
 #ifdef POCO_HAVE_FD_EPOLL
@@ -88,18 +87,14 @@ struct SocketInterruptablePollWrapper
         socket_event.data.fd = sockfd;
         if (epoll_ctl(epollfd, EPOLL_CTL_ADD, sockfd, &socket_event) < 0)
         {
-            int err = ::close(epollfd);
-            chassert(!err || errno == EINTR);
-
+            ::close(epollfd);
             throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
         }
         pipe_event.events = EPOLLIN | EPOLLERR | EPOLLPRI;
         pipe_event.data.fd = pipe.fds_rw[0];
         if (epoll_ctl(epollfd, EPOLL_CTL_ADD, pipe.fds_rw[0], &pipe_event) < 0)
         {
-            int err = ::close(epollfd);
-            chassert(!err || errno == EINTR);
-
+            ::close(epollfd);
             throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
         }
 #endif
@@ -131,8 +126,7 @@ struct SocketInterruptablePollWrapper
             do
             {
                 Poco::Timestamp start;
-                /// TODO: use epoll_pwait() for more precise timers
-                rc = epoll_wait(epollfd, evout, 2, static_cast<int>(remaining_time.totalMilliseconds()));
+                rc = epoll_wait(epollfd, evout, 2, remaining_time.totalMilliseconds());
                 if (rc < 0 && errno == EINTR)
                 {
                     Poco::Timestamp end;
@@ -162,7 +156,7 @@ struct SocketInterruptablePollWrapper
             do
             {
                 Poco::Timestamp start;
-                rc = ::poll(poll_buf, 2, static_cast<int>(remaining_time.totalMilliseconds()));
+                rc = ::poll(poll_buf, 2, remaining_time.totalMilliseconds());
                 if (rc < 0 && errno == POCO_EINTR)
                 {
                     Poco::Timestamp end;
@@ -203,8 +197,7 @@ struct SocketInterruptablePollWrapper
 #if defined(POCO_HAVE_FD_EPOLL)
     ~SocketInterruptablePollWrapper()
     {
-        int err = ::close(epollfd);
-        chassert(!err || errno == EINTR);
+        ::close(epollfd);
     }
 #endif
 };
@@ -275,12 +268,12 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length)
     std::array<char, Coordination::PASSWORD_LENGTH> passwd {};
 
     if (!isHandShake(handshake_length))
-        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected handshake length received: {}", toString(handshake_length));
+        throw Exception("Unexpected handshake length received: " + toString(handshake_length), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 
     Coordination::read(protocol_version, *in);
 
     if (protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION)
-        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected protocol version: {}", toString(protocol_version));
+        throw Exception("Unexpected protocol version: " + toString(protocol_version), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 
     Coordination::read(last_zxid_seen, *in);
     Coordination::read(timeout_ms, *in);
@@ -293,7 +286,7 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length)
     if (handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY)
         Coordination::read(readonly, *in);
 
-    return Poco::Timespan(timeout_ms * 1000);
+    return Poco::Timespan(0, timeout_ms * 1000);
 }
 
 
@@ -332,7 +325,6 @@ void KeeperTCPHandler::runImpl()
     int32_t four_letter_cmd = header;
     if (!isHandShake(four_letter_cmd))
     {
-        connected.store(true, std::memory_order_relaxed);
         tryExecuteFourLetterWordCmd(four_letter_cmd);
         return;
     }
@@ -342,8 +334,8 @@ void KeeperTCPHandler::runImpl()
         int32_t handshake_length = header;
         auto client_timeout = receiveHandshake(handshake_length);
 
-        if (client_timeout.totalMilliseconds() == 0)
-            client_timeout = Poco::Timespan(Coordination::DEFAULT_SESSION_TIMEOUT_MS * Poco::Timespan::MILLISECONDS);
+        if (client_timeout == 0)
+            client_timeout = Coordination::DEFAULT_SESSION_TIMEOUT_MS;
         session_timeout = std::max(client_timeout, min_session_timeout);
         session_timeout = std::min(session_timeout, max_session_timeout);
     }
@@ -388,7 +380,7 @@ void KeeperTCPHandler::runImpl()
                 response->zxid);
 
         UInt8 single_byte = 1;
-        [[maybe_unused]] ssize_t result = write(response_fd, &single_byte, sizeof(single_byte));
+        [[maybe_unused]] int result = write(response_fd, &single_byte, sizeof(single_byte));
     };
     keeper_dispatcher->registerSession(session_id, response_callback);
 
@@ -403,7 +395,6 @@ void KeeperTCPHandler::runImpl()
     };
 
     session_stopwatch.start();
-    connected.store(true, std::memory_order_release);
     bool close_received = false;
 
     try
@@ -477,7 +468,7 @@ void KeeperTCPHandler::runImpl()
             }
 
             if (result.error)
-                throw Exception(ErrorCodes::SYSTEM_ERROR, "Exception happened while reading from socket");
+                throw Exception("Exception happened while reading from socket", ErrorCodes::SYSTEM_ERROR);
 
             if (session_stopwatch.elapsedMicroseconds() > static_cast<UInt64>(session_timeout.totalMicroseconds()))
             {
@@ -593,9 +584,6 @@ KeeperConnectionStats & KeeperTCPHandler::getConnectionStats()
 
 void KeeperTCPHandler::dumpStats(WriteBufferFromOwnString & buf, bool brief)
 {
-    if (!connected.load(std::memory_order_acquire))
-        return;
-
     auto & stats = getConnectionStats();
 
     writeText(' ', buf);

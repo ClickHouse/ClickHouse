@@ -12,6 +12,3 @@ in_transaction	10000
 out_transaction	0
 {"'implicit_True'":"implicit_True","all":"2","is_empty":0}
 {"'implicit_False'":"implicit_False","all":"2","is_empty":1}
-0
-0
-0

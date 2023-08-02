@@ -1,11 +1,9 @@
-set (SOURCE_DIR ${PROJECT_SOURCE_DIR}/contrib/zlib-ng)
+set (SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/zlib-ng)
 
 add_definitions(-DZLIB_COMPAT)
 add_definitions(-DWITH_GZFILEOP)
-if(NOT ARCH_S390X)
-    add_definitions(-DUNALIGNED_OK)
-    add_definitions(-DUNALIGNED64_OK)
-endif()
+add_definitions(-DUNALIGNED_OK)
+add_definitions(-DUNALIGNED64_OK)
 
 set (HAVE_UNISTD_H 1)
 add_definitions(-D_LARGEFILE64_SOURCE=1 -D__USE_LARGEFILE64)

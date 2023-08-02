@@ -1,5 +1,4 @@
 ---
-slug: /ru/faq/
 sidebar_label: F.A.Q.
 sidebar_position: 76
 ---

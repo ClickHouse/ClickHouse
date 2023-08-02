@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/database-engines/mysql
 sidebar_position: 50
 sidebar_label: MySQL
 ---
@@ -12,9 +11,9 @@ The `MySQL` database engine translate queries to the MySQL server so you can per
 
 You cannot perform the following queries:
 
-- `RENAME`
-- `CREATE TABLE`
-- `ALTER`
+-   `RENAME`
+-   `CREATE TABLE`
+-   `ALTER`
 
 ## Creating a Database {#creating-a-database}
 
@@ -25,10 +24,10 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 
 **Engine Parameters**
 
-- `host:port` — MySQL server address.
-- `database` — Remote database name.
-- `user` — MySQL user.
-- `password` — User password.
+-   `host:port` — MySQL server address.
+-   `database` — Remote database name.
+-   `user` — MySQL user.
+-   `password` — User password.
 
 ## Data Types Support {#data_types-support}
 
@@ -60,7 +59,7 @@ These variables are supported:
 - `version`
 - `max_allowed_packet`
 
-:::note
+:::warning
 By now these variables are stubs and don't correspond to anything.
 :::
 
@@ -148,3 +147,5 @@ SELECT * FROM mysql_db.mysql_table
 │      3 │     4 │
 └────────┴───────┘
 ```
+
+[Original article](https://clickhouse.com/docs/en/database_engines/mysql/) <!--hide-->

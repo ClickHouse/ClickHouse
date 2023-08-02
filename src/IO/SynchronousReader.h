@@ -13,8 +13,7 @@ class SynchronousReader final : public IAsynchronousReader
 {
 public:
     std::future<Result> submit(Request request) override;
-
-    void wait() override {}
 };
 
 }
+

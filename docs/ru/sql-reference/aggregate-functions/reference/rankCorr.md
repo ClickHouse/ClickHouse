@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/rankCorr
 sidebar_position: 145
 ---
 

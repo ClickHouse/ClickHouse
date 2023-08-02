@@ -1,3 +1,0 @@
-x	Array(Array(Nullable(Int64)))					
-x	Tuple(Array(Array(Nullable(Int64))), Nullable(Int64))					
-x	Map(String, Array(Nullable(Int64)))					

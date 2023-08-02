@@ -11,8 +11,8 @@ namespace DB
 {
 
 VerticalRowOutputFormat::VerticalRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_), format_settings(format_settings_)
+    WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_, params_), format_settings(format_settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
@@ -71,7 +71,6 @@ void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerializ
 
 void VerticalRowOutputFormat::writeRowStartDelimiter()
 {
-    field_number = 0;
     ++row_number;
 
     if (row_number > format_settings.pretty.max_rows)
@@ -81,7 +80,7 @@ void VerticalRowOutputFormat::writeRowStartDelimiter()
     writeIntText(row_number, out);
     writeCString(":\n", out);
 
-    size_t width = static_cast<size_t>(log10(row_number + 1)) + 1 + strlen("Row :");
+    size_t width = log10(row_number + 1) + 1 + strlen("Row :");
     for (size_t i = 0; i < width; ++i)
         writeCString("─", out);
     writeChar('\n', out);
@@ -93,7 +92,8 @@ void VerticalRowOutputFormat::writeRowBetweenDelimiter()
     if (row_number > format_settings.pretty.max_rows)
         return;
 
-    writeChar('\n', out);
+    writeCString("\n", out);
+    field_number = 0;
 }
 
 
@@ -160,9 +160,10 @@ void registerOutputFormatVertical(FormatFactory & factory)
     factory.registerOutputFormat("Vertical", [](
         WriteBuffer & buf,
         const Block & sample,
+        const RowOutputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<VerticalRowOutputFormat>(buf, sample, settings);
+        return std::make_shared<VerticalRowOutputFormat>(buf, sample, params, settings);
     });
 
     factory.markOutputFormatSupportsParallelFormatting("Vertical");

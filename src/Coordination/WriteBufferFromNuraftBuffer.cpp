@@ -1,4 +1,5 @@
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -11,7 +12,7 @@ namespace ErrorCodes
 void WriteBufferFromNuraftBuffer::nextImpl()
 {
     if (finalized)
-        throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER, "WriteBufferFromNuraftBuffer is finished");
+        throw Exception("WriteBufferFromNuraftBuffer is finished", ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER);
 
     /// pos may not be equal to vector.data() + old_size, because WriteBuffer::next() can be used to flush data
     size_t pos_offset = pos - reinterpret_cast<Position>(buffer->data_begin());

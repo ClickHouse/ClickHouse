@@ -12,15 +12,7 @@ try
     std::string input = std::string(reinterpret_cast<const char*>(data), size);
 
     DB::ParserQueryWithOutput parser(input.data() + input.size());
-
-    const UInt64 max_parser_depth = 1000;
-    DB::ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, max_parser_depth);
-
-    const UInt64 max_ast_depth = 1000;
-    ast->checkDepth(max_ast_depth);
-
-    const UInt64 max_ast_elements = 50000;
-    ast->checkSize(max_ast_elements);
+    DB::ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 1000);
 
     DB::WriteBufferFromOwnString wb;
     DB::formatAST(*ast, wb);

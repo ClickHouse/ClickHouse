@@ -35,7 +35,21 @@ ColumnsDescription readSchemaFromFormat(
     ContextPtr & context,
     std::unique_ptr<ReadBuffer> & buf_out);
 
+/// Make type Nullable recursively:
+/// - Type -> Nullable(type)
+/// - Array(Type) -> Array(Nullable(Type))
+/// - Tuple(Type1, ..., TypeN) -> Tuple(Nullable(Type1), ..., Nullable(TypeN))
+/// - Map(KeyType, ValueType) -> Map(KeyType, Nullable(ValueType))
+/// - LowCardinality(Type) -> LowCardinality(Nullable(Type))
+/// If type is Nothing or one of the nested types is Nothing, return nullptr.
+DataTypePtr makeNullableRecursivelyAndCheckForNothing(DataTypePtr type);
+
+/// Call makeNullableRecursivelyAndCheckForNothing for all types
+/// in the block and return names and types.
+NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header);
+
 SchemaCache::Key  getKeyForSchemaCache(const String & source, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
 SchemaCache::Keys  getKeysForSchemaCache(const Strings & sources, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
 
+void splitSchemaCacheKey(const String & key, String & source, String & format, String & additional_format_info);
 }

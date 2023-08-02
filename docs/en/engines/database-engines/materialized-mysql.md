@@ -1,12 +1,11 @@
 ---
-slug: /en/engines/database-engines/materialized-mysql
 sidebar_label: MaterializedMySQL
 sidebar_position: 70
 ---
 
 # [experimental] MaterializedMySQL 
 
-:::note
+:::warning
 This is an experimental feature that should not be used in production.
 :::
 
@@ -22,10 +21,10 @@ ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'passwo
 
 **Engine Parameters**
 
-- `host:port` — MySQL server endpoint.
-- `database` — MySQL database name.
-- `user` — MySQL user.
-- `password` — User password.
+-   `host:port` — MySQL server endpoint.
+-   `database` — MySQL database name.
+-   `user` — MySQL user.
+-   `password` — User password.
 
 ## Engine Settings
 
@@ -77,15 +76,15 @@ While turning on `gtid_mode` you should also specify `enforce_gtid_consistency =
 
 ## Virtual Columns {#virtual-columns}
 
-When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](/docs/en/engines/table-engines/mergetree-family/replacingmergetree.md) tables are used with virtual `_sign` and `_version` columns.
+When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables are used with virtual `_sign` and `_version` columns.
 
 ### \_version
 
-`_version` — Transaction counter. Type [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+`_version` — Transaction counter. Type [UInt64](../../sql-reference/data-types/int-uint.md).
 
 ### \_sign
 
-`_sign` — Deletion mark. Type [Int8](/docs/en/sql-reference/data-types/int-uint.md). Possible values:
+`_sign` — Deletion mark. Type [Int8](../../sql-reference/data-types/int-uint.md). Possible values:
     - `1` — Row is not deleted,
     - `-1` — Row is deleted.
 
@@ -93,33 +92,33 @@ When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](
 
 | MySQL                   | ClickHouse                                                   |
 |-------------------------|--------------------------------------------------------------|
-| TINY                    | [Int8](/docs/en/sql-reference/data-types/int-uint.md)           |
-| SHORT                   | [Int16](/docs/en/sql-reference/data-types/int-uint.md)          |
-| INT24                   | [Int32](/docs/en/sql-reference/data-types/int-uint.md)          |
-| LONG                    | [UInt32](/docs/en/sql-reference/data-types/int-uint.md)         |
-| LONGLONG                | [UInt64](/docs/en/sql-reference/data-types/int-uint.md)         |
-| FLOAT                   | [Float32](/docs/en/sql-reference/data-types/float.md)           |
-| DOUBLE                  | [Float64](/docs/en/sql-reference/data-types/float.md)           |
-| DECIMAL, NEWDECIMAL     | [Decimal](/docs/en/sql-reference/data-types/decimal.md)         |
-| DATE, NEWDATE           | [Date](/docs/en/sql-reference/data-types/date.md)               |
-| DATETIME, TIMESTAMP     | [DateTime](/docs/en/sql-reference/data-types/datetime.md)       |
-| DATETIME2, TIMESTAMP2   | [DateTime64](/docs/en/sql-reference/data-types/datetime64.md)   |
-| YEAR                    | [UInt16](/docs/en/sql-reference/data-types/int-uint.md)         |
-| TIME                    | [Int64](/docs/en/sql-reference/data-types/int-uint.md)          |
-| ENUM                    | [Enum](/docs/en/sql-reference/data-types/enum.md)               |
-| STRING                  | [String](/docs/en/sql-reference/data-types/string.md)           |
-| VARCHAR, VAR_STRING     | [String](/docs/en/sql-reference/data-types/string.md)           |
-| BLOB                    | [String](/docs/en/sql-reference/data-types/string.md)           |
-| GEOMETRY                | [String](/docs/en/sql-reference/data-types/string.md)           |
-| BINARY                  | [FixedString](/docs/en/sql-reference/data-types/fixedstring.md) |
-| BIT                     | [UInt64](/docs/en/sql-reference/data-types/int-uint.md)         |
-| SET                     | [UInt64](/docs/en/sql-reference/data-types/int-uint.md)         |
+| TINY                    | [Int8](../../sql-reference/data-types/int-uint.md)           |
+| SHORT                   | [Int16](../../sql-reference/data-types/int-uint.md)          |
+| INT24                   | [Int32](../../sql-reference/data-types/int-uint.md)          |
+| LONG                    | [UInt32](../../sql-reference/data-types/int-uint.md)         |
+| LONGLONG                | [UInt64](../../sql-reference/data-types/int-uint.md)         |
+| FLOAT                   | [Float32](../../sql-reference/data-types/float.md)           |
+| DOUBLE                  | [Float64](../../sql-reference/data-types/float.md)           |
+| DECIMAL, NEWDECIMAL     | [Decimal](../../sql-reference/data-types/decimal.md)         |
+| DATE, NEWDATE           | [Date](../../sql-reference/data-types/date.md)               |
+| DATETIME, TIMESTAMP     | [DateTime](../../sql-reference/data-types/datetime.md)       |
+| DATETIME2, TIMESTAMP2   | [DateTime64](../../sql-reference/data-types/datetime64.md)   |
+| YEAR                    | [UInt16](../../sql-reference/data-types/int-uint.md)         |
+| TIME                    | [Int64](../../sql-reference/data-types/int-uint.md)          |
+| ENUM                    | [Enum](../../sql-reference/data-types/enum.md)               |
+| STRING                  | [String](../../sql-reference/data-types/string.md)           |
+| VARCHAR, VAR_STRING     | [String](../../sql-reference/data-types/string.md)           |
+| BLOB                    | [String](../../sql-reference/data-types/string.md)           |
+| GEOMETRY                | [String](../../sql-reference/data-types/string.md)           |
+| BINARY                  | [FixedString](../../sql-reference/data-types/fixedstring.md) |
+| BIT                     | [UInt64](../../sql-reference/data-types/int-uint.md)         |
+| SET                     | [UInt64](../../sql-reference/data-types/int-uint.md)         |
 
-[Nullable](/docs/en/sql-reference/data-types/nullable.md) is supported.
+[Nullable](../../sql-reference/data-types/nullable.md) is supported.
 
 The data of TIME type in MySQL is converted to microseconds in ClickHouse.
 
-Other types are not supported. If MySQL table contains a column of such type, ClickHouse throws an exception and stops replication.
+Other types are not supported. If MySQL table contains a column of such type, ClickHouse throws exception "Unhandled data type" and stops replication.
 
 ## Specifics and Recommendations {#specifics-and-recommendations}
 
@@ -133,7 +132,7 @@ Apart of the data types limitations there are few restrictions comparing to `MyS
 
 ### DDL Queries {#ddl-queries}
 
-MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([ALTER](/docs/en/sql-reference/statements/alter/index.md), [CREATE](/docs/en/sql-reference/statements/create/index.md), [DROP](/docs/en/sql-reference/statements/drop.md), [RENAME](/docs/en/sql-reference/statements/rename.md)). If ClickHouse cannot parse some DDL query, the query is ignored.
+MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create/index.md), [DROP](../../sql-reference/statements/drop), [RENAME](../../sql-reference/statements/rename.md)). If ClickHouse cannot parse some DDL query, the query is ignored.
 
 ### Data Replication {#data-replication}
 
@@ -151,7 +150,7 @@ MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([
 `SELECT` query from `MaterializedMySQL` tables has some specifics:
 
 - If `_version` is not specified in the `SELECT` query, the
-  [FINAL](/docs/en/sql-reference/statements/select/from.md/#select-from-final) modifier is used, so only rows with
+  [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier is used, so only rows with
   `MAX(_version)` are returned for each primary key value.
 
 - If `_sign` is not specified in the `SELECT` query, `WHERE _sign=1` is used by default. So the deleted rows are not
@@ -164,7 +163,7 @@ MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([
 MySQL `PRIMARY KEY` and `INDEX` clauses are converted into `ORDER BY` tuples in ClickHouse tables.
 
 ClickHouse has only one physical order, which is determined by `ORDER BY` clause. To create a new physical order, use
-[materialized views](/docs/en/sql-reference/statements/create/view.md/#materialized).
+[materialized views](../../sql-reference/statements/create/view.md#materialized).
 
 **Notes**
 
@@ -173,7 +172,7 @@ ClickHouse has only one physical order, which is determined by `ORDER BY` clause
   MySQL binlog.
 - Replication can be easily broken.
 - Manual operations on database and tables are forbidden.
-- `MaterializedMySQL` is affected by the [optimize_on_insert](/docs/en/operations/settings/settings.md/#optimize-on-insert)
+- `MaterializedMySQL` is affected by the [optimize_on_insert](../../operations/settings/settings.md#optimize-on-insert)
   setting. Data is merged in the corresponding table in the `MaterializedMySQL` database when a table in the MySQL
   server changes.
 
@@ -187,19 +186,19 @@ These are the schema conversion manipulations you can do with table overrides fo
 
  * Modify column type. Must be compatible with the original type, or replication will fail. For example,
    you can modify a UInt32 column to UInt64, but you can not modify a String column to Array(String).
- * Modify [column TTL](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-column-ttl).
- * Modify [column compression codec](/docs/en/sql-reference/statements/create/table.md/#codecs).
- * Add [ALIAS columns](/docs/en/sql-reference/statements/create/table.md/#alias).
- * Add [skipping indexes](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-data_skipping-indexes)
- * Add [projections](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#projections). Note that projection optimizations are
+ * Modify [column TTL](../table-engines/mergetree-family/mergetree/#mergetree-column-ttl).
+ * Modify [column compression codec](../../sql-reference/statements/create/table/#codecs).
+ * Add [ALIAS columns](../../sql-reference/statements/create/table/#alias).
+ * Add [skipping indexes](../table-engines/mergetree-family/mergetree/#table_engine-mergetree-data_skipping-indexes)
+ * Add [projections](../table-engines/mergetree-family/mergetree/#projections). Note that projection optimizations are
    disabled when using `SELECT ... FINAL` (which MaterializedMySQL does by default), so their utility is limited here.
    `INDEX ... TYPE hypothesis` as [described in the v21.12 blog post]](https://clickhouse.com/blog/en/2021/clickhouse-v21.12-released/)
    may be more useful in this case.
- * Modify [PARTITION BY](/docs/en/engines/table-engines/mergetree-family/custom-partitioning-key/)
- * Modify [ORDER BY](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-query-clauses)
- * Modify [PRIMARY KEY](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-query-clauses)
- * Add [SAMPLE BY](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-query-clauses)
- * Add [table TTL](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-query-clauses)
+ * Modify [PARTITION BY](../table-engines/mergetree-family/custom-partitioning-key/)
+ * Modify [ORDER BY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+ * Modify [PRIMARY KEY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+ * Add [SAMPLE BY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+ * Add [table TTL](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
 
 ```sql
 CREATE DATABASE db_name ENGINE = MaterializedMySQL(...)
@@ -245,7 +244,7 @@ extra care needs to be taken.
 
 You may specify overrides for tables that do not exist yet.
 
-:::important
+:::warning
 It is easy to break replication with table overrides if not used with care. For example:
     
 * If an ALIAS column is added with a table override, and a column with the same name is later added to the source
@@ -313,3 +312,5 @@ SELECT * FROM mysql.test;
 │ 2 │ 222 │ Wow! │
 └───┴─────┴──────┘
 ```
+
+[Original article](https://clickhouse.com/docs/en/engines/database-engines/materialized-mysql/) <!--hide-->

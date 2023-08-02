@@ -1,15 +1,67 @@
 #if defined(OS_LINUX)
 
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
-#include <QueryPipeline/RemoteQueryExecutor.h>
-#include <base/defines.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Client/IConnections.h>
-#include <Common/AsyncTaskExecutor.h>
+#include <sys/epoll.h>
 
 namespace DB
 {
+
+struct RemoteQueryExecutorRoutine
+{
+    IConnections & connections;
+    RemoteQueryExecutorReadContext & read_context;
+
+    struct ReadCallback
+    {
+        RemoteQueryExecutorReadContext & read_context;
+        Fiber & fiber;
+
+        void operator()(int fd, Poco::Timespan timeout = 0, const std::string fd_description = "")
+        {
+            try
+            {
+                read_context.setConnectionFD(fd, timeout, fd_description);
+            }
+            catch (DB::Exception & e)
+            {
+                e.addMessage(" while reading from {}", fd_description);
+                throw;
+            }
+
+            read_context.is_read_in_progress.store(true, std::memory_order_relaxed);
+            fiber = std::move(fiber).resume();
+            read_context.is_read_in_progress.store(false, std::memory_order_relaxed);
+        }
+    };
+
+    Fiber operator()(Fiber && sink) const
+    {
+        try
+        {
+            while (true)
+            {
+                read_context.packet = connections.receivePacketUnlocked(ReadCallback{read_context, sink}, false /* is_draining */);
+                sink = std::move(sink).resume();
+            }
+        }
+        catch (const boost::context::detail::forced_unwind &)
+        {
+            /// This exception is thrown by fiber implementation in case if fiber is being deleted but hasn't exited
+            /// It should not be caught or it will segfault.
+            /// Other exceptions must be caught
+            throw;
+        }
+        catch (...)
+        {
+            read_context.exception = std::current_exception();
+        }
+
+        return std::move(sink);
+    }
+};
 
 namespace ErrorCodes
 {
@@ -18,69 +70,68 @@ namespace ErrorCodes
     extern const int SOCKET_TIMEOUT;
 }
 
-RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(RemoteQueryExecutor & executor_, bool suspend_when_query_sent_)
-    : AsyncTaskExecutor(std::make_unique<Task>(*this)), executor(executor_), suspend_when_query_sent(suspend_when_query_sent_)
+RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(IConnections & connections_)
+    : connections(connections_)
 {
+
     if (-1 == pipe2(pipe_fd, O_NONBLOCK))
         throwFromErrno("Cannot create pipe", ErrorCodes::CANNOT_OPEN_FILE);
 
-    epoll.add(pipe_fd[0]);
-    epoll.add(timer.getDescriptor());
+    {
+        epoll.add(pipe_fd[0]);
+    }
+
+    {
+        epoll.add(timer.getDescriptor());
+    }
+
+    auto routine = RemoteQueryExecutorRoutine{connections, *this};
+    fiber = boost::context::fiber(std::allocator_arg_t(), stack, std::move(routine));
 }
 
-bool RemoteQueryExecutorReadContext::checkBeforeTaskResume()
+void RemoteQueryExecutorReadContext::setConnectionFD(int fd, Poco::Timespan timeout, const std::string & fd_description)
 {
-    return !is_in_progress.load(std::memory_order_relaxed) || checkTimeout();
-}
-
-
-void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, SuspendCallback suspend_callback)
-{
-    read_context.executor.sendQueryUnlocked(ClientInfo::QueryKind::SECONDARY_QUERY, async_callback);
-    read_context.is_query_sent = true;
-
-    if (read_context.suspend_when_query_sent)
-        suspend_callback();
-
-    if (read_context.executor.needToSkipUnavailableShard())
+    if (fd == connection_fd)
         return;
 
-    while (true)
-    {
-        read_context.packet = read_context.executor.getConnections().receivePacketUnlocked(async_callback);
-        suspend_callback();
-    }
-}
+    if (connection_fd != -1)
+        epoll.remove(connection_fd);
 
-void RemoteQueryExecutorReadContext::processAsyncEvent(int fd, Poco::Timespan socket_timeout, AsyncEventTimeoutType type, const std::string & description, uint32_t events)
-{
     connection_fd = fd;
-    epoll.add(connection_fd, events);
-    timeout = socket_timeout;
-    timer.setRelative(socket_timeout);
-    timeout_type = type;
-    connection_fd_description = description;
-    is_in_progress.store(true);
-}
+    epoll.add(connection_fd);
 
-void RemoteQueryExecutorReadContext::clearAsyncEvent()
-{
-    epoll.remove(connection_fd);
-    timer.reset();
-    is_in_progress.store(false);
+    receive_timeout_usec = timeout.totalMicroseconds();
+    connection_fd_description = fd_description;
 }
 
 bool RemoteQueryExecutorReadContext::checkTimeout(bool blocking)
+{
+    try
+    {
+        return checkTimeoutImpl(blocking);
+    }
+    catch (DB::Exception & e)
+    {
+        if (last_used_socket)
+            e.addMessage(" while reading from socket ({})", last_used_socket->peerAddress().toString());
+        if (e.code() == ErrorCodes::SOCKET_TIMEOUT)
+            e.addMessage(" (receive timeout {} ms)", receive_timeout_usec / 1000);
+        throw;
+    }
+}
+
+bool RemoteQueryExecutorReadContext::checkTimeoutImpl(bool blocking)
 {
     /// Wait for epoll will not block if it was polled externally.
     epoll_event events[3];
     events[0].data.fd = events[1].data.fd = events[2].data.fd = -1;
 
-    size_t num_events = epoll.getManyReady(3, events, blocking);
+    int num_events = epoll.getManyReady(3, events, blocking);
 
     bool is_socket_ready = false;
+    bool is_pipe_alarmed = false;
 
-    for (size_t i = 0; i < num_events; ++i)
+    for (int i = 0; i < num_events; ++i)
     {
         if (events[i].data.fd == connection_fd)
             is_socket_ready = true;
@@ -95,32 +146,60 @@ bool RemoteQueryExecutorReadContext::checkTimeout(bool blocking)
 
     if (is_timer_alarmed && !is_socket_ready)
     {
-        /// Socket timeout. Drain it in case of error, or it may be hide by timeout exception.
+        /// Socket receive timeout. Drain it in case of error, or it may be hide by timeout exception.
         timer.drain();
-        const String exception_message = getSocketTimeoutExceededMessageByTimeoutType(timeout_type, timeout, connection_fd_description);
-        throw NetException(ErrorCodes::SOCKET_TIMEOUT, exception_message);
+        throw NetException("Timeout exceeded", ErrorCodes::SOCKET_TIMEOUT);
     }
 
     return true;
 }
 
-void RemoteQueryExecutorReadContext::cancelBefore()
+void RemoteQueryExecutorReadContext::setTimer() const
 {
+    /// Did not get packet yet. Init timeout for the next async reading.
+    timer.reset();
+
+    if (receive_timeout_usec)
+        timer.setRelative(receive_timeout_usec);
+}
+
+bool RemoteQueryExecutorReadContext::resumeRoutine()
+{
+    if (is_read_in_progress.load(std::memory_order_relaxed) && !checkTimeout())
+        return false;
+
+    {
+        std::lock_guard guard(fiber_lock);
+        if (!fiber)
+            return false;
+
+        fiber = std::move(fiber).resume();
+
+        if (exception)
+            std::rethrow_exception(exception);
+    }
+
+    return true;
+}
+
+void RemoteQueryExecutorReadContext::cancel()
+{
+    std::lock_guard guard(fiber_lock);
+
+    /// It is safe to just destroy fiber - we are not in the process of reading from socket.
+    boost::context::fiber to_destroy = std::move(fiber);
+
     /// One should not try to wait for the current packet here in case of
     /// timeout because this will exceed the timeout.
     /// Anyway if the timeout is exceeded, then the connection will be shutdown
     /// (disconnected), so it will not left in an unsynchronised state.
     if (!is_timer_alarmed)
     {
-        /// If query wasn't sent, just complete sending it.
-        if (!is_query_sent)
-            suspend_when_query_sent = true;
-
         /// Wait for current pending packet, to avoid leaving connection in unsynchronised state.
-        while (is_in_progress.load(std::memory_order_relaxed))
+        while (is_read_in_progress.load(std::memory_order_relaxed))
         {
             checkTimeout(/* blocking= */ true);
-            resumeUnlocked();
+            to_destroy = std::move(to_destroy).resume();
         }
     }
 
@@ -140,15 +219,9 @@ RemoteQueryExecutorReadContext::~RemoteQueryExecutorReadContext()
 {
     /// connection_fd is closed by Poco::Net::Socket or Epoll
     if (pipe_fd[0] != -1)
-    {
-        int err = close(pipe_fd[0]);
-        chassert(!err || errno == EINTR);
-    }
+        close(pipe_fd[0]);
     if (pipe_fd[1] != -1)
-    {
-        int err = close(pipe_fd[1]);
-        chassert(!err || errno == EINTR);
-    }
+        close(pipe_fd[1]);
 }
 
 }

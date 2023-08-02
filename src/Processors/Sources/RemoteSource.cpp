@@ -1,4 +1,3 @@
-#include <variant>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
@@ -9,16 +8,10 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_, bool async_read_, bool async_query_sending_)
+RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_, bool async_read_)
     : ISource(executor->getHeader(), false)
     , add_aggregation_info(add_aggregation_info_), query_executor(std::move(executor))
     , async_read(async_read_)
-    , async_query_sending(async_query_sending_)
 {
     /// Add AggregatedChunkInfo if we expect DataTypeAggregateFunction as a result.
     const auto & sample = getPort().getHeader();
@@ -56,11 +49,9 @@ ISource::Status RemoteSource::prepare()
     /// RemoteQueryExecutor it should be finished explicitly.
     if (status == Status::Finished)
     {
-        query_executor->finish();
+        query_executor->finish(&read_context);
         is_async_state = false;
-        return status;
     }
-
     return status;
 }
 
@@ -83,31 +74,11 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         /// Get rows_before_limit result for remote query from ProfileInfo packet.
         query_executor->setProfileInfoCallback([this](const ProfileInfo & info)
         {
-            if (rows_before_limit)
-            {
-                if (info.hasAppliedLimit())
-                    rows_before_limit->add(info.getRowsBeforeLimit());
-                else
-                    manually_add_rows_before_limit_counter = true; /// Remote subquery doesn't contain a limit
-            }
+            if (rows_before_limit && info.hasAppliedLimit())
+                rows_before_limit->set(info.getRowsBeforeLimit());
         });
 
-        if (async_query_sending)
-        {
-            int fd_ = query_executor->sendQueryAsync();
-            if (fd_ >= 0)
-            {
-                fd = fd_;
-                is_async_state = true;
-                return Chunk();
-            }
-
-            is_async_state = false;
-        }
-        else
-        {
-            query_executor->sendQuery();
-        }
+        query_executor->sendQuery();
 
         was_query_sent = true;
     }
@@ -116,42 +87,28 @@ std::optional<Chunk> RemoteSource::tryGenerate()
 
     if (async_read)
     {
-        auto res = query_executor->readAsync();
-
-        if (res.getType() == RemoteQueryExecutor::ReadResult::Type::Nothing)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got an empty packet from the RemoteQueryExecutor. This is a bug");
-
-        if (res.getType() == RemoteQueryExecutor::ReadResult::Type::FileDescriptor)
+        auto res = query_executor->read(read_context);
+        if (std::holds_alternative<int>(res))
         {
-            fd = res.getFileDescriptor();
+            fd = std::get<int>(res);
             is_async_state = true;
-            return Chunk();
-        }
-
-        if (res.getType() == RemoteQueryExecutor::ReadResult::Type::ParallelReplicasToken)
-        {
-            is_async_state = false;
             return Chunk();
         }
 
         is_async_state = false;
 
-        block = res.getBlock();
+        block = std::get<Block>(std::move(res));
     }
     else
-        block = query_executor->readBlock();
+        block = query_executor->read();
 
     if (!block)
     {
-        if (manually_add_rows_before_limit_counter)
-            rows_before_limit->add(rows);
-
-        query_executor->finish();
+        query_executor->finish(&read_context);
         return {};
     }
 
     UInt64 num_rows = block.rows();
-    rows += num_rows;
     Chunk chunk(block.getColumns(), num_rows);
 
     if (add_aggregation_info)
@@ -168,7 +125,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
 void RemoteSource::onCancel()
 {
     was_query_canceled = true;
-    query_executor->cancel();
+    query_executor->cancel(&read_context);
 }
 
 void RemoteSource::onUpdatePorts()
@@ -176,7 +133,7 @@ void RemoteSource::onUpdatePorts()
     if (getPort().isFinished())
     {
         was_query_canceled = true;
-        query_executor->finish();
+        query_executor->finish(&read_context);
     }
 }
 
@@ -223,9 +180,9 @@ Chunk RemoteExtremesSource::generate()
 
 Pipe createRemoteSourcePipe(
     RemoteQueryExecutorPtr query_executor,
-    bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read, bool async_query_sending)
+    bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read)
 {
-    Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info, async_read, async_query_sending));
+    Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info, async_read));
 
     if (add_totals)
         pipe.addTotalsSource(std::make_shared<RemoteTotalsSource>(query_executor));

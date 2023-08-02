@@ -38,7 +38,7 @@ public:
         : IAggregateFunctionDataHelper<
             AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType>,
             AggregationFunctionDeltaSumTimestamp<ValueType, TimestampType>
-        >{arguments, params, createResultType()}
+        >{arguments, params}
     {}
 
     AggregationFunctionDeltaSumTimestamp()
@@ -52,7 +52,7 @@ public:
 
     String getName() const override { return "deltaSumTimestamp"; }
 
-    static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<ValueType>>(); }
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<ValueType>>(); }
 
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

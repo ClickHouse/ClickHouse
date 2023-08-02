@@ -204,7 +204,7 @@ class PostgresManager:
         assert materialized_database in self.instance.query("SHOW DATABASES")
 
     def drop_materialized_db(self, materialized_database="test_database"):
-        self.instance.query(f"DROP DATABASE IF EXISTS {materialized_database} SYNC")
+        self.instance.query(f"DROP DATABASE IF EXISTS {materialized_database} NO DELAY")
         if materialized_database in self.created_materialized_postgres_db_list:
             self.created_materialized_postgres_db_list.remove(materialized_database)
         assert materialized_database not in self.instance.query("SHOW DATABASES")
@@ -320,11 +320,11 @@ def check_tables_are_synchronized(
     )
     result = instance.query(result_query)
 
-    for _ in range(50):
+    for _ in range(30):
         if result == expected:
             break
         else:
-            time.sleep(1)
+            time.sleep(0.5)
         result = instance.query(result_query)
 
     assert result == expected

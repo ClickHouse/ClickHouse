@@ -2,7 +2,7 @@
 
 #include <Core/Block.h>
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 #    include <Common/LocalDateTime.h>

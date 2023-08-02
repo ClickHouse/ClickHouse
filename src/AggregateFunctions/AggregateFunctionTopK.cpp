@@ -5,7 +5,6 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeIPv4andIPv6.h>
 
 
 static inline constexpr UInt64 TOP_K_MAX_SIZE = 0xFFFFFF;
@@ -32,49 +31,15 @@ namespace
 template <bool is_weighted>
 class AggregateFunctionTopKDate : public AggregateFunctionTopK<DataTypeDate::FieldType, is_weighted>
 {
-public:
     using AggregateFunctionTopK<DataTypeDate::FieldType, is_weighted>::AggregateFunctionTopK;
-
-    AggregateFunctionTopKDate(UInt64 threshold_, UInt64 load_factor, const DataTypes & argument_types_, const Array & params)
-        : AggregateFunctionTopK<DataTypeDate::FieldType, is_weighted>(
-            threshold_,
-            load_factor,
-            argument_types_,
-            params,
-            std::make_shared<DataTypeArray>(std::make_shared<DataTypeDate>()))
-    {}
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDate>()); }
 };
 
 template <bool is_weighted>
 class AggregateFunctionTopKDateTime : public AggregateFunctionTopK<DataTypeDateTime::FieldType, is_weighted>
 {
-public:
     using AggregateFunctionTopK<DataTypeDateTime::FieldType, is_weighted>::AggregateFunctionTopK;
-
-    AggregateFunctionTopKDateTime(UInt64 threshold_, UInt64 load_factor, const DataTypes & argument_types_, const Array & params)
-        : AggregateFunctionTopK<DataTypeDateTime::FieldType, is_weighted>(
-            threshold_,
-            load_factor,
-            argument_types_,
-            params,
-            std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()))
-    {}
-};
-
-template <bool is_weighted>
-class AggregateFunctionTopKIPv4 : public AggregateFunctionTopK<DataTypeIPv4::FieldType, is_weighted>
-{
-public:
-    using AggregateFunctionTopK<DataTypeIPv4::FieldType, is_weighted>::AggregateFunctionTopK;
-
-    AggregateFunctionTopKIPv4(UInt64 threshold_, UInt64 load_factor, const DataTypes & argument_types_, const Array & params)
-        : AggregateFunctionTopK<DataTypeIPv4::FieldType, is_weighted>(
-            threshold_,
-            load_factor,
-            argument_types_,
-            params,
-            std::make_shared<DataTypeArray>(std::make_shared<DataTypeIPv4>()))
-    {}
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()); }
 };
 
 
@@ -89,8 +54,6 @@ IAggregateFunction * createWithExtraTypes(const DataTypes & argument_types, UInt
         return new AggregateFunctionTopKDate<is_weighted>(threshold, load_factor, argument_types, params);
     if (which.idx == TypeIndex::DateTime)
         return new AggregateFunctionTopKDateTime<is_weighted>(threshold, load_factor, argument_types, params);
-    if (which.idx == TypeIndex::IPv4)
-        return new AggregateFunctionTopKIPv4<is_weighted>(threshold, load_factor, argument_types, params);
 
     /// Check that we can use plain version of AggregateFunctionTopKGeneric
     if (argument_types[0]->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
@@ -111,7 +74,7 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
     {
         assertBinary(name, argument_types);
         if (!isInteger(argument_types[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second argument for aggregate function 'topKWeighted' must have integer type");
+            throw Exception("The second argument for aggregate function 'topKWeighted' must have integer type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     UInt64 threshold = 10;  /// default values

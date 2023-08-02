@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/functions/files
 sidebar_position: 43
 sidebar_label: "Функции для работы с файлами"
 ---

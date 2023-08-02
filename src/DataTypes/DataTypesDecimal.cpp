@@ -28,11 +28,6 @@ std::string DataTypeDecimal<T>::doGetName() const
     return fmt::format("Decimal({}, {})", this->precision, this->scale);
 }
 
-template <is_decimal T>
-std::string DataTypeDecimal<T>::getSQLCompatibleName() const
-{
-    return fmt::format("DECIMAL({}, {})", this->precision, this->scale);
-}
 
 template <is_decimal T>
 bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
@@ -45,10 +40,8 @@ bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
 template <is_decimal T>
 DataTypePtr DataTypeDecimal<T>::promoteNumericType() const
 {
-    if (sizeof(T) <= sizeof(Decimal128))
-        return std::make_shared<DataTypeDecimal<Decimal128>>(DataTypeDecimal<Decimal128>::maxPrecision(), this->scale);
-    else
-        return std::make_shared<DataTypeDecimal<Decimal256>>(DataTypeDecimal<Decimal256>::maxPrecision(), this->scale);
+    using PromotedType = DataTypeDecimal<Decimal128>;
+    return std::make_shared<PromotedType>(PromotedType::maxPrecision(), this->scale);
 }
 
 template <is_decimal T>
@@ -60,7 +53,7 @@ T DataTypeDecimal<T>::parseFromString(const String & str) const
     readDecimalText(buf, x, this->precision, unread_scale, true);
 
     if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<T>(unread_scale), x.value))
-        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 
     return x;
 }
@@ -75,15 +68,15 @@ SerializationPtr DataTypeDecimal<T>::doGetDefaultSerialization() const
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Decimal data type family must have exactly two arguments: precision and scale");
+        throw Exception("Decimal data type family must have exactly two arguments: precision and scale",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const auto * precision = arguments->children[0]->as<ASTLiteral>();
     const auto * scale = arguments->children[1]->as<ASTLiteral>();
 
     if (!precision || precision->value.getType() != Field::Types::UInt64 ||
         !scale || !(scale->value.getType() == Field::Types::Int64 || scale->value.getType() == Field::Types::UInt64))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Decimal data type family must have two numbers as its arguments");
+        throw Exception("Decimal data type family must have two numbers as its arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     UInt64 precision_value = precision->value.get<UInt64>();
     UInt64 scale_value = scale->value.get<UInt64>();
@@ -95,13 +88,13 @@ template <typename T>
 static DataTypePtr createExact(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-        "Decimal32 | Decimal64 | Decimal128 | Decimal256 data type family must have exactly one arguments: scale");
+        throw Exception("Decimal data type family must have exactly two arguments: precision and scale",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
     const auto * scale_arg = arguments->children[0]->as<ASTLiteral>();
 
     if (!scale_arg || !(scale_arg->value.getType() == Field::Types::Int64 || scale_arg->value.getType() == Field::Types::UInt64))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-        "Decimal32 | Decimal64 | Decimal128 | Decimal256 data type family must have a one number as its argument");
+        throw Exception("Decimal data type family must have a two numbers as its arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     UInt64 precision = DecimalUtils::max_precision<T>;
     UInt64 scale = scale_arg->value.get<UInt64>();

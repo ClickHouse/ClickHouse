@@ -3,9 +3,7 @@
 #include <typeinfo>
 #include <vector>
 #include <Common/typeid_cast.h>
-#include <Common/checkStackSize.h>
 #include <Parsers/DumpASTNode.h>
-
 
 namespace DB
 {
@@ -26,46 +24,11 @@ public:
 
     void visit(T & ast)
     {
-        if (ostr)
-            visitImpl</* with_dump= */ true>(ast);
-        else
-            visitImpl</* with_dump= */ false>(ast);
-    }
+        DumpASTNode dump(*ast, ostr, visit_depth, typeid(Matcher).name());
 
-private:
-    Data & data;
-    size_t visit_depth;
-    WriteBuffer * ostr;
-
-    template <bool with_dump>
-    void visitImpl(T & ast)
-    {
-        checkStackSize();
-        if constexpr (with_dump)
-        {
-            DumpASTNode dump(*ast, ostr, visit_depth, typeid(Matcher).name());
-            visitImplMain</* with_dump= */ true>(ast);
-        }
-        else
-        {
-            visitImplMain</* with_dump= */ false>(ast);
-        }
-    }
-
-    template <bool with_dump>
-    void visitImplMain(T & ast)
-    {
         if constexpr (!_top_to_bottom)
-            visitChildren<with_dump>(ast);
+            visitChildren(ast);
 
-        doVisit(ast);
-
-        if constexpr (_top_to_bottom)
-            visitChildren<with_dump>(ast);
-    }
-
-    void doVisit(T & ast)
-    {
         try
         {
             Matcher::visit(ast, data);
@@ -75,9 +38,16 @@ private:
             e.addMessage("While processing {}", ast->formatForErrorMessage());
             throw;
         }
+
+        if constexpr (_top_to_bottom)
+            visitChildren(ast);
     }
 
-    template <bool with_dump>
+private:
+    Data & data;
+    size_t visit_depth;
+    WriteBuffer * ostr;
+
     void visitChildren(T & ast)
     {
         for (auto & child : ast->children)
@@ -89,7 +59,7 @@ private:
                 need_visit_child = Matcher::needChildVisit(ast, child);
 
             if (need_visit_child)
-                visitImpl<with_dump>(child);
+                visit(child);
         }
     }
 };

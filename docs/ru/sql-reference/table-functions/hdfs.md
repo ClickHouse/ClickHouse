@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/table-functions/hdfs
 sidebar_position: 45
 sidebar_label: hdfs
 ---
@@ -61,3 +60,4 @@ LIMIT 2
 **Смотрите также**
 
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
+

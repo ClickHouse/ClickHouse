@@ -63,7 +63,7 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
     /// Locked for read while query processing
     std::shared_lock lock(endpoint->rwlock);
     if (endpoint->blocker.isCancelled())
-        throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
+        throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 
     if (compress)
     {
@@ -93,13 +93,10 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 
     auto write_response = [&](const std::string & message)
     {
-        auto & out = *used_output.out;
         if (response.sent())
-        {
-            out.finalize();
             return;
-        }
 
+        auto & out = *used_output.out;
         try
         {
             writeString(message, out);
@@ -130,31 +127,28 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     catch (Exception & e)
     {
         if (e.code() == ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES)
-        {
-            used_output.out->finalize();
             return;
-        }
 
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 
         /// Sending to remote server was cancelled due to server shutdown or drop table.
         bool is_real_error = e.code() != ErrorCodes::ABORTED;
 
-        PreformattedMessage message = getCurrentExceptionMessageAndPattern(is_real_error);
-        write_response(message.text);
+        std::string message = getCurrentExceptionMessage(is_real_error);
+        write_response(message);
 
         if (is_real_error)
-            LOG_ERROR(log, message);
+            LOG_ERROR(log, fmt::runtime(message));
         else
-            LOG_INFO(log, message);
+            LOG_INFO(log, fmt::runtime(message));
     }
     catch (...)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-        PreformattedMessage message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
-        write_response(message.text);
+        std::string message = getCurrentExceptionMessage(false);
+        write_response(message);
 
-        LOG_ERROR(log, message);
+        LOG_ERROR(log, fmt::runtime(message));
     }
 }
 

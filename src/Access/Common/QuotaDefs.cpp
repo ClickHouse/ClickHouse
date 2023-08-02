@@ -1,12 +1,13 @@
 #include <Access/Common/QuotaDefs.h>
 #include <Common/Exception.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+
+#include <base/range.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
+#include <boost/lexical_cast.hpp>
 
 
 namespace DB
@@ -28,15 +29,15 @@ String QuotaTypeInfo::valueToString(QuotaValue value) const
     if (!(value % output_denominator))
         return std::to_string(value / output_denominator);
     else
-        return toString(static_cast<double>(value) / output_denominator);
+        return boost::lexical_cast<std::string>(static_cast<double>(value) / output_denominator);
 }
 
 QuotaValue QuotaTypeInfo::stringToValue(const String & str) const
 {
     if (output_denominator == 1)
-        return static_cast<QuotaValue>(parse<UInt64>(str));
+        return static_cast<QuotaValue>(std::strtoul(str.c_str(), nullptr, 10));
     else
-        return static_cast<QuotaValue>(parse<Float64>(str) * output_denominator);
+        return static_cast<QuotaValue>(std::strtod(str.c_str(), nullptr) * output_denominator);
 }
 
 String QuotaTypeInfo::valueToStringWithName(QuotaValue value) const
@@ -113,7 +114,7 @@ const QuotaTypeInfo & QuotaTypeInfo::get(QuotaType type)
         }
         case QuotaType::MAX: break;
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected quota type: {}", static_cast<int>(type));
+    throw Exception("Unexpected quota type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
 }
 
 String toString(QuotaKeyType type)
@@ -187,7 +188,7 @@ const QuotaKeyTypeInfo & QuotaKeyTypeInfo::get(QuotaKeyType type)
         }
         case QuotaKeyType::MAX: break;
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected quota key type: {}", static_cast<int>(type));
+    throw Exception("Unexpected quota key type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
 }
 
 }

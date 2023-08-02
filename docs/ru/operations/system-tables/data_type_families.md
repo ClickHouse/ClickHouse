@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/data_type_families
----
 # system.data_type_families {#system_tables-data_type_families}
 
 Содержит информацию о поддерживаемых [типах данных](../../sql-reference/data-types/index.md).
@@ -35,3 +32,4 @@ SELECT * FROM system.data_type_families WHERE alias_to = 'String'
 **See Also**
 
 -   [Синтаксис](../../sql-reference/syntax.md) — поддерживаемый SQL синтаксис.
+

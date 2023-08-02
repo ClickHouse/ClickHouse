@@ -7,7 +7,7 @@
 #include <Poco/Util/Application.h>
 #include "OwnSplitChannel.h"
 
-#ifndef WITHOUT_TEXT_LOG
+#ifdef WITH_TEXT_LOG
 namespace DB
 {
     class TextLog;
@@ -29,7 +29,7 @@ public:
     /// Close log files. On next log write files will be reopened.
     void closeLogs(Poco::Logger & logger);
 
-#ifndef WITHOUT_TEXT_LOG
+#ifdef WITH_TEXT_LOG
     void setTextLog(std::shared_ptr<DB::TextLog> log, int max_priority);
 #endif
 
@@ -39,9 +39,9 @@ private:
     Poco::AutoPtr<Poco::Channel> syslog_channel;
 
     /// Previous value of logger element in config. It is used to reinitialize loggers whenever the value changed.
-    std::optional<std::string> config_logger;
+    std::string config_logger;
 
-#ifndef WITHOUT_TEXT_LOG
+#ifdef WITH_TEXT_LOG
     std::weak_ptr<DB::TextLog> text_log;
     int text_log_max_priority = -1;
 #endif

@@ -6,7 +6,7 @@
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 #   include <mysqlxx/PoolFactory.h>
@@ -83,11 +83,6 @@ DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary {} config not found", backQuote(dictionary_name));
 
     return ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
-}
-
-void ExternalDictionariesLoader::assertDictionaryStructureExists(const std::string & dictionary_name, ContextPtr query_context) const
-{
-    getDictionaryStructure(dictionary_name, query_context);
 }
 
 QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr query_context) const

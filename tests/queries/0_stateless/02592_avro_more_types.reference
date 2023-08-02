@@ -1,7 +1,0 @@
-c1	FixedString(16)					
-c2	FixedString(16)					
-c3	FixedString(32)					
-c4	FixedString(32)					
-c5	Map(String, Int32)					
-c6	Decimal(18, 2)					
-42	42	42	42	{42:42}	2020-01-01 00:00:00.00

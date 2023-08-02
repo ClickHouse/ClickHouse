@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_formats.h"
 
 #if USE_PROTOBUF
 #   include <Common/PODArray.h>
@@ -32,9 +32,7 @@ public:
     void readString(String & str);
     void readStringAndAppend(PaddedPODArray<UInt8> & str);
 
-    bool eof() const { return in->eof(); }
-
-    void setReadBuffer(ReadBuffer & in_) { in = &in_; }
+    bool eof() const { return in.eof(); }
 
 private:
     void readBinary(void * data, size_t size);
@@ -45,7 +43,7 @@ private:
     UInt64 ALWAYS_INLINE readVarint()
     {
         char c;
-        in->readStrict(c);
+        in.readStrict(c);
         UInt64 first_byte = static_cast<UInt8>(c);
         ++cursor;
         if (likely(!(c & 0x80)))
@@ -58,7 +56,7 @@ private:
     void ignoreGroup();
     [[noreturn]] void throwUnknownFormat() const;
 
-    ReadBuffer * in;
+    ReadBuffer & in;
     Int64 cursor = 0;
     bool root_message_has_length_delimiter = false;
     size_t current_message_level = 0;

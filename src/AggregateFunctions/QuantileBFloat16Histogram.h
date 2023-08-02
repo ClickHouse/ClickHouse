@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <base/bit_cast.h>
 #include <base/sort.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -103,13 +104,13 @@ private:
     /// Take the most significant 16 bits of the floating point number.
     BFloat16 toBFloat16(const Value & x) const
     {
-        return std::bit_cast<UInt32>(static_cast<Float32>(x)) >> 16;
+        return bit_cast<UInt32>(static_cast<Float32>(x)) >> 16;
     }
 
     /// Put the bits into most significant 16 bits of the floating point number and fill other bits with zeros.
     Float32 toFloat32(const BFloat16 & x) const
     {
-        return std::bit_cast<Float32>(x << 16);
+        return bit_cast<Float32>(x << 16);
     }
 
     using Pair = PairNoInit<Float32, Weight>;
@@ -144,10 +145,10 @@ private:
             accumulated += p->second;
 
             if (accumulated >= threshold)
-                return static_cast<T>(p->first);
+                return p->first;
         }
 
-        return static_cast<T>(array[size - 1].first);
+        return array[size - 1].first;
     }
 
     template <typename T>
@@ -187,7 +188,7 @@ private:
 
             while (accumulated >= threshold)
             {
-                result[indices[level_index]] = static_cast<T>(p->first);
+                result[indices[level_index]] = p->first;
                 ++level_index;
 
                 if (level_index == num_levels)
@@ -199,7 +200,7 @@ private:
 
         while (level_index < num_levels)
         {
-            result[indices[level_index]] = static_cast<T>(array[size - 1].first);
+            result[indices[level_index]] = array[size - 1].first;
             ++level_index;
         }
     }

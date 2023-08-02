@@ -6,6 +6,8 @@
     "docker/packager/binary": {
         "name": "clickhouse/binary-builder",
         "dependent": [
+            "docker/test/split_build_smoke_test",
+            "docker/test/pvs",
             "docker/test/codebrowser"
         ]
     },
@@ -27,6 +29,10 @@
     },
     "docker/test/performance-comparison": {
         "name": "clickhouse/performance-comparison",
+        "dependent": []
+    },
+    "docker/test/pvs": {
+        "name": "clickhouse/pvs-test",
         "dependent": []
     },
     "docker/test/util": {
@@ -57,12 +63,20 @@
         "name": "clickhouse/stress-test",
         "dependent": []
     },
+    "docker/test/split_build_smoke_test": {
+        "name": "clickhouse/split-build-smoke-test",
+        "dependent": []
+    },
     "docker/test/codebrowser": {
         "name": "clickhouse/codebrowser",
         "dependent": []
     },
     "docker/test/integration/runner": {
         "name": "clickhouse/integration-tests-runner",
+        "dependent": []
+    },
+    "docker/test/testflows/runner": {
+        "name": "clickhouse/testflows-runner",
         "dependent": []
     },
     "docker/test/fasttest": {
@@ -148,10 +162,6 @@
     },
     "docker/docs/release": {
         "name": "clickhouse/docs-release",
-        "dependent": []
-    },
-    "docker/test/sqllogic": {
-        "name": "clickhouse/sqllogic-test",
         "dependent": []
     }
 }

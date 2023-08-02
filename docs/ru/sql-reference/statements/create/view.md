@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/create/view
 sidebar_position: 37
 sidebar_label: "Представление"
 ---
@@ -11,7 +10,7 @@ sidebar_label: "Представление"
 ## Обычные представления {#normal}
 
 ``` sql
-CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] AS SELECT ...
+CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] AS SELECT ...
 ```
 
 Обычные представления не хранят никаких данных, они выполняют чтение данных из другой таблицы при каждом доступе. Другими словами, обычное представление — это не что иное, как сохраненный запрос. При чтении данных из представления этот сохраненный запрос используется как подзапрос в секции [FROM](../../../sql-reference/statements/select/from.md).
@@ -156,6 +155,23 @@ SELECT * FROM [db.]live_view WHERE ...
 
 Чтобы принудительно обновить LIVE-представление, используйте запрос `ALTER LIVE VIEW [db.]table_name REFRESH`.
 
+### Секция WITH TIMEOUT {#live-view-with-timeout}
+
+LIVE-представление, созданное с параметром `WITH TIMEOUT`, будет автоматически удалено через определенное количество секунд с момента предыдущего запроса [WATCH](../../../sql-reference/statements/watch.md), примененного к данному LIVE-представлению.
+
+```sql
+CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AS SELECT ...
+```
+
+Если временной промежуток не указан, используется значение настройки [temporary_live_view_timeout](../../../operations/settings/settings.md#temporary-live-view-timeout).
+
+**Пример:**
+
+```sql
+CREATE TABLE mt (x Int8) Engine = MergeTree ORDER BY x;
+CREATE LIVE VIEW lv WITH TIMEOUT 15 AS SELECT sum(x) FROM mt;
+```
+
 ### Секция WITH REFRESH {#live-view-with-refresh}
 
 LIVE-представление, созданное с параметром `WITH REFRESH`, будет автоматически обновляться через указанные промежутки времени, начиная с момента последнего обновления.
@@ -185,6 +201,20 @@ WATCH lv;
 └─────────────────────┴──────────┘
 ```
 
+Параметры `WITH TIMEOUT` и `WITH REFRESH` можно сочетать с помощью `AND`.
+
+```sql
+CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AND REFRESH [value_in_sec] AS SELECT ...
+```
+
+**Пример:**
+
+```sql
+CREATE LIVE VIEW lv WITH TIMEOUT 15 AND REFRESH 5 AS SELECT now();
+```
+
+По истечении 15 секунд представление будет автоматически удалено, если нет активного запроса `WATCH`.
+
 ```sql
 WATCH lv;
 ```
@@ -201,3 +231,5 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
 - Кеширование результатов часто используемых запросов для получения их без задержки.
 - Отслеживание изменений таблицы для запуска других запросов `SELECT`.
 - Отслеживание показателей из системных таблиц с помощью периодических обновлений.
+
+[Оригинальная статья](https://clickhouse.com/docs/ru/sql-reference/statements/create/view) <!--hide-->

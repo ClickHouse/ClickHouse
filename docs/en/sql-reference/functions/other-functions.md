@@ -1,6 +1,5 @@
 ---
-slug: /en/sql-reference/functions/other-functions
-sidebar_position: 140
+sidebar_position: 67
 sidebar_label: Other
 ---
 
@@ -8,12 +7,12 @@ sidebar_label: Other
 
 ## hostName()
 
-Returns the name of the host on which this function was executed. If the function executes on a remote server (distributed processing), the remote server name is returned.
-If the function executes in the context of a distributed table, it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
+Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
+If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
 ## getMacro
 
-Returns a named value from the [macros](../../operations/server-configuration-parameters/settings.md#macros) section of the server configuration.
+Gets a named value from the [macros](../../operations/server-configuration-parameters/settings.md#macros) section of the server configuration.
 
 **Syntax**
 
@@ -23,17 +22,17 @@ getMacro(name);
 
 **Arguments**
 
-- `name` — Macro name to retrieve from the `<macros>` section. [String](../../sql-reference/data-types/string.md#string).
+-   `name` — Name to retrieve from the `macros` section. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
-- Value of the specified macro.
+-   Value of the specified macro.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
-Example `<macros>` section in the server configuration file:
+The example `macros` section in the server configuration file:
 
 ``` xml
 <macros>
@@ -55,7 +54,7 @@ Result:
 └──────────────────┘
 ```
 
-The same value can be retrieved as follows:
+An alternative way to get the same value:
 
 ``` sql
 SELECT * FROM system.macros
@@ -70,7 +69,7 @@ WHERE macro = 'test';
 
 ## FQDN
 
-Returns the fully qualified domain name of the ClickHouse server.
+Returns the fully qualified domain name.
 
 **Syntax**
 
@@ -82,11 +81,13 @@ This function is case-insensitive.
 
 **Returned value**
 
-- String with the fully qualified domain name.
+-   String with the fully qualified domain name.
 
 Type: `String`.
 
 **Example**
+
+Query:
 
 ``` sql
 SELECT FQDN();
@@ -102,60 +103,51 @@ Result:
 
 ## basename
 
-Extracts the tail of a string following its last slash or backslash. This function if often used to extract the filename from a path.
+Extracts the trailing part of a string after the last slash or backslash. This function if often used to extract the filename from a path.
 
 ``` sql
-basename(expr)
+basename( expr )
 ```
 
 **Arguments**
 
-- `expr` — A value of type [String](../../sql-reference/data-types/string.md). Backslashes must be escaped.
+-   `expr` — Expression resulting in a [String](../../sql-reference/data-types/string.md) type value. All the backslashes must be escaped in the resulting value.
 
 **Returned Value**
 
 A string that contains:
 
-- The tail of the input string after its last slash or backslash. If the input string ends with a slash or backslash (e.g. `/` or `c:\`), the function returns an empty string.
-- The original string if there are no slashes or backslashes.
+-   The trailing part of a string after the last slash or backslash.
+
+        If the input string contains a path ending with slash or backslash, for example, `/` or `c:\`, the function returns an empty string.
+
+-   The original string if there are no slashes or backslashes.
 
 **Example**
-
-Query:
 
 ``` sql
 SELECT 'some/long/path/to/file' AS a, basename(a)
 ```
 
-Result:
-
 ``` text
 ┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
 │ some\long\path\to\file │ file                                   │
 └────────────────────────┴────────────────────────────────────────┘
 ```
-
-Query:
 
 ``` sql
 SELECT 'some\\long\\path\\to\\file' AS a, basename(a)
 ```
 
-Result:
-
 ``` text
 ┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
 │ some\long\path\to\file │ file                                   │
 └────────────────────────┴────────────────────────────────────────┘
 ```
 
-Query:
-
 ``` sql
 SELECT 'some-file-name' AS a, basename(a)
 ```
-
-Result:
 
 ``` text
 ┌─a──────────────┬─basename('some-file-name')─┐
@@ -166,7 +158,7 @@ Result:
 ## visibleWidth(x)
 
 Calculates the approximate width when outputting values to the console in text format (tab-separated).
-This function is used by the system to implement Pretty formats.
+This function is used by the system for implementing Pretty formats.
 
 `NULL` is represented as a string corresponding to `NULL` in `Pretty` formats.
 
@@ -182,18 +174,18 @@ SELECT visibleWidth(NULL)
 
 ## toTypeName(x)
 
-Returns the type name of the passed argument.
+Returns a string containing the type name of the passed argument.
 
-If `NULL` is passed, then the function returns type `Nullable(Nothing)`, which corresponds to ClickHouse's internal `NULL` representation.
+If `NULL` is passed to the function as input, then it returns the `Nullable(Nothing)` type, which corresponds to an internal `NULL` representation in ClickHouse.
 
 ## blockSize()
 
-In ClickHouse, queries are processed in blocks (chunks).
-This function returns the size (row count) of the block the function is called on.
+Gets the size of the block.
+In ClickHouse, queries are always run on blocks (sets of column parts). This function allows getting the size of the block that you called it for.
 
 ## byteSize
 
-Returns an estimation of uncompressed byte size of its arguments in memory.
+Returns estimation of uncompressed byte size of its arguments in memory.
 
 **Syntax**
 
@@ -203,17 +195,17 @@ byteSize(argument [, ...])
 
 **Arguments**
 
-- `argument` — Value.
+-   `argument` — Value.
 
 **Returned value**
 
-- Estimation of byte size of the arguments in memory.
+-   Estimation of byte size of the arguments in memory.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Examples**
 
-For [String](../../sql-reference/data-types/string.md) arguments, the function returns the string length + 9 (terminating zero + length).
+For [String](../../sql-reference/data-types/string.md) arguments the funtion returns the string length + 9 (terminating zero + length).
 
 Query:
 
@@ -272,7 +264,7 @@ byteSize(Float32): 4
 byteSize(Float64): 8
 ```
 
-If the function has multiple arguments, the function accumulates their byte sizes.
+If the function takes multiple arguments, it returns their combined byte size.
 
 Query:
 
@@ -290,30 +282,30 @@ Result:
 
 ## materialize(x)
 
-Turns a constant into a full column containing a single value.
-Full columns and constants are represented differently in memory. Functions usually execute different code for normal and constant arguments, although the result should typically be the same. This function can be used to debug this behavior.
+Turns a constant into a full column containing just one value.
+In ClickHouse, full columns and constants are represented differently in memory. Functions work differently for constant arguments and normal arguments (different code is executed), although the result is almost always the same. This function is for debugging this behavior.
 
 ## ignore(…)
 
-Accepts any arguments, including `NULL` and does nothing. Always returns 0.
-The argument is internally still evaluated. Useful e.g. for benchmarks.
+Accepts any arguments, including `NULL`. Always returns 0.
+However, the argument is still evaluated. This can be used for benchmarks.
 
 ## sleep(seconds)
 
-Sleeps ‘seconds’ seconds for each data block. The sleep time can be specified as integer or as floating-point number.
+Sleeps ‘seconds’ seconds on each data block. You can specify an integer or a floating-point number.
 
 ## sleepEachRow(seconds)
 
-Sleeps ‘seconds’ seconds for each row. The sleep time can be specified as integer or as floating-point number.
+Sleeps ‘seconds’ seconds on each row. You can specify an integer or a floating-point number.
 
 ## currentDatabase()
 
 Returns the name of the current database.
-Useful in table engine parameters of `CREATE TABLE` queries where you need to specify the database.
+You can use this function in table engine parameters in a CREATE TABLE query where you need to specify the database.
 
 ## currentUser()
 
-Returns the name of the current user. In case of a distributed query, the name of the user who initiated the query is returned.
+Returns the login of current user. Login of user, that initiated query, will be returned in case distibuted query.
 
 ``` sql
 SELECT currentUser();
@@ -323,12 +315,14 @@ Alias: `user()`, `USER()`.
 
 **Returned values**
 
-- The name of the current user.
-- In distributed queries, the login of the user who initiated the query.
+-   Login of current user.
+-   Login of user that initiated query in case of disributed query.
 
 Type: `String`.
 
 **Example**
+
+Query:
 
 ``` sql
 SELECT currentUser();
@@ -344,11 +338,11 @@ Result:
 
 ## isConstant
 
-Returns whether the argument is a constant expression.
+Checks whether the argument is a constant expression.
 
-A constant expression is an expression whose result is known during query analysis, i.e. before execution. For example, expressions over [literals](../../sql-reference/syntax.md#literals) are constant expressions.
+A constant expression means an expression whose resulting value is known at the query analysis (i.e. before execution). For example, expressions over [literals](../../sql-reference/syntax.md#literals) are constant expressions.
 
-This function is mostly intended for development, debugging and demonstration.
+The function is intended for development, debugging and demonstration.
 
 **Syntax**
 
@@ -358,12 +352,12 @@ isConstant(x)
 
 **Arguments**
 
-- `x` — Expression to check.
+-   `x` — Expression to check.
 
 **Returned values**
 
-- `1` if `x` is constant.
-- `0` if `x` is non-constant.
+-   `1` — `x` is constant.
+-   `0` — `x` is non-constant.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 
@@ -413,31 +407,29 @@ Result:
 
 ## isFinite(x)
 
-Returns 1 if the Float32 or Float64 argument not infinite and not a NaN, otherwise this function returns 0.
+Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is not infinite and not a NaN, otherwise 0.
 
 ## isInfinite(x)
 
-Returns 1 if the Float32 or Float64 argument is infinite, otherwise this function returns 0. Note that 0 is returned for a NaN.
+Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is infinite, otherwise 0. Note that 0 is returned for a NaN.
 
 ## ifNotFinite
 
-Checks whether a floating point value is finite.
+Checks whether floating point value is finite.
 
 **Syntax**
 
-``` sql
-ifNotFinite(x,y)
-```
+    ifNotFinite(x,y)
 
 **Arguments**
 
-- `x` — Value to check for infinity. Type: [Float\*](../../sql-reference/data-types/float.md).
-- `y` — Fallback value. Type: [Float\*](../../sql-reference/data-types/float.md).
+-   `x` — Value to be checked for infinity. Type: [Float\*](../../sql-reference/data-types/float.md).
+-   `y` — Fallback value. Type: [Float\*](../../sql-reference/data-types/float.md).
 
 **Returned value**
 
-- `x` if `x` is finite.
-- `y` if `x` is not finite.
+-   `x` if `x` is finite.
+-   `y` if `x` is not finite.
 
 **Example**
 
@@ -451,29 +443,29 @@ Result:
     │     inf │                            42 │
     └─────────┴───────────────────────────────┘
 
-You can get similar result by using the [ternary operator](../../sql-reference/functions/conditional-functions.md#ternary-operator): `isFinite(x) ? x : y`.
+You can get similar result by using [ternary operator](../../sql-reference/functions/conditional-functions.md#ternary-operator): `isFinite(x) ? x : y`.
 
 ## isNaN(x)
 
-Returns 1 if the Float32 and Float64 argument is NaN, otherwise this function 0.
+Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is a NaN, otherwise 0.
 
 ## hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘database’, ‘table’, ‘column’)
 
-Given the database name, the table name, and the column name as constant strings, returns 1 if the given column exists, otherwise 0. If parameter `hostname` is given, the check is performed on a remote server.
-If the table does not exist, an exception is thrown.
+Accepts constant strings: database name, table name, and column name. Returns a UInt8 constant expression equal to 1 if there is a column, otherwise 0. If the hostname parameter is set, the test will run on a remote server.
+The function throws an exception if the table does not exist.
 For elements in a nested data structure, the function checks for the existence of a column. For the nested data structure itself, the function returns 0.
 
 ## bar
 
-Builds a bar chart.
+Allows building a unicode-art diagram.
 
-`bar(x, min, max, width)` draws a band with width proportional to `(x - min)` and equal to `width` characters when `x = max`.
+`bar(x, min, max, width)` draws a band with a width proportional to `(x - min)` and equal to `width` characters when `x = max`.
 
 **Arguments**
 
-- `x` — Size to display.
-- `min, max` — Integer constants. The value must fit in `Int64`.
-- `width` — Constant, positive integer, can be fractional.
+-   `x` — Size to display.
+-   `min, max` — Integer constants. The value must fit in `Int64`.
+-   `width` — Constant, positive integer, can be fractional.
 
 The band is drawn with accuracy to one eighth of a symbol.
 
@@ -527,23 +519,23 @@ There are two variations of this function:
 
 `x` – What to transform.
 
-`array_from` – Constant array of values to convert.
+`array_from` – Constant array of values for converting.
 
 `array_to` – Constant array of values to convert the values in ‘from’ to.
 
 `default` – Which value to use if ‘x’ is not equal to any of the values in ‘from’.
 
-`array_from` and `array_to` must have equally many elements.
+`array_from` and `array_to` – Arrays of the same size.
 
-Signature:
-
-For `x` equal to one of the elements in `array_from`, the function returns the corresponding element in `array_to`, i.e. the one at the same array index. Otherwise, it returns `default`. If multiple matching elements exist `array_from`, an arbitrary corresponding element from `array_to` is returned.
+Types:
 
 `transform(T, Array(T), Array(U), U) -> U`
 
 `T` and `U` can be numeric, string, or Date or DateTime types.
-The same letter (T or U) means that types must be mutually compatible and not necessarily equal.
-For example, the first argument could have type `Int64`, while the second argument could have type `Array(UInt16)`.
+Where the same letter is indicated (T or U), for numeric types these might not be matching types, but types that have a common type.
+For example, the first argument can have the Int64 type, while the second has the Array(UInt16) type.
+
+If the ‘x’ value is equal to one of the elements in the ‘array_from’ array, it returns the existing element (that is numbered the same) from the ‘array_to’ array. Otherwise, it returns ‘default’. If there are multiple matching elements in ‘array_from’, it returns one of the matches.
 
 Example:
 
@@ -567,13 +559,18 @@ ORDER BY c DESC
 
 ### transform(x, array_from, array_to)
 
-Similar to the other variation but has no ‘default’ argument. In case no match can be found, `x` is returned.
+Differs from the first variation in that the ‘default’ argument is omitted.
+If the ‘x’ value is equal to one of the elements in the ‘array_from’ array, it returns the matching element (that is numbered the same) from the ‘array_to’ array. Otherwise, it returns ‘x’.
+
+Types:
+
+`transform(T, Array(T), Array(T)) -> T`
 
 Example:
 
 ``` sql
 SELECT
-    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vkontakte.ru'], ['www.yandex', 'example.com', 'vk.com']) AS s,
+    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
     count() AS c
 FROM test.hits
 GROUP BY domain(Referer)
@@ -595,30 +592,9 @@ LIMIT 10
 └────────────────┴─────────┘
 ```
 
-## formatReadableDecimalSize(x)
-
-Given a size (number of bytes), this function returns a readable, rounded size with suffix (KB, MB, etc.) as string.
-
-Example:
-
-``` sql
-SELECT
-    arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
-    formatReadableDecimalSize(filesize_bytes) AS filesize
-```
-
-``` text
-┌─filesize_bytes─┬─filesize───┐
-│              1 │ 1.00 B     │
-│           1024 │ 1.02 KB   │
-│        1048576 │ 1.05 MB   │
-│      192851925 │ 192.85 MB │
-└────────────────┴────────────┘
-```
-
 ## formatReadableSize(x)
 
-Given a size (number of bytes), this function returns a readable, rounded size with suffix (KiB, MiB, etc.) as string.
+Accepts the size (number of bytes). Returns a rounded size with a suffix (KiB, MiB, etc.) as a string.
 
 Example:
 
@@ -639,7 +615,9 @@ SELECT
 
 ## formatReadableQuantity(x)
 
-Given a number, this function returns a rounded number with suffix (thousand, million, billion, etc.) as string.
+Accepts the number. Returns a rounded number with a suffix (thousand, million, billion, etc.) as a string.
+
+It is useful for reading big numbers by human.
 
 Example:
 
@@ -660,7 +638,7 @@ SELECT
 
 ## formatReadableTimeDelta
 
-Given a time interval (delta) in seconds, this function returns a time delta with year/month/day/hour/minute/second as string.
+Accepts the time delta in seconds. Returns a time delta with (year, month, day, hour, minute, second) as a string.
 
 **Syntax**
 
@@ -670,8 +648,8 @@ formatReadableTimeDelta(column[, maximum_unit])
 
 **Arguments**
 
-- `column` — A column with a numeric time delta.
-- `maximum_unit` — Optional. Maximum unit to show. Acceptable values `seconds`, `minutes`, `hours`, `days`, `months`, `years`.
+-   `column` — A column with numeric time delta.
+-   `maximum_unit` — Optional. Maximum unit to show. Acceptable values seconds, minutes, hours, days, months, years.
 
 Example:
 
@@ -715,12 +693,12 @@ parseTimeDelta(timestr)
 
 **Arguments**
 
-- `timestr` — A sequence of numbers followed by something resembling a time unit.
+-   `timestr` — A sequence of numbers followed by something resembling a time unit.
 
 
 **Returned value**
 
-- A floating-point number with the number of seconds.
+-   A floating-point number with the number of seconds.
 
 **Example**
 
@@ -746,32 +724,33 @@ SELECT parseTimeDelta('1yr2mo')
 
 ## least(a, b)
 
-Returns the smaller value of a and b.
+Returns the smallest value from a and b.
 
 ## greatest(a, b)
 
-Returns the larger value of a and b.
+Returns the largest value of a and b.
 
 ## uptime()
 
 Returns the server’s uptime in seconds.
-If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
+If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
 ## version()
 
-Returns the server version as a string.
-If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
+Returns the version of the server as a string.
+If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
 ## buildId()
 
 Returns the build ID generated by a compiler for the running ClickHouse server binary.
-If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
+If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
-## blockNumber()
+
+## blockNumber
 
 Returns the sequence number of the data block where the row is located.
 
-## rowNumberInBlock()
+## rowNumberInBlock
 
 Returns the ordinal number of the row in the data block. Different data blocks are always recalculated.
 
@@ -781,7 +760,7 @@ Returns the ordinal number of the row in the data block. This function only cons
 
 ## neighbor
 
-The window function that provides access to a row at a specified offset before or after the current row of a given column.
+The window function that provides access to a row at a specified offset which comes before or after the current row of a given column.
 
 **Syntax**
 
@@ -791,23 +770,23 @@ neighbor(column, offset[, default_value])
 
 The result of the function depends on the affected data blocks and the order of data in the block.
 
-:::note
-Only returns neighbor inside the currently processed data block.
+:::warning    
+It can reach the neighbor rows only inside the currently processed data block.
 :::
 
-The order of rows during calculation of `neighbor()` can differ from the order of rows returned to the user.
-To prevent that you can create a subquery with [ORDER BY](../../sql-reference/statements/select/order-by.md) and call the function from outside the subquery.
+The rows order used during the calculation of `neighbor` can differ from the order of rows returned to the user.
+To prevent that you can make a subquery with [ORDER BY](../../sql-reference/statements/select/order-by.md) and call the function from outside the subquery.
 
 **Arguments**
 
-- `column` — A column name or scalar expression.
-- `offset` — The number of rows to look before or ahead of the current row in `column`. [Int64](../../sql-reference/data-types/int-uint.md).
-- `default_value` — Optional. The returned value if offset is beyond the block boundaries. Type of data blocks affected.
+-   `column` — A column name or scalar expression.
+-   `offset` — The number of rows forwards or backwards from the current row of `column`. [Int64](../../sql-reference/data-types/int-uint.md).
+-   `default_value` — Optional. The value to be returned if offset goes beyond the scope of the block. Type of data blocks affected.
 
 **Returned values**
 
-- Value of `column` with `offset` distance from current row, if `offset` is not outside the block boundaries.
-- The default value of `column` or `default_value` (if given), if `offset` is outside the block boundaries.
+-   Value for `column` in `offset` distance from current row if `offset` value is not outside block bounds.
+-   Default value for `column` if `offset` value is outside block bounds. If `default_value` is given, then it will be used.
 
 Type: type of data blocks affected or default value type.
 
@@ -898,17 +877,17 @@ Result:
 
 ## runningDifference(x)
 
-Calculates the difference between two consecutive row values in the data block.
-Returns 0 for the first row, and for subsequent rows the difference to the previous row.
+Calculates the difference between successive row values ​​in the data block.
+Returns 0 for the first row and the difference from the previous row for each subsequent row.
 
-:::note
-Only returns differences inside the currently processed data block.
+:::warning    
+It can reach the previous row only inside the currently processed data block.
 :::
 
 The result of the function depends on the affected data blocks and the order of data in the block.
 
-The order of rows during calculation of `runningDifference()` can differ from the order of rows returned to the user.
-To prevent that you can create a subquery with [ORDER BY](../../sql-reference/statements/select/order-by.md) and call the function from outside the subquery.
+The rows order used during the calculation of `runningDifference` can differ from the order of rows returned to the user.
+To prevent that you can make a subquery with [ORDER BY](../../sql-reference/statements/select/order-by.md) and call the function from outside the subquery.
 
 Example:
 
@@ -939,7 +918,7 @@ FROM
 └─────────┴─────────────────────┴───────┘
 ```
 
-Please note that the block size affects the result. The internal state of `runningDifference` state is reset for each new block.
+Please note - block size affects the result. With each new block, the `runningDifference` state is reset.
 
 ``` sql
 SELECT
@@ -976,7 +955,7 @@ WHERE diff != 1
 
 ## runningDifferenceStartingWithFirstValue
 
-Same as [runningDifference](./other-functions.md#other_functions-runningdifference), but returns the value of the first row as the value on the first row.
+Same as for [runningDifference](./other-functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
 
 ## runningConcurrency
 
@@ -985,7 +964,7 @@ Each event has a start time and an end time. The start time is included in the e
 The function calculates the total number of active (concurrent) events for each event start time.
 
 
-:::tip
+:::warning    
 Events must be ordered by the start time in ascending order. If this requirement is violated the function raises an exception. Every data block is processed separately. If events from different data blocks overlap then they can not be processed correctly.
 :::
 
@@ -997,12 +976,12 @@ runningConcurrency(start, end)
 
 **Arguments**
 
-- `start` — A column with the start time of events. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
-- `end` — A column with the end time of events.  [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `start` — A column with the start time of events. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `end` — A column with the end time of events.  [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Returned values**
 
-- The number of concurrent events at each event start time.
+-   The number of concurrent events at each event start time.
 
 Type: [UInt32](../../sql-reference/data-types/int-uint.md)
 
@@ -1038,7 +1017,7 @@ Result:
 
 ## MACNumToString(num)
 
-Interprets a UInt64 number as a MAC address in big endian format. Returns the corresponding MAC address in format AA:BB:CC:DD:EE:FF (colon-separated numbers in hexadecimal form) as string.
+Accepts a UInt64 number. Interprets it as a MAC address in big endian. Returns a string containing the corresponding MAC address in the format AA:BB:CC:DD:EE:FF (colon-separated numbers in hexadecimal form).
 
 ## MACStringToNum(s)
 
@@ -1046,12 +1025,11 @@ The inverse function of MACNumToString. If the MAC address has an invalid format
 
 ## MACStringToOUI(s)
 
-Given a MAC address in format AA:BB:CC:DD:EE:FF (colon-separated numbers in hexadecimal form), returns the first three octets as a UInt64 number. If the MAC address has an invalid format, it returns 0.
+Accepts a MAC address in the format AA:BB:CC:DD:EE:FF (colon-separated numbers in hexadecimal form). Returns the first three octets as a UInt64 number. If the MAC address has an invalid format, it returns 0.
 
 ## getSizeOfEnumType
 
 Returns the number of fields in [Enum](../../sql-reference/data-types/enum.md).
-An exception is thrown if the type is not `Enum`.
 
 ``` sql
 getSizeOfEnumType(value)
@@ -1059,11 +1037,12 @@ getSizeOfEnumType(value)
 
 **Arguments:**
 
-- `value` — Value of type `Enum`.
+-   `value` — Value of type `Enum`.
 
 **Returned values**
 
-- The number of fields with `Enum` input values.
+-   The number of fields with `Enum` input values.
+-   An exception is thrown if the type is not `Enum`.
 
 **Example**
 
@@ -1079,7 +1058,7 @@ SELECT getSizeOfEnumType( CAST('a' AS Enum8('a' = 1, 'b' = 2) ) ) AS x
 
 ## blockSerializedSize
 
-Returns the size on disk without considering compression.
+Returns size on disk (without taking into account compression).
 
 ``` sql
 blockSerializedSize(value[, value[, ...]])
@@ -1087,11 +1066,11 @@ blockSerializedSize(value[, value[, ...]])
 
 **Arguments**
 
-- `value` — Any value.
+-   `value` — Any value.
 
 **Returned values**
 
-- The number of bytes that will be written to disk for block of values without compression.
+-   The number of bytes that will be written to disk for block of values (without compression).
 
 **Example**
 
@@ -1111,7 +1090,7 @@ Result:
 
 ## toColumnTypeName
 
-Returns the internal name of the data type that represents the value.
+Returns the name of the class that represents the data type of the column in RAM.
 
 ``` sql
 toColumnTypeName(value)
@@ -1119,21 +1098,17 @@ toColumnTypeName(value)
 
 **Arguments:**
 
-- `value` — Any type of value.
+-   `value` — Any type of value.
 
 **Returned values**
 
-- The internal data type name used to represent `value`.
+-   A string with the name of the class that is used for representing the `value` data type in RAM.
 
-**Example**
-
-Difference between `toTypeName ' and ' toColumnTypeName`:
+**Example of the difference between`toTypeName ' and ' toColumnTypeName`**
 
 ``` sql
 SELECT toTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
 ```
-
-Result:
 
 ``` text
 ┌─toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
@@ -1141,13 +1116,9 @@ Result:
 └─────────────────────────────────────────────────────┘
 ```
 
-Query:
-
 ``` sql
 SELECT toColumnTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
 ```
-
-Result:
 
 ``` text
 ┌─toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
@@ -1155,7 +1126,7 @@ Result:
 └───────────────────────────────────────────────────────────┘
 ```
 
-The example shows that the `DateTime` data type is internally stored as `Const(UInt32)`.
+The example shows that the `DateTime` data type is stored in memory as `Const(UInt32)`.
 
 ## dumpColumnStructure
 
@@ -1167,11 +1138,11 @@ dumpColumnStructure(value)
 
 **Arguments:**
 
-- `value` — Any type of value.
+-   `value` — Any type of value.
 
 **Returned values**
 
-- A description of the column structure used for representing `value`.
+-   A string describing the structure that is used for representing the `value` data type in RAM.
 
 **Example**
 
@@ -1187,7 +1158,7 @@ SELECT dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))
 
 ## defaultValueOfArgumentType
 
-Returns the default value for the given data type.
+Outputs the default value for the data type.
 
 Does not include default values for custom columns set by the user.
 
@@ -1197,23 +1168,19 @@ defaultValueOfArgumentType(expression)
 
 **Arguments:**
 
-- `expression` — Arbitrary type of value or an expression that results in a value of an arbitrary type.
+-   `expression` — Arbitrary type of value or an expression that results in a value of an arbitrary type.
 
 **Returned values**
 
-- `0` for numbers.
-- Empty string for strings.
-- `ᴺᵁᴸᴸ` for [Nullable](../../sql-reference/data-types/nullable.md).
+-   `0` for numbers.
+-   Empty string for strings.
+-   `ᴺᵁᴸᴸ` for [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Example**
-
-Query:
 
 ``` sql
 SELECT defaultValueOfArgumentType( CAST(1 AS Int8) )
 ```
-
-Result:
 
 ``` text
 ┌─defaultValueOfArgumentType(CAST(1, 'Int8'))─┐
@@ -1221,13 +1188,9 @@ Result:
 └─────────────────────────────────────────────┘
 ```
 
-Query:
-
 ``` sql
 SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 ```
-
-Result:
 
 ``` text
 ┌─defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))─┐
@@ -1237,7 +1200,7 @@ Result:
 
 ## defaultValueOfTypeName
 
-Returns the default value for the given type name.
+Outputs the default value for given type name.
 
 Does not include default values for custom columns set by the user.
 
@@ -1247,23 +1210,19 @@ defaultValueOfTypeName(type)
 
 **Arguments:**
 
-- `type` — A string representing a type name.
+-   `type` — A string representing a type name.
 
 **Returned values**
 
-- `0` for numbers.
-- Empty string for strings.
-- `ᴺᵁᴸᴸ` for [Nullable](../../sql-reference/data-types/nullable.md).
+-   `0` for numbers.
+-   Empty string for strings.
+-   `ᴺᵁᴸᴸ` for [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Example**
-
-Query:
 
 ``` sql
 SELECT defaultValueOfTypeName('Int8')
 ```
-
-Result:
 
 ``` text
 ┌─defaultValueOfTypeName('Int8')─┐
@@ -1271,13 +1230,9 @@ Result:
 └────────────────────────────────┘
 ```
 
-Query:
-
 ``` sql
 SELECT defaultValueOfTypeName('Nullable(Int8)')
 ```
-
-Result:
 
 ``` text
 ┌─defaultValueOfTypeName('Nullable(Int8)')─┐
@@ -1286,10 +1241,9 @@ Result:
 ```
 
 ## indexHint
+The function is intended for debugging and introspection purposes. The function ignores it's argument and always returns 1. Arguments are not even evaluated.
 
-This function is intended for debugging and introspection. It ignores its argument and always returns 1. The arguments are not evaluated.
-
-But during index analysis, the argument of this function is assumed to be not wrapped in `indexHint`. This allows to select data in index ranges by the corresponding condition but without further filtering by this condition. The index in ClickHouse is sparse and using `indexHint` will yield more data than specifying the same condition directly.
+But for the purpose of index analysis, the argument of this function is analyzed as if it was present directly without being wrapped inside `indexHint` function. This allows to select data in index ranges by the corresponding condition but without further filtering by this condition. The index in ClickHouse is sparse and using `indexHint` will yield more data than specifying the same condition directly.
 
 **Syntax**
 
@@ -1299,13 +1253,13 @@ SELECT * FROM table WHERE indexHint(<expression>)
 
 **Returned value**
 
-Type: [Uint8](https://clickhouse.com/docs/en/data_types/int_uint/#diapazony-uint).
+1. Type: [Uint8](https://clickhouse.com/docs/en/data_types/int_uint/#diapazony-uint).
 
 **Example**
 
 Here is the example of test data from the table [ontime](../../getting-started/example-datasets/ontime.md).
 
-Table:
+Input table:
 
 ```sql
 SELECT count() FROM ontime
@@ -1319,7 +1273,9 @@ SELECT count() FROM ontime
 
 The table has indexes on the fields `(FlightDate, (Year, FlightDate))`.
 
-Create a query which does not use the index:
+Create a query, where the index is not used.
+
+Query:
 
 ```sql
 SELECT FlightDate AS k, count() FROM ontime GROUP BY k ORDER BY k
@@ -1340,13 +1296,15 @@ Result:
 └────────────┴─────────┘
 ```
 
-To apply the index, select a specific date:
+To apply the index, select a specific date.
+
+Query:
 
 ```sql
 SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k ORDER BY k
 ```
 
-ClickHouse now uses the index to process a significantly smaller number of rows (`Processed 32.74 thousand rows`).
+By using the index, ClickHouse processed a significantly smaller number of rows (`Processed 32.74 thousand rows`).
 
 Result:
 
@@ -1356,7 +1314,7 @@ Result:
 └────────────┴─────────┘
 ```
 
-Now wrap the expression `k = '2017-09-15'` in function `indexHint`:
+Now wrap the expression `k = '2017-09-15'` into `indexHint` function.
 
 Query:
 
@@ -1370,9 +1328,9 @@ GROUP BY k
 ORDER BY k ASC
 ```
 
-ClickHouse used the index the same way as previously (`Processed 32.74 thousand rows`).
+ClickHouse used the index in the same way as the previous time (`Processed 32.74 thousand rows`).
 The expression `k = '2017-09-15'` was not used when generating the result.
-In example, the `indexHint` function allows to see adjacent dates.
+In examle the `indexHint` function allows to see adjacent dates.
 
 Result:
 
@@ -1389,7 +1347,7 @@ Result:
 
 Creates an array with a single value.
 
-Used for the internal implementation of [arrayJoin](../../sql-reference/functions/array-join.md#functions_arrayjoin).
+Used for internal implementation of [arrayJoin](../../sql-reference/functions/array-join.md#functions_arrayjoin).
 
 ``` sql
 SELECT replicate(x, arr);
@@ -1397,12 +1355,12 @@ SELECT replicate(x, arr);
 
 **Arguments:**
 
-- `arr` — An array.
-- `x` — The value to fill the result array with.
+-   `arr` — Original array. ClickHouse creates a new array of the same length as the original and fills it with the value `x`.
+-   `x` — The value that the resulting array will be filled with.
 
 **Returned value**
 
-An array of the lame length as `arr` filled with value `x`.
+An array filled with the value `x`.
 
 Type: `Array`.
 
@@ -1424,7 +1382,7 @@ Result:
 
 ## filesystemAvailable
 
-Returns the amount of free space in the filesystem hosting the database persistence. The returned value is always smaller than total free space ([filesystemFree](#filesystemfree)) because some space is reserved for the operating system.
+Returns amount of remaining space on the filesystem where the files of the databases located. It is always smaller than total free space ([filesystemFree](#filesystemfree)) because some space is reserved for OS.
 
 **Syntax**
 
@@ -1434,7 +1392,7 @@ filesystemAvailable()
 
 **Returned value**
 
-- The amount of remaining space available in bytes.
+-   The amount of remaining space available in bytes.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -1443,20 +1401,20 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-SELECT formatReadableSize(filesystemAvailable()) AS "Available space";
+SELECT formatReadableSize(filesystemAvailable()) AS "Available space", toTypeName(filesystemAvailable()) AS "Type";
 ```
 
 Result:
 
 ``` text
-┌─Available space─┐
-│ 30.75 GiB       │
-└─────────────────┘
+┌─Available space─┬─Type───┐
+│ 30.75 GiB       │ UInt64 │
+└─────────────────┴────────┘
 ```
 
 ## filesystemFree
 
-Returns the total amount of the free space on the filesystem hosting the database persistence. See also `filesystemAvailable`
+Returns total amount of the free space on the filesystem where the files of the databases located. See also `filesystemAvailable`
 
 **Syntax**
 
@@ -1466,7 +1424,7 @@ filesystemFree()
 
 **Returned value**
 
-- The amount of free space in bytes.
+-   Amount of free space in bytes.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -1475,20 +1433,20 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-SELECT formatReadableSize(filesystemFree()) AS "Free space";
+SELECT formatReadableSize(filesystemFree()) AS "Free space", toTypeName(filesystemFree()) AS "Type";
 ```
 
 Result:
 
 ``` text
-┌─Free space─┐
-│ 32.39 GiB  │
-└────────────┘
+┌─Free space─┬─Type───┐
+│ 32.39 GiB  │ UInt64 │
+└────────────┴────────┘
 ```
 
 ## filesystemCapacity
 
-Returns the capacity of the filesystem in bytes. Needs the [path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-path) to the data directory to be configured.
+Returns the capacity of the filesystem in bytes. For evaluation, the [path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-path) to the data directory must be configured.
 
 **Syntax**
 
@@ -1498,7 +1456,7 @@ filesystemCapacity()
 
 **Returned value**
 
-- Capacity of the filesystem in bytes.
+-   Capacity information of the filesystem in bytes.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -1507,20 +1465,20 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-SELECT formatReadableSize(filesystemCapacity()) AS "Capacity";
+SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesystemCapacity()) AS "Type"
 ```
 
 Result:
 
 ``` text
-┌─Capacity──┐
-│ 39.32 GiB │
-└───────────┘
+┌─Capacity──┬─Type───┐
+│ 39.32 GiB │ UInt64 │
+└───────────┴────────┘
 ```
 
 ## initializeAggregation
 
-Calculates the result of an aggregate function based on a single value. This function can be used to initialize aggregate functions with combinator [-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state). You can create states of aggregate functions and insert them to columns of type [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction) or use initialized aggregates as default values.
+Calculates result of aggregate function based on single value. It is intended to use this function to initialize aggregate functions with combinator [-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state). You can create states of aggregate functions and insert them to columns of type [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction) or use initialized aggregates as default values.
 
 **Syntax**
 
@@ -1530,8 +1488,8 @@ initializeAggregation (aggregate_function, arg1, arg2, ..., argN)
 
 **Arguments**
 
-- `aggregate_function` — Name of the aggregation function to initialize. [String](../../sql-reference/data-types/string.md).
-- `arg` — Arguments of aggregate function.
+-   `aggregate_function` — Name of the aggregation function to initialize. [String](../../sql-reference/data-types/string.md).
+-   `arg` — Arguments of aggregate function.
 
 **Returned value(s)**
 
@@ -1559,7 +1517,6 @@ Query:
 ```sql
 SELECT finalizeAggregation(state), toTypeName(state) FROM (SELECT initializeAggregation('sumState', number % 3) AS state FROM numbers(5));
 ```
-
 Result:
 
 ```text
@@ -1589,12 +1546,11 @@ INSERT INTO metrics VALUES (0, initializeAggregation('sumState', toUInt64(42)))
 ```
 
 **See Also**
-
-- [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
+-   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
 
 ## finalizeAggregation
 
-Given a state of aggregate function, this function returns the result of aggregation (or finalized state when using a [-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state) combinator).
+Takes state of aggregate function. Returns result of aggregation (or finalized state when using[-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state) combinator).
 
 **Syntax**
 
@@ -1604,11 +1560,11 @@ finalizeAggregation(state)
 
 **Arguments**
 
-- `state` — State of aggregation. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
+-   `state` — State of aggregation. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
 
 **Returned value(s)**
 
-- Value/values that was aggregated.
+-   Value/values that was aggregated.
 
 Type: Value of any types that was aggregated.
 
@@ -1689,16 +1645,15 @@ Result:
 ```
 
 **See Also**
-
-- [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
-- [initializeAggregation](#initializeaggregation)
+-   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
+-   [initializeAggregation](#initializeaggregation)
 
 ## runningAccumulate
 
-Accumulates the states of an aggregate function for each row of a data block.
+Accumulates states of an aggregate function for each row of a data block.
 
-:::note
-The state is reset for each new block of data.
+:::warning    
+The state is reset for each new data block.
 :::
 
 **Syntax**
@@ -1709,12 +1664,12 @@ runningAccumulate(agg_state[, grouping]);
 
 **Arguments**
 
-- `agg_state` — State of the aggregate function. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
-- `grouping` — Grouping key. Optional. The state of the function is reset if the `grouping` value is changed. It can be any of the [supported data types](../../sql-reference/data-types/index.md) for which the equality operator is defined.
+-   `agg_state` — State of the aggregate function. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
+-   `grouping` — Grouping key. Optional. The state of the function is reset if the `grouping` value is changed. It can be any of the [supported data types](../../sql-reference/data-types/index.md) for which the equality operator is defined.
 
 **Returned value**
 
-- Each resulting row contains a result of the aggregate function, accumulated for all the input rows from 0 to the current position. `runningAccumulate` resets states for each new data block or when the `grouping` value changes.
+-   Each resulting row contains a result of the aggregate function, accumulated for all the input rows from 0 to the current position. `runningAccumulate` resets states for each new data block or when the `grouping` value changes.
 
 Type depends on the aggregate function used.
 
@@ -1749,10 +1704,10 @@ The subquery generates `sumState` for every number from `0` to `9`. `sumState` r
 
 The whole query does the following:
 
-1. For the first row, `runningAccumulate` takes `sumState(0)` and returns `0`.
-2. For the second row, the function merges `sumState(0)` and `sumState(1)` resulting in `sumState(0 + 1)`, and returns `1` as a result.
-3. For the third row, the function merges `sumState(0 + 1)` and `sumState(2)` resulting in `sumState(0 + 1 + 2)`, and returns `3` as a result.
-4. The actions are repeated until the block ends.
+1.  For the first row, `runningAccumulate` takes `sumState(0)` and returns `0`.
+2.  For the second row, the function merges `sumState(0)` and `sumState(1)` resulting in `sumState(0 + 1)`, and returns `1` as a result.
+3.  For the third row, the function merges `sumState(0 + 1)` and `sumState(2)` resulting in `sumState(0 + 1 + 2)`, and returns `3` as a result.
+4.  The actions are repeated until the block ends.
 
 The following example shows the `groupping` parameter usage:
 
@@ -1803,7 +1758,7 @@ As you can see, `runningAccumulate` merges states for each group of rows separat
 
 The function lets you extract data from the table the same way as from a [dictionary](../../sql-reference/dictionaries/index.md).
 
-Gets the data from [Join](../../engines/table-engines/special/join.md#creating-a-table) tables using the specified join key.
+Gets data from [Join](../../engines/table-engines/special/join.md#creating-a-table) tables using the specified join key.
 
 Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
 
@@ -1815,13 +1770,13 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 **Arguments**
 
-- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicating where the search is performed. The identifier is searched in the default database (see setting `default_database` in the config file). To override the default database, use `USE db_name` or specify the database and the table through the separator `db_name.db_table` as in the example.
-- `value_column` — name of the column of the table that contains required data.
-- `join_keys` — list of keys.
+-   `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicates where search is performed. The identifier is searched in the default database (see parameter `default_database` in the config file). To override the default database, use the `USE db_name` or specify the database and the table through the separator `db_name.db_table`, see the example.
+-   `value_column` — name of the column of the table that contains required data.
+-   `join_keys` — list of keys.
 
 **Returned value**
 
-Returns a list of values corresponded to list of keys.
+Returns list of values corresponded to list of keys.
 
 If certain does not exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
 
@@ -1848,7 +1803,7 @@ INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
 Query:
 
 ``` sql
-SELECT joinGet(db_test.id_val, 'val', toUInt32(number)) from numbers(4) SETTINGS join_use_nulls = 1
+SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS join_use_nulls = 1
 ```
 
 Result:
@@ -1862,70 +1817,19 @@ Result:
 └──────────────────────────────────────────────────┘
 ```
 
-## catboostEvaluate(path_to_model, feature_1, feature_2, …, feature_n)
+## modelEvaluate(model_name, …)
 
-:::note
-This function is not available in ClickHouse Cloud.
-:::
+Evaluate external model.
+Accepts a model name and model arguments. Returns Float64.
 
-Evaluate an external catboost model. [CatBoost](https://catboost.ai) is an open-source gradient boosting library developed by Yandex for machine learning.
-Accepts a path to a catboost model and model arguments (features). Returns Float64.
+## throwIf(x\[, custom_message\])
 
-``` sql
-SELECT feat1, ..., feat_n, catboostEvaluate('/path/to/model.bin', feat_1, ..., feat_n) AS prediction
-FROM data_table
-```
-
-**Prerequisites**
-
-1. Build the catboost evaluation library
-
-Before evaluating catboost models, the `libcatboostmodel.<so|dylib>` library must be made available. See [CatBoost documentation](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html) how to compile it.
-
-Next, specify the path to `libcatboostmodel.<so|dylib>` in the clickhouse configuration:
-
-``` xml
-<clickhouse>
-...
-    <catboost_lib_path>/path/to/libcatboostmodel.so</catboost_lib_path>
-...
-</clickhouse>
-```
-
-For security and isolation reasons, the model evaluation does not run in the server process but in the clickhouse-library-bridge process.
-At the first execution of `catboostEvaluate()`, the server starts the library bridge process if it is not running already. Both processes
-communicate using a HTTP interface. By default, port `9012` is used. A different port can be specified as follows - this is useful if port
-`9012` is already assigned to a different service.
-
-``` xml
-<library_bridge>
-    <port>9019</port>
-</library_bridge>
-```
-
-2. Train a catboost model using libcatboost
-
-See [Training and applying models](https://catboost.ai/docs/features/training.html#training) for how to train catboost models from a training data set.
-
-## throwIf(x\[, message\[, error_code\]\])
-
-Throw an exception if argument `x` is true.
-
-**Arguments**
-
-- `x` - the condition to check.
-- `message` - a constant string providing a custom error message. Optional.
-- `error_code` - A constant integer providing a custom error code. Optional.
-
-To use the `error_code` argument, configuration parameter `allow_custom_error_code_in_throwif` must be enabled.
-
-**Example**
+Throw an exception if the argument is non zero.
+custom_message - is an optional parameter: a constant string, provides an error message
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
 ```
-
-Result:
 
 ``` text
 ↙ Progress: 0.00 rows, 0.00 B (0.00 rows/s., 0.00 B/s.) Received exception from server (version 19.14.1):
@@ -1934,7 +1838,7 @@ Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 
 ## identity
 
-Returns its argument. Intended for debugging and testing. Allows to cancel using index, and get the query performance of a full scan. When the query is analyzed for possible use of an index, the analyzer ignores everything in `identity` functions. Also disables constant folding.
+Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer does not look inside `identity` functions. Also constant folding is not applied too.
 
 **Syntax**
 
@@ -1947,7 +1851,7 @@ identity(x)
 Query:
 
 ``` sql
-SELECT identity(42);
+SELECT identity(42)
 ```
 
 Result:
@@ -1956,6 +1860,164 @@ Result:
 ┌─identity(42)─┐
 │           42 │
 └──────────────┘
+```
+
+## randomPrintableASCII
+
+Generates a string with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters.
+
+**Syntax**
+
+``` sql
+randomPrintableASCII(length)
+```
+
+**Arguments**
+
+-   `length` — Resulting string length. Positive integer.
+
+        If you pass `length < 0`, behavior of the function is undefined.
+
+**Returned value**
+
+-   String with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters.
+
+Type: [String](../../sql-reference/data-types/string.md)
+
+**Example**
+
+``` sql
+SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers LIMIT 3
+```
+
+``` text
+┌─number─┬─str────────────────────────────┬─length(randomPrintableASCII(30))─┐
+│      0 │ SuiCOSTvC0csfABSw=UcSzp2.`rv8x │                               30 │
+│      1 │ 1Ag NlJ &RCN:*>HVPG;PE-nO"SUFD │                               30 │
+│      2 │ /"+<"wUTh:=LjJ Vm!c&hI*m#XTfzz │                               30 │
+└────────┴────────────────────────────────┴──────────────────────────────────┘
+```
+
+## randomString
+
+Generates a binary string of the specified length filled with random bytes (including zero bytes).
+
+**Syntax**
+
+``` sql
+randomString(length)
+```
+
+**Arguments**
+
+-   `length` — String length. Positive integer.
+
+**Returned value**
+
+-   String filled with random bytes.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT randomString(30) AS str, length(str) AS len FROM numbers(2) FORMAT Vertical;
+```
+
+Result:
+
+``` text
+Row 1:
+──────
+str: 3 G  :   pT ?w тi  k aV f6
+len: 30
+
+Row 2:
+──────
+str: 9 ,]    ^   )  ]??  8
+len: 30
+```
+
+**See Also**
+
+-   [generateRandom](../../sql-reference/table-functions/generate.md#generaterandom)
+-   [randomPrintableASCII](../../sql-reference/functions/other-functions.md#randomascii)
+
+
+## randomFixedString
+
+Generates a binary string of the specified length filled with random bytes (including zero bytes).
+
+**Syntax**
+
+``` sql
+randomFixedString(length);
+```
+
+**Arguments**
+
+-   `length` — String length in bytes. [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Returned value(s)**
+
+-   String filled with random bytes.
+
+Type: [FixedString](../../sql-reference/data-types/fixedstring.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT randomFixedString(13) as rnd, toTypeName(rnd)
+```
+
+Result:
+
+```text
+┌─rnd──────┬─toTypeName(randomFixedString(13))─┐
+│ j▒h㋖HɨZ'▒ │ FixedString(13)                 │
+└──────────┴───────────────────────────────────┘
+
+```
+
+## randomStringUTF8
+
+Generates a random string of a specified length. Result string contains valid UTF-8 code points. The value of code points may be outside of the range of assigned Unicode.
+
+**Syntax**
+
+``` sql
+randomStringUTF8(length);
+```
+
+**Arguments**
+
+-   `length` — Required length of the resulting string in code points. [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Returned value(s)**
+
+-   UTF-8 random string.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT randomStringUTF8(13)
+```
+
+Result:
+
+```text
+┌─randomStringUTF8(13)─┐
+│ 𘤗𙉝д兠庇󡅴󱱎󦐪􂕌𔊹𓰛   │
+└──────────────────────┘
+
 ```
 
 ## getSetting
@@ -1970,11 +2032,11 @@ getSetting('custom_setting');
 
 **Parameter**
 
-- `custom_setting` — The setting name. [String](../../sql-reference/data-types/string.md).
+-   `custom_setting` — The setting name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
-- The setting's current value.
+-   The setting current value.
 
 **Example**
 
@@ -1983,7 +2045,7 @@ SET custom_a = 123;
 SELECT getSetting('custom_a');
 ```
 
-Result:
+**Result**
 
 ```
 123
@@ -1991,11 +2053,11 @@ Result:
 
 **See Also**
 
-- [Custom Settings](../../operations/settings/index.md#custom_settings)
+-   [Custom Settings](../../operations/settings/index.md#custom_settings)
 
 ## isDecimalOverflow
 
-Checks whether the [Decimal](../../sql-reference/data-types/decimal.md) value is outside its precision or outside the specified precision.
+Checks whether the [Decimal](../../sql-reference/data-types/decimal.md) value is out of its (or specified) precision.
 
 **Syntax**
 
@@ -2005,13 +2067,13 @@ isDecimalOverflow(d, [p])
 
 **Arguments**
 
-- `d` — value. [Decimal](../../sql-reference/data-types/decimal.md).
-- `p` — precision. Optional. If omitted, the initial precision of the first argument is used. This parameter can be helpful to migrate data from/to another database or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
+-   `d` — value. [Decimal](../../sql-reference/data-types/decimal.md).
+-   `p` — precision. Optional. If omitted, the initial precision of the first argument is used. Using of this paratemer could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 **Returned values**
 
-- `1` — Decimal value has more digits then allowed by its precision,
-- `0` — Decimal value satisfies the specified precision.
+-   `1` — Decimal value has more digits then it's precision allow,
+-   `0` — Decimal value satisfies the specified precision.
 
 **Example**
 
@@ -2032,7 +2094,7 @@ Result:
 
 ## countDigits
 
-Returns number of decimal digits need to represent a value.
+Returns number of decimal digits you need to represent the value.
 
 **Syntax**
 
@@ -2042,7 +2104,7 @@ countDigits(x)
 
 **Arguments**
 
-- `x` — [Int](../../sql-reference/data-types/int-uint.md) or [Decimal](../../sql-reference/data-types/decimal.md) value.
+-   `x` — [Int](../../sql-reference/data-types/int-uint.md) or [Decimal](../../sql-reference/data-types/decimal.md) value.
 
 **Returned value**
 
@@ -2050,7 +2112,7 @@ Number of digits.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
-:::note
+:::note    
 For `Decimal` values takes into account their scales: calculates result over underlying integer type which is `(value * scale)`. For example: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. I.e. you may check decimal overflow for `Decimal64` with `countDecimal(x) > 18`. It's a slow variant of [isDecimalOverflow](#is-decimal-overflow).
 :::
 
@@ -2072,7 +2134,9 @@ Result:
 
 ## errorCodeToName
 
-Returns the textual name of an error code.
+**Returned value**
+
+-   Variable name for the error code.
 
 Type: [LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md).
 
@@ -2091,7 +2155,7 @@ UNSUPPORTED_METHOD
 ## tcpPort
 
 Returns [native interface](../../interfaces/tcp.md) TCP port number listened by this server.
-If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
+If it is executed in the context of a distributed table, then it generates a normal column, otherwise it produces a constant value.
 
 **Syntax**
 
@@ -2101,11 +2165,11 @@ tcpPort()
 
 **Arguments**
 
-- None.
+-   None.
 
 **Returned value**
 
-- The TCP port number.
+-   The TCP port number.
 
 Type: [UInt16](../../sql-reference/data-types/int-uint.md).
 
@@ -2127,11 +2191,11 @@ Result:
 
 **See Also**
 
-- [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
+-   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
 ## currentProfiles
 
-Returns a list of the current [settings profiles](../../guides/sre/user-management/index.md#settings-profiles-management) for the current user.
+Returns a list of the current [settings profiles](../../operations/access-rights.md#settings-profiles-management) for the current user. 
 
 The command [SET PROFILE](../../sql-reference/statements/set.md#query-set) could be used to change the current setting profile. If the command `SET PROFILE` was not used the function returns the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement)).
 
@@ -2143,7 +2207,7 @@ currentProfiles()
 
 **Returned value**
 
-- List of the current user settings profiles.
+-   List of the current user settings profiles. 
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
@@ -2159,7 +2223,7 @@ enabledProfiles()
 
 **Returned value**
 
-- List of the enabled settings profiles.
+-   List of the enabled settings profiles. 
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
@@ -2175,13 +2239,13 @@ defaultProfiles()
 
 **Returned value**
 
-- List of the default settings profiles.
+-   List of the default settings profiles. 
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 ## currentRoles
 
-Returns the roles assigned to the current user. The roles can be changed by the [SET ROLE](../../sql-reference/statements/set-role.md#set-role-statement) statement. If no `SET ROLE` statement was not, the function `currentRoles` returns the same as `defaultRoles`.
+Returns the names of the roles which are current for the current user. The current roles can be changed by the [SET ROLE](../../sql-reference/statements/set-role.md#set-role-statement) statement. If the `SET ROLE` statement was not used, the function `currentRoles` returns the same as `defaultRoles`.
 
 **Syntax**
 
@@ -2191,7 +2255,7 @@ currentRoles()
 
 **Returned value**
 
-- A list of the current roles for the current user.
+-   List of the current roles for the current user. 
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
@@ -2207,13 +2271,13 @@ enabledRoles()
 
 **Returned value**
 
-- List of the enabled roles for the current user.
+-   List of the enabled roles for the current user. 
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 ## defaultRoles
 
-Returns the roles which are enabled by default for the current user when he logs in. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant.md#grant-select)), but that can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement.
+Returns the names of the roles which are enabled by default for the current user when he logins. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant/#grant-select)), but that can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement. 
 
 **Syntax**
 
@@ -2223,13 +2287,13 @@ defaultRoles()
 
 **Returned value**
 
-- List of the default roles for the current user.
+-   List of the default roles for the current user. 
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 ## getServerPort
 
-Returns the server port number. When the port is not used by the server, throws an exception.
+Returns the number of the server port. When the port is not used by the server, throws an exception.
 
 **Syntax**
 
@@ -2239,22 +2303,22 @@ getServerPort(port_name)
 
 **Arguments**
 
-- `port_name` — The name of the server port. [String](../../sql-reference/data-types/string.md#string). Possible values:
+-   `port_name` — The name of the server port. [String](../../sql-reference/data-types/string.md#string). Possible values:
 
-    - 'tcp_port'
-    - 'tcp_port_secure'
-    - 'http_port'
-    - 'https_port'
-    - 'interserver_http_port'
-    - 'interserver_https_port'
-    - 'mysql_port'
-    - 'postgresql_port'
-    - 'grpc_port'
-    - 'prometheus.port'
+    -   'tcp_port'
+    -   'tcp_port_secure'
+    -   'http_port'
+    -   'https_port'
+    -   'interserver_http_port'
+    -   'interserver_https_port'
+    -   'mysql_port'
+    -   'postgresql_port'
+    -   'grpc_port'
+    -   'prometheus.port'
 
 **Returned value**
 
-- The number of the server port.
+-   The number of the server port.
 
 Type: [UInt16](../../sql-reference/data-types/int-uint.md).
 
@@ -2278,7 +2342,7 @@ Result:
 
 Returns the ID of the current query. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `query_id`.
 
-In contrast to [initialQueryID](#initial-query-id) function, `queryID` can return different results on different shards (see the example).
+In contrast to [initialQueryID](#initial-query-id) function, `queryID` can return different results on different shards (see example).
 
 **Syntax**
 
@@ -2288,7 +2352,7 @@ queryID()
 
 **Returned value**
 
-- The ID of the current query.
+-   The ID of the current query.
 
 Type: [String](../../sql-reference/data-types/string.md)
 
@@ -2324,7 +2388,7 @@ initialQueryID()
 
 **Returned value**
 
-- The ID of the initial current query.
+-   The ID of the initial current query.
 
 Type: [String](../../sql-reference/data-types/string.md)
 
@@ -2348,7 +2412,7 @@ Result:
 
 ## shardNum
 
-Returns the index of a shard which processes a part of data in a distributed query. Indices are started from `1`.
+Returns the index of a shard which processes a part of data for a distributed query. Indices are started from `1`.
 If a query is not distributed then constant value `0` is returned.
 
 **Syntax**
@@ -2359,7 +2423,7 @@ shardNum()
 
 **Returned value**
 
-- Shard index or constant `0`.
+-   Shard index or constant `0`.
 
 Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
@@ -2370,7 +2434,7 @@ In the following example a configuration with two shards is used. The query is e
 Query:
 
 ``` sql
-CREATE TABLE shard_num_example (dummy UInt8)
+CREATE TABLE shard_num_example (dummy UInt8) 
     ENGINE=Distributed(test_cluster_two_shards_localhost, system, one, dummy);
 SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 ```
@@ -2386,7 +2450,7 @@ Result:
 
 **See Also**
 
-- [Distributed Table Engine](../../engines/table-engines/special/distributed.md)
+-   [Distributed Table Engine](../../engines/table-engines/special/distributed.md)
 
 ## shardCount
 
@@ -2401,7 +2465,7 @@ shardCount()
 
 **Returned value**
 
-- Total number of shards or `0`.
+-   Total number of shards or `0`.
 
 Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
@@ -2421,11 +2485,11 @@ getOSKernelVersion()
 
 **Arguments**
 
-- None.
+-   None.
 
 **Returned value**
 
-- The current OS kernel version.
+-   The current OS kernel version.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -2457,11 +2521,11 @@ zookeeperSessionUptime()
 
 **Arguments**
 
-- None.
+-   None.
 
 **Returned value**
 
-- Uptime of the current ZooKeeper session in seconds.
+-   Uptime of the current ZooKeeper session in seconds.
 
 Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
@@ -2480,75 +2544,3 @@ Result:
 │                      286 │
 └──────────────────────────┘
 ```
-
-## generateRandomStructure
-
-Generates random table structure in a format `column1_name column1_type, column2_name column2_type, ...`.
-
-**Syntax**
-
-``` sql
-generateRandomStructure([number_of_columns, seed])
-```
-
-**Arguments**
-
-- `number_of_columns` — The desired number of columns in the result table structure. If set to 0 or `Null`, the number of columns will be random from 1 to 128. Default value: `Null`.
-- `seed` - Random seed to produce stable results. If seed is not specified or set to `Null`, it is randomly generated.
-
-All arguments must be constant.
-
-**Returned value**
-
-- Randomly generated table structure.
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**Examples**
-
-Query:
-
-``` sql
-SELECT generateRandomStructure()
-```
-
-Result:
-
-``` text
-┌─generateRandomStructure()─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ c1 Decimal32(5), c2 Date, c3 Tuple(LowCardinality(String), Int128, UInt64, UInt16, UInt8, IPv6), c4 Array(UInt128), c5 UInt32, c6 IPv4, c7 Decimal256(64), c8 Decimal128(3), c9 UInt256, c10 UInt64, c11 DateTime │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT generateRandomStructure(1)
-```
-
-Result:
-
-``` text
-┌─generateRandomStructure(1)─┐
-│ c1 Map(UInt256, UInt16)    │
-└────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT generateRandomStructure(NULL, 33)
-```
-
-Result:
-
-``` text
-┌─generateRandomStructure(NULL, 33)─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ c1 DateTime, c2 Enum8('c2V0' = 0, 'c2V1' = 1, 'c2V2' = 2, 'c2V3' = 3), c3 LowCardinality(Nullable(FixedString(30))), c4 Int16, c5 Enum8('c5V0' = 0, 'c5V1' = 1, 'c5V2' = 2, 'c5V3' = 3), c6 Nullable(UInt8), c7 String, c8 Nested(e1 IPv4, e2 UInt8, e3 UInt16, e4 UInt16, e5 Int32, e6 Map(Date, Decimal256(70))) │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-**Note**: the maximum nesting depth of complex types (Array, Tuple, Map, Nested) is limited to 16.
-
-This function can be used together with [generateRandom](../../sql-reference/table-functions/generate.md) to generate completely random tables.
-

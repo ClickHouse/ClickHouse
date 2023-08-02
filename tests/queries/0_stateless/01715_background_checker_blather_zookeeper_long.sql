@@ -1,7 +1,7 @@
 -- Tags: long, zookeeper
 
-DROP TABLE IF EXISTS i20203_1 SYNC;
-DROP TABLE IF EXISTS i20203_2 SYNC;
+DROP TABLE IF EXISTS i20203_1;
+DROP TABLE IF EXISTS i20203_2;
 
 CREATE TABLE i20203_1 (a Int8)
 ENGINE = ReplicatedMergeTree('/clickhouse/{database}/01715_background_checker_i20203', 'r1')
@@ -26,5 +26,5 @@ WHERE table = 'i20203_2' AND database = currentDatabase();
 
 ATTACH TABLE i20203_1;
 
-DROP TABLE i20203_1 SYNC;
-DROP TABLE i20203_2 SYNC;
+DROP TABLE IF EXISTS i20203_1;
+DROP TABLE IF EXISTS i20203_2;

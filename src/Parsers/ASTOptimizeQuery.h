@@ -21,12 +21,11 @@ public:
     bool deduplicate = false;
     /// Deduplicate by columns.
     ASTPtr deduplicate_by_columns;
-    /// Delete 'is_deleted' data
-    bool cleanup = false;
+
     /** Get the text that identifies this element. */
     String getID(char delim) const override
     {
-        return "OptimizeQuery" + (delim + getDatabase()) + delim + getTable() + (final ? "_final" : "") + (deduplicate ? "_deduplicate" : "")+ (cleanup ? "_cleanup" : "");
+        return "OptimizeQuery" + (delim + getDatabase()) + delim + getTable() + (final ? "_final" : "") + (deduplicate ? "_deduplicate" : "");
     }
 
     ASTPtr clone() const override
@@ -55,8 +54,6 @@ public:
     {
         return removeOnCluster<ASTOptimizeQuery>(clone(), params.default_database);
     }
-
-    QueryKind getQueryKind() const override { return QueryKind::Optimize; }
 };
 
 }

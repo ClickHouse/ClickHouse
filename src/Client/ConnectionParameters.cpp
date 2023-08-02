@@ -9,6 +9,7 @@
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>
+#include <base/setTerminalEcho.h>
 #include <base/scope_guard.h>
 
 #include <readpassphrase/readpassphrase.h>
@@ -40,7 +41,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     if (config.getBool("ask-password", false))
     {
         if (config.has("password"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specified both --password and --ask-password. Remove one of them");
+            throw Exception("Specified both --password and --ask-password. Remove one of them", ErrorCodes::BAD_ARGUMENTS);
         password_prompt = true;
     }
     else
@@ -60,23 +61,14 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     quota_key = config.getString("quota_key", "");
 
     /// By default compression is disabled if address looks like localhost.
-
-    /// Avoid DNS request if the host is "localhost".
-    /// If ClickHouse is run under QEMU-user with a binary for a different architecture,
-    /// and there are all listed startup dependency shared libraries available, but not the runtime dependencies of glibc,
-    /// the glibc cannot open "plugins" for DNS resolving, and the DNS resolution does not work.
-    /// At the same time, I want clickhouse-local to always work, regardless.
-    /// TODO: get rid of glibc, or replace getaddrinfo to c-ares.
-
-    compression = config.getBool("compression", host != "localhost" && !isLocalAddress(DNSResolver::instance().resolveHost(host)))
+    compression = config.getBool("compression", !isLocalAddress(DNSResolver::instance().resolveHost(host)))
                   ? Protocol::Compression::Enable : Protocol::Compression::Disable;
 
     timeouts = ConnectionTimeouts(
             Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
             Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0),
             Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
-            Poco::Timespan(config.getInt("tcp_keep_alive_timeout", 0), 0),
-            Poco::Timespan(config.getInt("handshake_timeout_ms", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC * 1000), 0));
+            Poco::Timespan(config.getInt("tcp_keep_alive_timeout", 0), 0));
 
     timeouts.sync_request_timeout = Poco::Timespan(config.getInt("sync_request_timeout", DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC), 0);
 }

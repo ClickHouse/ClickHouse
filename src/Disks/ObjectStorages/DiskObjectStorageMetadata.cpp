@@ -20,7 +20,7 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
     UInt32 version;
     readIntText(version, buf);
 
-    if (version < VERSION_ABSOLUTE_PATHS || version > VERSION_INLINE_DATA)
+    if (version < VERSION_ABSOLUTE_PATHS || version > VERSION_READ_ONLY_FLAG)
         throw Exception(
             ErrorCodes::UNKNOWN_FORMAT,
             "Unknown metadata file version. Path: {}. Version: {}. Maximum expected version: {}",
@@ -54,7 +54,7 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
         assertChar('\n', buf);
 
         storage_objects[i].relative_path = object_relative_path;
-        storage_objects[i].metadata.size_bytes = object_size;
+        storage_objects[i].bytes_size = object_size;
     }
 
     readIntText(ref_count, buf);
@@ -63,12 +63,6 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
     if (version >= VERSION_READ_ONLY_FLAG)
     {
         readBoolText(read_only, buf);
-        assertChar('\n', buf);
-    }
-
-    if (version >= VERSION_INLINE_DATA)
-    {
-        readEscapedString(inline_data, buf);
         assertChar('\n', buf);
     }
 }
@@ -81,11 +75,7 @@ void DiskObjectStorageMetadata::deserializeFromString(const std::string & data)
 
 void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
 {
-    if (inline_data.empty())
-        writeIntText(VERSION_READ_ONLY_FLAG, buf);
-    else
-        writeIntText(VERSION_INLINE_DATA, buf);
-
+    writeIntText(VERSION_READ_ONLY_FLAG, buf);
     writeChar('\n', buf);
 
     writeIntText(storage_objects.size(), buf);
@@ -93,9 +83,9 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
     writeIntText(total_size, buf);
     writeChar('\n', buf);
 
-    for (const auto & [object_relative_path, object_metadata] : storage_objects)
+    for (const auto & [object_relative_path, object_size] : storage_objects)
     {
-        writeIntText(object_metadata.size_bytes, buf);
+        writeIntText(object_size, buf);
         writeChar('\t', buf);
         writeEscapedString(object_relative_path, buf);
         writeChar('\n', buf);
@@ -106,12 +96,6 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
 
     writeBoolText(read_only, buf);
     writeChar('\n', buf);
-
-    if (!inline_data.empty())
-    {
-        writeEscapedString(inline_data, buf);
-        writeChar('\n', buf);
-    }
 
     buf.finalize();
     if (sync)
@@ -139,7 +123,7 @@ DiskObjectStorageMetadata::DiskObjectStorageMetadata(
 void DiskObjectStorageMetadata::addObject(const String & path, size_t size)
 {
     total_size += size;
-    storage_objects.emplace_back(path, ObjectMetadata{size, {}, {}});
+    storage_objects.emplace_back(path, size);
 }
 
 

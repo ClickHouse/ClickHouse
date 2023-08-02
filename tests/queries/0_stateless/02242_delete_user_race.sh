@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, no-fasttest, no-parallel, no-upgrade-check
+# Tags: race, no-fasttest, no-parallel, no-backward-compatibility-check
 
 # Test tries to reproduce a race between threads:
 # - deletes user

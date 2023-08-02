@@ -28,16 +28,8 @@ public:
     BackupCoordinationReplicatedAccess();
     ~BackupCoordinationReplicatedAccess();
 
-    struct FilePathForAccessEntitry
-    {
-        String access_zk_path;
-        AccessEntityType access_entity_type;
-        String host_id;
-        String file_path;
-    };
-
     /// Adds a path to access*.txt file keeping access entities of a ReplicatedAccessStorage.
-    void addFilePath(FilePathForAccessEntitry && file_path_for_access_entity);
+    void addFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path);
 
     /// Returns all paths added by addFilePath() if `host_id` is a host chosen to store access.
     Strings getFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const;

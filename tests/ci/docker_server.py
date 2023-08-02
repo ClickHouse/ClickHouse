@@ -7,24 +7,21 @@ import logging
 import subprocess
 import sys
 import time
-from pathlib import Path
 from os import path as p, makedirs
-from typing import List
+from typing import List, Tuple
 
 from github import Github
 
 from build_check import get_release_or_pr
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import format_description, get_commit, post_commit_status
+from commit_status_helper import format_description, post_commit_status
 from docker_images_check import DockerImage
 from env_helper import CI, GITHUB_RUN_URL, RUNNER_TEMP, S3_BUILDS_BUCKET, S3_DOWNLOAD
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from git_helper import Git
 from pr_info import PRInfo
-from report import TestResults, TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
-from tee_popen import TeePopen
 from upload_result_helper import upload_results
 from version_helper import (
     ClickHouseVersion,
@@ -119,7 +116,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def retry_popen(cmd: str, log_file: Path) -> int:
+def retry_popen(cmd: str) -> int:
     max_retries = 5
     for retry in range(max_retries):
         # From time to time docker build may failed. Curl issues, or even push
@@ -132,14 +129,18 @@ def retry_popen(cmd: str, log_file: Path) -> int:
                 cmd,
             )
             time.sleep(progressive_sleep)
-        with TeePopen(
+        with subprocess.Popen(
             cmd,
-            log_file=log_file,
+            shell=True,
+            stderr=subprocess.STDOUT,
+            stdout=subprocess.PIPE,
+            universal_newlines=True,
         ) as process:
+            for line in process.stdout:  # type: ignore
+                print(line, end="")
             retcode = process.wait()
             if retcode == 0:
                 return 0
-
     return retcode
 
 
@@ -234,8 +235,8 @@ def build_and_push_image(
     os: str,
     tag: str,
     version: ClickHouseVersion,
-) -> TestResults:
-    result = []  # type: TestResults
+) -> List[Tuple[str, str]]:
+    result = []
     if os != "ubuntu":
         tag += f"-{os}"
     init_args = ["docker", "buildx", "build", "--build-arg BUILDKIT_INLINE_CACHE=1"]
@@ -249,9 +250,7 @@ def build_and_push_image(
     # `docker buildx build --load` does not support multiple images currently
     # images must be built separately and merged together with `docker manifest`
     digests = []
-    multiplatform_sw = Stopwatch()
     for arch in BUCKETS:
-        single_sw = Stopwatch()
         arch_tag = f"{tag}-{arch}"
         metadata_path = p.join(TEMP_PATH, arch_tag)
         dockerfile = p.join(image.full_path, f"Dockerfile.{os}")
@@ -270,25 +269,10 @@ def build_and_push_image(
         )
         cmd = " ".join(cmd_args)
         logging.info("Building image %s:%s for arch %s: %s", image.repo, tag, arch, cmd)
-        log_file = Path(TEMP_PATH) / f"{image.repo.replace('/', '__')}:{tag}-{arch}.log"
-        if retry_popen(cmd, log_file) != 0:
-            result.append(
-                TestResult(
-                    f"{image.repo}:{tag}-{arch}",
-                    "FAIL",
-                    single_sw.duration_seconds,
-                    [log_file],
-                )
-            )
+        if retry_popen(cmd) != 0:
+            result.append((f"{image.repo}:{tag}-{arch}", "FAIL"))
             return result
-        result.append(
-            TestResult(
-                f"{image.repo}:{tag}-{arch}",
-                "OK",
-                single_sw.duration_seconds,
-                [log_file],
-            )
-        )
+        result.append((f"{image.repo}:{tag}-{arch}", "OK"))
         with open(metadata_path, "rb") as m:
             metadata = json.load(m)
             digests.append(metadata["containerimage.digest"])
@@ -298,16 +282,9 @@ def build_and_push_image(
             f"--tag {image.repo}:{tag} {' '.join(digests)}"
         )
         logging.info("Pushing merged %s:%s image: %s", image.repo, tag, cmd)
-        if retry_popen(cmd, Path("/dev/null")) != 0:
-            result.append(
-                TestResult(
-                    f"{image.repo}:{tag}", "FAIL", multiplatform_sw.duration_seconds
-                )
-            )
+        if retry_popen(cmd) != 0:
+            result.append((f"{image.repo}:{tag}", "FAIL"))
             return result
-        result.append(
-            TestResult(f"{image.repo}:{tag}", "OK", multiplatform_sw.duration_seconds)
-        )
     else:
         logging.info(
             "Merging is available only on push, separate %s images are created",
@@ -346,7 +323,7 @@ def main():
 
     logging.info("Following tags will be created: %s", ", ".join(tags))
     status = "success"
-    test_results = []  # type: TestResults
+    test_results = []  # type: List[Tuple[str, str]]
     for os in args.os:
         for tag in tags:
             test_results.extend(
@@ -354,7 +331,7 @@ def main():
                     image, args.push, args.bucket_prefix, os, tag, args.version
                 )
             )
-            if test_results[-1].status != "OK":
+            if test_results[-1][1] != "OK":
                 status = "failure"
 
     pr_info = pr_info or PRInfo()
@@ -372,8 +349,7 @@ def main():
     description = format_description(description)
 
     gh = Github(get_best_robot_token(), per_page=100)
-    commit = get_commit(gh, pr_info.sha)
-    post_commit_status(commit, status, url, description, NAME, pr_info)
+    post_commit_status(gh, pr_info.sha, NAME, description, status, url)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

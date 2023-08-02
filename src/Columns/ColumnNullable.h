@@ -6,7 +6,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
-#include "config.h"
+#include "config_core.h"
 
 
 class Collator;
@@ -130,17 +130,17 @@ public:
 
     ColumnPtr compress() const override;
 
-    void forEachSubcolumn(MutableColumnCallback callback) override
+    void forEachSubcolumn(ColumnCallback callback) override
     {
         callback(nested_column);
         callback(null_map);
     }
 
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    void forEachSubcolumnRecursively(ColumnCallback callback) override
     {
-        callback(*nested_column);
+        callback(nested_column);
         nested_column->forEachSubcolumnRecursively(callback);
-        callback(*null_map);
+        callback(null_map);
         null_map->forEachSubcolumnRecursively(callback);
     }
 
@@ -154,11 +154,6 @@ public:
     double getRatioOfDefaultRows(double sample_ratio) const override
     {
         return getRatioOfDefaultRowsImpl<ColumnNullable>(sample_ratio);
-    }
-
-    UInt64 getNumberOfDefaultRows() const override
-    {
-        return getNumberOfDefaultRowsImpl<ColumnNullable>();
     }
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
@@ -193,8 +188,6 @@ public:
     NullMap & getNullMapData() { return getNullMapColumn().getData(); }
     const NullMap & getNullMapData() const { return getNullMapColumn().getData(); }
 
-    ColumnPtr getNestedColumnWithDefaultOnNull() const;
-
     /// Apply the null byte map of a specified nullable column onto the
     /// null byte map of the current column by performing an element-wise OR
     /// between both byte maps. This method is used to determine the null byte
@@ -227,6 +220,5 @@ private:
 
 ColumnPtr makeNullable(const ColumnPtr & column);
 ColumnPtr makeNullableSafe(const ColumnPtr & column);
-ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column);
 
 }

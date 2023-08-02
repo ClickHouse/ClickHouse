@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -21,8 +20,6 @@ struct BackupInfo
 
     ASTPtr toAST() const;
     static BackupInfo fromAST(const IAST & ast);
-
-    String toStringForLogging() const;
 };
 
 }

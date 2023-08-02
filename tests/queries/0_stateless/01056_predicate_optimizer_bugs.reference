@@ -50,12 +50,12 @@ FROM
 WHERE (co != 0) AND (co2 != 2)
 1	0	3	1
 1	0	0	1
-SELECT name
+SELECT alias AS name
 FROM
 (
-    SELECT name
+    SELECT name AS alias
     FROM system.settings
-    WHERE name = \'enable_optimize_predicate_expression\'
+    WHERE alias = \'enable_optimize_predicate_expression\'
 )
 ANY INNER JOIN
 (

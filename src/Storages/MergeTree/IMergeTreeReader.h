@@ -4,8 +4,6 @@
 #include <Common/HashTable/HashMap.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 
 namespace DB
 {
@@ -22,7 +20,7 @@ public:
     using DeserializeBinaryBulkStateMap = std::map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
 
     IMergeTreeReader(
-        MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
+        const MergeTreeData::DataPartPtr & data_part_,
         const NamesAndTypesList & columns_,
         const StorageMetadataPtr & metadata_snapshot_,
         UncompressedCache * uncompressed_cache_,
@@ -50,8 +48,8 @@ public:
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
-    /// If part metadata is not equal to storage metadata,
-    /// then try to perform conversions of columns.
+    /// If part metadata is not equal to storage metadata, than
+    /// try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;
 
     const NamesAndTypesList & getColumns() const { return requested_columns; }
@@ -59,9 +57,7 @@ public:
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
-    MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
-
-    virtual void prefetchBeginOfRange(Priority) {}
+    MergeTreeData::DataPartPtr data_part;
 
 protected:
     /// Returns actual column name in part, which can differ from table metadata.
@@ -73,8 +69,6 @@ protected:
     SerializationPtr getSerializationInPart(const NameAndTypePair & required_column) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
-
-    String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;
@@ -92,21 +86,16 @@ protected:
 
     MergeTreeReaderSettings settings;
 
+    const MergeTreeData & storage;
     StorageMetadataPtr metadata_snapshot;
     MarkRanges all_mark_ranges;
 
-    /// Position and level (of nesting).
-    using ColumnPositionLevel = std::optional<std::pair<size_t, size_t>>;
-    /// In case of part of the nested column does not exists, offsets should be
-    /// read, but only the offsets for the current column, that is why it
-    /// returns pair of size_t, not just one.
-    ColumnPositionLevel findColumnForOffsets(const NameAndTypePair & column) const;
-
-    NameSet partially_read_columns;
+    using ColumnPosition = std::optional<size_t>;
+    ColumnPosition findColumnForOffsets(const String & column_name) const;
 
 private:
     /// Alter conversions, which must be applied on fly if required
-    AlterConversionsPtr alter_conversions;
+    MergeTreeData::AlterConversions alter_conversions;
 
     /// Columns that are requested to read.
     NamesAndTypesList requested_columns;

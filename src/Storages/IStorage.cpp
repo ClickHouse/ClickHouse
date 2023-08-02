@@ -39,9 +39,12 @@ RWLockImpl::LockHolder IStorage::tryLockTimed(
     if (!lock_holder)
     {
         const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
-        throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
-            "{} locking attempt on \"{}\" has timed out! ({}ms) Possible deadlock avoided. Client should retry",
-            type_str, getStorageID(), acquire_timeout.count());
+        throw Exception(
+            type_str + " locking attempt on \"" + getStorageID().getFullTableName() + "\" has timed out! ("
+                + std::to_string(acquire_timeout.count())
+                + "ms) "
+                  "Possible deadlock avoided. Client should retry.",
+            ErrorCodes::DEADLOCK_AVOIDED);
     }
     return lock_holder;
 }
@@ -50,22 +53,10 @@ TableLockHolder IStorage::lockForShare(const String & query_id, const std::chron
 {
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
 
-    if (is_dropped || is_detached)
+    if (is_dropped)
     {
         auto table_id = getStorageID();
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped or detached", table_id.database_name, table_id.table_name);
-    }
-    return result;
-}
-
-TableLockHolder IStorage::tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
-{
-    TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
-
-    if (is_dropped || is_detached)
-    {
-        // Table was dropped while acquiring the lock
-        result = nullptr;
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", table_id.database_name, table_id.table_name);
     }
 
     return result;
@@ -79,10 +70,10 @@ IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
                         "Locking attempt for ALTER on \"{}\" has timed out! ({} ms) "
                         "Possible deadlock avoided. Client should retry.",
-                        getStorageID().getFullTableName(), acquire_timeout.count());
+                        getStorageID().getFullTableName(), std::to_string(acquire_timeout.count()));
 
-    if (is_dropped || is_detached)
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
+    if (is_dropped)
+        throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 
     return lock;
 }
@@ -93,8 +84,8 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
     TableExclusiveLockHolder result;
     result.drop_lock = tryLockTimed(drop_lock, RWLockImpl::Write, query_id, acquire_timeout);
 
-    if (is_dropped || is_detached)
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
+    if (is_dropped)
+        throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 
     return result;
 }
@@ -105,9 +96,9 @@ Pipe IStorage::watch(
     ContextPtr /*context*/,
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t /*max_block_size*/,
-    size_t /*num_streams*/)
+    unsigned /*num_streams*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method watch is not supported by storage {}", getName());
+    throw Exception("Method watch is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 Pipe IStorage::read(
@@ -117,9 +108,9 @@ Pipe IStorage::read(
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
-    size_t /*num_streams*/)
+    unsigned /*num_streams*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method read is not supported by storage {}", getName());
+    throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void IStorage::read(
@@ -130,16 +121,9 @@ void IStorage::read(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    size_t num_streams)
+    unsigned num_streams)
 {
     auto pipe = read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-
-    /// parallelize processing if not yet
-    const size_t output_ports = pipe.numOutputPorts();
-    const bool parallelize_output = context->getSettingsRef().parallelize_output_from_storages;
-    if (parallelize_output && parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < num_streams)
-        pipe.resize(num_streams);
-
     readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, getName());
 }
 
@@ -174,7 +158,7 @@ std::optional<QueryPipeline> IStorage::distributedWrite(
 Pipe IStorage::alterPartition(
     const StorageMetadataPtr & /* metadata_snapshot */, const PartitionCommands & /* commands */, ContextPtr /* context */)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Partition operations are not supported by storage {}", getName());
+    throw Exception("Partition operations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &)
@@ -198,13 +182,13 @@ void IStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /
 
 void IStorage::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support mutations", getName());
+    throw Exception("Table engine " + getName() + " doesn't support mutations", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void IStorage::checkAlterPartitionIsPossible(
     const PartitionCommands & /*commands*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & /*settings*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitioning", getName());
+    throw Exception("Table engine " + getName() + " doesn't support partitioning", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 StorageID IStorage::getStorageID() const
@@ -236,16 +220,16 @@ Names IStorage::getAllRegisteredNames() const
 NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
 {
     NameDependencies name_deps;
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(storage_id);
-    for (const auto & view_id : view_ids)
+    auto dependencies = DatabaseCatalog::instance().getDependencies(storage_id);
+    for (const auto & depend_id : dependencies)
     {
-        auto view = DatabaseCatalog::instance().getTable(view_id, context);
-        if (view->getInMemoryMetadataPtr()->select.inner_query)
+        auto depend_table = DatabaseCatalog::instance().getTable(depend_id, context);
+        if (depend_table->getInMemoryMetadataPtr()->select.inner_query)
         {
-            const auto & select_query = view->getInMemoryMetadataPtr()->select.inner_query;
+            const auto & select_query = depend_table->getInMemoryMetadataPtr()->select.inner_query;
             auto required_columns = InterpreterSelectQuery(select_query, context, SelectQueryOptions{}.noModify()).getRequiredColumns();
             for (const auto & col_name : required_columns)
-                name_deps[col_name].push_back(view_id.table_name);
+                name_deps[col_name].push_back(depend_id.table_name);
         }
     }
     return name_deps;
@@ -257,7 +241,7 @@ bool IStorage::isStaticStorage() const
     if (storage_policy)
     {
         for (const auto & disk : storage_policy->getDisks())
-            if (!(disk->isReadOnly() || disk->isWriteOnce()))
+            if (!disk->isReadOnly())
                 return false;
         return true;
     }

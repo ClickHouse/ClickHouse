@@ -46,9 +46,8 @@ public:
         {
             const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
             if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Argument {} for function {} must be an array but it has type {}.",
-                                i, getName(), arguments[i]->getName());
+                throw Exception("Argument " + std::to_string(i) + " for function " + getName() + " must be an array but it has type "
+                                + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         return std::make_shared<DataTypeUInt8>();
@@ -79,7 +78,7 @@ public:
             if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(argument_column.get()))
                 sources.emplace_back(GatherUtils::createArraySource(*argument_column_array, is_const, input_rows_count));
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments for function {} must be arrays.", getName());
+                throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
         }
 
         auto result_column = ColumnUInt8::create(input_rows_count);

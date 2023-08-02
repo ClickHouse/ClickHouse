@@ -20,13 +20,12 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_EMBEDDED_COMPILER
 #include <Interpreters/JIT/compileFunction.h>
@@ -697,8 +696,6 @@ private:
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<DateTime64>>, strategy>,
 
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UUID>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<IPv4>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<IPv6>>, strategy>,
 
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnString>, strategy>,
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnFixedString>, strategy>,

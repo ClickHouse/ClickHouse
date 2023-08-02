@@ -23,22 +23,22 @@ namespace DB
 
 int io_setup(unsigned nr, aio_context_t * ctxp)
 {
-    return static_cast<int>(syscall(__NR_io_setup, nr, ctxp));
+    return syscall(__NR_io_setup, nr, ctxp);
 }
 
 int io_destroy(aio_context_t ctx)
 {
-    return static_cast<int>(syscall(__NR_io_destroy, ctx));
+    return syscall(__NR_io_destroy, ctx);
 }
 
 int io_submit(aio_context_t ctx, long nr, struct iocb * iocbpp[]) // NOLINT
 {
-    return static_cast<int>(syscall(__NR_io_submit, ctx, nr, iocbpp));
+    return syscall(__NR_io_submit, ctx, nr, iocbpp);
 }
 
 int io_getevents(aio_context_t ctx, long min_nr, long max_nr, io_event * events, struct timespec * timeout) // NOLINT
 {
-    return static_cast<int>(syscall(__NR_io_getevents, ctx, min_nr, max_nr, events, timeout));
+    return syscall(__NR_io_getevents, ctx, min_nr, max_nr, events, timeout);
 }
 
 
@@ -124,12 +124,12 @@ int io_submit(int ctx, long nr, struct iocb * iocbpp[])
         }
     }
 
-    return static_cast<int>(nr);
+    return nr;
 }
 
 int io_getevents(int ctx, long, long max_nr, struct kevent * events, struct timespec * timeout)
 {
-    return kevent(ctx, nullptr, 0, events, static_cast<int>(max_nr), timeout);
+    return kevent(ctx, nullptr, 0, events, max_nr, timeout);
 }
 
 

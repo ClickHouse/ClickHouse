@@ -27,9 +27,6 @@ public:
 
     bool supportsTransactions() const override { return true; }
 
-    /// To apply SETTINGS clauses from query as early as possible
-    static void applySettingsFromQuery(const ASTPtr & ast, ContextMutablePtr context_);
-
 private:
     ASTPtr query_ptr;
 };

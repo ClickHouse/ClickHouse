@@ -1,20 +1,15 @@
 #include <IO/WriteHelpers.h>
 #include <Common/NamePrompter.h>
 
-namespace DB
+namespace DB::detail
 {
-
-String getHintsErrorMessageSuffix(const std::vector<String> & hints)
+void appendHintsMessageImpl(String & message, const std::vector<String> & hints)
 {
     if (hints.empty())
-        return {};
+    {
+        return;
+    }
 
-    return ". Maybe you meant: " + toString(hints);
+    message += ". Maybe you meant: " + toString(hints);
 }
-
-void appendHintsMessage(String & message, const std::vector<String> & hints)
-{
-    message += getHintsErrorMessageSuffix(hints);
-}
-
 }

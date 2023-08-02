@@ -8,11 +8,10 @@
 #include <IO/ReadBufferFromString.h>
 #include <Poco/Net/NetException.h>
 #include <Common/logger_useful.h>
-#include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ParserQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Databases/DatabaseReplicated.h>
 
@@ -29,14 +28,12 @@ namespace ErrorCodes
     extern const int DNS_ERROR;
 }
 
-
 HostID HostID::fromString(const String & host_port_str)
 {
     HostID res;
     std::tie(res.host_name, res.port) = Cluster::Address::fromString(host_port_str);
     return res;
 }
-
 
 bool HostID::isLocalAddress(UInt16 clickhouse_port) const
 {
@@ -53,26 +50,21 @@ bool HostID::isLocalAddress(UInt16 clickhouse_port) const
 
 void DDLLogEntry::assertVersion() const
 {
-    if (version == 0
-    /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not change the entry format, it uses versioin 2, so there shouldn't be such version
-    || version == NORMALIZE_CREATE_ON_INITIATOR_VERSION
-    || version > DDL_ENTRY_FORMAT_MAX_VERSION)
+    constexpr UInt64 max_version = 2;
+    if (version == 0 || max_version < version)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown DDLLogEntry format version: {}."
-                                                            "Maximum supported version is {}", version, DDL_ENTRY_FORMAT_MAX_VERSION);
+                                                            "Maximum supported version is {}", version, max_version);
 }
 
 void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
 {
     version = context->getSettingsRef().distributed_ddl_entry_format_version;
-    if (version <= 0 || version > DDL_ENTRY_FORMAT_MAX_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown distributed_ddl_entry_format_version: {}."
-                                                            "Maximum supported version is {}.", version, DDL_ENTRY_FORMAT_MAX_VERSION);
 
     /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not affect entry format in ZooKeeper
     if (version == NORMALIZE_CREATE_ON_INITIATOR_VERSION)
         version = SETTINGS_IN_ZK_VERSION;
 
-    if (version >= SETTINGS_IN_ZK_VERSION)
+    if (version == SETTINGS_IN_ZK_VERSION)
         settings.emplace(context->getSettingsRef().changes());
 }
 
@@ -102,17 +94,6 @@ String DDLLogEntry::toString() const
         wb << "settings: " << serializeAST(ast) << "\n";
     }
 
-    if (version >= OPENTELEMETRY_ENABLED_VERSION)
-        wb << "tracing: " << this->tracing_context;
-    /// NOTE: OPENTELEMETRY_ENABLED_VERSION has new line in TracingContext::serialize(), so no need to add one more
-
-    if (version >= PRESERVE_INITIAL_QUERY_ID_VERSION)
-    {
-        writeString("initial_query_id: ", wb);
-        writeEscapedString(initial_query_id, wb);
-        writeChar('\n', wb);
-    }
-
     return wb.str();
 }
 
@@ -125,7 +106,7 @@ void DDLLogEntry::parse(const String & data)
 
     Strings host_id_strings;
     rb >> "query: " >> escape >> query >> "\n";
-    if (version == OLDEST_VERSION)
+    if (version == 1)
     {
         rb >> "hosts: " >> host_id_strings >> "\n";
 
@@ -134,8 +115,9 @@ void DDLLogEntry::parse(const String & data)
         else
             initiator.clear();
     }
-    else if (version >= SETTINGS_IN_ZK_VERSION)
+    else if (version == 2)
     {
+
         if (!rb.eof() && *rb.position() == 'h')
             rb >> "hosts: " >> host_id_strings >> "\n";
         if (!rb.eof() && *rb.position() == 'i')
@@ -151,20 +133,6 @@ void DDLLogEntry::parse(const String & data)
             settings.emplace(std::move(settings_ast->as<ASTSetQuery>()->changes));
         }
     }
-
-    if (version >= OPENTELEMETRY_ENABLED_VERSION)
-    {
-        if (!rb.eof() && *rb.position() == 't')
-            rb >> "tracing: " >> this->tracing_context;
-    }
-
-    if (version >= PRESERVE_INITIAL_QUERY_ID_VERSION)
-    {
-        checkString("initial_query_id: ", rb);
-        readEscapedString(initial_query_id, rb);
-        checkChar('\n', rb);
-    }
-
 
     assertEOF(rb);
 
@@ -185,13 +153,6 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
     ParserQuery parser_query(end, settings.allow_settings_after_format_in_insert);
     String description;
     query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth);
-}
-
-void DDLTaskBase::formatRewrittenQuery(ContextPtr context)
-{
-    /// Convert rewritten AST back to string.
-    query_str = queryToString(*query);
-    query_for_logging = query->formatForLogging(context->getSettingsRef().log_queries_cut_to_length);
 }
 
 ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)
@@ -264,7 +225,7 @@ void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
 {
     auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query.get());
     if (!query_on_cluster)
-        throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Received unknown DDL query");
+        throw Exception("Received unknown DDL query", ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
 
     cluster_name = query_on_cluster->cluster;
     cluster = context->tryGetCluster(cluster_name);
@@ -291,7 +252,6 @@ void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
                  host_id.readableString(), entry_name, address_in_cluster.readableString(), cluster_name);
     }
 
-    /// Rewrite AST without ON CLUSTER.
     WithoutOnClusterASTRewriteParams params;
     params.default_database = address_in_cluster.default_database;
     params.host_id = address_in_cluster.toString();
@@ -337,8 +297,7 @@ bool DDLTask::tryFindHostInCluster()
                         {
                             if (!query_with_table->database)
                                 throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                                                "For a distributed DDL on circular replicated cluster its table name "
-                                                "must be qualified by database name.");
+                                                "For a distributed DDL on circular replicated cluster its table name must be qualified by database name.");
 
                             if (default_database == query_with_table->getDatabase())
                                 return true;
@@ -433,7 +392,6 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
         chassert(!ddl_query->database);
         ddl_query->setDatabase(database->getDatabaseName());
     }
-    formatRewrittenQuery(context);
 }
 
 ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
@@ -511,7 +469,7 @@ void ZooKeeperMetadataTransaction::commit()
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
 {
     if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(cluster_name).get()))
-        return replicated_db->tryGetCluster();
+        return replicated_db->getCluster();
     return {};
 }
 
