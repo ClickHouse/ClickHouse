@@ -121,7 +121,7 @@ private:
     Block header;
     std::shared_ptr<Processors> processors;
 
-    /// If is true, then on each addition of processor also try
+    /// If the variable is true, then each time a processor is added pipe will try
     /// to add processor which will send partial result from original processor
     bool is_partial_result_active = false;
     UInt64 partial_result_limit = 0;

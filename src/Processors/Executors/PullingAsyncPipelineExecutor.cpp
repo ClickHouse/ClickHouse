@@ -46,9 +46,7 @@ PullingAsyncPipelineExecutor::PullingAsyncPipelineExecutor(QueryPipeline & pipel
     if (!pipeline.pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PullingAsyncPipelineExecutor must be pulling");
 
-    lazy_format = std::make_shared<LazyOutputFormat>(pipeline.output->getHeader());
-    if (has_partial_result_setting)
-        lazy_format->activatePartialResultProtocol();
+    lazy_format = std::make_shared<LazyOutputFormat>(pipeline.output->getHeader(), /*is_partial_result_protocol_active*/ has_partial_result_setting);
 
     pipeline.complete(lazy_format);
 }

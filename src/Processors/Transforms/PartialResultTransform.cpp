@@ -26,29 +26,38 @@ IProcessor::Status PartialResultTransform::prepare()
         return Status::Finished;
     }
 
-    if (input.hasData())
-        partial_result = {input.pull(), SnaphotStatus::Ready};
-
-    /// Send partial result from real processor snapshot or from previous partial result processor if possible
-    if (partial_result.snapshot_status == SnaphotStatus::Ready && output.canPush())
+    if (!output.canPush())
     {
-        transformPartialResult(partial_result.chunk);
-        partial_result.snapshot_status = SnaphotStatus::NotReady;
-        if (partial_result.chunk.getNumRows() > 0)
-        {
-            output.push(std::move(partial_result.chunk));
-            return Status::PortFull;
-        }
-    }
+        input.setNotNeeded();
+        return Status::PortFull;
+    } 
 
     /// If input data from previous partial result processor is finished then
     /// PartialResultTransform ready to create snapshots and send them as a partial result
     if (input.isFinished())
     {
+        if (partial_result.snapshot_status == SnaphotStatus::Ready)
+        {
+            partial_result.snapshot_status = SnaphotStatus::NotReady;
+            output.push(std::move(partial_result.chunk));
+            return Status::PortFull;
+        }
+
         return Status::Ready;
     }
 
     input.setNeeded();
+    if (!input.hasData())
+        return Status::NeedData; 
+
+    partial_result.chunk = input.pull();
+    transformPartialResult(partial_result.chunk);
+    if (partial_result.chunk.getNumRows() > 0)
+    {
+        output.push(std::move(partial_result.chunk));
+        return Status::PortFull;
+    }
+
     return Status::NeedData;
 }
 

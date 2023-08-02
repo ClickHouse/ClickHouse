@@ -6,30 +6,18 @@
 namespace DB
 {
 
-IOutputFormat::IOutputFormat(const Block & header_, WriteBuffer & out_)
-    : IProcessor({header_, header_, header_, header_}, {}), out(out_)
+IOutputFormat::IOutputFormat(const Block & header_, WriteBuffer & out_, bool is_partial_result_protocol_active_)
+    : IProcessor({header_, header_, header_, header_}, {})
+    , out(out_)
+    , is_partial_result_protocol_active(is_partial_result_protocol_active_)
 {
 }
 
-IOutputFormat::Status IOutputFormat::prepare()
+void IOutputFormat::setCurrentChunk(InputPort & input, PortKind kind)
 {
-    if (has_input)
-        return Status::Ready;
-
-    auto status = prepareMainAndPartialResult();
-    if (status != Status::Finished)
-        return status;
-
-    status = prepareTotalsAndExtremes();
-    if (status != Status::Finished)
-        return status;
-
-    finished = true;
-
-    if (!finalized)
-        return Status::Ready;
-
-    return Status::Finished;
+    current_chunk = input.pull(true);
+    current_block_kind = kind;
+    has_input = true;
 }
 
 IOutputFormat::Status IOutputFormat::prepareMainAndPartialResult()
@@ -42,7 +30,7 @@ IOutputFormat::Status IOutputFormat::prepareMainAndPartialResult()
         if (input.isFinished())
             continue;
 
-        if (kind == PartialResult && was_main_input)
+        if (kind == PartialResult && main_input_activated)
         {
             input.close();
             continue;
@@ -84,11 +72,25 @@ IOutputFormat::Status IOutputFormat::prepareTotalsAndExtremes()
     return Status::Finished;
 }
 
-void IOutputFormat::setCurrentChunk(InputPort & input, PortKind kind)
+IOutputFormat::Status IOutputFormat::prepare()
 {
-    current_chunk = input.pull(true);
-    current_block_kind = kind;
-    has_input = true;
+    if (has_input)
+        return Status::Ready;
+
+    auto status = prepareMainAndPartialResult();
+    if (status != Status::Finished)
+        return status;
+
+    status = prepareTotalsAndExtremes();
+    if (status != Status::Finished)
+        return status;
+
+    finished = true;
+
+    if (!finalized)
+        return Status::Ready;
+
+    return Status::Finished;
 }
 
 static Chunk prepareTotals(Chunk chunk)
@@ -130,10 +132,12 @@ void IOutputFormat::work()
         case Main:
             result_rows += current_chunk.getNumRows();
             result_bytes += current_chunk.allocatedBytes();
-            if (is_partial_result_protocol_active && !was_main_input && current_chunk.hasRows())
+            if (is_partial_result_protocol_active && !main_input_activated && current_chunk.hasRows())
             {
+                /// Sending an empty block signals to the client that partial results are terminated,
+                /// and only data from the main pipeline will be forwarded.
                 consume(Chunk(current_chunk.cloneEmptyColumns(), 0));
-                was_main_input = true;
+                main_input_activated = true;
             }
             consume(std::move(current_chunk));
             break;

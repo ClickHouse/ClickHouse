@@ -25,7 +25,7 @@ class IOutputFormat : public IProcessor
 public:
     enum PortKind { Main = 0, Totals = 1, Extremes = 2, PartialResult = 3 };
 
-    IOutputFormat(const Block & header_, WriteBuffer & out_);
+    IOutputFormat(const Block & header_, WriteBuffer & out_, bool is_partial_result_protocol_active_ = false);
 
     Status prepare() override;
     void work() override;
@@ -105,8 +105,6 @@ public:
 
     void clearLastLines(size_t lines_number);
 
-    void activatePartialResultProtocol() { is_partial_result_protocol_active = true; }
-
 protected:
     friend class ParallelFormattingOutputFormat;
 
@@ -172,7 +170,7 @@ protected:
 
     Chunk current_chunk;
     PortKind current_block_kind = PortKind::Main;
-    bool was_main_input = false;
+    bool main_input_activated = false;
     bool has_input = false;
     bool finished = false;
     bool finalized = false;
@@ -187,9 +185,9 @@ protected:
     Statistics statistics;
 
 private:
+    void setCurrentChunk(InputPort & input, PortKind kind);
     IOutputFormat::Status prepareMainAndPartialResult();
     IOutputFormat::Status prepareTotalsAndExtremes();
-    void setCurrentChunk(InputPort & input, PortKind kind);
 
     size_t rows_read_before = 0;
     bool are_totals_written = false;

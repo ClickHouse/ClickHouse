@@ -127,7 +127,7 @@ static void checkPulling(
     if (partial_result && !found_partial_result)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cannot create pulling QueryPipeline because its partial_result port does not belong to any processor");
+            "Cannot create pulling QueryPipeline because its partial result port does not belong to any processor");
 }
 
 static void checkCompleted(Processors & processors)
