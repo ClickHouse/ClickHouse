@@ -42,7 +42,7 @@ MergeTreeReaderInMemory::MergeTreeReaderInMemory(
         {
             if (auto offsets_position = findColumnForOffsets(column_to_read))
             {
-                positions_for_offsets[column_to_read.name] = offsets_position->first;
+                positions_for_offsets[column_to_read.name] = *data_part_info_for_read->getColumnPosition(offsets_position->first);
                 partially_read_columns.insert(column_to_read.name);
             }
         }
