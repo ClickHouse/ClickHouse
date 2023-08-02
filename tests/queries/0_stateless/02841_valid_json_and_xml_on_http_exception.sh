@@ -4,6 +4,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+CH_URL='$CLICKHOUSE_URL&http_write_exception_in_output_format=1&allow_experimental_analyzer=0'
+
 echo "One block"
 for parallel in 0 1
 do
@@ -11,7 +13,7 @@ do
     for format in JSON JSONEachRow JSONCompact JSONCompactEachRow JSONObjectEachRow XML
     do
         echo $format
-        ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL&http_write_exception_in_output_format=1" -d "select number, throwIf(number > 3) as res from numbers(10) format $format settings output_format_parallel_formatting=$parallel" | sed "s/(version .*)//" | sed "s/DB::Exception//"
+        ${CLICKHOUSE_CURL} -sS "$CH_URL" -d "select number, throwIf(number > 3) as res from numbers(10) format $format settings output_format_parallel_formatting=$parallel" | sed "s/(version .*)//" | sed "s/DB::Exception//"
     done
 done
 
@@ -20,20 +22,20 @@ echo "Without parallel formatting"
 for format in JSON JSONEachRow JSONCompact JSONCompactEachRow JSONObjectEachRow XML
 do
     echo $format
-        ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL&http_write_exception_in_output_format=1" -d "select number, throwIf(number > 3) as res from system.numbers format $format settings max_block_size=1, output_format_parallel_formatting=0" | sed "s/(version .*)//" | sed "s/DB::Exception//"
+        ${CLICKHOUSE_CURL} -sS "$CH_URL" -d "select number, throwIf(number > 3) as res from system.numbers format $format settings max_block_size=1, output_format_parallel_formatting=0" | sed "s/(version .*)//" | sed "s/DB::Exception//"
 done
 
 echo "With parallel formatting"
 for format in JSON JSONCompact JSONObjectEachRow
 do
     echo $format
-    ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL&http_write_exception_in_output_format=1" -d "select number, throwIf(number > 3) as res from system.numbers format $format settings max_block_size=1, output_format_parallel_formatting=1" | $CLICKHOUSE_LOCAL --input-format=JSONAsString -q "select isValidJSON(json) from table"
+    ${CLICKHOUSE_CURL} -sS "$CH_URL" -d "select number, throwIf(number > 3) as res from system.numbers format $format settings max_block_size=1, output_format_parallel_formatting=1" | $CLICKHOUSE_LOCAL --input-format=JSONAsString -q "select isValidJSON(json) from table"
 done
 
 for format in JSONEachRow JSONCompactEachRow
 do
     echo $format
-    ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL&http_write_exception_in_output_format=1" -d "select number, throwIf(number > 3) as res from system.numbers format $format settings max_block_size=1, output_format_parallel_formatting=1" | $CLICKHOUSE_LOCAL --input-format=LineAsString -q "select min(isValidJSON(line)) from table"
+    ${CLICKHOUSE_CURL} -sS "$CH_URL" -d "select number, throwIf(number > 3) as res from system.numbers format $format settings max_block_size=1, output_format_parallel_formatting=1" | $CLICKHOUSE_LOCAL --input-format=LineAsString -q "select min(isValidJSON(line)) from table"
 done
 
 echo "Formatting error"
@@ -51,20 +53,20 @@ echo "Without parallel formatting"
 for format in JSON JSONEachRow JSONCompact JSONCompactEachRow JSONObjectEachRow XML
 do
     echo $format
-    ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL&http_write_exception_in_output_format=1" -d "select * from test_02841 order by x format $format settings output_format_parallel_formatting=0" | sed "s/(version .*)//" | sed "s/DB::Exception//"
+    ${CLICKHOUSE_CURL} -sS "$CH_URL" -d "select * from test_02841 order by x format $format settings output_format_parallel_formatting=0" | sed "s/(version .*)//" | sed "s/DB::Exception//"
 done
 
 echo "With parallel formatting"
 for format in JSON JSONCompact JSONObjectEachRow
 do
     echo $format
-    ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL&http_write_exception_in_output_format=1" -d "select * from test_02841 format $format settings output_format_parallel_formatting=1" | $CLICKHOUSE_LOCAL --input-format=JSONAsString -q "select isValidJSON(json) from table"
+    ${CLICKHOUSE_CURL} -sS "$CH_URL" -d "select * from test_02841 format $format settings output_format_parallel_formatting=1" | $CLICKHOUSE_LOCAL --input-format=JSONAsString -q "select isValidJSON(json) from table"
 done
 
 for format in JSONEachRow JSONCompactEachRow
 do
     echo $format
-    ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL&http_write_exception_in_output_format=1" -d "select * from test_02841 format $format settings output_format_parallel_formatting=1" | $CLICKHOUSE_LOCAL --input-format=LineAsString -q "select min(isValidJSON(line)) from table"
+    ${CLICKHOUSE_CURL} -sS "$CH_URL" -d "select * from test_02841 format $format settings output_format_parallel_formatting=1" | $CLICKHOUSE_LOCAL --input-format=LineAsString -q "select min(isValidJSON(line)) from table"
 done
 
 
@@ -74,8 +76,8 @@ $CLICKHOUSE_CLIENT -q "insert into test_02841 select 1, repeat('aaaaa', 1000000)
 $CLICKHOUSE_CLIENT -q "insert into test_02841 select 2, repeat('aaaaa', 1000000), 99"
 $CLICKHOUSE_CLIENT -q "insert into test_02841 select 3, repeat('aaaaa', 1000000), 1"
 
-${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL&http_write_exception_in_output_format=1" -d "select * from test_02841 format JSON settings output_format_parallel_formatting=0" | $CLICKHOUSE_LOCAL --input-format=JSONAsString -q "select isValidJSON(json) from table"
-${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL&http_write_exception_in_output_format=1" -d "select * from test_02841 format JSON settings output_format_parallel_formatting=1" | $CLICKHOUSE_LOCAL --input-format=JSONAsString -q "select isValidJSON(json) from table"
+${CLICKHOUSE_CURL} -sS "$CH_URL" -d "select * from test_02841 format JSON settings output_format_parallel_formatting=0" | $CLICKHOUSE_LOCAL --input-format=JSONAsString -q "select isValidJSON(json) from table"
+${CLICKHOUSE_CURL} -sS "$CH_URL" -d "select * from test_02841 format JSON settings output_format_parallel_formatting=1" | $CLICKHOUSE_LOCAL --input-format=JSONAsString -q "select isValidJSON(json) from table"
 
 
 echo "Test 2"
@@ -87,8 +89,8 @@ $CLICKHOUSE_CLIENT -q "insert into test_02841 values (3, 'str4', 99)"
 $CLICKHOUSE_CLIENT -q "insert into test_02841 values (4, 'str5', 1)"
 $CLICKHOUSE_CLIENT -q "insert into test_02841 select number, 'str_numbers_2', 1 from numbers(10000)"
 
-${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL&http_write_exception_in_output_format=1" -d "select * from test_02841 format JSON settings output_format_parallel_formatting=0" | $CLICKHOUSE_LOCAL --input-format=JSONAsString -q "select isValidJSON(json) from table"
-${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL&http_write_exception_in_output_format=1" -d "select * from test_02841 format JSON settings output_format_parallel_formatting=1" | $CLICKHOUSE_LOCAL --input-format=JSONAsString -q "select isValidJSON(json) from table"
+${CLICKHOUSE_CURL} -sS "$CH_URL" -d "select * from test_02841 format JSON settings output_format_parallel_formatting=0" | $CLICKHOUSE_LOCAL --input-format=JSONAsString -q "select isValidJSON(json) from table"
+${CLICKHOUSE_CURL} -sS "$CH_URL" -d "select * from test_02841 format JSON settings output_format_parallel_formatting=1" | $CLICKHOUSE_LOCAL --input-format=JSONAsString -q "select isValidJSON(json) from table"
 
 echo "Test 3"
 $CLICKHOUSE_CLIENT -q "truncate table test_02841"
@@ -99,8 +101,8 @@ $CLICKHOUSE_CLIENT -q "insert into test_02841 values (3, 'str4', 1)"
 $CLICKHOUSE_CLIENT -q "insert into test_02841 values (4, 'str5', 1)"
 $CLICKHOUSE_CLIENT -q "insert into test_02841 select number, 'str_numbers_2', 1 from numbers(10000)"
 
-${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL&http_write_exception_in_output_format=1" -d "select * from test_02841 format JSON settings output_format_parallel_formatting=0" | $CLICKHOUSE_LOCAL --input-format=JSONAsString -q "select isValidJSON(json) from table"
-${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL&http_write_exception_in_output_format=1" -d "select * from test_02841 format JSON settings output_format_parallel_formatting=1" | $CLICKHOUSE_LOCAL --input-format=JSONAsString -q "select isValidJSON(json) from table"
+${CLICKHOUSE_CURL} -sS "$CH_URL" -d "select * from test_02841 format JSON settings output_format_parallel_formatting=0" | $CLICKHOUSE_LOCAL --input-format=JSONAsString -q "select isValidJSON(json) from table"
+${CLICKHOUSE_CURL} -sS "$CH_URL" -d "select * from test_02841 format JSON settings output_format_parallel_formatting=1" | $CLICKHOUSE_LOCAL --input-format=JSONAsString -q "select isValidJSON(json) from table"
 
 $CLICKHOUSE_CLIENT -q "drop table test_02841"
 
