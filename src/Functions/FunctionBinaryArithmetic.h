@@ -1162,15 +1162,6 @@ class FunctionBinaryArithmetic : public IFunction
         if (!return_type_array)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Return type for function {} must be array.", getName());
 
-        return executeArray(arguments, result_type, input_rows_count);
-
-        // if (typeid_cast<const ColumnConst *>(arguments[0].column.get()))
-        //     return result_column;
-        // else
-    }
-
-    ColumnPtr executeArray(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
-    {
         if constexpr (is_multiply || is_division)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot use multiplication or division on arrays");
 
