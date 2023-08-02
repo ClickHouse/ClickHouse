@@ -1,3 +1,4 @@
+#include "Common/logger_useful.h"
 #include "config.h"
 
 #if USE_MYSQL
@@ -499,7 +500,10 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
             {
                 throw;
             }
-            catch (const mysqlxx::ConnectionFailed &) {}
+            catch (const mysqlxx::ConnectionFailed & ex)
+            {
+                LOG_TRACE(log, "Connection to MySQL failed {}", ex.displayText());
+            }
             catch (const mysqlxx::BadQuery & e)
             {
                 // Lost connection to MySQL server during query
