@@ -180,7 +180,7 @@ Chunk ParquetMetadataInputFormat::generate()
         else if (name == names[3])
         {
             auto column = types[3]->createColumn();
-            /// Version сan be only PARQUET_1_0 or PARQUET_2_LATEST (which is 2.6).
+            /// Version can be only PARQUET_1_0 or PARQUET_2_LATEST (which is 2.6).
             String version = metadata->version() == parquet::ParquetVersion::PARQUET_1_0 ? "1.0" : "2.6";
             assert_cast<ColumnString &>(*column).insertData(version.data(), version.size());
             res.addColumn(std::move(column));
