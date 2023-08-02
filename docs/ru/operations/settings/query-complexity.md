@@ -317,7 +317,7 @@ FORMAT Null;
 
 ## throw_on_max_partitions_per_insert_block {#settings-throw_on_max_partition_per_insert_block}
 
-Pozvolyayet vam kontrolirovat' povedeniye pri dostizhenii `max_partitions_per_insert_block`
+Позволяет контролировать поведение при достижении `max_partitions_per_insert_block`
 
 - `true`  - Когда вставляемый блок достигает max_partitions_per_insert_block, возникает исключение.
 - `false` - Записывает предупреждение при достижении `max_partitions_per_insert_block`.
