@@ -1,7 +1,6 @@
 #include <Processors/Executors/ExecutingGraph.h>
 #include <stack>
 #include <Common/Stopwatch.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -61,7 +60,6 @@ bool ExecutingGraph::addEdges(uint64_t node)
     /// Add backward edges from input ports.
     auto & inputs = from->getInputs();
     auto from_input = nodes[node]->back_edges.size();
-    LOG_DEBUG(&Poco::Logger::get("ExecutingGraph::addEdges"), "Node id {}. Node name {}. Backward edges size {}. Inputs size {}. Direct edges size {}. Outputs size {}", node, from->getName(), from_input, inputs.size(), nodes[node]->direct_edges.size(), from->getOutputs().size());
 
     if (from_input < inputs.size())
     {
@@ -222,7 +220,6 @@ bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue
     updated_processors.push(pid);
 
     std::shared_lock read_lock(nodes_mutex);
-    // LOG_DEBUG(&Poco::Logger::get("ExecutingGraph::updateNode"), "Original node for update. Node id {}. Node name {}", pid, nodes[pid]->processor->getName());
 
     while (!updated_processors.empty() || !updated_edges.empty())
     {
@@ -284,7 +281,6 @@ bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue
                     IProcessor::Status last_status = node.last_processor_status;
                     IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
                     node.last_processor_status = status;
-                    // LOG_DEBUG(&Poco::Logger::get("ExecutingGraph::updateNode"), "Node id {}. Node name {}. Status {}", pid, nodes[pid]->processor->getName(), status);
 
                     if (profile_processors)
                     {
