@@ -1,10 +1,11 @@
+#include <base/defines.h>
 #include <Core/SettingsQuirks.h>
 #include <Core/Settings.h>
 #include <Poco/Environment.h>
 #include <Poco/Platform.h>
 #include <Common/VersionNumber.h>
 #include <Common/logger_useful.h>
-#include <cstdlib>
+
 
 namespace
 {
@@ -70,6 +71,12 @@ void applySettingsQuirks(Settings & settings, Poco::Logger * log)
                 LOG_WARNING(log, "use_hedged_requests has been disabled (you can explicitly enable it still)");
         }
     }
+
+#if defined(THREAD_SANITIZER)
+    settings.use_hedged_requests.value = false;
+    if (log)
+        LOG_WARNING(log, "use_hedged_requests has been disabled for the build with Thread Sanitizer, because they are using fibers, leading to a failed assertion inside TSan");
+#endif
 
     if (!queryProfilerWorks())
     {

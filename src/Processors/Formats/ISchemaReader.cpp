@@ -63,10 +63,14 @@ void checkFinalInferredType(
 }
 
 IIRowSchemaReader::IIRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_)
-    : ISchemaReader(in_), default_type(default_type_), hints_str(format_settings_.schema_inference_hints), format_settings(format_settings_)
+    : ISchemaReader(in_)
+    , max_rows_to_read(format_settings_.max_rows_to_read_for_schema_inference)
+    , max_bytes_to_read(format_settings_.max_bytes_to_read_for_schema_inference)
+    , default_type(default_type_)
+    , hints_str(format_settings_.schema_inference_hints)
+    , format_settings(format_settings_)
 {
 }
-
 
 void IIRowSchemaReader::setContext(ContextPtr & context)
 {
@@ -105,11 +109,11 @@ IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, const FormatSettings & form
 
 NamesAndTypesList IRowSchemaReader::readSchema()
 {
-    if (max_rows_to_read == 0)
+    if (max_rows_to_read == 0 || max_bytes_to_read == 0)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Cannot read rows to determine the schema, the maximum number of rows to read is set to 0. "
-            "Most likely setting input_format_max_rows_to_read_for_schema_inference is set to 0");
+            "Cannot read rows to determine the schema, the maximum number of rows (or bytes) to read is set to 0. "
+            "Most likely setting input_format_max_rows_to_read_for_schema_inference or input_format_max_bytes_to_read_for_schema_inference is set to 0");
 
     DataTypes data_types = readRowAndGetDataTypes();
 
@@ -149,7 +153,7 @@ NamesAndTypesList IRowSchemaReader::readSchema()
             data_types[i] = hint_it->second;
     }
 
-    for (rows_read = 1; rows_read < max_rows_to_read; ++rows_read)
+    for (rows_read = 1; rows_read < max_rows_to_read && in.count() < max_bytes_to_read; ++rows_read)
     {
         DataTypes new_data_types = readRowAndGetDataTypes();
         if (new_data_types.empty())
@@ -226,11 +230,11 @@ IRowWithNamesSchemaReader::IRowWithNamesSchemaReader(ReadBuffer & in_, const For
 
 NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
 {
-    if (max_rows_to_read == 0)
+    if (max_rows_to_read == 0 || max_bytes_to_read == 0)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Cannot read rows to determine the schema, the maximum number of rows to read is set to 0. "
-            "Most likely setting input_format_max_rows_to_read_for_schema_inference is set to 0");
+            "Cannot read rows to determine the schema, the maximum number of rows (or bytes) to read is set to 0. "
+            "Most likely setting input_format_max_rows_to_read_for_schema_inference or input_format_max_bytes_to_read_for_schema_inference is set to 0");
 
     bool eof = false;
     auto names_and_types = readRowAndGetNamesAndDataTypes(eof);
@@ -251,7 +255,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
         names_order.push_back(name);
     }
 
-    for (rows_read = 1; rows_read < max_rows_to_read; ++rows_read)
+    for (rows_read = 1; rows_read < max_rows_to_read && in.count() < max_bytes_to_read; ++rows_read)
     {
         auto new_names_and_types = readRowAndGetNamesAndDataTypes(eof);
         if (eof)

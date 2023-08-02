@@ -55,6 +55,9 @@ contents:
 - src: clickhouse
   dst: /usr/bin/clickhouse-keeper
   type: symlink
+- src: clickhouse
+  dst: /usr/bin/clickhouse-keeper-client
+  type: symlink
 - src: root/usr/bin/clickhouse-report
   dst: /usr/bin/clickhouse-report
 - src: root/usr/bin/clickhouse-server

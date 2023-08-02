@@ -23,7 +23,7 @@ public:
     MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block);
 
     const TableJoin & getTableJoin() const override { return *table_join; }
-    bool addJoinedBlock(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
 

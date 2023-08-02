@@ -227,7 +227,30 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
             format_reader->skipField(file_column);
 
         if (!is_last_file_column)
+        {
+            if (format_reader->allowVariableNumberOfColumns() && format_reader->checkForEndOfRow())
+            {
+                ++file_column;
+                while (file_column < column_mapping->column_indexes_for_input_fields.size())
+                {
+                    const auto & rem_column_index = column_mapping->column_indexes_for_input_fields[file_column];
+                    columns[*rem_column_index]->insertDefault();
+                    ++file_column;
+                }
+            }
+            else
+                format_reader->skipFieldDelimiter();
+        }
+    }
+
+    if (format_reader->allowVariableNumberOfColumns() && !format_reader->checkForEndOfRow())
+    {
+        do
+        {
             format_reader->skipFieldDelimiter();
+            format_reader->skipField(1);
+        }
+        while (!format_reader->checkForEndOfRow());
     }
 
     format_reader->skipRowEndDelimiter();

@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/mysql
-sidebar_position: 42
+sidebar_position: 137
 sidebar_label: mysql
 ---
 
@@ -105,6 +105,30 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 │      1 │     3 │
 │      2 │     4 │
 └────────┴───────┘
+```
+
+Copying data from MySQL table into ClickHouse table:
+
+```sql
+CREATE TABLE mysql_copy
+(
+   `id` UInt64,
+   `datetime` DateTime('UTC'),
+   `description` String,
+)
+ENGINE = MergeTree
+ORDER BY (id,datetime);
+
+INSERT INTO mysql_copy
+SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password');
+```
+
+Or if copying only an incremental batch from MySQL based on the max current id:
+
+```sql
+INSERT INTO mysql_copy
+SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password')
+WHERE id > (SELECT max(id) from mysql_copy);
 ```
 
 **See Also**

@@ -7,8 +7,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e -o pipefail
 
-# Run the client.
-$CLICKHOUSE_CLIENT --multiquery <<'EOF'
+# NOTE: dictionaries TTLs works with server timezone, so session_timeout cannot be used
+$CLICKHOUSE_CLIENT --session_timezone '' --multiquery <<'EOF'
 DROP DATABASE IF EXISTS dictdb_01042;
 CREATE DATABASE dictdb_01042;
 CREATE TABLE dictdb_01042.table(x Int64, y Int64, insert_time DateTime) ENGINE = MergeTree ORDER BY tuple();

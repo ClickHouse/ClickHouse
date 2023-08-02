@@ -2,6 +2,7 @@
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/Exception.h>
 
 #include <type_traits>
 
@@ -12,13 +13,19 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 template <typename T>
 IColumn::Selector createBlockSelector(
     const IColumn & column,
     const std::vector<UInt64> & slots)
 {
     const auto total_weight = slots.size();
-    assert(total_weight != 0);
+    if (total_weight == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "weight is zero");
 
     size_t num_rows = column.size();
     IColumn::Selector selector(num_rows);

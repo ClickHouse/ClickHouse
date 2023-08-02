@@ -6,6 +6,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/IAST.h>
+#include <Parsers/formatAST.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
@@ -115,6 +116,13 @@ ASTPtr removeQueryCacheSettings(ASTPtr ast)
     return transformed_ast;
 }
 
+String queryStringFromAST(ASTPtr ast)
+{
+    WriteBufferFromOwnString buf;
+    formatAST(*ast, buf, /*hilite*/ false, /*one_line*/ true, /*show_secrets*/ false);
+    return buf.str();
+}
+
 }
 
 QueryCache::Key::Key(
@@ -129,21 +137,18 @@ QueryCache::Key::Key(
     , is_shared(is_shared_)
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
+    , query_string(queryStringFromAST(ast_))
+{
+}
+
+QueryCache::Key::Key(ASTPtr ast_, const String & user_name_)
+    : QueryCache::Key(ast_, {}, user_name_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST or user name
 {
 }
 
 bool QueryCache::Key::operator==(const Key & other) const
 {
     return ast->getTreeHash() == other.ast->getTreeHash();
-}
-
-String QueryCache::Key::queryStringFromAst() const
-{
-    WriteBufferFromOwnString buf;
-    IAST::FormatSettings format_settings(buf, /*one_line*/ true);
-    format_settings.show_secrets = false;
-    ast->format(format_settings);
-    return buf.str();
 }
 
 size_t QueryCache::KeyHasher::operator()(const Key & key) const
@@ -186,7 +191,7 @@ QueryCache::Writer::Writer(
     if (auto entry = cache.getWithKey(key); entry.has_value() && !IsStale()(entry->key))
     {
         skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
-        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (non-stale entry found), query: {}", key.queryStringFromAst());
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (non-stale entry found), query: {}", key.query_string);
     }
 }
 
@@ -233,6 +238,7 @@ void QueryCache::Writer::buffer(Chunk && chunk, ChunkType chunk_type)
             auto & buffered_chunk = (chunk_type == ChunkType::Totals) ? query_result->totals : query_result->extremes;
 
             convertToFullIfSparse(chunk);
+            convertToFullIfConst(chunk);
 
             if (!buffered_chunk.has_value())
                 buffered_chunk = std::move(chunk);
@@ -257,22 +263,22 @@ void QueryCache::Writer::finalizeWrite()
 
     if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time) < min_query_runtime)
     {
-        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (query not expensive enough), query: {}", key.queryStringFromAst());
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (query not expensive enough), query: {}", key.query_string);
         return;
     }
 
     if (auto entry = cache.getWithKey(key); entry.has_value() && !IsStale()(entry->key))
     {
-        /// same check as in ctor because a parallel Writer could have inserted the current key in the meantime
-        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (non-stale entry found), query: {}", key.queryStringFromAst());
+        /// Same check as in ctor because a parallel Writer could have inserted the current key in the meantime
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (non-stale entry found), query: {}", key.query_string);
         return;
     }
 
     if (squash_partial_results)
     {
-        // Squash partial result chunks to chunks of size 'max_block_size' each. This costs some performance but provides a more natural
-        // compression of neither too small nor big blocks. Also, it will look like 'max_block_size' is respected when the query result is
-        // served later on from the query cache.
+        /// Squash partial result chunks to chunks of size 'max_block_size' each. This costs some performance but provides a more natural
+        /// compression of neither too small nor big blocks. Also, it will look like 'max_block_size' is respected when the query result is
+        /// served later on from the query cache.
 
         Chunks squashed_chunks;
         size_t rows_remaining_in_squashed = 0; /// how many further rows can the last squashed chunk consume until it reaches max_block_size
@@ -280,6 +286,7 @@ void QueryCache::Writer::finalizeWrite()
         for (auto & chunk : query_result->chunks)
         {
             convertToFullIfSparse(chunk);
+            convertToFullIfConst(chunk);
 
             const size_t rows_chunk = chunk.getNumRows();
             if (rows_chunk == 0)
@@ -346,7 +353,7 @@ void QueryCache::Writer::finalizeWrite()
 
     if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
     {
-        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (query result too big), new_entry_size_in_bytes: {} ({}), new_entry_size_in_rows: {} ({}), query: {}", new_entry_size_in_bytes, max_entry_size_in_bytes, new_entry_size_in_rows, max_entry_size_in_rows, key.queryStringFromAst());
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (query result too big), new_entry_size_in_bytes: {} ({}), new_entry_size_in_rows: {} ({}), query: {}", new_entry_size_in_bytes, max_entry_size_in_bytes, new_entry_size_in_rows, max_entry_size_in_rows, key.query_string);
         return;
     }
 
@@ -381,23 +388,26 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
 
     if (!entry.has_value())
     {
-        LOG_TRACE(&Poco::Logger::get("QueryCache"), "No entry found for query {}", key.queryStringFromAst());
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "No entry found for query {}", key.query_string);
         return;
     }
 
-    if (!entry->key.is_shared && entry->key.user_name != key.user_name)
+    const auto & entry_key = entry->key;
+    const auto & entry_mapped = entry->mapped;
+
+    if (!entry_key.is_shared && entry_key.user_name != key.user_name)
     {
-        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Inaccessible entry found for query {}", key.queryStringFromAst());
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Inaccessible entry found for query {}", key.query_string);
         return;
     }
 
-    if (IsStale()(entry->key))
+    if (IsStale()(entry_key))
     {
-        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Stale entry found for query {}", key.queryStringFromAst());
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Stale entry found for query {}", key.query_string);
         return;
     }
 
-    if (!entry->key.is_compressed)
+    if (!entry_key.is_compressed)
     {
         // Cloning chunks isn't exactly great. It could be avoided by another indirection, i.e. wrapping Entry's members chunks, totals and
         // extremes into shared_ptrs and assuming that the lifecycle of these shared_ptrs coincides with the lifecycle of the Entry
@@ -406,15 +416,15 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
         // optimization.
 
         Chunks cloned_chunks;
-        for (const auto & chunk : entry->mapped->chunks)
+        for (const auto & chunk : entry_mapped->chunks)
             cloned_chunks.push_back(chunk.clone());
 
-        buildSourceFromChunks(entry->key.header, std::move(cloned_chunks), entry->mapped->totals, entry->mapped->extremes);
+        buildSourceFromChunks(entry_key.header, std::move(cloned_chunks), entry_mapped->totals, entry_mapped->extremes);
     }
     else
     {
         Chunks decompressed_chunks;
-        const Chunks & chunks = entry->mapped->chunks;
+        const Chunks & chunks = entry_mapped->chunks;
         for (const auto & chunk : chunks)
         {
             const Columns & columns = chunk.getColumns();
@@ -428,10 +438,10 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
             decompressed_chunks.push_back(std::move(decompressed_chunk));
         }
 
-        buildSourceFromChunks(entry->key.header, std::move(decompressed_chunks), entry->mapped->totals, entry->mapped->extremes);
+        buildSourceFromChunks(entry_key.header, std::move(decompressed_chunks), entry_mapped->totals, entry_mapped->extremes);
     }
 
-    LOG_TRACE(&Poco::Logger::get("QueryCache"), "Entry found for query {}", key.queryStringFromAst());
+    LOG_TRACE(&Poco::Logger::get("QueryCache"), "Entry found for query {}", key.query_string);
 }
 
 bool QueryCache::Reader::hasCacheEntryForKey() const
@@ -484,6 +494,16 @@ void QueryCache::reset()
     std::lock_guard lock(mutex);
     times_executed.clear();
     cache_size_in_bytes = 0;
+}
+
+size_t QueryCache::weight() const
+{
+    return cache.weight();
+}
+
+size_t QueryCache::count() const
+{
+    return cache.count();
 }
 
 size_t QueryCache::recordQueryRun(const Key & key)

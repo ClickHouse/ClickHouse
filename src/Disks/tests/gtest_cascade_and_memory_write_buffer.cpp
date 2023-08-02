@@ -33,7 +33,7 @@ public:
     void SetUp() override
     {
         fs::create_directories(tmp_root);
-        disk = std::make_shared<DB::DiskLocal>("local_disk", tmp_root, 0);
+        disk = std::make_shared<DB::DiskLocal>("local_disk", tmp_root);
     }
 
     void TearDown() override
@@ -166,6 +166,7 @@ static void checkHTTPHandlerCase(size_t input_size, size_t memory_buffer_size)
             });
 
         cascade.write(src.data(), src.size());
+        cascade.finalize();
         EXPECT_EQ(cascade.count(), src.size());
     }
 
@@ -222,6 +223,7 @@ TEST(MemoryWriteBuffer, WriteAndReread)
         {
             MemoryWriteBuffer buf(s - 1);
             EXPECT_THROW(buf.write(data.data(), data.size()), MemoryWriteBuffer::CurrentBufferExhausted);
+            buf.finalize();
         }
     }
 

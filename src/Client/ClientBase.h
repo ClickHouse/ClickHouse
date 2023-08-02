@@ -148,6 +148,7 @@ private:
     void cancelQuery();
 
     void onProgress(const Progress & value);
+    void onTimezoneUpdate(const String & tz);
     void onData(Block & block, ASTPtr parsed_query);
     void onLogData(Block & block);
     void onTotals(Block & block, ASTPtr parsed_query);

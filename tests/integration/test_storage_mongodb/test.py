@@ -17,6 +17,7 @@ def started_cluster(request):
                 "configs_secure/config.d/ssl_conf.xml",
                 "configs/named_collections.xml",
             ],
+            user_configs=["configs/users.xml"],
             with_mongo=True,
             with_mongo_secure=request.param,
         )
@@ -243,6 +244,12 @@ def test_arrays(started_cluster):
         node.query(f"SELECT arr_nullable FROM arrays_mongo_table WHERE key = 42")
         == "[]\n"
     )
+
+    # Test INSERT SELECT
+    node.query("INSERT INTO arrays_mongo_table SELECT * FROM arrays_mongo_table")
+
+    assert node.query("SELECT COUNT() FROM arrays_mongo_table") == "200\n"
+    assert node.query("SELECT COUNT(DISTINCT *) FROM arrays_mongo_table") == "100\n"
 
     node.query("DROP TABLE arrays_mongo_table")
     arrays_mongo_table.drop()

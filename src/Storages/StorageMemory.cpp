@@ -16,6 +16,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <Common/FileChecker.h>
@@ -155,7 +156,7 @@ void StorageMemory::read(
     size_t /*max_block_size*/,
     size_t num_streams)
 {
-    query_plan.addStep(std::make_unique<ReadFromMemoryStorageStep>(column_names, storage_snapshot, num_streams, delay_read_for_global_subqueries));
+    query_plan.addStep(std::make_unique<ReadFromMemoryStorageStep>(column_names, shared_from_this(), storage_snapshot, num_streams, delay_read_for_global_subqueries));
 }
 
 
@@ -313,7 +314,7 @@ namespace
             backup_entries.resize(file_paths.size());
 
             temp_dir_owner.emplace(temp_disk);
-            fs::path temp_dir = temp_dir_owner->getPath();
+            fs::path temp_dir = temp_dir_owner->getRelativePath();
             temp_disk->createDirectories(temp_dir);
 
             /// Writing data.bin
@@ -452,10 +453,10 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
         if (!dynamic_cast<ReadBufferFromFileBase *>(in.get()))
         {
             temp_data_file.emplace(temporary_disk);
-            auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getPath());
+            auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getAbsolutePath());
             copyData(*in, *out);
             out.reset();
-            in = createReadBufferFromFileBase(temp_data_file->getPath(), {});
+            in = createReadBufferFromFileBase(temp_data_file->getAbsolutePath(), {});
         }
         std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
         CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};
