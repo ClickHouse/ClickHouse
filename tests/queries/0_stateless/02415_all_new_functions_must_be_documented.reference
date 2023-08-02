@@ -667,6 +667,8 @@ sqrt
 startsWith
 subBitmap
 substring
+substringIndex
+substringIndexUTF8
 substringUTF8
 subtractDays
 subtractHours
