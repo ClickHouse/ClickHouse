@@ -55,6 +55,9 @@ With the described implementation now we can see what can negatively affect 'DEL
 - Table having a very large number of data parts
 - Having a lot of data in Compact parts—in a Compact part, all columns are stored in one file.
 
+:::note
+Currently, Lightweight delete does not work for tables with projection as rows in projection may be affected and require the projection to be rebuilt. Rebuilding projection makes the deletion not lightweight, so this is not supported. 
+:::
 
 ## Related content
 

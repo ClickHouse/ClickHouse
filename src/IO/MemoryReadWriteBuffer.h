@@ -30,11 +30,13 @@ public:
         double growth_rate_ = 2.0,
         size_t max_chunk_size_ = 128 * DBMS_DEFAULT_BUFFER_SIZE);
 
-    void nextImpl() override;
-
     ~MemoryWriteBuffer() override;
 
 protected:
+
+    void nextImpl() override;
+
+    void finalizeImpl() override { /* no op */ }
 
     std::shared_ptr<ReadBuffer> getReadBufferImpl() override;
 

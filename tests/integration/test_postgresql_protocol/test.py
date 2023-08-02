@@ -111,7 +111,7 @@ def test_psql_client(started_cluster):
 def test_python_client(started_cluster):
     node = cluster.instances["node"]
 
-    with pytest.raises(py_psql.InternalError) as exc_info:
+    with pytest.raises(py_psql.OperationalError) as exc_info:
         ch = py_psql.connect(
             host=node.ip_address,
             port=server_port,
@@ -122,9 +122,7 @@ def test_python_client(started_cluster):
         cur = ch.cursor()
         cur.execute("select name from tables;")
 
-    assert exc_info.value.args == (
-        "Query execution failed.\nDB::Exception: Table default.tables doesn't exist\nSSL connection has been closed unexpectedly\n",
-    )
+    assert exc_info.value.args == ("SSL connection has been closed unexpectedly\n",)
 
     ch = py_psql.connect(
         host=node.ip_address,

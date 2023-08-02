@@ -66,6 +66,7 @@ def create_table(node, table_name, **additional_settings):
         "storage_policy": "blob_storage_policy",
         "old_parts_lifetime": 1,
         "index_granularity": 512,
+        "temporary_directories_lifetime": 1,
     }
     settings.update(additional_settings)
 
@@ -214,7 +215,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical):
         if attempt == 59:
             assert parts_count == "(1)"
 
-        time.sleep(1)
+        time.sleep(10)
 
     assert azure_query(node, f"SELECT sum(id) FROM {TABLE_NAME} FORMAT Values") == "(0)"
     assert (

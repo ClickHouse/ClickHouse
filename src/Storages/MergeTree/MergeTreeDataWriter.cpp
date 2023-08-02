@@ -46,6 +46,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
 }
@@ -115,7 +116,7 @@ void updateTTL(
 
     if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(ttl_column.get()))
     {
-        const auto & date_lut = DateLUT::instance();
+        const auto & date_lut = DateLUT::serverTimezoneInstance();
         for (const auto & val : column_date->getData())
             ttl_info.update(date_lut.fromDayNum(DayNum(val)));
     }
@@ -128,7 +129,7 @@ void updateTTL(
     {
         if (typeid_cast<const ColumnUInt16 *>(&column_const->getDataColumn()))
         {
-            const auto & date_lut = DateLUT::instance();
+            const auto & date_lut = DateLUT::serverTimezoneInstance();
             ttl_info.update(date_lut.fromDayNum(DayNum(column_const->getValue<UInt16>())));
         }
         else if (typeid_cast<const ColumnUInt32 *>(&column_const->getDataColumn()))
@@ -147,6 +148,19 @@ void updateTTL(
 
 }
 
+void MergeTreeDataWriter::TemporaryPart::cancel()
+{
+    try
+    {
+        /// An exception context is needed to proper delete write buffers without finalization
+        throw Exception(ErrorCodes::ABORTED, "Cancel temporary part.");
+    }
+    catch (...)
+    {
+        *this = TemporaryPart{};
+    }
+}
+
 void MergeTreeDataWriter::TemporaryPart::finalize()
 {
     for (auto & stream : streams)
@@ -157,23 +171,23 @@ void MergeTreeDataWriter::TemporaryPart::finalize()
         projection->getDataPartStorage().precommitTransaction();
 }
 
-std::vector<ChunkOffsetsPtr> scatterOffsetsBySelector(ChunkOffsetsPtr chunk_offsets, const IColumn::Selector & selector, size_t partition_num)
+std::vector<AsyncInsertInfoPtr> scatterAsyncInsertInfoBySelector(AsyncInsertInfoPtr async_insert_info, const IColumn::Selector & selector, size_t partition_num)
 {
-    if (nullptr == chunk_offsets)
+    if (nullptr == async_insert_info)
     {
         return {};
     }
     if (selector.empty())
     {
-        return {chunk_offsets};
+        return {async_insert_info};
     }
-    std::vector<ChunkOffsetsPtr> result(partition_num);
+    std::vector<AsyncInsertInfoPtr> result(partition_num);
     std::vector<Int64> last_row_for_partition(partition_num, -1);
     size_t offset_idx = 0;
     for (size_t i = 0; i < selector.size(); ++i)
     {
         ++last_row_for_partition[selector[i]];
-        if (i + 1 == chunk_offsets->offsets[offset_idx])
+        if (i + 1 == async_insert_info->offsets[offset_idx])
         {
             for (size_t part_id = 0; part_id < last_row_for_partition.size(); ++part_id)
             {
@@ -182,9 +196,12 @@ std::vector<ChunkOffsetsPtr> scatterOffsetsBySelector(ChunkOffsetsPtr chunk_offs
                     continue;
                 size_t offset = static_cast<size_t>(last_row + 1);
                 if (result[part_id] == nullptr)
-                    result[part_id] = std::make_shared<ChunkOffsets>();
+                    result[part_id] = std::make_shared<AsyncInsertInfo>();
                 if (result[part_id]->offsets.empty() || offset > *result[part_id]->offsets.rbegin())
+                {
                     result[part_id]->offsets.push_back(offset);
+                    result[part_id]->tokens.push_back(async_insert_info->tokens[offset_idx]);
+                }
             }
             ++offset_idx;
         }
@@ -193,7 +210,7 @@ std::vector<ChunkOffsetsPtr> scatterOffsetsBySelector(ChunkOffsetsPtr chunk_offs
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
-    const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, ChunkOffsetsPtr chunk_offsets)
+    const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, AsyncInsertInfoPtr async_insert_info)
 {
     BlocksWithPartition result;
     if (!block || !block.rows())
@@ -204,8 +221,11 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     if (!metadata_snapshot->hasPartitionKey()) /// Table is not partitioned.
     {
         result.emplace_back(Block(block), Row{});
-        if (chunk_offsets != nullptr)
-            result[0].offsets = std::move(chunk_offsets->offsets);
+        if (async_insert_info != nullptr)
+        {
+            result[0].offsets = std::move(async_insert_info->offsets);
+            result[0].tokens = std::move(async_insert_info->tokens);
+        }
         return result;
     }
 
@@ -222,7 +242,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     IColumn::Selector selector;
     buildScatterSelector(partition_columns, partition_num_to_first_row, selector, max_parts);
 
-    auto chunk_offsets_with_partition = scatterOffsetsBySelector(chunk_offsets, selector, partition_num_to_first_row.size());
+    auto async_insert_info_with_partition = scatterAsyncInsertInfoBySelector(async_insert_info, selector, partition_num_to_first_row.size());
 
     size_t partitions_count = partition_num_to_first_row.size();
     result.reserve(partitions_count);
@@ -241,8 +261,11 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
         /// NOTE: returning a copy of the original block so that calculated partition key columns
         /// do not interfere with possible calculated primary key columns of the same name.
         result.emplace_back(Block(block), get_partition(0));
-        if (!chunk_offsets_with_partition.empty())
-            result[0].offsets = std::move(chunk_offsets_with_partition[0]->offsets);
+        if (!async_insert_info_with_partition.empty())
+        {
+            result[0].offsets = std::move(async_insert_info_with_partition[0]->offsets);
+            result[0].tokens = std::move(async_insert_info_with_partition[0]->tokens);
+        }
         return result;
     }
 
@@ -256,8 +279,11 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
             result[i].block.getByPosition(col).column = std::move(scattered[i]);
     }
 
-    for (size_t i = 0; i < chunk_offsets_with_partition.size(); ++i)
-        result[i].offsets = std::move(chunk_offsets_with_partition[i]->offsets);
+    for (size_t i = 0; i < async_insert_info_with_partition.size(); ++i)
+    {
+        result[i].offsets = std::move(async_insert_info_with_partition[i]->offsets);
+        result[i].tokens = std::move(async_insert_info_with_partition[i]->tokens);
+    }
 
     return result;
 }
@@ -369,7 +395,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         DayNum min_date(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].left.get<UInt64>());
         DayNum max_date(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].right.get<UInt64>());
 
-        const auto & date_lut = DateLUT::instance();
+        const auto & date_lut = DateLUT::serverTimezoneInstance();
 
         auto min_month = date_lut.toNumYYYYMM(min_date);
         auto max_month = date_lut.toNumYYYYMM(max_date);

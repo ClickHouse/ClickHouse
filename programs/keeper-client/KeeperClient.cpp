@@ -127,42 +127,42 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
 
     options.addOption(
         Poco::Util::Option("host", "h", "server hostname. default `localhost`")
-            .argument("host")
+            .argument("<host>")
             .binding("host"));
 
     options.addOption(
         Poco::Util::Option("port", "p", "server port. default `2181`")
-            .argument("port")
+            .argument("<port>")
             .binding("port"));
 
     options.addOption(
         Poco::Util::Option("query", "q", "will execute given query, then exit.")
-            .argument("query")
+            .argument("<query>")
             .binding("query"));
 
     options.addOption(
         Poco::Util::Option("connection-timeout", "", "set connection timeout in seconds. default 10s.")
-            .argument("connection-timeout")
+            .argument("<seconds>")
             .binding("connection-timeout"));
 
     options.addOption(
         Poco::Util::Option("session-timeout", "", "set session timeout in seconds. default 10s.")
-            .argument("session-timeout")
+            .argument("<seconds>")
             .binding("session-timeout"));
 
     options.addOption(
         Poco::Util::Option("operation-timeout", "", "set operation timeout in seconds. default 10s.")
-            .argument("operation-timeout")
+            .argument("<seconds>")
             .binding("operation-timeout"));
 
     options.addOption(
         Poco::Util::Option("history-file", "", "set path of history file. default `~/.keeper-client-history`")
-            .argument("history-file")
+            .argument("<file>")
             .binding("history-file"));
 
     options.addOption(
         Poco::Util::Option("log-level", "", "set log level")
-            .argument("log-level")
+            .argument("<level>")
             .binding("log-level"));
 }
 
@@ -177,6 +177,10 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
         std::make_shared<SetCommand>(),
         std::make_shared<CreateCommand>(),
         std::make_shared<GetCommand>(),
+        std::make_shared<GetStatCommand>(),
+        std::make_shared<FindSuperNodes>(),
+        std::make_shared<DeleteStableBackups>(),
+        std::make_shared<FindBigFamily>(),
         std::make_shared<RMCommand>(),
         std::make_shared<RMRCommand>(),
         std::make_shared<HelpCommand>(),

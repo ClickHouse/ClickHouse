@@ -171,7 +171,7 @@ void FileSegmentRangeWriter::appendFilesystemCacheLog(const FileSegment & file_s
         .profile_counters = nullptr,
     };
 
-    cache_log->add(elem);
+    cache_log->add(std::move(elem));
 }
 
 void FileSegmentRangeWriter::completeFileSegment()
@@ -194,7 +194,6 @@ CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     FileCachePtr cache_,
     const String & source_path_,
     const FileCache::Key & key_,
-    bool is_persistent_cache_file_,
     const String & query_id_,
     const WriteSettings & settings_)
     : WriteBufferFromFileDecorator(std::move(impl_))
@@ -202,7 +201,6 @@ CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     , cache(cache_)
     , source_path(source_path_)
     , key(key_)
-    , is_persistent_cache_file(is_persistent_cache_file_)
     , query_id(query_id_)
     , enable_cache_log(!query_id_.empty() && settings_.enable_filesystem_cache_log)
     , throw_on_error_from_cache(settings_.throw_on_error_from_cache)
@@ -255,8 +253,7 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool t
 
     try
     {
-        auto segment_kind = is_persistent_cache_file ? FileSegmentKind::Persistent : FileSegmentKind::Regular;
-        if (!cache_writer->write(data, size, current_download_offset, segment_kind))
+        if (!cache_writer->write(data, size, current_download_offset, FileSegmentKind::Regular))
         {
             LOG_INFO(log, "Write-through cache is stopped as cache limit is reached and nothing can be evicted");
             return;

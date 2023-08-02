@@ -60,6 +60,8 @@ public:
 
     const BlockMissingValues & getMissingValues() const override;
 
+    size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
+
 private:
     Chunk generate() override;
 
@@ -200,6 +202,9 @@ private:
         size_t next_chunk_idx = 0;
         size_t num_pending_chunks = 0;
 
+        size_t row_group_bytes_uncompressed = 0;
+        size_t row_group_rows = 0;
+
         // These are only used by the decoding thread, so don't require locking the mutex.
         std::unique_ptr<parquet::arrow::FileReader> file_reader;
         std::shared_ptr<arrow::RecordBatchReader> record_batch_reader;
@@ -213,6 +218,7 @@ private:
         BlockMissingValues block_missing_values;
         size_t chunk_idx; // within row group
         size_t row_group_idx;
+        size_t approx_original_chunk_size;
 
         // For priority_queue.
         // In ordered mode we deliver strictly in order of increasing row group idx,
@@ -267,6 +273,7 @@ private:
     std::unique_ptr<ThreadPool> pool;
 
     BlockMissingValues previous_block_missing_values;
+    size_t previous_approx_bytes_read_for_chunk = 0;
 
     std::exception_ptr background_exception = nullptr;
     std::atomic<int> is_stopped{0};

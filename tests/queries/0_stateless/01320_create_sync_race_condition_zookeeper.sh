@@ -12,19 +12,27 @@ $CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 --query "CREATE DATABA
 
 function thread1()
 {
-    while true; do $CLICKHOUSE_CLIENT -n --query "CREATE TABLE test_01320.r (x UInt64) ENGINE = ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/table', 'r') ORDER BY x; DROP TABLE test_01320.r;"; done
+    local TIMELIMIT=$((SECONDS+$1))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+        $CLICKHOUSE_CLIENT -n --query "CREATE TABLE test_01320.r (x UInt64) ENGINE = ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/table', 'r') ORDER BY x; DROP TABLE test_01320.r;"
+    done
 }
 
 function thread2()
 {
-    while true; do $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA test_01320.r" 2>/dev/null; done
+    local TIMELIMIT=$((SECONDS+$1))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+        $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA test_01320.r" 2>/dev/null;
+    done
 }
 
 export -f thread1
 export -f thread2
 
-timeout 10 bash -c thread1 &
-timeout 10 bash -c thread2 &
+TIMEOUT=10
+
+thread1 $TIMEOUT &
+thread2 $TIMEOUT &
 
 wait
 

@@ -88,7 +88,7 @@ std::vector<float> ApproximateNearestNeighborCondition::getReferenceVector() con
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Reference vector was requested for useless or uninitialized index.");
 }
 
-size_t ApproximateNearestNeighborCondition::getNumOfDimensions() const
+size_t ApproximateNearestNeighborCondition::getDimensions() const
 {
     if (index_is_useful && query_information.has_value())
         return query_information->reference_vector.size();

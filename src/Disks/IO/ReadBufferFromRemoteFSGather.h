@@ -50,6 +50,8 @@ public:
 
     off_t getPosition() override { return file_offset_of_buffer_end - available() + bytes_to_ignore; }
 
+    bool seekIsCheap() override { return !current_buf; }
+
 private:
     SeekableReadBufferPtr createImplementationBuffer(const StoredObject & object);
 
@@ -71,7 +73,7 @@ private:
     const std::shared_ptr<FilesystemCacheLog> cache_log;
     const String query_id;
     const bool use_external_buffer;
-    bool with_cache;
+    const bool with_cache;
 
     size_t read_until_position = 0;
     size_t file_offset_of_buffer_end = 0;
@@ -84,4 +86,5 @@ private:
     Poco::Logger * log;
 };
 
+size_t chooseBufferSizeForRemoteReading(const DB::ReadSettings & settings, size_t file_size);
 }

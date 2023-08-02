@@ -8,7 +8,7 @@ sidebar_label: Nullable
 
 ## isNull
 
-Returns whether the argument is [NULL](../../sql-reference/syntax.md#null-literal).
+Returns whether the argument is [NULL](../../sql-reference/syntax.md#null).
 
 ``` sql
 isNull(x)

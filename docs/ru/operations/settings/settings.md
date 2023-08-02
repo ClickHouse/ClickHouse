@@ -1686,7 +1686,7 @@ SELECT * FROM table_with_enum_column_for_csv_insert;
 ## input_format_csv_detect_header {#input_format_csv_detect_header}
 
 Обнаружить заголовок с именами и типами в формате CSV.
- 
+
 Значение по умолчанию - `true`.
 
 ## input_format_csv_skip_first_lines {#input_format_csv_skip_first_lines}
@@ -1726,6 +1726,12 @@ echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --in
 ```text
 "  string  "
 ```
+
+## input_format_csv_allow_variable_number_of_columns {#input_format_csv_allow_variable_number_of_columns}
+
+Игнорировать дополнительные столбцы (если файл содержит больше столбцов чем ожидается) и рассматривать отсутствующие поля в CSV в качестве значений по умолчанию.
+
+Выключено по умолчанию.
 
 ## output_format_tsv_crlf_end_of_line {#settings-output-format-tsv-crlf-end-of-line}
 
@@ -4127,6 +4133,63 @@ SELECT sum(number) FROM numbers(10000000000) SETTINGS partial_result_on_first_ca
 
 Значение по умолчанию: `false`
 
+## session_timezone {#session_timezone}
+
+Задаёт значение часового пояса (session_timezone) по умолчанию для текущей сессии вместо [часового пояса сервера](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone). То есть, все значения DateTime/DateTime64, для которых явно не задан часовой пояс, будут интерпретированы как относящиеся к указанной зоне.
+При значении настройки `''` (пустая строка), будет совпадать с часовым поясом сервера. 
+
+Функции `timeZone()` and `serverTimezone()` возвращают часовой пояс текущей сессии и сервера соответственно.
+
+Примеры:
+```sql
+SELECT timeZone(), serverTimezone() FORMAT TSV
+
+Europe/Berlin	Europe/Berlin
+```
+
+```sql
+SELECT timeZone(), serverTimezone() SETTINGS session_timezone = 'Asia/Novosibirsk' FORMAT TSV
+
+Asia/Novosibirsk	Europe/Berlin
+```
+
+```sql
+SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich') SETTINGS session_timezone = 'America/Denver' FORMAT TSV
+
+1999-12-13 07:23:23.123
+```
+
+Возможные значения:
+
+-    Любая зона из `system.time_zones`, например `Europe/Berlin`, `UTC` или `Zulu`
+
+Значение по умолчанию: `''`.
+
+:::warning
+Иногда при формировании значений типа `DateTime` и `DateTime64` параметр  `session_timezone` может быть проигнорирован.
+Это может привести к путанице. Пример и пояснение см. ниже.
+:::
+
+```sql
+CREATE TABLE test_tz (`d` DateTime('UTC')) ENGINE = Memory AS SELECT toDateTime('2000-01-01 00:00:00', 'UTC');
+
+SELECT *, timezone() FROM test_tz WHERE d = toDateTime('2000-01-01 00:00:00') SETTINGS session_timezone = 'Asia/Novosibirsk'
+0 rows in set.
+
+SELECT *, timezone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS session_timezone = 'Asia/Novosibirsk'
+┌───────────────────d─┬─timezone()───────┐
+│ 2000-01-01 00:00:00 │ Asia/Novosibirsk │
+└─────────────────────┴──────────────────┘
+```
+
+Это происходит из-за различного происхождения значения, используемого для сравнения:
+- В первом запросе функция `toDateTime()`, создавая значение типа `DateTime`, принимает во внимание параметр `session_timezone` из контекста запроса;
+- Во втором запросе `DateTime` формируется из строки неявно, наследуя тип колонки `d` (в том числе и числовой пояс), и параметр `session_timezone` игнорируется.
+
+**Смотрите также**
+
+- [timezone](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
+
 ## rename_files_after_processing
 
 - **Тип:** Строка
@@ -4138,6 +4201,7 @@ SELECT sum(number) FROM numbers(10000000000) SETTINGS partial_result_on_first_ca
 ### Шаблон
 Шаблон поддерживает следующие виды плейсхолдеров:
 
+- `%a` — Полное исходное имя файла (например "sample.csv").
 - `%f` — Исходное имя файла без расширения (например "sample").
 - `%e` — Оригинальное расширение файла с точкой (например ".csv").
 - `%t` — Текущее время (в микросекундах).
@@ -4149,3 +4213,29 @@ SELECT sum(number) FROM numbers(10000000000) SETTINGS partial_result_on_first_ca
 - Запрос: `SELECT * FROM file('sample.csv')`
 
 Если чтение и обработка `sample.csv` прошли успешно, файл будет переименован в `processed_sample_1683473210851438.csv`.
+
+## precise_float_parsing {#precise_float_parsing}
+
+Позволяет выбрать алгоритм, используемый при парсинге [Float32/Float64](../../sql-reference/data-types/float.md):
+* Если установлено значение `1`, то используется точный метод. Он более медленный, но всегда возвращает число, наиболее близкое к входному значению.
+* В противном случае используется быстрый метод (поведение по умолчанию). Обычно результат его работы совпадает с результатом, полученным точным методом, однако в редких случаях он может отличаться на 1 или 2 наименее значимых цифры.
+
+Возможные значения: `0`, `1`.
+
+Значение по умолчанию: `0`.
+
+Пример:
+
+```sql
+SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_parsing = 0;
+
+┌─toFloat64('1.7091')─┬─toFloat64('1.5008753E7')─┐
+│  1.7090999999999998 │       15008753.000000002 │
+└─────────────────────┴──────────────────────────┘
+
+SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_parsing = 1;
+
+┌─toFloat64('1.7091')─┬─toFloat64('1.5008753E7')─┐
+│              1.7091 │                 15008753 │
+└─────────────────────┴──────────────────────────┘
+```

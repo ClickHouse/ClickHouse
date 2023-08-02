@@ -13,6 +13,7 @@ RUN apt-get update --yes \
             sqlite3 \
             unixodbc \
             unixodbc-dev \
+            odbcinst \
             sudo \
     && apt-get clean
 

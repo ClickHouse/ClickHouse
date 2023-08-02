@@ -75,54 +75,7 @@ jobs:
   Codebrowser:
     needs: [DockerHubPush]
     uses: ./.github/workflows/woboq.yml
-  BuilderCoverity:
-    needs: DockerHubPush
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          BUILD_NAME=coverity
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          TEMP_PATH=${{runner.temp}}/build_check
-          EOF
-          echo "COVERITY_TOKEN=${{ secrets.COVERITY_TOKEN }}" >> "$GITHUB_ENV"
-      - name: Download changed images
-        uses: actions/download-artifact@v3
-        with:
-          name: changed_images
-          path: ${{ env.IMAGES_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
-      - name: Build
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
-      - name: Upload Coverity Analysis
-        if: ${{ success() || failure() }}
-        run: |
-          curl --form token="${COVERITY_TOKEN}" \
-            --form email='security+coverity@clickhouse.com' \
-            --form file="@$TEMP_PATH/$BUILD_NAME/coverity-scan.tar.gz" \
-            --form version="${GITHUB_REF#refs/heads/}-${GITHUB_SHA::6}" \
-            --form description="Nighly Scan: $(date +'%Y-%m-%dT%H:%M:%S')" \
-            https://scan.coverity.com/builds?project=ClickHouse%2FClickHouse
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   SonarCloud:
-    # TODO: Remove if: whenever SonarCloud supports c++23
-    if: ${{ false }}
     runs-on: [self-hosted, builder]
     env:
       SONAR_SCANNER_VERSION: 4.8.0.2856
@@ -159,7 +112,7 @@ jobs:
       - name: Set Up Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -yq git cmake ccache ninja-build python3 yasm
+          sudo apt-get install -yq git cmake ccache ninja-build python3 yasm nasm
           sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
       - name: Run build-wrapper
         run: |
@@ -178,4 +131,5 @@ jobs:
             --define sonar.cfamily.build-wrapper-output="${{ env.BUILD_WRAPPER_OUT_DIR }}" \
             --define sonar.projectKey="ClickHouse_ClickHouse" \
             --define sonar.organization="clickhouse-java" \
-            --define sonar.exclusions="**/*.java,**/*.ts,**/*.js,**/*.css,**/*.sql" \
+            --define sonar.cfamily.cpp23.enabled=true \
+            --define sonar.exclusions="**/*.java,**/*.ts,**/*.js,**/*.css,**/*.sql"

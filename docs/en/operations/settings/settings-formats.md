@@ -137,6 +137,12 @@ The maximum rows of data to read for automatic schema inference.
 
 Default value: `25'000`.
 
+## input_format_max_bytes_to_read_for_schema_inference {#input_format_max_bytes_to_read_for_schema_inference}
+
+The maximum amount of data in bytes to read for automatic schema inference.
+
+Default value: `33554432` (32 Mb).
+
 ## column_names_for_schema_inference {#column_names_for_schema_inference}
 
 The list of column names to use in schema inference for formats without column names. The format: 'column1,column2,column3,...'
@@ -236,6 +242,26 @@ See also:
 - [DateTime data type.](../../sql-reference/data-types/datetime.md)
 - [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
 
+## interval_output_format {#interval_output_format}
+
+Allows choosing different output formats of the text representation of interval types.
+
+Possible values:
+
+-   `kusto` - KQL-style output format.
+
+    ClickHouse outputs intervals in [KQL format](https://learn.microsoft.com/en-us/dotnet/standard/base-types/standard-timespan-format-strings#the-constant-c-format-specifier). For example, `toIntervalDay(2)` would be formatted as `2.00:00:00`. Please note that for interval types of varying length (ie. `IntervalMonth` and `IntervalYear`) the average number of seconds per interval is taken into account.
+
+-   `numeric` - Numeric output format.
+
+    ClickHouse outputs intervals as their underlying numeric representation. For example, `toIntervalDay(2)` would be formatted as `2`.
+
+Default value: `numeric`.
+
+See also:
+
+-   [Interval](../../sql-reference/data-types/special-data-types/interval.md)
+
 ## input_format_ipv4_default_on_conversion_error {#input_format_ipv4_default_on_conversion_error}
 
 Deserialization of IPv4 will use default values instead of throwing exception on conversion error.
@@ -294,6 +320,10 @@ If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` ar
 ## format_schema {#format-schema}
 
 This parameter is useful when you are using formats that require a schema definition, such as [Cap’n Proto](https://capnproto.org/) or [Protobuf](https://developers.google.com/protocol-buffers/). The value depends on the format.
+
+## output_format_schema {#output-format-schema}
+
+The path to the file where the automatically generated schema will be saved in [Cap’n Proto](../../interfaces/formats.md#capnproto-capnproto) or [Protobuf](../../interfaces/formats.md#protobuf-protobuf) formats.
 
 ## output_format_enable_streaming {#output_format_enable_streaming}
 
@@ -728,6 +758,12 @@ My NULL
 My NULL
 ```
 
+### input_format_tsv_skip_trailing_empty_lines {input_format_tsv_skip_trailing_empty_lines}
+
+When enabled, trailing empty lines at the end of TSV file will be skipped.
+
+Disabled by default.
+
 ## CSV format settings {#csv-format-settings}
 
 ### format_csv_delimiter {#format_csv_delimiter}
@@ -882,6 +918,12 @@ My NULL
 My NULL
 ```
 
+### input_format_csv_skip_trailing_empty_lines {input_format_csv_skip_trailing_empty_lines}
+
+When enabled, trailing empty lines at the end of CSV file will be skipped.
+
+Disabled by default.
+
 ### input_format_csv_trim_whitespaces {#input_format_csv_trim_whitespaces}
 
 Trims spaces and tabs in non-quoted CSV strings.
@@ -912,6 +954,65 @@ Result
 
 ```text
 "  string  "
+```
+### input_format_csv_allow_variable_number_of_columns {#input_format_csv_allow_variable_number_of_columns}
+
+ignore extra columns in CSV input (if file has more columns than expected) and treat missing fields in CSV input as default values.
+
+Disabled by default.
+
+### input_format_csv_allow_whitespace_or_tab_as_delimiter {#input_format_csv_allow_whitespace_or_tab_as_delimiter}
+
+Allow to use whitespace or tab as field delimiter in CSV strings.
+
+Default value: `false`.
+
+**Examples**
+
+Query
+
+```bash
+echo 'a b' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_allow_whitespace_or_tab_as_delimiter=true --format_csv_delimiter=' '
+```
+
+Result
+
+```text
+a  b
+```
+
+Query
+
+```bash
+echo 'a         b' | ./clickhouse local -q  "select * from table FORMAT CSV" --input-format="CSV" --input_format_csv_allow_whitespace_or_tab_as_delimiter=true --format_csv_delimiter='\t'
+```
+
+Result
+
+```text
+a  b
+```
+
+### input_format_csv_use_default_on_bad_values {#input_format_csv_use_default_on_bad_values}
+
+Allow to set default value to column when CSV field deserialization failed on bad value
+
+Default value: `false`.
+
+**Examples**
+
+Query
+
+```bash
+./clickhouse local -q "create table test_tbl (x String, y UInt32, z Date) engine=MergeTree order by x"
+echo 'a,b,c' | ./clickhouse local -q  "INSERT INTO test_tbl SETTINGS input_format_csv_use_default_on_bad_values=true FORMAT CSV"
+./clickhouse local -q "select * from test_tbl"
+```
+
+Result
+
+```text
+a  0  1971-01-01
 ```
 
 ## Values format settings {#values-format-settings}
@@ -1067,7 +1168,7 @@ Enabled by default.
 
 Compression method used in output Arrow format. Supported codecs: `lz4_frame`, `zstd`, `none` (uncompressed)
 
-Default value: `none`.
+Default value: `lz4_frame`.
 
 ## ORC format settings {#orc-format-settings}
 
@@ -1233,6 +1334,11 @@ When serializing Nullable columns with Google wrappers, serialize default values
 
 Disabled by default.
 
+### format_protobuf_use_autogenerated_schema {#format_capn_proto_use_autogenerated_schema}
+
+Use autogenerated Protobuf schema when [format_schema](#formatschema-format-schema) is not set.
+The schema is generated from ClickHouse table structure using function [structureToProtobufSchema](../../sql-reference/functions/other-functions.md#structure_to_protobuf_schema)
+
 ## Avro format settings {#avro-format-settings}
 
 ### input_format_avro_allow_missing_fields {#input_format_avro_allow_missing_fields}
@@ -1249,6 +1355,17 @@ Default value: 0.
 ### format_avro_schema_registry_url {#format_avro_schema_registry_url}
 
 Sets [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) URL to use with [AvroConfluent](../../interfaces/formats.md/#data-format-avro-confluent) format.
+
+Format:
+``` text
+http://[user:password@]machine[:port]"
+```
+
+Examples:
+``` text
+http://registry.example.com:8081
+http://admin:secret@registry.example.com:8081
+```
 
 Default value: `Empty`.
 
@@ -1475,6 +1592,12 @@ Sets the character that is interpreted as a suffix after the result set for [Cus
 
 Default value: `''`.
 
+### input_format_custom_skip_trailing_empty_lines {input_format_custom_skip_trailing_empty_lines}
+
+When enabled, trailing empty lines at the end of file in CustomSeparated format will be skipped.
+
+Disabled by default.
+
 ## Regexp format settings {#regexp-format-settings}
 
 ### format_regexp_escaping_rule {#format_regexp_escaping_rule}
@@ -1511,6 +1634,11 @@ Possible values:
 - `'by_name_case_insensitive'` — Names in enums should be the same case-insensitive, values can be different.
 
 Default value: `'by_values'`.
+
+### format_capn_proto_use_autogenerated_schema {#format_capn_proto_use_autogenerated_schema}
+
+Use autogenerated CapnProto schema when [format_schema](#formatschema-format-schema) is not set.
+The schema is generated from ClickHouse table structure using function [structureToCapnProtoSchema](../../sql-reference/functions/other-functions.md#structure_to_capnproto_schema)
 
 ## MySQLDump format settings {#musqldump-format-settings}
 
