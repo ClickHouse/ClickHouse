@@ -264,7 +264,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             secure,
             /* priority= */ Priority{1},
             /* cluster_name= */ "",
-            /* password= */ ""
+            /* cluster_secret= */ ""
         };
         cluster = std::make_shared<Cluster>(context->getSettingsRef(), names, params);
     }
@@ -276,12 +276,12 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     remote_table_id.table_name = table;
 }
 
-StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const
+StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
     /// StorageDistributed supports mismatching structure of remote table, so we can use outdated structure for CREATE ... AS remote(...)
     /// without additional conversion in StorageTableFunctionProxy
     if (cached_columns.empty())
-        cached_columns = getActualTableStructure(context);
+        cached_columns = getActualTableStructure(context, is_insert_query);
 
     assert(cluster);
     StoragePtr res = remote_table_function_ptr
@@ -318,7 +318,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
     return res;
 }
 
-ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     assert(cluster);
     return getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);

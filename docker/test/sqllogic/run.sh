@@ -92,8 +92,8 @@ sudo clickhouse stop ||:
 
 for _ in $(seq 1 60); do if [[ $(wget --timeout=1 -q 'localhost:8123' -O-) == 'Ok.' ]]; then sleep 1 ; else break; fi ; done
 
-grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
-pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz &
+rg -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
+zstd < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.zst &
 
 # Compressed (FIXME: remove once only github actions will be left)
 rm /var/log/clickhouse-server/clickhouse-server.log

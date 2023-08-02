@@ -1686,7 +1686,7 @@ SELECT * FROM table_with_enum_column_for_csv_insert;
 ## input_format_csv_detect_header {#input_format_csv_detect_header}
 
 Обнаружить заголовок с именами и типами в формате CSV.
- 
+
 Значение по умолчанию - `true`.
 
 ## input_format_csv_skip_first_lines {#input_format_csv_skip_first_lines}
@@ -1726,6 +1726,12 @@ echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --in
 ```text
 "  string  "
 ```
+
+## input_format_csv_allow_variable_number_of_columns {#input_format_csv_allow_variable_number_of_columns}
+
+Игнорировать дополнительные столбцы (если файл содержит больше столбцов чем ожидается) и рассматривать отсутствующие поля в CSV в качестве значений по умолчанию.
+
+Выключено по умолчанию.
 
 ## output_format_tsv_crlf_end_of_line {#settings-output-format-tsv-crlf-end-of-line}
 
@@ -4195,6 +4201,7 @@ SELECT *, timezone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS sessi
 ### Шаблон
 Шаблон поддерживает следующие виды плейсхолдеров:
 
+- `%a` — Полное исходное имя файла (например "sample.csv").
 - `%f` — Исходное имя файла без расширения (например "sample").
 - `%e` — Оригинальное расширение файла с точкой (например ".csv").
 - `%t` — Текущее время (в микросекундах).
@@ -4206,3 +4213,29 @@ SELECT *, timezone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS sessi
 - Запрос: `SELECT * FROM file('sample.csv')`
 
 Если чтение и обработка `sample.csv` прошли успешно, файл будет переименован в `processed_sample_1683473210851438.csv`.
+
+## precise_float_parsing {#precise_float_parsing}
+
+Позволяет выбрать алгоритм, используемый при парсинге [Float32/Float64](../../sql-reference/data-types/float.md):
+* Если установлено значение `1`, то используется точный метод. Он более медленный, но всегда возвращает число, наиболее близкое к входному значению.
+* В противном случае используется быстрый метод (поведение по умолчанию). Обычно результат его работы совпадает с результатом, полученным точным методом, однако в редких случаях он может отличаться на 1 или 2 наименее значимых цифры.
+
+Возможные значения: `0`, `1`.
+
+Значение по умолчанию: `0`.
+
+Пример:
+
+```sql
+SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_parsing = 0;
+
+┌─toFloat64('1.7091')─┬─toFloat64('1.5008753E7')─┐
+│  1.7090999999999998 │       15008753.000000002 │
+└─────────────────────┴──────────────────────────┘
+
+SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_parsing = 1;
+
+┌─toFloat64('1.7091')─┬─toFloat64('1.5008753E7')─┐
+│              1.7091 │                 15008753 │
+└─────────────────────┴──────────────────────────┘
+```
