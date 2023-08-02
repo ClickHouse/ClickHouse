@@ -166,7 +166,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int BAD_GET;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
@@ -181,6 +180,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_FUNCTION;
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+    extern const int CLUSTER_DOESNT_EXIST;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -3073,7 +3073,7 @@ UInt16 Context::getServerPort(const String & port_name) const
 {
     auto it = shared->server_ports.find(port_name);
     if (it == shared->server_ports.end())
-        throw Exception(ErrorCodes::BAD_GET, "There is no port named {}", port_name);
+        throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "There is no port named {}", port_name);
     else
         return it->second;
 }
@@ -3082,7 +3082,7 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) c
 {
     if (auto res = tryGetCluster(cluster_name))
         return res;
-    throw Exception(ErrorCodes::BAD_GET, "Requested cluster '{}' not found", cluster_name);
+    throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "Requested cluster '{}' not found", cluster_name);
 }
 
 
