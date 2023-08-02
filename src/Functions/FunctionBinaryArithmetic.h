@@ -1195,7 +1195,7 @@ class FunctionBinaryArithmetic : public IFunction
         if (*typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsets().data() !=
             *typeid_cast<const ColumnArray *>(arguments[1].column.get())->getOffsets().data())
         {
-            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
             "Cannot apply operation for arguments of different sizes. Size of the first argument: {}, size of the second argument: {}",
             *typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsets().data(),
             *typeid_cast<const ColumnArray *>(arguments[1].column.get())->getOffsets().data());
