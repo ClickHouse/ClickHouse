@@ -9,12 +9,6 @@ import time
 from typing import List, Tuple
 
 from ci_config import CI_CONFIG, BuildConfig
-from commit_status_helper import (
-    NotSet,
-    get_commit_filtered_statuses,
-    get_commit,
-    post_commit_status,
-)
 from docker_pull_helper import get_image_with_version
 from env_helper import (
     GITHUB_JOB,
@@ -24,8 +18,6 @@ from env_helper import (
     S3_DOWNLOAD,
     TEMP_PATH,
 )
-from get_robot_token import get_best_robot_token
-from github_helper import GitHub
 from pr_info import PRInfo
 from s3_helper import S3Helper
 from tee_popen import TeePopen
@@ -242,34 +234,6 @@ def upload_master_static_binaries(
     print(f"::notice ::Binary static URL: {url}")
 
 
-def mark_failed_reports_pending(build_name: str, pr_info: PRInfo) -> None:
-    try:
-        gh = GitHub(get_best_robot_token())
-        commit = get_commit(gh, pr_info.sha)
-        statuses = get_commit_filtered_statuses(commit)
-        report_status = [
-            name
-            for name, builds in CI_CONFIG["builds_report_config"].items()
-            if build_name in builds
-        ][0]
-        for status in statuses:
-            if status.context == report_status and status.state in ["failure", "error"]:
-                logging.info(
-                    "Commit already have failed status for '%s', setting it to 'pending'",
-                    report_status,
-                )
-                post_commit_status(
-                    commit,
-                    "pending",
-                    status.target_url or NotSet,
-                    "Set to pending on rerun",
-                    report_status,
-                    pr_info,
-                )
-    except:  # we do not care about any exception here
-        logging.info("Failed to get or mark the reports status as pending, continue")
-
-
 def main():
     logging.basicConfig(level=logging.INFO)
 
@@ -299,9 +263,6 @@ def main():
     # If this is rerun, then we try to find already created artifacts and just
     # put them as github actions artifact (result)
     check_for_success_run(s3_helper, s3_path_prefix, build_name, build_config)
-
-    # If it's a latter running, we need to mark possible failed status
-    mark_failed_reports_pending(build_name, pr_info)
 
     docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
     image_version = docker_image.version
