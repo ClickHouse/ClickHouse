@@ -509,7 +509,7 @@ public:
                 // because the latter one outputs the string in the memory order
                 Impl::executeOneUIntOrInt(UUIDHelpers::getUUIDLow(uuid[i]), end, false, false);
                 Impl::executeOneUIntOrInt(UUIDHelpers::getUUIDHigh(uuid[i]), end, false, true);
-                
+
                 pos += end - begin;
                 out_offsets[i] = pos;
             }

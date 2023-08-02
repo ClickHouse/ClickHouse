@@ -1061,8 +1061,7 @@ private:
                     vec_to[i] = combineHashes(key, vec_to[i], hash);
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                column->getName(), getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", column->getName(), getName());
     }
 
     template <typename FromType, bool first>
@@ -1085,11 +1084,11 @@ private:
             const typename ColVecType::Container & vec_from = col_from->getData();
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
-            {       
+            {
                 // Take a copy to maintain column representation as is.
                 auto value = vec_from[i];
                 to_little_endian(value);
-                
+
                 if constexpr (std::is_same_v<FromType, UUID>)
                     UUIDHelpers::toLegacyFormat(value);
 
@@ -1105,10 +1104,10 @@ private:
         {
             auto value = col_from_const->template getValue<FromType>();
             to_little_endian(value);
-            
+
             if constexpr (std::is_same_v<FromType, UUID>)
                 UUIDHelpers::toLegacyFormat(value);
-                
+
             const auto hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
             const size_t size = vec_to.size();
             if constexpr (first)
@@ -1118,8 +1117,7 @@ private:
                     vec_to[i] = combineHashes(key, vec_to[i], hash);
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                column->getName(), getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", column->getName(), getName());
     }
 
     template <bool first>
