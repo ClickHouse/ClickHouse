@@ -114,7 +114,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         ///
         /// clusterAllReplicas() - same as cluster()
 
-        if ((!is_cluster_function && args.size() < 1) || args.size() > max_args)
+        if ((!is_cluster_function && args.empty()) || args.size() > max_args)
             throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         size_t arg_num = 0;
@@ -133,7 +133,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
 
         if (is_cluster_function)
         {
-            if (args.size() > 0)
+            if (!args.empty())
             {
                 args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
                 cluster_name = checkAndGetLiteralArgument<String>(args[arg_num], "cluster_name");
