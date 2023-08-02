@@ -20,9 +20,9 @@ public:
 protected:
     enum class SnaphotStatus
     {
-        NotReady,
-        Ready,
-        Stopped,
+        NotReady, // Waiting for data from the previous partial result processor or awaiting a timer before creating the snapshot.
+        Ready,    // Current partial result processor has received a snapshot from the processor in the main pipeline.
+        Stopped,  // The processor from the main pipeline has started sending data, and the pipeline for partial results should use data from the next processors of the main pipeline.
     };
 
     struct ShaphotResult

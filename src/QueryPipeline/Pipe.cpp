@@ -325,10 +325,7 @@ Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors, bool allow
                 pipe.partial_result_ports.end());
         }
         else
-        {
-            res.is_partial_result_active = false;
-            res.partial_result_ports.clear();
-        }
+            res.dropPartialResult();
 
         res.max_parallel_streams += pipe.max_parallel_streams;
 
