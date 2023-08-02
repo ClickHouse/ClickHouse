@@ -245,6 +245,12 @@ def test_arrays(started_cluster):
         == "[]\n"
     )
 
+    # Test INSERT SELECT
+    node.query("INSERT INTO arrays_mongo_table SELECT * FROM arrays_mongo_table")
+
+    assert node.query("SELECT COUNT() FROM arrays_mongo_table") == "200\n"
+    assert node.query("SELECT COUNT(DISTINCT *) FROM arrays_mongo_table") == "100\n"
+
     node.query("DROP TABLE arrays_mongo_table")
     arrays_mongo_table.drop()
 
