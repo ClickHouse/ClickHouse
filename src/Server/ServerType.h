@@ -25,6 +25,7 @@ public:
         QUERIES_ALL,
         QUERIES_DEFAULT,
         QUERIES_CUSTOM,
+        REMOTE_FS,
         END
     };
 
