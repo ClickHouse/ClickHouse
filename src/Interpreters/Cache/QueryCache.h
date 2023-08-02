@@ -186,6 +186,9 @@ public:
 
     void reset();
 
+    size_t weight() const;
+    size_t count() const;
+
     /// Record new execution of query represented by key. Returns number of executions so far.
     size_t recordQueryRun(const Key & key);
 
@@ -193,7 +196,7 @@ public:
     std::vector<QueryCache::Cache::KeyMapped> dump() const;
 
 private:
-    Cache cache;
+    Cache cache; /// has its own locking --> not protected by mutex
 
     mutable std::mutex mutex;
     TimesExecuted times_executed TSA_GUARDED_BY(mutex);
