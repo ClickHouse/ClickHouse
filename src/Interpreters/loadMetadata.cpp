@@ -250,6 +250,9 @@ static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & dat
 {
     String path = context->getPath() + "metadata/" + database_name;
     String metadata_file = path + ".sql";
+    if (fs::exists(metadata_file + ".tmp"))
+        fs::remove(metadata_file + ".tmp");
+
     if (fs::exists(fs::path(metadata_file)))
     {
         /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
