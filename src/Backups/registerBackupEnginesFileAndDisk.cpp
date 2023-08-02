@@ -169,9 +169,9 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         {
             std::shared_ptr<IBackupReader> reader;
             if (engine_name == "File")
-                reader = std::make_shared<BackupReaderFile>(path);
+                reader = std::make_shared<BackupReaderFile>(path, params.context);
             else
-                reader = std::make_shared<BackupReaderDisk>(disk, path);
+                reader = std::make_shared<BackupReaderDisk>(disk, path, params.context);
             return std::make_unique<BackupImpl>(backup_name_for_logging, archive_params, params.base_backup_info, reader, params.context);
         }
         else

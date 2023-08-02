@@ -26,6 +26,8 @@ using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
 struct StorageID;
 
+class PreparedSets;
+using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
 namespace ClusterProxy
 {
 
@@ -48,6 +50,8 @@ public:
     {
         /// Query and header may be changed depending on shard.
         ASTPtr query;
+        /// Used to check the table existence on remote node
+        StorageID main_table;
         Block header;
 
         Cluster::ShardInfo shard_info;

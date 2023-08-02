@@ -10,16 +10,22 @@ def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
-            "node1", main_configs=["configs/storage_conf.xml"], with_nginx=True
+            "node1",
+            main_configs=["configs/storage_conf.xml"],
+            with_nginx=True,
         )
         cluster.add_instance(
             "node2",
             main_configs=["configs/storage_conf_web.xml"],
             with_nginx=True,
             stay_alive=True,
+            with_zookeeper=True,
         )
         cluster.add_instance(
-            "node3", main_configs=["configs/storage_conf_web.xml"], with_nginx=True
+            "node3",
+            main_configs=["configs/storage_conf_web.xml"],
+            with_nginx=True,
+            with_zookeeper=True,
         )
 
         cluster.add_instance(
@@ -38,6 +44,8 @@ def cluster():
             node.query(
                 f"CREATE TABLE data{i} (id Int32) ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'def', min_bytes_for_wide_part=1;"
             )
+
+            node.query("SYSTEM STOP MERGES")
 
             for _ in range(10):
                 node.query(
@@ -95,7 +103,7 @@ def test_usage(cluster, node_name):
     for i in range(3):
         node2.query(
             """
-            ATTACH TABLE test{} UUID '{}'
+            CREATE TABLE test{} UUID '{}'
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'web';
         """.format(
@@ -140,7 +148,7 @@ def test_incorrect_usage(cluster):
     global uuids
     node2.query(
         """
-        ATTACH TABLE test0 UUID '{}'
+        CREATE TABLE test0 UUID '{}'
         (id Int32) ENGINE = MergeTree() ORDER BY id
         SETTINGS storage_policy = 'web';
     """.format(
@@ -173,7 +181,7 @@ def test_cache(cluster, node_name):
     for i in range(3):
         node2.query(
             """
-            ATTACH TABLE test{} UUID '{}'
+            CREATE TABLE test{} UUID '{}'
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'cached_web';
         """.format(
@@ -238,7 +246,7 @@ def test_unavailable_server(cluster):
     global uuids
     node2.query(
         """
-        ATTACH TABLE test0 UUID '{}'
+        CREATE TABLE test0 UUID '{}'
         (id Int32) ENGINE = MergeTree() ORDER BY id
         SETTINGS storage_policy = 'web';
     """.format(
@@ -276,3 +284,35 @@ def test_unavailable_server(cluster):
         )
         node2.start_clickhouse()
         node2.query("DROP TABLE test0 SYNC")
+
+
+def test_replicated_database(cluster):
+    node1 = cluster.instances["node3"]
+    node1.query(
+        "CREATE DATABASE rdb ENGINE=Replicated('/test/rdb', 's1', 'r1')",
+        settings={"allow_experimental_database_replicated": 1},
+    )
+
+    global uuids
+    node1.query(
+        """
+        CREATE TABLE rdb.table0 UUID '{}'
+        (id Int32) ENGINE = MergeTree() ORDER BY id
+        SETTINGS storage_policy = 'web';
+    """.format(
+            uuids[0]
+        )
+    )
+
+    node2 = cluster.instances["node2"]
+    node2.query(
+        "CREATE DATABASE rdb ENGINE=Replicated('/test/rdb', 's1', 'r2')",
+        settings={"allow_experimental_database_replicated": 1},
+    )
+    node2.query("SYSTEM SYNC DATABASE REPLICA rdb")
+
+    assert node1.query("SELECT count() FROM rdb.table0") == "5000000\n"
+    assert node2.query("SELECT count() FROM rdb.table0") == "5000000\n"
+
+    node1.query("DROP DATABASE rdb SYNC")
+    node2.query("DROP DATABASE rdb SYNC")

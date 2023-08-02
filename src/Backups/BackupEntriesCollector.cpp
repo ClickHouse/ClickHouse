@@ -470,17 +470,17 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
     const auto & database_info = database_infos.at(database_name);
     const auto & database = database_info.database;
 
-    auto filter_by_table_name = [database_info = &database_info](const String & table_name)
+    auto filter_by_table_name = [my_database_info = &database_info](const String & table_name)
     {
         /// We skip inner tables of materialized views.
         if (table_name.starts_with(".inner_id."))
             return false;
 
-        if (database_info->tables.contains(table_name))
+        if (my_database_info->tables.contains(table_name))
             return true;
 
-        if (database_info->all_tables)
-            return !database_info->except_table_names.contains(table_name);
+        if (my_database_info->all_tables)
+            return !my_database_info->except_table_names.contains(table_name);
 
         return false;
     };

@@ -12,7 +12,7 @@ Columns:
 - `table` ([String](../../sql-reference/data-types/string.md)) — Table name.
 - `uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — Table uuid.
 - `engine` ([String](../../sql-reference/data-types/string.md)) — Table engine name.
-- `metadata_dropped_path` ([String](../../sql-reference/data-types/string.md)) — Path of table's metadata file in metadate_dropped directory.
+- `metadata_dropped_path` ([String](../../sql-reference/data-types/string.md)) — Path of table's metadata file in metadata_dropped directory.
 - `table_dropped_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The time when the next attempt to remove table's data is scheduled on. Usually it's the table when the table was dropped plus `database_atomic_delay_before_drop_table_sec`
 
 **Example**

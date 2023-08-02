@@ -37,7 +37,7 @@ void KillCursorsRequest::buildRequest(BinaryWriter& writer)
 	for (std::vector<Int64>::iterator it = _cursors.begin(); it != _cursors.end(); ++it)
 	{
 		writer << *it;
-	}		
+	}
 }
 
 

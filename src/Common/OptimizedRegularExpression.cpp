@@ -1,6 +1,8 @@
 #include <limits>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Common/PODArray.h>
+#include <Common/checkStackSize.h>
 #include <Common/OptimizedRegularExpression.h>
 
 #define MIN_LENGTH_FOR_STRSTR 3
@@ -43,6 +45,25 @@ size_t shortest_literal_length(const Literals & literals)
     return shortest;
 }
 
+const char * skipNameCapturingGroup(const char * pos, size_t offset, const char * end)
+{
+    const char special = *(pos + offset) == '<' ? '>' : '\'';
+    offset ++;
+    while (pos + offset < end)
+    {
+        const char cur = *(pos + offset);
+        if (cur == special)
+        {
+            return pos + offset;
+        }
+        if (('0' <= cur && cur <= '9') || ('a' <= cur && cur <= 'z') || ('A' <= cur && cur <= 'Z'))
+            offset ++;
+        else
+            return pos;
+    }
+    return pos;
+}
+
 const char * analyzeImpl(
     std::string_view regexp,
     const char * pos,
@@ -50,6 +71,8 @@ const char * analyzeImpl(
     bool & is_trivial,
     Literals & global_alternatives)
 {
+    checkStackSize();
+
     /** The expression is trivial if all the metacharacters in it are escaped.
       * The non-alternative string is
       *  a string outside parentheses,
@@ -63,12 +86,13 @@ const char * analyzeImpl(
     bool is_first_call = begin == regexp.data();
     int depth = 0;
     is_trivial = true;
+    bool is_prefix = true;
     required_substring.clear();
     bool has_alternative_on_depth_0 = false;
     bool has_case_insensitive_flag = false;
 
-    /// Substring with a position.
-    using Substring = std::pair<std::string, size_t>;
+    /// Substring with is_prefix.
+    using Substring = std::pair<std::string, bool>;
     using Substrings = std::vector<Substring>;
 
     Substrings trivial_substrings(1);
@@ -98,6 +122,9 @@ const char * analyzeImpl(
 
     auto finish_non_trivial_char = [&](bool create_new_substr = true)
     {
+        is_trivial = false;
+        if (create_new_substr)
+            is_prefix = false;
         if (depth != 0)
             return;
 
@@ -106,6 +133,7 @@ const char * analyzeImpl(
             if (alter.suffix)
             {
                 alter.literal += last_substring->first;
+                alter.suffix = false;
             }
         }
 
@@ -126,16 +154,24 @@ const char * analyzeImpl(
             if (alter.prefix)
             {
                 alter.literal = last_substring->first + alter.literal;
+                alter.prefix = is_prefix;
             }
         }
 
         if (group_required_string.prefix)
+        {
             last_substring->first += group_required_string.literal;
+            last_substring->second = is_prefix;
+        }
         else
         {
             finish_non_trivial_char();
             last_substring->first = group_required_string.literal;
+            last_substring->second = false;
         }
+
+        is_prefix = is_prefix && group_required_string.prefix && group_required_string.suffix;
+
         /// if we can still append, no need to finish it. e.g. abc(de)fg should capture abcdefg
         if (!last_substring->first.empty() && !group_required_string.suffix)
         {
@@ -185,7 +221,6 @@ const char * analyzeImpl(
                         goto ordinary;
                     default:
                         /// all other escape sequences are not supported
-                        is_trivial = false;
                         finish_non_trivial_char();
                         break;
                 }
@@ -196,6 +231,7 @@ const char * analyzeImpl(
 
             case '|':
                 is_trivial = false;
+                is_prefix = false;
                 ++pos;
                 if (depth == 0)
                 {
@@ -205,6 +241,7 @@ const char * analyzeImpl(
                 break;
 
             case '(':
+                /// bracket does not break is_prefix. for example abc(d) has a prefix 'abcd'
                 is_trivial = false;
                 if (!in_square_braces)
                 {
@@ -229,9 +266,14 @@ const char * analyzeImpl(
                                 break;
                         }
                     }
+                    /// (?:regex) means non-capturing parentheses group
                     if (pos + 2 < end && pos[1] == '?' && pos[2] == ':')
                     {
                         pos += 2;
+                    }
+                    if (pos + 3 < end && pos[1] == '?' && (pos[2] == '<' || pos[2] == '\'' || (pos[2] == 'P' && pos[3] == '<')))
+                    {
+                        pos = skipNameCapturingGroup(pos, pos[2] == 'P' ? 3: 2, end);
                     }
                     Literal group_required_substr;
                     bool group_is_trival = true;
@@ -258,7 +300,6 @@ const char * analyzeImpl(
             case '[':
                 in_square_braces = true;
                 ++depth;
-                is_trivial = false;
                 finish_non_trivial_char();
                 ++pos;
                 break;
@@ -270,7 +311,6 @@ const char * analyzeImpl(
                 --depth;
                 if (depth == 0)
                     in_square_braces = false;
-                is_trivial = false;
                 finish_non_trivial_char();
                 ++pos;
                 break;
@@ -284,7 +324,6 @@ const char * analyzeImpl(
                 break;
 
             case '^': case '$': case '.': case '+':
-                is_trivial = false;
                 finish_non_trivial_char();
                 ++pos;
                 break;
@@ -296,7 +335,6 @@ const char * analyzeImpl(
             case '?':
                 [[fallthrough]];
             case '*':
-                is_trivial = false;
                 if (depth == 0 && !last_substring->first.empty() && !in_square_braces)
                 {
                     last_substring->first.resize(last_substring->first.size() - 1);
@@ -318,8 +356,9 @@ const char * analyzeImpl(
             default:
                 if (depth == 0 && !in_curly_braces && !in_square_braces)
                 {
+                    /// record the first position of last string.
                     if (last_substring->first.empty())
-                        last_substring->second = pos - begin;
+                        last_substring->second = is_prefix;
                     last_substring->first.push_back(*pos);
                 }
                 ++pos;
@@ -328,10 +367,9 @@ const char * analyzeImpl(
     }
 finish:
 
-    finish_non_trivial_char(false);
-
     if (!is_trivial)
     {
+        finish_non_trivial_char(false);
         /// we calculate required substring even though has_alternative_on_depth_0.
         /// we will clear the required substring after putting it to alternatives.
         if (!has_case_insensitive_flag)
@@ -357,7 +395,7 @@ finish:
             if (max_length >= MIN_LENGTH_FOR_STRSTR || (!is_first_call && max_length > 0))
             {
                 required_substring.literal = candidate_it->first;
-                required_substring.prefix = candidate_it->second == 0;
+                required_substring.prefix = candidate_it->second;
                 required_substring.suffix = candidate_it + 1 == trivial_substrings.end();
             }
         }
@@ -365,7 +403,8 @@ finish:
     else if (!trivial_substrings.empty())
     {
         required_substring.literal = trivial_substrings.front().first;
-        required_substring.prefix = trivial_substrings.front().second == 0;
+        /// trivial string means the whole regex is a simple string literal, so the prefix and suffix should be true.
+        required_substring.prefix = true;
         required_substring.suffix = true;
     }
 
@@ -409,6 +448,7 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
         bool & is_trivial,
         bool & required_substring_is_prefix,
         std::vector<std::string> & alternatives)
+try
 {
     Literals alternative_literals;
     Literal required_literal;
@@ -418,12 +458,20 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
     for (auto & lit : alternative_literals)
         alternatives.push_back(std::move(lit.literal));
 }
+catch (...)
+{
+    required_substring = "";
+    is_trivial = false;
+    required_substring_is_prefix = false;
+    alternatives.clear();
+    LOG_ERROR(&Poco::Logger::get("OptimizeRegularExpression"), "Analyze RegularExpression failed, got error: {}", DB::getCurrentExceptionMessage(false));
+}
 
 template <bool thread_safe>
 OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(const std::string & regexp_, int options)
 {
-    std::vector<std::string> alternativesDummy; /// this vector extracts patterns a,b,c from pattern (a|b|c). for now it's not used.
-    analyze(regexp_, required_substring, is_trivial, required_substring_is_prefix, alternativesDummy);
+    std::vector<std::string> alternatives_dummy; /// this vector extracts patterns a,b,c from pattern (a|b|c). for now it's not used.
+    analyze(regexp_, required_substring, is_trivial, required_substring_is_prefix, alternatives_dummy);
 
 
     /// Just three following options are supported
@@ -529,7 +577,7 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
             }
         }
 
-        return re2->Match(StringPieceType(subject, subject_size), 0, subject_size, RegexType::UNANCHORED, nullptr, 0);
+        return re2->Match({subject, subject_size}, 0, subject_size, RegexType::UNANCHORED, nullptr, 0);
     }
 }
 
@@ -574,9 +622,9 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
                 return false;
         }
 
-        StringPieceType piece;
+        std::string_view piece;
 
-        if (!RegexType::PartialMatch(StringPieceType(subject, subject_size), *re2, &piece))
+        if (!RegexType::PartialMatch({subject, subject_size}, *re2, &piece))
             return false;
         else
         {
@@ -641,10 +689,10 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
                 return 0;
         }
 
-        DB::PODArrayWithStackMemory<StringPieceType, 128> pieces(limit);
+        DB::PODArrayWithStackMemory<std::string_view, 128> pieces(limit);
 
         if (!re2->Match(
-            StringPieceType(subject, subject_size),
+            {subject, subject_size},
             0,
             subject_size,
             RegexType::UNANCHORED,
@@ -658,15 +706,15 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
             matches.resize(limit);
             for (size_t i = 0; i < limit; ++i)
             {
-                if (pieces[i] != nullptr)
-                {
-                    matches[i].offset = pieces[i].data() - subject;
-                    matches[i].length = pieces[i].length();
-                }
-                else
+                if (pieces[i].empty())
                 {
                     matches[i].offset = std::string::npos;
                     matches[i].length = 0;
+                }
+                else
+                {
+                    matches[i].offset = pieces[i].data() - subject;
+                    matches[i].length = pieces[i].length();
                 }
             }
             return limit;

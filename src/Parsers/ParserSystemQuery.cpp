@@ -258,6 +258,16 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::ENABLE_FAILPOINT:
+        case Type::DISABLE_FAILPOINT:
+        {
+            ASTPtr ast;
+            if (ParserIdentifier{}.parse(pos, ast, expected))
+                res->fail_point_name = ast->as<ASTIdentifier &>().name();
+            else
+                return false;
+            break;
+        }
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
@@ -429,6 +439,42 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {
                 return false;
             }
+            break;
+        }
+
+        case Type::START_LISTEN:
+        case Type::STOP_LISTEN:
+        {
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+
+            ServerType::Type current_type = ServerType::Type::END;
+            std::string current_custom_name;
+
+            for (const auto & type : magic_enum::enum_values<ServerType::Type>())
+            {
+                if (ParserKeyword{ServerType::serverTypeToString(type)}.ignore(pos, expected))
+                {
+                    current_type = type;
+                    break;
+                }
+            }
+
+            if (current_type == ServerType::Type::END)
+                return false;
+
+            if (current_type == ServerType::CUSTOM)
+            {
+                ASTPtr ast;
+
+                if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                    return false;
+
+                current_custom_name = ast->as<ASTLiteral &>().value.get<const String &>();
+            }
+
+            res->server_type = ServerType(current_type, current_custom_name);
+
             break;
         }
 

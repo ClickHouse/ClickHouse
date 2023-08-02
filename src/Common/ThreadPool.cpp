@@ -123,7 +123,7 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 
 template <typename Thread>
 template <typename ReturnType>
-ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, ssize_t priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context)
+ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
     auto on_error = [&](const std::string & reason)
     {
@@ -189,7 +189,9 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, ssize_t priority, std::
         jobs.emplace(std::move(job),
                      priority,
                      /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
-                     propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread());
+                     propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
+                     /// capture_frame_pointers
+                     DB::Exception::enable_job_stack_trace);
 
         ++scheduled_jobs;
     }
@@ -231,19 +233,19 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
 }
 
 template <typename Thread>
-void ThreadPoolImpl<Thread>::scheduleOrThrowOnError(Job job, ssize_t priority)
+void ThreadPoolImpl<Thread>::scheduleOrThrowOnError(Job job, Priority priority)
 {
     scheduleImpl<void>(std::move(job), priority, std::nullopt);
 }
 
 template <typename Thread>
-bool ThreadPoolImpl<Thread>::trySchedule(Job job, ssize_t priority, uint64_t wait_microseconds) noexcept
+bool ThreadPoolImpl<Thread>::trySchedule(Job job, Priority priority, uint64_t wait_microseconds) noexcept
 {
     return scheduleImpl<bool>(std::move(job), priority, wait_microseconds);
 }
 
 template <typename Thread>
-void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, ssize_t priority, uint64_t wait_microseconds, bool propagate_opentelemetry_tracing_context)
+void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, Priority priority, uint64_t wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
     scheduleImpl<void>(std::move(job), priority, wait_microseconds, propagate_opentelemetry_tracing_context);
 }
@@ -348,6 +350,8 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         /// A copy of parent trace context
         DB::OpenTelemetry::TracingContextOnThread parent_thread_trace_context;
 
+        std::vector<StackTrace::FramePointers> thread_frame_pointers;
+
         /// Get a job from the queue.
         Job job;
 
@@ -393,11 +397,17 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
             /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority::job.
             job = std::move(const_cast<Job &>(jobs.top().job));
             parent_thread_trace_context = std::move(const_cast<DB::OpenTelemetry::TracingContextOnThread &>(jobs.top().thread_trace_context));
+            DB::Exception::enable_job_stack_trace = jobs.top().enable_job_stack_trace;
+            if (DB::Exception::enable_job_stack_trace)
+                thread_frame_pointers = std::move(const_cast<std::vector<StackTrace::FramePointers> &>(jobs.top().frame_pointers));
             jobs.pop();
 
             /// We don't run jobs after `shutdown` is set, but we have to properly dequeue all jobs and finish them.
             if (shutdown)
+            {
+                job_is_done = true;
                 continue;
+            }
         }
 
         ALLOW_ALLOCATIONS_IN_SCOPE;
@@ -408,6 +418,10 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         /// Run the job.
         try
         {
+            if (DB::Exception::enable_job_stack_trace)
+                DB::Exception::thread_frame_pointers = std::move(thread_frame_pointers);
+
+
             CurrentMetrics::Increment metric_active_pool_threads(metric_active_threads);
 
             job();

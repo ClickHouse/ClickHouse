@@ -23,6 +23,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/DDLTask.h>
 
 
 namespace DB
@@ -535,7 +536,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (!args.storage_def->order_by)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "You must provide an ORDER BY or PRIMARY KEY expression in the table definition. "
-                            "If you don't want this table to be sorted, use ORDER BY/PRIMARY KEY tuple()");
+                            "If you don't want this table to be sorted, use ORDER BY/PRIMARY KEY ()");
 
         /// Get sorting key from engine arguments.
         ///
@@ -684,6 +685,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
+        bool need_check_table_structure = true;
+        if (auto txn = args.getLocalContext()->getZooKeeperMetadataTransaction())
+            need_check_table_structure = txn->isInitialQuery();
+
         return std::make_shared<StorageReplicatedMergeTree>(
             zookeeper_path,
             replica_name,
@@ -696,7 +701,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             merging_params,
             std::move(storage_settings),
             args.has_force_restore_data_flag,
-            renaming_restrictions);
+            renaming_restrictions,
+            need_check_table_structure);
     }
     else
         return std::make_shared<StorageMergeTree>(

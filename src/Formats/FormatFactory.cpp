@@ -69,6 +69,11 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.use_best_effort_in_schema_inference = settings.input_format_csv_use_best_effort_in_schema_inference;
     format_settings.csv.skip_first_lines = settings.input_format_csv_skip_first_lines;
     format_settings.csv.try_detect_header = settings.input_format_csv_detect_header;
+    format_settings.csv.skip_trailing_empty_lines = settings.input_format_csv_skip_trailing_empty_lines;
+    format_settings.csv.trim_whitespaces = settings.input_format_csv_trim_whitespaces;
+    format_settings.csv.allow_whitespace_or_tab_as_delimiter = settings.input_format_csv_allow_whitespace_or_tab_as_delimiter;
+    format_settings.csv.allow_variable_number_of_columns = settings.input_format_csv_allow_variable_number_of_columns;
+    format_settings.csv.use_default_on_bad_values = settings.input_format_csv_use_default_on_bad_values;
     format_settings.hive_text.fields_delimiter = settings.input_format_hive_text_fields_delimiter;
     format_settings.hive_text.collection_items_delimiter = settings.input_format_hive_text_collection_items_delimiter;
     format_settings.hive_text.map_keys_delimiter = settings.input_format_hive_text_map_keys_delimiter;
@@ -80,8 +85,10 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.custom.row_before_delimiter = settings.format_custom_row_before_delimiter;
     format_settings.custom.row_between_delimiter = settings.format_custom_row_between_delimiter;
     format_settings.custom.try_detect_header = settings.input_format_custom_detect_header;
+    format_settings.custom.skip_trailing_empty_lines = settings.input_format_custom_skip_trailing_empty_lines;
     format_settings.date_time_input_format = settings.date_time_input_format;
     format_settings.date_time_output_format = settings.date_time_output_format;
+    format_settings.interval.output_format = settings.interval_output_format;
     format_settings.input_format_ipv4_default_on_conversion_error = settings.input_format_ipv4_default_on_conversion_error;
     format_settings.input_format_ipv6_default_on_conversion_error = settings.input_format_ipv6_default_on_conversion_error;
     format_settings.bool_true_representation = settings.bool_true_representation;
@@ -110,7 +117,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.allow_object_type = context->getSettingsRef().allow_experimental_object_type;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
-    format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
+    format_settings.parquet.row_group_rows = settings.output_format_parquet_row_group_size;
+    format_settings.parquet.row_group_bytes = settings.output_format_parquet_row_group_size_bytes;
     format_settings.parquet.output_version = settings.output_format_parquet_version;
     format_settings.parquet.import_nested = settings.input_format_parquet_import_nested;
     format_settings.parquet.case_insensitive_column_matching = settings.input_format_parquet_case_insensitive_column_matching;
@@ -121,6 +129,11 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.parquet.output_fixed_string_as_fixed_byte_array = settings.output_format_parquet_fixed_string_as_fixed_byte_array;
     format_settings.parquet.max_block_size = settings.input_format_parquet_max_block_size;
     format_settings.parquet.output_compression_method = settings.output_format_parquet_compression_method;
+    format_settings.parquet.output_compliant_nested_types = settings.output_format_parquet_compliant_nested_types;
+    format_settings.parquet.use_custom_encoder = settings.output_format_parquet_use_custom_encoder;
+    format_settings.parquet.parallel_encoding = settings.output_format_parquet_parallel_encoding;
+    format_settings.parquet.data_page_size = settings.output_format_parquet_data_page_size;
+    format_settings.parquet.write_batch_size = settings.output_format_parquet_batch_size;
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
@@ -130,12 +143,14 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.protobuf.input_flatten_google_wrappers = settings.input_format_protobuf_flatten_google_wrappers;
     format_settings.protobuf.output_nullables_with_google_wrappers = settings.output_format_protobuf_nullables_with_google_wrappers;
     format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference;
+    format_settings.protobuf.use_autogenerated_schema = settings.format_protobuf_use_autogenerated_schema;
     format_settings.regexp.escaping_rule = settings.format_regexp_escaping_rule;
     format_settings.regexp.regexp = settings.format_regexp;
     format_settings.regexp.skip_unmatched = settings.format_regexp_skip_unmatched;
     format_settings.schema.format_schema = settings.format_schema;
     format_settings.schema.format_schema_path = context->getFormatSchemaPath();
     format_settings.schema.is_server = context->hasGlobalContext() && (context->getGlobalContext()->getApplicationType() == Context::ApplicationType::SERVER);
+    format_settings.schema.output_format_schema = settings.output_format_schema;
     format_settings.skip_unknown_fields = settings.input_format_skip_unknown_fields;
     format_settings.template_settings.resultset_format = settings.format_template_resultset;
     format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
@@ -147,6 +162,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.tsv.use_best_effort_in_schema_inference = settings.input_format_tsv_use_best_effort_in_schema_inference;
     format_settings.tsv.skip_first_lines = settings.input_format_tsv_skip_first_lines;
     format_settings.tsv.try_detect_header = settings.input_format_tsv_detect_header;
+    format_settings.tsv.skip_trailing_empty_lines = settings.input_format_tsv_skip_trailing_empty_lines;
     format_settings.values.accurate_types_of_literals = settings.input_format_values_accurate_types_of_literals;
     format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
@@ -176,10 +192,12 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.defaults_for_omitted_fields = settings.input_format_defaults_for_omitted_fields;
     format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
     format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference;
+    format_settings.capn_proto.use_autogenerated_schema = settings.format_capn_proto_use_autogenerated_schema;
     format_settings.seekable_read = settings.input_format_allow_seeks;
     format_settings.msgpack.number_of_columns = settings.input_format_msgpack_number_of_columns;
     format_settings.msgpack.output_uuid_representation = settings.output_format_msgpack_uuid_representation;
     format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
+    format_settings.max_bytes_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
     format_settings.column_names_for_schema_inference = settings.column_names_for_schema_inference;
     format_settings.schema_inference_hints = settings.schema_inference_hints;
     format_settings.schema_inference_make_columns_nullable = settings.schema_inference_make_columns_nullable;
@@ -219,68 +237,16 @@ template FormatSettings getFormatSettings<Settings>(ContextPtr context, const Se
 
 InputFormatPtr FormatFactory::getInput(
     const String & name,
-    ReadBuffer & buf,
+    ReadBuffer & _buf,
     const Block & sample,
     ContextPtr context,
     UInt64 max_block_size,
-    const std::optional<FormatSettings> & format_settings,
-    std::optional<size_t> max_parsing_threads) const
-{
-    return getInputImpl(
-        name,
-        nullptr,
-        &buf,
-        sample,
-        context,
-        max_block_size,
-        /* is_remote_fs */ false,
-        CompressionMethod::None,
-        format_settings,
-        /* max_download_threads */ 1,
-        max_parsing_threads);
-}
-
-InputFormatPtr FormatFactory::getInputRandomAccess(
-    const String & name,
-    SeekableReadBufferFactoryPtr buf_factory,
-    const Block & sample,
-    ContextPtr context,
-    UInt64 max_block_size,
-    bool is_remote_fs,
-    CompressionMethod compression,
-    const std::optional<FormatSettings> & format_settings,
-    std::optional<size_t> max_download_threads,
-    std::optional<size_t> max_parsing_threads) const
-{
-    return getInputImpl(
-        name,
-        std::move(buf_factory),
-        nullptr,
-        sample,
-        context,
-        max_block_size,
-        is_remote_fs,
-        compression,
-        format_settings,
-        max_download_threads,
-        max_parsing_threads);
-}
-
-InputFormatPtr FormatFactory::getInputImpl(
-    const String & name,
-    // exactly one of the following two is nullptr
-    SeekableReadBufferFactoryPtr buf_factory,
-    ReadBuffer * _buf,
-    const Block & sample,
-    ContextPtr context,
-    UInt64 max_block_size,
-    bool is_remote_fs,
-    CompressionMethod compression,
     const std::optional<FormatSettings> & _format_settings,
+    std::optional<size_t> _max_parsing_threads,
     std::optional<size_t> _max_download_threads,
-    std::optional<size_t> _max_parsing_threads) const
+    bool is_remote_fs,
+    CompressionMethod compression) const
 {
-    chassert((!_buf) != (!buf_factory));
     const auto& creators = getCreators(name);
     if (!creators.input_creator && !creators.random_access_input_creator)
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT, "Format {} is not suitable for input", name);
@@ -300,14 +266,12 @@ InputFormatPtr FormatFactory::getInputImpl(
     if (context->hasQueryContext() && settings.log_queries)
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
 
-    // Prepare a read buffer.
+    // Add ParallelReadBuffer and decompression if needed.
 
-    std::unique_ptr<ReadBuffer> owned_buf;
-    if (buf_factory)
-        owned_buf = prepareReadBuffer(buf_factory, compression, creators, format_settings, settings, max_download_threads);
-    auto * buf = owned_buf ? owned_buf.get() : _buf;
+    auto owned_buf = wrapReadBufferIfNeeded(_buf, compression, creators, format_settings, settings, is_remote_fs, max_download_threads);
+    auto & buf = owned_buf ? *owned_buf : _buf;
 
-    // Decide whether to use parallel ParallelParsingInputFormat.
+    // Decide whether to use ParallelParsingInputFormat.
 
     bool parallel_parsing = max_parsing_threads > 1 && settings.input_format_parallel_parsing && creators.file_segmentation_engine && !creators.random_access_input_creator;
 
@@ -320,7 +284,7 @@ InputFormatPtr FormatFactory::getInputImpl(
     {
         const auto & non_trivial_prefix_and_suffix_checker = creators.non_trivial_prefix_and_suffix_checker;
         /// Disable parallel parsing for input formats with non-trivial readPrefix() and readSuffix().
-        if (non_trivial_prefix_and_suffix_checker && non_trivial_prefix_and_suffix_checker(*buf))
+        if (non_trivial_prefix_and_suffix_checker && non_trivial_prefix_and_suffix_checker(buf))
             parallel_parsing = false;
     }
 
@@ -338,7 +302,7 @@ InputFormatPtr FormatFactory::getInputImpl(
             { return input_getter(input, sample, row_input_format_params, format_settings); };
 
         ParallelParsingInputFormat::Params params{
-            *buf, sample, parser_creator, creators.file_segmentation_engine, name, max_parsing_threads,
+            buf, sample, parser_creator, creators.file_segmentation_engine, name, max_parsing_threads,
             settings.min_chunk_bytes_for_parallel_parsing, max_block_size, context->getApplicationType() == Context::ApplicationType::SERVER};
 
         format = std::make_shared<ParallelParsingInputFormat>(params);
@@ -347,7 +311,6 @@ InputFormatPtr FormatFactory::getInputImpl(
     {
         format = creators.random_access_input_creator(
             buf,
-            std::move(buf_factory),
             sample,
             format_settings,
             context->getReadSettings(),
@@ -357,7 +320,7 @@ InputFormatPtr FormatFactory::getInputImpl(
     }
     else
     {
-        format = creators.input_creator(*buf, sample, row_input_format_params, format_settings);
+        format = creators.input_creator(buf, sample, row_input_format_params, format_settings);
     }
 
     if (owned_buf)
@@ -373,26 +336,28 @@ InputFormatPtr FormatFactory::getInputImpl(
     return format;
 }
 
-std::unique_ptr<ReadBuffer> FormatFactory::prepareReadBuffer(
-    SeekableReadBufferFactoryPtr & buf_factory,
+std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
+    ReadBuffer & buf,
     CompressionMethod compression,
     const Creators & creators,
     const FormatSettings & format_settings,
     const Settings & settings,
+    bool is_remote_fs,
     size_t max_download_threads) const
 {
     std::unique_ptr<ReadBuffer> res;
 
-    bool parallel_read = max_download_threads > 1 && buf_factory && format_settings.seekable_read;
+    bool parallel_read = is_remote_fs && max_download_threads > 1 && format_settings.seekable_read && isBufferWithFileSize(buf);
     if (creators.random_access_input_creator)
         parallel_read &= compression != CompressionMethod::None;
+    size_t file_size = 0;
 
     if (parallel_read)
     {
         try
         {
-            parallel_read = buf_factory->checkIfActuallySeekable()
-                         && buf_factory->getFileSize() >= 2 * settings.max_download_buffer_size;
+            file_size = getFileSizeFromReadBuffer(buf);
+            parallel_read = file_size >= 2 * settings.max_download_buffer_size;
         }
         catch (const Poco::Exception & e)
         {
@@ -413,22 +378,17 @@ std::unique_ptr<ReadBuffer> FormatFactory::prepareReadBuffer(
             max_download_threads,
             settings.max_download_buffer_size);
 
-        res = std::make_unique<ParallelReadBuffer>(
-            std::move(buf_factory),
-            threadPoolCallbackRunner<void>(IOThreadPool::get(), "ParallelRead"),
-            max_download_threads,
-            settings.max_download_buffer_size);
+        res = wrapInParallelReadBufferIfSupported(
+            buf, threadPoolCallbackRunner<void>(getIOThreadPool().get(), "ParallelRead"),
+            max_download_threads, settings.max_download_buffer_size, file_size);
     }
 
     if (compression != CompressionMethod::None)
     {
         if (!res)
-            res = buf_factory->getReader(); // NOLINT
+            res = wrapReadBufferReference(buf);
         res = wrapReadBufferWithCompressionMethod(std::move(res), compression, static_cast<int>(settings.zstd_window_log_max));
     }
-
-    if (!creators.random_access_input_creator && !res)
-        res = buf_factory->getReader();
 
     return res;
 }
@@ -481,7 +441,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
         return format;
     }
 
-    return getOutputFormat(name, buf, sample, context, _format_settings);
+    return getOutputFormat(name, buf, sample, context, format_settings);
 }
 
 
@@ -500,6 +460,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+    format_settings.max_threads = context->getSettingsRef().max_threads;
 
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.
@@ -734,6 +695,14 @@ void FormatFactory::markFormatSupportsSubcolumns(const String & name)
     target = true;
 }
 
+void FormatFactory::markOutputFormatPrefersLargeBlocks(const String & name)
+{
+    auto & target = dict[name].prefers_large_blocks;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as preferring large blocks", name);
+    target = true;
+}
+
 bool FormatFactory::checkIfFormatSupportsSubcolumns(const String & name) const
 {
     const auto & target = getCreators(name);
@@ -792,6 +761,20 @@ bool FormatFactory::checkIfFormatHasExternalSchemaReader(const String & name) co
 bool FormatFactory::checkIfFormatHasAnySchemaReader(const String & name) const
 {
     return checkIfFormatHasSchemaReader(name) || checkIfFormatHasExternalSchemaReader(name);
+}
+
+bool FormatFactory::checkIfOutputFormatPrefersLargeBlocks(const String & name) const
+{
+    const auto & target = getCreators(name);
+    return target.prefers_large_blocks;
+}
+
+bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, ContextPtr context) const
+{
+    if (name == "Parquet" && context->getSettingsRef().input_format_parquet_preserve_order)
+        return false;
+
+    return true;
 }
 
 void FormatFactory::checkFormatName(const String & name) const

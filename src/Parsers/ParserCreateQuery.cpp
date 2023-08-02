@@ -139,9 +139,19 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     auto index = std::make_shared<ASTIndexDeclaration>();
     index->name = name->as<ASTIdentifier &>().name();
-    index->granularity = granularity ? granularity->as<ASTLiteral &>().value.safeGet<UInt64>() : 1;
     index->set(index->expr, expr);
     index->set(index->type, type);
+
+    if (granularity)
+        index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
+    else
+    {
+        if (index->type->name == "annoy")
+            index->granularity = ASTIndexDeclaration::DEFAULT_ANNOY_INDEX_GRANULARITY;
+        else
+            index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+    }
+
     node = index;
 
     return true;
@@ -290,11 +300,21 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr constraints = std::make_shared<ASTExpressionList>();
     ASTPtr projections = std::make_shared<ASTExpressionList>();
     ASTPtr primary_key;
+    ASTPtr primary_key_from_columns;
 
     for (const auto & elem : list->children)
     {
-        if (elem->as<ASTColumnDeclaration>())
+        if (auto * cd = elem->as<ASTColumnDeclaration>())
+        {
+            if (cd->primary_key_specifier)
+            {
+                if (!primary_key_from_columns)
+                    primary_key_from_columns = makeASTFunction("tuple");
+                auto column_identifier = std::make_shared<ASTIdentifier>(cd->name);
+                primary_key_from_columns->children[0]->as<ASTExpressionList>()->children.push_back(column_identifier);
+            }
             columns->children.push_back(elem);
+        }
         else if (elem->as<ASTIndexDeclaration>())
             indices->children.push_back(elem);
         else if (elem->as<ASTConstraintDeclaration>())
@@ -326,6 +346,8 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
         res->set(res->projections, projections);
     if (primary_key)
         res->set(res->primary_key, primary_key);
+    if (primary_key_from_columns)
+        res->set(res->primary_key_from_columns, primary_key_from_columns);
 
     node = res;
 
@@ -589,6 +611,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     /// List of columns.
     if (s_lparen.ignore(pos, expected))
     {
+        /// Columns and all table properties (indices, constraints, projections, primary_key)
         if (!table_properties_p.parse(pos, columns_list, expected))
             return false;
 
@@ -687,6 +710,18 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
 
         query->storage->primary_key = query->columns_list->primary_key;
+
+    }
+
+    if (query->columns_list && (query->columns_list->primary_key_from_columns))
+    {
+        /// If engine is not set will use default one
+        if (!query->storage)
+            query->set(query->storage, std::make_shared<ASTStorage>());
+        else if (query->storage->primary_key)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
+
+        query->storage->primary_key = query->columns_list->primary_key_from_columns;
     }
 
     tryGetIdentifierNameInto(as_database, query->as_database);

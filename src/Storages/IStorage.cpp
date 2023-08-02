@@ -71,20 +71,29 @@ TableLockHolder IStorage::tryLockForShare(const String & query_id, const std::ch
     return result;
 }
 
-IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds & acquire_timeout)
+std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const std::chrono::milliseconds & acquire_timeout)
 {
     AlterLockHolder lock{alter_lock, std::defer_lock};
 
     if (!lock.try_lock_for(acquire_timeout))
-        throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
-                        "Locking attempt for ALTER on \"{}\" has timed out! ({} ms) "
-                        "Possible deadlock avoided. Client should retry.",
-                        getStorageID().getFullTableName(), acquire_timeout.count());
+        return {};
 
     if (is_dropped || is_detached)
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
 
     return lock;
+}
+
+IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds & acquire_timeout)
+{
+
+    if (auto lock = tryLockForAlter(acquire_timeout); lock == std::nullopt)
+        throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
+                        "Locking attempt for ALTER on \"{}\" has timed out! ({} ms) "
+                        "Possible deadlock avoided. Client should retry.",
+                        getStorageID().getFullTableName(), acquire_timeout.count());
+    else
+        return std::move(*lock);
 }
 
 
@@ -137,7 +146,7 @@ void IStorage::read(
     /// parallelize processing if not yet
     const size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = context->getSettingsRef().parallelize_output_from_storages;
-    if (parallelize_output && parallelizeOutputAfterReading() && output_ports > 0 && output_ports < num_streams)
+    if (parallelize_output && parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < num_streams)
         pipe.resize(num_streams);
 
     readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, getName());

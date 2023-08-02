@@ -10,16 +10,15 @@ from pr_info import PRInfo
 from report import TestResult
 import docker_images_check as di
 
-with patch("git_helper.Git"):
-    from version_helper import get_version_from_string
-    import docker_server as ds
+from version_helper import get_version_from_string
+import docker_server as ds
 
 # di.logging.basicConfig(level=di.logging.INFO)
 
 
 class TestDockerImageCheck(unittest.TestCase):
     docker_images_path = os.path.join(
-        os.path.dirname(__file__), "tests/docker_images.json"
+        os.path.dirname(__file__), "tests/docker_images_for_tests.json"
     )
 
     def test_get_changed_docker_images(self):
@@ -127,12 +126,13 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
+            "tar -v --exclude-vcs-ignores --show-transformed-names --transform 's#path#./#' --dereference --create path | "
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
             "--build-arg FROM_TAG=version "
             f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
             "--tag name:version --cache-from type=registry,ref=name:version "
             "--cache-from type=registry,ref=name:latest "
-            "--cache-to type=inline,mode=max --push --progress plain path",
+            "--cache-to type=inline,mode=max --push --progress plain -",
             mock_popen.call_args.args,
         )
         self.assertTrue(result)
@@ -144,12 +144,13 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
+            "tar -v --exclude-vcs-ignores --show-transformed-names --transform 's#path#./#' --dereference --create path | "
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
             "--build-arg FROM_TAG=version2 "
             f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
             "--tag name:version2 --cache-from type=registry,ref=name:version2 "
             "--cache-from type=registry,ref=name:latest "
-            "--cache-to type=inline,mode=max --progress plain path",
+            "--cache-to type=inline,mode=max --progress plain -",
             mock_popen.call_args.args,
         )
         self.assertTrue(result)
@@ -161,11 +162,12 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
+            "tar -v --exclude-vcs-ignores --show-transformed-names --transform 's#path#./#' --dereference --create path | "
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
             f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
             "--tag name:version2 --cache-from type=registry,ref=name:version2 "
             "--cache-from type=registry,ref=name:latest "
-            "--cache-to type=inline,mode=max --progress plain path",
+            "--cache-to type=inline,mode=max --progress plain -",
             mock_popen.call_args.args,
         )
         self.assertFalse(result)
@@ -179,13 +181,14 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
+            "tar -v --exclude-vcs-ignores --show-transformed-names --transform 's#path#./#' --dereference --create path | "
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
             f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
             "--tag name:version2 --cache-from type=registry,ref=name:version2 "
             "--cache-from type=registry,ref=name:latest "
             "--cache-from type=registry,ref=name:cached-version "
             "--cache-from type=registry,ref=name:another-cached "
-            "--cache-to type=inline,mode=max --progress plain path",
+            "--cache-to type=inline,mode=max --progress plain -",
             mock_popen.call_args.args,
         )
         self.assertFalse(result)
@@ -312,7 +315,3 @@ class TestDockerServer(unittest.TestCase):
         for case in cases_equal:
             release = ds.auto_release_type(case[0], "auto")
             self.assertEqual(case[1], release)
-
-
-if __name__ == "__main__":
-    unittest.main()

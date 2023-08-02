@@ -146,6 +146,8 @@ public:
     virtual bool supportsReplication() const { return false; }
 
     /// Returns true if the storage supports parallel insert.
+    /// If false, each INSERT query will call write() only once.
+    /// Different INSERT queries may write in parallel regardless of this value.
     virtual bool supportsParallelInsert() const { return false; }
 
     /// Returns true if the storage supports deduplication of inserted data blocks.
@@ -252,6 +254,9 @@ public:
     /// because those are internally translated into 'ALTER UDPATE' mutations.
     virtual bool supportsDelete() const { return false; }
 
+    /// Return true if the trivial count query could be optimized without reading the data at all.
+    virtual bool supportsTrivialCountOptimization() const { return false; }
+
 private:
 
     StorageID storage_id;
@@ -281,6 +286,7 @@ public:
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
     using AlterLockHolder = std::unique_lock<std::timed_mutex>;
     AlterLockHolder lockForAlter(const std::chrono::milliseconds & acquire_timeout);
+    std::optional<AlterLockHolder> tryLockForAlter(const std::chrono::milliseconds & acquire_timeout);
 
     /// Lock table exclusively. This lock must be acquired if you want to be
     /// sure, that no other thread (SELECT, merge, ALTER, etc.) doing something
@@ -374,10 +380,11 @@ private:
     /// even when the storage returned only one stream of data for reading?
     /// It is beneficial, for example, when you read from a file quickly,
     /// but then do heavy computations on returned blocks.
-    /// This is enabled by default, but in some cases shouldn't be done.
-    /// For example, when you read from system.numbers instead of system.numbers_mt,
-    /// you still expect the data to be processed sequentially.
-    virtual bool parallelizeOutputAfterReading() const { return true; }
+    ///
+    /// This is enabled by default, but in some cases shouldn't be done (for
+    /// example it is disabled for all system tables, since it is pretty
+    /// useless).
+    virtual bool parallelizeOutputAfterReading(ContextPtr) const { return !isSystemStorage(); }
 
 public:
     /// Other version of read which adds reading step to query plan.
@@ -400,11 +407,14 @@ public:
       * passed in all parts of the returned streams. Storage metadata can be
       * changed during lifetime of the returned streams, but the snapshot is
       * guaranteed to be immutable.
+      *
+      * async_insert - set to true if the write is part of async insert flushing
       */
     virtual SinkToStoragePtr write(
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr /*context*/)
+        ContextPtr /*context*/,
+        bool /*async_insert*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", getName());
     }
@@ -543,15 +553,15 @@ public:
     /**
       * If the storage requires some complicated work on destroying,
       * then you have two virtual methods:
-      * - flush()
+      * - flushAndPrepareForShutdown()
       * - shutdown()
       *
       * @see shutdown()
-      * @see flush()
+      * @see flushAndPrepareForShutdown()
       */
     void flushAndShutdown()
     {
-        flush();
+        flushAndPrepareForShutdown();
         shutdown();
     }
 
@@ -564,7 +574,7 @@ public:
 
     /// Called before shutdown() to flush data to underlying storage
     /// Data in memory need to be persistent
-    virtual void flush() {}
+    virtual void flushAndPrepareForShutdown() {}
 
     /// Asks table to stop executing some action identified by action_type
     /// If table does not support such type of lock, and empty lock is returned
@@ -655,6 +665,12 @@ public:
 
     /// Creates a storage snapshot from given metadata and columns, which are used in query.
     virtual StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context) const
+    {
+        return getStorageSnapshot(metadata_snapshot, query_context);
+    }
+
+    /// Creates a storage snapshot but without holding a data specific to storage.
+    virtual StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
     {
         return getStorageSnapshot(metadata_snapshot, query_context);
     }

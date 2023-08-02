@@ -1,5 +1,3 @@
--- Tags: no-parallel-replicas
-
 DROP TABLE IF EXISTS test.merge_hits;
 CREATE TABLE IF NOT EXISTS test.merge_hits AS test.hits ENGINE = Merge(test, '^hits$');
 SELECT count() FROM test.merge_hits WHERE AdvEngineID = 2;

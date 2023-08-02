@@ -5,6 +5,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
@@ -126,9 +127,20 @@ bool DistinctSortedChunkTransform::isKey(const size_t key_pos, const size_t row_
 
 bool DistinctSortedChunkTransform::isLatestKeyFromPrevChunk(const size_t row_pos) const
 {
-    for (size_t i = 0; i < sorted_columns.size(); ++i)
+    for (size_t i = 0, s = sorted_columns.size(); i < s; ++i)
     {
-        const int res = prev_chunk_latest_key[i]->compareAt(0, row_pos, *sorted_columns[i], sorted_columns_descr[i].nulls_direction);
+        const auto & sorted_column = *sorted_columns[i];
+        /// temporary hardening due to suspious crashes in sqlancer tests
+        if (unlikely(sorted_column.size() <= row_pos))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Unexpected size of a sorted column: size {}, row_pos {}, column position {}, type {}",
+                sorted_column.size(),
+                row_pos,
+                i,
+                sorted_column.getFamilyName());
+
+        const int res = prev_chunk_latest_key[i]->compareAt(0, row_pos, sorted_column, sorted_columns_descr[i].nulls_direction);
         if (res != 0)
             return false;
     }

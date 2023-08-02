@@ -11,6 +11,9 @@
 
 namespace DB
 {
+
+class IInputFormat;
+
 /**
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.
@@ -18,6 +21,20 @@ namespace DB
 class StorageHDFS final : public IStorage, WithContext
 {
 public:
+    struct PathInfo
+    {
+        time_t last_mod_time;
+        size_t size;
+    };
+
+    struct PathWithInfo
+    {
+        PathWithInfo() = default;
+        PathWithInfo(const String & path_, const std::optional<PathInfo> & info_) : path(path_), info(info_) {}
+        String path;
+        std::optional<PathInfo> info;
+    };
+
     StorageHDFS(
         const String & uri_,
         const StorageID & table_id_,
@@ -41,7 +58,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
 
     void truncate(
         const ASTPtr & query,
@@ -72,14 +89,13 @@ protected:
 
 private:
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
-        const Strings & paths,
+        const std::vector<StorageHDFS::PathWithInfo> & paths_with_info,
         const String & uri_without_path,
-        std::unordered_map<String, time_t> & last_mod_time,
         const String & format_name,
         const ContextPtr & ctx);
 
     static void addColumnsToCache(
-        const Strings & paths,
+        const std::vector<StorageHDFS::PathWithInfo> & paths,
         const String & uri_without_path,
         const ColumnsDescription & columns,
         const String & format_name,
@@ -105,7 +121,7 @@ public:
     {
         public:
             DisclosedGlobIterator(ContextPtr context_, const String & uri_);
-            String next();
+            StorageHDFS::PathWithInfo next();
         private:
             class Impl;
             /// shared_ptr to have copy constructor
@@ -116,14 +132,14 @@ public:
     {
         public:
             URISIterator(const std::vector<String> & uris_, ContextPtr context);
-            String next();
+            StorageHDFS::PathWithInfo next();
         private:
             class Impl;
             /// shared_ptr to have copy constructor
             std::shared_ptr<Impl> pimpl;
     };
 
-    using IteratorWrapper = std::function<String()>;
+    using IteratorWrapper = std::function<StorageHDFS::PathWithInfo()>;
     using StorageHDFSPtr = std::shared_ptr<StorageHDFS>;
 
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
@@ -150,6 +166,7 @@ private:
     ColumnsDescription columns_description;
 
     std::unique_ptr<ReadBuffer> read_buf;
+    std::shared_ptr<IInputFormat> input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
     String current_path;

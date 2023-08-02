@@ -1,10 +1,10 @@
 ---
 slug: /en/operations/query-cache
 sidebar_position: 65
-sidebar_label: Query Cache [experimental]
+sidebar_label: Query Cache
 ---
 
-# Query Cache [experimental]
+# Query Cache
 
 The query cache allows to compute `SELECT` queries just once and to serve further executions of the same query directly from the cache.
 Depending on the type of the queries, this can dramatically reduce latency and resource consumption of the ClickHouse server.
@@ -29,21 +29,10 @@ Transactionally inconsistent caching is traditionally provided by client tools o
 the same caching logic and configuration is often duplicated. With ClickHouse's query cache, the caching logic moves to the server side.
 This reduces maintenance effort and avoids redundancy.
 
-:::note
-The query cache is an experimental feature that should not be used in production. There are known cases (e.g. in distributed query
-processing) where wrong results are returned.
-:::
-
 ## Configuration Settings and Usage
 
-As long as the result cache is experimental it must be activated using the following configuration setting:
-
-```sql
-SET allow_experimental_query_cache = true;
-```
-
-Afterwards, setting [use_query_cache](settings/settings.md#use-query-cache) can be used to control whether a specific query or all queries
-of the current session should utilize the query cache. For example, the first execution of query
+Setting [use_query_cache](settings/settings.md#use-query-cache) can be used to control whether a specific query or all queries of the
+current session should utilize the query cache. For example, the first execution of query
 
 ```sql
 SELECT some_expensive_calculation(column_1, column_2)
@@ -72,9 +61,12 @@ use_query_cache = true`) but one should keep in mind that all `SELECT` queries i
 may return cached results then.
 
 The query cache can be cleared using statement `SYSTEM DROP QUERY CACHE`. The content of the query cache is displayed in system table
-`system.query_cache`. The number of query cache hits and misses are shown as events "QueryCacheHits" and "QueryCacheMisses" in system table
-`system.events`. Both counters are only updated for `SELECT` queries which run with setting "use_query_cache = true". Other queries do not
-affect the cache miss counter.
+`system.query_cache`. The number of query cache hits and misses since database start are shown as events "QueryCacheHits" and
+"QueryCacheMisses" in system table [system.events](system-tables/events.md). Both counters are only updated for `SELECT` queries which run
+with setting `use_query_cache = true`, other queries do not affect "QueryCacheMisses". Field `query_log_usage` in system table
+[system.query_log](system-tables/query_log.md) shows for each executed query whether the query result was written into or read from the
+query cache. Asynchronous metrics "QueryCacheEntries" and "QueryCacheBytes" in system table
+[system.asynchronous_metrics](system-tables/asynchronous_metrics.md) show how many entries / bytes the query cache currently contains.
 
 The query cache exists once per ClickHouse server process. However, cache results are by default not shared between users. This can be
 changed (see below) but doing so is not recommended for security reasons.

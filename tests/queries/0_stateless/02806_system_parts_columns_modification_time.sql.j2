@@ -1,0 +1,30 @@
+-- Tags: no-s3-storage
+-- Tag: no-s3-storage because S3 updates metadata for the virtual link file on metadata disk (see CreateHardlinkOperation::execute() for details)
+
+set mutations_sync=1;
+
+{# modification time of the part folder and column files not always equal, this is how much seconds of difference is allowed #}
+{% set mtime_diff_in_seconds = 5 %}
+
+{% for id, settings, file_per_column in [
+    ("wide",    "min_bytes_for_wide_part=0, min_rows_for_wide_part=0",      true),
+    ("compact", "min_bytes_for_wide_part=1000, min_rows_for_wide_part=100", false)
+]
+%}
+
+drop table if exists data_{{ id }};
+create table data_{{ id }} (key Int) engine=MergeTree() order by tuple() settings {{ settings }};
+insert into data_{{ id }} values (1);
+select sleep(3) format Null;
+select part_type, column, now()-modification_time < 10, modification_time - column_modification_time < {{ mtime_diff_in_seconds }} from system.parts_columns where database = currentDatabase() and table = 'data_{{ id }}';
+alter table data_{{ id }} add column value Int default 0;
+alter table data_{{ id }} materialize column value;
+select part_type, column, now()-modification_time < 10,
+{% if file_per_column %}
+modification_time - column_modification_time >= 3
+{% else %}
+modification_time - column_modification_time < {{ mtime_diff_in_seconds }}
+{% endif %}
+from system.parts_columns where active and database = currentDatabase() and table = 'data_{{ id }}' order by column;
+
+{% endfor %}

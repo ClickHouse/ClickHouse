@@ -71,21 +71,20 @@ inline size_t JSONEachRowRowInputFormat::columnIndex(StringRef name, size_t key_
     /// and a quick check to match the next expected field, instead of searching the hash table.
 
     if (prev_positions.size() > key_index
-        && prev_positions[key_index]
-        && name == prev_positions[key_index]->getKey())
+        && prev_positions[key_index] != Block::NameMap::const_iterator{}
+        && name == prev_positions[key_index]->first)
     {
-        return prev_positions[key_index]->getMapped();
+        return prev_positions[key_index]->second;
     }
     else
     {
-        auto * it = name_map.find(name);
-
-        if (it)
+        const auto it = name_map.find(name);
+        if (it != name_map.end())
         {
             if (key_index < prev_positions.size())
                 prev_positions[key_index] = it;
 
-            return it->getMapped();
+            return it->second;
         }
         else
             return UNKNOWN_FIELD;
@@ -237,10 +236,10 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
 
 bool JSONEachRowRowInputFormat::checkEndOfData(bool is_first_row)
 {
-    /// We consume , or \n before scanning a new row, instead scanning to next row at the end.
+    /// We consume ',' or '\n' before scanning a new row, instead scanning to next row at the end.
     /// The reason is that if we want an exact number of rows read with LIMIT x
     /// from a streaming table engine with text data format, like File or Kafka
-    /// then seeking to next ;, or \n would trigger reading of an extra row at the end.
+    /// then seeking to next ';,' or '\n' would trigger reading of an extra row at the end.
 
     /// Semicolon is added for convenience as it could be used at end of INSERT query.
     if (!in->eof())

@@ -2,7 +2,6 @@
 -- Tag no-parallel: Messes with internal cache
 
 SET allow_experimental_analyzer = 1;
-SET allow_experimental_query_cache = true;
 
 SYSTEM DROP QUERY CACHE;
 

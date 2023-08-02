@@ -16,7 +16,6 @@ from github import Github
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import (
     ClickHouseHelper,
-    mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
@@ -108,7 +107,7 @@ def get_run_command(
 
     env_str = " ".join(envs)
     volume_with_broken_test = (
-        f"--volume={repo_tests_path}/broken_tests.txt:/broken_tests.txt"
+        f"--volume={repo_tests_path}/analyzer_tech_debt.txt:/analyzer_tech_debt.txt"
         if "analyzer" in check_name
         else ""
     )
@@ -355,7 +354,10 @@ def main():
         else:
             logging.info("Run failed")
 
-    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
+    try:
+        subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
+    except subprocess.CalledProcessError:
+        logging.warning("Failed to change files owner in %s, ignoring it", temp_path)
 
     s3_helper = S3Helper()
 
@@ -365,7 +367,6 @@ def main():
     state = override_status(state, check_name, invert=validate_bugfix_check)
 
     ch_helper = ClickHouseHelper()
-    mark_flaky_tests(ch_helper, check_name, test_results)
 
     report_url = upload_results(
         s3_helper,
@@ -378,34 +379,16 @@ def main():
 
     print(f"::notice:: {check_name} Report url: {report_url}")
     if args.post_commit_status == "commit_status":
-        if "parallelreplicas" in check_name.lower():
-            post_commit_status(
-                commit,
-                "success",
-                report_url,
-                description,
-                check_name_with_group,
-                pr_info,
-            )
-        else:
-            post_commit_status(
-                commit, state, report_url, description, check_name_with_group, pr_info
-            )
+        post_commit_status(
+            commit, state, report_url, description, check_name_with_group, pr_info
+        )
     elif args.post_commit_status == "file":
-        if "parallelreplicas" in check_name.lower():
-            post_commit_status_to_file(
-                post_commit_path,
-                description,
-                "success",
-                report_url,
-            )
-        else:
-            post_commit_status_to_file(
-                post_commit_path,
-                description,
-                state,
-                report_url,
-            )
+        post_commit_status_to_file(
+            post_commit_path,
+            description,
+            state,
+            report_url,
+        )
     else:
         raise Exception(
             f'Unknown post_commit_status option "{args.post_commit_status}"'
@@ -423,11 +406,7 @@ def main():
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     if state != "success":
-        # Parallel replicas are always green for now
-        if (
-            FORCE_TESTS_LABEL in pr_info.labels
-            or "parallelreplicas" in check_name.lower()
-        ):
+        if FORCE_TESTS_LABEL in pr_info.labels:
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
             sys.exit(1)

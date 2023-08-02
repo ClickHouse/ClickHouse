@@ -16,6 +16,7 @@
 #include <Poco/URI.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/CompressionMethod.h>
+#include <IO/SeekableReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Storages/Cache/SchemaCache.h>
@@ -30,7 +31,6 @@ namespace DB
 {
 
 class PullingPipelineExecutor;
-class StorageS3SequentialSource;
 class NamedCollection;
 
 class StorageS3Source : public ISource, WithContext
@@ -56,7 +56,6 @@ public:
     public:
         virtual ~IIterator() = default;
         virtual KeyWithInfo next() = 0;
-        virtual size_t getTotalSize() const = 0;
 
         KeyWithInfo operator ()() { return next(); }
     };
@@ -71,10 +70,10 @@ public:
             const Block & virtual_header,
             ContextPtr context,
             KeysWithInfo * read_keys_ = nullptr,
-            const S3Settings::RequestSettings & request_settings_ = {});
+            const S3Settings::RequestSettings & request_settings_ = {},
+            std::function<void(FileProgress)> progress_callback_ = {});
 
         KeyWithInfo next() override;
-        size_t getTotalSize() const override;
 
     private:
         class Impl;
@@ -94,10 +93,10 @@ public:
             ASTPtr query,
             const Block & virtual_header,
             ContextPtr context,
-            KeysWithInfo * read_keys = nullptr);
+            KeysWithInfo * read_keys = nullptr,
+            std::function<void(FileProgress)> progress_callback_ = {});
 
         KeyWithInfo next() override;
-        size_t getTotalSize() const override;
 
     private:
         class Impl;
@@ -111,8 +110,6 @@ public:
         explicit ReadTaskIterator(const ReadTaskCallback & callback_) : callback(callback_) {}
 
         KeyWithInfo next() override { return {callback(), {}}; }
-
-        size_t getTotalSize() const override { return 0; }
 
     private:
         ReadTaskCallback callback;
@@ -144,6 +141,8 @@ public:
     Chunk generate() override;
 
 private:
+    friend class StorageS3QueueSource;
+
     String name;
     String bucket;
     String version_id;
@@ -160,12 +159,16 @@ private:
     {
     public:
         ReaderHolder(
-            String path_,
+            String key_,
+            String bucket_,
             std::unique_ptr<ReadBuffer> read_buf_,
+            std::shared_ptr<IInputFormat> input_format_,
             std::unique_ptr<QueryPipeline> pipeline_,
             std::unique_ptr<PullingPipelineExecutor> reader_)
-            : path(std::move(path_))
+            : key(std::move(key_))
+            , bucket(std::move(bucket_))
             , read_buf(std::move(read_buf_))
+            , input_format(std::move(input_format_))
             , pipeline(std::move(pipeline_))
             , reader(std::move(reader_))
         {
@@ -186,27 +189,28 @@ private:
             /// reader uses pipeline, pipeline uses read_buf.
             reader = std::move(other.reader);
             pipeline = std::move(other.pipeline);
+            input_format = std::move(other.input_format);
             read_buf = std::move(other.read_buf);
-            path = std::move(other.path);
+            key = std::move(other.key);
+            bucket = std::move(other.bucket);
             return *this;
         }
 
         explicit operator bool() const { return reader != nullptr; }
         PullingPipelineExecutor * operator->() { return reader.get(); }
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
-        const String & getPath() const { return path; }
+        String getPath() const { return fs::path(bucket) / key; }
+        const String & getFile() const { return key; }
+
+        const IInputFormat * getInputFormat() const { return input_format.get(); }
 
     private:
-        String path;
+        String key;
+        String bucket;
         std::unique_ptr<ReadBuffer> read_buf;
+        std::shared_ptr<IInputFormat> input_format;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
-    };
-
-    struct ReadBufferOrFactory
-    {
-        std::unique_ptr<ReadBuffer> buf;
-        SeekableReadBufferFactoryPtr buf_factory;
     };
 
     ReaderHolder reader;
@@ -221,15 +225,11 @@ private:
     ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
 
-    UInt64 total_rows_approx_max = 0;
-    size_t total_rows_count_times = 0;
-    UInt64 total_rows_approx_accumulated = 0;
-
     /// Recreate ReadBuffer and Pipeline for each file.
     ReaderHolder createReader();
     std::future<ReaderHolder> createReaderAsync();
 
-    ReadBufferOrFactory createS3ReadBuffer(const String & key, size_t object_size);
+    std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key, size_t object_size);
     std::unique_ptr<ReadBuffer> createAsyncS3ReadBuffer(const String & key, const ReadSettings & read_settings, size_t object_size);
 };
 
@@ -238,7 +238,7 @@ private:
  * It sends HTTP GET to server when select is called and
  * HTTP PUT when insert is called.
  */
-class StorageS3 : public IStorage, WithContext
+class StorageS3 : public IStorage
 {
 public:
     struct Configuration : public StatelessTableEngineConfiguration
@@ -246,11 +246,6 @@ public:
         Configuration() = default;
 
         String getPath() const { return url.key; }
-
-        void appendToPath(const String & suffix)
-        {
-            url = S3::URI{std::filesystem::path(url.uri.toString()) / suffix};
-        }
 
         bool update(ContextPtr context);
 
@@ -275,6 +270,7 @@ public:
         HTTPHeaderEntries headers_from_ast;
 
         std::shared_ptr<const S3::Client> client;
+        std::shared_ptr<const S3::Client> client_with_long_timeout;
         std::vector<String> keys;
     };
 
@@ -303,7 +299,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, TableExclusiveLockHolder &) override;
 
@@ -334,6 +330,7 @@ protected:
 private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
+    friend class StorageS3Queue;
 
     Configuration configuration;
     std::mutex configuration_update_mutex;
@@ -353,7 +350,8 @@ private:
         ContextPtr local_context,
         ASTPtr query,
         const Block & virtual_block,
-        KeysWithInfo * read_keys = nullptr);
+        KeysWithInfo * read_keys = nullptr,
+        std::function<void(FileProgress)> progress_callback = {});
 
     static ColumnsDescription getTableStructureFromDataImpl(
         const Configuration & configuration,
@@ -363,6 +361,10 @@ private:
     bool supportsSubcolumns() const override;
 
     bool supportsSubsetOfColumns() const override;
+
+    bool prefersLargeBlocks() const override;
+
+    bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const KeysWithInfo::const_iterator & begin,

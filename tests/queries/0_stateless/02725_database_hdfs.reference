@@ -1,0 +1,12 @@
+Test 1: select from hdfs database
+1	2	3
+test1
+1	2	3
+test2
+Test 2: check exceptions
+OK0
+OK1
+OK2
+OK3
+OK4
+OK5

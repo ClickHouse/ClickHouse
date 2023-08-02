@@ -39,15 +39,15 @@ MergeTreeSink::MergeTreeSink(
     , metadata_snapshot(metadata_snapshot_)
     , max_parts_per_block(max_parts_per_block_)
     , context(context_)
-    , storage_snapshot(storage.getStorageSnapshotWithoutParts(metadata_snapshot))
+    , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
 {
 }
 
 void MergeTreeSink::onStart()
 {
-    /// Only check "too many parts" before write,
+    /// It's only allowed to throw "too many parts" before write,
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
-    storage.delayInsertOrThrowIfNeeded(nullptr, context);
+    storage.delayInsertOrThrowIfNeeded(nullptr, context, true);
 }
 
 void MergeTreeSink::onFinish()
@@ -57,6 +57,9 @@ void MergeTreeSink::onFinish()
 
 void MergeTreeSink::consume(Chunk chunk)
 {
+    if (num_blocks_processed > 0)
+        storage.delayInsertOrThrowIfNeeded(nullptr, context, false);
+
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
     if (!storage_snapshot->object_columns.empty())
         convertDynamicColumnsToTuples(block, storage_snapshot);
@@ -136,6 +139,8 @@ void MergeTreeSink::consume(Chunk chunk)
     finishDelayedChunk();
     delayed_chunk = std::make_unique<MergeTreeSink::DelayedChunk>();
     delayed_chunk->partitions = std::move(partitions);
+
+    ++num_blocks_processed;
 }
 
 void MergeTreeSink::finishDelayedChunk()

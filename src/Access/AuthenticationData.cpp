@@ -10,6 +10,7 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Poco/SHA1Engine.h>
 #include <base/types.h>
+#include <base/hex.h>
 #include <boost/algorithm/hex.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 

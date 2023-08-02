@@ -37,6 +37,10 @@ sidebar_label: "Настройки пользователей"
                 <table_name>
             </database_name>
         </databases>
+        
+        <grants>
+            <query>GRANT SELECT ON system.*</query>
+        </grants>
     </user_name>
     <!-- Other users settings -->
 </users>
@@ -88,6 +92,27 @@ sidebar_label: "Настройки пользователей"
 - 1 — Включено.
 
 Значение по умолчанию: 0.
+
+### grants {#grants-user-setting}
+
+Настройка позволяет указать набор прав для заданного пользователя.
+Каждый элемент списка должен представлять собой `GRANT` запрос без указания пользователей в самом запросе.
+
+Пример:
+
+```xml
+<user1>
+    <grants>
+        <query>GRANT SHOW ON *.*</query>
+        <query>GRANT CREATE ON *.* WITH GRANT OPTION</query>
+        <query>GRANT SELECT ON system.*</query>
+    </grants>
+</user1>
+```
+
+Настройка не может быть выставлена одновременно с
+`dictionaries`, `access_management`, `named_collection_control`, `show_named_collections_secrets`
+или `allow_databases`.
 
 ### user_name/networks {#user-namenetworks}
 

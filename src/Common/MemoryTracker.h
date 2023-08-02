@@ -67,6 +67,12 @@ private:
     /// To randomly sample allocations and deallocations in trace_log.
     double sample_probability = 0;
 
+    /// Randomly sample allocations only larger or equal to this size
+    UInt64 min_allocation_size_bytes = 0;
+
+    /// Randomly sample allocations only smaller or equal to this size
+    UInt64 max_allocation_size_bytes = 0;
+
     /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
     /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
     std::atomic<MemoryTracker *> parent {};
@@ -88,6 +94,8 @@ private:
 
     void setOrRaiseProfilerLimit(Int64 value);
 
+    bool isSizeOkForSampling(UInt64 size) const;
+
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
     void allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr);
@@ -95,9 +103,11 @@ private:
 public:
 
     static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
+    static constexpr auto PEAK_USAGE_EVENT_NAME = "MemoryTrackerPeakUsage";
 
     explicit MemoryTracker(VariableContext level_ = VariableContext::Thread);
     explicit MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
+    MemoryTracker(MemoryTracker * parent_, VariableContext level_, bool log_peak_memory_usage_in_destructor_);
 
     ~MemoryTracker();
 
@@ -108,6 +118,22 @@ public:
     Int64 get() const
     {
         return amount.load(std::memory_order_relaxed);
+    }
+
+    // Merges and mutations may pass memory ownership to other threads thus in the end of execution
+    // MemoryTracker for background task may have a non-zero counter.
+    // This method is intended to fix the counter inside of background_memory_tracker.
+    // NOTE: We can't use alloc/free methods to do it, because they also will change the value inside
+    // of total_memory_tracker.
+    void adjustOnBackgroundTaskEnd(const MemoryTracker * child)
+    {
+        auto background_memory_consumption = child->amount.load(std::memory_order_relaxed);
+        amount.fetch_sub(background_memory_consumption, std::memory_order_relaxed);
+
+        // Also fix CurrentMetrics::MergesMutationsMemoryTracking
+        auto metric_loaded = metric.load(std::memory_order_relaxed);
+        if (metric_loaded != CurrentMetrics::end())
+            CurrentMetrics::sub(metric_loaded, background_memory_consumption);
     }
 
     Int64 getPeak() const
@@ -146,6 +172,16 @@ public:
     void setSampleProbability(double value)
     {
         sample_probability = value;
+    }
+
+    void setSampleMinAllocationSize(UInt64 value)
+    {
+        min_allocation_size_bytes = value;
+    }
+
+    void setSampleMaxAllocationSize(UInt64 value)
+    {
+        max_allocation_size_bytes = value;
     }
 
     void setProfilerStep(Int64 value)
@@ -220,3 +256,6 @@ public:
 };
 
 extern MemoryTracker total_memory_tracker;
+extern MemoryTracker background_memory_tracker;
+
+bool canEnqueueBackgroundTask();

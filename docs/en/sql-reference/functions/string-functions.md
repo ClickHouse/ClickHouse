@@ -90,6 +90,8 @@ Returns the length of a string in bytes (not: in characters or Unicode code poin
 
 The function also works for arrays.
 
+Alias: `OCTET_LENGTH`
+
 ## lengthUTF8
 
 Returns the length of a string in Unicode code points (not: in bytes or characters). It assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
@@ -310,7 +312,7 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b');
 
 ## repeat
 
-Conatenates a string as many times with itself as specified.
+Concatenates a string as many times with itself as specified.
 
 **Syntax**
 
@@ -323,11 +325,11 @@ Alias: `REPEAT`
 **Arguments**
 
 - `s` — The string to repeat. [String](../../sql-reference/data-types/string.md).
-- `n` — The number of times to repeat the string. [UInt or Int](../../sql-reference/data-types/int-uint.md).
+- `n` — The number of times to repeat the string. [UInt* or Int*](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
-The single string containing string `s` repeated `n` times. If `n` \< 1, the function returns empty string.
+A string containing string `s` repeated `n` times. If `n` <= 0, the function returns the empty string.
 
 Type: `String`.
 
@@ -345,6 +347,44 @@ Result:
 └────────────────────────────────┘
 ```
 
+## space
+
+Concatenates a space (` `) as many times with itself as specified.
+
+**Syntax**
+
+``` sql
+space(n)
+```
+
+Alias: `SPACE`.
+
+**Arguments**
+
+- `n` — The number of times to repeat the space. [UInt* or Int*](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+The string containing string ` ` repeated `n` times. If `n` <= 0, the function returns the empty string.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT space(3);
+```
+
+Result:
+
+``` text
+┌─space(3) ────┐
+│              │
+└──────────────┘
+```
+
 ## reverse
 
 Reverses the sequence of bytes in a string.
@@ -355,7 +395,7 @@ Reverses a sequence of Unicode code points in a string. Assumes that the string 
 
 ## format
 
-Format the `pattern` string with the strings listed in the arguments, similar to formatting in Python. The pattern string can contain replacement fields surrounded by curly braces `{}`. Anything not contained in braces is considered literal text and copied verbatim into the output. Literal brace character can be escaped by two braces: `{{ '{{' }}` and `{{ '}}' }}`. Field names can be numbers (starting from zero) or empty (then they are implicitely given monotonically increasing numbers).
+Format the `pattern` string with the strings listed in the arguments, similar to formatting in Python. The pattern string can contain replacement fields surrounded by curly braces `{}`. Anything not contained in braces is considered literal text and copied verbatim into the output. Literal brace character can be escaped by two braces: `{{ '{{' }}` and `{{ '}}' }}`. Field names can be numbers (starting from zero) or empty (then they are implicitly given monotonically increasing numbers).
 
 **Syntax**
 
@@ -534,6 +574,42 @@ Alias:
 ## substringUTF8
 
 Like `substring` but for Unicode code points. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+
+## substringIndex(s, delim, count)
+
+Returns the substring of `s` before `count` occurrences of the delimiter `delim`, as in Spark or MySQL.
+
+**Syntax**
+
+```sql
+substringIndex(s, delim, count)
+```
+Alias: `SUBSTRING_INDEX`
+
+
+**Arguments**
+
+- s: The string to extract substring from. [String](../../sql-reference/data-types/string.md).
+- delim: The character to split. [String](../../sql-reference/data-types/string.md).
+- count: The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned. [UInt or Int](../data-types/int-uint.md)
+
+**Example**
+
+``` sql
+SELECT substringIndex('www.clickhouse.com', '.', 2)
+```
+
+Result:
+```
+┌─substringIndex('www.clickhouse.com', '.', 2)─┐
+│ www.clickhouse                               │
+└──────────────────────────────────────────────┘
+```
+
+## substringIndexUTF8(s, delim, count)
+
+Like `substringIndex` but for Unicode code points. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
 ## appendTrailingCharIfAbsent
 
@@ -1216,95 +1292,47 @@ Result:
 └──────────────────┘
 ```
 
-## extractKeyValuePairs
+## initcap
 
-Extracts key-value pairs from any string. The string does not need to be 100% structured in a key value pair format;
+Convert the first letter of each word to upper case and the rest to lower case. Words are sequences of alphanumeric characters separated by non-alphanumeric characters.
 
-It can contain noise (e.g. log files). The key-value pair format to be interpreted should be specified via function arguments.
+## initcapUTF8
 
-A key-value pair consists of a key followed by a `key_value_delimiter` and a value. Quoted keys and values are also supported. Key value pairs must be separated by pair delimiters.
+Like [initcap](#initcap), assuming that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+Does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
+
+If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
+
+## firstLine
+
+Returns the first line from a multi-line string.
 
 **Syntax**
-``` sql
-extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character])
+
+```sql
+firstLine(val)
 ```
 
 **Arguments**
-- `data` - String to extract key-value pairs from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- `key_value_delimiter` - Character to be used as delimiter between the key and the value. Defaults to `:`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- `pair_delimiters` - Set of character to be used as delimiters between pairs. Defaults to `\space`, `,` and `;`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- `quoting_character` - Character to be used as quoting character. Defaults to `"`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
 
-**Returned values**
-- The extracted key-value pairs in a Map(String, String).
+- `val` - Input value. [String](../data-types/string.md)
 
-**Examples**
+**Returned value**
 
-Query:
+- The first line of the input value or the whole value if there is no line
+  separators. [String](../data-types/string.md)
 
-**Simple case**
-``` sql
-arthur :) select extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
+**Example**
 
-SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
-
-Query id: f9e0ca6f-3178-4ee2-aa2c-a5517abb9cee
-
-┌─kv──────────────────────────────────────────────────────────────────────┐
-│ {'name':'neymar','age':'31','team':'psg','nationality':'brazil'}        │
-└─────────────────────────────────────────────────────────────────────────┘
+```sql
+select firstLine('foo\nbar\nbaz');
 ```
 
-**Single quote as quoting character**
-``` sql
-arthur :) select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
+Result:
 
-SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
-
-Query id: 0e22bf6b-9844-414a-99dc-32bf647abd5e
-
-┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-**Escape sequences without escape sequences support**
-``` sql
-arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
-
-SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
-
-Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
-
-┌─kv─────────────────────┐
-│ {'age':'a\\x0A\\n\\0'} │
-└────────────────────────┘
-```
-
-## extractKeyValuePairsWithEscaping
-
-Same as `extractKeyValuePairs` but with escaping support.
-
-Escape sequences supported: `\x`, `\N`, `\a`, `\b`, `\e`, `\f`, `\n`, `\r`, `\t`, `\v` and `\0`.
-Non standard escape sequences are returned as it is (including the backslash) unless they are one of the following:
-`\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c <= 31).
-
-This function will satisfy the use case where pre-escaping and post-escaping are not suitable. For instance, consider the following
-input string: `a: "aaaa\"bbb"`. The expected output is: `a: aaaa\"bbbb`.
-- Pre-escaping: Pre-escaping it will output: `a: "aaaa"bbb"` and `extractKeyValuePairs` will then output: `a: aaaa`
-- Post-escaping: `extractKeyValuePairs` will output `a: aaaa\` and post-escaping will keep it as it is.
-
-Leading escape sequences will be skipped in keys and will be considered invalid for values.
-
-**Escape sequences with escape sequence support turned on**
-``` sql
-arthur :) select extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') as kv
-
-SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
-
-Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
-
-┌─kv────────────────┐
-│ {'age':'a\n\n\0'} │
-└───────────────────┘
+```result
+┌─firstLine('foo\nbar\nbaz')─┐
+│ foo                        │
+└────────────────────────────┘
 ```

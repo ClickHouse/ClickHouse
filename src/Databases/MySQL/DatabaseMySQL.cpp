@@ -67,7 +67,7 @@ DatabaseMySQL::DatabaseMySQL(
     try
     {
         /// Test that the database is working fine; it will also fetch tables.
-        empty();
+        empty(); // NOLINT(bugprone-standalone-empty)
     }
     catch (...)
     {
@@ -402,7 +402,7 @@ String DatabaseMySQL::getMetadataPath() const
     return metadata_path;
 }
 
-void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/, bool /* skip_startup_tables */)
+void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/)
 {
 
     std::lock_guard lock{mutex};

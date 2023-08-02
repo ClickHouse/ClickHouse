@@ -54,6 +54,7 @@ struct DataSourceDescription
     bool is_cached = false;
 
     bool operator==(const DataSourceDescription & other) const;
+    bool sameKind(const DataSourceDescription & other) const;
 };
 
 }

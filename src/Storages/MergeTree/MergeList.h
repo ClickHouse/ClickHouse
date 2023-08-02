@@ -115,6 +115,8 @@ struct MergeListElement : boost::noncopyable
     MergeListElement * ptr() { return this; }
 
     MergeListElement & ref() { return *this; }
+
+    ~MergeListElement();
 };
 
 /** Maintains a list of currently running merges.

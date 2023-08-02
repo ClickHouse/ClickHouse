@@ -12,7 +12,9 @@ Zero as an argument is considered `false`, non-zero values are considered `true`
 
 ## and
 
-Calculates the logical conjunction between two or more values. 
+Calculates the logical conjunction of two or more values. 
+
+Setting [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) controls whether short-circuit evaluation is used. If enabled, `val_i` is evaluated only if `(val_1 AND val_2 AND ... AND val_{i-1})` is `true`. For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)`.
 
 **Syntax**
 
@@ -20,9 +22,7 @@ Calculates the logical conjunction between two or more values.
 and(val1, val2...)
 ```
 
-Setting [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) controls whether short-circuit evaluation is used. If enabled, `val_i` is evaluated only if `(val_1 AND val_2 AND ... AND val_{i-1})` is `true`. For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)`.
-
-Alias: The [AND Operator](../../sql-reference/operators/index.md#logical-and-operator).
+Alias: The [AND operator](../../sql-reference/operators/index.md#logical-and-operator).
 
 **Arguments**
 
@@ -30,8 +30,8 @@ Alias: The [AND Operator](../../sql-reference/operators/index.md#logical-and-ope
 
 **Returned value**
 
-- `0`, if there at least one argument evaluates to `false`,
-- `NULL`, if no argumetn evaluates to `false` and at least one argument is `NULL`,
+- `0`, if at least one argument evaluates to `false`,
+- `NULL`, if no argument evaluates to `false` and at least one argument is `NULL`,
 - `1`, otherwise.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
@@ -66,7 +66,9 @@ Result:
 
 ## or
 
-Calculates the logical disjunction between two or more values.
+Calculates the logical disjunction of two or more values.
+
+Setting [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) controls whether short-circuit evaluation is used. If enabled, `val_i` is evaluated only if `((NOT val_1) AND (NOT val_2) AND ... AND (NOT val_{i-1}))` is `true`. For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(5)`.
 
 **Syntax**
 
@@ -74,9 +76,7 @@ Calculates the logical disjunction between two or more values.
 or(val1, val2...)
 ```
 
-Setting [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) controls whether short-circuit evaluation is used. If enabled, `val_i` is evaluated only if `((NOT val_1) AND (NOT val_2) AND ... AND (NOT val_{i-1}))` is `true`. For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(5)`.
-
-Alias: The [OR Operator](../../sql-reference/operators/index.md#logical-or-operator).
+Alias: The [OR operator](../../sql-reference/operators/index.md#logical-or-operator).
 
 **Arguments**
 
@@ -84,7 +84,7 @@ Alias: The [OR Operator](../../sql-reference/operators/index.md#logical-or-opera
 
 **Returned value**
 
-- `1`, if at least one argument evalutes to `true`,
+- `1`, if at least one argument evaluates to `true`,
 - `0`, if all arguments evaluate to `false`,
 - `NULL`, if all arguments evaluate to `false` and at least one argument is `NULL`.
 
@@ -120,7 +120,7 @@ Result:
 
 ## not
 
-Calculates logical negation of a value.
+Calculates the logical negation of a value.
 
 **Syntax**
 
@@ -128,7 +128,7 @@ Calculates logical negation of a value.
 not(val);
 ```
 
-Alias: The [Negation Operator](../../sql-reference/operators/index.md#logical-negation-operator).
+Alias: The [Negation operator](../../sql-reference/operators/index.md#logical-negation-operator).
 
 **Arguments**
 
@@ -158,7 +158,7 @@ Result:
 
 ## xor
 
-Calculates the logical exclusive disjunction between two or more values. For more than two values the function first xor-s the first two values, then xor-s the result with the third value etc.
+Calculates the logical exclusive disjunction of two or more values. For more than two input values, the function first xor-s the first two values, then xor-s the result with the third value etc.
 
 **Syntax**
 
@@ -173,7 +173,7 @@ xor(val1, val2...)
 **Returned value**
 
 - `1`, for two values: if one of the values evaluates to `false` and other does not,
-- `0`, for two values: if both values evalute to `false` or to both `true`,
+- `0`, for two values: if both values evaluate to `false` or to both `true`,
 - `NULL`, if at least one of the inputs is `NULL`
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
