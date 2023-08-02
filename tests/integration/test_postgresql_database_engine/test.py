@@ -123,7 +123,9 @@ def test_postgresql_database_engine_with_clickhouse_ddl(started_cluster):
     assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
 
     # issue-52343
-    create_postgres_table(cursor, "test_table",
+    create_postgres_table(
+            cursor,
+            "test_table",
             suffix="""SETTINGS
             postgresql_connection_pool_size = 50,
             postgresql_connection_pool_auto_close = true
