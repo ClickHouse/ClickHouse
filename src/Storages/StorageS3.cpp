@@ -245,7 +245,7 @@ private:
 
         if (!outcome.IsSuccess())
         {
-            throw Exception(ErrorCodes::S3_ERROR, "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
+            throw S3Exception(outcome.GetError().GetErrorType(), "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
                             quoteString(request.GetBucket()), quoteString(request.GetPrefix()),
                             backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
         }
@@ -596,7 +596,7 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
-    return ReaderHolder{fs::path(bucket) / key_with_info.key, std::move(read_buf), std::move(input_format), std::move(pipeline), std::move(current_reader)};
+    return ReaderHolder{key_with_info.key, bucket, std::move(read_buf), std::move(input_format), std::move(pipeline), std::move(current_reader)};
 }
 
 std::future<StorageS3Source::ReaderHolder> StorageS3Source::createReaderAsync()
@@ -1195,7 +1195,7 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
     if (!response.IsSuccess())
     {
         const auto & err = response.GetError();
-        throw Exception(ErrorCodes::S3_ERROR, "{}: {}", std::to_string(static_cast<int>(err.GetErrorType())), err.GetMessage());
+        throw S3Exception(err.GetMessage(), err.GetErrorType());
     }
 
     for (const auto & error : response.GetResult().GetErrors())
