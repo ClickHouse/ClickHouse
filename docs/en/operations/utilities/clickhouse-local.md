@@ -34,21 +34,27 @@ The binary you just downloaded can run all sorts of ClickHouse tools and utiliti
 
 A common use of `clickhouse-local` is to run ad-hoc queries on files: where you don't have to insert the data into a table. `clickhouse-local` can stream the data from a file into a temporary table and execute your SQL.
 
-If the file is sitting on the same machine as `clickhouse-local`, use the `file` table engine. The following `reviews.tsv` file contains a sampling of Amazon product reviews:
+If the file is sitting on the same machine as `clickhouse-local`, you can simple specify the file to load. The following `reviews.tsv` file contains a sampling of Amazon product reviews:
 
 ```bash
-./clickhouse local -q "SELECT * FROM file('reviews.tsv')"
+./clickhouse-local -q "SELECT * FROM 'reviews.tsv'"
+```
+
+This command is a shortcut of:
+
+```bash
+./clickhouse-local -q "SELECT * FROM file('reviews.tsv')"
 ```
 
 ClickHouse knows the file uses a tab-separated format from filename extension. If you need to explicitly specify the format, simply add one of the [many ClickHouse input formats](../../interfaces/formats.md):
 ```bash
-./clickhouse local -q "SELECT * FROM file('reviews.tsv', 'TabSeparated')"
+./clickhouse-local -q "SELECT * FROM file('reviews.tsv', 'TabSeparated')"
 ```
 
 The `file` table function creates a table, and you can use `DESCRIBE` to see the inferred schema:
 
 ```bash
-./clickhouse local -q "DESCRIBE file('reviews.tsv')"
+./clickhouse-local -q "DESCRIBE file('reviews.tsv')"
 ```
 
 ```response
@@ -72,7 +78,7 @@ review_date	Nullable(Date)
 Let's find a product with the highest rating:
 
 ```bash
-./clickhouse local -q "SELECT
+./clickhouse-local -q "SELECT
     argMax(product_title,star_rating),
     max(star_rating)
 FROM file('reviews.tsv')"
@@ -87,7 +93,7 @@ Monopoly Junior Board Game	5
 If you have a file in S3, use `clickhouse-local` and the `s3` table function to query the file in place (without inserting the data into a ClickHouse table). We have a file named `house_0.parquet` in a public bucket that contains home prices of property sold in the United Kingdom. Let's see how many rows it has:
 
 ```bash
-./clickhouse local -q "
+./clickhouse-local -q "
 SELECT count()
 FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet')"
 ```
@@ -101,7 +107,7 @@ The file has 2.7M rows:
 It's always useful to see what the inferred schema that ClickHouse determines from the file:
 
 ```bash
-./clickhouse local -q "DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet')"
+./clickhouse-local -q "DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet')"
 ```
 
 ```response
@@ -124,7 +130,7 @@ county	Nullable(String)
 Let's see what the most expensive neighborhoods are:
 
 ```bash
-./clickhouse local -q "
+./clickhouse-local -q "
 SELECT
     town,
     district,
@@ -171,7 +177,7 @@ $ clickhouse-local --structure "table_structure" --input-format "format_of_incom
 Basic usage (Mac):
 
 ``` bash
-$ ./clickhouse local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
+$ ./clickhouse-local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
 ```
 
 :::note
