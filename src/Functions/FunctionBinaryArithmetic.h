@@ -1209,17 +1209,14 @@ class FunctionBinaryArithmetic : public IFunction
         result_array_type = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
         new_arguments[1] = {array_ptr, result_array_type, arguments[1].name};
 
-
         result_array_type = typeid_cast<const DataTypeArray *>(result_type.get())->getNestedType();
-
-        std::cerr << result_array_type->getName() << std::endl;
 
         const auto & offsets = typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsets();
         size_t rows_count = 0;
         if (!offsets.empty())
             rows_count = offsets.back();
         auto res = executeImpl(new_arguments, result_array_type, rows_count);
-        std::cerr << res->dumpStructure() << std::endl;
+
         return ColumnArray::create(res, typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
     }
 
