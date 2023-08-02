@@ -110,8 +110,12 @@ def main():
     s3_prefix = f"{pr_info.number}/{pr_info.sha}/sqltest_{check_name_lower}/"
     paths = {
         "run.log": run_log_path,
-        "server.log.zst": os.path.join(workspace_path, "/var/log/clickhouse-server/server.log.zst"),
-        "server.err.log.zst": os.path.join(workspace_path, "/var/log/clickhouse-server/server.err.log.zst"),
+        "server.log.zst": os.path.join(
+            workspace_path, "/var/log/clickhouse-server/server.log.zst"
+        ),
+        "server.err.log.zst": os.path.join(
+            workspace_path, "/var/log/clickhouse-server/server.err.log.zst"
+        ),
         "report.html": os.path.join(workspace_path, "/report.html"),
         "test.log": os.path.join(workspace_path, "/test.log"),
     }
