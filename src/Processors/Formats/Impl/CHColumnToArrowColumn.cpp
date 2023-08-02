@@ -684,9 +684,6 @@ namespace DB
         bool output_fixed_string_as_fixed_byte_array,
         std::unordered_map<String, MutableColumnPtr> & dictionary_values)
     {
-        const String column_type_name = column_type->getFamilyName();
-        WhichDataType which(column_type);
-
         switch (column_type->getTypeId())
         {
             case TypeIndex::Nullable:
@@ -796,7 +793,7 @@ namespace DB
                 FOR_INTERNAL_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
             default:
-                throw Exception(ErrorCodes::UNKNOWN_TYPE, "Internal type '{}' of a column '{}' is not supported for conversion into {} data format.", column_type_name, column_name, format_name);
+                throw Exception(ErrorCodes::UNKNOWN_TYPE, "Internal type '{}' of a column '{}' is not supported for conversion into {} data format.", column_type->getFamilyName(), column_name, format_name);
         }
     }
 
