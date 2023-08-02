@@ -23,7 +23,7 @@ def main():
 
         # Partial result
         _, partial_result = client.readHeader(need_read_data=True)[0]
-        
+
         assert_message = (
             "There should be at least one block of data with partial result"
         )

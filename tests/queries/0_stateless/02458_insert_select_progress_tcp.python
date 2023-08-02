@@ -17,7 +17,7 @@ class Progress:
         read_bytes=0,
         total_rows_to_read=0,
         written_rows=0,
-        written_bytes=0
+        written_bytes=0,
     ):
         # NOTE: this is done in ctor to initialize __dict__
         self.read_rows = read_rows

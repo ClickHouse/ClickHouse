@@ -214,7 +214,7 @@ class TCPClient(object):
             return None
 
         assertPacket(packet_type, 1)  # Data
-        
+
         self.readStringBinary()  # external table name
 
     def readProgress(self):
@@ -235,7 +235,7 @@ class TCPClient(object):
         return read_rows, read_bytes, total_rows_to_read, written_rows, written_bytes
 
     def readRow(self, row_type, rows):
-        if row_type == 'UInt64':
+        if row_type == "UInt64":
             row = [self.readUInt64() for _ in range(rows)]
             return row
         else:
