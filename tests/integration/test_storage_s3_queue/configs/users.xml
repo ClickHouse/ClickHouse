@@ -1,7 +1,7 @@
 <clickhouse>
     <profiles>
         <default>
-            <force_remove_data_recursively_on_drop>1</force_remove_data_recursively_on_drop>
+            <stream_like_engine_allow_direct_select>1</stream_like_engine_allow_direct_select>
         </default>
     </profiles>
 </clickhouse>
