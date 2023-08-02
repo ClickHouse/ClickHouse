@@ -1,3 +1,15 @@
+-- disable timezone randomization since otherwise TTL may fail at particular datetime, i.e.:
+--
+--     SELECT
+--         now(),
+--         toDate(toTimeZone(now(), 'America/Mazatlan')),
+--         today()
+--
+--     ┌───────────────now()─┬─toDate(toTimeZone(now(), 'America/Mazatlan'))─┬────today()─┐
+--     │ 2023-07-24 06:24:06 │                                    2023-07-23 │ 2023-07-24 │
+--     └─────────────────────┴───────────────────────────────────────────────┴────────────┘
+set session_timezone = '';
+
 drop table if exists ttl_00933_1;
 
 -- Column TTL works only with wide parts, because it's very expensive to apply it for compact parts

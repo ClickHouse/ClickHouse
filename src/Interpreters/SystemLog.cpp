@@ -101,7 +101,6 @@ namespace
 namespace
 {
 
-constexpr size_t DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS = 7500;
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 
 /// Creates a system log with MergeTree engine using parameters from config
@@ -124,18 +123,23 @@ std::shared_ptr<TSystemLog> createSystemLog(
     LOG_DEBUG(&Poco::Logger::get("SystemLog"),
               "Creating {}.{} from {}", default_database_name, default_table_name, config_prefix);
 
-    String database = config.getString(config_prefix + ".database", default_database_name);
-    String table = config.getString(config_prefix + ".table", default_table_name);
+    SystemLogSettings log_settings;
+    log_settings.queue_settings.database = config.getString(config_prefix + ".database", default_database_name);
+    log_settings.queue_settings.table = config.getString(config_prefix + ".table", default_table_name);
 
-    if (database != default_database_name)
+    if (log_settings.queue_settings.database != default_database_name)
     {
         /// System tables must be loaded before other tables, but loading order is undefined for all databases except `system`
-        LOG_ERROR(&Poco::Logger::get("SystemLog"), "Custom database name for a system table specified in config."
-            " Table `{}` will be created in `system` database instead of `{}`", table, database);
-        database = default_database_name;
+        LOG_ERROR(
+            &Poco::Logger::get("SystemLog"),
+            "Custom database name for a system table specified in config."
+            " Table `{}` will be created in `system` database instead of `{}`",
+            log_settings.queue_settings.table,
+            log_settings.queue_settings.database);
+
+        log_settings.queue_settings.database = default_database_name;
     }
 
-    String engine;
     if (config.has(config_prefix + ".engine"))
     {
         if (config.has(config_prefix + ".partition_by"))
@@ -159,26 +163,26 @@ std::shared_ptr<TSystemLog> createSystemLog(
                             "If 'engine' is specified for system table, SETTINGS parameters should "
                             "be specified directly inside 'engine' and 'settings' setting doesn't make sense");
 
-        engine = config.getString(config_prefix + ".engine");
+        log_settings.engine = config.getString(config_prefix + ".engine");
     }
     else
     {
         /// ENGINE expr is necessary.
-        engine = "ENGINE = MergeTree";
+        log_settings.engine = "ENGINE = MergeTree";
 
         /// PARTITION expr is not necessary.
         String partition_by = config.getString(config_prefix + ".partition_by", "toYYYYMM(event_date)");
         if (!partition_by.empty())
-            engine += " PARTITION BY (" + partition_by + ")";
+            log_settings.engine += " PARTITION BY (" + partition_by + ")";
 
         /// TTL expr is not necessary.
         String ttl = config.getString(config_prefix + ".ttl", "");
         if (!ttl.empty())
-            engine += " TTL " + ttl;
+            log_settings.engine += " TTL " + ttl;
 
         /// ORDER BY expr is necessary.
         String order_by = config.getString(config_prefix + ".order_by", TSystemLog::getDefaultOrderBy());
-        engine += " ORDER BY (" + order_by + ")";
+        log_settings.engine += " ORDER BY (" + order_by + ")";
 
         /// SETTINGS expr is not necessary.
         ///   https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree#settings
@@ -188,24 +192,52 @@ std::shared_ptr<TSystemLog> createSystemLog(
         String settings = config.getString(config_prefix + ".settings", "");
         if (!storage_policy.empty() || !settings.empty())
         {
-            engine += " SETTINGS";
+            log_settings.engine += " SETTINGS";
             /// If 'storage_policy' is repeated, the 'settings' configuration is preferred.
             if (!storage_policy.empty())
-                engine += " storage_policy = " + quoteString(storage_policy);
+                log_settings.engine += " storage_policy = " + quoteString(storage_policy);
             if (!settings.empty())
-                engine += (storage_policy.empty() ? " " : ", ") + settings;
+                log_settings.engine += (storage_policy.empty() ? " " : ", ") + settings;
         }
     }
 
     /// Validate engine definition syntax to prevent some configuration errors.
     ParserStorageWithComment storage_parser;
-    parseQuery(storage_parser, engine.data(), engine.data() + engine.size(),
+    parseQuery(storage_parser, log_settings.engine.data(), log_settings.engine.data() + log_settings.engine.size(),
             "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
-    size_t flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds",
-                                                          DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS);
+    log_settings.queue_settings.flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds",
+                                                                               TSystemLog::getDefaultFlushIntervalMilliseconds());
 
-    return std::make_shared<TSystemLog>(context, database, table, engine, flush_interval_milliseconds);
+    log_settings.queue_settings.max_size_rows = config.getUInt64(config_prefix + ".max_size_rows",
+                                                                 TSystemLog::getDefaultMaxSize());
+
+    if (log_settings.queue_settings.max_size_rows < 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{0}.max_size_rows {1} should be 1 at least",
+                        config_prefix,
+                        log_settings.queue_settings.max_size_rows);
+
+    log_settings.queue_settings.reserved_size_rows = config.getUInt64(config_prefix + ".reserved_size_rows",
+                                                                      TSystemLog::getDefaultReservedSize());
+
+    if (log_settings.queue_settings.max_size_rows < log_settings.queue_settings.reserved_size_rows)
+    {
+         throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                         "{0}.max_size_rows {1} should be greater or equal to {0}.reserved_size_rows {2}",
+                         config_prefix,
+                         log_settings.queue_settings.max_size_rows,
+                         log_settings.queue_settings.reserved_size_rows);
+    }
+
+    log_settings.queue_settings.buffer_size_rows_flush_threshold = config.getUInt64(config_prefix + ".buffer_size_rows_flush_threshold",
+                                                                                    log_settings.queue_settings.max_size_rows / 2);
+
+    log_settings.queue_settings.notify_flush_on_crash = config.getBool(config_prefix + ".flush_on_crash",
+                                                                       TSystemLog::shouldNotifyFlushOnCrash());
+
+    log_settings.queue_settings.turn_off_logger = TSystemLog::shouldTurnOffLogger();
+
+    return std::make_shared<TSystemLog>(context, log_settings);
 }
 
 
@@ -325,23 +357,25 @@ void SystemLogs::shutdown()
         log->shutdown();
 }
 
+void SystemLogs::handleCrash()
+{
+    for (auto & log : logs)
+        log->handleCrash();
+}
 
 template <typename LogElement>
 SystemLog<LogElement>::SystemLog(
     ContextPtr context_,
-    const String & database_name_,
-    const String & table_name_,
-    const String & storage_def_,
-    size_t flush_interval_milliseconds_,
+    const SystemLogSettings & settings_,
     std::shared_ptr<SystemLogQueue<LogElement>> queue_)
-    : Base(database_name_ + "." + table_name_, flush_interval_milliseconds_, queue_)
+    : Base(settings_.queue_settings, queue_)
     , WithContext(context_)
-    , log(&Poco::Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")"))
-    , table_id(database_name_, table_name_)
-    , storage_def(storage_def_)
+    , log(&Poco::Logger::get("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
+    , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
+    , storage_def(settings_.engine)
     , create_query(serializeAST(*getCreateTableQuery()))
 {
-    assert(database_name_ == DatabaseCatalog::SYSTEM_DATABASE);
+    assert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
 }
 
 template <typename LogElement>
