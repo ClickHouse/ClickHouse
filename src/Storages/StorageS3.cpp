@@ -823,6 +823,9 @@ public:
         , sample_block(sample_block_)
         , format_settings(format_settings_)
     {
+        BlobStorageLogWriter blob_log(context->getBlobStorageLog());
+        blob_log.query_id = context->getCurrentQueryId();
+
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromS3>(
                 configuration_.client,
@@ -831,6 +834,7 @@ public:
                 key,
                 DBMS_DEFAULT_BUFFER_SIZE,
                 configuration_.request_settings,
+                std::move(blob_log),
                 std::nullopt,
                 threadPoolCallbackRunner<void>(getIOThreadPool().get(), "S3ParallelWrite"),
                 context->getWriteSettings()),
@@ -1012,6 +1016,7 @@ StorageS3::StorageS3(
     , distributed_processing(distributed_processing_)
     , format_settings(format_settings_)
     , partition_by(partition_by_)
+    , blob_storage_log(context_->getBlobStorageLog())
 {
     updateConfiguration(context_); // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
 
@@ -1243,6 +1248,12 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
     request.SetDelete(delkeys);
 
     auto response = query_configuration.client->DeleteObjects(request);
+
+    const auto * response_error = response.IsSuccess() ? nullptr : &response.GetError();
+    auto time_now = std::chrono::system_clock::now();
+    for (const auto & key : query_configuration.keys)
+        blob_storage_log.addEvent(BlobStorageLogElement::EventType::Delete, query_configuration.url.bucket, key, {}, response_error, time_now);
+
     if (!response.IsSuccess())
     {
         const auto & err = response.GetError();

@@ -11,6 +11,7 @@
 #include <IO/WriteSettings.h>
 #include <Storages/StorageS3Settings.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
+#include <Interpreters/BlobStorageLog.h>
 
 #include <memory>
 #include <vector>
@@ -36,6 +37,7 @@ public:
         const String & key_,
         size_t buf_size_,
         const S3Settings::RequestSettings & request_settings_,
+        BlobStorageLogWriter blob_log_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         ThreadPoolCallbackRunner<void> schedule_ = {},
         const WriteSettings & write_settings_ = {});
@@ -121,6 +123,8 @@ private:
 
     class TaskTracker;
     std::unique_ptr<TaskTracker> task_tracker;
+
+    BlobStorageLogWriter blob_log;
 };
 
 }

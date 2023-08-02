@@ -6,6 +6,7 @@
 
 #include <Storages/StorageS3Settings.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
+#include <Interpreters/BlobStorageLog.h>
 #include <base/types.h>
 #include <functional>
 #include <memory>
@@ -44,6 +45,7 @@ void copyS3File(
     const String & dest_key,
     const S3Settings::RequestSettings & settings,
     const ReadSettings & read_settings,
+    BlobStorageLogWriter blob_storage_log,
     const std::optional<std::map<String, String>> & object_metadata = std::nullopt,
     ThreadPoolCallbackRunner<void> schedule_ = {},
     bool for_disk_s3 = false);
@@ -62,6 +64,7 @@ void copyDataToS3File(
     const String & dest_bucket,
     const String & dest_key,
     const S3Settings::RequestSettings & settings,
+    BlobStorageLogWriter blob_storage_log,
     const std::optional<std::map<String, String>> & object_metadata = std::nullopt,
     ThreadPoolCallbackRunner<void> schedule_ = {},
     bool for_disk_s3 = false);

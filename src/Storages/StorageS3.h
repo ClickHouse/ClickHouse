@@ -24,6 +24,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageConfiguration.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Interpreters/BlobStorageLog.h>
 
 namespace Aws::S3
 {
@@ -400,6 +401,8 @@ private:
     const bool distributed_processing;
     std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
+
+    BlobStorageLogWriter blob_storage_log;
 
     static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
         const Configuration & configuration,

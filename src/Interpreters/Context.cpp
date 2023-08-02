@@ -3632,15 +3632,24 @@ std::shared_ptr<BackupLog> Context::getBackupLog() const
     return shared->system_logs->backup_log;
 }
 
+std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+    return shared->system_logs->blob_storage_log;
+}
+
 std::vector<ISystemLog *> Context::getSystemLogs() const
 {
     SharedLockGuard lock(shared->mutex);
 
     if (!shared->system_logs)
         return {};
-
     return shared->system_logs->logs;
 }
+
 
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
