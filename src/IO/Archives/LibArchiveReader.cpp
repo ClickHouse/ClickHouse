@@ -49,7 +49,12 @@ public:
         }
     }
 
-    bool locateFile(const String & filename)
+    bool locateFile(const std::string & filename)
+    {
+        return locateFile([&](const std::string & file) { return file == filename; });
+    }
+
+    bool locateFile(NameFilter filter)
     {
         resetFileInfo();
         int err = ARCHIVE_OK;
@@ -63,7 +68,7 @@ public:
             if (err != ARCHIVE_OK)
                 break;
 
-            if (archive_entry_pathname(current_entry) == filename)
+            if (filter(archive_entry_pathname(current_entry)))
                 return true;
         }
 
@@ -95,7 +100,7 @@ public:
         return archive;
     }
 
-    std::vector<std::string> getAllFiles()
+    std::vector<std::string> getAllFiles(NameFilter filter)
     {
         auto * archive = open(path_to_archive);
         auto * entry = archive_entry_new();
@@ -104,7 +109,10 @@ public:
         int error = archive_read_next_header(archive, &entry);
         while (error == ARCHIVE_OK || error == ARCHIVE_RETRY)
         {
-            files.push_back(archive_entry_pathname(entry));
+            std::string name = archive_entry_pathname(entry);
+            if (!filter || filter(name))
+                files.push_back(std::move(name));
+
             error = archive_read_next_header(archive, &entry);
         }
 
@@ -263,8 +271,14 @@ std::unique_ptr<typename LibArchiveReader<ArchiveInfo>::FileEnumerator> LibArchi
 template <typename ArchiveInfo>
 std::unique_ptr<ReadBufferFromFileBase> LibArchiveReader<ArchiveInfo>::readFile(const String & filename)
 {
+    return readFile([&](const std::string & file) { return file == filename; });
+}
+
+template <typename ArchiveInfo>
+std::unique_ptr<ReadBufferFromFileBase> LibArchiveReader<ArchiveInfo>::readFile(NameFilter filter)
+{
     Handle handle(path_to_archive);
-    handle.locateFile(filename);
+    handle.locateFile(filter);
     return std::make_unique<ReadBufferFromLibArchive>(std::move(handle), path_to_archive);
 }
 
@@ -293,8 +307,14 @@ LibArchiveReader<ArchiveInfo>::nextFile(std::unique_ptr<ReadBuffer> read_buffer)
 template <typename ArchiveInfo>
 std::vector<std::string> LibArchiveReader<ArchiveInfo>::getAllFiles()
 {
+    return getAllFiles({});
+}
+
+template <typename ArchiveInfo>
+std::vector<std::string> LibArchiveReader<ArchiveInfo>::getAllFiles(NameFilter filter)
+{
     Handle handle(path_to_archive);
-    return handle.getAllFiles();
+    return handle.getAllFiles(filter);
 }
 
 template <typename ArchiveInfo>

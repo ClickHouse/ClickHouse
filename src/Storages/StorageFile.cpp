@@ -57,7 +57,6 @@
 #include <cmath>
 #include <algorithm>
 
-
 namespace ProfileEvents
 {
     extern const Event CreatedReadBufferOrdinary;
@@ -387,7 +386,23 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     if (!path_to_archive.empty())
     {
         auto reader = createArchiveReader(path_to_archive);
-        return reader->readFile(current_path);
+
+        if (current_path.find_first_of("*?{") != std::string::npos)
+        {
+            auto matcher = std::make_shared<re2::RE2>(makeRegexpPatternFromGlobs(current_path));
+            if (!matcher->ok())
+                throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                    "Cannot compile regex from glob ({}): {}", current_path, matcher->error());
+
+            return reader->readFile([matcher = std::move(matcher)](const std::string & path)
+            {
+                return re2::RE2::FullMatch(path, *matcher);
+            });
+        }
+        else
+        {
+            return reader->readFile(current_path);
+        }
     }
 
     if (use_table_fd)
@@ -529,14 +544,30 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     }
     else
     {
-        read_buffer_iterator = [&, path_it = paths.begin(), archive_it = paths_to_archive.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
+        read_buffer_iterator = [&, path_it = paths.begin(), archive_it = paths_to_archive.begin(), first = true](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
         {
-            if (archive_it == paths_to_archive.end())
-                return nullptr;
+            String path;
+            struct stat file_stat;
+            do
+            {
+                if (archive_it == paths_to_archive.end())
+                {
+                    if (first)
+                        throw Exception(
+                            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                            "Cannot extract table structure from {} format file, because all files are empty. You must specify table structure manually",
+                            format);
+                    return nullptr;
+                }
 
-            auto file_stat = getFileStat(*archive_it, false, -1, "File");
+                path = *archive_it++;
+                file_stat = getFileStat(path, false, -1, "File");
+            }
+            while (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0);
 
-            return createReadBuffer(*path_it, file_stat, false, -1, compression_method, context, *archive_it);
+            first = false;
+            return createReadBuffer(*path_it, file_stat, false, -1, compression_method, context, path);
+
         };
     }
 
@@ -1012,13 +1043,39 @@ Pipe StorageFile::read(
 
     if (!paths_to_archive.empty())
     {
+        if (paths.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Multiple paths defined for reading from archive");
+
+        const auto & path = paths[0];
+
+        IArchiveReader::NameFilter filter;
+        if (path.find_first_of("*?{") != std::string::npos)
+        {
+            auto matcher = std::make_shared<re2::RE2>(makeRegexpPatternFromGlobs(path));
+            if (!matcher->ok())
+                throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                    "Cannot compile regex from glob ({}): {}", path, matcher->error());
+
+            filter = [matcher](const std::string & p)
+            {
+                return re2::RE2::FullMatch(p, *matcher);
+            };
+        }
+
         for (size_t i = 0; i < paths_to_archive.size(); ++i)
         {
-            const auto & path_to_archive = paths_to_archive[i];
-            auto archive_reader = createArchiveReader(path_to_archive);
-            auto files = archive_reader->getAllFiles();
-            for (auto & file : files)
-                files_in_archive.push_back({i, std::move(file)});
+            if (filter)
+            {
+                const auto & path_to_archive = paths_to_archive[i];
+                auto archive_reader = createArchiveReader(path_to_archive);
+                auto files = archive_reader->getAllFiles(filter);
+                for (auto & file : files)
+                    files_in_archive.push_back({i, std::move(file)});
+            }
+            else
+            {
+                files_in_archive.push_back({i, path});
+            }
         }
     }
 
