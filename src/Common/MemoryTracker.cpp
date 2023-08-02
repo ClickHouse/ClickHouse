@@ -208,10 +208,10 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
       *  we allow exception about memory limit exceeded to be thrown only on next allocation.
       * So, we allow over-allocations.
       */
-    Int64 will_be = size + amount.fetch_add(size, std::memory_order_relaxed);
+    Int64 will_be = size ? size + amount.fetch_add(size, std::memory_order_relaxed) : amount.load(std::memory_order_relaxed);
 
     auto metric_loaded = metric.load(std::memory_order_relaxed);
-    if (metric_loaded != CurrentMetrics::end())
+    if (metric_loaded != CurrentMetrics::end() && size)
         CurrentMetrics::add(metric_loaded, size);
 
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
@@ -229,7 +229,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     }
 
     std::bernoulli_distribution sample(sample_probability);
-    if (unlikely(sample_probability > 0.0 && sample(thread_local_rng)))
+    if (unlikely(sample_probability > 0.0 && isSizeOkForSampling(size) && sample(thread_local_rng)))
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
         DB::TraceSender::send(DB::TraceType::MemorySample, StackTrace(), {.size = size});
@@ -413,7 +413,7 @@ void MemoryTracker::free(Int64 size)
     }
 
     std::bernoulli_distribution sample(sample_probability);
-    if (unlikely(sample_probability > 0.0 && sample(thread_local_rng)))
+    if (unlikely(sample_probability > 0.0 && isSizeOkForSampling(size) && sample(thread_local_rng)))
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
         DB::TraceSender::send(DB::TraceType::MemorySample, StackTrace(), {.size = -size});
@@ -532,6 +532,12 @@ void MemoryTracker::setOrRaiseProfilerLimit(Int64 value)
     Int64 old_value = profiler_limit.load(std::memory_order_relaxed);
     while ((value == 0 || old_value < value) && !profiler_limit.compare_exchange_weak(old_value, value))
         ;
+}
+
+bool MemoryTracker::isSizeOkForSampling(UInt64 size) const
+{
+    /// We can avoid comparison min_allocation_size_bytes with zero, because we cannot have 0 bytes allocation/deallocation
+    return ((max_allocation_size_bytes == 0 || size <= max_allocation_size_bytes) && size >= min_allocation_size_bytes);
 }
 
 bool canEnqueueBackgroundTask()
