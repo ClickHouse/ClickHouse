@@ -795,6 +795,10 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
     bool filter_by_database_virtual_column /* = false */,
     bool filter_by_table_virtual_column /* = false */) const
 {
+    /// FIXME: filtering does not work with allow_experimental_analyzer due to
+    /// different column names there (it has "table_name._table" not just
+    /// "_table")
+
     assert(!filter_by_database_virtual_column || !filter_by_table_virtual_column || query);
 
     const Settings & settings = query_context->getSettingsRef();

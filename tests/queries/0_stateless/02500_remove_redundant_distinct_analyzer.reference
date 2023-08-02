@@ -479,3 +479,32 @@ Expression (Project names)
             ReadFromStorage (SystemNumbers)
 -- execute
 1
+-- UNION ALL with DISTINCT => do _not_ remove DISTINCT
+-- query
+SELECT DISTINCT number
+FROM
+(
+    SELECT DISTINCT number
+    FROM numbers(1)
+    UNION ALL
+    SELECT DISTINCT number
+    FROM numbers(2)
+)
+-- explain
+Expression (Project names)
+  Distinct (DISTINCT)
+    Distinct (Preliminary DISTINCT)
+      Union
+        Expression ((Projection + (Change column names to column identifiers + Project names)))
+          Distinct (DISTINCT)
+            Distinct (Preliminary DISTINCT)
+              Expression ((Projection + Change column names to column identifiers))
+                ReadFromStorage (SystemNumbers)
+        Expression (( + ( + Project names)))
+          Distinct (DISTINCT)
+            Distinct (Preliminary DISTINCT)
+              Expression ((Projection + Change column names to column identifiers))
+                ReadFromStorage (SystemNumbers)
+-- execute
+0
+1
