@@ -42,9 +42,8 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
         ast_create_upper.setTable(Poco::toUpper(view_name));
         StoragePtr view_upper = createTableFromAST(ast_create_upper, database.getDatabaseName(),
                                              database.getTableDataPath(ast_create_upper), context, true).second;
-        
+
         database.createTable(context, ast_create_upper.getTable(), view_upper, ast_upper);
-        
 
     }
     catch (...)
