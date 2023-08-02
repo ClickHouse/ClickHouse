@@ -37,8 +37,8 @@ static bool isUnlimitedQuery(const IAST * ast)
     if (!ast)
         return false;
 
-    /// It is KILL QUERY
-    if (ast->as<ASTKillQueryQuery>())
+    /// It is KILL QUERY or an async insert flush query
+    if (ast->as<ASTKillQueryQuery>() || ast->getQueryKind() == IAST::QueryKind::AsyncInsertFlush)
         return true;
 
     /// It is SELECT FROM system.processes
@@ -223,7 +223,10 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             {
                 /// Set up memory profiling
                 thread_group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
+
                 thread_group->memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
+                thread_group->memory_tracker.setSampleMinAllocationSize(settings.memory_profiler_sample_min_allocation_size);
+                thread_group->memory_tracker.setSampleMaxAllocationSize(settings.memory_profiler_sample_max_allocation_size);
                 thread_group->performance_counters.setTraceProfileEvents(settings.trace_profile_events);
             }
 

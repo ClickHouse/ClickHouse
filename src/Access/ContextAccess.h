@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/AccessRights.h>
+#include <Access/ContextAccessParams.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Interpreters/ClientInfo.h>
 #include <Core/UUID.h>
@@ -30,46 +31,17 @@ class AccessControl;
 class IAST;
 struct IAccessEntity;
 using ASTPtr = std::shared_ptr<IAST>;
-
-
-struct ContextAccessParams
-{
-    std::optional<UUID> user_id;
-    boost::container::flat_set<UUID> current_roles;
-    bool use_default_roles = false;
-    UInt64 readonly = 0;
-    bool allow_ddl = false;
-    bool allow_introspection = false;
-    String current_database;
-    ClientInfo::Interface interface = ClientInfo::Interface::TCP;
-    ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
-    Poco::Net::IPAddress address;
-    String forwarded_address;
-    String quota_key;
-
-    auto toTuple() const
-    {
-        return std::tie(
-            user_id, current_roles, use_default_roles, readonly, allow_ddl, allow_introspection,
-            current_database, interface, http_method, address, forwarded_address, quota_key);
-    }
-
-    friend bool operator ==(const ContextAccessParams & lhs, const ContextAccessParams & rhs) { return lhs.toTuple() == rhs.toTuple(); }
-    friend bool operator !=(const ContextAccessParams & lhs, const ContextAccessParams & rhs) { return !(lhs == rhs); }
-    friend bool operator <(const ContextAccessParams & lhs, const ContextAccessParams & rhs) { return lhs.toTuple() < rhs.toTuple(); }
-    friend bool operator >(const ContextAccessParams & lhs, const ContextAccessParams & rhs) { return rhs < lhs; }
-    friend bool operator <=(const ContextAccessParams & lhs, const ContextAccessParams & rhs) { return !(rhs < lhs); }
-    friend bool operator >=(const ContextAccessParams & lhs, const ContextAccessParams & rhs) { return !(lhs < rhs); }
-};
+class Context;
+using ContextPtr = std::shared_ptr<const Context>;
 
 
 class ContextAccess : public std::enable_shared_from_this<ContextAccess>
 {
 public:
+    static std::shared_ptr<const ContextAccess> fromContext(const ContextPtr & context);
+
     using Params = ContextAccessParams;
     const Params & getParams() const { return params; }
-
-    ContextAccess(const AccessControl & access_control_, const Params & params_);
 
     /// Returns the current user. Throws if user is nullptr.
     UserPtr getUser() const;
@@ -81,12 +53,9 @@ public:
     /// Returns information about current and enabled roles.
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
 
-    /// Returns information about enabled row policies.
-    std::shared_ptr<const EnabledRowPolicies> getEnabledRowPolicies() const;
-
     /// Returns the row policy filter for a specified table.
     /// The function returns nullptr if there is no filter to apply.
-    RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, RowPolicyFilterPtr combine_with_filter = {}) const;
+    RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
     /// Returns the quota to track resource consumption.
     std::shared_ptr<const EnabledQuota> getQuota() const;
@@ -161,21 +130,11 @@ public:
     /// Checks if grantees are allowed for the current user, throws an exception if not.
     void checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const;
 
-    /// Makes an instance of ContextAccess which provides full access to everything
-    /// without any limitations. This is used for the global context.
-    static std::shared_ptr<const ContextAccess> getFullAccess();
-
+    ContextAccess(const AccessControl & access_control_, const Params & params_);
     ~ContextAccess();
 
 private:
     friend class AccessControl;
-
-    struct FullAccess {};
-    static const FullAccess kFullAccess;
-
-    /// Makes an instance of ContextAccess which provides full access to everything
-    /// without any limitations. This is used for the global context.
-    explicit ContextAccess(FullAccess);
 
     void initialize();
     void setUser(const UserPtr & user_) const TSA_REQUIRES(mutex);
@@ -223,7 +182,6 @@ private:
 
     const AccessControl * access_control = nullptr;
     const Params params;
-    const bool is_full_access = false;
 
     mutable std::atomic<bool> user_was_dropped = false;
     mutable std::atomic<Poco::Logger *> trace_log = nullptr;
@@ -237,6 +195,7 @@ private:
     mutable std::shared_ptr<const AccessRights> access TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const AccessRights> access_with_implicit TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledRowPolicies> enabled_row_policies TSA_GUARDED_BY(mutex);
+    mutable std::shared_ptr<const EnabledRowPolicies> row_policies_of_initial_user TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledQuota> enabled_quota TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledSettings> enabled_settings TSA_GUARDED_BY(mutex);
 
