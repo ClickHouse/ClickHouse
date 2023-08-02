@@ -38,14 +38,14 @@ echo "Test 2: check exceptions"
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 DROP DATABASE IF EXISTS test3;
 CREATE DATABASE test3 ENGINE = HDFS('abacaba');
-""" | tr '\n' ' ' | grep -oF "BAD_ARGUMENTS"
+""" 2>&1 | tr '\n' ' ' | grep -oF "BAD_ARGUMENTS"
 
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 DROP DATABASE IF EXISTS test4;
 CREATE DATABASE test4 ENGINE = HDFS;
 USE test4;
 SELECT * FROM \"abacaba/file.tsv\"
-""" | tr '\n' ' ' | grep -oF "CANNOT_EXTRACT_TABLE_STRUCTURE"
+""" 2>&1 | tr '\n' ' ' | grep -oF "CANNOT_EXTRACT_TABLE_STRUCTURE"
 
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM test4.\`http://localhost:11111/test/a.tsv\`" 2>&1 | tr '\n' ' ' | grep -oF "BAD_ARGUMENTS"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222/file.myext\`" 2>&1 | tr '\n' ' ' | grep -oF "BAD_ARGUMENTS"
