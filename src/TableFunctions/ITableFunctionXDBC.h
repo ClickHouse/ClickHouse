@@ -16,7 +16,7 @@ namespace DB
 class ITableFunctionXDBC : public ITableFunction
 {
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
     /* A factory method to create bridge helper, that will assist in remote interaction */
     virtual BridgeHelperPtr createBridgeHelper(ContextPtr context,
@@ -24,7 +24,7 @@ private:
         const std::string & connection_string_,
         bool use_connection_pooling_) const = 0;
 
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
