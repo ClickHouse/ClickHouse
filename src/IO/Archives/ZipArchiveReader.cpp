@@ -86,6 +86,26 @@ public:
         file_name = file_name_;
     }
 
+    void locateFile(NameFilter filter)
+    {
+        int err = unzGoToFirstFile(raw_handle);
+        if (err == UNZ_END_OF_LIST_OF_FILE)
+            showError("No file was found satisfying the filter");
+
+        do
+        {
+            checkResult(err);
+            resetFileInfo();
+            retrieveFileInfo();
+            if (filter(getFileName()))
+                return;
+
+            err = unzGoToNextFile(raw_handle);
+        } while (err != UNZ_END_OF_LIST_OF_FILE);
+
+        showError("No file was found satisfying the filter");
+    }
+
     bool tryLocateFile(const String & file_name_)
     {
         resetFileInfo();
@@ -132,7 +152,7 @@ public:
         return *file_info;
     }
 
-    std::vector<std::string> getAllFiles()
+    std::vector<std::string> getAllFiles(NameFilter filter)
     {
         std::vector<std::string> files;
         resetFileInfo();
@@ -145,7 +165,8 @@ public:
             checkResult(err);
             resetFileInfo();
             retrieveFileInfo();
-            files.push_back(*file_name);
+            if (!filter || filter(getFileName()))
+                files.push_back(*file_name);
             err = unzGoToNextFile(raw_handle);
         } while (err != UNZ_END_OF_LIST_OF_FILE);
 
@@ -512,6 +533,13 @@ std::unique_ptr<ReadBufferFromFileBase> ZipArchiveReader::readFile(const String 
     return std::make_unique<ReadBufferFromZipArchive>(std::move(handle));
 }
 
+std::unique_ptr<ReadBufferFromFileBase> ZipArchiveReader::readFile(NameFilter filter)
+{
+    auto handle = acquireHandle();
+    handle.locateFile(filter);
+    return std::make_unique<ReadBufferFromZipArchive>(std::move(handle));
+}
+
 std::unique_ptr<ReadBufferFromFileBase> ZipArchiveReader::readFile(std::unique_ptr<FileEnumerator> enumerator)
 {
     if (!dynamic_cast<FileEnumeratorImpl *>(enumerator.get()))
@@ -534,8 +562,13 @@ std::unique_ptr<ZipArchiveReader::FileEnumerator> ZipArchiveReader::nextFile(std
 
 std::vector<std::string> ZipArchiveReader::getAllFiles()
 {
+    return getAllFiles({});
+}
+
+std::vector<std::string> ZipArchiveReader::getAllFiles(NameFilter filter)
+{
     auto handle = acquireHandle();
-    return handle.getAllFiles();
+    return handle.getAllFiles(filter);
 }
 
 void ZipArchiveReader::setPassword(const String & password_)
