@@ -193,6 +193,19 @@ index creation, `L2Distance` is used as default. Parameter `NumTrees` is the num
 specified: 100). Higher values of `NumTree` mean more accurate search results but slower index creation / query times (approximately
 linearly) as well as larger index sizes.
 
+`L2Distance` is also called Euclidean distance, the Euclidean distance between two points in Euclidean space is the length of a line segment between the two points.
+For example: If we have point P(p1,p2), Q(q1,q2), their distance will be d(p,q)
+![L2Distance](https://en.wikipedia.org/wiki/Euclidean_distance#/media/File:Euclidean_distance_2d.svg)
+
+`cosineDistance` also called cosine similarity is a measure of similarity between two non-zero vectors defined in an inner product space. Cosine similarity is the cosine of the angle between the vectors; that is, it is the dot product of the vectors divided by the product of their lengths. 
+![cosineDistance](https://www.tyrrell4innovation.ca/wp-content/uploads/2021/06/rsz_jenny_du_miword.png)
+
+The Euclidean distance corresponds to the L2-norm of a difference between vectors. The cosine similarity is proportional to the dot product of two vectors and inversely proportional to the product of their magnitudes.
+![compare](https://www.researchgate.net/publication/320914786/figure/fig2/AS:558221849841664@1510101868614/The-difference-between-Euclidean-distance-and-cosine-similarity.png)
+In one sentence: cosine similarity care only about the angle between them, but do not care about the "distance" we normally think.
+![L2 distance](https://www.baeldung.com/wp-content/uploads/sites/4/2020/06/4-1.png)
+![cosineDistance](https://www.baeldung.com/wp-content/uploads/sites/4/2020/06/5.png)
+
 :::note
 Indexes over columns of type `Array` will generally work faster than indexes on `Tuple` columns. All arrays **must** have same length. Use
 [CONSTRAINT](/docs/en/sql-reference/statements/create/table.md#constraints) to avoid errors. For example, `CONSTRAINT constraint_name_1
