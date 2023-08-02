@@ -66,7 +66,7 @@ public:
         ASTPtr partition_by_);
 
     static StorageAzureBlob::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
-    static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration);
+    static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration, bool is_read_only);
 
     static AzureObjectStorage::SettingsPtr createSettings(ContextPtr local_context);
 
@@ -149,7 +149,6 @@ public:
         IIterator(ContextPtr context_):WithContext(context_) {}
         virtual ~IIterator() = default;
         virtual RelativePathWithMetadata next() = 0;
-        virtual size_t getTotalSize() const = 0;
 
         RelativePathWithMetadata operator ()() { return next(); }
     };
@@ -164,10 +163,10 @@ public:
             ASTPtr query_,
             const Block & virtual_header_,
             ContextPtr context_,
-            RelativePathsWithMetadata * outer_blobs_);
+            RelativePathsWithMetadata * outer_blobs_,
+            std::function<void(FileProgress)> file_progress_callback_ = {});
 
         RelativePathWithMetadata next() override;
-        size_t getTotalSize() const override;
         ~GlobIterator() override = default;
 
     private:
@@ -179,7 +178,6 @@ public:
         Block virtual_header;
 
         size_t index = 0;
-        std::atomic<size_t> total_size = 0;
 
         RelativePathsWithMetadata blobs_with_metadata;
         RelativePathsWithMetadata * outer_blobs;
@@ -192,6 +190,8 @@ public:
         bool is_finished = false;
         bool is_initialized = false;
         std::mutex next_mutex;
+
+        std::function<void(FileProgress)> file_progress_callback;
     };
 
     class ReadIterator : public IIterator
@@ -216,14 +216,14 @@ public:
         KeysIterator(
             AzureObjectStorage * object_storage_,
             const std::string & container_,
-            Strings keys_,
+            const Strings & keys_,
             ASTPtr query_,
             const Block & virtual_header_,
             ContextPtr context_,
-            RelativePathsWithMetadata * outer_blobs_);
+            RelativePathsWithMetadata * outer_blobs,
+            std::function<void(FileProgress)> file_progress_callback = {});
 
         RelativePathWithMetadata next() override;
-        size_t getTotalSize() const override;
         ~KeysIterator() override = default;
 
     private:
@@ -236,9 +236,6 @@ public:
         Block virtual_header;
 
         std::atomic<size_t> index = 0;
-        std::atomic<size_t> total_size = 0;
-
-        RelativePathsWithMetadata * outer_blobs;
     };
 
     StorageAzureBlobSource(
@@ -287,7 +284,7 @@ private:
             std::unique_ptr<PullingPipelineExecutor> reader_)
             : path(std::move(path_))
             , read_buf(std::move(read_buf_))
-            , input_format(input_format_)
+            , input_format(std::move(input_format_))
             , pipeline(std::move(pipeline_))
             , reader(std::move(reader_))
         {
@@ -318,10 +315,7 @@ private:
         PullingPipelineExecutor * operator->() { return reader.get(); }
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
         const String & getPath() const { return path; }
-
-        const std::unique_ptr<ReadBuffer> & getReadBuffer() const { return read_buf; }
-
-        const std::shared_ptr<IInputFormat> & getFormat() const { return input_format; }
+        const IInputFormat * getInputFormat() const { return input_format.get(); }
 
     private:
         String path;
@@ -338,11 +332,6 @@ private:
     ThreadPool create_reader_pool;
     ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
-
-    UInt64 total_rows_approx_max = 0;
-    size_t total_rows_count_times = 0;
-    UInt64 total_rows_approx_accumulated = 0;
-    size_t total_objects_size = 0;
 
     /// Recreate ReadBuffer and Pipeline for each file.
     ReaderHolder createReader();

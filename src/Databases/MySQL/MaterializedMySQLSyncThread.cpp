@@ -1,8 +1,11 @@
+#include "Common/logger_useful.h"
 #include "config.h"
 
 #if USE_MYSQL
 
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
+#include <Databases/MySQL/tryParseTableIDFromDDL.h>
+#include <Databases/MySQL/tryQuoteUnrecognizedTokens.h>
 #include <cstdlib>
 #include <random>
 #include <string_view>
@@ -59,7 +62,7 @@ static ContextMutablePtr createQueryContext(ContextPtr context)
     query_context->setSettings(new_query_settings);
     query_context->setInternalQuery(true);
 
-    query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
     query_context->setCurrentQueryId(""); // generate random query_id
     return query_context;
 }
@@ -149,61 +152,6 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
 
         throw Exception::createDeprecated(error_message.str(), ErrorCodes::ILLEGAL_MYSQL_VARIABLE);
     }
-}
-
-static std::tuple<String, String> tryExtractTableNameFromDDL(const String & ddl)
-{
-    String table_name;
-    String database_name;
-    if (ddl.empty()) return std::make_tuple(database_name, table_name);
-
-    bool parse_failed = false;
-    Tokens tokens(ddl.data(), ddl.data() + ddl.size());
-    IParser::Pos pos(tokens, 0);
-    Expected expected;
-    ASTPtr res;
-    ASTPtr table;
-    if (ParserKeyword("CREATE TEMPORARY TABLE").ignore(pos, expected) || ParserKeyword("CREATE TABLE").ignore(pos, expected))
-    {
-        ParserKeyword("IF NOT EXISTS").ignore(pos, expected);
-        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
-            parse_failed = true;
-    }
-    else if (ParserKeyword("ALTER TABLE").ignore(pos, expected))
-    {
-        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
-            parse_failed = true;
-    }
-    else if (ParserKeyword("DROP TABLE").ignore(pos, expected) || ParserKeyword("DROP TEMPORARY TABLE").ignore(pos, expected))
-    {
-        ParserKeyword("IF EXISTS").ignore(pos, expected);
-        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
-            parse_failed = true;
-    }
-    else if (ParserKeyword("TRUNCATE").ignore(pos, expected))
-    {
-        ParserKeyword("TABLE").ignore(pos, expected);
-        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
-            parse_failed = true;
-    }
-    else if (ParserKeyword("RENAME TABLE").ignore(pos, expected))
-    {
-        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
-            parse_failed = true;
-    }
-    else
-    {
-        parse_failed = true;
-    }
-    if (!parse_failed)
-    {
-        if (auto table_id = table->as<ASTTableIdentifier>()->getTableId())
-        {
-            database_name = table_id.database_name;
-            table_name = table_id.table_name;
-        }
-    }
-    return std::make_tuple(database_name, table_name);
 }
 
 MaterializedMySQLSyncThread::MaterializedMySQLSyncThread(
@@ -396,9 +344,8 @@ static inline String rewriteMysqlQueryColumn(mysqlxx::Pool::Entry & connection, 
                     { std::make_shared<DataTypeString>(),   "column_type" }
             };
 
-    const String & query =  "SELECT COLUMN_NAME AS column_name, COLUMN_TYPE AS column_type FROM INFORMATION_SCHEMA.COLUMNS"
-                            " WHERE TABLE_SCHEMA = '"  + backQuoteIfNeed(database_name) +
-                            "' AND TABLE_NAME = '" + backQuoteIfNeed(table_name) +  "' ORDER BY ORDINAL_POSITION";
+    String query = "SELECT COLUMN_NAME AS column_name, COLUMN_TYPE AS column_type FROM INFORMATION_SCHEMA.COLUMNS"
+                   " WHERE TABLE_SCHEMA = '" + database_name + "' AND TABLE_NAME = '" + table_name + "' ORDER BY ORDINAL_POSITION";
 
     StreamSettings mysql_input_stream_settings(global_settings, false, true);
     auto mysql_source = std::make_unique<MySQLSource>(connection, query, tables_columns_sample_block, mysql_input_stream_settings);
@@ -553,7 +500,10 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
             {
                 throw;
             }
-            catch (const mysqlxx::ConnectionFailed &) {}
+            catch (const mysqlxx::ConnectionFailed & ex)
+            {
+                LOG_TRACE(log, "Connection to MySQL failed {}", ex.displayText());
+            }
             catch (const mysqlxx::BadQuery & e)
             {
                 // Lost connection to MySQL server during query
@@ -866,16 +816,15 @@ void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_even
         CurrentThread::QueryScope query_scope(query_context);
 
         String query = query_event.query;
+        tryQuoteUnrecognizedTokens(query, query);
         if (!materialized_tables_list.empty())
         {
-             auto [ddl_database_name, ddl_table_name] = tryExtractTableNameFromDDL(query_event.query);
-
-            if (!ddl_table_name.empty())
+            auto table_id = tryParseTableIDFromDDL(query, query_event.schema);
+            if (!table_id.table_name.empty())
             {
-                ddl_database_name =  ddl_database_name.empty() ? query_event.schema: ddl_database_name;
-                if (ddl_database_name != mysql_database_name || !materialized_tables_list.contains(ddl_table_name))
+                if (table_id.database_name != mysql_database_name || !materialized_tables_list.contains(table_id.table_name))
                 {
-                    LOG_DEBUG(log, "Skip MySQL DDL: \n {}", query_event.query);
+                    LOG_DEBUG(log, "Skip MySQL DDL for {}.{}:\n{}", table_id.database_name, table_id.table_name, query);
                     return;
                 }
             }

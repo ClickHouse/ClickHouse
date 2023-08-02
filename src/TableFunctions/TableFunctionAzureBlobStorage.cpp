@@ -39,7 +39,7 @@ namespace
 
 bool isConnectionString(const std::string & candidate)
 {
-    return candidate.starts_with("DefaultEndpointsProtocol");
+    return !candidate.starts_with("http");
 }
 
 }
@@ -174,7 +174,6 @@ void TableFunctionAzureBlobStorage::parseArguments(const ASTPtr & ast_function, 
     parseArgumentsImpl(args, context);
 }
 
-
 void TableFunctionAzureBlobStorage::addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr & context)
 {
     if (tryGetNamedCollectionWithOverrides(args, context))
@@ -255,13 +254,12 @@ void TableFunctionAzureBlobStorage::addColumnsStructureToArguments(ASTs & args, 
     }
 }
 
-
-ColumnsDescription TableFunctionAzureBlobStorage::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionAzureBlobStorage::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
     if (configuration.structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
-        auto client = StorageAzureBlob::createClient(configuration);
+        auto client = StorageAzureBlob::createClient(configuration, !is_insert_query);
         auto settings = StorageAzureBlob::createSettings(context);
 
         auto object_storage = std::make_unique<AzureObjectStorage>("AzureBlobStorageTableFunction", std::move(client), std::move(settings));
@@ -276,9 +274,9 @@ bool TableFunctionAzureBlobStorage::supportsReadingSubsetOfColumns()
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
 }
 
-StoragePtr TableFunctionAzureBlobStorage::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionAzureBlobStorage::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
-    auto client = StorageAzureBlob::createClient(configuration);
+    auto client = StorageAzureBlob::createClient(configuration, !is_insert_query);
     auto settings = StorageAzureBlob::createSettings(context);
 
     ColumnsDescription columns;
