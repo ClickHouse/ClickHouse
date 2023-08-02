@@ -71,9 +71,4 @@ public:
     size_t getNumberOfDimensions() const;
 };
 
-template <typename DataType> inline constexpr bool IsDataTypeArray()
-{
-    return false;
-}
-
 }
