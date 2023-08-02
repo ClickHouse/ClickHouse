@@ -108,12 +108,12 @@ public:
     ~DiskRemoteFSOverClickHouseServerDirectoryIterator() override
     {
         // Should read all data from connection before returning it to pool
-        try 
+        try
         {
             while (valid)
                 valid = conn->nextDirectoryIteratorEntry(entry);
         }
-        catch(...)
+        catch (...)
         {
             // TODO: log exception
             conn.expire();
