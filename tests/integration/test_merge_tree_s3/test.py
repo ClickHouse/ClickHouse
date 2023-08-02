@@ -765,8 +765,10 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
     )
     assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
     assert int(node.query("SELECT max(size) FROM system.filesystem_cache")) == 1024
+    count = int(node.query("SELECT count() FROM test"))
 
     node.restart_clickhouse()
+
     assert node.contains_in_log("Loading filesystem cache with 30 threads")
     assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
     assert int(node.query("SELECT max(size) FROM system.filesystem_cache")) == 1024
@@ -779,6 +781,7 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
         > 0
     )
     node.query("SELECT * FROM test FORMAT Null")
+    assert count == int(node.query("SELECT count() FROM test"))
 
 
 @pytest.mark.parametrize("node_name", ["node"])
