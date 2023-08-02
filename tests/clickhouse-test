@@ -505,7 +505,6 @@ class FailureReason(enum.Enum):
     REPLICATED_DB = "replicated-database"
     S3_STORAGE = "s3-storage"
     BUILD = "not running for current build"
-    NO_UPGRADE_CHECK = "not running for upgrade check"
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
 
     # UNKNOWN reasons
@@ -945,12 +944,6 @@ class TestCase:
 
         elif tags and ("no-replicated-database" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
-
-        # TODO: remove checking "no-upgrade-check" after 23.1
-        elif args.upgrade_check and (
-            "no-upgrade-check" in tags or "no-upgrade-check" in tags
-        ):
-            return FailureReason.NO_UPGRADE_CHECK
 
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
             return FailureReason.S3_STORAGE
