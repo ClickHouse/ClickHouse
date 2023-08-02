@@ -505,19 +505,19 @@ public:
     bool operator()(const MergeTreeData::DataPartPtr & left,
                     const MergeTreeData::DataPartPtr & right,
                     const MergeTreeTransaction * txn,
-                    String * out_reason = nullptr) const;
+                    String & out_reason) const;
 
     /// Can we assign a merge with these two parts?
     /// (assuming that no merge was assigned after the predicate was constructed)
     /// If we can't and out_reason is not nullptr, set it to the reason why we can't merge.
     bool canMergeTwoParts(const MergeTreeData::DataPartPtr & left,
                           const MergeTreeData::DataPartPtr & right,
-                          String * out_reason = nullptr) const;
+                          String & out_reason) const;
 
     /// Can we assign a merge this part and some other part?
     /// For example a merge of a part and itself is needed for TTL.
     /// This predicate is checked for the first part of each range.
-    bool canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String * out_reason) const;
+    bool canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String & out_reason) const;
 
     CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, Poco::Logger * log_);
 
@@ -561,7 +561,7 @@ public:
 
     /// Returns true if part is needed for some REPLACE_RANGE entry.
     /// We should not drop part in this case, because replication queue may stuck without that part.
-    bool partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, String * out_reason) const;
+    bool partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, String & out_reason) const;
 
     /// Return nonempty optional of desired mutation version and alter version.
     /// If we have no alter (modify/drop) mutations in mutations queue, than we return biggest possible
