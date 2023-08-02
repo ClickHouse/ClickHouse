@@ -216,7 +216,7 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
     }
 }
 
-IMergeTreeReader::ColumnPositionLevel IMergeTreeReader::findColumnForOffsets(const NameAndTypePair & required_column) const
+IMergeTreeReader::ColumnNameLevel IMergeTreeReader::findColumnForOffsets(const NameAndTypePair & required_column) const
 {
     auto get_offsets_streams = [](const auto & serialization, const auto & name_in_storage)
     {
@@ -238,7 +238,7 @@ IMergeTreeReader::ColumnPositionLevel IMergeTreeReader::findColumnForOffsets(con
     auto required_offsets_streams = get_offsets_streams(getSerializationInPart(required_column), required_name_in_storage);
 
     size_t max_matched_streams = 0;
-    ColumnPositionLevel position_level;
+    ColumnNameLevel name_level;
 
     /// Find column that has maximal number of matching
     /// offsets columns with required_column.
@@ -261,14 +261,14 @@ IMergeTreeReader::ColumnPositionLevel IMergeTreeReader::findColumnForOffsets(con
             it = current_it;
         }
 
-        if (i && (!position_level || i > max_matched_streams))
+        if (i && (!name_level || i > max_matched_streams))
         {
             max_matched_streams = i;
-            position_level.emplace(*data_part_info_for_read->getColumnPosition(part_column.name), it->second);
+            name_level.emplace(part_column.name, it->second);
         }
     }
 
-    return position_level;
+    return name_level;
 }
 
 void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
