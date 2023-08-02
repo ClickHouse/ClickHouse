@@ -1,6 +1,4 @@
 <test>
-    <settings><optimize_uniq_to_count>1</optimize_uniq_to_count></settings>
-
     <query>select uniq(number) from (select DISTINCT number from numbers(100000000)) SETTINGS optimize_uniq_to_count=1</query>
     <query>select uniq(number) from (select number from numbers(100000000) group by number) SETTINGS optimize_uniq_to_count=1</query>
 
