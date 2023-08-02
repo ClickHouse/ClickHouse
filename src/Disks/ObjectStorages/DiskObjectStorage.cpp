@@ -3,6 +3,7 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -82,7 +83,7 @@ void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::
     {
         try
         {
-            paths_map.emplace_back(local_path, metadata_storage->getObjectStorageRootPath(), getStorageObjects(local_path), metadata_storage->getHardlinkCount(local_path));
+            paths_map.emplace_back(local_path, metadata_storage->getObjectStorageRootPath(), getStorageObjects(local_path));
         }
         catch (const Exception & e)
         {
@@ -485,8 +486,15 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
+    auto storage_objects = metadata_storage->getStorageObjects(path);
+
+    const bool file_can_be_empty = !file_size.has_value() || *file_size == 0;
+
+    if (storage_objects.empty() && file_can_be_empty)
+        return std::make_unique<ReadBufferFromEmptyFile>();
+
     return object_storage->readObjects(
-        metadata_storage->getStorageObjects(path),
+        storage_objects,
         object_storage->getAdjustedSettingsFromMetadataFile(settings, path),
         read_hint,
         file_size);
