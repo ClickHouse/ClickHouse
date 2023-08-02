@@ -1169,7 +1169,7 @@ class FunctionBinaryArithmetic : public IFunction
         DataTypes data_types;
 
         ColumnsWithTypeAndName new_arguments {num_args};
-        DataTypePtr t;
+        DataTypePtr result_array_type;
 
         const auto * left_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
         const auto * right_const = typeid_cast<const ColumnConst *>(arguments[1].column.get());
@@ -1195,21 +1195,31 @@ class FunctionBinaryArithmetic : public IFunction
         if (*typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsets().data() !=
             *typeid_cast<const ColumnArray *>(arguments[1].column.get())->getOffsets().data())
         {
-            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
             "Cannot apply operation for arguments of different sizes. Size of the first argument: {}, size of the second argument: {}",
             *typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsets().data(),
             *typeid_cast<const ColumnArray *>(arguments[1].column.get())->getOffsets().data());
         }
 
-        auto a = typeid_cast<const ColumnArray *>(arguments[0].column.get())->getData().getPtr();
-        t = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
-        new_arguments[0] = {a, t, arguments[0].name};
+        auto array_ptr = typeid_cast<const ColumnArray *>(arguments[0].column.get())->getData().getPtr();
+        result_array_type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
+        new_arguments[0] = {array_ptr, result_array_type, arguments[0].name};
 
-        a = typeid_cast<const ColumnArray *>(arguments[1].column.get())->getData().getPtr();
-        t = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
-        new_arguments[1] = {a, t, arguments[1].name};
+        array_ptr = typeid_cast<const ColumnArray *>(arguments[1].column.get())->getData().getPtr();
+        result_array_type = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
+        new_arguments[1] = {array_ptr, result_array_type, arguments[1].name};
 
-        auto res = executeImpl(new_arguments, t, input_rows_count);
+
+        result_array_type = typeid_cast<const DataTypeArray *>(result_type.get())->getNestedType();
+
+        std::cerr << result_array_type->getName() << std::endl;
+
+        const auto & offsets = typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsets();
+        size_t rows_count = 0;
+        if (!offsets.empty())
+            rows_count = offsets.back();
+        auto res = executeImpl(new_arguments, result_array_type, rows_count);
+        std::cerr << res->dumpStructure() << std::endl;
         return ColumnArray::create(res, typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
     }
 
