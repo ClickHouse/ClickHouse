@@ -1197,7 +1197,10 @@ template <std::endian endian, typename T>
 inline void writeBinaryEndian(T x, WriteBuffer & buf)
 {
     transformEndianness<endian>(x);
-    writeBinary(x, buf);
+    if constexpr (std::is_same_v<T, UUID>)
+        writeBinary(x, buf);
+    else
+        writePODBinary(x, buf);
 }
 
 template <typename T>
