@@ -81,13 +81,14 @@ def create_postgres_table(
     database_name="",
     replica_identity_full=False,
     template=postgres_table_template,
+    suffix="",
 ):
     if database_name == "":
         name = table_name
     else:
         name = f"{database_name}.{table_name}"
     drop_postgres_table(cursor, name)
-    query = template.format(name)
+    query = template.format(name) + suffix
     cursor.execute(query)
     print(f"Query: {query}")
     if replica_identity_full:

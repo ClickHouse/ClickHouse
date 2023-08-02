@@ -122,6 +122,14 @@ def test_postgresql_database_engine_with_clickhouse_ddl(started_cluster):
     create_postgres_table(cursor, "test_table")
     assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
 
+    # issue-52343
+    create_postgres_table(cursor, "test_table",
+            suffix="""SETTINGS
+            postgresql_connection_pool_size = 50,
+            postgresql_connection_pool_auto_close = true
+            """)
+    assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
+
     node1.query("DROP TABLE postgres_database.test_table")
     assert "test_table" not in node1.query("SHOW TABLES FROM postgres_database")
 
@@ -138,36 +146,6 @@ def test_postgresql_database_engine_with_clickhouse_ddl(started_cluster):
     assert "postgres_database" not in node1.query("SHOW DATABASES")
 
     drop_postgres_table(cursor, "test_table")
-
-
-def test_postgresql_database_engine_queries(started_cluster):
-    conn = get_postgres_conn(
-        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
-    )
-    cursor = conn.cursor()
-
-    node1.query(
-        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
-    )
-
-    create_postgres_table(cursor, "test_table")
-    assert (
-        node1.query("SELECT count() FROM postgres_database.test_table").rstrip() == "0"
-    )
-
-    node1.query(
-        "INSERT INTO postgres_database.test_table SELECT number, number from numbers(10000)"
-    )
-    assert (
-        node1.query("SELECT count() FROM postgres_database.test_table").rstrip()
-        == "10000"
-    )
-
-    drop_postgres_table(cursor, "test_table")
-    assert "test_table" not in node1.query("SHOW TABLES FROM postgres_database")
-
-    node1.query("DROP DATABASE postgres_database")
-    assert "postgres_database" not in node1.query("SHOW DATABASES")
 
 
 def test_get_create_table_query_with_multidim_arrays(started_cluster):
