@@ -107,8 +107,6 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
 void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context)
 {
     context.setTask(nullptr);
-    // if (!queue.empty())
-    //     LOG_DEBUG(&Poco::Logger::get("ExecutorTasks::pushTasks"), "First task to add in queue. Processor id {}. Processor name {}", queue.front()->processors_id, queue.front()->processor->getName());
 
     /// If sending partial results is allowed and local tasks scheduling optimization is repeated longer than the limit
     /// or new task need to send partial result later, skip optimization for this iteration.
@@ -126,8 +124,6 @@ void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThrea
 
     if (!queue.empty() || !async_queue.empty())
     {
-        // LOG_DEBUG(&Poco::Logger::get("ExecutorTasks::pushTasks"), "After local optimizations push new tasks to queue");
-        // task_queue.print();
         std::unique_lock lock(mutex);
 
 #if defined(OS_LINUX)
@@ -148,8 +144,6 @@ void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThrea
         /// Wake up at least one thread that will wake up other threads if required
         tryWakeUpAnyOtherThreadWithTasks(context, lock);
     }
-    // LOG_DEBUG(&Poco::Logger::get("ExecutorTasks::pushTasks"), "After push new tasks to queue");
-    // task_queue.print();
 }
 
 void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback, UInt64 partial_result_duration_ms)

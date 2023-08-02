@@ -893,7 +893,7 @@ void Pipe::transform(const Transformer & transformer, bool check_ports)
     if (output_ports.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot transform empty Pipe");
 
-    /// TODO: Add functionality to work with partial result ports in transformer. 
+    /// TODO: Add functionality to work with partial result ports in transformer.
     dropPartialResult();
 
     auto new_processors = transformer(output_ports);

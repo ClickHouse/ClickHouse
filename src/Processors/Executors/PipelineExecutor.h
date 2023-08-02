@@ -89,7 +89,7 @@ private:
     QueryStatusPtr process_list_element;
 
     ReadProgressCallbackPtr read_progress_callback;
-    
+
     /// Duration between sending partial result through the pipeline
     const UInt64 partial_result_duration_ms;
 

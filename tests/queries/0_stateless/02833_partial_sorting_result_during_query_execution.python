@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+
+import os
+import sys
+
+CURDIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(CURDIR, "helpers"))
+
+from tcp_client import TCPClient, assertPacket
+
+
+def main():
+    with TCPClient() as client:
+        client.sendQuery(
+            f"SELECT number FROM numbers_mt(1e7+1) ORDER BY -number LIMIT 15 SETTINGS max_threads = 1, partial_result_update_duration_ms=1, max_rows_in_partial_result=10"
+        )
+
+        # external tables
+        client.sendEmptyBlock()
+        client.readHeader()
+        
+        # Partial result
+        _, partial_result = client.readHeader(need_read_data=True)[0]
+        
+        assert_message = "There should be at least one block of data with partial result"
+        assert len(partial_result) > 0, assert_message
+        
+        while True:
+            _, new_partial_result = client.readHeader(need_read_data=True, need_print_info=False)[0]
+            if (len(new_partial_result) == 0):
+                break
+            
+            data_size = len(partial_result)
+            assert_message = f"New block contains more info about the full data so sorted results should not be less then in the previous iteration. New result {new_partial_result}. Previous result {partial_result}"
+            assert all(partial_result[i] <= new_partial_result[i] for i in range(data_size)), assert_message
+
+            partial_result = new_partial_result
+        
+        # Full result
+        _, full_result = client.readHeader(need_read_data=True)[0]
+        for result in full_result:
+            print(result)
+
+
+if __name__ == "__main__":
+    main()
+

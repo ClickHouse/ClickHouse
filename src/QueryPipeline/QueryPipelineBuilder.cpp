@@ -116,7 +116,7 @@ void QueryPipelineBuilder::init(QueryPipeline & pipeline)
         pipe.activatePartialResult(pipeline.partial_result_limit, pipeline.partial_result_duration_ms);
         pipe.partial_result_ports = {pipeline.partial_result};
     }
-    
+
     if (!pipeline.partial_result)
         pipe.dropPartialResult();
 
@@ -357,7 +357,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
 {
     left->checkInitializedAndNotCompleted();
     right->checkInitializedAndNotCompleted();
-    
+
     /// TODO: Support joining of partial results from different pipelines.
     left->pipe.dropPartialResult();
     right->pipe.dropPartialResult();

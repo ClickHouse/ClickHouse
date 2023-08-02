@@ -1,6 +1,5 @@
 #include <Processors/ISource.h>
 #include <QueryPipeline/StreamLocalLimits.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -22,61 +21,38 @@ ISource::ISource(Block header, bool enable_auto_progress)
 
 ISource::Status ISource::prepare()
 {
-    const auto name =  getName();
-    if (name == "NullSource")
-        LOG_DEBUG(&Poco::Logger::get("ISource::prepare"), "KEK {}", getName());
     if (finished)
     {
-        if (name == "NullSource")
-            LOG_DEBUG(&Poco::Logger::get("ISource::prepare"), "finished");
         output.finish();
         return Status::Finished;
     }
 
     /// Check can output.
     if (output.isFinished())
-    {   
-        if (name == "NullSource")
-            LOG_DEBUG(&Poco::Logger::get("ISource::prepare"), "output.isFinished()");
         return Status::Finished;
-    }
 
     if (!output.canPush())
-    {
-        if (name == "NullSource")
-            LOG_DEBUG(&Poco::Logger::get("ISource::prepare"), "!output.canPush()");
         return Status::PortFull;
-    }
 
     if (!has_input)
-    {
-        if (name == "NullSource")
-            LOG_DEBUG(&Poco::Logger::get("ISource::prepare"), "!has_input");
         return Status::Ready;
-    }
 
     output.pushData(std::move(current_chunk));
     has_input = false;
 
     if (isCancelled())
     {
-        if (name == "NullSource")
-            LOG_DEBUG(&Poco::Logger::get("ISource::prepare"), "isCancelled()");
         output.finish();
         return Status::Finished;
     }
 
     if (got_exception)
     {
-        if (name == "NullSource")
-            LOG_DEBUG(&Poco::Logger::get("ISource::prepare"), "got_exception");
         finished = true;
         output.finish();
         return Status::Finished;
     }
 
-    if (name == "NullSource")
-        LOG_DEBUG(&Poco::Logger::get("ISource::prepare"), "Status::PortFull");
     /// Now, we pushed to output, and it must be full.
     return Status::PortFull;
 }
