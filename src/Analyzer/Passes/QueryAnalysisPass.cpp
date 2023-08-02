@@ -6451,7 +6451,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     table_function_ptr->parseArguments(table_function_ast, scope_context);
 
     auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr);
-    table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context);
+    table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
 }
 
 /// Resolve array join node in scope
@@ -6494,55 +6494,69 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
 
         resolveExpressionNode(array_join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-        auto result_type = array_join_expression->getResultType();
-        bool is_array_type = isArray(result_type);
-        bool is_map_type = isMap(result_type);
-
-        if (!is_array_type && !is_map_type)
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "ARRAY JOIN {} requires expression {} with Array or Map type. Actual {}. In scope {}",
-                array_join_node_typed.formatASTForErrorMessage(),
-                array_join_expression->formatASTForErrorMessage(),
-                result_type->getName(),
-                scope.scope_node->formatASTForErrorMessage());
-
-        if (is_map_type)
-            result_type = assert_cast<const DataTypeMap &>(*result_type).getNestedType();
-
-        result_type = assert_cast<const DataTypeArray &>(*result_type).getNestedType();
-
-        String array_join_column_name;
-
-        if (!array_join_expression_alias.empty())
+        auto process_array_join_expression = [&](QueryTreeNodePtr & expression)
         {
-            array_join_column_name = array_join_expression_alias;
-        }
-        else if (auto * array_join_expression_inner_column = array_join_expression->as<ColumnNode>())
+            auto result_type = expression->getResultType();
+            bool is_array_type = isArray(result_type);
+            bool is_map_type = isMap(result_type);
+
+            if (!is_array_type && !is_map_type)
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "ARRAY JOIN {} requires expression {} with Array or Map type. Actual {}. In scope {}",
+                    array_join_node_typed.formatASTForErrorMessage(),
+                    expression->formatASTForErrorMessage(),
+                    result_type->getName(),
+                    scope.scope_node->formatASTForErrorMessage());
+
+            if (is_map_type)
+                result_type = assert_cast<const DataTypeMap &>(*result_type).getNestedType();
+
+            result_type = assert_cast<const DataTypeArray &>(*result_type).getNestedType();
+
+            String array_join_column_name;
+
+            if (!array_join_expression_alias.empty())
+            {
+                array_join_column_name = array_join_expression_alias;
+            }
+            else if (auto * array_join_expression_inner_column = array_join_expression->as<ColumnNode>())
+            {
+                array_join_column_name = array_join_expression_inner_column->getColumnName();
+            }
+            else if (!identifier_full_name.empty())
+            {
+                array_join_column_name = identifier_full_name;
+            }
+            else
+            {
+                array_join_column_name = "__array_join_expression_" + std::to_string(array_join_expressions_counter);
+                ++array_join_expressions_counter;
+            }
+
+            if (array_join_column_names.contains(array_join_column_name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ARRAY JOIN {} multiple columns with name {}. In scope {}",
+                    array_join_node_typed.formatASTForErrorMessage(),
+                    array_join_column_name,
+                    scope.scope_node->formatASTForErrorMessage());
+            array_join_column_names.emplace(array_join_column_name);
+
+            NameAndTypePair array_join_column(array_join_column_name, result_type);
+            auto array_join_column_node = std::make_shared<ColumnNode>(std::move(array_join_column), expression, array_join_node);
+            array_join_column_node->setAlias(array_join_expression_alias);
+            array_join_column_expressions.push_back(std::move(array_join_column_node));
+        };
+
+        // Support ARRAY JOIN COLUMNS(...). COLUMNS transformer is resolved to list of columns.
+        if (auto * columns_list = array_join_expression->as<ListNode>())
         {
-            array_join_column_name = array_join_expression_inner_column->getColumnName();
-        }
-        else if (!identifier_full_name.empty())
-        {
-            array_join_column_name = identifier_full_name;
+            for (auto & array_join_subexpression : columns_list->getNodes())
+                process_array_join_expression(array_join_subexpression);
         }
         else
         {
-            array_join_column_name = "__array_join_expression_" + std::to_string(array_join_expressions_counter);
-            ++array_join_expressions_counter;
+            process_array_join_expression(array_join_expression);
         }
-
-        if (array_join_column_names.contains(array_join_column_name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "ARRAY JOIN {} multiple columns with name {}. In scope {}",
-                array_join_node_typed.formatASTForErrorMessage(),
-                array_join_column_name,
-                scope.scope_node->formatASTForErrorMessage());
-        array_join_column_names.emplace(array_join_column_name);
-
-        NameAndTypePair array_join_column(array_join_column_name, result_type);
-        auto array_join_column_node = std::make_shared<ColumnNode>(std::move(array_join_column), array_join_expression, array_join_node);
-        array_join_column_node->setAlias(array_join_expression_alias);
-        array_join_column_expressions.push_back(std::move(array_join_column_node));
     }
 
     /** Allow to resolve ARRAY JOIN columns from aliases with types after ARRAY JOIN only after ARRAY JOIN expression list is resolved, because
@@ -6554,11 +6568,9 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
       * And it is expected that `value_element` inside projection expression list will be resolved as `value_element` expression
       * with type after ARRAY JOIN.
       */
-    for (size_t i = 0; i < array_join_nodes_size; ++i)
+    array_join_nodes = std::move(array_join_column_expressions);
+    for (auto & array_join_column_expression : array_join_nodes)
     {
-        auto & array_join_column_expression = array_join_nodes[i];
-        array_join_column_expression = std::move(array_join_column_expressions[i]);
-
         auto it = scope.alias_name_to_expression_node.find(array_join_column_expression->getAlias());
         if (it != scope.alias_name_to_expression_node.end())
         {

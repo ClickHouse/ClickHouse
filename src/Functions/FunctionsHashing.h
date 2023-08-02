@@ -153,15 +153,10 @@ struct IntHash64Impl
 template<typename T, typename HashFunction>
 T combineHashesFunc(T t1, T t2)
 {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        T tmp;
-        reverseMemcpy(&tmp, &t1, sizeof(T));
-        t1 = tmp;
-        reverseMemcpy(&tmp, &t2, sizeof(T));
-        t2 = tmp;
-#endif
-    T hashes[] = {t1, t2};
-    return HashFunction::apply(reinterpret_cast<const char *>(hashes), 2 * sizeof(T));
+    transformEndianness<std::endian::little>(t1);
+    transformEndianness<std::endian::little>(t2);
+    const T hashes[] {t1, t2};
+    return HashFunction::apply(reinterpret_cast<const char *>(hashes), sizeof(hashes));
 }
 
 
@@ -184,21 +179,14 @@ struct HalfMD5Impl
         MD5_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
         MD5_Final(buf.char_data, &ctx);
 
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        return buf.uint64_data;        /// No need to flip bytes on big endian machines
-#else
-        return std::byteswap(buf.uint64_data);    /// Compatibility with existing code. Cast need for old poco AND macos where UInt64 != uint64_t
-#endif
+        /// Compatibility with existing code. Cast need for old poco AND macos where UInt64 != uint64_t
+        transformEndianness<std::endian::big>(buf.uint64_data);
+        return buf.uint64_data;
     }
 
     static UInt64 combineHashes(UInt64 h1, UInt64 h2)
     {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        h1 = std::byteswap(h1);
-        h2 = std::byteswap(h2);
-#endif
-        UInt64 hashes[] = {h1, h2};
-        return apply(reinterpret_cast<const char *>(hashes), 16);
+        return combineHashesFunc<UInt64, HalfMD5Impl>(h1, h2);
     }
 
     /// If true, it will use intHash32 or intHash64 to hash POD types. This behaviour is intended for better performance of some functions.
@@ -311,15 +299,8 @@ struct SipHash64Impl
     static constexpr auto name = "sipHash64";
     using ReturnType = UInt64;
 
-    static UInt64 apply(const char * begin, size_t size)
-    {
-        return sipHash64(begin, size);
-    }
-
-    static UInt64 combineHashes(UInt64 h1, UInt64 h2)
-    {
-        return combineHashesFunc<UInt64, SipHash64Impl>(h1, h2);
-    }
+    static UInt64 apply(const char * begin, size_t size) { return sipHash64(begin, size); }
+    static UInt64 combineHashes(UInt64 h1, UInt64 h2) { return combineHashesFunc<UInt64, SipHash64Impl>(h1, h2); }
 
     static constexpr bool use_int_hash_for_pods = false;
 };
@@ -336,12 +317,10 @@ struct SipHash64KeyedImpl
 
     static UInt64 combineHashesKeyed(const Key & key, UInt64 h1, UInt64 h2)
     {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        h1 = std::byteswap(h1);
-        h2 = std::byteswap(h2);
-#endif
-        UInt64 hashes[] = {h1, h2};
-        return applyKeyed(key, reinterpret_cast<const char *>(hashes), 2 * sizeof(UInt64));
+        transformEndianness<std::endian::little>(h1);
+        transformEndianness<std::endian::little>(h2);
+        const UInt64 hashes[]{h1, h2};
+        return applyKeyed(key, reinterpret_cast<const char *>(hashes), sizeof(hashes));
     }
 
     static constexpr bool use_int_hash_for_pods = false;
@@ -353,15 +332,8 @@ struct SipHash128Impl
 
     using ReturnType = UInt128;
 
-    static UInt128 combineHashes(UInt128 h1, UInt128 h2)
-    {
-        return combineHashesFunc<UInt128, SipHash128Impl>(h1, h2);
-    }
-
-    static UInt128 apply(const char * data, const size_t size)
-    {
-        return sipHash128(data, size);
-    }
+    static UInt128 combineHashes(UInt128 h1, UInt128 h2) { return combineHashesFunc<UInt128, SipHash128Impl>(h1, h2); }
+    static UInt128 apply(const char * data, const size_t size) { return sipHash128(data, size); }
 
     static constexpr bool use_int_hash_for_pods = false;
 };
@@ -378,15 +350,10 @@ struct SipHash128KeyedImpl
 
     static UInt128 combineHashesKeyed(const Key & key, UInt128 h1, UInt128 h2)
     {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        UInt128 tmp;
-        reverseMemcpy(&tmp, &h1, sizeof(UInt128));
-        h1 = tmp;
-        reverseMemcpy(&tmp, &h2, sizeof(UInt128));
-        h2 = tmp;
-#endif
-        UInt128 hashes[] = {h1, h2};
-        return applyKeyed(key, reinterpret_cast<const char *>(hashes), 2 * sizeof(UInt128));
+        transformEndianness<std::endian::little>(h1);
+        transformEndianness<std::endian::little>(h2);
+        const UInt128 hashes[]{h1, h2};
+        return applyKeyed(key, reinterpret_cast<const char *>(hashes), sizeof(hashes));
     }
 
     static constexpr bool use_int_hash_for_pods = false;
@@ -531,10 +498,7 @@ struct MurmurHash3Impl64
         return h[0] ^ h[1];
     }
 
-    static UInt64 combineHashes(UInt64 h1, UInt64 h2)
-    {
-        return IntHash64Impl::apply(h1) ^ h2;
-    }
+    static UInt64 combineHashes(UInt64 h1, UInt64 h2) { return IntHash64Impl::apply(h1) ^ h2; }
 
     static constexpr bool use_int_hash_for_pods = false;
 };
@@ -552,10 +516,7 @@ struct MurmurHash3Impl128
         return *reinterpret_cast<UInt128 *>(bytes);
     }
 
-    static UInt128 combineHashes(UInt128 h1, UInt128 h2)
-    {
-        return combineHashesFunc<UInt128, MurmurHash3Impl128>(h1, h2);
-    }
+    static UInt128 combineHashes(UInt128 h1, UInt128 h2) { return combineHashesFunc<UInt128, MurmurHash3Impl128>(h1, h2); }
 
     static constexpr bool use_int_hash_for_pods = false;
 };
@@ -1040,11 +1001,10 @@ private:
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(column))
         {
             const typename ColVecType::Container & vec_from = col_from->getData();
-            size_t size = vec_from.size();
+            const size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
                 ToType hash;
-
                 if constexpr (Impl::use_int_hash_for_pods)
                 {
                     if constexpr (std::is_same_v<ToType, UInt64>)
@@ -1058,13 +1018,8 @@ private:
                         hash = JavaHashImpl::apply(vec_from[i]);
                     else
                     {
-                        FromType value = vec_from[i];
-                        if constexpr (std::endian::native == std::endian::big)
-                        {
-                            FromType value_reversed;
-                            reverseMemcpy(&value_reversed, &value, sizeof(value));
-                            value = value_reversed;
-                        }
+                        auto value = vec_from[i];
+                        transformEndianness<std::endian::little>(value);
                         hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
                     }
                 }
@@ -1078,8 +1033,8 @@ private:
         else if (auto col_from_const = checkAndGetColumnConst<ColVecType>(column))
         {
             auto value = col_from_const->template getValue<FromType>();
-            ToType hash;
 
+            ToType hash;
             if constexpr (Impl::use_int_hash_for_pods)
             {
                 if constexpr (std::is_same_v<ToType, UInt64>)
@@ -1093,17 +1048,12 @@ private:
                     hash = JavaHashImpl::apply(value);
                 else
                 {
-                    if constexpr (std::endian::native == std::endian::big)
-                    {
-                        FromType value_reversed;
-                        reverseMemcpy(&value_reversed, &value, sizeof(value));
-                        value = value_reversed;
-                    }
+                    transformEndianness<std::endian::little>(value);
                     hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
                 }
             }
 
-            size_t size = vec_to.size();
+            const size_t size = vec_to.size();
             if constexpr (first)
                 vec_to.assign(size, hash);
             else
@@ -1120,16 +1070,26 @@ private:
     {
         using ColVecType = ColumnVectorOrDecimal<FromType>;
 
+        static const auto to_little_endian = [](auto & value)
+        {
+            // IPv6 addresses are parsed into four 32-bit components in big-endian ordering on both platforms, so no change is necessary.
+            // Reference: `parseIPv6orIPv4` in src/Common/formatIPv6.h.
+            if constexpr (std::endian::native == std::endian::big && std::is_same_v<std::remove_reference_t<decltype(value)>, IPv6>)
+                return;
+
+            transformEndianness<std::endian::little>(value);
+        };
+
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(column))
         {
             const typename ColVecType::Container & vec_from = col_from->getData();
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
-            {
+            {       
                 // Take a copy to maintain column representation as is.
                 auto value = vec_from[i];
-                transformEndianness<std::endian::little>(value);
-
+                to_little_endian(value);
+                
                 if constexpr (std::is_same_v<FromType, UUID>)
                     UUIDHelpers::toLegacyFormat(value);
 
@@ -1144,14 +1104,13 @@ private:
         else if (auto col_from_const = checkAndGetColumnConst<ColVecType>(column))
         {
             auto value = col_from_const->template getValue<FromType>();
-            transformEndianness<std::endian::little>(value);
-
+            to_little_endian(value);
+            
             if constexpr (std::is_same_v<FromType, UUID>)
                 UUIDHelpers::toLegacyFormat(value);
-
+                
             const auto hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
-
-            size_t size = vec_to.size();
+            const size_t size = vec_to.size();
             if constexpr (first)
                 vec_to.assign(size, hash);
             else
@@ -1420,6 +1379,9 @@ public:
 
         if constexpr (std::is_same_v<ToType, UInt128>) /// backward-compatible
         {
+            if (std::endian::native == std::endian::big)
+                std::ranges::for_each(col_to->getData(), transformEndianness<std::endian::little, ToType>);
+
             auto col_to_fixed_string = ColumnFixedString::create(sizeof(UInt128));
             const auto & data = col_to->getData();
             auto & chars = col_to_fixed_string->getChars();
@@ -1673,21 +1635,8 @@ struct ImplWyHash64
     static constexpr auto name = "wyHash64";
     using ReturnType = UInt64;
 
-    static UInt64 apply(const char * s, const size_t len)
-    {
-        return wyhash(s, len, 0, _wyp);
-    }
-    static UInt64 combineHashes(UInt64 h1, UInt64 h2)
-    {
-        union
-        {
-            UInt64 u64[2];
-            char chars[16];
-        };
-        u64[0] = h1;
-        u64[1] = h2;
-        return apply(chars, 16);
-    }
+    static UInt64 apply(const char * s, const size_t len) { return wyhash(s, len, 0, _wyp); }
+    static UInt64 combineHashes(UInt64 h1, UInt64 h2) { return combineHashesFunc<UInt64, ImplWyHash64>(h1, h2); }
 
     static constexpr bool use_int_hash_for_pods = false;
 };
