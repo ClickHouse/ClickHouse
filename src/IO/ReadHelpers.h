@@ -116,7 +116,7 @@ inline void readPODBinary(T & x, ReadBuffer & buf)
     buf.readStrict(reinterpret_cast<char *>(&x), sizeof(x)); /// NOLINT
 }
 
-inline void readPODBinary(UUID & x, ReadBuffer & buf)
+inline void readUUIDBinary(UUID & x, ReadBuffer & buf)
 {
     auto & uuid = x.toUnderType();
     readPODBinary(uuid.items[1], buf);
@@ -1102,11 +1102,6 @@ inline void readBinary(bool & x, ReadBuffer & buf)
     x = (flag != 0);
 }
 
-inline void readBinary(UUID & x, ReadBuffer & buf)
-{
-    readPODBinary(x, buf);
-}
-
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
 inline void readBinary(Int32 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Int128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
@@ -1120,12 +1115,17 @@ inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf)
 inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readPODBinary(x.value, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
+inline void readBinary(UUID & x, ReadBuffer & buf)
+{
+    readUUIDBinary(x, buf);
+}
+
 inline void readBinary(StackTrace::FramePointers & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 template <std::endian endian, typename T>
 inline void readBinaryEndian(T & x, ReadBuffer & buf)
 {
-    readPODBinary(x, buf);
+    readBinary(x, buf);
     transformEndianness<endian>(x);
 }
 

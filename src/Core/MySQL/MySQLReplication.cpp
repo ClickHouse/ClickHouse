@@ -945,12 +945,8 @@ namespace MySQLReplication
         readBigEndianStrict(payload, reinterpret_cast<char *>(&high), 8);
         readBigEndianStrict(payload, reinterpret_cast<char *>(&low), 8);
 
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        std::swap(low, high);
-#endif
-
-        gtid.uuid.toUnderType().items[0] = low;
-        gtid.uuid.toUnderType().items[1] = high;
+        UUIDHelpers::getUUIDLow(gtid.uuid) = low;
+        UUIDHelpers::getUUIDHigh(gtid.uuid) = high;
 
         payload.readStrict(reinterpret_cast<char *>(&gtid.seq_no), 8);
 

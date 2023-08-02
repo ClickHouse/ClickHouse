@@ -88,7 +88,7 @@ inline void writePODBinary(const T & x, WriteBuffer & buf)
     buf.write(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
 }
 
-inline void writePODBinary(const UUID & x, WriteBuffer & buf)
+inline void writeUUIDBinary(const UUID & x, WriteBuffer & buf)
 {
     const auto & uuid = x.toUnderType();
     writePODBinary(uuid.items[1], buf);
@@ -880,7 +880,7 @@ inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinar
 inline void writeBinary(const Decimal256 & x, WriteBuffer & buf) { writePODBinary(x.value, buf); }
 inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const UUID & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const UUID & x, WriteBuffer & buf) { writeUUIDBinary(x, buf); }
 inline void writeBinary(const IPv4 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const IPv6 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
@@ -1197,7 +1197,7 @@ template <std::endian endian, typename T>
 inline void writeBinaryEndian(T x, WriteBuffer & buf)
 {
     transformEndianness<endian>(x);
-    writePODBinary(x, buf);
+    writeBinary(x, buf);
 }
 
 template <typename T>

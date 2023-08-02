@@ -174,14 +174,8 @@ String GTIDSets::toPayload() const
     for (const auto & set : sets)
     {
         // MySQL UUID is big-endian.
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        writeBinaryBigEndian(set.uuid.toUnderType().items[1], buffer);
-        writeBinaryBigEndian(set.uuid.toUnderType().items[0], buffer);
-#else
-        writeBinaryBigEndian(set.uuid.toUnderType().items[0], buffer);
-        writeBinaryBigEndian(set.uuid.toUnderType().items[1], buffer);
-#endif
-
+        writeBinaryBigEndian(UUIDHelpers::getUUIDLow(set.uuid), buffer);
+        writeBinaryBigEndian(UUIDHelpers::getUUIDHigh(set.uuid), buffer);
 
         UInt64 intervals_size = set.intervals.size();
         buffer.write(reinterpret_cast<const char *>(&intervals_size), 8);
