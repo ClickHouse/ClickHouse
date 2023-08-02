@@ -17,7 +17,7 @@ def writeVarUInt(x, ba):
 
         x >>= 7
         if x == 0:
-            return 
+            return
 
 
 def writeStringBinary(s, ba):
@@ -68,7 +68,7 @@ class TCPClient(object):
 
         self.sendHello()
         self.receiveHello()
-        
+
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
@@ -85,7 +85,7 @@ class TCPClient(object):
             res.extend(cur)
 
         return res
-    
+
     def readUInt(self, size=1):
         res = self.readStrict(size)
         val = 0
@@ -182,7 +182,7 @@ class TCPClient(object):
         writeVarUInt(0, ba)  # rows
         writeVarUInt(0, ba)  # columns
         self.send(ba)
-    
+
     def readException(self):
         code = self.readUInt32()
         _name = self.readStringBinary()
@@ -217,7 +217,6 @@ class TCPClient(object):
         
         self.readStringBinary()  # external table name
 
-
     def readProgress(self):
         packet_type = self.readVarUInt()
         if packet_type == 2:  # Exception
@@ -236,11 +235,15 @@ class TCPClient(object):
         return read_rows, read_bytes, total_rows_to_read, written_rows, written_bytes
 
     def readRow(self, row_type, rows):
-        if (row_type == 'UInt64'):
+        if row_type == 'UInt64':
             row = [self.readUInt64() for _ in range(rows)]
             return row
         else:
-            raise RuntimeError("Currently python version of tcp client doesn't support the following type of row: {}".format(row_type))
+            raise RuntimeError(
+                "Currently python version of tcp client doesn't support the following type of row: {}".format(
+                    row_type
+                )
+            )
 
     def readHeader(self, need_read_data=False, need_print_info=True):
         packet_type = self.readVarUInt()
@@ -257,11 +260,11 @@ class TCPClient(object):
         assertPacket(self.readVarUInt(), 0)  # 0
         columns = self.readVarUInt()  # rows
         rows = self.readVarUInt()  # columns
-        
+
         data = [] if need_read_data else None
         if need_print_info:
             print("Rows {} Columns {}".format(rows, columns))
-        
+
         for _ in range(columns):
             col_name = self.readStringBinary()
             type_name = self.readStringBinary()

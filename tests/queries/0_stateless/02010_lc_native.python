@@ -7,7 +7,14 @@ import sys
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(CURDIR, "helpers"))
 
-from tcp_client import TCPClient, CLICKHOUSE_DATABASE, writeVarUInt, writeStringBinary, serializeBlockInfo, assertPacket
+from tcp_client import (
+    TCPClient,
+    CLICKHOUSE_DATABASE,
+    writeVarUInt,
+    writeStringBinary,
+    serializeBlockInfo,
+    assertPacket,
+)
 
 
 def insertValidLowCardinalityRow():

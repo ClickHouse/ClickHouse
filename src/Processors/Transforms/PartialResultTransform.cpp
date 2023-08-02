@@ -30,7 +30,7 @@ IProcessor::Status PartialResultTransform::prepare()
     {
         input.setNotNeeded();
         return Status::PortFull;
-    } 
+    }
 
     /// If input data from previous partial result processor is finished then
     /// PartialResultTransform ready to create snapshots and send them as a partial result
@@ -48,7 +48,7 @@ IProcessor::Status PartialResultTransform::prepare()
 
     input.setNeeded();
     if (!input.hasData())
-        return Status::NeedData; 
+        return Status::NeedData;
 
     partial_result.chunk = input.pull();
     transformPartialResult(partial_result.chunk);
