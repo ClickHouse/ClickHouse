@@ -1227,7 +1227,6 @@ def test_backup_all(exclude_system_log_tables):
             "asynchronous_insert_log",
         ]
         exclude_from_backup += ["system." + table_name for table_name in log_tables]
-        exclude_from_backup += ["information_schema.COLUMNS", "information_schema.SCHEMATA", "information_schema.TABLES", "information_schema.VIEWS"]
 
     backup_command = f"BACKUP ALL {'EXCEPT TABLES ' + ','.join(exclude_from_backup) if exclude_from_backup else ''} TO {backup_name}"
 
