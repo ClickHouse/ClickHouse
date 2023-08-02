@@ -230,9 +230,9 @@ JSONCompactEachRow
 JSONObjectEachRow
 {
 	"row_1": {"number":"0","res":0},
-	"row_1": {"number":"1","res":0},
-	"row_1": {"number":"2","res":0},
-	"row_1": {"number":"3","res":0},
+	"row_2": {"number":"1","res":0},
+	"row_3": {"number":"2","res":0},
+	"row_4": {"number":"3","res":0},
 	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 3) :: 2) -> throwIf(greater(number, 3)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 XML
@@ -367,8 +367,8 @@ JSONCompactEachRow
 JSONObjectEachRow
 {
 	"row_1": {"x":1,"s":"str1","y":"a"},
-	"row_1": {"x":2,"s":"str2","y":"a"},
-	"row_1": {"x":3,"s":"str3","y":"a"},
+	"row_2": {"x":2,"s":"str2","y":"a"},
+	"row_3": {"x":3,"s":"str3","y":"a"},
 	"exception": "Code: 36. : Unexpected value 99 in enum: While executing JSONObjectEachRowRowOutputFormat. (BAD_ARGUMENTS) "
 }
 XML
