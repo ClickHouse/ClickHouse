@@ -195,6 +195,7 @@ struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
 std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Container & container, int64_t zxid) const
 {
     CreateResponse response;
+    response.zxid = zxid;
     Undo undo;
 
     if (container.contains(path))
@@ -257,9 +258,10 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
     return { std::make_shared<CreateResponse>(response), undo };
 }
 
-std::pair<ResponsePtr, Undo> TestKeeperRemoveRequest::process(TestKeeper::Container & container, int64_t) const
+std::pair<ResponsePtr, Undo> TestKeeperRemoveRequest::process(TestKeeper::Container & container, int64_t zxid) const
 {
     RemoveResponse response;
+    response.zxid = zxid;
     Undo undo;
 
     auto it = container.find(path);
@@ -296,9 +298,10 @@ std::pair<ResponsePtr, Undo> TestKeeperRemoveRequest::process(TestKeeper::Contai
     return { std::make_shared<RemoveResponse>(response), undo };
 }
 
-std::pair<ResponsePtr, Undo> TestKeeperExistsRequest::process(TestKeeper::Container & container, int64_t) const
+std::pair<ResponsePtr, Undo> TestKeeperExistsRequest::process(TestKeeper::Container & container, int64_t zxid) const
 {
     ExistsResponse response;
+    response.zxid = zxid;
 
     auto it = container.find(path);
     if (it != container.end())
@@ -314,9 +317,10 @@ std::pair<ResponsePtr, Undo> TestKeeperExistsRequest::process(TestKeeper::Contai
     return { std::make_shared<ExistsResponse>(response), {} };
 }
 
-std::pair<ResponsePtr, Undo> TestKeeperGetRequest::process(TestKeeper::Container & container, int64_t) const
+std::pair<ResponsePtr, Undo> TestKeeperGetRequest::process(TestKeeper::Container & container, int64_t zxid) const
 {
     GetResponse response;
+    response.zxid = zxid;
 
     auto it = container.find(path);
     if (it == container.end())
@@ -336,6 +340,7 @@ std::pair<ResponsePtr, Undo> TestKeeperGetRequest::process(TestKeeper::Container
 std::pair<ResponsePtr, Undo> TestKeeperSetRequest::process(TestKeeper::Container & container, int64_t zxid) const
 {
     SetResponse response;
+    response.zxid = zxid;
     Undo undo;
 
     auto it = container.find(path);
@@ -370,9 +375,10 @@ std::pair<ResponsePtr, Undo> TestKeeperSetRequest::process(TestKeeper::Container
     return { std::make_shared<SetResponse>(response), undo };
 }
 
-std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Container & container, int64_t) const
+std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Container & container, int64_t zxid) const
 {
     ListResponse response;
+    response.zxid = zxid;
 
     auto it = container.find(path);
     if (it == container.end())
@@ -414,9 +420,10 @@ std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Containe
     return { std::make_shared<ListResponse>(response), {} };
 }
 
-std::pair<ResponsePtr, Undo> TestKeeperCheckRequest::process(TestKeeper::Container & container, int64_t) const
+std::pair<ResponsePtr, Undo> TestKeeperCheckRequest::process(TestKeeper::Container & container, int64_t zxid) const
 {
     CheckResponse response;
+    response.zxid = zxid;
     auto it = container.find(path);
     if (it == container.end())
     {
@@ -434,10 +441,11 @@ std::pair<ResponsePtr, Undo> TestKeeperCheckRequest::process(TestKeeper::Contain
     return { std::make_shared<CheckResponse>(response), {} };
 }
 
-std::pair<ResponsePtr, Undo> TestKeeperSyncRequest::process(TestKeeper::Container & /*container*/, int64_t) const
+std::pair<ResponsePtr, Undo> TestKeeperSyncRequest::process(TestKeeper::Container & /*container*/, int64_t zxid) const
 {
     SyncResponse response;
     response.path = path;
+    response.zxid = zxid;
 
     return { std::make_shared<SyncResponse>(std::move(response)), {} };
 }
@@ -456,6 +464,7 @@ std::pair<ResponsePtr, Undo> TestKeeperReconfigRequest::process(TestKeeper::Cont
 std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Container & container, int64_t zxid) const
 {
     MultiResponse response;
+    response.zxid = zxid;
     response.responses.reserve(requests.size());
     std::vector<Undo> undo_actions;
 
