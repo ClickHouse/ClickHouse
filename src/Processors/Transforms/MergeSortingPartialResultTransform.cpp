@@ -5,7 +5,7 @@ namespace DB
 {
 
 MergeSortingPartialResultTransform::MergeSortingPartialResultTransform(
-    const Block & header, MergeSortingTransformPtr merge_sorting_transform_, 
+    const Block & header, MergeSortingTransformPtr merge_sorting_transform_,
     UInt64 partial_result_limit_, UInt64 partial_result_duration_ms_)
     : PartialResultTransform(header, partial_result_limit_, partial_result_duration_ms_)
     , merge_sorting_transform(std::move(merge_sorting_transform_))

@@ -11,7 +11,14 @@ from tcp_client import TCPClient
 
 
 class Progress:
-    def __init__(self, read_rows=0, read_bytes=0, total_rows_to_read=0, written_rows=0, written_bytes=0):
+    def __init__(
+        self,
+        read_rows=0,
+        read_bytes=0,
+        total_rows_to_read=0,
+        written_rows=0,
+        written_bytes=0
+    ):
         # NOTE: this is done in ctor to initialize __dict__
         self.read_rows = read_rows
         self.read_bytes = read_bytes
