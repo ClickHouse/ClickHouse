@@ -266,6 +266,10 @@ void LocalServer::tryInitPath()
 
     global_context->setUserFilesPath(""); // user's files are everywhere
 
+    std::string user_scripts_path = config().getString("user_scripts_path", fs::path(path) / "user_scripts/");
+    global_context->setUserScriptsPath(user_scripts_path);
+    fs::create_directories(user_scripts_path);
+
     /// top_level_domains_lists
     const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/");
     if (!top_level_domains_path.empty())
@@ -490,6 +494,17 @@ try
 
     applyCmdSettings(global_context);
 
+    /// try to load user defined executable functions, throw on error and die
+    try
+    {
+        global_context->loadOrReloadUserDefinedExecutableFunctions(config());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(&logger(), "Caught exception while loading user defined executable functions.");
+        throw;
+    }
+
     if (is_interactive)
     {
         clearTerminal();
@@ -569,7 +584,9 @@ void LocalServer::processConfig()
     }
 
     print_stack_trace = config().getBool("stacktrace", false);
-    load_suggestions = (is_interactive || delayed_interactive) && !config().getBool("disable_suggestion", false);
+    const std::string clickhouse_dialect{"clickhouse"};
+    load_suggestions = (is_interactive || delayed_interactive) && !config().getBool("disable_suggestion", false)
+        && config().getString("dialect", clickhouse_dialect) == clickhouse_dialect;
 
     auto logging = (config().has("logger.console")
                     || config().has("logger.level")

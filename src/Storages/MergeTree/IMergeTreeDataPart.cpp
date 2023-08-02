@@ -1674,8 +1674,8 @@ std::pair<bool, NameSet> IMergeTreeDataPart::canRemovePart() const
 void IMergeTreeDataPart::initializePartMetadataManager()
 {
 #if USE_ROCKSDB
-    if (use_metadata_cache)
-        metadata_manager = std::make_shared<PartMetadataManagerWithCache>(this, storage.getContext()->getMergeTreeMetadataCache());
+    if (auto metadata_cache = storage.getContext()->tryGetMergeTreeMetadataCache(); metadata_cache && use_metadata_cache)
+        metadata_manager = std::make_shared<PartMetadataManagerWithCache>(this, metadata_cache);
     else
         metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(this);
 #else

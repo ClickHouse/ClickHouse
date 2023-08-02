@@ -47,6 +47,7 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
 using AggregateDataPtr = char *;
+using AggregateDataPtrs = std::vector<AggregateDataPtr>;
 using ConstAggregateDataPtr = const char *;
 
 class IAggregateFunction;
@@ -147,6 +148,13 @@ public:
     /// Adds several default values of arguments into aggregation data on which place points to.
     /// Default values must be a the 0-th positions in columns.
     virtual void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const = 0;
+
+    virtual bool isParallelizeMergePrepareNeeded() const { return false; }
+
+    virtual void parallelizeMergePrepare(AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "parallelizeMergePrepare() with thread pool parameter isn't implemented for {} ", getName());
+    }
 
     /// Merges state (on which place points to) with other state of current aggregation function.
     virtual void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
