@@ -328,9 +328,6 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
 
     enabled_row_policies = access_control->getEnabledRowPolicies(*params.user_id, roles_info->enabled_roles);
 
-    enabled_quota = access_control->getEnabledQuota(
-        *params.user_id, user_name, roles_info->enabled_roles, params.address, params.forwarded_address, params.quota_key);
-
     enabled_settings = access_control->getEnabledSettings(
         *params.user_id, user->settings, roles_info->enabled_roles, roles_info->settings_from_enabled_roles);
 
@@ -416,19 +413,32 @@ RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, co
 std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
 {
     std::lock_guard lock{mutex};
-    if (enabled_quota)
-        return enabled_quota;
-    static const auto unlimited_quota = EnabledQuota::getUnlimitedQuota();
-    return unlimited_quota;
+
+    if (!enabled_quota)
+    {
+        if (roles_info)
+        {
+            enabled_quota = access_control->getEnabledQuota(*params.user_id,
+                                                            user_name,
+                                                            roles_info->enabled_roles,
+                                                            params.address,
+                                                            params.forwarded_address,
+                                                            params.quota_key);
+        }
+        else
+        {
+            static const auto unlimited_quota = EnabledQuota::getUnlimitedQuota();
+            return unlimited_quota;
+        }
+    }
+
+    return enabled_quota;
 }
 
 
 std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
 {
-    std::lock_guard lock{mutex};
-    if (enabled_quota)
-        return enabled_quota->getUsage();
-    return {};
+    return getQuota()->getUsage();
 }
 
 

@@ -35,6 +35,11 @@ from version_helper import (
     get_version_from_repo,
     update_version_local,
 )
+from clickhouse_helper import (
+    ClickHouseHelper,
+    prepare_tests_results_for_clickhouse,
+)
+from stopwatch import Stopwatch
 
 IMAGE_NAME = "clickhouse/binary-builder"
 BUILD_LOG_NAME = "build_log.log"
@@ -45,7 +50,7 @@ def _can_export_binaries(build_config: BuildConfig) -> bool:
         return False
     if build_config["sanitizer"] != "":
         return True
-    if build_config["build_type"] != "":
+    if build_config["debug_build"]:
         return True
     return False
 
@@ -66,8 +71,8 @@ def get_packager_cmd(
         f"--package-type={package_type} --compiler={comp}"
     )
 
-    if build_config["build_type"]:
-        cmd += f" --build-type={build_config['build_type']}"
+    if build_config["debug_build"]:
+        cmd += " --debug-build"
     if build_config["sanitizer"]:
         cmd += f" --sanitizer={build_config['sanitizer']}"
     if build_config["tidy"] == "enable":
@@ -268,6 +273,7 @@ def mark_failed_reports_pending(build_name: str, pr_info: PRInfo) -> None:
 def main():
     logging.basicConfig(level=logging.INFO)
 
+    stopwatch = Stopwatch()
     build_name = sys.argv[1]
 
     build_config = CI_CONFIG["build_config"][build_name]
@@ -394,7 +400,20 @@ def main():
     )
 
     upload_master_static_binaries(pr_info, build_config, s3_helper, build_output_path)
-    # Fail build job if not successeded
+
+    ch_helper = ClickHouseHelper()
+    prepared_events = prepare_tests_results_for_clickhouse(
+        pr_info,
+        [],
+        "success" if success else "failure",
+        stopwatch.duration_seconds,
+        stopwatch.start_time_str,
+        log_url,
+        f"Build ({build_name})",
+    )
+    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+
+    # Fail the build job if it didn't succeed
     if not success:
         sys.exit(1)
 

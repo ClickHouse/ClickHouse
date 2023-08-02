@@ -31,10 +31,10 @@ protected:
         not_endswith,
         endswith_cs,
         not_endswith_cs,
-        equal, //=~
-        not_equal,//!~
-        equal_cs, //=
-        not_equal_cs,//!=
+        equal, /// =~
+        not_equal, /// !~
+        equal_cs, /// =
+        not_equal_cs, /// !=
         has,
         not_has,
         has_all,
@@ -49,10 +49,10 @@ protected:
         not_hassuffix,
         hassuffix_cs,
         not_hassuffix_cs,
-        in_cs,  //in
-        not_in_cs, //!in
-        in, //in~
-        not_in ,//!in~
+        in_cs, /// in
+        not_in_cs, /// !in
+        in, /// in~
+        not_in, /// !in~
         matches_regex,
         startswith,
         not_startswith,

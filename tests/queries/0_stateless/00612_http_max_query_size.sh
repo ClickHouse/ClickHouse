@@ -36,7 +36,7 @@ def gen_data(q):
 
     pattern = ''' or toString(number) = '{}'\n'''
 
-    for i in range(1, 4 * 1024):
+    for i in range(0, 1024 * 2):
         yield pattern.format(str(i).zfill(1024 - len(pattern) + 2)).encode()
 
 s = requests.Session()
