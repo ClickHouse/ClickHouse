@@ -224,7 +224,7 @@ elseif (ARCH_AMD64)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
     endif ()
 
-    set (TEST_FLAG "-mavx2 -mprefer-vector-width=128")
+    set (TEST_FLAG "-mavx2 -mprefer-vector-width=256")
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
     check_cxx_source_compiles("
         #include <immintrin.h>
