@@ -153,7 +153,10 @@ Pool::Entry Pool::get(uint64_t wait_timeout)
         for (auto & connection : connections)
         {
             if (connection->ref_count == 0)
+            {
+                logger.test("Found free connection in pool, returning it to the caller");
                 return Entry(connection, this);
+            }
         }
 
         logger.trace("(%s): Trying to allocate a new connection.", getDescription());
