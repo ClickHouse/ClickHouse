@@ -89,14 +89,14 @@ namespace ErrorCodes
 
 namespace ActionLocks
 {
-    extern StorageActionBlockType PartsMerge;
-    extern StorageActionBlockType PartsFetch;
-    extern StorageActionBlockType PartsSend;
-    extern StorageActionBlockType ReplicationQueue;
-    extern StorageActionBlockType DistributedSend;
-    extern StorageActionBlockType PartsTTLMerge;
-    extern StorageActionBlockType PartsMove;
-    extern StorageActionBlockType PullReplicationLog;
+    extern const StorageActionBlockType PartsMerge;
+    extern const StorageActionBlockType PartsFetch;
+    extern const StorageActionBlockType PartsSend;
+    extern const StorageActionBlockType ReplicationQueue;
+    extern const StorageActionBlockType DistributedSend;
+    extern const StorageActionBlockType PartsTTLMerge;
+    extern const StorageActionBlockType PartsMove;
+    extern const StorageActionBlockType PullReplicationLog;
 }
 
 

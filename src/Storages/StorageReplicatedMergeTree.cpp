@@ -197,7 +197,7 @@ namespace ActionLocks
     extern const StorageActionBlockType ReplicationQueue;
     extern const StorageActionBlockType PartsTTLMerge;
     extern const StorageActionBlockType PartsMove;
-    extern StorageActionBlockType PullReplicationLog;
+    extern const StorageActionBlockType PullReplicationLog;
 }
 
 
