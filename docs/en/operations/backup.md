@@ -84,6 +84,11 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
     - `password` for the file on disk
     - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
     - `structure_only`: if enabled, allows to only backup or restore the CREATE statements without the data of tables
+    - `storage_policy`: storage policy for the table being restored. See [Using Multiple Block Devices for Data Storage](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes).
+
+:::note storage_policy
+`storage_policy` setting is only applicable to the `RESTORE TABLE` command with an engine from the `MergeTree` family.
+:::
 
 ### Usage examples
 
