@@ -110,7 +110,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<UniqToCountVisitor>;
     using Base::Base;
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_uniq_to_count)
             return;
