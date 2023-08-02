@@ -12,19 +12,19 @@ Engines in the `MergeTree` family are designed for inserting a very large amount
 
 Main features:
 
-- Stores data sorted by primary key.
+-   Stores data sorted by primary key.
 
     This allows you to create a small sparse index that helps find data faster.
 
-- Partitions can be used if the [partitioning key](/docs/en/engines/table-engines/mergetree-family/custom-partitioning-key.md) is specified.
+-   Partitions can be used if the [partitioning key](/docs/en/engines/table-engines/mergetree-family/custom-partitioning-key.md) is specified.
 
     ClickHouse supports certain operations with partitions that are more efficient than general operations on the same data with the same result. ClickHouse also automatically cuts off the partition data where the partitioning key is specified in the query.
 
-- Data replication support.
+-   Data replication support.
 
     The family of `ReplicatedMergeTree` tables provides data replication. For more information, see [Data replication](/docs/en/engines/table-engines/mergetree-family/replication.md).
 
-- Data sampling support.
+-   Data sampling support.
 
     If necessary, you can set the data sampling method in the table.
 
@@ -207,10 +207,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **MergeTree() Parameters**
 
-- `date-column` — The name of a column of the [Date](/docs/en/sql-reference/data-types/date.md) type. ClickHouse automatically creates partitions by month based on this column. The partition names are in the `"YYYYMM"` format.
-- `sampling_expression` — An expression for sampling.
-- `(primary, key)` — Primary key. Type: [Tuple()](/docs/en/sql-reference/data-types/tuple.md)
-- `index_granularity` — The granularity of an index. The number of data rows between the “marks” of an index. The value 8192 is appropriate for most tasks.
+-   `date-column` — The name of a column of the [Date](/docs/en/sql-reference/data-types/date.md) type. ClickHouse automatically creates partitions by month based on this column. The partition names are in the `"YYYYMM"` format.
+-   `sampling_expression` — An expression for sampling.
+-   `(primary, key)` — Primary key. Type: [Tuple()](/docs/en/sql-reference/data-types/tuple.md)
+-   `index_granularity` — The granularity of an index. The number of data rows between the “marks” of an index. The value 8192 is appropriate for most tasks.
 
 **Example**
 
@@ -250,9 +250,9 @@ Take the `(CounterID, Date)` primary key as an example. In this case, the sortin
 
 If the data query specifies:
 
-- `CounterID in ('a', 'h')`, the server reads the data in the ranges of marks `[0, 3)` and `[6, 8)`.
-- `CounterID IN ('a', 'h') AND Date = 3`, the server reads the data in the ranges of marks `[1, 3)` and `[7, 8)`.
-- `Date = 3`, the server reads the data in the range of marks `[1, 10]`.
+-   `CounterID in ('a', 'h')`, the server reads the data in the ranges of marks `[0, 3)` and `[6, 8)`.
+-   `CounterID IN ('a', 'h') AND Date = 3`, the server reads the data in the ranges of marks `[1, 3)` and `[7, 8)`.
+-   `Date = 3`, the server reads the data in the range of marks `[1, 10]`.
 
 The examples above show that it is always more effective to use an index than a full scan.
 
@@ -268,18 +268,18 @@ You can use `Nullable`-typed expressions in the `PRIMARY KEY` and `ORDER BY` cla
 
 The number of columns in the primary key is not explicitly limited. Depending on the data structure, you can include more or fewer columns in the primary key. This may:
 
-- Improve the performance of an index.
+-   Improve the performance of an index.
 
     If the primary key is `(a, b)`, then adding another column `c` will improve the performance if the following conditions are met:
 
-    - There are queries with a condition on column `c`.
-    - Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
+    -   There are queries with a condition on column `c`.
+    -   Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
 
-- Improve data compression.
+-   Improve data compression.
 
     ClickHouse sorts data by primary key, so the higher the consistency, the better the compression.
 
-- Provide additional logic when merging data parts in the [CollapsingMergeTree](/docs/en/engines/table-engines/mergetree-family/collapsingmergetree.md/#table_engine-collapsingmergetree) and [SummingMergeTree](/docs/en/engines/table-engines/mergetree-family/summingmergetree.md) engines.
+-   Provide additional logic when merging data parts in the [CollapsingMergeTree](/docs/en/engines/table-engines/mergetree-family/collapsingmergetree.md/#table_engine-collapsingmergetree) and [SummingMergeTree](/docs/en/engines/table-engines/mergetree-family/summingmergetree.md) engines.
 
     In this case it makes sense to specify the *sorting key* that is different from the primary key.
 
@@ -439,50 +439,6 @@ Syntax: `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, 
 - `number_of_hash_functions` — The number of hash functions used in the Bloom filter.
 - `random_seed` — The seed for Bloom filter hash functions.
 
-Users can create [UDF](/docs/en/sql-reference/statements/create/function.md) to estimate the parameters set of `ngrambf_v1`. Query statements are as follows:  
-
-```sql
-CREATE FUNCTION bfEstimateFunctions [ON CLUSTER cluster]   
-AS  
-(total_nubmer_of_all_grams, size_of_bloom_filter_in_bits) -> round((size_of_bloom_filter_in_bits / total_nubmer_of_all_grams) * log(2));   
-  
-CREATE FUNCTION bfEstimateBmSize [ON CLUSTER cluster]   
-AS  
-(total_nubmer_of_all_grams,  probability_of_false_positives) -> ceil((total_nubmer_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));  
-    
-CREATE FUNCTION bfEstimateFalsePositive [ON CLUSTER cluster]  
-AS   
-(total_nubmer_of_all_grams, number_of_hash_functions, size_of_bloom_filter_in_bytes) -> pow(1 - exp(-number_of_hash_functions/ (size_of_bloom_filter_in_bytes / total_nubmer_of_all_grams)), number_of_hash_functions);  
-  
-CREATE FUNCTION bfEstimateGramNumber [ON CLUSTER cluster]   
-AS  
-(number_of_hash_functions, probability_of_false_positives, size_of_bloom_filter_in_bytes) -> ceil(size_of_bloom_filter_in_bytes / (-number_of_hash_functions / log(1 - exp(log(probability_of_false_positives) / number_of_hash_functions))))
-
-```  
-To use those functions,we need to specify two parameter at least.
-For example, if there 4300 ngrams in the granule and we expect false positives to be less than 0.0001. The other parameters can be estimated by executing following queries:   
-  
-
-```sql
---- estimate number of bits in the filter
-SELECT bfEstimateBmSize(4300, 0.0001) / 8 as size_of_bloom_filter_in_bytes;  
-
-┌─size_of_bloom_filter_in_bytes─┐
-│                         10304 │
-└───────────────────────────────┘
-  
---- estimate number of hash functions
-SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) as number_of_hash_functions
-  
-┌─number_of_hash_functions─┐
-│                       13 │
-└──────────────────────────┘
-
-```
-Of course, you can also use those functions to estimate parameters by other conditions.
-The functions refer to the content [here](https://hur.st/bloomfilter).
-
-
 #### Token Bloom Filter
 
 The same as `ngrambf_v1`, but stores tokens instead of ngrams. Tokens are sequences separated by non-alphanumeric characters.
@@ -491,7 +447,7 @@ Syntax: `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, ran
 
 #### Special-purpose
 
-- Experimental indexes to support approximate nearest neighbor (ANN) search. See [here](annindexes.md) for details.
+- An experimental index to support approximate nearest neighbor (ANN) search. See [here](annindexes.md) for details.
 - An experimental inverted index to support full-text search. See [here](invertedindexes.md) for details.
 
 ### Functions Support {#functions-support}
@@ -527,25 +483,25 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 
 Functions with a constant argument that is less than ngram size can’t be used by `ngrambf_v1` for query optimization.
 
-(*) For `hasTokenCaseInsensitive` and `hasTokenCaseInsensitiveOrNull` to be effective, the `tokenbf_v1` index must be created on lowercased data, for example `INDEX idx (lower(str_col)) TYPE tokenbf_v1(512, 3, 0)`.
+(*) For `hasTokenCaseInsensitve` and `hasTokenCaseInsensitive` to be effective, the `tokenbf_v1` index must be created on lowercased data, for example `INDEX idx (lower(str_col)) TYPE tokenbf_v1(512, 3, 0)`.
 
 :::note
 Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, and `bloom_filter` indexes can not be used for optimizing queries where the result of a function is expected to be false.
 
 For example:
 
-- Can be optimized:
-    - `s LIKE '%test%'`
-    - `NOT s NOT LIKE '%test%'`
-    - `s = 1`
-    - `NOT s != 1`
-    - `startsWith(s, 'test')`
-- Can not be optimized:
-    - `NOT s LIKE '%test%'`
-    - `s NOT LIKE '%test%'`
-    - `NOT s = 1`
-    - `s != 1`
-    - `NOT startsWith(s, 'test')`
+-   Can be optimized:
+    -   `s LIKE '%test%'`
+    -   `NOT s NOT LIKE '%test%'`
+    -   `s = 1`
+    -   `NOT s != 1`
+    -   `startsWith(s, 'test')`
+-   Can not be optimized:
+    -   `NOT s LIKE '%test%'`
+    -   `s NOT LIKE '%test%'`
+    -   `NOT s = 1`
+    -   `s != 1`
+    -   `NOT startsWith(s, 'test')`
 :::
 
 
@@ -658,11 +614,11 @@ TTL expr
 
 Type of TTL rule may follow each TTL expression. It affects an action which is to be done once the expression is satisfied (reaches current time):
 
-- `DELETE` - delete expired rows (default action);
-- `RECOMPRESS codec_name` - recompress data part with the `codec_name`;
-- `TO DISK 'aaa'` - move part to the disk `aaa`;
-- `TO VOLUME 'bbb'` - move part to the disk `bbb`;
-- `GROUP BY` - aggregate expired rows.
+-   `DELETE` - delete expired rows (default action);
+-   `RECOMPRESS codec_name` - recompress data part with the `codec_name`;
+-   `TO DISK 'aaa'` - move part to the disk `aaa`;
+-   `TO VOLUME 'bbb'` - move part to the disk `bbb`;
+-   `GROUP BY` - aggregate expired rows.
 
 `DELETE` action can be used together with `WHERE` clause to delete only some of the expired rows based on a filtering condition:
 ``` sql
@@ -727,7 +683,7 @@ TTL d + INTERVAL 1 MONTH RECOMPRESS CODEC(ZSTD(17)), d + INTERVAL 1 YEAR RECOMPR
 SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 ```
 
-Creating a table, where expired rows are aggregated. In result rows `x` contains the maximum value across the grouped rows, `y` — the minimum value, and `d` — any occasional value from grouped rows.
+Creating a table, where expired rows are aggregated. In result rows `x` contains the maximum value accross the grouped rows, `y` — the minimum value, and `d` — any occasional value from grouped rows.
 
 ``` sql
 CREATE TABLE table_for_aggregation
@@ -756,17 +712,6 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 - [ttl_only_drop_parts](/docs/en/operations/settings/settings.md/#ttl_only_drop_parts) setting
 
 
-## Disk types
-
-In addition to local block devices, ClickHouse supports these storage types:
-- [`s3` for S3 and MinIO](#table_engine-mergetree-s3)
-- [`gcs` for GCS](/docs/en/integrations/data-ingestion/gcs/index.md/#creating-a-disk)
-- [`blob_storage_disk` for Azure Blob Storage](#table_engine-mergetree-azure-blob-storage)
-- [`hdfs` for HDFS](#hdfs-storage)
-- [`web` for read-only from web](#web-storage)
-- [`cache` for local caching](/docs/en/operations/storing-data.md/#using-local-cache)
-- [`s3_plain` for backups to S3](/docs/en/operations/backup#backuprestore-using-an-s3-disk)
-
 ## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
 
 ### Introduction {#introduction}
@@ -777,22 +722,16 @@ Data part is the minimum movable unit for `MergeTree`-engine tables. The data be
 
 ### Terms {#terms}
 
-- Disk — Block device mounted to the filesystem.
-- Default disk — Disk that stores the path specified in the [path](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-path) server setting.
-- Volume — Ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
-- Storage policy — Set of volumes and the rules for moving data between them.
+-   Disk — Block device mounted to the filesystem.
+-   Default disk — Disk that stores the path specified in the [path](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-path) server setting.
+-   Volume — Ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
+-   Storage policy — Set of volumes and the rules for moving data between them.
 
 The names given to the described entities can be found in the system tables, [system.storage_policies](/docs/en/operations/system-tables/storage_policies.md/#system_tables-storage_policies) and [system.disks](/docs/en/operations/system-tables/disks.md/#system_tables-disks). To apply one of the configured storage policies for a table, use the `storage_policy` setting of `MergeTree`-engine family tables.
 
 ### Configuration {#table_engine-mergetree-multiple-volumes_configure}
 
-Disks, volumes and storage policies should be declared inside the `<storage_configuration>` tag either in a file in the `config.d` directory.
-
-:::tip
-Disks can also be declared in the `SETTINGS` section of a query.  This is useful
-for ad-hoc analysis to temporarily attach a disk that is, for example, hosted at a URL.
-See [dynamic storage](#dynamic-storage) for more details.
-:::
+Disks, volumes and storage policies should be declared inside the `<storage_configuration>` tag either in the main file `config.xml` or in a distinct file in the `config.d` directory.
 
 Configuration structure:
 
@@ -820,9 +759,9 @@ Configuration structure:
 
 Tags:
 
-- `<disk_name_N>` — Disk name. Names must be different for all disks.
-- `path` — path under which a server will store data (`data` and `shadow` folders), should be terminated with ‘/’.
-- `keep_free_space_bytes` — the amount of free disk space to be reserved.
+-   `<disk_name_N>` — Disk name. Names must be different for all disks.
+-   `path` — path under which a server will store data (`data` and `shadow` folders), should be terminated with ‘/’.
+-   `keep_free_space_bytes` — the amount of free disk space to be reserved.
 
 The order of the disk definition is not important.
 
@@ -858,16 +797,16 @@ Storage policies configuration markup:
 
 Tags:
 
-- `policy_name_N` — Policy name. Policy names must be unique.
-- `volume_name_N` — Volume name. Volume names must be unique.
-- `disk` — a disk within a volume.
-- `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume’s disks. If the a size of a merged part estimated to be bigger than `max_data_part_size_bytes` then this part will be written to a next volume. Basically this feature allows to keep new/small parts on a hot (SSD) volume and move them to a cold (HDD) volume when they reach large size. Do not use this setting if your policy has only one volume.
-- `move_factor` — when the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1). ClickHouse sorts existing parts by size from largest to smallest (in descending order) and selects parts with the total size that is sufficient to meet the `move_factor` condition. If the total size of all parts is insufficient, all parts will be moved.
-- `prefer_not_to_merge` — Disables merging of data parts on this volume. When this setting is enabled, merging data on this volume is not allowed. This allows controlling how ClickHouse works with slow disks.
-- `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default (if enabled) if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3). If disabled then already expired data part is written into a default volume and then right after moved to TTL volume.
-- `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
+-   `policy_name_N` — Policy name. Policy names must be unique.
+-   `volume_name_N` — Volume name. Volume names must be unique.
+-   `disk` — a disk within a volume.
+-   `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume’s disks. If the a size of a merged part estimated to be bigger than `max_data_part_size_bytes` then this part will be written to a next volume. Basically this feature allows to keep new/small parts on a hot (SSD) volume and move them to a cold (HDD) volume when they reach large size. Do not use this setting if your policy has only one volume.
+-   `move_factor` — when the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1). ClickHouse sorts existing parts by size from largest to smallest (in descending order) and selects parts with the total size that is sufficient to meet the `move_factor` condition. If the total size of all parts is insufficient, all parts will be moved.
+-   `prefer_not_to_merge` — Disables merging of data parts on this volume. When this setting is enabled, merging data on this volume is not allowed. This allows controlling how ClickHouse works with slow disks.
+-   `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3).
+-   `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
 
-Configuration examples:
+Cofiguration examples:
 
 ``` xml
 <storage_configuration>
@@ -937,104 +876,14 @@ You could change storage policy after table creation with [ALTER TABLE ... MODIF
 
 The number of threads performing background moves of data parts can be changed by [background_move_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_move_pool_size) setting.
 
-### Dynamic Storage
-
-This example query shows how to attach a table stored at a URL and configure the
-remote storage within the query. The web storage is not configured in the ClickHouse
-configuration files; all the settings are in the CREATE/ATTACH query.
-
-:::note
-The example uses `type=web`, but any disk type can be configured as dynamic, even Local disk. Local disks require a path argument to be inside the server config parameter `custom_local_disks_base_directory`, which has no default, so set that also when using local disk.
-:::
-
-#### Example dynamic web storage
-
-:::tip
-A [demo dataset](https://github.com/ClickHouse/web-tables-demo) is hosted in GitHub.  To prepare your own tables for web storage see the tool [clickhouse-static-files-uploader](/docs/en/operations/storing-data.md/#storing-data-on-webserver)
-:::
-
-In this `ATTACH TABLE` query the `UUID` provided matches the directory name of the data, and the endpoint is the URL for the raw GitHub content.
-
-```sql
-# highlight-next-line
-ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
-(
-    price UInt32,
-    date Date,
-    postcode1 LowCardinality(String),
-    postcode2 LowCardinality(String),
-    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
-    is_new UInt8,
-    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
-    addr1 String,
-    addr2 String,
-    street LowCardinality(String),
-    locality LowCardinality(String),
-    town LowCardinality(String),
-    district LowCardinality(String),
-    county LowCardinality(String)
-)
-ENGINE = MergeTree
-ORDER BY (postcode1, postcode2, addr1, addr2)
-  # highlight-start
-  SETTINGS disk = disk(
-      type=web,
-      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
-      );
-  # highlight-end
-```
-
-### Nested Dynamic Storage
-
-This example query builds on the above dynamic disk configuration and shows how to
-use a local disk to cache data from a table stored at a URL. Neither the cache disk
-nor the web storage is configured in the ClickHouse configuration files; both are
-configured in the CREATE/ATTACH query settings.
-
-In the settings highlighted below notice that the disk of `type=web` is nested within 
-the disk of `type=cache`.
-
-```sql
-ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
-(
-    price UInt32,
-    date Date,
-    postcode1 LowCardinality(String),
-    postcode2 LowCardinality(String),
-    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
-    is_new UInt8,
-    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
-    addr1 String,
-    addr2 String,
-    street LowCardinality(String),
-    locality LowCardinality(String),
-    town LowCardinality(String),
-    district LowCardinality(String),
-    county LowCardinality(String)
-)
-ENGINE = MergeTree
-ORDER BY (postcode1, postcode2, addr1, addr2)
-  # highlight-start
-  SETTINGS disk = disk(
-    type=cache,
-    max_size='1Gi',
-    path='/var/lib/clickhouse/custom_disk_cache/',
-    disk=disk(
-      type=web,
-      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
-      )
-  );
-  # highlight-end
-```
-
 ### Details {#details}
 
 In the case of `MergeTree` tables, data is getting to disk in different ways:
 
-- As a result of an insert (`INSERT` query).
-- During background merges and [mutations](/docs/en/sql-reference/statements/alter/index.md#alter-mutations).
-- When downloading from another replica.
-- As a result of partition freezing [ALTER TABLE … FREEZE PARTITION](/docs/en/sql-reference/statements/alter/partition.md/#alter_freeze-partition).
+-   As a result of an insert (`INSERT` query).
+-   During background merges and [mutations](/docs/en/sql-reference/statements/alter/index.md#alter-mutations).
+-   When downloading from another replica.
+-   As a result of partition freezing [ALTER TABLE … FREEZE PARTITION](/docs/en/sql-reference/statements/alter/partition.md/#alter_freeze-partition).
 
 In all these cases except for mutations and partition freezing, a part is stored on a volume and a disk according to the given storage policy:
 
@@ -1075,11 +924,7 @@ Configuration markup:
             <access_key_id>your_access_key_id</access_key_id>
             <secret_access_key>your_secret_access_key</secret_access_key>
             <region></region>
-            <header>Authorization: Bearer SOME-TOKEN</header>
             <server_side_encryption_customer_key_base64>your_base64_encoded_customer_key</server_side_encryption_customer_key_base64>
-            <server_side_encryption_kms_key_id>your_kms_key_id</server_side_encryption_kms_key_id>
-            <server_side_encryption_kms_encryption_context>your_kms_encryption_context</server_side_encryption_kms_encryption_context>
-            <server_side_encryption_kms_bucket_key_enabled>true</server_side_encryption_kms_bucket_key_enabled>
             <proxy>
                 <uri>http://proxy1</uri>
                 <uri>http://proxy2</uri>
@@ -1111,34 +956,30 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 
 Required parameters:
 
-- `endpoint` — S3 endpoint URL in `path` or `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). Endpoint URL should contain a bucket and root path to store data.
-- `access_key_id` — S3 access key id.
-- `secret_access_key` — S3 secret access key.
+-   `endpoint` — S3 endpoint URL in `path` or `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). Endpoint URL should contain a bucket and root path to store data.
+-   `access_key_id` — S3 access key id.
+-   `secret_access_key` — S3 secret access key.
 
 Optional parameters:
 
-- `region` — S3 region name.
-- `support_batch_delete` — This controls the check to see if batch deletes are supported. Set this to `false` when using Google Cloud Storage (GCS) as GCS does not support batch deletes and preventing the checks will prevent error messages in the logs.
-- `use_environment_credentials` — Reads AWS credentials from the Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN if they exist. Default value is `false`.
-- `use_insecure_imds_request` — If set to `true`, S3 client will use insecure IMDS request while obtaining credentials from Amazon EC2 metadata. Default value is `false`.
-- `expiration_window_seconds` — Grace period for checking if expiration-based credentials have expired. Optional, default value is `120`.
-- `proxy` — Proxy configuration for S3 endpoint. Each `uri` element inside `proxy` block should contain a proxy URL.
-- `connect_timeout_ms` — Socket connect timeout in milliseconds. Default value is `10 seconds`.
-- `request_timeout_ms` — Request timeout in milliseconds. Default value is `5 seconds`.
-- `retry_attempts` — Number of retry attempts in case of failed request. Default value is `10`.
-- `single_read_retries` — Number of retry attempts in case of connection drop during read. Default value is `4`.
-- `min_bytes_for_seek` — Minimal number of bytes to use seek operation instead of sequential read. Default value is `1 Mb`.
-- `metadata_path` — Path on local FS to store metadata files for S3. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.
-- `skip_access_check` — If true, disk access checks will not be performed on disk start-up. Default value is `false`.
-- `header` —  Adds specified HTTP header to a request to given endpoint. Optional, can be specified multiple times.
-- `server_side_encryption_customer_key_base64` — If specified, required headers for accessing S3 objects with SSE-C encryption will be set.
-- `server_side_encryption_kms_key_id` - If specified, required headers for accessing S3 objects with [SSE-KMS encryption](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html) will be set. If an empty string is specified, the AWS managed S3 key will be used. Optional.
-- `server_side_encryption_kms_encryption_context` - If specified alongside `server_side_encryption_kms_key_id`, the given encryption context header for SSE-KMS will be set. Optional.
-- `server_side_encryption_kms_bucket_key_enabled` - If specified alongside `server_side_encryption_kms_key_id`, the header to enable S3 bucket keys for SSE-KMS will be set. Optional, can be `true` or `false`, defaults to nothing (matches the bucket-level setting).
-- `s3_max_put_rps` — Maximum PUT requests per second rate before throttling. Default value is `0` (unlimited).
-- `s3_max_put_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_put_rps`.
-- `s3_max_get_rps` — Maximum GET requests per second rate before throttling. Default value is `0` (unlimited).
-- `s3_max_get_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_get_rps`.
+-   `region` — S3 region name.
+-   `support_batch_delete` — This controls the check to see if batch deletes are supported. Set this to `false` when using Google Cloud Storage (GCS) as GCS does not support batch deletes and preventing the checks will prevent error messages in the logs.
+-   `use_environment_credentials` — Reads AWS credentials from the Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN if they exist. Default value is `false`.
+-   `use_insecure_imds_request` — If set to `true`, S3 client will use insecure IMDS request while obtaining credentials from Amazon EC2 metadata. Default value is `false`.
+-   `expiration_window_seconds` — Grace period for checking if expiration-based credentials have expired. Optional, default value is `120`.
+-   `proxy` — Proxy configuration for S3 endpoint. Each `uri` element inside `proxy` block should contain a proxy URL.
+-   `connect_timeout_ms` — Socket connect timeout in milliseconds. Default value is `10 seconds`.
+-   `request_timeout_ms` — Request timeout in milliseconds. Default value is `5 seconds`.
+-   `retry_attempts` — Number of retry attempts in case of failed request. Default value is `10`.
+-   `single_read_retries` — Number of retry attempts in case of connection drop during read. Default value is `4`.
+-   `min_bytes_for_seek` — Minimal number of bytes to use seek operation instead of sequential read. Default value is `1 Mb`.
+-   `metadata_path` — Path on local FS to store metadata files for S3. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.
+-   `skip_access_check` — If true, disk access checks will not be performed on disk start-up. Default value is `false`.
+-   `server_side_encryption_customer_key_base64` — If specified, required headers for accessing S3 objects with SSE-C encryption will be set.
+-   `s3_max_put_rps` — Maximum PUT requests per second rate before throttling. Default value is `0` (unlimited).
+-   `s3_max_put_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_put_rps`.
+-   `s3_max_get_rps` — Maximum GET requests per second rate before throttling. Default value is `0` (unlimited).
+-   `s3_max_get_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_get_rps`.
 
 ### Configuring the cache
 
@@ -1153,12 +994,12 @@ This is the cache configuration from above:
 ```
 
 These parameters define the cache layer:
-- `type` — If a disk is of type `cache` it caches mark and index files in memory.
-- `disk` — The name of the disk that will be cached.
+-   `type` — If a disk is of type `cache` it caches mark and index files in memory.
+-   `disk` — The name of the disk that will be cached.
 
 Cache parameters:
-- `path` — The path where metadata for the cache is stored.
-- `max_size` — The size (amount of disk space) that the cache can grow to.
+-   `path` — The path where metadata for the cache is stored.
+-   `max_size` — The size (amount of memory) that the cache can grow to.
 
 :::tip
 There are several other cache parameters that you can use to tune your storage, see [using local cache](/docs/en/operations/storing-data.md/#using-local-cache) for the details.
@@ -1239,12 +1080,11 @@ Authentication parameters (the disk will try all available methods **and** Manag
 * `account_name` and `account_key` - For authentication using Shared Key.
 
 Limit parameters (mainly for internal usage):
-* `s3_max_single_part_upload_size` - Limits the size of a single block upload to Blob Storage.
+* `max_single_part_upload_size` - Limits the size of a single block upload to Blob Storage.
 * `min_bytes_for_seek` - Limits the size of a seekable region.
 * `max_single_read_retries` - Limits the number of attempts to read a chunk of data from Blob Storage.
 * `max_single_download_retries` - Limits the number of attempts to download a readable buffer from Blob Storage.
 * `thread_pool_size` - Limits the number of threads with which `IDiskRemote` is instantiated.
-* `s3_max_inflight_parts_for_one_file` - Limits the number of put requests that can be run concurrently for one object.
 
 Other parameters:
 * `metadata_path` - Path on local FS to store metadata files for Blob Storage. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.
@@ -1258,98 +1098,11 @@ Examples of working configurations can be found in integration tests directory (
   Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
   :::
 
-## HDFS storage {#hdfs-storage}
-
-In this sample configuration:
-- the disk is of type `hdfs`
-- the data is hosted at `hdfs://hdfs1:9000/clickhouse/`
-
-```xml
-<clickhouse>
-    <storage_configuration>
-        <disks>
-            <hdfs>
-                <type>hdfs</type>
-                <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
-                <skip_access_check>true</skip_access_check>
-            </hdfs>
-            <hdd>
-                <type>local</type>
-                <path>/</path>
-            </hdd>
-        </disks>
-        <policies>
-            <hdfs>
-                <volumes>
-                    <main>
-                        <disk>hdfs</disk>
-                    </main>
-                    <external>
-                        <disk>hdd</disk>
-                    </external>
-                </volumes>
-            </hdfs>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-```
-
-## Web storage (read-only) {#web-storage}
-
-Web storage can be used for read-only purposes. An example use is for hosting sample
-data, or for migrating data.
-
-:::tip
-Storage can also be configured temporarily within a query, if a web dataset is not expected
-to be used routinely, see [dynamic storage](#dynamic-storage) and skip editing the
-configuration file.
-:::
-
-In this sample configuration:
-- the disk is of type `web`
-- the data is hosted at `http://nginx:80/test1/`
-- a cache on local storage is used 
-
-```xml
-<clickhouse>
-    <storage_configuration>
-        <disks>
-            <web>
-                <type>web</type>
-                <endpoint>http://nginx:80/test1/</endpoint>
-            </web>
-            <cached_web>
-                <type>cache</type>
-                <disk>web</disk>
-                <path>cached_web_cache/</path>
-                <max_size>100000000</max_size>
-            </cached_web>
-        </disks>
-        <policies>
-            <web>
-                <volumes>
-                    <main>
-                        <disk>web</disk>
-                    </main>
-                </volumes>
-            </web>
-            <cached_web>
-                <volumes>
-                    <main>
-                        <disk>cached_web</disk>
-                    </main>
-                </volumes>
-            </cached_web>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-```
-
 ## Virtual Columns {#virtual-columns}
 
-- `_part` — Name of a part.
-- `_part_index` — Sequential index of the part in the query result.
-- `_partition_id` — Name of a partition.
-- `_part_uuid` — Unique part identifier (if enabled MergeTree setting `assign_part_uuids`).
-- `_partition_value` — Values (a tuple) of a `partition by` expression.
-- `_sample_factor` — Sample factor (from the query).
+-   `_part` — Name of a part.
+-   `_part_index` — Sequential index of the part in the query result.
+-   `_partition_id` — Name of a partition.
+-   `_part_uuid` — Unique part identifier (if enabled MergeTree setting `assign_part_uuids`).
+-   `_partition_value` — Values (a tuple) of a `partition by` expression.
+-   `_sample_factor` — Sample factor (from the query).

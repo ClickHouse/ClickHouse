@@ -1,6 +1,5 @@
 ---
 slug: /en/engines/table-engines/integrations/hudi
-sidebar_position: 86
 sidebar_label: Hudi
 ---
 
@@ -19,8 +18,8 @@ CREATE TABLE hudi_table
 
 **Engine parameters**
 
-- `url` — Bucket url with the path to an existing Hudi table.
-- `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file.
+-   `url` — Bucket url with the path to an existing Hudi table.
+-   `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file.
 
 Engine parameters can be specified using [Named Collections](../../../operations/named-collections.md)
 
@@ -50,4 +49,4 @@ CREATE TABLE hudi_table ENGINE=Hudi(hudi_conf, filename = 'test_table')
 
 ## See also
 
-- [hudi table function](/docs/en/sql-reference/table-functions/hudi.md)
+-  [hudi table function](/docs/en/sql-reference/table-functions/hudi.md)

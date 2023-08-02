@@ -10,7 +10,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 
 #define SYSTEM_LOG_ELEMENTS(M) \
     M(AsynchronousMetricLogElement) \
@@ -60,12 +60,12 @@ public:
     /// Stop the background flush thread before destructor. No more data will be written.
     virtual void shutdown() = 0;
 
-    virtual ~ISystemLog();
+    virtual ~ISystemLog() = default;
 
     virtual void savingThreadFunction() = 0;
 
 protected:
-    std::unique_ptr<ThreadFromGlobalPool> saving_thread;
+    ThreadFromGlobalPool saving_thread;
 
     /// Data shared between callers of add()/flush()/shutdown(), and the saving thread
     std::mutex mutex;
@@ -92,7 +92,7 @@ public:
 
     String getName() const override { return LogElement::name(); }
 
-    static const char * getDefaultOrderBy() { return "event_date, event_time"; }
+    static const char * getDefaultOrderBy() { return "(event_date, event_time)"; }
 
 protected:
     Poco::Logger * log;

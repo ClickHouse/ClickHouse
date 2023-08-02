@@ -1,10 +1,8 @@
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/TargetSpecific.h>
-#include <Common/logger_useful.h>
 #include <Core/UUID.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -843,8 +841,8 @@ MergeTreeRangeReader::MergeTreeRangeReader(
         if (step.actions)
             step.actions->execute(result_sample_block, true);
 
-        if (step.remove_filter_column)
-            result_sample_block.erase(step.filter_column_name);
+        if (step.remove_column)
+            result_sample_block.erase(step.column_name);
     }
 }
 
@@ -982,9 +980,12 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         /// Calculate and update read bytes
         size_t total_bytes = 0;
         for (auto & column : columns)
+        {
             if (column)
+            {
                 total_bytes += column->byteSize();
-
+            }
+        }
         read_result.addNumBytesRead(total_bytes);
 
         if (!columns.empty())
@@ -998,7 +999,8 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
             /// some columns (e.g. arrays) might be only partially filled and thus not be valid and
             /// fillMissingColumns() fixes this.
             bool should_evaluate_missing_defaults;
-            merge_tree_reader->fillMissingColumns(columns, should_evaluate_missing_defaults, num_read_rows);
+            merge_tree_reader->fillMissingColumns(columns, should_evaluate_missing_defaults,
+                                                    num_read_rows);
 
             if (read_result.total_rows_per_granule == num_read_rows && read_result.num_rows != num_read_rows)
             {
@@ -1023,8 +1025,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
             }
 
             /// If columns not empty, then apply on-fly alter conversions if any required
-            if (!prewhere_info || prewhere_info->perform_alter_conversions)
-                merge_tree_reader->performRequiredConversions(columns);
+            merge_tree_reader->performRequiredConversions(columns);
         }
 
         read_result.columns.reserve(read_result.columns.size() + columns.size());
@@ -1048,15 +1049,15 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
             Columns physical_columns(read_result.columns.begin(), read_result.columns.begin() + physical_columns_count);
 
             bool should_evaluate_missing_defaults;
-            merge_tree_reader->fillMissingColumns(physical_columns, should_evaluate_missing_defaults, read_result.num_rows);
+            merge_tree_reader->fillMissingColumns(physical_columns, should_evaluate_missing_defaults,
+                                                  read_result.num_rows);
 
             /// If some columns absent in part, then evaluate default values
             if (should_evaluate_missing_defaults)
                 merge_tree_reader->evaluateMissingDefaults({}, physical_columns);
 
             /// If result not empty, then apply on-fly alter conversions if any required
-            if (!prewhere_info || prewhere_info->perform_alter_conversions)
-                merge_tree_reader->performRequiredConversions(physical_columns);
+            merge_tree_reader->performRequiredConversions(physical_columns);
 
             for (size_t i = 0; i < physical_columns.size(); ++i)
                 read_result.columns[i] = std::move(physical_columns[i]);
@@ -1315,87 +1316,91 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
                         "Invalid number of columns passed to MergeTreeRangeReader. Expected {}, got {}",
                         num_columns, result.columns.size());
 
-    /// Restore block from columns list.
-    Block block;
-    size_t pos = 0;
-
-    if (prev_reader)
-    {
-        for (const auto & col : prev_reader->getSampleBlock())
-        {
-            block.insert({result.columns[pos], col.type, col.name});
-            ++pos;
-        }
-    }
-
-    for (auto name_and_type = header.begin(); name_and_type != header.end() && pos < result.columns.size(); ++pos, ++name_and_type)
-        block.insert({result.columns[pos], name_and_type->type, name_and_type->name});
+    /// Filter computed at the current step. Its size is equal to num_rows which is <= total_rows_per_granule
+    ColumnPtr current_step_filter;
+    size_t prewhere_column_pos;
 
     {
-        /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
-        Block additional_columns = block;
+        /// Restore block from columns list.
+        Block block;
+        size_t pos = 0;
 
-        if (prewhere_info->actions)
+        if (prev_reader)
         {
-            const String dummy_column = addDummyColumnWithRowCount(block, result.num_rows);
-
-            LOG_TEST(log, "Executing prewhere actions on block: {}", block.dumpStructure());
-
-            prewhere_info->actions->execute(block);
-
-            if (!dummy_column.empty())
-                block.erase(dummy_column);
-        }
-
-        result.additional_columns.clear();
-        /// Additional columns might only be needed if there are more steps in the chain.
-        if (!last_reader_in_chain)
-        {
-            for (auto & col : additional_columns)
+            for (const auto & col : prev_reader->getSampleBlock())
             {
-                /// Exclude columns that are present in the result block to avoid storing them and filtering twice.
-                /// TODO: also need to exclude the columns that are not needed for the next steps.
-                if (block.has(col.name))
-                    continue;
-                result.additional_columns.insert(col);
+                block.insert({result.columns[pos], col.type, col.name});
+                ++pos;
             }
         }
+
+        for (auto name_and_type = header.begin(); name_and_type != header.end() && pos < result.columns.size(); ++pos, ++name_and_type)
+            block.insert({result.columns[pos], name_and_type->type, name_and_type->name});
+
+        {
+            /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
+            Block additional_columns = block;
+
+            if (prewhere_info->actions)
+            {
+                const String dummy_column = addDummyColumnWithRowCount(block, result.num_rows);
+
+                LOG_TEST(log, "Executing prewhere actions on block: {}", block.dumpStructure());
+
+                prewhere_info->actions->execute(block);
+
+                if (!dummy_column.empty())
+                    block.erase(dummy_column);
+            }
+
+            result.additional_columns.clear();
+            /// Additional columns might only be needed if there are more steps in the chain.
+            if (!last_reader_in_chain)
+            {
+                for (auto & col : additional_columns)
+                {
+                    /// Exclude columns that are present in the result block to avoid storing them and filtering twice.
+                    /// TODO: also need to exclude the columns that are not needed for the next steps.
+                    if (block.has(col.name))
+                        continue;
+                    result.additional_columns.insert(col);
+                }
+            }
+        }
+
+        prewhere_column_pos = block.getPositionByName(prewhere_info->column_name);
+
+        result.columns.clear();
+        result.columns.reserve(block.columns());
+        for (auto & col : block)
+            result.columns.emplace_back(std::move(col.column));
+
+        current_step_filter = result.columns[prewhere_column_pos];
     }
 
-    result.columns.clear();
-    result.columns.reserve(block.columns());
-    for (auto & col : block)
-        result.columns.emplace_back(std::move(col.column));
+    /// In case when we are returning prewhere column the caller expects it to serve as a final filter:
+    /// it must contain 0s not only from the current step but also from all the previous steps.
+    /// One way to achieve this is to apply the final_filter if we know that the final_filter was not applied at
+    /// several previous steps but was accumulated instead.
+    result.can_return_prewhere_column_without_filtering = result.filterWasApplied();
 
-    if (prewhere_info->type == PrewhereExprStep::Filter)
+    if (prewhere_info->remove_column)
+        result.columns.erase(result.columns.begin() + prewhere_column_pos);
+
+    FilterWithCachedCount current_filter(current_step_filter);
+
+    result.optimize(current_filter, merge_tree_reader->canReadIncompleteGranules());
+
+    if (prewhere_info->need_filter && !result.filterWasApplied())
     {
-        /// Filter computed at the current step. Its size is equal to num_rows which is <= total_rows_per_granule
-        size_t filter_column_pos = block.getPositionByName(prewhere_info->filter_column_name);
-        auto current_step_filter = result.columns[filter_column_pos];
-
-        /// In case when we are returning prewhere column the caller expects it to serve as a final filter:
-        /// it must contain 0s not only from the current step but also from all the previous steps.
-        /// One way to achieve this is to apply the final_filter if we know that the final_filter was not applied at
-        /// several previous steps but was accumulated instead.
-        result.can_return_prewhere_column_without_filtering = result.filterWasApplied();
-
-        if (prewhere_info->remove_filter_column)
-            result.columns.erase(result.columns.begin() + filter_column_pos);
-
-        FilterWithCachedCount current_filter(current_step_filter);
-        result.optimize(current_filter, merge_tree_reader->canReadIncompleteGranules());
-
-        if (prewhere_info->need_filter && !result.filterWasApplied())
-        {
-            /// Depending on whether the final filter was applied at the previous step or not we need to apply either
-            /// just the current step filter or the accumulated filter.
-            FilterWithCachedCount filter_to_apply =
-                current_filter.size() == result.total_rows_per_granule
-                    ? result.final_filter
-                    : current_filter;
+        /// Depending on whether the final filter was applied at the previous step or not we need to apply either
+        /// just the current step filter   or the accumulated filter.
+        FilterWithCachedCount filter_to_apply =
+            current_filter.size() == result.total_rows_per_granule ?
+                result.final_filter :
+                current_filter;
 
             result.applyFilter(filter_to_apply);
-        }
     }
 
     LOG_TEST(log, "After execute prewhere {}", result.dumpInfo());
@@ -1409,12 +1414,12 @@ std::string PrewhereExprInfo::dump() const
     for (size_t i = 0; i < steps.size(); ++i)
     {
         s << "STEP " << i << ":\n"
-            << "  ACTIONS: " << (steps[i]->actions ?
-                (indent + boost::replace_all_copy(steps[i]->actions->dumpActions(), "\n", indent)) :
+            << "  ACTIONS: " << (steps[i].actions ?
+                (indent + boost::replace_all_copy(steps[i].actions->dumpActions(), "\n", indent)) :
                 "nullptr") << "\n"
-            << "  COLUMN: " << steps[i]->filter_column_name << "\n"
-            << "  REMOVE_COLUMN: " << steps[i]->remove_filter_column << "\n"
-            << "  NEED_FILTER: " << steps[i]->need_filter << "\n\n";
+            << "  COLUMN: " << steps[i].column_name << "\n"
+            << "  REMOVE_COLUMN: " << steps[i].remove_column << "\n"
+            << "  NEED_FILTER: " << steps[i].need_filter << "\n\n";
     }
 
     return s.str();
@@ -1425,7 +1430,7 @@ std::string PrewhereExprInfo::dumpConditions() const
     WriteBufferFromOwnString s;
 
     for (size_t i = 0; i < steps.size(); ++i)
-        s << (i == 0 ? "\"" : ", \"") << steps[i]->filter_column_name << "\"";
+        s << (i == 0 ? "\"" : ", \"") << steps[i].column_name << "\"";
 
     return s.str();
 }

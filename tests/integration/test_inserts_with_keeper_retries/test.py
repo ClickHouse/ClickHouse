@@ -98,23 +98,3 @@ def test_replica_inserts_with_keeper_disconnect(started_cluster):
 
     finally:
         node1.query("DROP TABLE IF EXISTS r SYNC")
-
-
-def test_query_timeout_with_zk_down(started_cluster):
-    try:
-        node1.query(
-            "CREATE TABLE zk_down (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/zk_down', '0') ORDER BY tuple()"
-        )
-
-        cluster.stop_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
-
-        start_time = time.time()
-        with pytest.raises(QueryRuntimeException):
-            node1.query(
-                "INSERT INTO zk_down SELECT number, toString(number) FROM numbers(10) SETTINGS insert_keeper_max_retries=10000, insert_keeper_retry_max_backoff_ms=1000, max_execution_time=1"
-            )
-        finish_time = time.time()
-        assert finish_time - start_time < 10
-    finally:
-        cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
-        node1.query("DROP TABLE IF EXISTS zk_down SYNC")

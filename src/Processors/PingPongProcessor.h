@@ -3,6 +3,7 @@
 #include <Processors/IProcessor.h>
 #include <base/unit.h>
 #include <Processors/Chunk.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

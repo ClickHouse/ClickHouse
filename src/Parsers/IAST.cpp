@@ -167,10 +167,14 @@ size_t IAST::checkDepthImpl(size_t max_depth) const
     return res;
 }
 
-String IAST::formatWithPossiblyHidingSensitiveData(size_t max_length, bool one_line, bool show_secrets) const
+String IAST::formatWithSecretsHidden(size_t max_length, bool one_line) const
 {
     WriteBufferFromOwnString buf;
-    format({buf, one_line, show_secrets});
+
+    FormatSettings settings{buf, one_line};
+    settings.show_secrets = false;
+    format(settings);
+
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
 }
 

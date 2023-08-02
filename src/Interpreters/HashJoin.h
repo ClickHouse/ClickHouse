@@ -16,6 +16,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Storages/TableLockHolder.h>
+#include <Common/logger_useful.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -155,11 +156,11 @@ public:
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
-    bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
+    bool addJoinedBlock(const Block & block, bool check_limits) override;
 
     void checkTypesOfKeys(const Block & block) const override;
 
-    /** Join data from the map (that was previously built by calls to addBlockToJoin) to the block with data from "left" table.
+    /** Join data from the map (that was previously built by calls to addJoinedBlock) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
     void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
@@ -406,7 +407,7 @@ private:
     Poco::Logger * log;
 
     /// Should be set via setLock to protect hash table from modification from StorageJoin
-    /// If set HashJoin instance is not available for modification (addBlockToJoin)
+    /// If set HashJoin instance is not available for modification (addJoinedBlock)
     TableLockHolder storage_join_lock = nullptr;
 
     void dataMapInit(MapsVariant &);

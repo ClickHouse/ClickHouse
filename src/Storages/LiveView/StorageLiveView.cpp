@@ -647,9 +647,9 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
     }
     else
     {
-        auto inner_blocks_query_ = getInnerBlocksQuery();
+        auto inner_blocks_query = getInnerBlocksQuery();
         block_context->addExternalTable(getBlocksTableName(), std::move(blocks_storage_table_holder));
-        InterpreterSelectQuery interpreter(inner_blocks_query_,
+        InterpreterSelectQuery interpreter(inner_blocks_query,
             block_context,
             StoragePtr(),
             nullptr,

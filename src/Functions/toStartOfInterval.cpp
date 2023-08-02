@@ -384,7 +384,7 @@ public:
         if (result_type_is_date)
             return std::make_shared<DataTypeDate>();
         else if (result_type_is_datetime)
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
         else
         {
             auto scale = 0;
@@ -396,7 +396,7 @@ public:
             else if (interval_type->getKind() == IntervalKind::Millisecond)
                 scale = 3;
 
-            return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
+            return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
         }
 
     }

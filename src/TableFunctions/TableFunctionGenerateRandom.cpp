@@ -1,19 +1,18 @@
+#include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 
+#include <Core/Block.h>
 #include <Storages/StorageGenerateRandom.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
 
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionGenerateRandom.h>
-#include <Functions/FunctionGenerateRandomStructure.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
-#include <Interpreters/evaluateConstantExpression.h>
-
-#include <Common/randomSeed.h>
 
 #include "registerTableFunctions.h"
 
@@ -26,9 +25,10 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
-void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
 {
     ASTs & args_func = ast_function->children;
 
@@ -40,21 +40,10 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
     if (args.empty())
         return;
 
-    /// First, check if first argument is structure or seed.
-    const auto * first_arg_literal = args[0]->as<const ASTLiteral>();
-    bool first_argument_is_structure = !first_arg_literal || first_arg_literal->value.getType() == Field::Types::String;
-    size_t max_args = first_argument_is_structure ? 4 : 3;
-
-    if (args.size() > max_args)
+    if (args.size() > 4)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Table function '{}' requires at most four (or three if structure is missing) arguments: "
-                        " [structure, random_seed, max_string_length, max_array_length].", getName());
-
-    if (first_argument_is_structure)
-    {
-        /// Allow constant expression for structure argument, it can be generated using generateRandomStructure function.
-        args[0] = evaluateConstantExpressionAsLiteral(args[0], context);
-    }
+                        "Table function '{}' requires at most four arguments: "
+                        " structure, [random_seed, max_string_length, max_array_length].", getName());
 
     // All the arguments must be literals.
     for (const auto & arg : args)
@@ -62,39 +51,26 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
         if (!arg->as<const ASTLiteral>())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "All arguments of table function '{}' except structure argument must be literals. "
+                "All arguments of table function '{}' must be literals. "
                 "Got '{}' instead", getName(), arg->formatForErrorMessage());
         }
     }
 
-    size_t arg_index = 0;
+    /// Parsing first argument as table structure and creating a sample block
+    structure = checkAndGetLiteralArgument<String>(args[0], "structure");
 
-    if (first_argument_is_structure)
+    if (args.size() >= 2)
     {
-        /// Parsing first argument as table structure and creating a sample block
-        structure = checkAndGetLiteralArgument<String>(args[arg_index], "structure");
-        ++arg_index;
-    }
-
-    if (args.size() >= arg_index + 1)
-    {
-        const auto & literal = args[arg_index]->as<const ASTLiteral &>();
-        ++arg_index;
+        const auto & literal = args[1]->as<const ASTLiteral &>();
         if (!literal.value.isNull())
             random_seed = checkAndGetLiteralArgument<UInt64>(literal, "random_seed");
     }
 
-    if (args.size() >= arg_index + 1)
-    {
-        max_string_length = checkAndGetLiteralArgument<UInt64>(args[arg_index], "max_string_length");
-        ++arg_index;
-    }
+    if (args.size() >= 3)
+        max_string_length = checkAndGetLiteralArgument<UInt64>(args[2], "max_string_length");
 
-    if (args.size() == arg_index + 1)
-    {
-        max_array_length = checkAndGetLiteralArgument<UInt64>(args[arg_index], "max_string_length");
-        ++arg_index;
-    }
+    if (args.size() == 4)
+        max_array_length = checkAndGetLiteralArgument<UInt64>(args[3], "max_string_length");
 }
 
 ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(ContextPtr context) const
@@ -102,11 +78,11 @@ ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(ContextP
     if (structure == "auto")
     {
         if (structure_hint.empty())
-        {
-            auto random_structure = FunctionGenerateRandomStructure::generateRandomStructure(random_seed.value_or(randomSeed()), context);
-            return parseColumnsListFromString(random_structure, context);
-        }
-
+            throw Exception(
+                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                "Table function '{}' was used without structure argument but structure could not be determined automatically. Please, "
+                "provide structure manually",
+                getName());
         return structure_hint;
     }
 

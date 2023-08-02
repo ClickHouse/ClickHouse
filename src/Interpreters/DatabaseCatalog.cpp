@@ -8,17 +8,16 @@
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Disks/IDisk.h>
+#include <Common/quoteString.h>
 #include <Storages/StorageMemory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Common/quoteString.h>
 #include <Common/atomicRename.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
-#include <Common/ThreadPool.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
@@ -56,7 +55,6 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int HAVE_DEPENDENT_OBJECTS;
-    extern const int UNFINISHED;
 }
 
 TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
@@ -111,7 +109,7 @@ TemporaryTableHolder::TemporaryTableHolder(
 }
 
 TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs) noexcept
-        : WithContext(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id), future_set(std::move(rhs.future_set))
+        : WithContext(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id)
 {
     rhs.id = UUIDHelpers::Nil;
 }
@@ -197,9 +195,6 @@ void DatabaseCatalog::startupBackgroundCleanup()
 
 void DatabaseCatalog::shutdownImpl()
 {
-    is_shutting_down = true;
-    wait_table_finally_dropped.notify_all();
-
     if (cleanup_task)
         (*cleanup_task)->deactivate();
 
@@ -220,24 +215,8 @@ void DatabaseCatalog::shutdownImpl()
 
     /// We still hold "databases" (instead of std::move) for Buffer tables to flush data correctly.
 
-    /// Delay shutdown of temporary and system databases. They will be shutdown last.
-    /// Because some databases might use them until their shutdown is called, but calling shutdown
-    /// on temporary database means clearing its set of tables, which will lead to unnecessary errors like "table not found".
-    std::vector<DatabasePtr> databases_with_delayed_shutdown;
     for (auto & database : current_databases)
-    {
-        if (database.first == TEMPORARY_DATABASE || database.first == SYSTEM_DATABASE)
-        {
-            databases_with_delayed_shutdown.push_back(database.second);
-            continue;
-        }
         database.second->shutdown();
-    }
-
-    for (auto & database : databases_with_delayed_shutdown)
-    {
-        database->shutdown();
-    }
 
     {
         std::lock_guard lock(tables_marked_dropped_mutex);
@@ -347,6 +326,15 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
     DatabasePtr database;
     {
+        // Callers assume that this method doesn't throw exceptions, but getDatabaseName() will throw if there is no database part.
+        // So, fail early and gracefully...
+        if (!table_id.hasDatabase())
+        {
+            if (exception)
+                exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Empty database name"));
+            return {};
+        }
+
         std::lock_guard lock{databases_mutex};
         auto it = databases.find(table_id.getDatabaseName());
         if (databases.end() == it)
@@ -360,8 +348,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
     auto table = database->tryGetTable(table_id.table_name, context_);
     if (!table && exception)
-        exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
-
+            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
     if (!table)
         database = nullptr;
 
@@ -1165,13 +1152,8 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
     std::unique_lock lock{tables_marked_dropped_mutex};
     wait_table_finally_dropped.wait(lock, [&]() TSA_REQUIRES(tables_marked_dropped_mutex) -> bool
     {
-        return !tables_marked_dropped_ids.contains(uuid) || is_shutting_down;
+        return !tables_marked_dropped_ids.contains(uuid);
     });
-
-    /// TSA doesn't support unique_lock
-    if (TSA_SUPPRESS_WARNING_FOR_READ(tables_marked_dropped_ids).contains(uuid))
-        throw Exception(ErrorCodes::UNFINISHED, "Did not finish dropping the table with UUID {} because the server is shutting down, "
-                                                "will finish after restart", uuid);
 }
 
 void DatabaseCatalog::addDependencies(

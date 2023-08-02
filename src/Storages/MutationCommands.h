@@ -67,9 +67,6 @@ struct MutationCommand
 
     /// If parse_alter_commands, than consider more Alter commands as mutation commands
     static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_alter_commands = false);
-
-    /// This command shouldn't stick with other commands
-    bool isBarrierCommand() const;
 };
 
 /// Multiple mutation commands, possible from different ALTER queries
@@ -82,11 +79,6 @@ public:
     void readText(ReadBuffer & in);
     std::string toString() const;
     bool hasNonEmptyMutationCommands() const;
-
-    /// These set of commands contain barrier command and shouldn't
-    /// stick with other commands. Commands from one set have already been validated
-    /// to be executed without issues on the creation state.
-    bool containBarrierCommand() const;
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;

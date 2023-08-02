@@ -76,7 +76,7 @@ Resets the mark cache.
 
 ## DROP REPLICA
 
-Dead replicas of `ReplicatedMergeTree` tables can be dropped using following syntax:
+Dead replicas can be dropped using following syntax:
 
 ``` sql
 SYSTEM DROP REPLICA 'replica_name' FROM TABLE database.table;
@@ -85,24 +85,12 @@ SYSTEM DROP REPLICA 'replica_name';
 SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/path/to/table/in/zk';
 ```
 
-Queries will remove the `ReplicatedMergeTree` replica path in ZooKeeper. It is useful when the replica is dead and its metadata cannot be removed from ZooKeeper by `DROP TABLE` because there is no such table anymore. It will only drop the inactive/stale replica, and it cannot drop local replica, please use `DROP TABLE` for that. `DROP REPLICA` does not drop any tables and does not remove any data or metadata from disk.
+Queries will remove the replica path in ZooKeeper. It is useful when the replica is dead and its metadata cannot be removed from ZooKeeper by `DROP TABLE` because there is no such table anymore. It will only drop the inactive/stale replica, and it cannot drop local replica, please use `DROP TABLE` for that. `DROP REPLICA` does not drop any tables and does not remove any data or metadata from disk.
 
 The first one removes metadata of `'replica_name'` replica of `database.table` table.
 The second one does the same for all replicated tables in the database.
 The third one does the same for all replicated tables on the local server.
 The fourth one is useful to remove metadata of dead replica when all other replicas of a table were dropped. It requires the table path to be specified explicitly. It must be the same path as was passed to the first argument of `ReplicatedMergeTree` engine on table creation.
-
-## DROP DATABASE REPLICA
-
-Dead replicas of `Replicated` databases can be dropped using following syntax:
-
-``` sql
-SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM DATABASE database;
-SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'];
-SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPATH '/path/to/table/in/zk';
-```
-
-Similar to `SYSTEM DROP REPLICA`, but removes the `Replicated` database replica path from ZooKeeper when there's no database to run `DROP DATABASE`. Please note that it does not remove `ReplicatedMergeTree` replicas (so you may need `SYSTEM DROP REPLICA` as well). Shard and replica names are the names that were specified in `Replicated` engine arguments when creating the database. Also, these names can be obtained from `database_shard_name` and `database_replica_name` columns in `system.clusters`. If the `FROM SHARD` clause is missing, then `replica_name` must be a full replica name in `shard_name|replica_name` format.
 
 ## DROP UNCOMPRESSED CACHE
 
@@ -119,34 +107,18 @@ The compiled expression cache is enabled/disabled with the query/user/profile-le
 
 Resets the [query cache](../../operations/query-cache.md).
 
-```sql
-SYSTEM DROP QUERY CACHE [ON CLUSTER cluster_name]
-```
-
 ## FLUSH LOGS
 
 Flushes buffered log messages to system tables, e.g. system.query_log. Mainly useful for debugging since most system tables have a default flush interval of 7.5 seconds.
 This will also create system tables even if message queue is empty.
 
-```sql
-SYSTEM FLUSH LOGS [ON CLUSTER cluster_name]
-```
-
 ## RELOAD CONFIG
 
-Reloads ClickHouse configuration. Used when configuration is stored in ZooKeeper. Note that `SYSTEM RELOAD CONFIG` does not reload `USER` configuration stored in ZooKeeper, it only reloads `USER` configuration that is stored in `users.xml`.  To reload all `USER` config use `SYSTEM RELOAD USERS`
-
-```sql
-SYSTEM RELOAD CONFIG [ON CLUSTER cluster_name]
-```
+Reloads ClickHouse configuration. Used when configuration is stored in ZooKeeper.
 
 ## RELOAD USERS
 
-Reloads all access storages, including: users.xml, local disk access storage, replicated (in ZooKeeper) access storage. 
-
-```sql
-SYSTEM RELOAD USERS [ON CLUSTER cluster_name]
-```
+Reloads all access storages, including: users.xml, local disk access storage, replicated (in ZooKeeper) access storage. Note that `SYSTEM RELOAD CONFIG` will only reload users.xml access storage.
 
 ## SHUTDOWN
 
@@ -165,7 +137,7 @@ ClickHouse can manage [distributed](../../engines/table-engines/special/distribu
 Disables background data distribution when inserting data into distributed tables.
 
 ``` sql
-SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_name]
+SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name>
 ```
 
 ### FLUSH DISTRIBUTED
@@ -173,7 +145,7 @@ SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_
 Forces ClickHouse to send data to cluster nodes synchronously. If any nodes are unavailable, ClickHouse throws an exception and stops query execution. You can retry the query until it succeeds, which will happen when all nodes are back online.
 
 ``` sql
-SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name> [ON CLUSTER cluster_name]
+SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name>
 ```
 
 ### START DISTRIBUTED SENDS
@@ -181,7 +153,7 @@ SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name> [ON CLUSTER cluster_name]
 Enables background data distribution when inserting data into distributed tables.
 
 ``` sql
-SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_name]
+SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name>
 ```
 
 ## Managing MergeTree Tables
@@ -193,7 +165,7 @@ ClickHouse can manage background processes in [MergeTree](../../engines/table-en
 Provides possibility to stop background merges for tables in the MergeTree family:
 
 ``` sql
-SYSTEM STOP MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
+SYSTEM STOP MERGES [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
 ```
 
 :::note
@@ -205,7 +177,7 @@ SYSTEM STOP MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]mer
 Provides possibility to start background merges for tables in the MergeTree family:
 
 ``` sql
-SYSTEM START MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
+SYSTEM START MERGES [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
 ```
 
 ### STOP TTL MERGES
@@ -214,7 +186,7 @@ Provides possibility to stop background delete old data according to [TTL expres
 Returns `Ok.` even if table does not exist or table has not MergeTree engine. Returns error when database does not exist:
 
 ``` sql
-SYSTEM STOP TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+SYSTEM STOP TTL MERGES [[db.]merge_tree_family_table_name]
 ```
 
 ### START TTL MERGES
@@ -223,7 +195,7 @@ Provides possibility to start background delete old data according to [TTL expre
 Returns `Ok.` even if table does not exist. Returns error when database does not exist:
 
 ``` sql
-SYSTEM START TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+SYSTEM START TTL MERGES [[db.]merge_tree_family_table_name]
 ```
 
 ### STOP MOVES
@@ -232,7 +204,7 @@ Provides possibility to stop background move data according to [TTL table expres
 Returns `Ok.` even if table does not exist. Returns error when database does not exist:
 
 ``` sql
-SYSTEM STOP MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 ```
 
 ### START MOVES
@@ -241,7 +213,7 @@ Provides possibility to start background move data according to [TTL table expre
 Returns `Ok.` even if table does not exist. Returns error when database does not exist:
 
 ``` sql
-SYSTEM START MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+SYSTEM START MOVES [[db.]merge_tree_family_table_name]
 ```
 
 ### SYSTEM UNFREEZE {#query_language-system-unfreeze}
@@ -250,14 +222,6 @@ Clears freezed backup with the specified name from all the disks. See more about
 
 ``` sql
 SYSTEM UNFREEZE WITH NAME <backup_name>
-```
-
-### WAIT LOADING PARTS
-
-Wait until all asynchronously loading data parts of a table (outdated data parts) will became loaded.
-
-``` sql
-SYSTEM WAIT LOADING PARTS [ON CLUSTER cluster_name] [db.]merge_tree_family_table_name
 ```
 
 ## Managing ReplicatedMergeTree Tables
@@ -270,7 +234,7 @@ Provides possibility to stop background fetches for inserted parts for tables in
 Always returns `Ok.` regardless of the table engine and even if table or database does not exist.
 
 ``` sql
-SYSTEM STOP FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### START FETCHES
@@ -279,7 +243,7 @@ Provides possibility to start background fetches for inserted parts for tables i
 Always returns `Ok.` regardless of the table engine and even if table or database does not exist.
 
 ``` sql
-SYSTEM START FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+SYSTEM START FETCHES [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### STOP REPLICATED SENDS
@@ -287,7 +251,7 @@ SYSTEM START FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_famil
 Provides possibility to stop background sends to other replicas in cluster for new inserted parts for tables in the `ReplicatedMergeTree` family:
 
 ``` sql
-SYSTEM STOP REPLICATED SENDS [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+SYSTEM STOP REPLICATED SENDS [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### START REPLICATED SENDS
@@ -295,7 +259,7 @@ SYSTEM STOP REPLICATED SENDS [ON CLUSTER cluster_name] [[db.]replicated_merge_tr
 Provides possibility to start background sends to other replicas in cluster for new inserted parts for tables in the `ReplicatedMergeTree` family:
 
 ``` sql
-SYSTEM START REPLICATED SENDS [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+SYSTEM START REPLICATED SENDS [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### STOP REPLICATION QUEUES
@@ -303,7 +267,7 @@ SYSTEM START REPLICATED SENDS [ON CLUSTER cluster_name] [[db.]replicated_merge_t
 Provides possibility to stop background fetch tasks from replication queues which stored in Zookeeper for tables in the `ReplicatedMergeTree` family. Possible background tasks types - merges, fetches, mutation, DDL statements with ON CLUSTER clause:
 
 ``` sql
-SYSTEM STOP REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+SYSTEM STOP REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### START REPLICATION QUEUES
@@ -311,7 +275,7 @@ SYSTEM STOP REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge_
 Provides possibility to start background fetch tasks from replication queues which stored in Zookeeper for tables in the `ReplicatedMergeTree` family. Possible background tasks types - merges, fetches, mutation, DDL statements with ON CLUSTER clause:
 
 ``` sql
-SYSTEM START REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+SYSTEM START REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### SYNC REPLICA
@@ -319,14 +283,10 @@ SYSTEM START REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge
 Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a cluster, but no more than `receive_timeout` seconds.
 
 ``` sql
-SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name [STRICT | LIGHTWEIGHT | PULL]
+SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name [STRICT]
 ```
 
-After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands. The following modifiers are supported:
-
- - If a `STRICT` modifier was specified then the query waits for the replication queue to become empty. The `STRICT` version may never succeed if new entries constantly appear in the replication queue.
- - If a `LIGHTWEIGHT` modifier was specified then the query waits only for `GET_PART`, `ATTACH_PART`, `DROP_RANGE`, `REPLACE_RANGE` and `DROP_PART` entries to be processed.
- - If a `PULL` modifier was specified then the query pulls new replication queue entries from ZooKeeper, but does not wait for anything to be processed.
+After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands. If a `STRICT` modifier was specified then the query waits for the replication queue to become empty. The `STRICT` version may never succeed if new entries constantly appear in the replication queue.
 
 ### RESTART REPLICA
 
@@ -334,7 +294,7 @@ Provides possibility to reinitialize Zookeeper session's state for `ReplicatedMe
 Initialization of replication queue based on ZooKeeper data happens in the same way as for `ATTACH TABLE` statement. For a short time, the table will be unavailable for any operations.
 
 ``` sql
-SYSTEM RESTART REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name
+SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
 ### RESTORE REPLICA
@@ -400,7 +360,7 @@ Provides possibility to reinitialize Zookeeper sessions state for all `Replicate
 Allows to drop filesystem cache.
 
 ```sql
-SYSTEM DROP FILESYSTEM CACHE [ON CLUSTER cluster_name]
+SYSTEM DROP FILESYSTEM CACHE
 ```
 
 ### SYNC FILE CACHE
@@ -412,5 +372,5 @@ It's too heavy and has potential for misuse.
 Will do sync syscall.
 
 ```sql
-SYSTEM SYNC FILE CACHE [ON CLUSTER cluster_name]
+SYSTEM SYNC FILE CACHE
 ```

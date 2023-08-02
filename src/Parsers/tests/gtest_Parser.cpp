@@ -5,7 +5,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
-#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
@@ -70,7 +69,7 @@ TEST_P(ParserTest, parseQuery)
             {
                 if (input_text.starts_with("ATTACH"))
                 {
-                    auto salt = (dynamic_cast<const ASTCreateUserQuery *>(ast.get())->auth_data)->getSalt().value_or("");
+                    auto salt = (dynamic_cast<const ASTCreateUserQuery *>(ast.get())->auth_data)->getSalt();
                     EXPECT_TRUE(std::regex_match(salt, std::regex(expected_ast)));
                 }
                 else
@@ -215,7 +214,7 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateDatabaseQuery, ParserTest,
         },
         {
             "CREATE DATABASE db ENGINE=Foo TABLE OVERRIDE `tbl` (), TABLE OVERRIDE a (COLUMNS (_created DateTime MATERIALIZED now())), TABLE OVERRIDE b (PARTITION BY rand())",
-            "CREATE DATABASE db\nENGINE = Foo\nTABLE OVERRIDE `tbl`\n(\n\n),\nTABLE OVERRIDE `a`\n(\n    COLUMNS\n    (\n        `_created` DateTime MATERIALIZED now()\n    )\n),\nTABLE OVERRIDE `b`\n(\n    PARTITION BY rand()\n)"
+            "CREATE DATABASE db\nENGINE = Foo\nTABLE OVERRIDE `tbl`,\nTABLE OVERRIDE `a`\n(\n    COLUMNS\n    (\n        `_created` DateTime MATERIALIZED now()\n    )\n),\nTABLE OVERRIDE `b`\n(\n    PARTITION BY rand()\n)"
         },
         {
             "CREATE DATABASE db ENGINE=MaterializeMySQL('addr:port', 'db', 'user', 'pw') TABLE OVERRIDE tbl (COLUMNS (id UUID) PARTITION BY toYYYYMM(created))",
@@ -261,7 +260,7 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
         {
             "CREATE USER user1 IDENTIFIED WITH sha256_password BY 'qwe123'",
-            "CREATE USER user1 IDENTIFIED WITH sha256_password BY 'qwe123'"
+            "CREATE USER user1 IDENTIFIED WITH sha256_hash BY '[A-Za-z0-9]{64}' SALT '[A-Za-z0-9]{64}'"
         },
         {
             "CREATE USER user1 IDENTIFIED WITH sha256_hash BY '7A37B85C8918EAC19A9089C0FA5A2AB4DCE3F90528DCDEEC108B23DDF3607B99' SALT 'salt'",
@@ -269,7 +268,7 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
         },
         {
             "ALTER USER user1 IDENTIFIED WITH sha256_password BY 'qwe123'",
-            "ALTER USER user1 IDENTIFIED WITH sha256_password BY 'qwe123'"
+            "ALTER USER user1 IDENTIFIED WITH sha256_hash BY '[A-Za-z0-9]{64}' SALT '[A-Za-z0-9]{64}'"
         },
         {
             "ALTER USER user1 IDENTIFIED WITH sha256_hash BY '7A37B85C8918EAC19A9089C0FA5A2AB4DCE3F90528DCDEEC108B23DDF3607B99' SALT 'salt'",

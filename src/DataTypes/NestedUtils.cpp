@@ -71,7 +71,7 @@ std::string extractTableName(const std::string & nested_name)
 }
 
 
-static Block flattenImpl(const Block & block, bool flatten_named_tuple)
+Block flatten(const Block & block)
 {
     Block res;
 
@@ -114,7 +114,7 @@ static Block flattenImpl(const Block & block, bool flatten_named_tuple)
             else
                 res.insert(elem);
         }
-        else if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(elem.type.get()); type_tuple && flatten_named_tuple)
+        else if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(elem.type.get()))
         {
             if (type_tuple->haveExplicitNames())
             {
@@ -141,17 +141,6 @@ static Block flattenImpl(const Block & block, bool flatten_named_tuple)
     }
 
     return res;
-}
-
-Block flatten(const Block & block)
-{
-    return flattenImpl(block, true);
-}
-
-
-Block flattenArrayOfTuples(const Block & block)
-{
-    return flattenImpl(block, false);
 }
 
 namespace

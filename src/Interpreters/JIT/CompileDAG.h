@@ -53,7 +53,7 @@ public:
         std::vector<size_t> arguments;
     };
 
-    ValueWithType compile(llvm::IRBuilderBase & builder, const ValuesWithType & input_nodes_values_with_type) const;
+    llvm::Value * compile(llvm::IRBuilderBase & builder, Values input_nodes_values) const;
 
     std::string dump() const;
 

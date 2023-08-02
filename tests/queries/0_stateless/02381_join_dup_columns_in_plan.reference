@@ -2,51 +2,51 @@ Expression
 Header: key String
         value String
   Join
-  Header: key_0 String
-          value_1 String
+  Header: s1.key_0 String
+          s2.value_1 String
     Expression
-    Header: key_0 String
+    Header: s1.key_0 String
       ReadFromStorage
       Header: dummy UInt8
     Union
-    Header: key_2 String
-            value_1 String
+    Header: s2.key_2 String
+            s2.value_1 String
       Expression
-      Header: key_2 String
-              value_1 String
+      Header: s2.key_2 String
+              s2.value_1 String
         ReadFromStorage
         Header: dummy UInt8
       Expression
-      Header: key_2 String
-              value_1 String
+      Header: s2.key_2 String
+              s2.value_1 String
         ReadFromStorage
         Header: dummy UInt8
 Expression
 Header: key String
         value String
   Join
-  Header: key_0 String
-          key_2 String
-          value_1 String
+  Header: s1.key_0 String
+          s2.key_2 String
+          s2.value_1 String
     Sorting
-    Header: key_0 String
+    Header: s1.key_0 String
       Expression
-      Header: key_0 String
+      Header: s1.key_0 String
         ReadFromStorage
         Header: dummy UInt8
     Sorting
-    Header: key_2 String
-            value_1 String
+    Header: s2.key_2 String
+            s2.value_1 String
       Union
-      Header: key_2 String
-              value_1 String
+      Header: s2.key_2 String
+              s2.value_1 String
         Expression
-        Header: key_2 String
-                value_1 String
+        Header: s2.key_2 String
+                s2.value_1 String
           ReadFromStorage
           Header: dummy UInt8
         Expression
-        Header: key_2 String
-                value_1 String
+        Header: s2.key_2 String
+                s2.value_1 String
           ReadFromStorage
           Header: dummy UInt8

@@ -1,5 +1,4 @@
 #pragma once
-#include <Interpreters/ProcessList.h>
 #include <base/sleep.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -36,8 +35,7 @@ struct ZooKeeperRetriesInfo
 class ZooKeeperRetriesControl
 {
 public:
-    ZooKeeperRetriesControl(std::string name_, ZooKeeperRetriesInfo & retries_info_, QueryStatusPtr elem)
-        : name(std::move(name_)), retries_info(retries_info_), process_list_element(elem)
+    ZooKeeperRetriesControl(std::string name_, ZooKeeperRetriesInfo & retries_info_) : name(std::move(name_)), retries_info(retries_info_)
     {
     }
 
@@ -46,16 +44,6 @@ public:
         retryLoop(f, []() {});
     }
 
-    /// retryLoop() executes f() until it succeeds/max_retries is reached/non-retrialable error is encountered
-    ///
-    /// the callable f() can provide feedback in terms of errors in two ways:
-    /// 1. throw KeeperException exception:
-    ///     in such case, retries are done only on hardware keeper errors
-    ///     because non-hardware error codes are semantically not really errors, just a response
-    /// 2. set an error code in the ZooKeeperRetriesControl object (setUserError/setKeeperError)
-    ///     The idea is that if the caller has some semantics on top of non-hardware keeper errors,
-    ///     then it can provide feedback to retries controller via user errors
-    ///
     void retryLoop(auto && f, auto && iteration_cleanup)
     {
         while (canTry())
@@ -138,12 +126,6 @@ public:
         user_error = UserError{};
     }
 
-    template <typename... Args>
-    void setKeeperError(Coordination::Error code, fmt::format_string<Args...> fmt, Args &&... args)
-    {
-        setKeeperError(code, fmt::format(fmt, std::forward<Args>(args)...));
-    }
-
     void stopRetries() { stop_retries = true; }
 
     void requestUnconditionalRetry() { unconditional_retry = true; }
@@ -177,9 +159,6 @@ private:
         /// first iteration is ordinary execution, no further checks needed
         if (0 == iteration_count)
             return true;
-
-        if (process_list_element && !process_list_element->checkTimeLimitSoft())
-            return false;
 
         if (unconditional_retry)
         {
@@ -281,7 +260,6 @@ private:
     bool unconditional_retry = false;
     bool iteration_succeeded = true;
     bool stop_retries = false;
-    QueryStatusPtr process_list_element;
 };
 
 }

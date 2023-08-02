@@ -35,21 +35,21 @@ void ASTSettingsProfileElement::formatImpl(const FormatSettings & settings, Form
 
     formatSettingName(setting_name, settings.ostr);
 
-    if (value)
+    if (!value.isNull())
     {
-        settings.ostr << " = " << applyVisitor(FieldVisitorToString{}, *value);
+        settings.ostr << " = " << applyVisitor(FieldVisitorToString{}, value);
     }
 
-    if (min_value)
+    if (!min_value.isNull())
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " MIN " << (settings.hilite ? IAST::hilite_none : "")
-                      << applyVisitor(FieldVisitorToString{}, *min_value);
+                      << applyVisitor(FieldVisitorToString{}, min_value);
     }
 
-    if (max_value)
+    if (!max_value.isNull())
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " MAX " << (settings.hilite ? IAST::hilite_none : "")
-                      << applyVisitor(FieldVisitorToString{}, *max_value);
+                      << applyVisitor(FieldVisitorToString{}, max_value);
     }
 
     if (writability)

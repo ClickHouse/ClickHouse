@@ -70,41 +70,6 @@ namespace ErrorCodes
 namespace S3
 {
 
-HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config)
-{
-    HTTPHeaderEntries headers;
-    Poco::Util::AbstractConfiguration::Keys subconfig_keys;
-    config.keys(config_elem, subconfig_keys);
-    for (const std::string & subkey : subconfig_keys)
-    {
-        if (subkey.starts_with("header"))
-        {
-            auto header_str = config.getString(config_elem + "." + subkey);
-            auto delimiter = header_str.find(':');
-            if (delimiter == std::string::npos)
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Malformed s3 header value");
-            headers.emplace_back(header_str.substr(0, delimiter), header_str.substr(delimiter + 1, String::npos));
-        }
-    }
-    return headers;
-}
-
-ServerSideEncryptionKMSConfig getSSEKMSConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config)
-{
-    ServerSideEncryptionKMSConfig sse_kms_config;
-
-    if (config.has(config_elem + ".server_side_encryption_kms_key_id"))
-        sse_kms_config.key_id = config.getString(config_elem + ".server_side_encryption_kms_key_id");
-
-    if (config.has(config_elem + ".server_side_encryption_kms_encryption_context"))
-        sse_kms_config.encryption_context = config.getString(config_elem + ".server_side_encryption_kms_encryption_context");
-
-    if (config.has(config_elem + ".server_side_encryption_kms_bucket_key_enabled"))
-        sse_kms_config.bucket_key_enabled = config.getBool(config_elem + ".server_side_encryption_kms_bucket_key_enabled");
-
-    return sse_kms_config;
-}
-
 AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config)
 {
     auto access_key_id = config.getString(config_elem + ".access_key_id", "");
@@ -128,15 +93,26 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
     if (config.has(config_elem + ".no_sign_request"))
         no_sign_request = config.getBool(config_elem + ".no_sign_request");
 
-    HTTPHeaderEntries headers = getHTTPHeaders(config_elem, config);
-    ServerSideEncryptionKMSConfig sse_kms_config = getSSEKMSConfig(config_elem, config);
+    HTTPHeaderEntries headers;
+    Poco::Util::AbstractConfiguration::Keys subconfig_keys;
+    config.keys(config_elem, subconfig_keys);
+    for (const std::string & subkey : subconfig_keys)
+    {
+        if (subkey.starts_with("header"))
+        {
+            auto header_str = config.getString(config_elem + "." + subkey);
+            auto delimiter = header_str.find(':');
+            if (delimiter == std::string::npos)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Malformed s3 header value");
+            headers.emplace_back(header_str.substr(0, delimiter), header_str.substr(delimiter + 1, String::npos));
+        }
+    }
 
     return AuthSettings
     {
         std::move(access_key_id), std::move(secret_access_key),
         std::move(region),
         std::move(server_side_encryption_customer_key_base64),
-        std::move(sse_kms_config),
         std::move(headers),
         use_environment_credentials,
         use_insecure_imds_request,
@@ -159,7 +135,6 @@ void AuthSettings::updateFrom(const AuthSettings & from)
     headers = from.headers;
     region = from.region;
     server_side_encryption_customer_key_base64 = from.server_side_encryption_customer_key_base64;
-    server_side_encryption_kms_config = from.server_side_encryption_kms_config;
 
     if (from.use_environment_credentials.has_value())
         use_environment_credentials = from.use_environment_credentials;

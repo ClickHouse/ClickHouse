@@ -88,38 +88,6 @@ struct ToStartOfWeekImpl
     using FactorTransform = ZeroTransform;
 };
 
-struct ToLastDayOfWeekImpl
-{
-    static constexpr auto name = "toLastDayOfWeek";
-
-    static inline UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-    }
-    static inline UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-    }
-    static inline UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
-    }
-    static inline UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toLastDayNumOfWeek(DayNum(d), week_mode);
-    }
-    static inline Int64 executeExtendedResult(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-    }
-    static inline Int32 executeExtendedResult(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
-    }
-
-    using FactorTransform = ZeroTransform;
-};
-
 struct ToWeekImpl
 {
     static constexpr auto name = "toWeek";

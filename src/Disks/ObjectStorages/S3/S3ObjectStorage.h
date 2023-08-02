@@ -9,6 +9,7 @@
 #include <memory>
 #include <Storages/StorageS3Settings.h>
 #include <Common/MultiVersion.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -97,12 +98,14 @@ public:
         const StoredObject & object,
         WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
+        FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
-    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
-
-    ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const override;
+    void findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const override;
+    void getDirectoryContents(const std::string & path,
+        RelativePathsWithSize & files,
+        std::vector<std::string> & directories) const override;
 
     /// Uses `DeleteObjectRequest`.
     void removeObject(const StoredObject & object) override;
@@ -119,8 +122,6 @@ public:
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
-
-    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -143,6 +144,8 @@ public:
         ContextPtr context) override;
 
     std::string getObjectsNamespace() const override { return bucket; }
+
+    std::string generateBlobNameForPath(const std::string & path) override;
 
     bool isRemote() const override { return true; }
 

@@ -1,10 +1,3 @@
 [env]
 CFLAGS = "@RUST_CFLAGS@"
 CXXFLAGS = "@RUST_CXXFLAGS@"
-
-[build]
-rustflags = @RUSTFLAGS@
-rustdocflags = @RUSTFLAGS@
-
-[unstable]
-@RUST_CARGO_BUILD_STD@

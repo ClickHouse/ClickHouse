@@ -33,52 +33,11 @@ SELECT toMonday(toDateTime(1419800400), 'Europe/Paris');
 SELECT toMonday(toDateTime(1419800400), 'Europe/London');
 SELECT toMonday(toDateTime(1419800400), 'Asia/Tokyo');
 SELECT toMonday(toDateTime(1419800400), 'Pacific/Pitcairn');
-SELECT toMonday(toDate(16433), 'Asia/Istanbul'); -- { serverError 43 }
 SELECT toMonday(toDate(16433));
-
-/* toStartOfWeek (Sunday) */
-
-SELECT 'toStartOfWeek (Sunday)';
-SELECT toStartOfWeek(toDateTime(1419800400), 0, 'Asia/Istanbul');
-SELECT toStartOfWeek(toDateTime(1419800400), 0, 'Europe/Paris');
-SELECT toStartOfWeek(toDateTime(1419800400), 0, 'Europe/London');
-SELECT toStartOfWeek(toDateTime(1419800400), 0, 'Asia/Tokyo');
-SELECT toStartOfWeek(toDateTime(1419800400), 0, 'Pacific/Pitcairn');
-SELECT toStartOfWeek(toDate(16433), 0, 'Asia/Istanbul'); -- { serverError 43 }
-SELECT toStartOfWeek(toDate(16433), 0);
-
-/* toStartOfWeek (Monday) */
-
-SELECT 'toStartOfWeek (Monday)';
-SELECT toStartOfWeek(toDateTime(1419800400), 1, 'Asia/Istanbul');
-SELECT toStartOfWeek(toDateTime(1419800400), 1, 'Europe/Paris');
-SELECT toStartOfWeek(toDateTime(1419800400), 1, 'Europe/London');
-SELECT toStartOfWeek(toDateTime(1419800400), 1, 'Asia/Tokyo');
-SELECT toStartOfWeek(toDateTime(1419800400), 1, 'Pacific/Pitcairn');
-SELECT toStartOfWeek(toDate(16433), 1, 'Asia/Istanbul'); -- { serverError 43 }
-SELECT toStartOfWeek(toDate(16433), 1);
-
-/* toLastDayOfWeek (Sunday) */
-
-SELECT 'toLastDayOfWeek (Sunday)';
-SELECT toLastDayOfWeek(toDateTime(1419800400), 0, 'Asia/Istanbul');
-SELECT toLastDayOfWeek(toDateTime(1419800400), 0, 'Europe/Paris');
-SELECT toLastDayOfWeek(toDateTime(1419800400), 0, 'Europe/London');
-SELECT toLastDayOfWeek(toDateTime(1419800400), 0, 'Asia/Tokyo');
-SELECT toLastDayOfWeek(toDateTime(1419800400), 0, 'Pacific/Pitcairn');
-SELECT toLastDayOfWeek(toDate(16433), 0, 'Asia/Istanbul'); -- { serverError 43 }
-SELECT toLastDayOfWeek(toDate(16433), 0);
-
-/* toLastDayOfWeek (Monday) */
-
-SELECT 'toLastDayOfWeek (Monday)';
-SELECT toLastDayOfWeek(toDateTime(1419800400), 1, 'Asia/Istanbul');
-SELECT toLastDayOfWeek(toDateTime(1419800400), 1, 'Europe/Paris');
-SELECT toLastDayOfWeek(toDateTime(1419800400), 1, 'Europe/London');
-SELECT toLastDayOfWeek(toDateTime(1419800400), 1, 'Asia/Tokyo');
-SELECT toLastDayOfWeek(toDateTime(1419800400), 1, 'Pacific/Pitcairn');
-SELECT toLastDayOfWeek(toDate(16433), 1, 'Asia/Istanbul'); -- { serverError 43 }
-SELECT toLastDayOfWeek(toDate(16433), 1);
+SELECT toMonday(toDate(16433));
+SELECT toMonday(toDate(16433));
+SELECT toMonday(toDate(16433));
+SELECT toMonday(toDate(16433));
 
 /* toStartOfMonth */
 
@@ -88,7 +47,10 @@ SELECT toStartOfMonth(toDateTime(1419800400), 'Europe/Paris');
 SELECT toStartOfMonth(toDateTime(1419800400), 'Europe/London');
 SELECT toStartOfMonth(toDateTime(1419800400), 'Asia/Tokyo');
 SELECT toStartOfMonth(toDateTime(1419800400), 'Pacific/Pitcairn');
-SELECT toStartOfMonth(toDate(16433), 'Asia/Istanbul'); -- { serverError 43 }
+SELECT toStartOfMonth(toDate(16433));
+SELECT toStartOfMonth(toDate(16433));
+SELECT toStartOfMonth(toDate(16433));
+SELECT toStartOfMonth(toDate(16433));
 SELECT toStartOfMonth(toDate(16433));
 
 /* toStartOfQuarter */
@@ -99,7 +61,10 @@ SELECT toStartOfQuarter(toDateTime(1412106600), 'Europe/Paris');
 SELECT toStartOfQuarter(toDateTime(1412106600), 'Europe/London');
 SELECT toStartOfQuarter(toDateTime(1412106600), 'Asia/Tokyo');
 SELECT toStartOfQuarter(toDateTime(1412106600), 'Pacific/Pitcairn');
-SELECT toStartOfQuarter(toDate(16343), 'Asia/Istanbul'); -- { serverError 43 }
+SELECT toStartOfQuarter(toDate(16343));
+SELECT toStartOfQuarter(toDate(16343));
+SELECT toStartOfQuarter(toDate(16343));
+SELECT toStartOfQuarter(toDate(16343));
 SELECT toStartOfQuarter(toDate(16343));
 
 /* toStartOfYear */
@@ -110,7 +75,10 @@ SELECT toStartOfYear(toDateTime(1419800400), 'Europe/Paris');
 SELECT toStartOfYear(toDateTime(1419800400), 'Europe/London');
 SELECT toStartOfYear(toDateTime(1419800400), 'Asia/Tokyo');
 SELECT toStartOfYear(toDateTime(1419800400), 'Pacific/Pitcairn');
-SELECT toStartOfYear(toDate(16433), 'Asia/Istanbul'); -- { serverError 43 }
+SELECT toStartOfYear(toDate(16433));
+SELECT toStartOfYear(toDate(16433));
+SELECT toStartOfYear(toDate(16433));
+SELECT toStartOfYear(toDate(16433));
 SELECT toStartOfYear(toDate(16433));
 
 /* toTime */

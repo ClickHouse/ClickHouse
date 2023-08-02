@@ -10,7 +10,6 @@
 #include <Common/checkStackSize.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#include <Common/logger_useful.h>
 
 #include <future>
 #include <chrono>
@@ -37,6 +36,8 @@ namespace ProfileEvents
     extern const Event MemoryAllocatorPurge;
     extern const Event MemoryAllocatorPurgeTimeMicroseconds;
 }
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -236,13 +237,13 @@ void KeeperDispatcher::snapshotThread()
 
         try
         {
-            auto snapshot_file_info = task.create_snapshot(std::move(task.snapshot));
+            auto snapshot_path = task.create_snapshot(std::move(task.snapshot));
 
-            if (snapshot_file_info.path.empty())
+            if (snapshot_path.empty())
                 continue;
 
             if (isLeader())
-                snapshot_s3.uploadSnapshot(snapshot_file_info);
+                snapshot_s3.uploadSnapshot(snapshot_path);
         }
         catch (...)
         {
@@ -334,39 +335,28 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     snapshot_s3.startup(config, macros);
 
-    keeper_context = std::make_shared<KeeperContext>(standalone_keeper);
-    keeper_context->initialize(config);
-
-    server = std::make_unique<KeeperServer>(
-        configuration_and_settings,
-        config,
-        responses_queue,
-        snapshots_queue,
-        keeper_context,
-        snapshot_s3,
-        [this](const KeeperStorage::RequestForSession & request_for_session)
+    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue, snapshot_s3, [this](const KeeperStorage::RequestForSession & request_for_session)
+    {
+        /// check if we have queue of read requests depending on this request to be committed
+        std::lock_guard lock(read_request_queue_mutex);
+        if (auto it = read_request_queue.find(request_for_session.session_id); it != read_request_queue.end())
         {
-            /// check if we have queue of read requests depending on this request to be committed
-            std::lock_guard lock(read_request_queue_mutex);
-            if (auto it = read_request_queue.find(request_for_session.session_id); it != read_request_queue.end())
+            auto & xid_to_request_queue = it->second;
+
+            if (auto request_queue_it = xid_to_request_queue.find(request_for_session.request->xid); request_queue_it != xid_to_request_queue.end())
             {
-                auto & xid_to_request_queue = it->second;
-
-                if (auto request_queue_it = xid_to_request_queue.find(request_for_session.request->xid);
-                    request_queue_it != xid_to_request_queue.end())
+                for (const auto & read_request : request_queue_it->second)
                 {
-                    for (const auto & read_request : request_queue_it->second)
-                    {
-                        if (server->isLeaderAlive())
-                            server->putLocalReadRequest(read_request);
-                        else
-                            addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
-                    }
-
-                    xid_to_request_queue.erase(request_queue_it);
+                    if (server->isLeaderAlive())
+                        server->putLocalReadRequest(read_request);
+                    else
+                        addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
                 }
+
+                xid_to_request_queue.erase(request_queue_it);
             }
-        });
+        }
+    });
 
     try
     {
@@ -480,9 +470,9 @@ void KeeperDispatcher::shutdown()
             const auto raft_result = server->putRequestBatch(close_requests);
             auto sessions_closing_done_promise = std::make_shared<std::promise<void>>();
             auto sessions_closing_done = sessions_closing_done_promise->get_future();
-            raft_result->when_ready([my_sessions_closing_done_promise = std::move(sessions_closing_done_promise)](
+            raft_result->when_ready([sessions_closing_done_promise = std::move(sessions_closing_done_promise)](
                                         nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & /*result*/,
-                                        nuraft::ptr<std::exception> & /*exception*/) { my_sessions_closing_done_promise->set_value(); });
+                                        nuraft::ptr<std::exception> & /*exception*/) { sessions_closing_done_promise->set_value(); });
 
             auto session_shutdown_timeout = configuration_and_settings->coordination_settings->session_shutdown_timeout.totalMilliseconds();
             if (sessions_closing_done.wait_for(std::chrono::milliseconds(session_shutdown_timeout)) != std::future_status::ready)
@@ -775,37 +765,35 @@ void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)
     keeper_stats.updateLatency(process_time_ms);
 }
 
-static uint64_t getTotalSize(const DiskPtr & disk, const std::string & path = "")
+static uint64_t getDirSize(const fs::path & dir)
 {
     checkStackSize();
+    if (!fs::exists(dir))
+        return 0;
 
-    uint64_t size = 0;
-    for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
+    fs::directory_iterator it(dir);
+    fs::directory_iterator end;
+
+    uint64_t size{0};
+    while (it != end)
     {
-        if (disk->isFile(it->path()))
-            size += disk->getFileSize(it->path());
+        if (it->is_regular_file())
+            size += fs::file_size(*it);
         else
-            size += getTotalSize(disk, it->path());
+            size += getDirSize(it->path());
+        ++it;
     }
-
     return size;
 }
 
 uint64_t KeeperDispatcher::getLogDirSize() const
 {
-    auto log_disk = keeper_context->getLogDisk();
-    auto size = getTotalSize(log_disk);
-
-    auto latest_log_disk = keeper_context->getLatestLogDisk();
-    if (log_disk != latest_log_disk)
-        size += getTotalSize(latest_log_disk);
-
-    return size;
+    return getDirSize(configuration_and_settings->log_storage_path);
 }
 
 uint64_t KeeperDispatcher::getSnapDirSize() const
 {
-    return getTotalSize(keeper_context->getSnapshotDisk());
+    return getDirSize(configuration_and_settings->snapshot_storage_path);
 }
 
 Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
