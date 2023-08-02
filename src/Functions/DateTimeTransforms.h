@@ -19,6 +19,9 @@
 namespace DB
 {
 
+static constexpr auto microsecond_multiplier = 1000000;
+static constexpr auto millisecond_multiplier = 1000;
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -1377,6 +1380,36 @@ struct ToRelativeSecondNumImpl
     using FactorTransform = ZeroTransform;
 };
 
+template <Int64 scale_multiplier>
+struct ToRelativeSubsecondNumImpl
+{
+    static constexpr auto name = "toRelativeSubsecondNumImpl";
+
+    static inline Int64 execute(const DateTime64 & t, DateTime64::NativeType scale, const DateLUTImpl &)
+    {
+        static_assert(scale_multiplier == 1000 || scale_multiplier == 1000000);
+        if (scale == scale_multiplier)
+            return t.value;
+        if (scale > scale_multiplier)
+            return t.value / (scale / scale_multiplier);
+        return t.value * (scale_multiplier / scale);
+    }
+    static inline Int64 execute(UInt32 t, const DateLUTImpl &)
+    {
+        return t * scale_multiplier;
+    }
+    static inline Int64 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(d))) * scale_multiplier;
+    }
+    static inline Int64 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return static_cast<Int64>(time_zone.fromDayNum(DayNum(d)) * scale_multiplier);
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
 struct ToYYYYMMImpl
 {
     static constexpr auto name = "toYYYYMM";
@@ -1476,25 +1509,47 @@ struct ToYYYYMMDDhhmmssImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct DateTimeComponentsWithFractionalPart : public DateLUTImpl::DateTimeComponents
+{
+    UInt16  millisecond;
+    UInt16  microsecond;
+};
+
 struct ToDateTimeComponentsImpl
 {
     static constexpr auto name = "toDateTimeComponents";
 
-    static inline DateLUTImpl::DateTimeComponents execute(Int64 t, const DateLUTImpl & time_zone)
+    static inline DateTimeComponentsWithFractionalPart execute(const DateTime64 & t, DateTime64::NativeType scale_multiplier, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDateTimeComponents(t);
+        auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+
+        if (t.value < 0 && components.fractional)
+        {
+            components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
+            --components.whole;
+        }
+        Int64 fractional = components.fractional;
+        if (scale_multiplier > microsecond_multiplier)
+            fractional = fractional / (scale_multiplier / microsecond_multiplier);
+        else if (scale_multiplier < microsecond_multiplier)
+            fractional = fractional * (microsecond_multiplier / scale_multiplier);
+
+        constexpr Int64 divider = microsecond_multiplier/ millisecond_multiplier;
+        UInt16 millisecond = static_cast<UInt16>(fractional / divider);
+        UInt16 microsecond = static_cast<UInt16>(fractional % divider);
+        return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(components.whole), millisecond, microsecond};
     }
-    static inline DateLUTImpl::DateTimeComponents execute(UInt32 t, const DateLUTImpl & time_zone)
+    static inline DateTimeComponentsWithFractionalPart execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDateTimeComponents(static_cast<DateLUTImpl::Time>(t));
+        return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(static_cast<DateLUTImpl::Time>(t)), 0, 0};
     }
-    static inline DateLUTImpl::DateTimeComponents execute(Int32 d, const DateLUTImpl & time_zone)
+    static inline DateTimeComponentsWithFractionalPart execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDateTimeComponents(ExtendedDayNum(d));
+        return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(ExtendedDayNum(d)), 0, 0};
     }
-    static inline DateLUTImpl::DateTimeComponents execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline DateTimeComponentsWithFractionalPart execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDateTimeComponents(DayNum(d));
+        return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(DayNum(d)), 0, 0};
     }
 
     using FactorTransform = ZeroTransform;
