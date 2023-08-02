@@ -75,6 +75,15 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
 }
 
+void applySettingsOverridesForLocal(ContextMutablePtr context)
+{
+    Settings settings = context->getSettings();
+
+    settings.allow_introspection_functions = true;
+    settings.storage_file_read_method = LocalFSReadMethod::mmap;
+
+    context->setSettings(settings);
+}
 
 void LocalServer::processError(const String &) const
 {
@@ -256,6 +265,10 @@ void LocalServer::tryInitPath()
     global_context->setFlagsPath(path + "flags");
 
     global_context->setUserFilesPath(""); // user's files are everywhere
+
+    std::string user_scripts_path = config().getString("user_scripts_path", fs::path(path) / "user_scripts/");
+    global_context->setUserScriptsPath(user_scripts_path);
+    fs::create_directories(user_scripts_path);
 
     /// top_level_domains_lists
     const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/");
@@ -481,6 +494,17 @@ try
 
     applyCmdSettings(global_context);
 
+    /// try to load user defined executable functions, throw on error and die
+    try
+    {
+        global_context->loadOrReloadUserDefinedExecutableFunctions(config());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(&logger(), "Caught exception while loading user defined executable functions.");
+        throw;
+    }
+
     if (is_interactive)
     {
         clearTerminal();
@@ -560,7 +584,9 @@ void LocalServer::processConfig()
     }
 
     print_stack_trace = config().getBool("stacktrace", false);
-    load_suggestions = (is_interactive || delayed_interactive) && !config().getBool("disable_suggestion", false);
+    const std::string clickhouse_dialect{"clickhouse"};
+    load_suggestions = (is_interactive || delayed_interactive) && !config().getBool("disable_suggestion", false)
+        && config().getString("dialect", clickhouse_dialect) == clickhouse_dialect;
 
     auto logging = (config().has("logger.console")
                     || config().has("logger.level")
@@ -668,6 +694,12 @@ void LocalServer::processConfig()
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size, compiled_expression_cache_elements_size);
 #endif
 
+    /// NOTE: it is important to apply any overrides before
+    /// setDefaultProfiles() calls since it will copy current context (i.e.
+    /// there is separate context for Buffer tables).
+    applySettingsOverridesForLocal(global_context);
+    applyCmdOptions(global_context);
+
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
 
@@ -682,7 +714,6 @@ void LocalServer::processConfig()
     std::string default_database = config().getString("default_database", "_local");
     DatabaseCatalog::instance().attachDatabase(default_database, createClickHouseLocalDatabaseOverlay(default_database, global_context));
     global_context->setCurrentDatabase(default_database);
-    applyCmdOptions(global_context);
 
     if (config().has("path"))
     {
@@ -723,9 +754,8 @@ void LocalServer::processConfig()
     for (const auto & [key, value] : prompt_substitutions)
         boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
 
-    ClientInfo & client_info = global_context->getClientInfo();
-    client_info.setInitialQuery();
-    client_info.query_kind = query_kind;
+    global_context->setQueryKindInitial();
+    global_context->setQueryKind(query_kind);
 }
 
 

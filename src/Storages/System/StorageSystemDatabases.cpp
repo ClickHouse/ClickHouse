@@ -5,6 +5,8 @@
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Access/ContextAccess.h>
 #include <Storages/System/StorageSystemDatabases.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/logger_useful.h>
 
@@ -69,19 +71,51 @@ static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database
     return engine_full;
 }
 
-void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+static ColumnPtr getFilteredDatabases(const Databases & databases, const SelectQueryInfo & query_info, ContextPtr context)
+{
+    MutableColumnPtr name_column = ColumnString::create();
+    MutableColumnPtr engine_column = ColumnString::create();
+    MutableColumnPtr uuid_column = ColumnUUID::create();
+
+    for (const auto & [database_name, database] : databases)
+    {
+        if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+            continue; /// We don't want to show the internal database for temporary tables in system.tables
+
+        name_column->insert(database_name);
+        engine_column->insert(database->getEngineName());
+        uuid_column->insert(database->getUUID());
+    }
+
+    Block block
+    {
+        ColumnWithTypeAndName(std::move(name_column), std::make_shared<DataTypeString>(), "name"),
+        ColumnWithTypeAndName(std::move(engine_column), std::make_shared<DataTypeString>(), "engine"),
+        ColumnWithTypeAndName(std::move(uuid_column), std::make_shared<DataTypeUUID>(), "uuid")
+    };
+    VirtualColumnUtils::filterBlockWithQuery(query_info.query, block, context);
+    return block.getByPosition(0).column;
+}
+
+void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
     const auto databases = DatabaseCatalog::instance().getDatabases();
-    for (const auto & [database_name, database] : databases)
+    ColumnPtr filtered_databases_column = getFilteredDatabases(databases, query_info, context);
+
+    for (size_t i = 0; i < filtered_databases_column->size(); ++i)
     {
+        auto database_name = filtered_databases_column->getDataAt(i).toString();
+
         if (check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
             continue;
 
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue; /// filter out the internal database for temporary tables in system.databases, asynchronous metric "NumberOfDatabases" behaves the same way
+
+        const auto & database = databases.at(database_name);
 
         res_columns[0]->insert(database_name);
         res_columns[1]->insert(database->getEngineName());

@@ -24,6 +24,7 @@ public:
 
     explicit DataTypeInterval(IntervalKind kind_) : kind(kind_) {}
 
+    SerializationPtr doGetDefaultSerialization() const override;
     std::string doGetName() const override { return fmt::format("Interval{}", kind.toString()); }
     const char * getFamilyName() const override { return "Interval"; }
     String getSQLCompatibleName() const override { return "TEXT"; }

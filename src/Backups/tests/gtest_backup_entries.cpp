@@ -24,7 +24,7 @@ protected:
         /// Make local disk.
         temp_dir = std::make_unique<Poco::TemporaryFile>();
         temp_dir->createDirectories();
-        local_disk = std::make_shared<DiskLocal>("local_disk", temp_dir->path() + "/", 0);
+        local_disk = std::make_shared<DiskLocal>("local_disk", temp_dir->path() + "/");
 
         /// Make encrypted disk.
         auto settings = std::make_unique<DiskEncryptedSettings>();
@@ -38,7 +38,7 @@ protected:
         settings->current_key = key;
         settings->current_key_fingerprint = fingerprint;
 
-        encrypted_disk = std::make_shared<DiskEncrypted>("encrypted_disk", std::move(settings), true);
+        encrypted_disk = std::make_shared<DiskEncrypted>("encrypted_disk", std::move(settings));
     }
 
     void TearDown() override

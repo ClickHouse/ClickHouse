@@ -92,6 +92,12 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
             " The files opened with `mmap` are kept in the cache to avoid costly TLB flushes."};
     }
 
+    if (auto query_cache = getContext()->getQueryCache())
+    {
+        new_values["QueryCacheBytes"] = { query_cache->weight(), "Total size of the query cache in bytes." };
+        new_values["QueryCacheEntries"] = { query_cache->count(), "Total number of entries in the query cache." };
+    }
+
     {
         auto caches = FileCacheFactory::instance().getAll();
         size_t total_bytes = 0;
@@ -191,14 +197,21 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
             auto available = disk->getAvailableSpace();
             auto unreserved = disk->getUnreservedSpace();
 
-            new_values[fmt::format("DiskTotal_{}", name)] = { total,
-                "The total size in bytes of the disk (virtual filesystem). Remote filesystems can show a large value like 16 EiB." };
-            new_values[fmt::format("DiskUsed_{}", name)] = { total - available,
-                "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
-            new_values[fmt::format("DiskAvailable_{}", name)] = { available,
-                "Available bytes on the disk (virtual filesystem). Remote filesystems can show a large value like 16 EiB." };
-            new_values[fmt::format("DiskUnreserved_{}", name)] = { unreserved,
-                "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems can show a large value like 16 EiB." };
+            new_values[fmt::format("DiskTotal_{}", name)] = { *total,
+                "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information." };
+
+            if (available)
+            {
+                new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
+                    "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
+
+                new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
+                    "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information." };
+            }
+
+            if (unreserved)
+                new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
+                    "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
         }
     }
 

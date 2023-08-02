@@ -308,6 +308,8 @@ private:
 
     Poco::Logger * log;
 
+    std::atomic_bool is_shutting_down = false;
+
     /// Do not allow simultaneous execution of DDL requests on the same table.
     /// database name -> database guard -> (table name mutex, counter),
     /// counter: how many threads are running a query on the table at the same time
@@ -321,6 +323,7 @@ private:
     mutable std::mutex ddl_guards_mutex;
 
     TablesMarkedAsDropped tables_marked_dropped TSA_GUARDED_BY(tables_marked_dropped_mutex);
+    TablesMarkedAsDropped::iterator first_async_drop_in_queue TSA_GUARDED_BY(tables_marked_dropped_mutex);
     std::unordered_set<UUID> tables_marked_dropped_ids TSA_GUARDED_BY(tables_marked_dropped_mutex);
     mutable std::mutex tables_marked_dropped_mutex;
 

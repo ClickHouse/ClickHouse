@@ -72,14 +72,10 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     if (coordinator)
     {
         new_context->parallel_reading_coordinator = coordinator;
-        new_context->getClientInfo().interface = ClientInfo::Interface::LOCAL;
-        new_context->getClientInfo().collaborate_with_initiator = true;
-        new_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-        new_context->getClientInfo().count_participating_replicas = replica_count;
-        new_context->getClientInfo().number_of_current_replica = replica_num;
-        new_context->getClientInfo().connection_client_version_major = DBMS_VERSION_MAJOR;
-        new_context->getClientInfo().connection_client_version_minor = DBMS_VERSION_MINOR;
-        new_context->getClientInfo().connection_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
+        new_context->setClientInterface(ClientInfo::Interface::LOCAL);
+        new_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+        new_context->setReplicaInfo(true, replica_count, replica_num);
+        new_context->setConnectionClientVersion(DBMS_VERSION_MAJOR, DBMS_VERSION_MINOR, DBMS_VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
         new_context->setParallelReplicasGroupUUID(group_uuid);
         new_context->setMergeTreeAllRangesCallback([coordinator](InitialAllRangesAnnouncement announcement)
         {

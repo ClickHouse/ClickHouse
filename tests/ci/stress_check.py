@@ -13,7 +13,6 @@ from github import Github
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import (
     ClickHouseHelper,
-    mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import RerunHelper, get_commit, post_commit_status
@@ -168,7 +167,6 @@ def run_stress_test(docker_image_name):
         result_path, server_log_path, run_log_path
     )
     ch_helper = ClickHouseHelper()
-    mark_flaky_tests(ch_helper, check_name, test_results)
 
     report_url = upload_results(
         s3_helper,
