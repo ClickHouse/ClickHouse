@@ -28,7 +28,7 @@ void JSONObjectEachRowRowOutputFormat::write(const Columns & columns, size_t row
     else
         object_name = "row_" + std::to_string(row + 1);
 
-    IRowOutputFormat::write(columns, row);
+    RowOutputFormatWithExceptionHandlerAdaptor::write(columns, row);
 }
 
 void JSONObjectEachRowRowOutputFormat::writeFieldDelimiter()
