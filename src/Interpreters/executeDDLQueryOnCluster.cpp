@@ -49,7 +49,7 @@ static ZooKeeperRetriesInfo getRetriesInfo()
     );
 }
 
-bool isSupportedAlterType(int type)
+bool isSupportedAlterTypeForOnClusterDDLQuery(int type)
 {
     assert(type != ASTAlterCommand::NO_TYPE);
     static const std::unordered_set<int> unsupported_alter_types{
@@ -90,7 +90,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     {
         for (const auto & command : query_alter->command_list->children)
         {
-            if (!isSupportedAlterType(command->as<ASTAlterCommand&>().type))
+            if (!isSupportedAlterTypeForOnClusterDDLQuery(command->as<ASTAlterCommand&>().type))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported type of ALTER query");
         }
     }

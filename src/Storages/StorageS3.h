@@ -141,6 +141,8 @@ public:
     Chunk generate() override;
 
 private:
+    friend class StorageS3QueueSource;
+
     String name;
     String bucket;
     String version_id;
@@ -157,12 +159,14 @@ private:
     {
     public:
         ReaderHolder(
-            String path_,
+            String key_,
+            String bucket_,
             std::unique_ptr<ReadBuffer> read_buf_,
             std::shared_ptr<IInputFormat> input_format_,
             std::unique_ptr<QueryPipeline> pipeline_,
             std::unique_ptr<PullingPipelineExecutor> reader_)
-            : path(std::move(path_))
+            : key(std::move(key_))
+            , bucket(std::move(bucket_))
             , read_buf(std::move(read_buf_))
             , input_format(std::move(input_format_))
             , pipeline(std::move(pipeline_))
@@ -187,19 +191,22 @@ private:
             pipeline = std::move(other.pipeline);
             input_format = std::move(other.input_format);
             read_buf = std::move(other.read_buf);
-            path = std::move(other.path);
+            key = std::move(other.key);
+            bucket = std::move(other.bucket);
             return *this;
         }
 
         explicit operator bool() const { return reader != nullptr; }
         PullingPipelineExecutor * operator->() { return reader.get(); }
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
-        const String & getPath() const { return path; }
+        String getPath() const { return fs::path(bucket) / key; }
+        const String & getFile() const { return key; }
 
         const IInputFormat * getInputFormat() const { return input_format.get(); }
 
     private:
-        String path;
+        String key;
+        String bucket;
         std::unique_ptr<ReadBuffer> read_buf;
         std::shared_ptr<IInputFormat> input_format;
         std::unique_ptr<QueryPipeline> pipeline;
@@ -323,6 +330,7 @@ protected:
 private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
+    friend class StorageS3Queue;
 
     Configuration configuration;
     std::mutex configuration_update_mutex;

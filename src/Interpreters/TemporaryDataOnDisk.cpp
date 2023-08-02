@@ -235,9 +235,9 @@ TemporaryFileStream::TemporaryFileStream(TemporaryFileOnDiskHolder file_, const 
     : parent(parent_)
     , header(header_)
     , file(std::move(file_))
-    , out_writer(std::make_unique<OutputWriter>(std::make_unique<WriteBufferFromFile>(file->getPath()), header))
+    , out_writer(std::make_unique<OutputWriter>(std::make_unique<WriteBufferFromFile>(file->getAbsolutePath()), header))
 {
-    LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Writing to temporary file {}", file->getPath());
+    LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Writing to temporary file {}", file->getAbsolutePath());
 }
 
 TemporaryFileStream::TemporaryFileStream(FileSegmentsHolderPtr segments_, const Block & header_, TemporaryDataOnDisk * parent_)
@@ -365,7 +365,7 @@ void TemporaryFileStream::release()
 String TemporaryFileStream::getPath() const
 {
     if (file)
-        return file->getPath();
+        return file->getAbsolutePath();
     if (segment_holder && !segment_holder->empty())
         return segment_holder->front().getPathInLocalCache();
 

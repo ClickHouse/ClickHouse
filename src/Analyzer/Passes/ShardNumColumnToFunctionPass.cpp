@@ -24,7 +24,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<ShardNumColumnToFunctionVisitor>;
     using Base::Base;
 
-    void visitImpl(QueryTreeNodePtr & node) const
+    void enterImpl(QueryTreeNodePtr & node) const
     {
         auto * column_node = node->as<ColumnNode>();
         if (!column_node)
