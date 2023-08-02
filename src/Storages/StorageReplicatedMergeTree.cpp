@@ -1927,15 +1927,15 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                     auto region_leader = geo_replication_controller.getCurrentLeader();
                     if (region_leader != getReplicaName())
                     {
-                        auto total_waited_seconds = entry.waiting_for_region_leader * ReplicatedMergeTreeGeoReplicationController::DBMS_DEFAULT_WAIT_FOR_REGION_LEADER;
-                        if (total_waited_seconds < ReplicatedMergeTreeGeoReplicationController::DBMS_DEFAULT_WAIT_FOR_REGION_LEADER_TIMEOUT)
+                        auto total_waited_seconds = entry.waiting_for_region_leader * getSettings()->geo_replication_control_leader_wait.totalSeconds();
+                        if (total_waited_seconds < getSettings()->geo_replication_control_leader_wait_timeout.totalSeconds())
                         {
                             LOG_INFO(
                                 log,
-                                "Leader of region {} (replica {}) doesn't have part {} or covering part yet, will defer executing {} : {} "
+                                "Leader of region {} ({}) has not been elected, or it doesn't have part {} or covering part yet, will defer executing {} : {} "
                                 "(has been deferred for {} seconds)",
                                 geo_replication_controller.getRegion(),
-                                region_leader,
+                                region_leader.empty() ? String("NO LEADER") : region_leader,
                                 entry.new_part_name,
                                 entry.znode_name,
                                 entry.getDescriptionForLogs(format_version),
@@ -3988,7 +3988,6 @@ bool StorageReplicatedMergeTree::checkReplicaHavePart(const String & replica, co
     auto zookeeper = getZooKeeper();
     return zookeeper->exists(fs::path(zookeeper_path) / "replicas" / replica / "parts" / part_name);
 }
-
 
 
 String StorageReplicatedMergeTree::findReplicaHavingPart(LogEntry & entry, bool active)
@@ -9533,14 +9532,7 @@ bool StorageReplicatedMergeTree::checkIfDetachedPartExists(const String & part_n
     fs::directory_iterator dir_end;
     for (const std::string & path : getDataPaths())
     {
-        auto detached_path = fs::path(path) / "detached/";
-        if (!fs::exists(detached_path))
-        {
-            /// Empty detached folders could be lost, e.g. ignored during disk migration
-            fs::create_directory(detached_path);
-            continue;
-        }
-        for (fs::directory_iterator dir_it{detached_path}; dir_it != dir_end; ++dir_it)
+        for (fs::directory_iterator dir_it{fs::path(path) / "detached/"}; dir_it != dir_end; ++dir_it)
             if (dir_it->path().filename().string() == part_name)
                 return true;
     }
@@ -9554,14 +9546,7 @@ bool StorageReplicatedMergeTree::checkIfDetachedPartitionExists(const String & p
 
     for (const std::string & path : getDataPaths())
     {
-        auto detached_path = fs::path(path) / "detached/";
-        if (!fs::exists(detached_path))
-        {
-            /// Empty detached folders could be lost, e.g. ignored during disk migration
-            fs::create_directory(detached_path);
-            continue;
-        }
-        for (fs::directory_iterator dir_it{detached_path}; dir_it != dir_end; ++dir_it)
+        for (fs::directory_iterator dir_it{fs::path(path) / "detached/"}; dir_it != dir_end; ++dir_it)
         {
             const String file_name = dir_it->path().filename().string();
             auto part_info = MergeTreePartInfo::tryParsePartName(file_name, format_version);
@@ -10050,7 +10035,6 @@ template std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::all
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
     const std::vector<String> & zookeeper_block_id_path,
     const String & zookeeper_path_prefix) const;
-
 
 Strings StorageReplicatedMergeTree::getAllReplicasPossiblyWithRegionAwareness(
     const ReplicatedMergeTreeGeoReplicationController & geo_replication_controller, ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & current_replica_name, bool follower_prefer_leader)

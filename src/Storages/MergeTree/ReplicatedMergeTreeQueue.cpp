@@ -1554,7 +1554,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
     if (entry.waiting_for_region_leader > 0)
     {
-        auto extra_wait = entry.last_attempt_time + ReplicatedMergeTreeGeoReplicationController::DBMS_DEFAULT_WAIT_FOR_REGION_LEADER - time(nullptr);
+        auto extra_wait = entry.last_attempt_time + storage.getSettings()->geo_replication_control_leader_wait.totalSeconds() - time(nullptr);
         if (extra_wait > 0)
         {
             constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} "

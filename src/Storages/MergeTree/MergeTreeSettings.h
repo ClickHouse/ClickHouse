@@ -121,6 +121,12 @@ struct Settings;
     M(UInt64, max_replicated_sends_network_bandwidth, 0, "The maximum speed of data exchange over the network in bytes per second for replicated sends. Zero means unlimited.", 0) \
     M(Milliseconds, wait_for_unique_parts_send_before_shutdown_ms, 0, "Before shutdown table will wait for required amount time for unique parts (exist only on current replica) to be fetched by other replicas (0 means disabled).", 0) \
     \
+    /** Gep-replication control settings. */ \
+    M(String, geo_replication_control_region, "", "Which region the replica belong to, value defined by users", 0) \
+    M(UInt64, geo_replication_control_leader_election_period_ms, 10*1000, "If there is no region leader, how frequent should this replica trigger a leader election", 0) \
+    M(Seconds, geo_replication_control_leader_wait, 10, "When the target part is not yet on leader, how long follower should wait before try executing the log entry again", 0) \
+    M(Seconds, geo_replication_control_leader_wait_timeout, 300, "Maximum time the follower should wait the leader to execute fetch, if timeout then follower will fetch from any replica", 0) \
+    \
     /** Check delay of replicas settings. */ \
     M(UInt64, min_relative_delay_to_measure, 120, "Calculate relative replica delay only if absolute delay is not less that this value.", 0) \
     M(UInt64, cleanup_delay_period, 30, "Minimum period to clean old queue logs, blocks hashes and parts.", 0) \

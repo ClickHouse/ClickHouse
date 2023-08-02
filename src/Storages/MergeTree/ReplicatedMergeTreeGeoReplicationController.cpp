@@ -1,29 +1,25 @@
 #include "ReplicatedMergeTreeGeoReplicationController.h"
 #include <Storages/StorageReplicatedMergeTree.h>
 
-
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int NO_ZOOKEEPER;
 }
 
 ReplicatedMergeTreeGeoReplicationController::ReplicatedMergeTreeGeoReplicationController(StorageReplicatedMergeTree & storage_) : storage(storage_)
 {
-    region = storage.getContext()->getConfigRef().getString("replicated_merge_tree_geo_replication.region", "");
+    region = storage.getSettings()->geo_replication_control_region;
 }
 
 void ReplicatedMergeTreeGeoReplicationController::onLeader()
 {
-    LOG_INFO(storage.log.load(),"Replica {} becomes leader for region {}", storage.getReplicaName(), region);
     auto lease_path = fs::path(storage.getZooKeeperPath()) / "regions" / region / "leader_lease";
     current_zookeeper->createAncestors(lease_path);
     leader_lease_holder = zkutil::EphemeralNodeHolder::create(lease_path, *current_zookeeper, storage.getReplicaName());
+    LOG_INFO(storage.log.load(),"Replica {} becomes leader for region {}", storage.getReplicaName(), region);
 }
 
 void ReplicatedMergeTreeGeoReplicationController::exitLeaderElection()
@@ -33,7 +29,7 @@ void ReplicatedMergeTreeGeoReplicationController::exitLeaderElection()
         leader_election.reset();
         leader_lease_holder.reset();
     }
-    catch(...)
+    catch (...)
     {
         /// Zookeeper session may have been expired
         tryLogCurrentException(__PRETTY_FUNCTION__);
@@ -54,7 +50,8 @@ void ReplicatedMergeTreeGeoReplicationController::enterLeaderElection()
             election_path,
             *current_zookeeper,
             [this]() { return onLeader(); },
-            storage.getReplicaName(),
+            "",
+            storage.getSettings()->geo_replication_control_leader_election_period_ms,
             false
         );
     }
@@ -81,7 +78,7 @@ String ReplicatedMergeTreeGeoReplicationController::getCurrentLeader() const
     return leader_replica;
 }
 
-} /// namespace DB
+}
 
 namespace zkutil
 {
@@ -108,12 +105,14 @@ public:
         ZooKeeper & zookeeper_,
         LeadershipHandler handler_,
         const std::string & identifier_,
+        int time_wait_ms_,
         bool allow_multiple_leaders_)
         : pool(pool_)
         , path(path_)
         , zookeeper(zookeeper_)
         , handler(std::move(handler_))
         , identifier(allow_multiple_leaders_ ? (identifier_ + suffix) : identifier_)
+        , time_wait_ms(time_wait_ms_ > 0 ? time_wait_ms_ : 10*1000)
         , allow_multiple_leaders(allow_multiple_leaders_)
         , log_name("LeaderElection (" + path + ")")
         , log(&Poco::Logger::get(log_name))
@@ -144,6 +143,7 @@ private:
     ZooKeeper & zookeeper;
     LeadershipHandler handler;
     std::string identifier;
+    int time_wait_ms;
     bool allow_multiple_leaders;
     std::string log_name;
     Poco::Logger * log;
@@ -176,6 +176,7 @@ private:
 
         try
         {
+            LOG_INFO(log,"Running leader election");
             Strings children = zookeeper.getChildren(path);
             std::sort(children.begin(), children.end());
 
@@ -190,6 +191,7 @@ private:
                 if (value.ends_with(suffix))
                 {
                     handler();
+                    success = true;
                     return;
                 }
 
@@ -201,6 +203,8 @@ private:
                 if (my_node_it == children.begin())
                 {
                     handler();
+                    LOG_INFO(log, "Become leader");
+                    success = true;
                     return;
                 }
             }
@@ -226,8 +230,8 @@ private:
         }
 
         if (!success)
-            task->scheduleAfter(10 * 1000);
+            task->scheduleAfter(time_wait_ms);
     }
 };
 
-} /// namespace zkutil
+}

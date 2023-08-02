@@ -1,5 +1,5 @@
 <clickhouse>
-    <replicated_merge_tree_geo_replication>
-        <region>US</region>
-    </replicated_merge_tree_geo_replication>
+    <replicated_merge_tree>
+        <geo_replication_control_region>US</geo_replication_control_region>
+    </replicated_merge_tree>
 </clickhouse>

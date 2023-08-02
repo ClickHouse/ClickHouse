@@ -1,5 +1,5 @@
 <clickhouse>
-    <replicated_merge_tree_geo_replication>
-        <region>APAC</region>
-    </replicated_merge_tree_geo_replication>
+    <replicated_merge_tree>
+        <geo_replication_control_region>APAC</geo_replication_control_region>
+    </replicated_merge_tree>
 </clickhouse>

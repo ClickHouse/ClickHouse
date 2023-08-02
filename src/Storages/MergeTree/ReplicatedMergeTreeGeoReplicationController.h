@@ -46,10 +46,6 @@ class StorageReplicatedMergeTree;
 class ReplicatedMergeTreeGeoReplicationController
 {
 public:
-    /// When follower fetch a part from replica and leader doesn't have the part yet, how long in seconds should it wait for
-    /// before trying to fetch again.
-    static constexpr int DBMS_DEFAULT_WAIT_FOR_REGION_LEADER = 20;
-    static constexpr int DBMS_DEFAULT_WAIT_FOR_REGION_LEADER_TIMEOUT = 900;
     explicit ReplicatedMergeTreeGeoReplicationController(StorageReplicatedMergeTree & storage_);
 
     bool isValid() const { return !region.empty(); }

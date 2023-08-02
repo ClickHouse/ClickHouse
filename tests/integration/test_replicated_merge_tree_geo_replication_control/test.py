@@ -90,6 +90,7 @@ def test_follower_only_fetch_from_leader(start_cluster):
             time.sleep(0.5)
 
         max_fetch_speed = max(apac2_fetch_speed)
+
         # apac2 should have high traffic now
         assert max_fetch_speed > 100, (
             "Follower should become leader and have high traffic for fetching, but we got "
@@ -101,6 +102,85 @@ def test_follower_only_fetch_from_leader(start_cluster):
         assert max_send_speed < 0.5, (
             "Replica should prefer fetching from node in same region, but out of region node has traffic "
             + str(max_send_speed)
+        )
+
+    finally:
+        for node in [apac1, apac2, us3]:
+            node.query("DROP TABLE IF EXISTS us_table SYNC")
+
+def test_follower_fetch_from_leader_timeout(start_cluster):
+    try:
+        for i, node in enumerate([apac1, apac2, us3]): #apac1 will become leader of APAC
+            node.query(
+                f"CREATE TABLE us_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/us_table', '{i}') ORDER BY tuple() PARTITION BY key "
+                + f"SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 1;"
+            )
+            time.sleep(1)
+
+        apac1.query("SYSTEM STOP FETCHES us_table")
+
+        for i in range(5):
+            us3.query(
+                "INSERT INTO us_table SELECT {}, (select randomPrintableASCII(104857)) FROM numbers(300)".format(
+                    i
+                )
+            )
+
+        # apac2 waited for too long and should start fetch from us3
+        apac2.query("SYSTEM SYNC REPLICA us_table LIGHTWEIGHT")
+
+        count_ref = int(us3.query("SELECT count() FROM us_table"))
+        count = int(apac2.query("SELECT count() FROM us_table"))
+        assert count == count_ref, (
+            "Follower should start fetching from any replica if leader timeout, but table on follower is empty"
+        )
+
+    finally:
+        for node in [apac1, apac2, us3]:
+            node.query("DROP TABLE IF EXISTS us_table SYNC")
+
+def test_all_nodes_have_data_when_zookeeper_restart(start_cluster):
+    try:
+        for i, node in enumerate([apac1, apac2, us3]): #apac1 will become leader of APAC
+            node.query(
+                f"CREATE TABLE us_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/us_table', '{i}') ORDER BY tuple() PARTITION BY key "
+                + f"SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 100, geo_replication_control_leader_election_period_ms = 1000;"
+            )
+            time.sleep(1)
+
+        apac1.query("SYSTEM STOP FETCHES us_table")
+        apac2.query("SYSTEM STOP FETCHES us_table")
+
+        for i in range(5):
+            us3.query(
+                "INSERT INTO us_table SELECT {}, (select randomPrintableASCII(104857)) FROM numbers(300)".format(
+                    i
+                )
+            )
+        cluster.stop_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
+        cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
+
+        apac1.query("SYSTEM START FETCHES us_table")
+        apac2.query("SYSTEM START FETCHES us_table")
+
+        while 1:
+            time.sleep(0.5)
+            if int(apac1.query("SELECT count() FROM system.replicas WHERE is_readonly")) == 0 and int(apac2.query("SELECT count() FROM system.replicas WHERE is_readonly")) == 0:
+                break
+
+        apac1.query("SYSTEM SYNC REPLICA us_table LIGHTWEIGHT", timeout = 60)
+        apac2.query("SYSTEM SYNC REPLICA us_table LIGHTWEIGHT", timeout = 60)
+
+        # we don't care who is the leader, but all nodes must have data
+        count_ref = int(us3.query("SELECT count() FROM us_table"))
+
+        count = int(apac1.query("SELECT count() FROM us_table"))
+        assert count == count_ref, (
+            "All nodes in apac should have same data now, but table on apac1 has {} rows, (ref {})".format(count, count_ref)
+        )
+        count = int(apac2.query("SELECT count() FROM us_table"))
+        assert count == count_ref, (
+            "All nodes in apac should have same data now, but table on apac1 has {} rows, (ref {})".format(count, count_ref)
         )
 
     finally:
