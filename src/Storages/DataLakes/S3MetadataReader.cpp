@@ -57,8 +57,8 @@ std::vector<String> S3DataLakeMetadataReadHelper::listFiles(
     {
         outcome = client->ListObjectsV2(request);
         if (!outcome.IsSuccess())
-            throw Exception(
-                ErrorCodes::S3_ERROR,
+            throw S3Exception(
+                outcome.GetError().GetErrorType(),
                 "Could not list objects in bucket {} with key {}, S3 exception: {}, message: {}",
                 quoteString(bucket),
                 quoteString(base_configuration.url.key),

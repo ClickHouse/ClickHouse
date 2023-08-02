@@ -30,6 +30,8 @@ public:
 
     struct PathWithInfo
     {
+        PathWithInfo() = default;
+        PathWithInfo(const String & path_, const std::optional<PathInfo> & info_) : path(path_), info(info_) {}
         String path;
         std::optional<PathInfo> info;
     };

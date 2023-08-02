@@ -556,6 +556,14 @@ BlockIO InterpreterSystemQuery::execute()
             );
             break;
         }
+        case Type::STOP_LISTEN:
+            getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
+            getContext()->stopServers(query.server_type);
+            break;
+        case Type::START_LISTEN:
+            getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
+            getContext()->startServers(query.server_type);
+            break;
         case Type::FLUSH_ASYNC_INSERT_QUEUE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
@@ -567,9 +575,6 @@ BlockIO InterpreterSystemQuery::execute()
             queue->flushAll();
             break;
         }
-        case Type::STOP_LISTEN_QUERIES:
-        case Type::START_LISTEN_QUERIES:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported yet", query.type);
         case Type::STOP_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::stop();
@@ -1181,8 +1186,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_SYNC_FILE_CACHE);
             break;
         }
-        case Type::STOP_LISTEN_QUERIES:
-        case Type::START_LISTEN_QUERIES:
+        case Type::STOP_LISTEN:
+        case Type::START_LISTEN:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_LISTEN);
+            break;
+        }
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
         case Type::ENABLE_FAILPOINT:
