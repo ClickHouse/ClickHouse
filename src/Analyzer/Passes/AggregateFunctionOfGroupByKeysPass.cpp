@@ -93,7 +93,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<EliminateFunctionVisitor>;
     using Base::Base;
 
-    using GroupByKeysStack = std::vector<const QueryTreeNodes>;
+    using GroupByKeysStack = std::vector<QueryTreeNodes>;
 
     void enterImpl(QueryTreeNodePtr & node)
     {
