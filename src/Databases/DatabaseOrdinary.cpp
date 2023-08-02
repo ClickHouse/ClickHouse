@@ -89,8 +89,7 @@ DatabaseOrdinary::DatabaseOrdinary(
 {
 }
 
-void DatabaseOrdinary::loadStoredObjects(
-    ContextMutablePtr local_context, LoadingStrictnessLevel mode, bool skip_startup_tables)
+void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode)
 {
     /** Tables load faster if they are loaded in sorted (by name) order.
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
@@ -159,12 +158,6 @@ void DatabaseOrdinary::loadStoredObjects(
     }
 
     pool.wait();
-
-    if (!skip_startup_tables)
-    {
-        /// After all tables was basically initialized, startup them.
-        startupTables(pool, mode);
-    }
 }
 
 void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)

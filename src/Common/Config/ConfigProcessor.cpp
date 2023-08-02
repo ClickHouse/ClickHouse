@@ -19,13 +19,20 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
-#include <Common/getResource.h>
 #include <Common/XMLUtils.h>
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <base/sort.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+
+#if USE_SSL
+#include <format>
+#include <IO/BufferWithOwnMemory.h>
+#include <Compression/ICompressionCodec.h>
+#include <Compression/CompressionCodecEncrypted.h>
+#include <boost/algorithm/hex.hpp>
+#endif
 
 #define PREPROCESSED_SUFFIX "-preprocessed"
 
@@ -40,6 +47,9 @@ namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_LOAD_CONFIG;
+#if USE_SSL
+    extern const int BAD_ARGUMENTS;
+#endif
 }
 
 /// For cutting preprocessed path to this base
@@ -81,6 +91,13 @@ ConfigProcessor::~ConfigProcessor()
 {
     if (channel_ptr) /// This means we have created a new console logger in the constructor.
         Poco::Logger::destroy("ConfigProcessor");
+}
+
+static std::unordered_map<std::string, std::string_view> embedded_configs;
+
+void ConfigProcessor::registerEmbeddedConfig(std::string name, std::string_view content)
+{
+    embedded_configs[name] = content;
 }
 
 
@@ -171,6 +188,72 @@ static void mergeAttributes(Element & config_element, Element & with_element)
     with_element_attributes->release();
 }
 
+#if USE_SSL
+
+std::string ConfigProcessor::encryptValue(const std::string & codec_name, const std::string & value)
+{
+    EncryptionMethod encryption_method = toEncryptionMethod(codec_name);
+    CompressionCodecEncrypted codec(encryption_method);
+
+    Memory<> memory;
+    memory.resize(codec.getCompressedReserveSize(static_cast<UInt32>(value.size())));
+    auto bytes_written = codec.compress(value.data(), static_cast<UInt32>(value.size()), memory.data());
+    std::string encrypted_value(memory.data(), bytes_written);
+    std::string hex_value;
+    boost::algorithm::hex(encrypted_value.begin(), encrypted_value.end(), std::back_inserter(hex_value));
+    return hex_value;
+}
+
+std::string ConfigProcessor::decryptValue(const std::string & codec_name, const std::string & value)
+{
+    EncryptionMethod encryption_method = toEncryptionMethod(codec_name);
+    CompressionCodecEncrypted codec(encryption_method);
+
+    Memory<> memory;
+    std::string encrypted_value;
+
+    try
+    {
+        boost::algorithm::unhex(value, std::back_inserter(encrypted_value));
+    }
+    catch (const std::exception &)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read encrypted text, check for valid characters [0-9a-fA-F] and length");
+    }
+
+    memory.resize(codec.readDecompressedBlockSize(encrypted_value.data()));
+    codec.decompress(encrypted_value.data(), static_cast<UInt32>(encrypted_value.size()), memory.data());
+    std::string decrypted_value(memory.data(), memory.size());
+    return decrypted_value;
+}
+
+void ConfigProcessor::decryptRecursive(Poco::XML::Node * config_root)
+{
+    for (Node * node = config_root->firstChild(); node; node = node->nextSibling())
+    {
+        if (node->nodeType() == Node::ELEMENT_NODE)
+        {
+            Element & element = dynamic_cast<Element &>(*node);
+            if (element.hasAttribute("encrypted_by"))
+            {
+                const NodeListPtr children = element.childNodes();
+                if (children->length() != 1)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted node {} cannot contain nested elements", node->nodeName());
+
+                Node * text_node = node->firstChild();
+                if (text_node->nodeType() != Node::TEXT_NODE)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted node {} should have text node", node->nodeName());
+
+                auto encrypted_by = element.getAttribute("encrypted_by");
+                text_node->setNodeValue(decryptValue(encrypted_by, text_node->getNodeValue()));
+            }
+            decryptRecursive(node);
+        }
+    }
+}
+
+#endif
+
 void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, const Node * with_root)
 {
     const NodeListPtr with_nodes = with_root->childNodes();
@@ -245,7 +328,7 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
     }
 }
 
-void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
+bool ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
 {
     Node * config_root = getRootNode(config.get());
     Node * with_root = getRootNode(with.get());
@@ -260,11 +343,15 @@ void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
         && !((config_root_node_name == "yandex" || config_root_node_name == "clickhouse")
             && (merged_root_node_name == "yandex" || merged_root_node_name == "clickhouse")))
     {
+        if (config_root_node_name != "clickhouse" && config_root_node_name != "yandex")
+            return false;
+
         throw Poco::Exception("Root element doesn't have the corresponding root element as the config file."
             " It must be <" + config_root->nodeName() + ">");
     }
 
     mergeRecursive(config, config_root, with_root);
+    return true;
 }
 
 void ConfigProcessor::doIncludesRecursive(
@@ -281,15 +368,15 @@ void ConfigProcessor::doIncludesRecursive(
         {
             std::string value = node->nodeValue();
 
-            bool replace_occured = false;
+            bool replace_occurred = false;
             size_t pos;
             while ((pos = value.find(substitution.first)) != std::string::npos)
             {
                 value.replace(pos, substitution.first.length(), substitution.second);
-                replace_occured = true;
+                replace_occurred = true;
             }
 
-            if (replace_occured)
+            if (replace_occurred)
                 node->setNodeValue(value);
         }
     }
@@ -528,26 +615,14 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     }
     else
     {
-        /// These embedded files added during build with some cmake magic.
-        /// Look at the end of programs/server/CMakeLists.txt.
-        std::string embedded_name;
-        if (path == "config.xml")
-            embedded_name = "embedded.xml";
-
-        if (path == "keeper_config.xml")
-            embedded_name = "keeper_embedded.xml";
-
-        /// When we can use config embedded in binary.
-        if (!embedded_name.empty())
+        /// When we can use a config embedded in the binary.
+        if (auto it = embedded_configs.find(path); it != embedded_configs.end())
         {
-            auto resource = getResource(embedded_name);
-            if (resource.empty())
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Configuration file {} doesn't exist and there is no embedded config", path);
             LOG_DEBUG(log, "There is no file '{}', will use embedded config.", path);
-            config = dom_parser.parseMemory(resource.data(), resource.size());
+            config = dom_parser.parseMemory(it->second.data(), it->second.size());
         }
         else
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Configuration file {} doesn't exist", path);
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Configuration file {} doesn't exist and there is no embedded config", path);
     }
 
     std::vector<std::string> contributing_files;
@@ -574,7 +649,12 @@ XMLDocumentPtr ConfigProcessor::processConfig(
                 with = dom_parser.parse(merge_file);
             }
 
-            merge(config, with);
+            if (!merge(config, with))
+            {
+                LOG_DEBUG(log, "Merging bypassed - configuration file '{}' doesn't belong to configuration '{}' - merging root node name '{}' doesn't match '{}'",
+                               merge_file, path, getRootNode(with.get())->nodeName(), getRootNode(config.get())->nodeName());
+                continue;
+            }
 
             contributing_files.push_back(merge_file);
         }
@@ -700,7 +780,19 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     return LoadedConfig{configuration, has_zk_includes, !processed_successfully, config_xml, path};
 }
 
-void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir)
+#if USE_SSL
+
+void ConfigProcessor::decryptEncryptedElements(LoadedConfig & loaded_config)
+{
+    CompressionCodecEncrypted::Configuration::instance().load(*loaded_config.configuration, "encryption_codecs");
+    Node * config_root = getRootNode(loaded_config.preprocessed_xml.get());
+    decryptRecursive(config_root);
+    loaded_config.configuration = new Poco::Util::XMLConfiguration(loaded_config.preprocessed_xml);
+}
+
+#endif
+
+void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::string preprocessed_dir)
 {
     try
     {
@@ -755,6 +847,12 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
     {
         LOG_WARNING(log, "Couldn't save preprocessed config to {}: {}", preprocessed_path, e.displayText());
     }
+
+#if USE_SSL
+    std::string preprocessed_file_name = fs::path(preprocessed_path).filename();
+    if (preprocessed_file_name == "config.xml" || preprocessed_file_name == std::format("config{}.xml", PREPROCESSED_SUFFIX))
+        decryptEncryptedElements(loaded_config);
+#endif
 }
 
 void ConfigProcessor::setConfigPath(const std::string & config_path)
