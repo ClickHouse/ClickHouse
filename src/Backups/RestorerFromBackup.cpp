@@ -629,12 +629,10 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
 void RestorerFromBackup::applyCustomStoragePolicy(ASTPtr query_ptr)
 {
     constexpr auto setting_name = "storage_policy";
-    if (!query_ptr)
-        return;
-    auto storage = query_ptr->as<ASTCreateQuery &>().storage;
-    if (storage && storage->settings)
+    if (query_ptr && restore_settings.storage_policy.has_value())
     {
-        if (restore_settings.storage_policy.has_value())
+        ASTStorage * storage = query_ptr->as<ASTCreateQuery &>().storage;
+        if (storage && storage->settings)
         {
             if (restore_settings.storage_policy.value().empty())
                 /// it has been set to "" deliberately, so the source storage policy is erased
