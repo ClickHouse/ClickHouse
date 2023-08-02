@@ -38,11 +38,11 @@ BUILD_LOG_NAME = "build_log.log"
 
 
 def _can_export_binaries(build_config: BuildConfig) -> bool:
-    if build_config["package_type"] != "deb":
+    if build_config.package_type != "deb":
         return False
-    if build_config["sanitizer"] != "":
+    if build_config.sanitizer != "":
         return True
-    if build_config["debug_build"]:
+    if build_config.debug_build:
         return True
     return False
 
@@ -55,26 +55,26 @@ def get_packager_cmd(
     image_version: str,
     official: bool,
 ) -> str:
-    package_type = build_config["package_type"]
-    comp = build_config["compiler"]
+    package_type = build_config.package_type
+    comp = build_config.compiler
     cmake_flags = "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=1"
     cmd = (
         f"cd {packager_path} && CMAKE_FLAGS='{cmake_flags}' ./packager --output-dir={output_path} "
         f"--package-type={package_type} --compiler={comp}"
     )
 
-    if build_config["debug_build"]:
+    if build_config.debug_build:
         cmd += " --debug-build"
-    if build_config["sanitizer"]:
-        cmd += f" --sanitizer={build_config['sanitizer']}"
-    if build_config["tidy"] == "enable":
+    if build_config.sanitizer:
+        cmd += f" --sanitizer={build_config.sanitizer}"
+    if build_config.tidy:
         cmd += " --clang-tidy"
 
     cmd += " --cache=sccache"
     cmd += " --s3-rw-access"
     cmd += f" --s3-bucket={S3_BUILDS_BUCKET}"
 
-    if "additional_pkgs" in build_config and build_config["additional_pkgs"]:
+    if build_config.additional_pkgs:
         cmd += " --additional-pkgs"
 
     cmd += f" --docker-image-version={image_version}"
@@ -180,7 +180,7 @@ def create_json_artifact(
     result = {
         "log_url": log_url,
         "build_urls": build_urls,
-        "build_config": build_config,
+        "build_config": build_config.__dict__,
         "elapsed_seconds": elapsed,
         "status": success,
         "job_name": GITHUB_JOB,
@@ -220,7 +220,7 @@ def upload_master_static_binaries(
     build_output_path: str,
 ) -> None:
     """Upload binary artifacts to a static S3 links"""
-    static_binary_name = build_config.get("static_binary_name", False)
+    static_binary_name = build_config.static_binary_name
     if pr_info.number != 0:
         return
     elif not static_binary_name:
@@ -240,7 +240,7 @@ def main():
     stopwatch = Stopwatch()
     build_name = sys.argv[1]
 
-    build_config = CI_CONFIG["build_config"][build_name]
+    build_config = CI_CONFIG.build_config[build_name]
 
     if not os.path.exists(TEMP_PATH):
         os.makedirs(TEMP_PATH)
@@ -270,8 +270,6 @@ def main():
     logging.info("Got version from repo %s", version.string)
 
     official_flag = pr_info.number == 0
-    if "official" in build_config:
-        official_flag = build_config["official"]
 
     version_type = "testing"
     if "release" in pr_info.labels or "release-lts" in pr_info.labels:
