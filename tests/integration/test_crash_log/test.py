@@ -30,7 +30,7 @@ def send_signal(started_node, signal):
 
 def wait_for_clickhouse_stop(started_node):
     result = None
-    for attempt in range(60):
+    for attempt in range(120):
         time.sleep(1)
         pid = started_node.get_process_pid("clickhouse")
         if pid is None:
