@@ -463,8 +463,8 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     StoragePostgreSQL::Configuration configuration;
 
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port"};
-    auto mysql_settings = storage_settings.all();
-    for (const auto & setting : mysql_settings)
+    auto postgresql_settings = storage_settings.all();
+    for (const auto & setting : postgresql_settings)
         optional_arguments.insert(setting.getName());
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
     if (require_table)
@@ -546,6 +546,8 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     {
         PostgreSQLSettings postgresql_settings; /// TODO: move some arguments from the arguments to the SETTINGS.
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), postgresql_settings);
+        if (args.storage_def->settings)
+            postgresql_settings.loadFromQuery(*args.storage_def);
         const auto & settings = args.getContext()->getSettingsRef();
         if (!settings.postgresql_connection_pool_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");

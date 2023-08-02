@@ -14,7 +14,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_JOIN;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL;
-    extern const int UNKNOWN_POSTGRESQL_DATATYPES_SUPPORT_LEVEL;
     extern const int UNKNOWN_UNION;
 }
 
@@ -99,12 +98,6 @@ IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DA
      {"datetime64", MySQLDataTypesSupport::DATETIME64},
      {"date2Date32", MySQLDataTypesSupport::DATE2DATE32},
      {"date2String", MySQLDataTypesSupport::DATE2STRING}})
-
-IMPLEMENT_SETTING_MULTI_ENUM(PostgreSQLDataTypesSupport, ErrorCodes::UNKNOWN_POSTGRESQL_DATATYPES_SUPPORT_LEVEL,
-    {{"decimal",    PostgreSQLDataTypesSupport::DECIMAL},
-     {"datetime64", PostgreSQLDataTypesSupport::DATETIME64},
-     {"date2Date32", PostgreSQLDataTypesSupport::DATE2DATE32},
-     {"date2String", PostgreSQLDataTypesSupport::DATE2STRING}})
 
 IMPLEMENT_SETTING_ENUM(SetOperationMode, ErrorCodes::UNKNOWN_UNION,
     {{"",         SetOperationMode::Unspecified},

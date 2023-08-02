@@ -67,7 +67,7 @@ public:
 
     static Configuration getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings & storage_settings);
 
-    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings& storage_settings, bool require_table = true);
+    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings & storage_settings, bool require_table = true);
 
     static ColumnsDescription getTableStructureFromData(
         const postgres::PoolWithFailoverPtr & pool_,
