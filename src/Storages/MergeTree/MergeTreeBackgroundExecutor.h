@@ -270,6 +270,8 @@ public:
     /// implementing tasks eviction will definitely be too error-prone and buggy.
     void increaseThreadsAndMaxTasksCount(size_t new_threads_count, size_t new_max_tasks_count);
 
+    size_t getMaxThreads() const;
+
     /// This method can return stale value of max_tasks_count (no mutex locking).
     /// It's okay because amount of tasks can be only increased and getting stale value
     /// can lead only to some postponing, not logical error.
