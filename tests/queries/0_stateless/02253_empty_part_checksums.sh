@@ -25,6 +25,8 @@ rm -rf "$path"
 $CLICKHOUSE_CLIENT -q "check table rmt" 2>/dev/null
 $CLICKHOUSE_CLIENT -q "select count() from rmt"
 
+$CLICKHOUSE_CLIENT --receive_timeout=30 -q "system sync replica rmt"
+
 # the empty part should pass the check
 $CLICKHOUSE_CLIENT -q "check table rmt"
 $CLICKHOUSE_CLIENT -q "select count() from rmt"
