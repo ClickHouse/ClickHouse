@@ -818,7 +818,7 @@ class ExpressionLayer : public Layer
 public:
 
     explicit ExpressionLayer(bool is_table_function_, bool allow_trailing_commas_ = false)
-        : Layer(false, false)
+        : Layer(true, false)
     {
         is_table_function = is_table_function_;
         allow_trailing_commas = allow_trailing_commas_;
