@@ -30,10 +30,14 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Storages/BlockNumberColumn.h>
 
 
 namespace DB
 {
+
+CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
+
 
 namespace ErrorCodes
 {
@@ -714,6 +718,12 @@ bool ColumnsDescription::hasCompressionCodec(const String & column_name) const
 
 CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
+    if (column_name == BlockNumberColumn.name)
+    {
+        auto data_bytes_size = BlockNumberColumn.type->getSizeOfValueInMemory();
+        return getCompressionCodecDelta(data_bytes_size);
+    }
+
     const auto it = columns.get<1>().find(column_name);
 
     if (it == columns.get<1>().end() || !it->codec)
@@ -729,6 +739,12 @@ CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_
 
 ASTPtr ColumnsDescription::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
+    if (column_name == BlockNumberColumn.name)
+    {
+        auto data_bytes_size = BlockNumberColumn.type->getSizeOfValueInMemory();
+        return getCompressionCodecDelta(data_bytes_size)->getFullCodecDesc();
+    }
+
     const auto it = columns.get<1>().find(column_name);
 
     if (it == columns.get<1>().end() || !it->codec)
