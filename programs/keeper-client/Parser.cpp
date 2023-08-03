@@ -58,6 +58,7 @@ bool KeeperParser::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 
     String command_name(pos->begin, pos->end);
+    std::transform(command_name.begin(), command_name.end(), command_name.begin(), [](unsigned char c) { return std::tolower(c); });
     Command command;
 
     auto iter = KeeperClient::commands.find(command_name);
