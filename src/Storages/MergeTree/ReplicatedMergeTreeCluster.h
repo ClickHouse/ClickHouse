@@ -4,6 +4,8 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeClusterPartition.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeClusterReplica.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeClusterBalancer.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <base/defines.h>
 #include <boost/core/noncopyable.hpp>
@@ -33,6 +35,13 @@ class ReplicatedMergeTreeCluster : public boost::noncopyable
 {
 public:
     explicit ReplicatedMergeTreeCluster(StorageReplicatedMergeTree & storage_);
+    ~ReplicatedMergeTreeCluster();
+
+    void addCreateOps(Coordination::Requests & ops);
+    static void addDropOps(const fs::path & zookeeper_path, Coordination::Requests & ops);
+
+    void initialize();
+    void startDistributor();
 
     void loadFromCoordinator();
     void loadPartitionFromCoordinator(const String & partition_id);
@@ -41,23 +50,42 @@ public:
     ReplicatedMergeTreeClusterPartition getClusterPartition(const String & partition_id) const;
 
     ReplicatedMergeTreeClusterPartitions getClusterPartitions() const;
+    void updateClusterPartition(const ReplicatedMergeTreeClusterPartition & new_partition);
+
+    ReplicatedMergeTreeClusterReplicas getClusterReplicas() const;
 
 private:
+    friend class ReplicatedMergeTreeClusterBalancer;
+    friend class ReplicatedMergeTreeClusterPartitionSelector;
+
     StorageReplicatedMergeTree & storage;
+    ReplicatedMergeTreeClusterBalancer balancer;
+    Poco::Logger * log;
 
     const fs::path zookeeper_path;
+    const fs::path cluster_path;
     const fs::path replica_path;
     const fs::path replica_name;
 
-    Strings getActiveReplicas(const zkutil::ZooKeeperPtr & zookeeper) const;
-    std::unordered_map<String, ReplicatedMergeTreeClusterPartition> partitions TSA_GUARDED_BY(mutex);
+    Strings getActiveReplicasImpl(const zkutil::ZooKeeperPtr & zookeeper) const;
+    Strings getActiveReplicas() const;
+    /// Store <partition_id, info>
+    std::unordered_map<String, ReplicatedMergeTreeClusterPartition> partitions TSA_GUARDED_BY(partitions_mutex);
+
+    ReplicatedMergeTreeClusterReplicas replicas TSA_GUARDED_BY(replicas_mutex);
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
     void loadFromCoordinatorImpl(const zkutil::ZooKeeperPtr & zookeeper, const Strings & partition_ids);
-    void resolveReplica(ReplicatedMergeTreeClusterReplica & replica);
+    ReplicatedMergeTreeClusterReplica resolveReplica(const String & name) const;
 
-    mutable std::mutex mutex;
+    void cloneReplicaWithReshardingIfNeeded();
+    void cloneReplicaWithResharding(const zkutil::ZooKeeperPtr & zookeeper);
+
+    void updateReplicas(const Strings & names);
+
+    mutable std::mutex partitions_mutex;
+    mutable std::mutex replicas_mutex;
 };
 
 }

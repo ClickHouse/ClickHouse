@@ -465,13 +465,15 @@ void executeQueryForReplicatedMergeTreeCluster(
         log);
     new_context->increaseDistributedDepth();
 
+    ReplicatedMergeTreeClusterReplicas cluster_replicas = cluster.getClusterReplicas();
     auto cluster_partitions = cluster.getClusterPartitions();
     UInt32 shards = 0;
 
     for (const auto & cluster_partition : cluster_partitions)
     {
         /// TODO(cluster): support other replicas
-        const auto & partition_replica = cluster_partition.getReplicas().front();
+        const auto & partition_replica_name = cluster_partition.getActiveReplicas().front();
+        const auto & partition_replica = cluster_replicas[partition_replica_name];
         Cluster::ShardInfo shard_info = partition_replica.makeShardInfo(context);
         LOG_TRACE(log, "Querying partition {} from replica {}",
             cluster_partition.getPartitionId(),

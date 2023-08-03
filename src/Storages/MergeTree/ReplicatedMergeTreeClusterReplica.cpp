@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeClusterReplica.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -7,6 +8,30 @@ namespace DB
 String ReplicatedMergeTreeClusterReplica::toStringForLog() const
 {
     return fmt::format("{}({}:{}#{}.{})", name, host, queries_port, database, table);
+}
+void ReplicatedMergeTreeClusterReplica::fromCoordinator(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_path, const String & name_)
+try
+{
+    const String & replica_path = fs::path(zookeeper_path) / "replicas" / name_;
+
+    ReplicatedMergeTreeAddress::fromString(zookeeper->get(fs::path(replica_path) / "host"));
+
+    ///
+    /// Additional fields of ReplicatedMergeTreeClusterReplica
+    ///
+    name = name_;
+
+    bool is_new_replica;
+    is_lost = StorageReplicatedMergeTree::isReplicaLost(zookeeper, replica_path, is_new_replica, is_lost_version);
+
+    String log_pointer_res;
+    if (zookeeper->tryGet(fs::path(replica_path) / "log_pointer", log_pointer_res) && !log_pointer_res.empty())
+        log_pointer = parse<UInt64>(log_pointer_res);
+}
+catch (Exception & e)
+{
+    e.addMessage("while resolving {}", name_);
+    throw;
 }
 
 Cluster::ShardInfo ReplicatedMergeTreeClusterReplica::makeShardInfo(const Settings & settings, bool treat_local_port_as_remote) const

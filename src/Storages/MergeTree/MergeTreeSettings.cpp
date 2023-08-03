@@ -196,19 +196,31 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
             max_cleanup_delay_period, cleanup_delay_period);
     }
 
-    if (cluster_replication_factor < 1)
+    if (cluster)
     {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "The value of cluster_replication_factor setting ({}) is too low",
-            cluster_replication_factor);
-    }
-    /// TODO(cluster): too much corner cases I guess, let's just prohibit for now.
-    if (cluster && allow_remote_fs_zero_copy_replication)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "cluster is not compatible with allow_remote_fs_zero_copy_replication");
+        if (cluster_replication_factor < 1)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The value of cluster_replication_factor setting ({}) is too low",
+                cluster_replication_factor);
+        }
+
+        /// There are some issues with it, i.e. the INSERT can be done only on
+        /// active replicas, while if the partition is under migration from replica
+        /// replica is considered as non-active.
+        if (cluster_replication_factor < 2)
+        {
+            LOG_WARNING(&Poco::Logger::get("MergeTreeSettings"), "Using cluster_replication_factor < 2 is not safe. Do not use this in production.");
+        }
+
+        /// TODO(cluster): too much corner cases I guess, let's just prohibit for now.
+        if (allow_remote_fs_zero_copy_replication)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "cluster is not compatible with allow_remote_fs_zero_copy_replication");
+        }
     }
 
     if (max_merge_selecting_sleep_ms < merge_selecting_sleep_ms)

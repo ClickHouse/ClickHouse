@@ -555,6 +555,10 @@ Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormat
 String ReplicatedMergeTreeLogEntryData::getDescriptionForLogs(MergeTreeDataFormatVersion format_version) const
 {
     String description = fmt::format("{} with virtual parts [{}]", typeToString(), fmt::join(getVirtualPartNames(format_version), ", "));
+    if (!replicas.empty())
+    {
+        description += fmt::format(" replicas [{}]", fmt::join(replicas, ", "));
+    }
     if (auto drop_range = getDropRange(format_version))
     {
         description += " and drop range ";

@@ -3,6 +3,8 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/thread_local_rng.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
+#include <base/defines.h>
 #include <algorithm>
 #include <filesystem>
 #include <mutex>
@@ -13,19 +15,48 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int TOO_FEW_LIVE_REPLICAS;
 };
 
 ReplicatedMergeTreeCluster::ReplicatedMergeTreeCluster(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
+    , balancer(*this)
+    , log(&Poco::Logger::get(storage.getStorageID().getFullTableName() + " (Cluster)"))
     , zookeeper_path(storage.zookeeper_path)
+    , cluster_path(zookeeper_path / "cluster")
     , replica_path(storage.replica_path)
     , replica_name(storage.replica_name)
 {
 }
 
+ReplicatedMergeTreeCluster::~ReplicatedMergeTreeCluster()
+{
+    balancer.shutdown();
+}
+
+void ReplicatedMergeTreeCluster::addCreateOps(Coordination::Requests & ops)
+{
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path / "cluster", "", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path / "cluster" / "balancer", "", zkutil::CreateMode::Persistent));
+}
+
+void ReplicatedMergeTreeCluster::addDropOps(const fs::path & zookeeper_path, Coordination::Requests & ops)
+{
+    ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path / "cluster" / "balancer", -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path / "cluster", -1));
+}
+
 void ReplicatedMergeTreeCluster::loadFromCoordinatorImpl(const zkutil::ZooKeeperPtr & zookeeper, const Strings & partition_ids)
 {
+    /// FIXME: this lock should be held for the whole function, since without
+    /// it some callers may get old version for some of partitions and brake
+    /// some invariants of balancer.
+    ///
+    /// But this is an ugly hack, and we need to fix this in a better way
+    /// (using multi-version, updating it only from one thread, ...)
+    ///
+    /// And actually holding this lock may not be enough sometimes I guess...
+    std::lock_guard lock(partitions_mutex);
+
     Strings partition_ids_paths;
     partition_ids_paths.reserve(partition_ids.capacity());
     for (const auto & partition_id : partition_ids)
@@ -39,17 +70,69 @@ void ReplicatedMergeTreeCluster::loadFromCoordinatorImpl(const zkutil::ZooKeeper
 
         auto partition = ReplicatedMergeTreeClusterPartition::fromString(
             partition_data.data,
-            partition_data.stat.version,
-            partition_id,
-            [this](auto & address) { resolveReplica(address); });
+            partition_data.stat,
+            partition_id);
 
-        {
-            std::lock_guard lock(mutex);
-            partitions[partition_id] = partition;
-        }
+        partitions[partition_id] = partition;
+        updateReplicas(partition.getAllReplicas());
 
-        LOG_TEST(storage.log, "Loading partition {} from coordinator: {}", partition_id, partition.toStringForLog());
+        LOG_TEST(log, "Loading partition from coordinator: {}", partition.toStringForLog());
     }
+}
+
+/// TODO: rename initialize() to cloneReplicaIfNeeded() and implement it
+void ReplicatedMergeTreeCluster::initialize()
+{
+    /// NOTE(cluster): loads replicas not in parallel like it could
+    loadFromCoordinator();
+    cloneReplicaWithReshardingIfNeeded();
+}
+
+void ReplicatedMergeTreeCluster::startDistributor()
+{
+    balancer.wakeup();
+}
+
+void ReplicatedMergeTreeCluster::cloneReplicaWithReshardingIfNeeded()
+{
+    auto zookeeper = getZooKeeper();
+
+    bool is_new_replica;
+    int is_lost_version;
+    if (!StorageReplicatedMergeTree::isReplicaLost(zookeeper, replica_path, is_new_replica, is_lost_version, /* create_is_lost= */ true))
+        return;
+
+    if (is_new_replica)
+        LOG_INFO(log, "Will initialize re-sharding from other replicas");
+    else
+        LOG_WARNING(log, "Will initialize re-sharding from other replicas");
+
+    Coordination::Stat source_is_lost_stat;
+    String source_replica = storage.getReplicaToCloneFrom(zookeeper, source_is_lost_stat);
+    fs::path source_path = zookeeper_path / "replicas" / source_replica;
+    /// Is it safe without processing queue firstly? We should take care of this during re-sharding.
+    storage.cloneMetadataIfNeeded(source_replica, source_path, zookeeper);
+
+    String raw_log_pointer = zookeeper->get(source_path / "log_pointer");
+    zookeeper->set(replica_path / "log_pointer", raw_log_pointer);
+
+    /// Clear obsolete queue that we no longer need.
+    zookeeper->removeChildren(replica_path / "queue");
+    storage.queue.clear();
+
+    /// Will do repair from the selected replica.
+    cloneReplicaWithResharding(zookeeper);
+    /// If repair fails to whatever reason, the exception is thrown, is_lost will remain "1" and the replica will be repaired later.
+
+    /// If replica is repaired successfully, we remove is_lost flag.
+    zookeeper->set(replica_path / "is_lost", "0");
+}
+
+void ReplicatedMergeTreeCluster::cloneReplicaWithResharding(const zkutil::ZooKeeperPtr &)
+{
+    /// TODO(cluster): implement the initial clone from replicas to make data
+    /// available faster (right now it is omitted, because it will cause
+    /// conflicts)
 }
 
 void ReplicatedMergeTreeCluster::loadFromCoordinator()
@@ -67,39 +150,23 @@ void ReplicatedMergeTreeCluster::loadPartitionFromCoordinator(const String & par
 
 ReplicatedMergeTreeClusterPartition ReplicatedMergeTreeCluster::getOrCreateClusterPartition(const String & partition_id)
 {
-    {
-        std::lock_guard lock(mutex);
-        auto it = partitions.find(partition_id);
-        if (it != partitions.end())
-            return it->second;
-    }
+    auto replicas_names = ReplicatedMergeTreeClusterPartitionSelector(*this).allocatePartition();
+    LOG_TEST(log, "Candidate replicas for {}: {}", partition_id, fmt::join(replicas_names, ", "));
 
-    auto zookeeper = getZooKeeper();
-    auto settings = storage.getSettings();
+    ReplicatedMergeTreeClusterPartition partition(partition_id,
+        /* all_replicas= */ replicas_names,
+        /* active_replicas= */ replicas_names,
+        /* source_replica_= */ {},
+        /* new_replica_= */ {},
+        /* stat= */ {});
 
-    auto replicas_names = getActiveReplicas(zookeeper);
-    std::shuffle(replicas_names.begin(), replicas_names.end(), thread_local_rng);
-    if (replicas_names.size() < settings->cluster_replication_factor)
-    {
-        throw Exception(ErrorCodes::TOO_FEW_LIVE_REPLICAS,
-            "Not enough active replicas_names (there are only {}, required {}, active replicas: {})",
-            replicas_names.size(), settings->cluster_replication_factor, fmt::join(replicas_names, ", "));
-    }
-    replicas_names.resize(settings->cluster_replication_factor);
+    updateReplicas(replicas_names);
 
-    ReplicatedMergeTreeClusterReplicas replicas;
-    replicas.reserve(replicas_names.size());
-    for (const auto & candidate_replica_name : replicas_names)
-    {
-        auto & replica = replicas.emplace_back();
-        replica.name = candidate_replica_name;
-        resolveReplica(replica);
-    }
-
-    ReplicatedMergeTreeClusterPartition partition(partition_id, replicas, /* version= */ -1);
     /// Check in the coordinator
     {
-        String partition_path = fs::path(storage.zookeeper_path) / "block_numbers" / partition_id;
+        auto zookeeper = getZooKeeper();
+
+        String partition_path = zookeeper_path / "block_numbers" / partition_id;
         auto code = zookeeper->tryCreate(partition_path, partition.toString(), zkutil::CreateMode::Persistent);
 
         /// Partition already added by some of replicas, update the in memory representation
@@ -110,9 +177,8 @@ ReplicatedMergeTreeClusterPartition ReplicatedMergeTreeCluster::getOrCreateClust
             String partition_data = zookeeper->get(partition_path, &partition_stat);
             partition = ReplicatedMergeTreeClusterPartition::fromString(
                 partition_data,
-                partition_stat.version,
-                partition_id,
-                [this](auto & address) { resolveReplica(address); });
+                partition_stat,
+                partition_id);
         }
         else if (code != Coordination::Error::ZOK)
             throw zkutil::KeeperException::fromPath(code, partition_path);
@@ -120,17 +186,17 @@ ReplicatedMergeTreeClusterPartition ReplicatedMergeTreeCluster::getOrCreateClust
 
     /// Update in-memory representation
     {
-        std::lock_guard lock(mutex);
+        std::lock_guard lock(partitions_mutex);
         partitions.emplace(std::make_pair(partition_id, partition));
     }
 
-    LOG_TEST(storage.log, "Add new partition {}: {}", partition_id, partition.toStringForLog());
+    LOG_INFO(log, "Add new partition {}: {}", partition_id, partition.toStringForLog());
     return partition;
 }
 
 ReplicatedMergeTreeClusterPartition ReplicatedMergeTreeCluster::getClusterPartition(const String & partition_id) const
 {
-    std::lock_guard lock(mutex);
+    std::lock_guard lock(partitions_mutex);
 
     const auto it = partitions.find(partition_id);
     if (it == partitions.end())
@@ -141,7 +207,7 @@ ReplicatedMergeTreeClusterPartition ReplicatedMergeTreeCluster::getClusterPartit
 
 ReplicatedMergeTreeClusterPartitions ReplicatedMergeTreeCluster::getClusterPartitions() const
 {
-    std::lock_guard lock(mutex);
+    std::lock_guard lock(partitions_mutex);
 
     ReplicatedMergeTreeClusterPartitions result;
     result.reserve(partitions.size());
@@ -150,14 +216,26 @@ ReplicatedMergeTreeClusterPartitions ReplicatedMergeTreeCluster::getClusterParti
     return result;
 }
 
-Strings ReplicatedMergeTreeCluster::getActiveReplicas(const zkutil::ZooKeeperPtr & zookeeper) const
+void ReplicatedMergeTreeCluster::updateClusterPartition(const ReplicatedMergeTreeClusterPartition & new_partition)
 {
-    Strings replicas = zookeeper->getChildren(zookeeper_path / "replicas");
-    std::erase_if(replicas, [this, &zookeeper](const auto & replica)
+    std::lock_guard lock(partitions_mutex);
+    partitions[new_partition.getPartitionId()] = new_partition;
+}
+
+Strings ReplicatedMergeTreeCluster::getActiveReplicasImpl(const zkutil::ZooKeeperPtr & zookeeper) const
+{
+    Strings active_replicas = zookeeper->getChildren(zookeeper_path / "replicas");
+    std::erase_if(active_replicas, [this, &zookeeper](const auto & replica)
     {
         return zookeeper->exists(zookeeper_path / "replicas" / replica / "is_active") == false;
     });
-    return replicas;
+    /// NOTE: Or just go through replicas and check is_lost?
+    return active_replicas;
+}
+
+Strings ReplicatedMergeTreeCluster::getActiveReplicas() const
+{
+    return getActiveReplicasImpl(getZooKeeper());
 }
 
 zkutil::ZooKeeperPtr ReplicatedMergeTreeCluster::getZooKeeper() const
@@ -165,9 +243,30 @@ zkutil::ZooKeeperPtr ReplicatedMergeTreeCluster::getZooKeeper() const
     return storage.getZooKeeper();
 }
 
-void ReplicatedMergeTreeCluster::resolveReplica(ReplicatedMergeTreeClusterReplica & replica)
+ReplicatedMergeTreeClusterReplicas ReplicatedMergeTreeCluster::getClusterReplicas() const
 {
-    replica.fromString(getZooKeeper()->get(zookeeper_path / "replicas" / replica.name / "host"));
+    std::lock_guard lock(replicas_mutex);
+    return replicas;
+}
+
+void ReplicatedMergeTreeCluster::updateReplicas(const Strings & names)
+{
+    std::lock_guard lock(replicas_mutex);
+    for (const auto & name : names)
+    {
+        if (replicas.contains(name))
+            continue;
+
+        replicas[name] = resolveReplica(name);
+    }
+}
+
+ReplicatedMergeTreeClusterReplica ReplicatedMergeTreeCluster::resolveReplica(const String & name) const
+{
+    auto zookeeper = getZooKeeper();
+    ReplicatedMergeTreeClusterReplica replica;
+    replica.fromCoordinator(zookeeper, zookeeper_path, name);
+    return replica;
 }
 
 }

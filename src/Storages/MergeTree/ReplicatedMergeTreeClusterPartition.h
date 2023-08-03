@@ -1,8 +1,12 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeClusterReplica.h>
 #include <vector>
+
+namespace Coordination
+{
+struct Stat;
+}
 
 namespace DB
 {
@@ -11,17 +15,32 @@ class ReadBuffer;
 class WriteBuffer;
 
 /// Representation of /block_numbers/$partition in case of cluster
+///
+/// Example:
+///
+///     cluster partition format version: 1
+///     all_replicas (2):
+///     1
+///     2
+///     active_replicas (0):
+///     deactivating_replicas (0):
+///
+///
 class ReplicatedMergeTreeClusterPartition
 {
 public:
-    using ResolveReplica = std::function<void(ReplicatedMergeTreeClusterReplica &)>;
-
     ReplicatedMergeTreeClusterPartition() = default;
     explicit ReplicatedMergeTreeClusterPartition(const String & partition_id_);
-    ReplicatedMergeTreeClusterPartition(const String & partition_id_, const ReplicatedMergeTreeClusterReplicas & replicas_, int version_);
+    ReplicatedMergeTreeClusterPartition(
+        const String & partition_id_,
+        const Strings & all_replicas_,
+        const Strings & active_replicas_,
+        const String & source_replica_,
+        const String & new_replica_,
+        const Coordination::Stat & stat);
 
-    static ReplicatedMergeTreeClusterPartition read(ReadBuffer & in, int version, const String & partition_id, const ResolveReplica & resolve_replica);
-    static ReplicatedMergeTreeClusterPartition fromString(const String & str, int version, const String & partition_id, const ResolveReplica & resolve_replica);
+    static ReplicatedMergeTreeClusterPartition read(ReadBuffer & in, const Coordination::Stat & stat, const String & partition_id);
+    static ReplicatedMergeTreeClusterPartition fromString(const String & str, const Coordination::Stat & stat, const String & partition_id);
 
     void write(WriteBuffer & out) const;
     String toString() const;
@@ -29,16 +48,47 @@ public:
 
     int getVersion() const { return version; }
 
-    const ReplicatedMergeTreeClusterReplicas & getReplicas() const { return replicas; }
-    const Strings & getReplicasNames() const { return replicas_names; }
+    const Strings & getAllReplicas() const { return all_replicas; }
+    const Strings & getActiveReplicas() const { return active_replicas; }
+    const Strings & getActiveNonMigrationReplicas() const { return active_non_migration_replicas; }
+    const Strings & getAllNonMigrationReplicas() const { return all_non_migration_replicas; }
+    const String & getNewReplica() const { return new_replica; }
+    const String & getSourceReplica() const { return source_replica; }
+
+    bool isUnderReSharding() const { return !new_replica.empty(); }
+
+    void replaceReplica(const String & src, const String & dest);
+    void finishReplicaMigration();
+    void revertReplicaMigration();
+
     const String & getPartitionId() const { return partition_id; }
+
+    Int64 getModificationTimeMs() const { return modification_time_ms; }
 
 private:
     /// NOTE: This are constant values, however, if you will declare them with const CV, you cannot copy the object.
     String partition_id;
-    ReplicatedMergeTreeClusterReplicas replicas;
-    Strings replicas_names;
+
+    /// List of all replicas -- should be used for filtered replication
+    Strings all_replicas;
+
+    /// List of active replicas -- only this replicas are allowed to be used for SELECT
+    Strings active_replicas;
+
+    /// List of replicas that are not participate in migration:
+    ///
+    ///     active_replicas - source_replica
+    ///
+    /// P.S. and of course does not include new_replica as well
+    Strings active_non_migration_replicas;
+    Strings all_non_migration_replicas;
+
+    /// If replica is under migration:
+    String source_replica;
+    String new_replica;
+
     int version = -1;
+    Int64 modification_time_ms = 0;
 };
 
 using ReplicatedMergeTreeClusterPartitions = std::vector<ReplicatedMergeTreeClusterPartition>;

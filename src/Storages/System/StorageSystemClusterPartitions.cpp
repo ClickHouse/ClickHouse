@@ -17,10 +17,11 @@ namespace DB
 NamesAndTypesList StorageSystemClusterPartitions::getNamesAndTypes()
 {
     return {
-        { "database",  std::make_shared<DataTypeString>() },
-        { "table",     std::make_shared<DataTypeString>() },
-        { "partition", std::make_shared<DataTypeString>() },
-        { "replicas",  std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
+        { "database",        std::make_shared<DataTypeString>() },
+        { "table",           std::make_shared<DataTypeString>() },
+        { "partition",       std::make_shared<DataTypeString>() },
+        { "all_replicas",    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
+        { "active_replicas", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
     };
 }
 
@@ -85,6 +86,15 @@ void StorageSystemClusterPartitions::fillData(MutableColumns & res_columns, Cont
         col_table_to_filter = filtered_block.getByName("table").column;
     }
 
+    auto get_replicas_array = [](const auto & replicas)
+    {
+        Array replicas_field;
+        replicas_field.reserve(replicas.size());
+        for (const auto & replica : replicas)
+            replicas_field.emplace_back(replica);
+        return replicas_field;
+    };
+
     for (size_t i = 0, tables_size = col_database_to_filter->size(); i < tables_size; ++i)
     {
         String database = (*col_database_to_filter)[i].safeGet<const String &>();
@@ -95,19 +105,12 @@ void StorageSystemClusterPartitions::fillData(MutableColumns & res_columns, Cont
 
         for (const auto & cluster_partition : cluster_partitions)
         {
-            Array replicas_field;
-            {
-                const auto & replicas = cluster_partition.getReplicasNames();
-                replicas_field.reserve(replicas.size());
-                for (const auto & replica : replicas)
-                    replicas_field.emplace_back(replica);
-            }
-
             size_t col_num = 0;
             res_columns[col_num++]->insert(database);
             res_columns[col_num++]->insert(table);
             res_columns[col_num++]->insert(cluster_partition.getPartitionId());
-            res_columns[col_num++]->insert(replicas_field);
+            res_columns[col_num++]->insert(get_replicas_array(cluster_partition.getAllReplicas()));
+            res_columns[col_num++]->insert(get_replicas_array(cluster_partition.getActiveReplicas()));
         }
     }
 }

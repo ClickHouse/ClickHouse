@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeClusterSink.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeClusterReplica.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Processors/Sinks/RemoteSink.h>
@@ -7,7 +8,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Common/thread_local_rng.h>
-#include "Parsers/queryToString.h"
+#include <Parsers/queryToString.h>
 #include <base/defines.h>
 #include <algorithm>
 
@@ -69,12 +70,19 @@ void ReplicatedMergeTreeClusterSink::consume(Chunk chunk)
     {
         MergeTreePartition partition(replica_block.partition);
         String partition_id = partition.getID(storage);
+
+        /// FIXME: this should be done with cluster partition version check to
+        /// ensure that nothing will goes to outdated replicas.
         const auto & cluster_partition = storage.cluster->getOrCreateClusterPartition(partition_id);
-        const auto & replicas = cluster_partition.getReplicas();
+        auto replicas = cluster_partition.getAllNonMigrationReplicas();
         if (replicas.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No replicas had been assigned for partition {}", partition_id);
+
         /// Other replicas will catch up from this replica.
-        const auto & replica = replicas[thread_local_rng() % replicas.size()];
+        const auto & replica_name = replicas[thread_local_rng() % replicas.size()];
+        ReplicatedMergeTreeClusterReplicas cluster_replicas = storage.cluster->getClusterReplicas();
+        const auto & replica = cluster_replicas[replica_name];
+
         LOG_TRACE(log, "Sending block (partition: {}, rows: {}) to replica {}",
             partition_id,
             replica_block.block.rows(),

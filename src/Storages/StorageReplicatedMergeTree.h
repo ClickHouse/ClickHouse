@@ -388,7 +388,6 @@ private:
 
     template<bool async_insert>
     friend class ReplicatedMergeTreeSinkImpl;
-    friend class ReplicatedMergeTreeClusterSink;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
     friend class AsyncBlockIDsCache<StorageReplicatedMergeTree>;
@@ -400,6 +399,10 @@ private:
     friend class ScopedPartitionMergeLock;
     friend class ReplicatedMergeTreeQueue;
     friend class ReplicatedMergeTreeCluster;
+    friend struct ReplicatedMergeTreeClusterReplica;
+    friend class ReplicatedMergeTreeClusterSink;
+    friend class ReplicatedMergeTreeClusterBalancer;
+    friend class ReplicatedMergeTreeClusterPartitionSelector;
     friend class PartMovesBetweenShardsOrchestrator;
     friend class MergeTreeData;
     friend class MergeFromLogEntryTask;

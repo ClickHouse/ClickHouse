@@ -30,7 +30,7 @@ $CLICKHOUSE_CLIENT -nm -q "
 # This can be fixed, but I decided to keep it as-is for now, to avoid interface
 # changes (since this will likely increase the conflicts probability as well as
 # complexity)
-replica_name=$($CLICKHOUSE_CLIENT -q "select replicas[1] from system.cluster_partitions where database = currentDatabase() and table like 'data_%' and partition = '0-0' limit 1")
+replica_name=$($CLICKHOUSE_CLIENT -q "select active_replicas[1] from system.cluster_partitions where database = currentDatabase() and table like 'data_%' and partition = '0-0' limit 1")
 replica_table=$($CLICKHOUSE_CLIENT -q "select table from system.replicas where database = currentDatabase() and replica_name = '$replica_name'")
 
 $CLICKHOUSE_CLIENT -q "alter table $replica_table drop part '0-0_0_0_0' settings mutations_sync=2"

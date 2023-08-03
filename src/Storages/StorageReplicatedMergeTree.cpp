@@ -900,6 +900,9 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/creator_info", toString(getStorageID().uuid) + "|" + toString(ServerUUID::get()),
             zkutil::CreateMode::Persistent));
 
+        if (cluster.has_value())
+            cluster->addCreateOps(ops);
+
         Coordination::Responses responses;
         auto code = zookeeper->tryMulti(ops, responses);
         if (code == Coordination::Error::ZNODEEXISTS)
@@ -1227,6 +1230,8 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
     Coordination::Responses responses;
     String drop_lock_path = zookeeper_path + "/dropped/lock";
     ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/replicas", -1));
+    if (table_settings->cluster)
+        ReplicatedMergeTreeCluster::addDropOps(zookeeper_path, ops);
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/dropped", "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(drop_lock_path, "", zkutil::CreateMode::Ephemeral));
     Coordination::Error code = zookeeper->tryMulti(ops, responses);
@@ -3928,7 +3933,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
         entry.source_parts.push_back(part->name);
 
     if (cluster.has_value())
-        entry.replicas = cluster->getClusterPartition(MergeTreePartInfo::fromPartName(merged_name, format_version).partition_id).getReplicasNames();
+        entry.replicas = cluster->getClusterPartition(MergeTreePartInfo::fromPartName(merged_name, format_version).partition_id).getAllReplicas();
 
     Coordination::Requests ops;
     Coordination::Responses responses;
@@ -3976,7 +3981,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     Strings part_replicas;
     if (cluster.has_value())
     {
-        part_replicas = cluster->getClusterPartition(part.info.partition_id).getReplicasNames();
+        part_replicas = cluster->getClusterPartition(part.info.partition_id).getAllReplicas();
         if (std::find(part_replicas.begin(), part_replicas.end(), replica_name) == part_replicas.end())
         {
             LOG_DEBUG(log, "This replica is not responsible for {} (only on replicas: {})",
@@ -5299,6 +5304,7 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
     try
     {
         shutdown(false);
+        cluster.reset();
     }
     catch (...)
     {
@@ -8803,7 +8809,7 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         entry.create_time = time(nullptr);
 
         if (cluster.has_value())
-            entry.replicas = cluster->getClusterPartition(part->info.partition_id).getReplicasNames();
+            entry.replicas = cluster->getClusterPartition(part->info.partition_id).getAllReplicas();
 
         ops.emplace_back(zkutil::makeCheckRequest(fs::path(zookeeper_path) / "log", merge_pred.getVersion())); /// Make sure no new events were added to the log.
         ops.emplace_back(zkutil::makeCreateRequest(fs::path(zookeeper_path) / "log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
@@ -8870,7 +8876,7 @@ bool StorageReplicatedMergeTree::addOpsToDropAllPartsInPartition(
     entry->create_time = time(nullptr);
 
     if (cluster.has_value())
-        entry->replicas = cluster->getClusterPartition(drop_range_info.partition_id).getReplicasNames();
+        entry->replicas = cluster->getClusterPartition(drop_range_info.partition_id).getAllReplicas();
 
     log_entry_ops_idx.push_back(ops.size());
     ops.emplace_back(zkutil::makeCreateRequest(fs::path(zookeeper_path) / "log/log-", entry->toString(),
