@@ -1,5 +1,4 @@
 #include <IO/Archives/ZipArchiveReader.h>
-#include "mz_compat.h"
 
 #if USE_MINIZIP
 #include <IO/Archives/ZipArchiveWriter.h>

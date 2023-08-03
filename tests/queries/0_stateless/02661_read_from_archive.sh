@@ -5,7 +5,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-source ${CUR_DIR}/02661_read_from_archive.lib
+# shellcheck source=./02661_read_from_archive.lib
+. "$CUR_DIR"/02661_read_from_archive.lib
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS 02661_archive_table"
 
