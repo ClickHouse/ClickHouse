@@ -72,7 +72,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
             return memory_tracker->allocImpl(size, throw_if_memory_exceeded);
         }
 
-        return AllocationTrace(memory_tracker->getSampleProbability());
+        return AllocationTrace(memory_tracker->getSampleProbability(size));
     }
 
     return AllocationTrace(0);
@@ -96,12 +96,6 @@ AllocationTrace CurrentMemoryTracker::allocNoThrow(Int64 size)
     return allocImpl(size, throw_if_memory_exceeded);
 }
 
-AllocationTrace CurrentMemoryTracker::realloc(Int64 old_size, Int64 new_size)
-{
-    Int64 addition = new_size - old_size;
-    return addition > 0 ? alloc(addition) : free(-addition);
-}
-
 AllocationTrace CurrentMemoryTracker::free(Int64 size)
 {
     if (auto * memory_tracker = getMemoryTracker())
@@ -122,7 +116,7 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
             return memory_tracker->free(size);
         }
 
-        return AllocationTrace(memory_tracker->getSampleProbability());
+        return AllocationTrace(memory_tracker->getSampleProbability(size));
     }
 
     return AllocationTrace(0);

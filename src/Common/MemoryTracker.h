@@ -176,7 +176,7 @@ public:
         sample_probability = value;
     }
 
-    double getSampleProbability();
+    double getSampleProbability(UInt64 size);
 
     void setSampleMinAllocationSize(UInt64 value)
     {
