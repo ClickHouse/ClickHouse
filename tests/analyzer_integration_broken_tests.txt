@@ -202,3 +202,4 @@ test_backward_compatibility/test_data_skipping_indices.py::test_index
 test_backward_compatibility/test_convert_ordinary.py::test_convert_ordinary_to_atomic
 test_backward_compatibility/test_memory_bound_aggregation.py::test_backward_compatability
 test_odbc_interaction/test.py::test_postgres_insert
+test_merge_tree_azure_blob_storage/test.py::test_table_manipulations

@@ -114,9 +114,9 @@ namespace
             {
                 if (next_slash_after_glob_pos == std::string::npos)
                 {
-                    result.emplace_back(
+                    result.emplace_back(StorageHDFS::PathWithInfo{
                         String(ls.file_info[i].mName),
-                        StorageHDFS::PathInfo{ls.file_info[i].mLastMod, static_cast<size_t>(ls.file_info[i].mSize)});
+                        StorageHDFS::PathInfo{ls.file_info[i].mLastMod, static_cast<size_t>(ls.file_info[i].mSize)}});
                 }
                 else
                 {

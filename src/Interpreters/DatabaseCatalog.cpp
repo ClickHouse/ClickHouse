@@ -400,7 +400,6 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         return db_and_table;
     }
 
-
     if (table_id.database_name == TEMPORARY_DATABASE)
     {
         /// For temporary tables UUIDs are set in Context::resolveStorageID(...).
@@ -446,20 +445,26 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         return {};
     }
 
-    auto table = database->tryGetTable(table_id.table_name, context_);
-    if (!table && exception)
+    StoragePtr table;
+    if (exception)
     {
-        TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
-        std::vector<String> names = hints.getHints(table_id.getTableName());
-        if (names.empty())
+        try
         {
-            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs()));
+            table = database->getTable(table_id.table_name, context_);
         }
-        else
+        catch (const Exception & e)
         {
-            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist. Maybe you meant {}?", table_id.getNameForLogs(), backQuoteIfNeed(names[0])));
+            exception->emplace(e);
         }
     }
+    else
+    {
+        table = database->tryGetTable(table_id.table_name, context_);
+    }
+
+    if (!table && exception && !exception->has_value())
+        exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
+
     if (!table)
         database = nullptr;
 
