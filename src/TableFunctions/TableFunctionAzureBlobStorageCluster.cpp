@@ -17,7 +17,7 @@ namespace DB
 
 StoragePtr TableFunctionAzureBlobStorageCluster::executeImpl(
     const ASTPtr & /*function*/, ContextPtr context,
-    const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+    const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
     StoragePtr storage;
     ColumnsDescription columns;
@@ -32,7 +32,7 @@ StoragePtr TableFunctionAzureBlobStorageCluster::executeImpl(
         columns = structure_hint;
     }
 
-    auto client = StorageAzureBlob::createClient(configuration);
+    auto client = StorageAzureBlob::createClient(configuration, !is_insert_query);
     auto settings = StorageAzureBlob::createSettings(context);
 
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
