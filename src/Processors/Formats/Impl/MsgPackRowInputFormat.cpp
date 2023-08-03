@@ -326,7 +326,8 @@ static void insertUUID(IColumn & column, DataTypePtr type, const char * value, s
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack UUID into column with type {}.", type->getName());
     ReadBufferFromMemory buf(value, size);
     UUID uuid;
-    readBinaryBigEndian(uuid, buf);
+    readBinaryBigEndian(UUIDHelpers::getUUIDLow(uuid), buf);
+    readBinaryBigEndian(UUIDHelpers::getUUIDHigh(uuid), buf);
     assert_cast<ColumnUUID &>(column).insertValue(uuid);
 }
 
