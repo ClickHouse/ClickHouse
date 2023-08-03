@@ -984,6 +984,8 @@ void Aggregator::executeOnBlockSmall(
     }
 
     executeImpl(result, row_begin, row_end, key_columns, aggregate_instructions);
+
+    CurrentMemoryTracker::check();
 }
 
 void Aggregator::mergeOnBlockSmall(
@@ -1023,6 +1025,8 @@ void Aggregator::mergeOnBlockSmall(
 #undef M
     else
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
+
+    CurrentMemoryTracker::check();
 }
 
 void Aggregator::executeImpl(
@@ -1383,11 +1387,8 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 }
 
 
-void NO_INLINE Aggregator::executeOnIntervalWithoutKeyImpl(
-    AggregatedDataVariants & data_variants,
-    size_t row_begin,
-    size_t row_end,
-    AggregateFunctionInstruction * aggregate_instructions) const
+void NO_INLINE Aggregator::executeOnIntervalWithoutKey(
+    AggregatedDataVariants & data_variants, size_t row_begin, size_t row_end, AggregateFunctionInstruction * aggregate_instructions) const
 {
     /// `data_variants` will destroy the states of aggregate functions in the destructor
     data_variants.aggregator = this;
@@ -1414,7 +1415,7 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKeyImpl(
     }
 }
 
-void NO_INLINE Aggregator::mergeOnIntervalWithoutKeyImpl(
+void NO_INLINE Aggregator::mergeOnIntervalWithoutKey(
     AggregatedDataVariants & data_variants,
     size_t row_begin,
     size_t row_end,
@@ -2603,6 +2604,20 @@ void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
 
     AggregatedDataVariantsPtr & res = non_empty_data[0];
 
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        if (aggregate_functions[i]->isParallelizeMergePrepareNeeded())
+        {
+            size_t size = non_empty_data.size();
+            std::vector<AggregateDataPtr> data_vec;
+
+            for (size_t result_num = 0; result_num < size; ++result_num)
+                data_vec.emplace_back(non_empty_data[result_num]->without_key + offsets_of_aggregate_states[i]);
+
+            aggregate_functions[i]->parallelizeMergePrepare(data_vec, thread_pool);
+        }
+    }
+
     /// We merge all aggregation results to the first.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
     {
@@ -2907,6 +2922,7 @@ void NO_INLINE Aggregator::mergeBlockWithoutKeyStreamsImpl(
     AggregateColumnsConstData aggregate_columns = params.makeAggregateColumnsData(block);
     mergeWithoutKeyStreamsImpl(result, 0, block.rows(), aggregate_columns);
 }
+
 void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
     AggregatedDataVariants & result,
     size_t row_begin,
@@ -3125,6 +3141,8 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         LOG_TRACE(log, "Merged partially aggregated single-level data.");
     }
+
+    CurrentMemoryTracker::check();
 }
 
 
