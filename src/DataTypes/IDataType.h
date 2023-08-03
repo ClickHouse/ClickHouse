@@ -73,6 +73,8 @@ public:
 
     DataTypePtr getPtr() const { return shared_from_this(); }
 
+    virtual DataTypes getPossiblePtr() const { return { shared_from_this() }; }
+
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
     /// Name of corresponding data type in MySQL (exampe: Bigint, Blob, etc)
