@@ -66,6 +66,8 @@ public:
       */
     ColumnPtr execute(const ColumnsWithTypeAndName & columns, bool negative) const;
 
+    bool hasNull() const;
+
     bool empty() const;
     size_t getTotalRowCount() const;
     size_t getTotalByteCount() const;
