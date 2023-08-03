@@ -95,6 +95,7 @@ RUN python3 -m pip install --no-cache-dir \
     pytest-timeout \
     pytest-xdist \
     pytz \
+    pyyaml==5.3.1 \
     redis \
     requests-kerberos \
     tzlocal==2.1 \
