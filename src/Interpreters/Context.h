@@ -109,6 +109,7 @@ class AsynchronousInsertLog;
 class BackupLog;
 class BlobStorageLog;
 class IAsynchronousReader;
+class IOUringReader;
 struct MergeTreeSettings;
 struct InitialAllRangesAnnouncement;
 struct ParallelReadRequest;
@@ -1210,6 +1211,9 @@ public:
     OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
+#if USE_LIBURING
+    IOUringReader & getIOURingReader() const;
+#endif
 
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
 
