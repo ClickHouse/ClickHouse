@@ -465,13 +465,17 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port"};
     auto postgresql_settings = storage_settings.all();
     for (const auto & setting : postgresql_settings)
-        optional_arguments.insert(setting.getName());
+    {
+        const auto & setting_name = setting.getName();
+        if (named_collection.has(setting_name))
+            storage_settings.set(setting_name, named_collection.get<String>(setting_name));
+    }
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
     if (require_table)
         required_arguments.insert("table");
 
     validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
-        named_collection, required_arguments, optional_arguments);
+        named_collection, required_arguments, {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache"});
 
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
     if (configuration.addresses_expr.empty())
