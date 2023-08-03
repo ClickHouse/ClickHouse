@@ -27,10 +27,7 @@ proto_dir = os.path.join(SCRIPT_DIR, "./protos")
 gen_dir = os.path.join(SCRIPT_DIR, "./_gen")
 os.makedirs(gen_dir, exist_ok=True)
 run_and_check(
-    "python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} \
-    {proto_dir}/clickhouse_grpc.proto".format(
-        proto_dir=proto_dir, gen_dir=gen_dir
-    ),
+    f"python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} {proto_dir}/clickhouse_grpc.proto",
     shell=True,
 )
 

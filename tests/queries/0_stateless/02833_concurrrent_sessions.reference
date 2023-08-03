@@ -1,0 +1,46 @@
+sessions:
+360
+port_0_sessions:
+0
+address_0_sessions:
+0
+tcp_sessions
+90
+http_sessions
+90
+http_with_session_id_sessions
+90
+my_sql_sessions
+90
+Corresponding LoginSuccess/Logout
+15
+LoginFailure
+15
+Corresponding LoginSuccess/Logout
+15
+LoginFailure
+15
+Corresponding LoginSuccess/Logout
+15
+LoginFailure
+15
+Corresponding LoginSuccess/Logout
+15
+LoginFailure
+15
+Corresponding LoginSuccess/Logout
+15
+LoginFailure
+15
+Corresponding LoginSuccess/Logout
+15
+LoginFailure
+15
+Corresponding LoginSuccess/Logout
+15
+LoginFailure
+15
+Corresponding LoginSuccess/Logout
+15
+LoginFailure
+15
