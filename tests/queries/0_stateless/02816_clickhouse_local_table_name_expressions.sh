@@ -46,7 +46,7 @@ $CLICKHOUSE_LOCAL -q "SELECT * FROM '${dir}/tmp.csv'"
 #################
 echo "Test 3a: check literal no parsing overflow"
 
-$CLICKHOUSE_LOCAL -q "SELECT * FROM '${dir}/tmp.csv''bad'" 2>&1 | grep -c "UNKNOWN_TABLE"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM '${dir}/tmp.csv''bad'" 2>&1 | grep -c "SYNTAX_ERROR"
 #################
 echo "Test 3b: check literal empty"
 
