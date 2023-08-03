@@ -262,7 +262,7 @@ class TCPClient(object):
 
     def readDataWithoutProgress(self, need_print_info=True):
         packet_type = self.readPacketType()
-        while packet_type == 3: # Progress
+        while packet_type == 3:  # Progress
             self.readProgressData()
             packet_type = self.readPacketType()
 
