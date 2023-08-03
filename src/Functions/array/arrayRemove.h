@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <Columns/ColumnsNumber.h>
@@ -7,7 +6,7 @@
 
 
 namespace DB
-{/** arrayRemove(array, x -> predicate) - Returns a pointer to the modified array after removing the elements that passed the predicate condition.
+{/** arrayRemove(x -> predicate,array) - Returns a pointer to the modified array after removing the elements that passed the predicate condition.
   */
 struct ArrayRemoveImpl
 {
@@ -26,5 +25,4 @@ struct ArrayRemoveImpl
 
 struct NameArrayFilter { static constexpr auto name = "arrayRemove"; };
 using FunctionArrayRemove = FunctionArrayMapped<ArrayRemoveImpl, NameArrayFilter>;
-
 }

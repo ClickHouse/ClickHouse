@@ -20,17 +20,28 @@ ColumnPtr ArrayRemoveImpl::execute(const ColumnArray & array, ColumnPtr mapped)
         if (!column_filter_const)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of filter column");
 
-        if (column_filter_const->getValue<UInt8>()) return array.clone();
-
+        if (column_filter_const->getValue<UInt8>())
+            return array.clone();
         else
             return ColumnArray::create(
                 array.getDataPtr()->cloneEmpty(),
                 ColumnArray::ColumnOffsets::create(array.size(), 0));
-
     }
 
     const IColumn::Filter & filter = column_filter->getData();
-    ColumnPtr removed = array.getData().filter(filter, -1);
+
+    // Create a new filter with the negated values, handling NULLs separately.
+    IColumn::Filter negated_filter(filter.size());
+
+    for (size_t i = 0; i < filter.size(); ++i)
+    {
+        if (filter[i] && !array.isNullAt(i))
+            negated_filter[i] = false; // Include non-NULL values that satisfy the predicate
+        else
+            negated_filter[i] = true;  // Exclude NULLs.
+    }
+
+    ColumnPtr filtered = array.getData().filter(negated_filter, -1);
 
     const IColumn::Offsets & in_offsets = array.getOffsets();
     auto column_offsets = ColumnArray::ColumnOffsets::create(in_offsets.size());
@@ -42,13 +53,13 @@ ColumnPtr ArrayRemoveImpl::execute(const ColumnArray & array, ColumnPtr mapped)
     {
         for (; in_pos < in_offsets[i]; ++in_pos)
         {
-            if (!filter[in_pos])
+            if (negated_filter[in_pos])
                 ++out_pos;
         }
         out_offsets[i] = out_pos;
     }
 
-    return ColumnArray::create(removed, std::move(column_offsets));
+    return ColumnArray::create(filtered, std::move(column_offsets));
 }
 
 REGISTER_FUNCTION(ArrayRemove)
