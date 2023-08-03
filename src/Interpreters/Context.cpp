@@ -4530,14 +4530,6 @@ ReadSettings Context::getReadSettings() const
     return res;
 }
 
-ReadSettings Context::getBackupReadSettings() const
-{
-    ReadSettings read_settings = getReadSettings();
-    read_settings.remote_throttler = getBackupsThrottler();
-    read_settings.local_throttler = getBackupsThrottler();
-    return read_settings;
-}
-
 WriteSettings Context::getWriteSettings() const
 {
     WriteSettings res;
