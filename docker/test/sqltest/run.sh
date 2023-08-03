@@ -42,8 +42,10 @@ done
 # Run the test
 pushd sqltest/standards/2016/
 /test.py
-mv report.html test.log /
+mv report.html test.log /workspace
 popd
 
 zstd --threads=0 /var/log/clickhouse-server/clickhouse-server.log
 zstd --threads=0 /var/log/clickhouse-server/clickhouse-server.err.log
+
+mv /var/log/clickhouse-server/clickhouse-server.log.zst /var/log/clickhouse-server/clickhouse-server.err.log.zst /workspace
