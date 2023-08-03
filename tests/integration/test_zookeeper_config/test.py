@@ -56,10 +56,21 @@ def test_chroot_with_same_root(started_cluster):
         for j in range(2):  # Second insert to test deduplication
             node.query("INSERT INTO simple VALUES ({0}, {0})".format(i))
 
-    time.sleep(1)
+    # Replication might take time
 
-    assert node1.query("select count() from simple").strip() == "2"
-    assert node2.query("select count() from simple").strip() == "2"
+    for i in range(100):
+        if node1.query("select count() from simple").strip() == "2":
+            break
+        time.sleep(1)
+    else:
+        assert node1.query("select count() from simple").strip() == "2"
+
+    for i in range(100):
+        if node2.query("select count() from simple").strip() == "2":
+            break
+        time.sleep(1)
+    else:
+        assert node1.query("select count() from simple").strip() == "2"
 
 
 def test_chroot_with_different_root(started_cluster):
