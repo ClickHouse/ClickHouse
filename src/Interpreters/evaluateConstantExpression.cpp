@@ -1,10 +1,14 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
+#include <Columns/ColumnSet.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -16,6 +20,8 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Functions/IFunction.h>
 #include <unordered_map>
 
 
@@ -350,6 +356,263 @@ namespace
             }
 
             return result;
+        }
+
+        return {};
+    }
+
+    /// This is a map which stores constants for a single conjunction.
+    /// It can contain execution results from different stanges.
+    /// Example: for expression `(a + b) * c` and predicate `a = 1 and b = 2 and a + b = 3` the map will be
+    /// a -> 1, b -> 2, a + b -> 3
+    /// It is allowed to have a map with contradictive conditions, like for `a = 1 and b = 2 and a + b = 5`,
+    /// but a map for predicate like `a = 1 and a = 2` cannot be built.
+    using ConjunctionMap = std::unordered_map<const ActionsDAG::Node *, ColumnConst::Ptr>;
+    using DisjunctionList = std::list<ConjunctionMap>;
+
+    std::optional<ConjunctionMap> andConjunctions(const ConjunctionMap & lhs, const ConjunctionMap & rhs)
+    {
+        ConjunctionMap res;
+        for (const auto & [node, column] : rhs)
+        {
+            auto it = lhs.find(node);
+            /// If constants are different, the conjunction is invalid.
+            if (it != lhs.end() && column->compareAt(0, 0, *it->second, 1))
+                return {};
+
+            if (it == lhs.end())
+                res.emplace(node, column);
+        }
+
+        res.insert(lhs.begin(), lhs.end());
+        return res;
+    }
+
+    DisjunctionList andDisjunctions(const DisjunctionList & lhs, const DisjunctionList & rhs)
+    {
+        DisjunctionList res;
+        for (const auto & lhs_map : lhs)
+            for(const auto & rhs_map : rhs)
+                if (auto conj = andConjunctions(lhs_map, rhs_map))
+                    res.emplace_back(std::move(*conj));
+
+        return res;
+    }
+
+    DisjunctionList orDisjunctions(DisjunctionList && lhs, DisjunctionList && rhs)
+    {
+        lhs.splice(lhs.end(), std::move(rhs));
+        return lhs;
+    }
+
+    const ActionsDAG::Node * findMatch(const ActionsDAG::Node * key, const MatchedTrees::Matches & matches)
+    {
+        auto it = matches.find(key);
+        if (it == matches.end())
+            return {};
+
+        const auto & match = it->second;
+        if (!match.node || match.monotonicity)
+            return nullptr;
+
+        return match.node;
+    }
+
+    ColumnNullable::Ptr tryCastColumn(ColumnPtr col, DataTypePtr from_type, DataTypePtr to_type)
+    {
+        if (!to_type->canBeInsideNullable())
+            return {};
+
+        auto res = castColumnAccurate({col, from_type, std::string()}, to_type);
+        if (res->onlyNull())
+            return nullptr;
+
+        auto col_nullable = typeid_cast<const ColumnNullable *>(col.get());
+        if (!col_nullable)
+            return nullptr;
+
+        return col_nullable->getPtr();
+    }
+
+    std::optional<ConjunctionMap::value_type> analyzeConstant(
+        const ActionsDAG::Node * key,
+        const ActionsDAG::Node * value,
+        const MatchedTrees::Matches & matches)
+    {
+        if (value->type != ActionsDAG::ActionType::COLUMN)
+            return {};
+
+        if (const auto * col = typeid_cast<const ColumnConst *>(value->column.get()))
+        {
+            if (const auto * node = findMatch(key, matches))
+            {
+                ColumnConst::Ptr column = col->getPtr();
+                if (!value->result_type->equals(*node->result_type))
+                {
+                    auto inner = tryCastColumn(column->getDataColumnPtr(), value->result_type, node->result_type);
+                    if (!inner || inner->isNullAt(0))
+                        return {};
+
+                    auto innder_column = node->result_type->createColumn();
+                    innder_column->insert((*inner)[0]);
+                    column = ColumnConst::create(std::move(innder_column), 1);
+                }
+
+                return ConjunctionMap::value_type{node, column};
+            }
+        }
+
+        return {};
+    }
+
+    std::optional<DisjunctionList> analyzeSet(
+        const ActionsDAG::Node * key,
+        const ActionsDAG::Node * value,
+        const MatchedTrees::Matches & matches,
+        const ContextPtr & context)
+    {
+        if (value->type != ActionsDAG::ActionType::COLUMN)
+            return {};
+
+        auto col = value->column;
+        if (const auto * col_const = typeid_cast<const ColumnConst *>(col.get()))
+            col = col_const->getDataColumnPtr();
+
+        const auto * col_set = typeid_cast<const ColumnSet *>(col.get());
+        if (!col_set || !col_set->getData())
+            return {};
+
+        auto * set_from_tuple = typeid_cast<FutureSetFromTuple *>(col_set->getData().get());
+        if (!set_from_tuple)
+            return {};
+
+        SetPtr set = set_from_tuple->buildOrderedSetInplace(context);
+        if (!set || !set->hasExplicitSetElements())
+            return {};
+
+        const auto * node = findMatch(key, matches);
+        if (!node)
+            return {};
+
+        auto elements = set->getSetElements();
+        auto types = set->getElementsTypes();
+
+        ColumnPtr column;
+        DataTypePtr type;
+        if (elements.empty())
+            return {};
+        if (elements.size() == 1)
+        {
+            column = elements[0];
+            type = types[0];
+        }
+        else
+        {
+            column = ColumnTuple::create(std::move(elements));
+            type = std::make_shared<DataTypeTuple>(std::move(types));
+        }
+
+        ColumnNullable::Ptr casted_col;
+        const NullMap * null_map = nullptr;
+
+        if (!type->equals(*node->result_type))
+        {
+            casted_col = tryCastColumn(column, value->result_type, node->result_type);
+            if (!casted_col)
+                return {};
+            null_map = &casted_col->getNullMapData();
+            column = casted_col->getNestedColumnPtr();
+        }
+
+        DisjunctionList res;
+        if (node->result_type->isNullable() && set->hasNull())
+            res.push_back({ConjunctionMap{{node, node->result_type->createColumnConst(1, Field())}}});
+
+        size_t num_rows = column->size();
+        for (size_t row = 0; row < num_rows; ++row)
+        {
+            if (null_map && (*null_map)[row])
+                continue;
+
+            auto innder_column = node->result_type->createColumn();
+            innder_column->insert((*column)[row]);
+            auto column_const = ColumnConst::create(std::move(innder_column), 1);
+
+            res.push_back({ConjunctionMap::value_type{node, column}});
+        }
+
+        return res;
+    }
+
+    // bool isIndependentSubtree(const ActionsDAG::Node * node, const MatchedTrees::Matches & matches)
+    // {
+    //     std::stack<const ActionsDAG::Node *> stack;
+    //     stack.push(node);
+    //     while (!stack.empty())
+    //     {
+    //         const auto * cur = stack.top();
+    //         stack.pop();
+    //         if (findMatch(cur, matches))
+    //             return false;
+
+    //         for (const auto * child : node->children)
+    //             stack.push(child);
+    //     }
+
+    //     return true;
+    // }
+
+    std::optional<DisjunctionList> analyze(const ActionsDAG::Node * node, const MatchedTrees::Matches & matches, const ContextPtr & context)
+    {
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            if (node->function_base->getName() == "equals")
+            {
+                const auto * lhs_node = node->children.at(0);
+                const auto * rhs_node = node->children.at(1);
+                if (auto val = analyzeConstant(lhs_node, rhs_node, matches))
+                    return DisjunctionList{ConjunctionMap{std::move(*val)}};
+
+                if (auto val = analyzeConstant(rhs_node, lhs_node, matches))
+                    return DisjunctionList{ConjunctionMap{std::move(*val)}};
+            }
+            else if (node->function_base->getName() == "in")
+            {
+                const auto * lhs_node = node->children.at(0);
+                const auto * rhs_node = node->children.at(1);
+
+                return analyzeSet(lhs_node, rhs_node, matches, context);
+            }
+            else if (node->function_base->getName() == "or")
+            {
+                DisjunctionList res;
+                for (const auto * child : node->children)
+                {
+                    if (auto val = analyze(child, matches, context))
+                        res = orDisjunctions(std::move(res), std::move(*val));
+                    else
+                        return {};
+                }
+
+                return res;
+            }
+            else if (node->function_base->getName() == "and")
+            {
+                std::optional<DisjunctionList> res;
+                for (const auto * child : node->children)
+                {
+                    auto val = analyze(child, matches, context);
+                    if (!val)
+                        continue;
+
+                    if (!res)
+                        res = std::move(val);
+                    else
+                        res = andDisjunctions(std::move(*res), std::move(*val));
+                }
+
+                return res;
+            }
         }
 
         return {};

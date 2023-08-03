@@ -409,6 +409,61 @@ StorageDistributed::StorageDistributed(
 {
 }
 
+QueryProcessingStage::Enum
+StorageDistributed::getQueryProcessingStageAnalyzer(
+    [[maybe_unused]] ContextPtr local_context,
+    [[maybe_unused]] QueryProcessingStage::Enum to_stage,
+    [[maybe_unused]] const StorageSnapshotPtr & storage_snapshot,
+    [[maybe_unused]] SelectQueryInfo & query_info) const
+{
+    if (query_info.query_tree)
+        LOG_INFO(log, "getQueryProcessingStageAnalyzer tree {}", query_info.query_tree->dumpTree());
+
+    if (query_info.table_expression)
+        LOG_INFO(log, "getQueryProcessingStageAnalyzer table_expression {}", query_info.table_expression->dumpTree());
+
+    if (query_info.filter_actions_dag)
+        LOG_INFO(log, "getQueryProcessingStageAnalyzer dag {}", query_info.filter_actions_dag->dumpDAG());
+
+    ClusterPtr cluster = getCluster();
+
+    if (query_info.use_custom_key)
+    {
+        LOG_INFO(log, "Single shard cluster used with custom_key, transforming replicas into virtual shards");
+        query_info.cluster = cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
+    }
+    else
+    {
+        query_info.cluster = cluster;
+
+        if (nodes > 1 && settings.optimize_skip_unused_shards)
+        {
+            /// Always calculate optimized cluster here, to avoid conditions during read()
+            /// (Anyway it will be calculated in the read())
+            ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info);
+            if (optimized_cluster)
+            {
+                LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
+                        makeFormattedListOfShards(optimized_cluster));
+
+                cluster = optimized_cluster;
+                query_info.optimized_cluster = cluster;
+
+                nodes = getClusterQueriedNodes(settings, cluster);
+            }
+            else
+            {
+                LOG_DEBUG(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}",
+                        has_sharding_key ? "" : " (no sharding key)");
+            }
+        }
+    }
+
+
+    query_info.cluster = cluster;
+    return QueryProcessingStage::WithMergeableState;
+}
+
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
@@ -416,6 +471,9 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     SelectQueryInfo & query_info) const
 {
     const auto & settings = local_context->getSettingsRef();
+
+    if (settings.allow_experimental_analyzer)
+        return getQueryProcessingStageAnalyzer(local_context, to_stage, storage_snapshot, query_info);
 
     ClusterPtr cluster = getCluster();
 
@@ -1355,6 +1413,53 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
     throw Exception(ErrorCodes::TYPE_MISMATCH, "Sharding key expression does not evaluate to an integer type");
 }
 
+ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
+    ClusterPtr cluster,
+    const SelectQueryInfo & query_info,
+    const StorageSnapshotPtr & storage_snapshot,
+    ContextPtr local_context) const
+{
+    if (!query_info.filter_actions_dag)
+        return nullptr;
+
+    size_t limit = local_context->getSettingsRef().optimize_skip_unused_shards_limit;
+    if (!limit || limit > SSIZE_MAX)
+    {
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "optimize_skip_unused_shards_limit out of range (0, {}]", SSIZE_MAX);
+    }
+    // To interpret limit==0 as limit is reached
+    ++limit;
+    const auto blocks = evaluateExpressionOverConstantCondition(condition_ast, sharding_key_expr, limit);
+
+    if (!limit)
+    {
+        LOG_DEBUG(log,
+            "Number of values for sharding key exceeds optimize_skip_unused_shards_limit={}, "
+            "try to increase it, but note that this may increase query processing time.",
+            local_context->getSettingsRef().optimize_skip_unused_shards_limit);
+        return nullptr;
+    }
+
+    // Can't get a definite answer if we can skip any shards
+    if (!blocks)
+        return nullptr;
+
+    std::set<int> shards;
+
+    for (const auto & block : *blocks)
+    {
+        if (!block.has(sharding_key_column_name))
+            throw Exception(ErrorCodes::TOO_MANY_ROWS, "sharding_key_expr should evaluate as a single row");
+
+        const ColumnWithTypeAndName & result = block.getByName(sharding_key_column_name);
+        const auto selector = createSelector(cluster, result);
+
+        shards.insert(selector.begin(), selector.end());
+    }
+
+    return cluster->getClusterWithMultipleShards({shards.begin(), shards.end()});
+}
+
 /// Returns a new cluster with fewer shards if constant folding for `sharding_key_expr` is possible
 /// using constraints from "PREWHERE" and "WHERE" conditions, otherwise returns `nullptr`
 ClusterPtr StorageDistributed::skipUnusedShards(
@@ -1363,6 +1468,9 @@ ClusterPtr StorageDistributed::skipUnusedShards(
     const StorageSnapshotPtr & storage_snapshot,
     ContextPtr local_context) const
 {
+    if (local_context->getSettingsRef().allow_experimental_analyzer)
+        return skipUnusedShardsWithAnalyzer(cluster, query_info, storage_snapshot, local_context);
+
     const auto & select = query_info.query->as<ASTSelectQuery &>();
     if (!select.prewhere() && !select.where())
         return nullptr;
