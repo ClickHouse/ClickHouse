@@ -1442,6 +1442,7 @@ void TreeRewriter::normalize(
 
     /// Common subexpression elimination. Rewrite rules.
     QueryNormalizer::Data normalizer_data(aliases, source_columns_set, ignore_alias, settings, allow_self_aliases, is_create_parameterized_view);
+    LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "QueryNormalizer:\n{}\n-----------\n{}", query->dumpTree(), StackTrace().toString());   
     QueryNormalizer(normalizer_data).visit(query);
 
     optimizeGroupingSets(query);

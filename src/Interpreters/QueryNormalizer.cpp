@@ -68,6 +68,14 @@ private:
 
 void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 {
+    LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "visit: node {}, ast {}", node.getID('_'), ast->getID('_'));
+
+    auto node_id = node.getID('_');
+    if (node_id == "Identifier_name")
+    {
+        LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "break");
+    }
+
     auto & current_asts = data.current_asts;
     String & current_alias = data.current_alias;
 
@@ -99,6 +107,8 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
         std::optional<String> our_name = IdentifierSemantic::getColumnName(alias_node);
 
         String node_alias = ast->tryGetAlias();
+
+        LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "alias info: id {}, node_alias {}", alias_node->getID('_'), node_alias);
 
         if (current_asts.contains(alias_node.get()) /// We have loop of multiple aliases
             || (node.name() == our_alias_or_name && our_name && node_alias == *our_name)) /// Our alias points to node.name, direct loop
@@ -152,6 +162,8 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 
 void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &, Data & data)
 {
+    LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "visit: node {}", node.getID('_'));
+
     /// normalize JOIN ON section
     if (node.table_join)
     {
@@ -170,6 +182,8 @@ static bool needVisitChild(const ASTPtr & child)
 /// special visitChildren() for ASTSelectQuery
 void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr &, Data & data)
 {
+    LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "visit: node {}", select.getID('_'));
+
     for (auto & child : select.children)
     {
         if (needVisitChild(child))
@@ -192,6 +206,8 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr &, Data & data
 ///  on aliases in expressions of the form 123 AS x, arrayMap(x -> 1, [2]).
 void QueryNormalizer::visitChildren(IAST * node, Data & data)
 {
+    LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "visitChildren: {}", node->getID('_'));
+
     if (auto * func_node = node->as<ASTFunction>())
     {
         if (func_node->tryGetQueryArgument())
@@ -257,6 +273,8 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
 
 void QueryNormalizer::visit(ASTPtr & ast, Data & data)
 {
+    LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "visit: {}", ast->getID('_'));
+
     CheckASTDepth scope1(data);
     RestoreAliasOnExitScope scope2(data.current_alias);
 
@@ -275,7 +293,7 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
     {
         String my_alias = ast->tryGetAlias();
         if (!my_alias.empty())
-            data.current_alias = my_alias;
+            data.current_alias = std::move(my_alias);
     }
 
     if (auto * node_id = ast->as<ASTIdentifier>())

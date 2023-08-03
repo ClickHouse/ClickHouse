@@ -420,61 +420,62 @@ void SystemLog<LogElement>::savingThreadFunction()
 template <typename LogElement>
 void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, uint64_t to_flush_end)
 {
-    try
-    {
-        LOG_TRACE(log, "Flushing system log, {} entries to flush up to offset {}",
-            to_flush.size(), to_flush_end);
+    UNUSED(to_flush_end);
+    UNUSED(to_flush);
 
-        /// We check for existence of the table and create it as needed at every
-        /// flush. This is done to allow user to drop the table at any moment
-        /// (new empty table will be created automatically). BTW, flush method
-        /// is called from single thread.
-        prepareTable();
+    //     LOG_TRACE(log, "Flushing system log, {} entries to flush up to offset {}",
+    //         to_flush.size(), to_flush_end);
 
-        ColumnsWithTypeAndName log_element_columns;
-        auto log_element_names_and_types = LogElement::getNamesAndTypes();
+    //     /// We check for existence of the table and create it as needed at every
+    //     /// flush. This is done to allow user to drop the table at any moment
+    //     /// (new empty table will be created automatically). BTW, flush method
+    //     /// is called from single thread.
+    //     prepareTable();
 
-        for (const auto & name_and_type : log_element_names_and_types)
-            log_element_columns.emplace_back(name_and_type.type, name_and_type.name);
+    //     ColumnsWithTypeAndName log_element_columns;
+    //     auto log_element_names_and_types = LogElement::getNamesAndTypes();
 
-        Block block(std::move(log_element_columns));
+    //     for (const auto & name_and_type : log_element_names_and_types)
+    //         log_element_columns.emplace_back(name_and_type.type, name_and_type.name);
 
-        MutableColumns columns = block.mutateColumns();
-        for (const auto & elem : to_flush)
-            elem.appendToBlock(columns);
+    //     Block block(std::move(log_element_columns));
 
-        block.setColumns(std::move(columns));
+    //     MutableColumns columns = block.mutateColumns();
+    //     for (const auto & elem : to_flush)
+    //         elem.appendToBlock(columns);
 
-        /// We write to table indirectly, using InterpreterInsertQuery.
-        /// This is needed to support DEFAULT-columns in table.
+    //     block.setColumns(std::move(columns));
 
-        std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
-        insert->table_id = table_id;
-        ASTPtr query_ptr(insert.release());
+    //     /// We write to table indirectly, using InterpreterInsertQuery.
+    //     /// This is needed to support DEFAULT-columns in table.
 
-        // we need query context to do inserts to target table with MV containing subqueries or joins
-        auto insert_context = Context::createCopy(context);
-        insert_context->makeQueryContext();
-        /// We always want to deliver the data to the original table regardless of the MVs
-        insert_context->setSetting("materialized_views_ignore_errors", true);
+    //     std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
+    //     insert->table_id = table_id;
+    //     ASTPtr query_ptr(insert.release());
 
-        InterpreterInsertQuery interpreter(query_ptr, insert_context);
-        BlockIO io = interpreter.execute();
+    //     // we need query context to do inserts to target table with MV containing subqueries or joins
+    //     auto insert_context = Context::createCopy(context);
+    //     insert_context->makeQueryContext();
+    //     /// We always want to deliver the data to the original table regardless of the MVs
+    //     insert_context->setSetting("materialized_views_ignore_errors", true);
 
-        PushingPipelineExecutor executor(io.pipeline);
+    //     InterpreterInsertQuery interpreter(query_ptr, insert_context);
+    //     BlockIO io = interpreter.execute();
 
-        executor.start();
-        executor.push(block);
-        executor.finish();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    //     PushingPipelineExecutor executor(io.pipeline);
 
-    queue->confirm(to_flush_end);
+    //     executor.start();
+    //     executor.push(block);
+    //     executor.finish();
+    // }
+    // catch (...)
+    // {
+    //     tryLogCurrentException(__PRETTY_FUNCTION__);
+    // }
 
-    LOG_TRACE(log, "Flushed system log up to offset {}", to_flush_end);
+    // queue->confirm(to_flush_end);
+
+    // LOG_TRACE(log, "Flushed system log up to offset {}", to_flush_end);
 }
 
 
