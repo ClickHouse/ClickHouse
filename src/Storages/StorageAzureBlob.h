@@ -204,7 +204,6 @@ public:
         {
             return {callback(), {}};
         }
-        size_t getTotalSize() const override { return 0; }
 
     private:
         ReadTaskCallback callback;
