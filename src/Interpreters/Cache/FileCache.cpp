@@ -951,7 +951,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
         return;
     }
 
-    size_t offset = 0, size = 0;
+    UInt64 offset = 0, size = 0;
     for (; key_it != fs::directory_iterator(); key_it++)
     {
         const fs::path key_directory = key_it->path();
