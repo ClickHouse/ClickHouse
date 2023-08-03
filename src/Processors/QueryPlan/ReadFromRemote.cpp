@@ -240,7 +240,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
             shard.shard_info.pool, query_string, output_stream->header, context, throttler, scalars, external_tables, stage);
 
     remote_query_executor->setLogger(log);
-    remote_query_executor->setPoolMode(PoolMode::GET_MANY);
+    remote_query_executor->setPoolMode(PoolMode::GET_ONE);
 
     if (!table_func_ptr)
         remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
