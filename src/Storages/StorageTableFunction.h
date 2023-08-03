@@ -79,11 +79,11 @@ public:
             nested->shutdown();
     }
 
-    void flush() override
+    void flushAndPrepareForShutdown() override
     {
         std::lock_guard lock{nested_mutex};
         if (nested)
-            nested->flush();
+            nested->flushAndPrepareForShutdown();
     }
 
     void drop() override
@@ -156,7 +156,7 @@ public:
     void checkTableCanBeDropped() const override {}
 
 private:
-    mutable std::mutex nested_mutex;
+    mutable std::recursive_mutex nested_mutex;
     mutable GetNestedStorageFunc get_nested;
     mutable StoragePtr nested;
     const bool add_conversion;

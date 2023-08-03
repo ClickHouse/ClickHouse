@@ -8,7 +8,6 @@
 
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
-#include <Common/Arena.h>
 
 #include <Interpreters/Context.h>
 

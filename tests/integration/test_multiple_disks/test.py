@@ -818,9 +818,10 @@ def test_start_stop_moves(start_cluster, name, engine):
         node1.query(f"SYSTEM STOP MOVES {name}")
         node1.query(f"SYSTEM STOP MERGES {name}")
 
+        first_part = None
         for i in range(5):
             data = []  # 5MB in total
-            for i in range(5):
+            for _ in range(5):
                 data.append(get_random_string(1024 * 1024))  # 1MB row
             # jbod size is 40MB, so lets insert 5MB batch 7 times
             node1.query_with_retry(
@@ -829,7 +830,13 @@ def test_start_stop_moves(start_cluster, name, engine):
                 )
             )
 
-        first_part = get_oldest_part(node1, name)
+            # we cannot rely simply on modification time of part because it can be changed
+            # by different background operations so we explicitly check after the first
+            # part is inserted
+            if i == 0:
+                first_part = get_oldest_part(node1, name)
+
+        assert first_part is not None
 
         used_disks = get_used_disks_for_table(node1, name)
 
@@ -882,15 +889,12 @@ def get_paths_for_partition_from_part_log(node, table, partition_id):
 
 
 @pytest.mark.parametrize(
-    "name,engine,use_metadata_cache",
+    "name,engine",
     [
-        pytest.param("altering_mt", "MergeTree()", "false", id="mt"),
-        pytest.param("altering_mt", "MergeTree()", "true", id="mt_use_metadata_cache"),
-        # ("altering_replicated_mt","ReplicatedMergeTree('/clickhouse/altering_replicated_mt', '1')",),
-        # SYSTEM STOP MERGES doesn't disable merges assignments
+        pytest.param("altering_mt", "MergeTree()", id="mt"),
     ],
 )
-def test_alter_move(start_cluster, name, engine, use_metadata_cache):
+def test_alter_move(start_cluster, name, engine):
     try:
         node1.query(
             """
@@ -900,9 +904,9 @@ def test_alter_move(start_cluster, name, engine, use_metadata_cache):
             ) ENGINE = {engine}
             ORDER BY tuple()
             PARTITION BY toYYYYMM(EventDate)
-            SETTINGS storage_policy='jbods_with_external', use_metadata_cache={use_metadata_cache}
+            SETTINGS storage_policy='jbods_with_external'
         """.format(
-                name=name, engine=engine, use_metadata_cache=use_metadata_cache
+                name=name, engine=engine
             )
         )
 
@@ -1711,7 +1715,7 @@ def test_freeze(start_cluster):
             ) ENGINE = MergeTree
             ORDER BY tuple()
             PARTITION BY toYYYYMM(d)
-            SETTINGS storage_policy='small_jbod_with_external', compress_marks=false, compress_primary_key=false
+            SETTINGS storage_policy='small_jbod_with_external', compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1
         """
         )
 

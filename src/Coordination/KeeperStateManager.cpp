@@ -451,7 +451,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
     return nullptr;
 }
 
-ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::AbstractConfiguration & config) const
+ClusterUpdateActions KeeperStateManager::getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config) const
 {
     auto new_configuration_wrapper = parseServersConfiguration(config, true);
 
@@ -465,14 +465,14 @@ ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::A
             old_ids[old_server->get_id()] = old_server;
     }
 
-    ConfigUpdateActions result;
+    ClusterUpdateActions result;
 
     /// First of all add new servers
     for (const auto & [new_id, server_config] : new_ids)
     {
         auto old_server_it = old_ids.find(new_id);
         if (old_server_it == old_ids.end())
-            result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::AddServer, server_config});
+            result.emplace_back(AddRaftServer{RaftServerConfig{*server_config}});
         else
         {
             const auto & old_endpoint = old_server_it->second->get_endpoint();
@@ -491,10 +491,8 @@ ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::A
 
     /// After that remove old ones
     for (auto [old_id, server_config] : old_ids)
-    {
         if (!new_ids.contains(old_id))
-            result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::RemoveServer, server_config});
-    }
+            result.emplace_back(RemoveRaftServer{old_id});
 
     {
         std::lock_guard lock(configuration_wrapper_mutex);
@@ -507,7 +505,10 @@ ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::A
                 {
                     if (old_server->get_priority() != new_server->get_priority())
                     {
-                        result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::UpdatePriority, new_server});
+                        result.emplace_back(UpdateRaftServerPriority{
+                            .id = new_server->get_id(),
+                            .priority = new_server->get_priority()
+                        });
                     }
                     break;
                 }

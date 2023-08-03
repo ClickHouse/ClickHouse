@@ -196,3 +196,8 @@ test_quota/test.py::test_tracking_quota
 test_quota/test.py::test_users_xml_is_readonly
 test_replicating_constants/test.py::test_different_versions
 test_merge_tree_s3/test.py::test_heavy_insert_select_check_memory[node]
+test_drop_is_lock_free/test.py::test_query_is_lock_free[detach table]
+test_backward_compatibility/test_data_skipping_indices.py::test_index
+test_backward_compatibility/test_convert_ordinary.py::test_convert_ordinary_to_atomic
+test_backward_compatibility/test_memory_bound_aggregation.py::test_backward_compatability
+test_odbc_interaction/test.py::test_postgres_insert

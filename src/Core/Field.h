@@ -28,7 +28,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TOO_DEEP_RECURSION;
 }
 
 constexpr Null NEGATIVE_INFINITY{Null::Value::NegativeInfinity};
@@ -42,13 +41,10 @@ using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
 /// construct a Field of Array or a Tuple type. An alternative approach would be
 /// to construct both of these types from FieldVector, and have the caller
 /// specify the desired Field type explicitly.
-/// As the result stack overflow on destruction is possible
-/// and to avoid it we need to count the depth and have a threshold.
 #define DEFINE_FIELD_VECTOR(X) \
 struct X : public FieldVector \
 { \
     using FieldVector::FieldVector; \
-    uint8_t nested_field_depth = 0; \
 }
 
 DEFINE_FIELD_VECTOR(Array);
@@ -65,7 +61,6 @@ using FieldMap = std::map<String, Field, std::less<>, AllocatorWithMemoryTrackin
 struct X : public FieldMap \
 { \
     using FieldMap::FieldMap; \
-    uint8_t nested_field_depth = 0; \
 }
 
 DEFINE_FIELD_MAP(Object);
@@ -296,12 +291,6 @@ decltype(auto) castToNearestFieldType(T && x)
   */
 #define DBMS_MIN_FIELD_SIZE 32
 
-/// Note: uint8_t is used for storing depth value.
-#if defined(SANITIZER) || !defined(NDEBUG)
-    #define DBMS_MAX_NESTED_FIELD_DEPTH 64
-#else
-    #define DBMS_MAX_NESTED_FIELD_DEPTH 255
-#endif
 
 /** Discriminated union of several types.
   * Made for replacement of `boost::variant`
@@ -682,49 +671,6 @@ private:
 
     Types::Which which;
 
-    /// StorageType and Original are the same for Array, Tuple, Map, Object
-    template <typename StorageType, typename Original>
-    uint8_t calculateAndCheckFieldDepth(Original && x)
-    {
-        uint8_t result = 0;
-
-        if constexpr (std::is_same_v<StorageType, Array>
-            || std::is_same_v<StorageType, Tuple>
-            || std::is_same_v<StorageType, Map>
-            || std::is_same_v<StorageType, Object>)
-        {
-            result = x.nested_field_depth;
-
-            auto get_depth = [](const Field & elem)
-            {
-                switch (elem.which)
-                {
-                    case Types::Array:
-                        return elem.template get<Array>().nested_field_depth;
-                    case Types::Tuple:
-                        return elem.template get<Tuple>().nested_field_depth;
-                    case Types::Map:
-                        return elem.template get<Map>().nested_field_depth;
-                    case Types::Object:
-                        return elem.template get<Object>().nested_field_depth;
-                    default:
-                        return static_cast<uint8_t>(0);
-                }
-            };
-
-            if constexpr (std::is_same_v<StorageType, Object>)
-                for (auto & [_, value] : x)
-                    result = std::max(get_depth(value), result);
-            else
-                for (auto & value : x)
-                    result = std::max(get_depth(value), result);
-        }
-
-        if (result >= DBMS_MAX_NESTED_FIELD_DEPTH)
-            throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Too deep Field");
-
-        return result;
-    }
 
     /// Assuming there was no allocated state or it was deallocated (see destroy).
     template <typename T>
@@ -738,17 +684,7 @@ private:
         // we must initialize the entire wide stored type, and not just the
         // nominal type.
         using StorageType = NearestFieldType<UnqualifiedType>;
-
-        /// Incrementing the depth since we create a new Field.
-        auto depth = calculateAndCheckFieldDepth<StorageType>(x);
         new (&storage) StorageType(std::forward<T>(x));
-
-        if constexpr (std::is_same_v<StorageType, Array>
-            || std::is_same_v<StorageType, Tuple>
-            || std::is_same_v<StorageType, Map>
-            || std::is_same_v<StorageType, Object>)
-            reinterpret_cast<StorageType *>(&storage)->nested_field_depth = depth + 1;
-
         which = TypeToEnum<UnqualifiedType>::value;
     }
 
@@ -845,7 +781,7 @@ private:
     }
 
     template <typename T>
-    ALWAYS_INLINE void destroy()
+    void destroy()
     {
         T * MAY_ALIAS ptr = reinterpret_cast<T*>(&storage);
         ptr->~T();

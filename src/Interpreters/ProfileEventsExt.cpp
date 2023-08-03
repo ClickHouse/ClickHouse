@@ -86,9 +86,16 @@ static void dumpMemoryTracker(ProfileEventsSnapshot const & snapshot, DB::Mutabl
     columns[i++]->insert(static_cast<UInt64>(snapshot.current_time));
     columns[i++]->insert(static_cast<UInt64>(snapshot.thread_id));
     columns[i++]->insert(Type::GAUGE);
-
     columns[i++]->insertData(MemoryTracker::USAGE_EVENT_NAME, strlen(MemoryTracker::USAGE_EVENT_NAME));
-    columns[i++]->insert(snapshot.memory_usage);
+    columns[i]->insert(snapshot.memory_usage);
+
+    i = 0;
+    columns[i++]->insertData(host_name.data(), host_name.size());
+    columns[i++]->insert(static_cast<UInt64>(snapshot.current_time));
+    columns[i++]->insert(static_cast<UInt64>(snapshot.thread_id));
+    columns[i++]->insert(Type::GAUGE);
+    columns[i++]->insertData(MemoryTracker::PEAK_USAGE_EVENT_NAME, strlen(MemoryTracker::PEAK_USAGE_EVENT_NAME));
+    columns[i]->insert(snapshot.peak_memory_usage);
 }
 
 void getProfileEvents(
@@ -121,6 +128,7 @@ void getProfileEvents(
         group_snapshot.thread_id    = 0;
         group_snapshot.current_time = time(nullptr);
         group_snapshot.memory_usage = thread_group->memory_tracker.get();
+        group_snapshot.peak_memory_usage = thread_group->memory_tracker.getPeak();
         auto group_counters         = thread_group->performance_counters.getPartiallyAtomicSnapshot();
         auto prev_group_snapshot    = last_sent_snapshots.find(0);
         group_snapshot.counters     =
