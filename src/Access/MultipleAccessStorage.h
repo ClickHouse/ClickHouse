@@ -47,6 +47,7 @@ public:
     bool isRestoreAllowed() const override;
     void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const override;
     void restoreFromBackup(RestorerFromBackup & restorer) override;
+    bool containsStorage(std::string_view storage_type) const;
 
 protected:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
