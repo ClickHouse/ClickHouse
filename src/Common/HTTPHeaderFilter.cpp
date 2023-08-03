@@ -35,7 +35,7 @@ void HTTPHeaderFilter::setValuesFromConfig(const Poco::Util::AbstractConfigurati
 
     forbidden_headers.clear();
     forbidden_headers_regexp.clear();
-    
+
     if (config.has("http_forbid_headers"))
     {
         std::vector<std::string> keys;
