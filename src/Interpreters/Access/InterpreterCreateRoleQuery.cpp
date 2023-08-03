@@ -37,7 +37,7 @@ BlockIO InterpreterCreateRoleQuery::execute()
 {
     const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
     const auto & query = updated_query_ptr->as<const ASTCreateRoleQuery &>();
-    
+
     auto & access_control = getContext()->getAccessControl();
     if (query.alter)
         getContext()->checkAccess(AccessType::ALTER_ROLE);
