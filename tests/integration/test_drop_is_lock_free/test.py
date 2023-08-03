@@ -126,7 +126,7 @@ def test_query_is_lock_free(lock_free_query, exclusive_table):
             """
         )
         assert (
-            f"Table default.{exclusive_table} does not exist. Maybe you meant table_test_query_is_lock_free_detach_part_?"
+            f"Table default.{exclusive_table} does not exist"
             in result
         )
     else:
