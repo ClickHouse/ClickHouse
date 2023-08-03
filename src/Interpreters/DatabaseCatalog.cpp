@@ -463,7 +463,18 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     }
 
     if (!table && exception && !exception->has_value())
-        exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
+    {
+        TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
+        std::vector<String> names = hints.getHints(table_id.getTableName());
+        if (names.empty())
+        {
+            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs()));
+        }
+        else
+        {
+            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist. Maybe you meant {}?", table_id.getNameForLogs(), backQuoteIfNeed(names[0])));
+        }
+    }
 
     if (!table)
         database = nullptr;
