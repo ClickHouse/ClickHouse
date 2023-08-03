@@ -1796,7 +1796,7 @@ Return value type is always [Float64](../../sql-reference/data-types/float.md). 
 ```
 ## arrayRemove
 
-Returns a pointer to the input array with elements removed based on the provided predicate condition.
+- Returns the array after filtering out the elements that pass the given predicate.
 
 **Syntax**
 
@@ -1811,7 +1811,7 @@ arrayRemove(array, predicate)
 
 **Returned value**
 
-- Returns the array after filtering out the elements that pass the given predicate.
+- The array that contains only those elements which failed the predicate.
 
 **Examples**
 
