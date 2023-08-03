@@ -268,9 +268,13 @@ public:
                     {
                         size_t i = 0;
                         std::ranges::for_each(
-                            from | toCompatibleFormatUUID,
-                            [&](const auto & value)
+                            from,
+                            [&](auto value)
                             {
+                                // Transform the UUID copy prior to copying to the target.
+                                transformEndianness<std::endian::little>(value);
+                                UUIDHelpers::toLegacyFormat(value);
+
                                 if constexpr (std::endian::native == std::endian::little)
                                     memcpy(static_cast<void *>(&to[i]), static_cast<const void *>(&value), copy_size);
                                 else
@@ -338,14 +342,6 @@ private:
             type.isDecimal();
     }
 
-    static constexpr auto toCompatibleFormatUUID = std::views::transform(
-        [](auto value)
-        {
-            transformEndianness<std::endian::little>(value);
-            UUIDHelpers::toLegacyFormat(value);
-            return value;
-        });
-
     static void NO_INLINE executeToFixedString(const IColumn & src, ColumnFixedString & dst, size_t n)
     {
         size_t rows = src.size();
@@ -377,9 +373,13 @@ private:
             ColumnFixedString::Offset offset = 0;
             const auto * uuid_src = checkAndGetColumn<ColumnUUID>(src);
             std::ranges::for_each(
-                uuid_src->getData() | toCompatibleFormatUUID,
-                [&](const auto & value)
+                uuid_src->getData(),
+                [&](auto value)
                 {
+                    // Transform the UUID copy prior to copying to the target.
+                    transformEndianness<std::endian::little>(value);
+                    UUIDHelpers::toLegacyFormat(value);
+
                     memcpy(&data_to[offset], reinterpret_cast<const char *>(&value), n);
                     offset += n;
                 });
