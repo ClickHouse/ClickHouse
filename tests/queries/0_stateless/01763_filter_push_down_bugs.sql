@@ -66,3 +66,17 @@ EXPLAIN indexes=1 SELECT id, delete_time FROM t1
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
+
+-- expected to get row (1, 3, 1, 4) from JOIN and empty result from the query
+SELECT *
+FROM
+(
+    SELECT *
+    FROM Values('id UInt64, t UInt64', (1, 3))
+) AS t1
+ASOF INNER JOIN
+(
+    SELECT *
+    FROM Values('id UInt64, t UInt64', (1, 1), (1, 2), (1, 3), (1, 4), (1, 5))
+) AS t2 ON (t1.id = t2.id) AND (t1.t < t2.t)
+WHERE t2.t != 4;

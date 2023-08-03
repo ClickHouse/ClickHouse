@@ -30,7 +30,6 @@
 #include <Storages/PartitionedSink.h>
 #include <Storages/getVirtualsForStorage.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/ReadFromStorageProgress.h>
 
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatFactory.h>
@@ -64,22 +63,130 @@ namespace ErrorCodes
 }
 namespace
 {
+    /// Forward-declared to use in LSWithFoldedRegexpMatching w/o circular dependency.
+    std::vector<StorageHDFS::PathWithInfo> LSWithRegexpMatching(const String & path_for_ls,
+                                                                const HDFSFSPtr & fs,
+                                                                const String & for_match);
+
+    /*
+     * When `{...}` has any `/`s, it must be processed in a different way:
+     * Basically, a path with globs is processed by LSWithRegexpMatching. In case it detects multi-dir glob {.../..., .../...},
+     * LSWithFoldedRegexpMatching is in charge from now on.
+     * It works a bit different: it still recursively goes through subdirectories, but does not match every directory to glob.
+     * Instead, it goes many levels down (until the approximate max_depth is reached) and compares this multi-dir path to a glob.
+     * StorageFile.cpp has the same logic.
+    */
+    std::vector<StorageHDFS::PathWithInfo> LSWithFoldedRegexpMatching(const String & path_for_ls,
+        const HDFSFSPtr & fs,
+        const String & processed_suffix,
+        const String & suffix_with_globs,
+        re2::RE2 & matcher,
+        const size_t max_depth,
+        const size_t next_slash_after_glob_pos)
+    {
+        /// We don't need to go all the way in every directory if max_depth is reached
+        /// as it is upper limit of depth by simply counting `/`s in curly braces
+        if (!max_depth)
+            return {};
+
+        HDFSFileInfo ls;
+        ls.file_info = hdfsListDirectory(fs.get(), path_for_ls.data(), &ls.length);
+        if (ls.file_info == nullptr && errno != ENOENT) // NOLINT
+        {
+            // ignore file not found exception, keep throw other exception, libhdfs3 doesn't have function to get exception type, so use errno.
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}", path_for_ls, String(hdfsGetLastError()));
+        }
+
+        std::vector<StorageHDFS::PathWithInfo> result;
+
+        if (!ls.file_info && ls.length > 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "file_info shouldn't be null");
+
+        for (int i = 0; i < ls.length; ++i)
+        {
+            const String full_path = String(ls.file_info[i].mName);
+            const size_t last_slash = full_path.rfind('/');
+            const String dir_or_file_name = full_path.substr(last_slash);
+            const bool is_directory = ls.file_info[i].mKind == 'D';
+
+            if (re2::RE2::FullMatch(processed_suffix + dir_or_file_name, matcher))
+            {
+                if (next_slash_after_glob_pos == std::string::npos)
+                {
+                    result.emplace_back(StorageHDFS::PathWithInfo{
+                        String(ls.file_info[i].mName),
+                        StorageHDFS::PathInfo{ls.file_info[i].mLastMod, static_cast<size_t>(ls.file_info[i].mSize)}});
+                }
+                else
+                {
+                    std::vector<StorageHDFS::PathWithInfo> result_part = LSWithRegexpMatching(
+                        fs::path(full_path) / "" , fs, suffix_with_globs.substr(next_slash_after_glob_pos));
+                    std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
+                }
+            }
+            else if (is_directory)
+            {
+                std::vector<StorageHDFS::PathWithInfo> result_part = LSWithFoldedRegexpMatching(
+                    fs::path(full_path), fs, processed_suffix + dir_or_file_name,
+                    suffix_with_globs, matcher, max_depth - 1, next_slash_after_glob_pos);
+                std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
+            }
+        }
+        return result;
+    }
+
     /* Recursive directory listing with matched paths as a result.
      * Have the same method in StorageFile.
      */
-    std::vector<StorageHDFS::PathWithInfo> LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, const String & for_match)
+    std::vector<StorageHDFS::PathWithInfo> LSWithRegexpMatching(
+        const String & path_for_ls,
+        const HDFSFSPtr & fs,
+        const String & for_match)
     {
-        const size_t first_glob = for_match.find_first_of("*?{");
+        const size_t first_glob_pos = for_match.find_first_of("*?{");
+        const bool has_glob = first_glob_pos != std::string::npos;
 
-        const size_t end_of_path_without_globs = for_match.substr(0, first_glob).rfind('/');
+        const size_t end_of_path_without_globs = for_match.substr(0, first_glob_pos).rfind('/');
         const String suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
         const String prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs); /// ends with '/'
 
-        const size_t next_slash = suffix_with_globs.find('/', 1);
-        re2::RE2 matcher(makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash)));
+        size_t slashes_in_glob = 0;
+        const size_t next_slash_after_glob_pos = [&]()
+        {
+            if (!has_glob)
+                return suffix_with_globs.find('/', 1);
+
+            size_t in_curly = 0;
+            for (std::string::const_iterator it = ++suffix_with_globs.begin(); it != suffix_with_globs.end(); it++)
+            {
+                if (*it == '{')
+                    ++in_curly;
+                else if (*it == '/')
+                {
+                    if (in_curly)
+                        ++slashes_in_glob;
+                    else
+                        return size_t(std::distance(suffix_with_globs.begin(), it));
+                }
+                else if (*it == '}')
+                    --in_curly;
+            }
+            return std::string::npos;
+        }();
+
+        const std::string current_glob = suffix_with_globs.substr(0, next_slash_after_glob_pos);
+
+        re2::RE2 matcher(makeRegexpPatternFromGlobs(current_glob));
         if (!matcher.ok())
             throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
                 "Cannot compile regex from glob ({}): {}", for_match, matcher.error());
+
+        if (slashes_in_glob)
+        {
+            return LSWithFoldedRegexpMatching(fs::path(prefix_without_globs), fs, "", suffix_with_globs,
+                                              matcher, slashes_in_glob, next_slash_after_glob_pos);
+        }
 
         HDFSFileInfo ls;
         ls.file_info = hdfsListDirectory(fs.get(), prefix_without_globs.data(), &ls.length);
@@ -97,7 +204,7 @@ namespace
             const String full_path = String(ls.file_info[i].mName);
             const size_t last_slash = full_path.rfind('/');
             const String file_name = full_path.substr(last_slash);
-            const bool looking_for_directory = next_slash != std::string::npos;
+            const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
             const bool is_directory = ls.file_info[i].mKind == 'D';
             /// Condition with type of current file_info means what kind of path is it in current iteration of ls
             if (!is_directory && !looking_for_directory)
@@ -111,7 +218,7 @@ namespace
             {
                 if (re2::RE2::FullMatch(file_name, matcher))
                 {
-                    std::vector<StorageHDFS::PathWithInfo> result_part = LSWithRegexpMatching(fs::path(full_path) / "", fs, suffix_with_globs.substr(next_slash));
+                    std::vector<StorageHDFS::PathWithInfo> result_part = LSWithRegexpMatching(fs::path(full_path) / "", fs, suffix_with_globs.substr(next_slash_after_glob_pos));
                     /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                     std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
                 }
@@ -259,8 +366,13 @@ public:
     {
         const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
         uris = getPathsList(path_from_uri, uri_without_path, context_);
+        auto file_progress_callback = context_->getFileProgressCallback();
         for (auto & elem : uris)
+        {
             elem.path = uri_without_path + elem.path;
+            if (file_progress_callback && elem.info)
+                file_progress_callback(FileProgress(0, elem.info->size));
+        }
         uris_iter = uris.begin();
     }
 
@@ -281,37 +393,54 @@ private:
     std::vector<StorageHDFS::PathWithInfo>::iterator uris_iter;
 };
 
-class HDFSSource::URISIterator::Impl
+class HDFSSource::URISIterator::Impl : WithContext
 {
 public:
-    explicit Impl(const std::vector<String> & uris_, ContextPtr context)
+    explicit Impl(const std::vector<String> & uris_, ContextPtr context_)
+        : WithContext(context_), uris(uris_), file_progress_callback(context_->getFileProgressCallback())
     {
-        auto path_and_uri = getPathFromUriAndUriWithoutPath(uris_[0]);
-        HDFSBuilderWrapper builder = createHDFSBuilder(path_and_uri.second + "/", context->getGlobalContext()->getConfigRef());
-        auto fs = createHDFSFS(builder.get());
-        for (const auto & uri : uris_)
+        if (!uris.empty())
         {
-            path_and_uri = getPathFromUriAndUriWithoutPath(uri);
-            if (!hdfsExists(fs.get(), path_and_uri.first.c_str()))
-                uris.push_back(uri);
+            auto path_and_uri = getPathFromUriAndUriWithoutPath(uris[0]);
+            builder = createHDFSBuilder(path_and_uri.second + "/", getContext()->getGlobalContext()->getConfigRef());
+            fs = createHDFSFS(builder.get());
         }
-        uris_iter = uris.begin();
     }
 
     StorageHDFS::PathWithInfo next()
     {
-        std::lock_guard lock(mutex);
-        if (uris_iter == uris.end())
-            return {"", {}};
-        auto key = *uris_iter;
-        ++uris_iter;
-        return {key, {}};
+        String uri;
+        hdfsFileInfo * hdfs_info;
+        do
+        {
+            size_t current_index = index.fetch_add(1);
+            if (current_index >= uris.size())
+                return {"", {}};
+
+            uri = uris[current_index];
+            auto path_and_uri = getPathFromUriAndUriWithoutPath(uri);
+            hdfs_info = hdfsGetPathInfo(fs.get(), path_and_uri.first.c_str());
+        }
+        /// Skip non-existed files.
+        while (!hdfs_info && String(hdfsGetLastError()).find("FileNotFoundException") != std::string::npos);
+
+        std::optional<StorageHDFS::PathInfo> info;
+        if (hdfs_info)
+        {
+            info = StorageHDFS::PathInfo{hdfs_info->mLastMod, static_cast<size_t>(hdfs_info->mSize)};
+            if (file_progress_callback)
+                file_progress_callback(FileProgress(0, hdfs_info->mSize));
+        }
+
+        return {uri, info};
     }
 
 private:
-    std::mutex mutex;
+    std::atomic_size_t index = 0;
     Strings uris;
-    Strings::iterator uris_iter;
+    HDFSBuilderWrapper builder;
+    HDFSFSPtr fs;
+    std::function<void(FileProgress)> file_progress_callback;
 };
 
 HDFSSource::DisclosedGlobIterator::DisclosedGlobIterator(ContextPtr context_, const String & uri)
@@ -348,7 +477,7 @@ HDFSSource::HDFSSource(
     UInt64 max_block_size_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
     ColumnsDescription columns_description_)
-    : ISource(getHeader(block_for_format_, requested_virtual_columns_))
+    : ISource(getHeader(block_for_format_, requested_virtual_columns_), false)
     , WithContext(context_)
     , storage(std::move(storage_))
     , block_for_format(block_for_format_)
@@ -374,13 +503,17 @@ bool HDFSSource::initialize()
             continue;
 
         current_path = path_with_info.path;
+        std::optional<size_t> file_size;
+        if (path_with_info.info)
+            file_size = path_with_info.info->size;
         const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(current_path);
 
         auto compression = chooseCompressionMethod(path_from_uri, storage->compression_method);
         auto impl = std::make_unique<ReadBufferFromHDFS>(
-            uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
+            uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings(), 0, false, file_size);
         if (!skip_empty_files || !impl->eof())
         {
+            impl->setProgressCallback(getContext());
             const Int64 zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
             read_buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
             break;
@@ -388,14 +521,6 @@ bool HDFSSource::initialize()
     }
 
     current_path = path_with_info.path;
-
-    if (path_with_info.info && path_with_info.info->size)
-    {
-        /// Adjust total_rows_approx_accumulated with new total size.
-        if (total_files_size)
-            total_rows_approx_accumulated = static_cast<size_t>(std::ceil(static_cast<double>(total_files_size + path_with_info.info->size) / total_files_size * total_rows_approx_accumulated));
-        total_files_size += path_with_info.info->size;
-    }
 
     input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
 
@@ -434,14 +559,8 @@ Chunk HDFSSource::generate()
         {
             Columns columns = chunk.getColumns();
             UInt64 num_rows = chunk.getNumRows();
-
-            if (num_rows && total_files_size)
-            {
-                size_t chunk_size = input_format->getApproxBytesReadForChunk();
-                if (!chunk_size)
-                    chunk_size = chunk.bytes();
-                updateRowsProgressApprox(*this, num_rows, chunk_size, total_files_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
-            }
+            size_t chunk_size = input_format->getApproxBytesReadForChunk();
+            progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
             for (const auto & virtual_column : requested_virtual_columns)
             {
