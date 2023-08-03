@@ -9,7 +9,6 @@ struct CurrentMemoryTracker
     /// Call the following functions before calling of corresponding operations with memory allocators.
     [[nodiscard]] static AllocationTrace alloc(Int64 size);
     [[nodiscard]] static AllocationTrace allocNoThrow(Int64 size);
-    [[nodiscard]] static AllocationTrace realloc(Int64 old_size, Int64 new_size);
 
     /// This function should be called after memory deallocation.
     [[nodiscard]] static AllocationTrace free(Int64 size);
