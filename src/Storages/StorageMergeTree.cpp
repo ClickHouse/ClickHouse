@@ -1154,16 +1154,25 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         }
 
         TransactionID first_mutation_tid = mutations_begin_it->second.tid;
-        MergeTreeTransactionPtr txn = tryGetTransactionForMutation(mutations_begin_it->second, log);
-        assert(txn || first_mutation_tid.isPrehistoric());
+        MergeTreeTransactionPtr txn;
 
-        if (txn)
+        if (!first_mutation_tid.isPrehistoric())
         {
+
             /// Mutate visible parts only
             /// NOTE Do not mutate visible parts in Outdated state, because it does not make sense:
             /// mutation will fail anyway due to serialization error.
-            if (!part->version.isVisible(*txn))
+
+            /// It's possible that both mutation and transaction are already finished,
+            /// because that part should not be mutated because it was not visible for that transaction.
+            if (!part->version.isVisible(first_mutation_tid.start_csn, first_mutation_tid))
                 continue;
+
+            txn = tryGetTransactionForMutation(mutations_begin_it->second, log);
+            if (!txn)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find transaction {} that has started mutation {} "
+                                "that is going to be applied to part {}",
+                                first_mutation_tid, mutations_begin_it->second.file_name, part->name);
         }
 
         auto commands = std::make_shared<MutationCommands>();
