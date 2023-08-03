@@ -119,7 +119,8 @@ public:
 
             /// If order by expression matches the sorting key, do not remove
             /// functions to allow execute reading in order of key.
-            if (should_checking_sorting_key && sorting_key == function_node->toAST()->getColumnName())
+            IQueryTreeNode::ConvertToASTOptions options{false, false, false};
+            if (should_checking_sorting_key && sorting_key == function_node->toAST(options)->getColumnName())
             {
                 is_monotonic = false;
                 return;
@@ -139,19 +140,17 @@ public:
 
 };
 
-class MonotonousFunctionsVisitor : public InDepthQueryTreeVisitor<MonotonousFunctionsVisitor>
+class MonotonousFunctionsVisitor : public InDepthQueryTreeVisitorWithContext<MonotonousFunctionsVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitor<MonotonousFunctionsVisitor>;
+    using Base = InDepthQueryTreeVisitorWithContext<MonotonousFunctionsVisitor>;
     using Base::Base;
 
-    static bool shouldTraverseTopToBottom()
+    void leaveImpl(QueryTreeNodePtr & node)
     {
-        return false;
-    }
+        if (!getSettings().optimize_monotonous_functions_in_order_by)
+            return;
 
-    void visitImpl(QueryTreeNodePtr & node)
-    {
         auto * query_node = node->as<QueryNode>();
         if (!query_node)
             return;
@@ -197,34 +196,41 @@ public:
 
             MonotonousFunctionsChecker checker(
                 group_by_nodes,
-                is_sorting_key_prefix && i >= sorting_key_columns.size(),
+                is_sorting_key_prefix && i < sorting_key_columns.size(),
                 i >= sorting_key_columns.size() ? "" : sorting_key_columns[i]);
 
             checker.visit(expr_node);
 
-            /// Replace function with its first argument
-            for (size_t num = 0; num < checker.monotonous_function_num; num++)
+            if (checker.monotonous_function_num > 0)
             {
-                expr_node = expr_function->getArguments().getNodes()[0];
-                expr_function = expr_node->as<FunctionNode>();
+                /// Replace function with its first argument
+                for (size_t num = 0; num < checker.monotonous_function_num; num++)
+                {
+                    expr_node = expr_function->getArguments().getNodes()[0];
+                    expr_function = expr_node->as<FunctionNode>();
+                }
+
+                /// Update sort direction.
+                if (!checker.is_positive)
+                {
+                    auto * sort_node = order_by_nodes[i]->as<SortNode>();
+                    SortDirection reverted = static_cast<SortDirection>(!static_cast<bool>(sort_node->getSortDirection()));
+
+                    order_by_nodes[i] = std::make_shared<SortNode>(
+                        sort_node->getExpression(),
+                        reverted,
+                        sort_node->getNullsSortDirection(),
+                        sort_node->getCollator(),
+                        sort_node->withFill());
+                }
             }
 
-            /// Update sort direction.
-            if (!checker.is_positive)
-            {
-                auto * sort_node = order_by_nodes[i]->as<SortNode>();
-                SortDirection reverted = static_cast<SortDirection>(!static_cast<bool>(sort_node->getSortDirection()));
-
-                order_by_nodes[i] = std::make_shared<SortNode>(
-                    sort_node->getExpression(),
-                    reverted,
-                    sort_node->getNullsSortDirection(),
-                    sort_node->getCollator(),
-                    sort_node->withFill());
-            }
+            IQueryTreeNode::ConvertToASTOptions options{false, false, false}; /// TODO not a strict way
+            auto * sort_node = order_by_nodes[i]->as<SortNode>();
 
             /// We should update is_sorting_key_prefix at last, for node may changed.
-            if (i >= sorting_key_columns.size() || expr_function->toAST()->getColumnName() != sorting_key_columns[i])
+            if (i >= sorting_key_columns.size() || sort_node->getExpression()->toAST(options)->getColumnName() != sorting_key_columns[i]
+                || sort_node->getSortDirection() != SortDirection::ASCENDING)
                 is_sorting_key_prefix = false;
         }
 
@@ -235,10 +241,7 @@ public:
 
 void MonotonousFunctionsInOrderByPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    if (!context->getSettings().optimize_monotonous_functions_in_order_by)
-        return;
-
-    MonotonousFunctionsVisitor visitor;
+    MonotonousFunctionsVisitor visitor(context);
     visitor.visit(query_tree_node);
 }
 
