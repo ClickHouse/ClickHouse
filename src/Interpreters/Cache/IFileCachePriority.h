@@ -44,7 +44,7 @@ public:
 
         virtual size_t use(const CacheGuard::Lock &) = 0;
 
-        virtual std::shared_ptr<IIterator> remove(const CacheGuard::Lock &) = 0;
+        virtual void remove(const CacheGuard::Lock &) = 0;
 
         virtual const Entry & getEntry() const = 0;
 

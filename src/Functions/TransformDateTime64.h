@@ -5,7 +5,7 @@
 
 namespace DB
 {
-/** Tansform-type wrapper for DateTime64, simplifies DateTime64 support for given Transform.
+/** Transform-type wrapper for DateTime64, simplifies DateTime64 support for given Transform.
  *
  * Depending on what overloads of Transform::execute() are available, when called with DateTime64 value,
  * invokes Transform::execute() with either:
@@ -80,7 +80,10 @@ public:
         }
         else
         {
-            const auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            if (t.value < 0 && components.fractional)
+                --components.whole;
+
             return wrapped_transform.execute(static_cast<Int64>(components.whole), std::forward<Args>(args)...);
         }
     }

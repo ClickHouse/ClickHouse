@@ -38,6 +38,9 @@ def get_options(i, upgrade_check):
             client_options.append("join_algorithm='partial_merge'")
         if join_alg_num % 5 == 2:
             client_options.append("join_algorithm='full_sorting_merge'")
+        if join_alg_num % 5 == 3 and not upgrade_check:
+            # Some crashes are not fixed in 23.2 yet, so ignore the setting in Upgrade check
+            client_options.append("join_algorithm='grace_hash'")
         if join_alg_num % 5 == 4:
             client_options.append("join_algorithm='auto'")
             client_options.append("max_rows_in_join=1000")
@@ -122,6 +125,8 @@ def prepare_for_hung_check(drop_databases):
     # However, it obstruct checking for hung queries.
     logging.info("Will terminate gdb (if any)")
     call_with_retry("kill -TERM $(pidof gdb)")
+    # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
+    call_with_retry("kill -CONT $(lsof -ti:9000)")
 
     # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
     call_with_retry("clickhouse client -q 'SYSTEM STOP THREAD FUZZER'")

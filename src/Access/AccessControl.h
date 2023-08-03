@@ -25,7 +25,7 @@ namespace Poco
 namespace DB
 {
 class ContextAccess;
-struct ContextAccessParams;
+class ContextAccessParams;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
 class EnabledRoles;
@@ -180,14 +180,6 @@ public:
 
     void setSettingsConstraintsReplacePrevious(bool enable) { settings_constraints_replace_previous = enable; }
     bool doesSettingsConstraintsReplacePrevious() const { return settings_constraints_replace_previous; }
-
-    std::shared_ptr<const ContextAccess> getContextAccess(
-        const UUID & user_id,
-        const std::vector<UUID> & current_roles,
-        bool use_default_roles,
-        const Settings & settings,
-        const String & current_database,
-        const ClientInfo & client_info) const;
 
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 

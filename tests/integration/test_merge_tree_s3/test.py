@@ -336,9 +336,7 @@ def test_attach_detach_partition(cluster, node_name):
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
     assert (
         len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD
-        + FILES_OVERHEAD_PER_PART_WIDE * 2
-        - FILES_OVERHEAD_METADATA_VERSION
+        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
     )
 
     node.query("ALTER TABLE s3_test DROP PARTITION '2020-01-03'")
@@ -785,9 +783,9 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
     min_key = node.query("SELECT min(key) FROM test_merge_canceled_by_s3_errors")
     assert int(min_key) == 0, min_key
 
-    broken_s3.setup_error_at_object_upload()
+    broken_s3.setup_at_object_upload()
     broken_s3.setup_fake_multpartuploads()
-    broken_s3.setup_error_at_part_upload()
+    broken_s3.setup_at_part_upload()
 
     node.query("SYSTEM START MERGES test_merge_canceled_by_s3_errors")
 
@@ -830,7 +828,7 @@ def test_merge_canceled_by_s3_errors_when_move(cluster, broken_s3, node_name):
         settings={"materialize_ttl_after_modify": 0},
     )
 
-    broken_s3.setup_error_at_object_upload(count=1, after=1)
+    broken_s3.setup_at_object_upload(count=1, after=1)
 
     node.query("SYSTEM START MERGES merge_canceled_by_s3_errors_when_move")
 

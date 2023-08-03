@@ -144,6 +144,11 @@ bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) co
     return (bin_checksum != checksums.files.end() && mrk_checksum != checksums.files.end());
 }
 
+std::optional<time_t> MergeTreeDataPartCompact::getColumnModificationTime(const String & /* column_name */) const
+{
+    return getDataPartStorage().getFileLastModified(DATA_FILE_NAME_WITH_EXTENSION).epochTime();
+}
+
 void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) const
 {
     checkConsistencyBase();

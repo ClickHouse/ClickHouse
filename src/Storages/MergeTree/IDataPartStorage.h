@@ -63,6 +63,9 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class ISyncGuard;
 using SyncGuardPtr = std::unique_ptr<ISyncGuard>;
 
+class MergeTreeTransaction;
+using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
+
 class IBackupEntry;
 using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
 using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
@@ -71,6 +74,17 @@ struct BackupSettings;
 struct WriteSettings;
 
 class TemporaryFileOnDisk;
+
+
+struct HardlinkedFiles
+{
+    /// Shared table uuid where hardlinks live
+    std::string source_table_shared_id;
+    /// Hardlinked from part
+    std::string source_part_name;
+    /// Hardlinked files list
+    NameSet hardlinks_from_source_part;
+};
 
 /// This is an abstraction of storage for data part files.
 /// Ideally, it is assumed to contain read-only methods from IDisk.
@@ -108,6 +122,7 @@ public:
     virtual DataPartStorageIteratorPtr iterate() const = 0;
 
     /// Get metadata for a file inside path dir.
+    virtual Poco::Timestamp getFileLastModified(const std::string & file_name) const = 0;
     virtual size_t getFileSize(const std::string & file_name) const = 0;
     virtual UInt32 getRefCount(const std::string & file_name) const = 0;
 
@@ -220,14 +235,24 @@ public:
     /// If `external_transaction` is provided, the disk operations (creating directories, hardlinking,
     /// etc) won't be applied immediately; instead, they'll be added to external_transaction, which the
     /// caller then needs to commit.
+
+    struct ClonePartParams
+    {
+        MergeTreeTransactionPtr txn = NO_TRANSACTION_PTR;
+        HardlinkedFiles * hardlinked_files = nullptr;
+        bool copy_instead_of_hardlink = false;
+        NameSet files_to_copy_instead_of_hardlinks;
+        bool keep_metadata_version = false;
+        bool make_source_readonly = false;
+        DiskTransactionPtr external_transaction = nullptr;
+        std::optional<int32_t> metadata_version_to_write = std::nullopt;
+    };
+
     virtual std::shared_ptr<IDataPartStorage> freeze(
         const std::string & to,
         const std::string & dir_path,
-        bool make_source_readonly,
         std::function<void(const DiskPtr &)> save_metadata_callback,
-        bool copy_instead_of_hardlink,
-        const NameSet & files_to_copy_instead_of_hardlinks,
-        DiskTransactionPtr external_transaction = nullptr) const = 0;
+        const ClonePartParams & params) const = 0;
 
     /// Make a full copy of a data part into 'to/dir_path' (possibly to a different disk).
     virtual std::shared_ptr<IDataPartStorage> clonePart(

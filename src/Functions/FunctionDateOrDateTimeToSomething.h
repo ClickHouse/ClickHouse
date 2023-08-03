@@ -7,6 +7,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /// See DateTimeTransforms.h
@@ -81,6 +82,18 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}",
                 arguments[0].type->getName(), this->getName());
+    }
+
+    bool hasInformationAboutPreimage() const override { return Transform::hasPreimage(); }
+
+    RangeOrNull getPreimage(const IDataType & type, const Field & point) const override
+    {
+        if constexpr (Transform::hasPreimage())
+            return Transform::getPreimage(type, point);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Function {} has no information about its preimage",
+                Transform::name);
     }
 
 };

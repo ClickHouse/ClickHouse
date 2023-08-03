@@ -98,6 +98,8 @@ public:
     /// Is node constant
     bool isConstant() const;
 
+    bool isSubqueryOrSet() const;
+
     /** Get constant as constant column.
       * Node must be constant before calling these method, otherwise logical exception is thrown.
       */

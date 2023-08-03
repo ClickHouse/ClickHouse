@@ -495,11 +495,10 @@ void DatabaseReplicated::beforeLoadingMetadata(ContextMutablePtr /*context*/, Lo
     tryConnectToZooKeeperAndInitDatabase(mode);
 }
 
-void DatabaseReplicated::loadStoredObjects(
-    ContextMutablePtr local_context, LoadingStrictnessLevel mode, bool skip_startup_tables)
+void DatabaseReplicated::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode)
 {
     beforeLoadingMetadata(local_context, mode);
-    DatabaseAtomic::loadStoredObjects(local_context, mode, skip_startup_tables);
+    DatabaseAtomic::loadStoredObjects(local_context, mode);
 }
 
 UInt64 DatabaseReplicated::getMetadataHash(const String & table_name) const
@@ -525,6 +524,7 @@ void DatabaseReplicated::startupTables(ThreadPool & thread_pool, LoadingStrictne
 
     ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
     ddl_worker->startup();
+    ddl_worker_initialized = true;
 }
 
 bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context, bool debug_check /* = true */) const
@@ -666,7 +666,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
     {
         for (const auto & command : query_alter->command_list->children)
         {
-            if (!isSupportedAlterType(command->as<ASTAlterCommand&>().type))
+            if (!isSupportedAlterTypeForOnClusterDDLQuery(command->as<ASTAlterCommand&>().type))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported type of ALTER query");
         }
     }
@@ -814,8 +814,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     {
         auto query_context = Context::createCopy(getContext());
         query_context->makeQueryContext();
-        query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-        query_context->getClientInfo().is_replicated_database_internal = true;
+        query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+        query_context->setQueryKindReplicatedDatabaseInternal();
         query_context->setCurrentDatabase(getDatabaseName());
         query_context->setCurrentQueryId("");
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
@@ -1156,6 +1156,7 @@ void DatabaseReplicated::stopReplication()
 void DatabaseReplicated::shutdown()
 {
     stopReplication();
+    ddl_worker_initialized = false;
     ddl_worker = nullptr;
     DatabaseAtomic::shutdown();
 }
@@ -1291,6 +1292,16 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
     DatabaseAtomic::commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, query_context);
     tables_metadata_digest = new_digest;
     assert(checkDigestValid(query_context));
+}
+
+
+bool DatabaseReplicated::canExecuteReplicatedMetadataAlter() const
+{
+    /// ReplicatedMergeTree may call commitAlterTable from its background threads when executing ALTER_METADATA entries.
+    /// It may update the metadata digest (both locally and in ZooKeeper)
+    /// before DatabaseReplicatedDDLWorker::initializeReplication() has finished.
+    /// We should not update metadata until the database is initialized.
+    return ddl_worker_initialized && ddl_worker->isCurrentlyActive();
 }
 
 void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const String & table_name)
@@ -1463,7 +1474,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     /// Some ALTERs are not replicated on database level
     if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
     {
-        if (alter->isAttachAlter() || alter->isFetchAlter() || alter->isDropPartitionAlter() || is_keeper_map_table(query_ptr))
+        if (alter->isAttachAlter() || alter->isFetchAlter() || alter->isDropPartitionAlter() || is_keeper_map_table(query_ptr) || alter->isFreezeAlter())
             return false;
 
         if (has_many_shards() || !is_replicated_table(query_ptr))

@@ -11,6 +11,7 @@
 #include <libnuraft/raft_server.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ThreadPool.h>
+#include <Coordination/KeeperContext.h>
 
 namespace DB
 {
@@ -59,6 +60,7 @@ struct ChangelogFileDescription
     uint64_t to_log_index;
     std::string extension;
 
+    DiskPtr disk;
     std::string path;
 
     bool deleted = false;
@@ -87,9 +89,9 @@ class Changelog
 {
 public:
     Changelog(
-        const std::string & changelogs_dir_,
         Poco::Logger * log_,
-        LogFileSettings log_file_settings);
+        LogFileSettings log_file_settings,
+        KeeperContextPtr keeper_context_);
 
     Changelog(Changelog &&) = delete;
 
@@ -152,6 +154,9 @@ private:
     /// Pack log_entry into changelog record
     static ChangelogRecord buildRecord(uint64_t index, const LogEntryPtr & log_entry);
 
+    DiskPtr getDisk() const;
+    DiskPtr getLatestLogDisk() const;
+
     /// Currently existing changelogs
     std::map<uint64_t, ChangelogFileDescriptionPtr> existing_changelogs;
 
@@ -169,8 +174,7 @@ private:
     /// Clean useless log files in a background thread
     void cleanLogThread();
 
-    const std::filesystem::path changelogs_dir;
-    const std::filesystem::path changelogs_detached_dir;
+    const String changelogs_detached_dir;
     const uint64_t rotate_interval;
     Poco::Logger * log;
 
@@ -185,7 +189,7 @@ private:
     uint64_t max_log_id = 0;
     /// For compaction, queue of delete not used logs
     /// 128 is enough, even if log is not removed, it's not a problem
-    ConcurrentBoundedQueue<std::string> log_files_to_delete_queue{128};
+    ConcurrentBoundedQueue<std::pair<std::string, DiskPtr>> log_files_to_delete_queue{128};
     ThreadFromGlobalPool clean_log_thread;
 
     struct AppendLog
@@ -222,6 +226,8 @@ private:
     uint64_t last_durable_idx{0};
 
     nuraft::wptr<nuraft::raft_server> raft_server;
+
+    KeeperContextPtr keeper_context;
 
     bool initialized = false;
 };
