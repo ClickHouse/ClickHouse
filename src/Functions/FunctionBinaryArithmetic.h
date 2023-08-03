@@ -71,9 +71,7 @@ namespace ErrorCodes
     extern const int DECIMAL_OVERFLOW;
     extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int UNSUPPORTED_METHOD;
-    extern const int BAD_ARGUMENTS;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
@@ -1181,10 +1179,10 @@ class FunctionBinaryArithmetic : public IFunction
         const auto * right_array_col = typeid_cast<const ColumnArray *>(arguments[1].column.get());
         const auto & left_offsets = left_array_col->getOffsets();
         const auto & right_offsets = right_array_col->getOffsets();
-        
+
         chassert(left_offsets.size() == right_offsets.size() && "Unexpected difference in number of offsets");
         /// Unpacking non-const arrays and checking sizes of them.
-        for(auto offset_index = 0U; offset_index < left_offsets.size(); ++offset_index)
+        for (auto offset_index = 0U; offset_index < left_offsets.size(); ++offset_index)
         {
             if (left_offsets[offset_index] != right_offsets[offset_index])
             {
