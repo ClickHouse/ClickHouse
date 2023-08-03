@@ -82,5 +82,9 @@ def test_work(start_cluster):
 
     # It is possible that the HTTP server takes long time to start accepting connections
 
-    assert_eq_with_retry(instance, "SELECT dictGetString('test_http', 'first', toUInt64(1))", "\\'a\n")
-    assert_eq_with_retry(instance, "SELECT dictGetString('test_http', 'second', toUInt64(1))", '"b\n')
+    assert_eq_with_retry(
+        instance, "SELECT dictGetString('test_http', 'first', toUInt64(1))", "\\'a\n"
+    )
+    assert_eq_with_retry(
+        instance, "SELECT dictGetString('test_http', 'second', toUInt64(1))", '"b\n'
+    )
