@@ -49,7 +49,7 @@ join (
     where d1.id  > 0
     order by d1.id
 ) s0 using id;
-
+set reorder_joins=0;
 explain syntax select d0.id from t1_distr d0
 join (
     select d1.id

@@ -249,6 +249,10 @@ private:
 
     /// Reuse already built sets for multiple passes of analysis, possibly across interpreters.
     PreparedSetsPtr prepared_sets;
+
+    /// For 2-table joins, when there's name clashes, we use short names for the left table, and qualified names for the right table.
+    /// If we changed the join order, we need to rename columns back to the names they would have if we didn't reorder.
+    Names pre_reorder_names = {};
 };
 
 }

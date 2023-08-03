@@ -31,7 +31,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
-#include <Interpreters/CrossToInnerJoinVisitor.h>
+#include <Interpreters/JoinReorderingVisitor.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
@@ -258,23 +258,35 @@ ContextPtr getSubqueryContext(const ContextPtr & context)
     return subquery_context;
 }
 
-void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database, const Settings & settings)
+Names rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const ContextPtr & context)
 {
-    ASTSelectQuery & select = query->as<ASTSelectQuery &>();
+    const String & database = context->getCurrentDatabase();
+    const Settings & settings = context->getSettingsRef();
 
+    ASTSelectQuery & select = query->as<ASTSelectQuery &>();
     Aliases aliases;
     if (ASTPtr with = select.with())
         QueryAliasesNoSubqueriesVisitor(aliases).visit(with);
     QueryAliasesNoSubqueriesVisitor(aliases).visit(select.select());
 
-    CrossToInnerJoinVisitor::Data cross_to_inner{tables, aliases, database};
-    cross_to_inner.cross_to_inner_join_rewrite = static_cast<UInt8>(std::min<UInt64>(settings.cross_to_inner_join_rewrite, 2));
-    CrossToInnerJoinVisitor(cross_to_inner).visit(query);
+    auto & database_catalog = DatabaseCatalog::instance();
+    std::vector<StoragePtr> storages(tables.size());
+    for (size_t i = 0; i < tables.size(); ++i)
+    {
+        if (tables[i].table.table.empty()) /// e.g. subquery. Can we do anything for those?
+            continue;
+        storages[i] = database_catalog.tryGetTable({tables[i].table.database, tables[i].table.table}, context);
+    }
 
-    JoinToSubqueryTransformVisitor::Data join_to_subs_data{tables, aliases};
+    TablesWithColumns tables_copy = tables;
+    JoinReorderingVisitor::Data join_reordering{storages, tables_copy, aliases, settings, database};
+    JoinReorderingVisitor(join_reordering).visit(query);
+
+    JoinToSubqueryTransformVisitor::Data join_to_subs_data{tables_copy, aliases};
     join_to_subs_data.try_to_keep_original_names = settings.multiple_joins_try_to_keep_original_names;
-
     JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query);
+
+    return join_reordering.pre_reorder_names;
 }
 
 /// Checks that the current user has the SELECT privilege.
@@ -428,6 +440,24 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols, options_.is_create_parameterized_view);
 
+    /// Rewrite JOINs
+    if (!has_input && joined_tables.resolveTables() && joined_tables.tablesCount() > 1)
+    {
+        pre_reorder_names = rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context);
+
+        joined_tables.reset(getSelectQuery());
+        joined_tables.resolveTables();
+        if (auto view_source = context->getViewSource())
+        {
+            // If we are using a virtual block view to replace a table and that table is used
+            // inside the JOIN then we need to update uses_view_source accordingly so we avoid propagating scalars that we can't cache
+            const auto & storage_values = static_cast<const StorageValues &>(*view_source);
+            auto tmp_table_id = storage_values.getStorageID();
+            for (const auto & t : joined_tables.tablesWithColumns())
+                uses_view_source |= (t.table.database == tmp_table_id.database_name && t.table.table == tmp_table_id.table_name);
+        }
+    }
+
     bool got_storage_from_query = false;
     if (!has_input && !storage)
     {
@@ -450,7 +480,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             storage_snapshot = storage->getStorageSnapshotForQuery(metadata_snapshot, query_ptr, context);
     }
 
-    if (has_input || !joined_tables.resolveTables())
+    if (has_input || joined_tables.tablesWithColumns().empty())
         joined_tables.makeFakeTable(storage, metadata_snapshot, source_header);
 
     if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
@@ -509,34 +539,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "To use parallel replicas with plain MergeTree tables please enable setting `parallel_replicas_for_non_replicated_merge_tree`");
-        }
-    }
-
-    /// Rewrite JOINs
-    if (!has_input && joined_tables.tablesCount() > 1)
-    {
-        rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context->getCurrentDatabase(), context->getSettingsRef());
-
-        joined_tables.reset(getSelectQuery());
-        joined_tables.resolveTables();
-        if (auto view_source = context->getViewSource())
-        {
-            // If we are using a virtual block view to replace a table and that table is used
-            // inside the JOIN then we need to update uses_view_source accordingly so we avoid propagating scalars that we can't cache
-            const auto & storage_values = static_cast<const StorageValues &>(*view_source);
-            auto tmp_table_id = storage_values.getStorageID();
-            for (const auto & t : joined_tables.tablesWithColumns())
-                uses_view_source |= (t.table.database == tmp_table_id.database_name && t.table.table == tmp_table_id.table_name);
-        }
-
-        if (storage && joined_tables.isLeftTableSubquery())
-        {
-            /// Rewritten with subquery. Free storage locks here.
-            storage = nullptr;
-            table_lock.reset();
-            table_id = StorageID::createEmpty();
-            metadata_snapshot = nullptr;
-            storage_snapshot = nullptr;
         }
     }
 
@@ -622,7 +624,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             options,
             joined_tables.tablesWithColumns(),
             required_result_column_names,
-            table_join);
+            table_join,
+            pre_reorder_names.empty() ? nullptr : &pre_reorder_names);
 
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
@@ -955,7 +958,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         && options.to_stage > QueryProcessingStage::WithMergeableState;
 
     analysis_result = ExpressionAnalysisResult(
-        *query_analyzer, metadata_snapshot, first_stage, second_stage, options.only_analyze, filter_info, additional_filter_info, source_header);
+        *query_analyzer, metadata_snapshot, first_stage, second_stage, options.only_analyze, filter_info, additional_filter_info, source_header, pre_reorder_names);
 
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {

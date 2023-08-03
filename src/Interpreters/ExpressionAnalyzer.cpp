@@ -1599,7 +1599,7 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
     return true;
 }
 
-ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) const
+ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain, const Names & pre_reorder_names) const
 {
     const auto * select_query = getSelectQuery();
 
@@ -1609,11 +1609,14 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
     NameSet required_result_columns_set(required_result_columns.begin(), required_result_columns.end());
 
     ASTs asts = select_query->select()->children;
-    for (const auto & ast : asts)
+    for (size_t i = 0; i < asts.size(); ++i)
     {
+        const auto & ast = asts[i];
         String result_name = ast->getAliasOrColumnName();
 
-        if (required_result_columns_set.empty() || required_result_columns_set.contains(result_name))
+        if (required_result_columns_set.empty() ||
+            required_result_columns_set.contains(result_name) ||
+            (i < pre_reorder_names.size() && required_result_columns_set.contains(pre_reorder_names[i])))
         {
             std::string source_name = ast->getColumnName();
 
@@ -1641,6 +1644,8 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
                 source_name = as_literal->unique_column_name;
                 assert(!source_name.empty());
             }
+            if (i < pre_reorder_names.size() && pre_reorder_names[i] != result_name)
+                result_name = pre_reorder_names[i];
 
             result_columns.emplace_back(source_name, result_name);
             step.addRequiredOutput(result_columns.back().second);
@@ -1648,6 +1653,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
     }
 
     auto actions = chain.getLastActions();
+
     actions->project(result_columns);
 
     if (!required_result_columns.empty())
@@ -1762,7 +1768,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     bool only_types,
     const FilterDAGInfoPtr & filter_info_,
     const FilterDAGInfoPtr & additional_filter,
-    const Block & source_header)
+    const Block & source_header,
+    const Names & pre_reorder_names)
     : first_stage(first_stage_)
     , second_stage(second_stage_)
     , need_aggregate(query_analyzer.hasAggregation())
@@ -1776,6 +1783,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
       * Regardless of from_stage and to_stage, we will compose a complete sequence of actions to perform optimization and
       * throw out unnecessary columns based on the entire query. In unnecessary parts of the query, we will not execute subqueries.
       */
+
 
     const ASTSelectQuery & query = *query_analyzer.getSelectQuery();
     auto context = query_analyzer.getContext();
@@ -2094,7 +2102,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             chain.addStep();
         }
 
-        final_projection = query_analyzer.appendProjectResult(chain);
+        final_projection = query_analyzer.appendProjectResult(chain, pre_reorder_names);
 
         finalize_chain(chain);
     }

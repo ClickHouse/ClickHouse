@@ -312,7 +312,7 @@ IdentifierMembershipCollector::IdentifierMembershipCollector(const ASTSelectQuer
     QueryAliasesNoSubqueriesVisitor(aliases).visit(select.select());
 
     const auto & settings = context->getSettingsRef();
-    tables = getDatabaseAndTablesWithColumns(getTableExpressions(select), context,
+    tables = getDatabaseAndTablesWithColumns(getTableExpressions(select), &select, context,
                                              settings.asterisk_include_alias_columns,
                                              settings.asterisk_include_materialized_columns);
 }
@@ -322,7 +322,7 @@ std::optional<size_t> IdentifierMembershipCollector::getIdentsMembership(ASTPtr 
     return IdentifierSemantic::getIdentsMembership(ast, tables, aliases);
 }
 
-void splitConjunctionsAst(const ASTPtr & node, ASTs & result)
+void splitAst(const ASTPtr & node, ASTs & result, const String & name)
 {
     if (!node)
         return;
@@ -333,7 +333,7 @@ void splitConjunctionsAst(const ASTPtr & node, ASTs & result)
     {
         ASTPtr expression = result.at(idx);
 
-        if (const auto * function = expression->as<ASTFunction>(); function && function->name == "and")
+        if (const auto * function = expression->as<ASTFunction>(); function && function->name == name)
         {
             result.erase(result.begin() + idx);
 
@@ -346,10 +346,27 @@ void splitConjunctionsAst(const ASTPtr & node, ASTs & result)
     }
 }
 
+void splitConjunctionsAst(const ASTPtr & node, ASTs & result)
+{
+    splitAst(node, result, "and");
+}
+
 ASTs splitConjunctionsAst(const ASTPtr & node)
 {
     ASTs result;
     splitConjunctionsAst(node, result);
+    return result;
+}
+
+void splitDisjunctionsAst(const ASTPtr & node, ASTs & result)
+{
+    splitAst(node, result, "or");
+}
+
+ASTs splitDisjunctionsAst(const ASTPtr & node)
+{
+    ASTs result;
+    splitDisjunctionsAst(node, result);
     return result;
 }
 

@@ -108,4 +108,8 @@ private:
 ASTs splitConjunctionsAst(const ASTPtr & node);
 void splitConjunctionsAst(const ASTPtr & node, ASTs & result);
 
+/// Split expression `expr_1 OR expr_2 OR ... OR expr_n` into vector `[expr_1, expr_2, ..., expr_n]`
+ASTs splitDisjunctionsAst(const ASTPtr & node);
+void splitDisjunctionsAst(const ASTPtr & node, ASTs & result);
+
 }

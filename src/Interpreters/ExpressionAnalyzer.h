@@ -274,7 +274,8 @@ struct ExpressionAnalysisResult
         bool only_types,
         const FilterDAGInfoPtr & filter_info,
         const FilterDAGInfoPtr & additional_filter, /// for setting additional_filters
-        const Block & source_header);
+        const Block & source_header,
+        const Names & pre_reorder_names);
 
     /// Filter for row-level security.
     bool hasFilter() const { return filter_info.get(); }
@@ -356,7 +357,7 @@ public:
     /// These appends are public only for tests
     void appendSelect(ExpressionActionsChain & chain, bool only_types);
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
-    ActionsDAGPtr appendProjectResult(ExpressionActionsChain & chain) const;
+    ActionsDAGPtr appendProjectResult(ExpressionActionsChain & chain, const Names & pre_reorder_names) const;
 
 private:
     StorageMetadataPtr metadata_snapshot;
@@ -408,6 +409,7 @@ private:
     ///  appendSelect
     ActionsDAGPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions &);
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
+
     ///  appendProjectResult
 };
 

@@ -81,7 +81,8 @@ static NamesAndTypesList getColumnsFromTableExpression(
     NamesAndTypesList & materialized,
     NamesAndTypesList & aliases,
     NamesAndTypesList & virtuals,
-    bool is_create_parameterized_view)
+    bool is_create_parameterized_view,
+    const ASTSelectQuery * select_query_hint)
 {
     NamesAndTypesList names_and_type_list;
     if (table_expression.subquery)
@@ -93,7 +94,7 @@ static NamesAndTypesList getColumnsFromTableExpression(
     {
         const auto table_function = table_expression.table_function;
         auto query_context = context->getQueryContext();
-        const auto & function_storage = query_context->executeTableFunction(table_function);
+        const auto & function_storage = query_context->executeTableFunction(table_function, select_query_hint);
         auto function_metadata_snapshot = function_storage->getInMemoryMetadataPtr();
         const auto & columns = function_metadata_snapshot->getColumns();
         names_and_type_list = columns.getOrdinary();
@@ -118,6 +119,7 @@ static NamesAndTypesList getColumnsFromTableExpression(
 
 TablesWithColumns getDatabaseAndTablesWithColumns(
         const ASTTableExprConstPtrs & table_expressions,
+        const ASTSelectQuery * select_query_hint,
         ContextPtr context,
         bool include_alias_cols,
         bool include_materialized_cols,
@@ -133,7 +135,7 @@ TablesWithColumns getDatabaseAndTablesWithColumns(
         NamesAndTypesList aliases;
         NamesAndTypesList virtuals;
         NamesAndTypesList names_and_types = getColumnsFromTableExpression(
-            *table_expression, context, materialized, aliases, virtuals, is_create_parameterized_view);
+            *table_expression, context, materialized, aliases, virtuals, is_create_parameterized_view, select_query_hint);
 
         removeDuplicateColumns(names_and_types);
 

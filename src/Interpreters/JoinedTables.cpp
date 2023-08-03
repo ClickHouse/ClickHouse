@@ -240,7 +240,7 @@ bool JoinedTables::resolveTables()
     const auto & settings = context->getSettingsRef();
     bool include_alias_cols = include_all_columns || settings.asterisk_include_alias_columns;
     bool include_materialized_cols = include_all_columns || settings.asterisk_include_materialized_columns;
-    tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context, include_alias_cols, include_materialized_cols, is_create_parameterized_view);
+    tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, &select_query, context, include_alias_cols, include_materialized_cols, is_create_parameterized_view);
     if (tables_with_columns.size() != table_expressions.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected tables count");
 
@@ -258,6 +258,7 @@ bool JoinedTables::resolveTables()
             }
         }
     }
+
 
     return !tables_with_columns.empty();
 }

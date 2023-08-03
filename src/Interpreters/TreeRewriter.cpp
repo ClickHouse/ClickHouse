@@ -362,9 +362,11 @@ void renameDuplicatedColumns(const ASTSelectQuery * select_query)
 /// This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.
 /// Also we have to remove duplicates in case of GLOBAL subqueries. Their results are placed into tables so duplicates are impossible.
 /// Also remove all INTERPOLATE columns which are not in SELECT anymore.
-void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const Names & required_result_columns, bool remove_dups)
+void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const Names & required_result_columns, bool remove_dups, Names * pre_reorder_names)
 {
     ASTs & elements = select_query->select()->children;
+    if (pre_reorder_names && !pre_reorder_names->empty() && pre_reorder_names->size() != elements.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size for pre_reorder_names ({}), expected {}.", pre_reorder_names->size(), elements.size());
 
     std::map<String, size_t> required_columns_with_duplicate_count;
 
@@ -392,12 +394,20 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
     new_elements.reserve(elements.size());
 
     NameSet remove_columns;
+    std::vector<size_t> remove_indexes;
 
-    for (const auto & elem : elements)
+    for (size_t i = 0; i < elements.size(); ++i)
     {
+        const auto & elem = elements[i];
         String name = elem->getAliasOrColumnName();
 
         auto it = required_columns_with_duplicate_count.find(name);
+
+        /// If we temporarily use a different name because of reordering,
+        /// check if the original name before reordering is required.
+        if (pre_reorder_names && !pre_reorder_names->empty() && required_columns_with_duplicate_count.end() == it)
+            it = required_columns_with_duplicate_count.find(pre_reorder_names->at(i));
+
         if (required_columns_with_duplicate_count.end() != it && it->second)
         {
             new_elements.push_back(elem);
@@ -412,6 +422,7 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
         else
         {
             remove_columns.insert(name);
+            remove_indexes.push_back(i);
 
             ASTFunction * func = elem->as<ASTFunction>();
 
@@ -428,6 +439,16 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
                 if (!data.aggregates.empty())
                     new_elements.push_back(elem);
             }
+        }
+    }
+
+    if (pre_reorder_names && !pre_reorder_names->empty())
+    {
+        /// Iterate last-to-first, so we can delete indexes safely
+        for (auto it = remove_indexes.rbegin(); it != remove_indexes.rend(); ++it)
+        {
+            size_t idx = *it;
+            pre_reorder_names->erase(std::next(pre_reorder_names->begin(), idx));
         }
     }
 
@@ -1159,7 +1180,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     const SelectQueryOptions & select_options,
     const TablesWithColumns & tables_with_columns,
     const Names & required_result_columns,
-    std::shared_ptr<TableJoin> table_join) const
+    std::shared_ptr<TableJoin> table_join,
+    Names * pre_reorder_names) const
 {
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
@@ -1219,8 +1241,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
     /// Must be after 'normalizeTree' (after expanding aliases, for aliases not get lost)
     ///  and before 'executeScalarSubqueries', 'analyzeAggregation', etc. to avoid excessive calculations.
-    removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
-
+    removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates, pre_reorder_names);
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, result.local_scalars, select_options.only_analyze, select_options.is_create_parameterized_view);
 

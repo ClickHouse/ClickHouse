@@ -58,6 +58,7 @@ join (
 ) s0 using id;
 42
 42
+set reorder_joins=0;
 explain syntax select d0.id from t1_distr d0
 join (
     select d1.id
