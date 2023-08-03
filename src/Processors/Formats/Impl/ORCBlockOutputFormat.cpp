@@ -490,11 +490,11 @@ void ORCBlockOutputFormat::writeColumn(
             for (size_t i = 0; i != column_size; ++i)
             {
                 list_orc_column.offsets[i + 1] = offsets[i];
-                list_orc_column.notNull[i] = 1;
+                list_orc_column.notNull[i] = (null_bytemap && (*null_bytemap)[i]) ? 0 : 1;
             }
 
             orc::ColumnVectorBatch & nested_orc_column = *list_orc_column.elements;
-            writeColumn(nested_orc_column, list_column.getData(), nested_type, null_bytemap);
+            writeColumn(nested_orc_column, list_column.getData(), nested_type, nullptr);
             list_orc_column.numElements = column_size;
             break;
         }
@@ -503,8 +503,10 @@ void ORCBlockOutputFormat::writeColumn(
             orc::StructVectorBatch & struct_orc_column = dynamic_cast<orc::StructVectorBatch &>(orc_column);
             const auto & tuple_column = assert_cast<const ColumnTuple &>(column);
             auto nested_types = assert_cast<const DataTypeTuple *>(type.get())->getElements();
+
             for (size_t i = 0; i != tuple_column.size(); ++i)
-                struct_orc_column.notNull[i] = 1;
+                struct_orc_column.notNull[i] = (null_bytemap && (*null_bytemap)[i]) ? 0 : 1;
+
             for (size_t i = 0; i != tuple_column.tupleSize(); ++i)
                 writeColumn(*struct_orc_column.fields[i], tuple_column.getColumn(i), nested_types[i], null_bytemap);
             break;
@@ -524,17 +526,17 @@ void ORCBlockOutputFormat::writeColumn(
             for (size_t i = 0; i != column_size; ++i)
             {
                 map_orc_column.offsets[i + 1] = offsets[i];
-                map_orc_column.notNull[i] = 1;
+                map_orc_column.notNull[i] = (null_bytemap && (*null_bytemap)[i]) ? 0 : 1;
             }
             const auto nested_columns = assert_cast<const ColumnTuple *>(list_column.getDataPtr().get())->getColumns();
 
             orc::ColumnVectorBatch & keys_orc_column = *map_orc_column.keys;
             auto key_type = map_type.getKeyType();
-            writeColumn(keys_orc_column, *nested_columns[0], key_type, null_bytemap);
+            writeColumn(keys_orc_column, *nested_columns[0], key_type, nullptr);
 
             orc::ColumnVectorBatch & values_orc_column = *map_orc_column.elements;
             auto value_type = map_type.getValueType();
-            writeColumn(values_orc_column, *nested_columns[1], value_type, null_bytemap);
+            writeColumn(values_orc_column, *nested_columns[1], value_type, nullptr);
 
             map_orc_column.numElements = column_size;
             break;
