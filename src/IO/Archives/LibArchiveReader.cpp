@@ -254,7 +254,8 @@ template <typename ArchiveInfo>
 LibArchiveReader<ArchiveInfo>::FileInfo LibArchiveReader<ArchiveInfo>::getFileInfo(const String & filename)
 {
     Handle handle(path_to_archive);
-    handle.locateFile(filename);
+    if (!handle.locateFile(filename))
+        throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't unpack archive {}: file not found", path_to_archive);
     return handle.getFileInfo();
 }
 
@@ -278,7 +279,9 @@ template <typename ArchiveInfo>
 std::unique_ptr<ReadBufferFromFileBase> LibArchiveReader<ArchiveInfo>::readFile(NameFilter filter)
 {
     Handle handle(path_to_archive);
-    handle.locateFile(filter);
+    if (!handle.locateFile(filter))
+        throw Exception(
+            ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't unpack archive {}: no file found satisfying the filter", path_to_archive);
     return std::make_unique<ReadBufferFromLibArchive>(std::move(handle), path_to_archive);
 }
 
