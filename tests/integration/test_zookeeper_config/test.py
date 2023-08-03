@@ -2,6 +2,7 @@ import time
 import pytest
 import logging
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(
     __file__, zookeeper_config_path="configs/zookeeper_config_root_a.xml"
