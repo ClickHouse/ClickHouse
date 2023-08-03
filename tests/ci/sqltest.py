@@ -110,10 +110,10 @@ def main():
     s3_prefix = f"{pr_info.number}/{pr_info.sha}/sqltest_{check_name_lower}/"
     paths = {
         "run.log": run_log_path,
-        "server.log.zst": os.path.join(workspace_path, "/workspace/server.log.zst"),
-        "server.err.log.zst": os.path.join(workspace_path, "/workspace/server.err.log.zst"),
-        "report.html": os.path.join(workspace_path, "/workspace/report.html"),
-        "test.log": os.path.join(workspace_path, "/workspace/test.log"),
+        "server.log.zst": os.path.join(workspace_path, "server.log.zst"),
+        "server.err.log.zst": os.path.join(workspace_path, "server.err.log.zst"),
+        "report.html": os.path.join(workspace_path, "report.html"),
+        "test.log": os.path.join(workspace_path, "test.log"),
     }
 
     s3_helper = S3Helper()
