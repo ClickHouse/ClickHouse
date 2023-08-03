@@ -191,11 +191,15 @@ class TCPClient(object):
         assertPacket(self.readUInt8(), 0)  # has_nested
         return "code {}: {}".format(code, text.replace("DB::Exception:", ""))
 
-    def readResponse(self):
+    def readPacketType(self):
         packet_type = self.readVarUInt()
         if packet_type == 2:  # Exception
             raise RuntimeError(self.readException())
 
+        return packet_type
+
+    def readResponse(self):
+        packet_type = self.readPacketType()
         if packet_type == 1:  # Data
             return None
         if packet_type == 3:  # Progress
@@ -205,34 +209,45 @@ class TCPClient(object):
 
         raise RuntimeError("Unexpected packet: {}".format(packet_type))
 
-    def readData(self):
-        packet_type = self.readVarUInt()
-        if packet_type == 2:  # Exception
-            raise RuntimeError(self.readException())
-
-        if packet_type == 5:  # End stream
-            return None
-
-        assertPacket(packet_type, 1)  # Data
-
-        self.readStringBinary()  # external table name
-
-    def readProgress(self):
-        packet_type = self.readVarUInt()
-        if packet_type == 2:  # Exception
-            raise RuntimeError(self.readException())
-
-        if packet_type == 5:  # End stream
-            return None
-
-        assertPacket(packet_type, 3)  # Progress
-
+    def readProgressData(self):
         read_rows = self.readVarUInt()
         read_bytes = self.readVarUInt()
         total_rows_to_read = self.readVarUInt()
         written_rows = self.readVarUInt()
         written_bytes = self.readVarUInt()
+
         return read_rows, read_bytes, total_rows_to_read, written_rows, written_bytes
+
+    def readProgress(self):
+        packet_type = self.readPacketType()
+        if packet_type == 5:  # End stream
+            return None
+        assertPacket(packet_type, 3)  # Progress
+        return self.readProgressData()
+
+    def readHeaderInfo(self):
+        self.readStringBinary()  # external table name
+        # BlockInfo
+        assertPacket(self.readVarUInt(), 1)  # field number 1
+        assertPacket(self.readUInt8(), 0)  # is_overflows
+        assertPacket(self.readVarUInt(), 2)  # field number 2
+        assertPacket(self.readUInt32(), 4294967295)  # bucket_num
+        assertPacket(self.readVarUInt(), 0)  # 0
+        columns = self.readVarUInt()  # rows
+        rows = self.readVarUInt()  # columns
+
+        return columns, rows
+
+    def readHeader(self):
+        packet_type = self.readPacketType()
+        assertPacket(packet_type, 1)  # Data
+
+        columns, rows = self.readHeaderInfo()
+        print("Rows {} Columns {}".format(rows, columns))
+        for _ in range(columns):
+            col_name = self.readStringBinary()
+            type_name = self.readStringBinary()
+            print("Column {} type {}".format(col_name, type_name))
 
     def readRow(self, row_type, rows):
         if row_type == "UInt64":
@@ -245,23 +260,18 @@ class TCPClient(object):
                 )
             )
 
-    def readHeader(self, need_read_data=False, need_print_info=True):
-        packet_type = self.readVarUInt()
-        if packet_type == 2:  # Exception
-            raise RuntimeError(self.readException())
+    def readDataWithoutProgress(self, need_print_info=True):
+        packet_type = self.readPacketType()
+        while packet_type == 3: # Progress
+            self.readProgressData()
+            packet_type = self.readPacketType()
+
+        if packet_type == 5:  # End stream
+            return None
         assertPacket(packet_type, 1)  # Data
 
-        self.readStringBinary()  # external table name
-        # BlockInfo
-        assertPacket(self.readVarUInt(), 1)  # field number 1
-        assertPacket(self.readUInt8(), 0)  # is_overflows
-        assertPacket(self.readVarUInt(), 2)  # field number 2
-        assertPacket(self.readUInt32(), 4294967295)  # bucket_num
-        assertPacket(self.readVarUInt(), 0)  # 0
-        columns = self.readVarUInt()  # rows
-        rows = self.readVarUInt()  # columns
-
-        data = [] if need_read_data else None
+        columns, rows = self.readHeaderInfo()
+        data = []
         if need_print_info:
             print("Rows {} Columns {}".format(rows, columns))
 
@@ -271,7 +281,6 @@ class TCPClient(object):
             if need_print_info:
                 print("Column {} type {}".format(col_name, type_name))
 
-            if need_read_data:
-                data.append((col_name, self.readRow(type_name, rows)))
+            data.append((col_name, self.readRow(type_name, rows)))
 
         return data

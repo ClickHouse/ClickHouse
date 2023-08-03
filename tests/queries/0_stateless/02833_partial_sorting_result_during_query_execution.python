@@ -22,7 +22,7 @@ def main():
         client.readHeader()
 
         # Partial result
-        _, partial_result = client.readHeader(need_read_data=True)[0]
+        _, partial_result = client.readDataWithoutProgress()[0]
 
         assert_message = (
             "There should be at least one block of data with partial result"
@@ -30,8 +30,8 @@ def main():
         assert len(partial_result) > 0, assert_message
 
         while True:
-            _, new_partial_result = client.readHeader(
-                need_read_data=True, need_print_info=False
+            _, new_partial_result = client.readDataWithoutProgress(
+                need_print_info=False
             )[0]
             if len(new_partial_result) == 0:
                 break
@@ -45,7 +45,7 @@ def main():
             partial_result = new_partial_result
 
         # Full result
-        _, full_result = client.readHeader(need_read_data=True)[0]
+        _, full_result = client.readDataWithoutProgress()[0]
         for result in full_result:
             print(result)
 
