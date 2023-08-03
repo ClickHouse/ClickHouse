@@ -50,7 +50,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<AnyFunctionVisitor>;
     using Base::Base;
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_move_functions_out_of_any)
             return;
@@ -84,7 +84,14 @@ public:
         if (inside_arguments.empty())
             return;
 
+        if (rewritten.contains(node.get()))
+        {
+            node = rewritten.at(node.get());
+            return;
+        }
+
         /// checking done, rewrite function
+        bool pushed = false;
         for (auto & inside_argument : inside_arguments)
         {
             if (inside_argument->as<ConstantNode>()) /// skip constant node
@@ -100,9 +107,21 @@ public:
             any_function_arguments.push_back(std::move(inside_argument));
 
             inside_argument = std::move(any_function);
+            pushed = true;
         }
-        node = arguments[0];
+
+        if (pushed)
+        {
+            rewritten.insert({node.get(), arguments[0]});
+            node = arguments[0];
+        }
     }
+
+private:
+    /// After query analysis alias will be rewritten to QueryTreeNode
+    /// whose memory address is same with the original one.
+    /// So we can reuse the rewritten one.
+    std::unordered_map<IQueryTreeNode *, QueryTreeNodePtr > rewritten;
 
 };
 
