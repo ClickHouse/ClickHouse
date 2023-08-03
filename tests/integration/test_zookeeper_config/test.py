@@ -58,12 +58,7 @@ def test_chroot_with_same_root(started_cluster):
 
     # Replication might take time
 
-    for i in range(100):
-        if node1.query("select count() from simple").strip() == "2":
-            break
-        time.sleep(1)
-    else:
-        assert node1.query("select count() from simple").strip() == "2"
+    assert_eq_with_retry(node1, "select count() from simple", "2\n")
 
     for i in range(100):
         if node2.query("select count() from simple").strip() == "2":
