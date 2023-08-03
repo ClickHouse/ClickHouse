@@ -9,8 +9,12 @@ import time
 import statistics
 
 cluster = ClickHouseCluster(__file__)
-apac1 = cluster.add_instance("apac1", main_configs=["configs/apac1.xml"], with_zookeeper=True)
-apac2 = cluster.add_instance("apac2", main_configs=["configs/apac2.xml"], with_zookeeper=True)
+apac1 = cluster.add_instance(
+    "apac1", main_configs=["configs/apac1.xml"], with_zookeeper=True
+)
+apac2 = cluster.add_instance(
+    "apac2", main_configs=["configs/apac2.xml"], with_zookeeper=True
+)
 us3 = cluster.add_instance("us3", main_configs=["configs/us3.xml"], with_zookeeper=True)
 
 
@@ -32,9 +36,12 @@ def get_random_string(length):
 
 def test_follower_only_fetch_from_leader(start_cluster):
     try:
-        for i, node in enumerate([apac1, apac2, us3]): #apac1 will become leader of APAC
+        for i, node in enumerate(
+            [apac1, apac2, us3]
+        ):  # apac1 will become leader of APAC
             node.query(
                 f"CREATE TABLE us_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/us_table', '{i}') ORDER BY tuple() PARTITION BY key"
+                + f" SETTINGS geo_replication_control_leader_wait = 10"
             )
             time.sleep(1)
 
@@ -86,7 +93,7 @@ def test_follower_only_fetch_from_leader(start_cluster):
             print("[N1] input:", us3_in, "MB/s", "output:", us3_out, "MB/s")
             print("[N2] input:", apac2_in, "MB/s", "output:", apac2_out, "MB/s")
             apac2_fetch_speed.append(apac2_in)
-            us3_send_speed.append(us3_out);
+            us3_send_speed.append(us3_out)
             time.sleep(0.5)
 
         max_fetch_speed = max(apac2_fetch_speed)
@@ -108,9 +115,12 @@ def test_follower_only_fetch_from_leader(start_cluster):
         for node in [apac1, apac2, us3]:
             node.query("DROP TABLE IF EXISTS us_table SYNC")
 
+
 def test_follower_fetch_from_leader_timeout(start_cluster):
     try:
-        for i, node in enumerate([apac1, apac2, us3]): #apac1 will become leader of APAC
+        for i, node in enumerate(
+            [apac1, apac2, us3]
+        ):  # apac1 will become leader of APAC
             node.query(
                 f"CREATE TABLE us_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/us_table', '{i}') ORDER BY tuple() PARTITION BY key "
                 + f"SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 1;"
@@ -131,20 +141,23 @@ def test_follower_fetch_from_leader_timeout(start_cluster):
 
         count_ref = int(us3.query("SELECT count() FROM us_table"))
         count = int(apac2.query("SELECT count() FROM us_table"))
-        assert count == count_ref, (
-            "Follower should start fetching from any replica if leader timeout, but table on follower is empty"
-        )
+        assert (
+            count == count_ref
+        ), "Follower should start fetching from any replica if leader timeout, but table on follower is empty"
 
     finally:
         for node in [apac1, apac2, us3]:
             node.query("DROP TABLE IF EXISTS us_table SYNC")
 
+
 def test_all_nodes_have_data_when_zookeeper_restart(start_cluster):
     try:
-        for i, node in enumerate([apac1, apac2, us3]): #apac1 will become leader of APAC
+        for i, node in enumerate(
+            [apac1, apac2, us3]
+        ):  # apac1 will become leader of APAC
             node.query(
-                f"CREATE TABLE us_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/us_table', '{i}') ORDER BY tuple() PARTITION BY key "
-                + f"SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 100, geo_replication_control_leader_election_period_ms = 1000;"
+                f"CREATE TABLE us_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/us_table', '{i}') ORDER BY tuple() PARTITION BY key"
+                + f" SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 100, geo_replication_control_leader_election_period_ms = 1000;"
             )
             time.sleep(1)
 
@@ -165,22 +178,35 @@ def test_all_nodes_have_data_when_zookeeper_restart(start_cluster):
 
         while 1:
             time.sleep(0.5)
-            if int(apac1.query("SELECT count() FROM system.replicas WHERE is_readonly")) == 0 and int(apac2.query("SELECT count() FROM system.replicas WHERE is_readonly")) == 0:
+            if (
+                int(
+                    apac1.query("SELECT count() FROM system.replicas WHERE is_readonly")
+                )
+                == 0
+                and int(
+                    apac2.query("SELECT count() FROM system.replicas WHERE is_readonly")
+                )
+                == 0
+            ):
                 break
 
-        apac1.query("SYSTEM SYNC REPLICA us_table LIGHTWEIGHT", timeout = 60)
-        apac2.query("SYSTEM SYNC REPLICA us_table LIGHTWEIGHT", timeout = 60)
+        apac1.query("SYSTEM SYNC REPLICA us_table LIGHTWEIGHT", timeout=60)
+        apac2.query("SYSTEM SYNC REPLICA us_table LIGHTWEIGHT", timeout=60)
 
         # we don't care who is the leader, but all nodes must have data
         count_ref = int(us3.query("SELECT count() FROM us_table"))
 
         count = int(apac1.query("SELECT count() FROM us_table"))
-        assert count == count_ref, (
-            "All nodes in apac should have same data now, but table on apac1 has {} rows, (ref {})".format(count, count_ref)
+        assert (
+            count == count_ref
+        ), "All nodes in apac should have same data now, but table on apac1 has {} rows, (ref {})".format(
+            count, count_ref
         )
         count = int(apac2.query("SELECT count() FROM us_table"))
-        assert count == count_ref, (
-            "All nodes in apac should have same data now, but table on apac1 has {} rows, (ref {})".format(count, count_ref)
+        assert (
+            count == count_ref
+        ), "All nodes in apac should have same data now, but table on apac1 has {} rows, (ref {})".format(
+            count, count_ref
         )
 
     finally:

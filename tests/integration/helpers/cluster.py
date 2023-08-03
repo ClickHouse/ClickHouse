@@ -1925,7 +1925,7 @@ class ClickHouseCluster:
                 raise Exception("You should specity ipv4_address in add_node method")
             self._replace(node.docker_compose_path, node.ipv4_address, new_ip)
             node.ipv4_address = new_ip
-        return restart_instance(self, node)
+        return self.restart_instance(node)
 
     def restart_service(self, service_name):
         run_and_check(self.base_cmd + ["restart", service_name])

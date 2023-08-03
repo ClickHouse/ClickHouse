@@ -191,7 +191,6 @@ private:
                 if (value.ends_with(suffix))
                 {
                     handler();
-                    success = true;
                     return;
                 }
 
@@ -204,7 +203,6 @@ private:
                 {
                     handler();
                     LOG_INFO(log, "Become leader");
-                    success = true;
                     return;
                 }
             }
