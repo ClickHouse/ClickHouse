@@ -3468,11 +3468,11 @@ Possible values:
 
 Default value: `0`.
 
-## disable_url_encoding {#disable_url_encoding}
+## enable_url_encoding {#enable_url_encoding}
 
-Allows to disable decoding/encoding path in uri in [URL](../../engines/table-engines/special/url.md) engine tables.
+Allows to enable/disable decoding/encoding path in uri in [URL](../../engines/table-engines/special/url.md) engine tables.
 
-Disabled by default.
+Enabled by default.
 
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
@@ -4577,3 +4577,29 @@ Allows you to select the max window log of ZSTD (it will not be used for MergeTr
 Type: Int64
 
 Default: 0
+
+## precise_float_parsing {#precise_float_parsing}
+
+Switches [Float32/Float64](../../sql-reference/data-types/float.md) parsing algorithms:
+* If the value is `1`, then precise method is used. It is slower than fast method, but it always returns a number that is the closest machine representable number to the input.
+* Otherwise, fast method is used (default). It usually returns the same value as precise, but in rare cases result may differ by one or two least significant digits.
+
+Possible values: `0`, `1`.
+
+Default value: `0`.
+
+Example:
+
+```sql
+SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_parsing = 0;
+
+┌─toFloat64('1.7091')─┬─toFloat64('1.5008753E7')─┐
+│  1.7090999999999998 │       15008753.000000002 │
+└─────────────────────┴──────────────────────────┘
+
+SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_parsing = 1;
+
+┌─toFloat64('1.7091')─┬─toFloat64('1.5008753E7')─┐
+│              1.7091 │                 15008753 │
+└─────────────────────┴──────────────────────────┘
+```

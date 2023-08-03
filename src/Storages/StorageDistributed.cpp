@@ -1435,7 +1435,7 @@ ActionLock StorageDistributed::getActionLock(StorageActionBlockType type)
     return {};
 }
 
-void StorageDistributed::flush()
+void StorageDistributed::flushAndPrepareForShutdown()
 {
     try
     {

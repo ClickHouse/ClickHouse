@@ -210,7 +210,15 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     else if (type == Type::DROP_FILESYSTEM_CACHE)
     {
         if (!filesystem_cache_name.empty())
+        {
             settings.ostr << (settings.hilite ? hilite_none : "") << " " << filesystem_cache_name;
+            if (!key_to_drop.empty())
+            {
+                settings.ostr << (settings.hilite ? hilite_none : "") << " KEY " << key_to_drop;
+                if (offset_to_drop.has_value())
+                    settings.ostr << (settings.hilite ? hilite_none : "") << " OFFSET " << offset_to_drop.value();
+            }
+        }
     }
     else if (type == Type::UNFREEZE)
     {
@@ -219,6 +227,17 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     else if (type == Type::SYNC_FILE_CACHE)
     {
         settings.ostr << (settings.hilite ? hilite_none : "");
+    }
+    else if (type == Type::START_LISTEN || type == Type::STOP_LISTEN)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " " << ServerType::serverTypeToString(server_type.type)
+            << (settings.hilite ? hilite_none : "");
+
+        if (server_type.type == ServerType::CUSTOM)
+        {
+            settings.ostr << (settings.hilite ? hilite_identifier : "") << " " << backQuoteIfNeed(server_type.custom_name);
+        }
+
     }
 }
 

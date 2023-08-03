@@ -51,6 +51,7 @@ MergeTreeInOrder
 MergeTreeInOrder
 -- enabled, only part of distinct columns form prefix of sorting key
 MergeTreeThread
+=== disable new analyzer ===
 -- enabled, check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct
 Sorting (Stream): a ASC, b ASC
 Sorting (Stream): a ASC, b ASC
@@ -79,4 +80,39 @@ Sorting (Stream): a DESC, b DESC
 -- enabled, check that disabling other 'read in order' optimizations do not disable distinct in order optimization
 Sorting (Stream): a ASC, b ASC
 Sorting (Stream): a ASC, b ASC
+Sorting (Stream): a ASC, b ASC
+=== enable new analyzer ===
+-- enabled, check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct
+Sorting (Stream): a_1 ASC, b_0 ASC
+Sorting (Stream): a_1 ASC, b_0 ASC
+Sorting (Stream): a_1 ASC, b_0 ASC
+Sorting (Stream): a_1 ASC, b ASC
+-- disabled, check that sorting description for ReadFromMergeTree match ORDER BY columns
+Sorting (Stream): a_1 ASC
+Sorting (Stream): a_1 ASC
+Sorting (Stream): a_1 ASC
+Sorting (Stream): a ASC
+-- enabled, check that ReadFromMergeTree sorting description is overwritten by DISTINCT optimization i.e. it contains columns from DISTINCT clause
+Sorting (Stream): a_1 ASC, b_0 ASC
+Sorting (Stream): a_1 ASC, b_0 ASC
+Sorting (Stream): a_1 ASC, b_0 ASC
+Sorting (Stream): a ASC, b ASC
+-- enabled, check that ReadFromMergeTree sorting description is overwritten by DISTINCT optimization, but direction used from ORDER BY clause
+Sorting (Stream): a_1 DESC, b_0 DESC
+Sorting (Stream): a_1 DESC, b_0 DESC
+Sorting (Stream): a_1 DESC, b_0 DESC
+Sorting (Stream): a DESC, b DESC
+-- enabled, check that ReadFromMergeTree sorting description is NOT overwritten by DISTINCT optimization (1), - it contains columns from ORDER BY clause
+Sorting (Stream): a_0 ASC, b_1 ASC
+Sorting (Stream): a_0 ASC, b_1 ASC
+Sorting (Stream): a_0 ASC, b_1 ASC
+Sorting (Stream): a ASC, b ASC
+-- enabled, check that ReadFromMergeTree sorting description is NOT overwritten by DISTINCT optimization (2), - direction used from ORDER BY clause
+Sorting (Stream): a_1 DESC, b_0 DESC
+Sorting (Stream): a_1 DESC, b_0 DESC
+Sorting (Stream): a_1 DESC, b_0 DESC
+Sorting (Stream): a DESC, b DESC
+-- enabled, check that disabling other 'read in order' optimizations do not disable distinct in order optimization
+Sorting (Stream): a_0 ASC, b_1 ASC
+Sorting (Stream): a_0 ASC, b_1 ASC
 Sorting (Stream): a ASC, b ASC
