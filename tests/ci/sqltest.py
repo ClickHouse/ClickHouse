@@ -111,7 +111,9 @@ def main():
     paths = {
         "run.log": run_log_path,
         "server.log.zst": os.path.join(workspace_path, "/workspace/server.log.zst"),
-        "server.err.log.zst": os.path.join(workspace_path, "/workspace/server.err.log.zst"),
+        "server.err.log.zst": os.path.join(
+            workspace_path, "/workspace/server.err.log.zst"
+        ),
         "report.html": os.path.join(workspace_path, "/workspace/report.html"),
         "test.log": os.path.join(workspace_path, "/workspace/test.log"),
     }
