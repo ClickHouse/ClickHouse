@@ -1240,7 +1240,7 @@ ColumnsDescription StorageAzureBlob::getTableStructureFromData(
     std::shared_ptr<StorageAzureBlobSource::IIterator> file_iterator;
     if (distributed_processing)
     {
-        file_iterator = std::make_shared<StorageAzureBlobSource::ReadIterator>(ctx ,
+        file_iterator = std::make_shared<StorageAzureBlobSource::ReadIterator>(ctx,
             ctx->getReadTaskCallback());
     }
     else if (configuration.withGlobs())
