@@ -1794,6 +1794,52 @@ Return value type is always [Float64](../../sql-reference/data-types/float.md). 
 │ 6   │ Float64                                                                                  │
 └─────┴──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+## arrayRemove
+
+Returns a pointer to the input array with elements removed based on the provided predicate condition.
+
+**Syntax**
+
+``` sql
+arrayRemove(array, predicate)
+```
+
+**Arguments**
+
+- `array` – Array.
+- `predicate` – Condition to remove elements from the array
+
+**Returned value**
+
+- Returns the array after filtering out the elements that pass the given predicate.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT arrayRemove(x->x<2, [2,10,11,12]) AS x;
+```
+
+Result:
+
+``` text
+┌─x────────────┐
+│ [2,10,11,12] │
+└──────────────┘
+```
+
+``` sql
+SELECT arrayRemove(x->x<11, [2,10,11,12]) AS x;
+```
+
+Result:
+
+``` text
+┌─x───────┐
+│ [11,12] │
+└─────────┘
+```
 
 ## Distance functions
 

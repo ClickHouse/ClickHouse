@@ -35,10 +35,13 @@ ColumnPtr ArrayRemoveImpl::execute(const ColumnArray & array, ColumnPtr mapped)
 
     for (size_t i = 0; i < filter.size(); ++i)
     {
-        if (filter[i] && !array.isNullAt(i))
-            negated_filter[i] = false; // Include non-NULL values that satisfy the predicate
-        else
-            negated_filter[i] = true;  // Exclude NULLs.
+        // if (filter[i] && !array.isNullAt(i))
+        //     negated_filter[i] = false; // Include non-NULL values that satisfy the predicate
+        // else
+        //     negated_filter[i] = true;  // Exclude NULLs.
+
+        if(filter[i]==NULL) continue;
+        else negated_filter[i] = true;
     }
 
     ColumnPtr filtered = array.getData().filter(negated_filter, -1);
