@@ -251,12 +251,7 @@ bool ParserTableAsStringLiteralIdentifier::parseImpl(Pos & pos, ASTPtr & node, E
     ReadBufferFromMemory in(pos->begin, pos->size());
     String s;
 
-    try
-    {
-        readQuotedStringWithSQLStyle(s, in);
-    }
-    catch (const Exception &)
-    {
+    if (!tryReadQuotedStringInto(s, in)) {
         expected.add(pos, "string literal");
         return false;
     }
