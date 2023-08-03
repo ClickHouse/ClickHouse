@@ -607,6 +607,9 @@ class SettingsRandomizer:
         "enable_memory_bound_merging_of_aggregation_results": lambda: random.randint(
             0, 1
         ),
+        "min_count_to_compile_expression": lambda: random.choice([0, 3]),
+        "min_count_to_compile_aggregate_expression": lambda: random.choice([0, 3]),
+        "min_count_to_compile_sort_description": lambda: random.choice([0, 3]),
         "session_timezone": lambda: random.choice(
             [
                 # special non-deterministic around 1970 timezone, see [1].
@@ -946,6 +949,16 @@ class TestCase:
             return FailureReason.REPLICATED_DB
 
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
+            return FailureReason.S3_STORAGE
+        elif (
+            tags
+            and ("no-s3-storage-with-slow-build" in tags)
+            and args.s3_storage
+            and (
+                BuildFlags.THREAD in args.build_flags
+                or BuildFlags.DEBUG in args.build_flags
+            )
+        ):
             return FailureReason.S3_STORAGE
 
         elif tags:
