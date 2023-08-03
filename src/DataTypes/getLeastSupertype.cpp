@@ -592,6 +592,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
     /// For numeric types, the most complicated part.
     {
+        optimizeTypeIds(types, type_ids);
         auto numeric_type = getNumericType<on_error>(type_ids);
         if (numeric_type)
             return numeric_type;
@@ -599,6 +600,137 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
     /// All other data types (UUID, AggregateFunction, Enum...) are compatible only if they are the same (checked in trivial cases).
     return throwOrReturn<on_error>(types, "", ErrorCodes::NO_COMMON_TYPE);
+}
+
+void optimizeTypeIds(const DataTypes & types, TypeIndexSet & type_ids)
+{
+    // Determine whether the type_id is UInt
+    auto is_unsigned = [](const TypeIndex & type_id)
+    {
+        switch (type_id)
+        {
+            case TypeIndex::UInt8:
+            case TypeIndex::UInt16:
+            case TypeIndex::UInt32:
+            case TypeIndex::UInt64:
+                return true;
+            default:
+                return false;
+        }
+    };
+
+    auto maximize = [](size_t & what, size_t value, bool & only_unsigned, bool & only_signed, bool & both)
+    {
+        if (value > what)
+        {
+            what = value;
+            only_unsigned = false;
+            only_signed = false;
+            both = false;
+            return true;
+        }else if (value == what)
+        {
+            return true;
+        }
+
+        return false;
+    };
+
+    size_t max_bits_of_integer = 0;
+    bool only_unsigned = false;
+    bool only_signed = false;
+    bool both = false;
+
+    // Determine the distribution of maximum signed and unsigned, Example:
+    // Int64, Int64 = only_signed.
+    // UInt64, UInt64 = only_unsigned.
+    // UInt64(possible: Int64), Int64(possible: UInt64) = both.
+    // UInt64(possible: Int64), Int64 = both, only_signed.
+    for (const auto & type : types)
+    {
+        TypeIndex type_id = type->getTypeId();
+        bool is_max_bits = false;
+        if (type_id == TypeIndex::UInt8 || type_id == TypeIndex::Int8)
+            is_max_bits = maximize(max_bits_of_integer, 8, only_unsigned, only_signed, both);
+        else if (type_id == TypeIndex::UInt16 || type_id == TypeIndex::Int16)
+            is_max_bits = maximize(max_bits_of_integer, 16, only_unsigned, only_signed, both);
+        else if (type_id == TypeIndex::UInt32 || type_id == TypeIndex::Int32)
+            is_max_bits = maximize(max_bits_of_integer, 32, only_unsigned, only_signed, both);
+        else if (type_id == TypeIndex::UInt64 || type_id == TypeIndex::Int64)
+            is_max_bits = maximize(max_bits_of_integer, 64, only_unsigned, only_signed, both);
+
+        if (is_max_bits)
+        {
+            bool type_is_unsigned = is_unsigned(type_id);
+            bool type_is_both = false;
+            for (const auto & possible_type : type->getPossiblePtr())
+            {
+                if (type_is_unsigned != is_unsigned(possible_type->getTypeId()))
+                {
+                    type_is_both = true;
+                    break;
+                }
+            }
+
+            if (type_is_both)
+                both = true;
+            else if (type_is_unsigned)
+                only_unsigned = true;
+            else
+                only_signed = true;
+        }
+    }
+
+    auto optimize_type_id = [&is_unsigned](const DataTypePtr & type, bool try_change_unsigned)
+    {
+        switch (type_id)
+        {
+            case TypeIndex::UInt8:
+            case TypeIndex::UInt16:
+            case TypeIndex::UInt32:
+            case TypeIndex::UInt64:
+                if (try_change_unsigned)
+                    return type_id;
+            case TypeIndex::Int8:
+            case TypeIndex::Int16:
+            case TypeIndex::Int32:
+            case TypeIndex::Int64:
+                if (!try_change_unsigned)
+                    return type_id;
+            default:
+                return type_id;
+        }
+
+        for (const auto & other_type : type->getPossiblePtr())
+        {
+            TypeIndex other_type_id = other_type->getTypeId();
+            if ((try_change_unsigned && is_unsigned(other_type_id))
+                || (!try_change_unsigned && !is_unsigned(other_type_id)))
+            {
+                return other_type_id;
+            }
+        }
+
+        return type_id;
+    };
+
+    // optimize type_ids, Example:
+    // if only_signed. UInt64(possible: Int64), Int64 = Int64, Int64
+    // if only_unsigned. Int64(possible: UInt64), UInt64 = UInt64, UInt64
+    if (!(only_unsigned && only_signed) && (both || only_unsigned || only_signed)) {
+        type_ids.clear();
+        for (const auto & type : types)
+        {
+            if (only_unsigned)
+            {
+                type_ids.insert(optimize_type_id(type, true));
+            }
+            else if (both || only_signed)
+            {
+                type_ids.insert(optimize_type_id(type, false));
+            }
+        }
+    }
 }
 
 DataTypePtr getLeastSupertypeOrString(const DataTypes & types)
