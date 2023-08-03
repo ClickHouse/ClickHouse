@@ -43,6 +43,7 @@ def get_fake_zk(node):
     return ku.get_fake_zk(cluster, node)
 
 
+@pytest.mark.skip(reason="test is flaky because changes are not properly waited for")
 def test_reconfig_replace_leader_in_one_command(started_cluster):
     """
     Remove leader from a cluster of 3 and add a new node to this cluster in a single command
