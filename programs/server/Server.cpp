@@ -1645,9 +1645,9 @@ try
                 LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
             else
                 LOG_INFO(log, "Closed connections to servers for tables.");
-
-            global_context->shutdownKeeperDispatcher();
         }
+
+        global_context->shutdownKeeperDispatcher();
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
