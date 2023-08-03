@@ -34,6 +34,7 @@ public:
     static void parallelizeMergePrepare(const std::vector<UniqExactSet *> & data_vec, ThreadPool & thread_pool)
     {
         unsigned long single_level_set_num = 0;
+        unsigned long all_single_hash_size = 0;
 
         for (auto ele : data_vec)
         {
@@ -41,7 +42,13 @@ public:
                 single_level_set_num ++;
         }
 
-        if (single_level_set_num > 0 && single_level_set_num < data_vec.size())
+        if (single_level_set_num == data_vec.size())
+        {
+            for (auto ele : data_vec)
+                all_single_hash_size += ele->size();
+        }
+
+        if ((single_level_set_num > 0 && single_level_set_num < data_vec.size()) || ((all_single_hash_size/data_vec.size()) > 6000))
         {
             try
             {
