@@ -220,6 +220,17 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     {
         settings.ostr << (settings.hilite ? hilite_none : "");
     }
+    else if (type == Type::START_LISTEN || type == Type::STOP_LISTEN)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " " << ServerType::serverTypeToString(server_type.type)
+            << (settings.hilite ? hilite_none : "");
+
+        if (server_type.type == ServerType::CUSTOM)
+        {
+            settings.ostr << (settings.hilite ? hilite_identifier : "") << " " << backQuoteIfNeed(server_type.custom_name);
+        }
+
+    }
 }
 
 

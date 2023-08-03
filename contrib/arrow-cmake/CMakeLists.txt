@@ -502,9 +502,10 @@ target_include_directories(_parquet SYSTEM BEFORE
         "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/cpp/src")
 target_link_libraries(_parquet
-    PUBLIC _arrow
-    PRIVATE
+    PUBLIC
+        _arrow
         ch_contrib::thrift
+    PRIVATE
         boost::headers_only
         boost::regex
         OpenSSL::Crypto OpenSSL::SSL)

@@ -238,10 +238,6 @@ defaultValueOfArgumentType
 defaultValueOfTypeName
 degrees
 demangle
-detectCharset
-detectLanguageUnknown
-detectProgrammingLanguage
-detectTonality
 divide
 dotProduct
 dumpColumnStructure
@@ -671,6 +667,8 @@ sqrt
 startsWith
 subBitmap
 substring
+substringIndex
+substringIndexUTF8
 substringUTF8
 subtractDays
 subtractHours
