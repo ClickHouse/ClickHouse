@@ -2,6 +2,9 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/TableJoin.h>
+#include <IO/Operators.h>
+#include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -60,6 +63,36 @@ bool JoinStep::allowPushDownToRight() const
 void JoinStep::describePipeline(FormatSettings & settings) const
 {
     IQueryPlanStep::describePipeline(processors, settings);
+}
+
+void JoinStep::describeActions(FormatSettings & settings) const
+{
+    String prefix(settings.offset, ' ');
+
+    const auto & table_join = join->getTableJoin();
+    settings.out << prefix << "Kind: " << toString(table_join.kind()) << '\n';
+    settings.out << prefix << "Strictness: " << toString(table_join.strictness()) << '\n';
+    settings.out << prefix << "Type: " << join->getName() << '\n';
+
+    if (table_join.strictness() == JoinStrictness::Asof)
+        settings.out << prefix << "ASOF inequality: " << toString(table_join.getAsofInequality()) << '\n';
+
+    if (!table_join.getClauses().empty())
+        settings.out << prefix << "Clauses: " << table_join.formatClauses(table_join.getClauses(), true /*short_format*/) << '\n';
+}
+
+void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    const auto & table_join = join->getTableJoin();
+    map.add("Kind", toString(table_join.kind()));
+    map.add("Strictness", toString(table_join.strictness()));
+    map.add("Type", join->getName());
+
+    if (table_join.strictness() == JoinStrictness::Asof)
+        map.add("ASOF inequality", toString(table_join.getAsofInequality()));
+
+    if (!table_join.getClauses().empty())
+        map.add("Clauses", table_join.formatClauses(table_join.getClauses(), true /*short_format*/));
 }
 
 void JoinStep::updateInputStream(const DataStream & new_input_stream_, size_t idx)
