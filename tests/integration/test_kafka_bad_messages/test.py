@@ -231,15 +231,6 @@ message Message {
 
         assert rows == len(messages)
 
-        result_system_kafka_consumers = instance.query(
-            """
-            SELECT last_exception, last_exception_time, database, table FROM system.kafka_consumers
-            """
-        )
-        logging.debug(
-            f"result_system_kafka_consumers (test_bad_messages_parsing 2): {result_system_kafka_consumers}"
-        )
-
         kafka_delete_topic(admin_client, f"{format_name}_err")
 
     capn_proto_schema = """
