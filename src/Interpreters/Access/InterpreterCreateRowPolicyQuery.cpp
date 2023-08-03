@@ -48,7 +48,7 @@ namespace
 BlockIO InterpreterCreateRowPolicyQuery::execute()
 {
     const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
-    auto & query = updated_query_ptr->as<ASTCreateRowPolicyQuery &>();    
+    auto & query = updated_query_ptr->as<ASTCreateRowPolicyQuery &>();
     auto required_access = getRequiredAccess();
 
     if (!query.cluster.empty())
