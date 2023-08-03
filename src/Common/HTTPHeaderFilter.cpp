@@ -33,6 +33,9 @@ void HTTPHeaderFilter::setValuesFromConfig(const Poco::Util::AbstractConfigurati
 {
     std::lock_guard guard(mutex);
 
+    forbidden_headers.clear();
+    forbidden_headers_regexp.clear();
+    
     if (config.has("http_forbid_headers"))
     {
         std::vector<std::string> keys;
@@ -45,11 +48,6 @@ void HTTPHeaderFilter::setValuesFromConfig(const Poco::Util::AbstractConfigurati
             else if (startsWith(key, "header"))
                 forbidden_headers.insert(config.getString("http_forbid_headers." + key));
         }
-    }
-    else
-    {
-        forbidden_headers.clear();
-        forbidden_headers_regexp.clear();
     }
 }
 
