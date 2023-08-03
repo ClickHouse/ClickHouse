@@ -41,6 +41,8 @@ public:
 
     void drop() override { nested_storage->drop(); }
 
+    bool supportsTrivialCountOptimization() const override { return false; }
+
 private:
     [[noreturn]] static void throwNotAllowed()
     {

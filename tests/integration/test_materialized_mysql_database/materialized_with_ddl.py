@@ -13,25 +13,36 @@ from multiprocessing.dummy import Pool
 from helpers.test_tools import assert_eq_with_retry
 
 
-def check_query(clickhouse_node, query, result_set, retry_count=10, interval_seconds=3):
-    lastest_result = ""
+def check_query(
+    clickhouse_node,
+    query,
+    result_set,
+    retry_count=30,
+    interval_seconds=1,
+    on_failure=None,
+):
+    latest_result = ""
 
+    if "/* expect: " not in query:
+        query = "/* expect: " + result_set.rstrip("\n") + "*/ " + query
     for i in range(retry_count):
         try:
-            lastest_result = clickhouse_node.query(query)
-            if result_set == lastest_result:
+            latest_result = clickhouse_node.query(query)
+            if result_set == latest_result:
                 return
 
-            logging.debug(f"latest_result {lastest_result}")
+            logging.debug(f"latest_result {latest_result}")
             time.sleep(interval_seconds)
         except Exception as e:
             logging.debug(f"check_query retry {i+1} exception {e}")
             time.sleep(interval_seconds)
     else:
-        result_got = clickhouse_node.query(query)
+        latest_result = clickhouse_node.query(query)
+        if on_failure is not None and latest_result != result_set:
+            on_failure(latest_result, result_set)
         assert (
-            result_got == result_set
-        ), f"Got result {result_got}, while expected result {result_set}"
+            latest_result == result_set
+        ), f"Got result '{latest_result}', expected result '{result_set}'"
 
 
 def dml_with_materialized_mysql_database(clickhouse_node, mysql_node, service_name):
@@ -980,6 +991,89 @@ def query_event_with_empty_transaction(clickhouse_node, mysql_node, service_name
     mysql_node.query("DROP DATABASE test_database_event")
 
 
+def text_blob_with_charset_test(clickhouse_node, mysql_node, service_name):
+    db = "text_blob_with_charset_test"
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db} DEFAULT CHARACTER SET 'utf8'")
+
+    mysql_node.query(
+        f"CREATE TABLE {db}.test_table_1 (a INT NOT NULL PRIMARY KEY, b text CHARACTER SET gbk, c tinytext CHARSET big5, d longtext, e varchar(256), f char(4)) ENGINE = InnoDB DEFAULT CHARSET=gbk"
+    )
+    mysql_node.query(
+        f"CREATE TABLE {db}.test_table_2 (a INT NOT NULL PRIMARY KEY, b blob, c longblob) ENGINE = InnoDB DEFAULT CHARSET=gbk"
+    )
+    mysql_node.query(
+        f"CREATE TABLE {db}.test_table_3 (a INT NOT NULL PRIMARY KEY, b text CHARACTER SET gbk, c tinytext CHARSET gbk, d tinytext CHARSET big5, e varchar(256), f char(4)) ENGINE = InnoDB"
+    )
+
+    mysql_node.query(
+        f"INSERT INTO {db}.test_table_1 VALUES (1, '你好', '世界', '哈罗', '您Hi您', '您Hi您')"
+    )
+    mysql_node.query(
+        f"INSERT INTO {db}.test_table_2 VALUES (1, '你好', 0xFAAA00000000000DDCC)"
+    )
+    mysql_node.query(
+        f"INSERT INTO {db}.test_table_3 VALUES (1, '你好', '世界', 'hello', '您Hi您', '您Hi您')"
+    )
+
+    clickhouse_node.query(
+        f"CREATE DATABASE {db} ENGINE = MaterializedMySQL('{service_name}:3306', '{db}', 'root', 'clickhouse')"
+    )
+    assert db in clickhouse_node.query("SHOW DATABASES")
+
+    # from full replication
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db} FORMAT TSV",
+        "test_table_1\ntest_table_2\ntest_table_3\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"SELECT b, c, d, e, f FROM {db}.test_table_1 WHERE a = 1 FORMAT TSV",
+        "你好\t世界\t哈罗\t您Hi您\t您Hi您\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"SELECT hex(b), hex(c) FROM {db}.test_table_2 WHERE a = 1 FORMAT TSV",
+        "E4BDA0E5A5BD\t0FAAA00000000000DDCC\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"SELECT b, c, d, e, f FROM {db}.test_table_3 WHERE a = 1 FORMAT TSV",
+        "你好\t世界\thello\t您Hi您\t您Hi您\n",
+    )
+
+    # from increment replication
+    mysql_node.query(
+        f"INSERT INTO {db}.test_table_1 VALUES (2, '你好', '世界', '哈罗', '您Hi您', '您Hi您')"
+    )
+    mysql_node.query(
+        f"INSERT INTO {db}.test_table_2 VALUES (2, '你好', 0xFAAA00000000000DDCC)"
+    )
+    mysql_node.query(
+        f"INSERT INTO {db}.test_table_3 VALUES (2, '你好', '世界', 'hello', '您Hi您', '您Hi您')"
+    )
+
+    check_query(
+        clickhouse_node,
+        f"SELECT b, c, d, e, f FROM {db}.test_table_1 WHERE a = 2 FORMAT TSV",
+        "你好\t世界\t哈罗\t您Hi您\t您Hi您\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"SELECT hex(b), hex(c) FROM {db}.test_table_2 WHERE a = 2 FORMAT TSV",
+        "E4BDA0E5A5BD\t0FAAA00000000000DDCC\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"SELECT b, c, d, e, f FROM {db}.test_table_3 WHERE a = 2 FORMAT TSV",
+        "你好\t世界\thello\t您Hi您\t您Hi您\n",
+    )
+    clickhouse_node.query(f"DROP DATABASE {db}")
+    mysql_node.query(f"DROP DATABASE {db}")
+
+
 def select_without_columns(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS db")
     clickhouse_node.query("DROP DATABASE IF EXISTS db")
@@ -1498,6 +1592,128 @@ def utf8mb4_test(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE utf8mb4_test")
 
 
+def utf8mb4_column_test(clickhouse_node, mysql_node, service_name):
+    db = "utf8mb4_column_test"
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db}")
+
+    # Full sync
+    mysql_node.query(f"CREATE TABLE {db}.unquoted (id INT primary key, 日期 DATETIME)")
+    mysql_node.query(f"CREATE TABLE {db}.quoted (id INT primary key, `日期` DATETIME)")
+    mysql_node.query(f"INSERT INTO {db}.unquoted VALUES(1, now())")
+    mysql_node.query(f"INSERT INTO {db}.quoted VALUES(1, now())")
+    clickhouse_node.query(
+        f"CREATE DATABASE {db} ENGINE = MaterializedMySQL('{service_name}:3306', '{db}', 'root', 'clickhouse')"
+    )
+
+    # Full sync replicated unquoted columns names since they use SHOW CREATE TABLE
+    # which returns quoted column names
+    check_query(
+        clickhouse_node,
+        f"/* expect: quoted unquoted */ SHOW TABLES FROM {db}",
+        "quoted\nunquoted\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT COUNT() FROM {db}.unquoted",
+        "1\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT COUNT() FROM {db}.quoted",
+        "1\n",
+    )
+
+    # Inc sync
+    mysql_node.query(
+        f"CREATE TABLE {db}.unquoted_new (id INT primary key, 日期 DATETIME)"
+    )
+    mysql_node.query(
+        f"CREATE TABLE {db}.quoted_new (id INT primary key, `日期` DATETIME)"
+    )
+    mysql_node.query(f"INSERT INTO {db}.unquoted_new VALUES(1, now())")
+    mysql_node.query(f"INSERT INTO {db}.quoted_new VALUES(1, now())")
+    mysql_node.query(f"INSERT INTO {db}.unquoted VALUES(2, now())")
+    mysql_node.query(f"INSERT INTO {db}.quoted VALUES(2, now())")
+    check_query(
+        clickhouse_node,
+        f"/* expect: 2 */ SELECT COUNT() FROM {db}.quoted",
+        "2\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT COUNT() FROM {db}.quoted_new",
+        "1\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 2 */ SELECT COUNT() FROM {db}.unquoted",
+        "2\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT COUNT() FROM {db}.unquoted_new",
+        "1\n",
+    )
+
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS `{db}`")
+    mysql_node.query(f"DROP DATABASE IF EXISTS `{db}`")
+
+
+def utf8mb4_name_test(clickhouse_node, mysql_node, service_name):
+    db = "您Hi您"
+    table = "日期"
+    mysql_node.query(f"DROP DATABASE IF EXISTS `{db}`")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS `{db}`")
+    mysql_node.query(f"CREATE DATABASE `{db}`")
+    mysql_node.query(
+        f"CREATE TABLE `{db}`.`{table}` (id INT(11) NOT NULL PRIMARY KEY, `{table}` DATETIME) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4"
+    )
+    mysql_node.query(f"INSERT INTO `{db}`.`{table}` VALUES(1, now())")
+    mysql_node.query(
+        f"CREATE TABLE {db}.{table}_unquoted (id INT(11) NOT NULL PRIMARY KEY, {table} DATETIME) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4"
+    )
+    mysql_node.query(f"INSERT INTO {db}.{table}_unquoted VALUES(1, now())")
+    clickhouse_node.query(
+        f"CREATE DATABASE `{db}` ENGINE = MaterializedMySQL('{service_name}:3306', '{db}', 'root', 'clickhouse')"
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT COUNT() FROM `{db}`.`{table}`",
+        "1\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT COUNT() FROM `{db}`.`{table}_unquoted`",
+        "1\n",
+    )
+
+    # Inc sync
+    mysql_node.query(
+        f"CREATE TABLE `{db}`.`{table}2` (id INT(11) NOT NULL PRIMARY KEY, `{table}` DATETIME) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4"
+    )
+    mysql_node.query(f"INSERT INTO `{db}`.`{table}2` VALUES(1, now())")
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT COUNT() FROM `{db}`.`{table}2`",
+        "1\n",
+    )
+
+    mysql_node.query(
+        f"CREATE TABLE {db}.{table}2_unquoted (id INT(11) NOT NULL PRIMARY KEY, {table} DATETIME) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4"
+    )
+    mysql_node.query(f"INSERT INTO {db}.{table}2_unquoted VALUES(1, now())")
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT COUNT() FROM `{db}`.`{table}2_unquoted`",
+        "1\n",
+    )
+
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS `{db}`")
+    mysql_node.query(f"DROP DATABASE IF EXISTS `{db}`")
+
+
 def system_parts_test(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS system_parts_test")
     clickhouse_node.query("DROP DATABASE IF EXISTS system_parts_test")
@@ -1616,6 +1832,41 @@ def materialized_with_column_comments_test(clickhouse_node, mysql_node, service_
     )
     clickhouse_node.query("DROP DATABASE materialized_with_column_comments_test")
     mysql_node.query("DROP DATABASE materialized_with_column_comments_test")
+
+
+def double_quoted_comment(clickhouse_node, mysql_node, service_name):
+    db = "comment_db"
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db}")
+    mysql_node.query(
+        f'CREATE TABLE {db}.t1 (i INT PRIMARY KEY, id VARCHAR(255) COMMENT "ID")'
+    )
+    mysql_node.query(
+        f"CREATE TABLE {db}.t2 (i INT PRIMARY KEY, id VARCHAR(255) COMMENT 'ID')"
+    )
+    clickhouse_node.query(
+        f"CREATE DATABASE {db} ENGINE = MaterializedMySQL('{service_name}:3306', '{db}', 'root', 'clickhouse')"
+    )
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db} FORMAT TSV",
+        "t1\nt2\n",
+    )
+
+    # incremental
+    mysql_node.query(
+        f'CREATE TABLE {db}.t3 (i INT PRIMARY KEY, id VARCHAR(255) COMMENT "ID")'
+    )
+    mysql_node.query(
+        f"CREATE TABLE {db}.t4 (i INT PRIMARY KEY, id VARCHAR(255) COMMENT 'ID')"
+    )
+    check_query(
+        clickhouse_node, f"SHOW TABLES FROM {db} FORMAT TSV", "t1\nt2\nt3\nt4\n"
+    )
+
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
 
 
 def materialized_with_enum8_test(clickhouse_node, mysql_node, service_name):

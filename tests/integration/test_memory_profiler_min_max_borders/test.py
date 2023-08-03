@@ -20,6 +20,9 @@ def started_cluster():
 
 
 def test_trace_boundaries_work(started_cluster):
+    if node.is_built_with_sanitizer():
+        pytest.skip("Disabled for sanitizers")
+
     node.query("select randomPrintableASCII(number) from numbers(1000) FORMAT Null")
     node.query("SYSTEM FLUSH LOGS")
 

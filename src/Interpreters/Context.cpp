@@ -21,6 +21,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/IDatabase.h>
+#include <Server/ServerType.h>
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeList.h>
@@ -44,6 +45,7 @@
 #include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
 #include <Core/Settings.h>
@@ -114,7 +116,10 @@
 #include <re2/re2.h>
 #include <Storages/StorageView.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/FunctionParameterValuesVisitor.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <base/find_symbols.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 
 #if USE_ROCKSDB
 #include <rocksdb/table.h>
@@ -153,6 +158,7 @@ namespace CurrentMetrics
     extern const Metric IOWriterThreads;
     extern const Metric IOWriterThreadsActive;
 }
+
 
 namespace DB
 {
@@ -272,6 +278,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable QueryCachePtr query_cache;         /// Cache of query results.
     mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     ProcessList process_list;                               /// Executing queries at the moment.
+    SessionTracker session_tracker;
     GlobalOvercommitTracker global_overcommit_tracker;
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
     MovesList moves_list;                                   /// The list of executing moves (for (Replicated)?MergeTree)
@@ -356,6 +363,9 @@ struct ContextSharedPart : boost::noncopyable
     std::vector<std::unique_ptr<ShellCommand>> bridge_commands;
 
     Context::ConfigReloadCallback config_reload_callback;
+
+    Context::StartStopServersCallback start_servers_callback;
+    Context::StartStopServersCallback stop_servers_callback;
 
     bool is_server_completely_started = false;
 
@@ -732,6 +742,9 @@ std::unique_lock<std::recursive_mutex> Context::getLock() const
 ProcessList & Context::getProcessList() { return shared->process_list; }
 const ProcessList & Context::getProcessList() const { return shared->process_list; }
 OvercommitTracker * Context::getGlobalOvercommitTracker() const { return &shared->global_overcommit_tracker; }
+
+SessionTracker & Context::getSessionTracker() { return shared->session_tracker; }
+
 MergeList & Context::getMergeList() { return shared->merge_list; }
 const MergeList & Context::getMergeList() const { return shared->merge_list; }
 MovesList & Context::getMovesList() { return shared->moves_list; }
@@ -784,15 +797,32 @@ Strings Context::getWarnings() const
         auto lock = getLock();
         common_warnings = shared->warnings;
     }
+    /// Make setting's name ordered
+    std::set<String> obsolete_settings;
     for (const auto & setting : settings)
     {
         if (setting.isValueChanged() && setting.isObsolete())
-        {
-            common_warnings.emplace_back("Some obsolete setting is changed. "
-                                         "Check 'select * from system.settings where changed' and read the changelog.");
-            break;
-        }
+            obsolete_settings.emplace(setting.getName());
     }
+
+    if (!obsolete_settings.empty())
+    {
+        bool single_element = obsolete_settings.size() == 1;
+        String res = single_element ? "Obsolete setting [" : "Obsolete settings [";
+
+        bool first = true;
+        for (const auto & setting : obsolete_settings)
+        {
+            res += first ? "" : ", ";
+            res += "'" + setting + "'";
+            first = false;
+        }
+        res = res + "]" + (single_element ? " is" : " are")
+            + " changed. "
+              "Please check 'select * from system.settings where changed and is_obsolete' and read the changelog.";
+        common_warnings.emplace_back(res);
+    }
+
     return common_warnings;
 }
 
@@ -1070,7 +1100,7 @@ void Context::setUser(const UUID & user_id_, bool set_current_profiles_, bool se
         std::optional<ContextAccessParams> params;
         {
             auto lock = getLock();
-            params.emplace(ContextAccessParams{user_id_, /* full_access= */ false, /* use_default_roles = */ true, {}, settings, current_database, client_info});
+            params.emplace(ContextAccessParams{user_id_, /* full_access= */ false, /* use_default_roles = */ true, {}, settings, current_database, client_info });
         }
         /// `temp_access` is used here only to extract information about the user, not to actually check access.
         /// NOTE: AccessControl::getContextAccess() may require some IO work, so Context::getLock() must be unlocked while we're doing this.
@@ -1130,13 +1160,6 @@ std::optional<UUID> Context::getUserID() const
 {
     auto lock = getLock();
     return user_id;
-}
-
-
-void Context::setQuotaKey(String quota_key_)
-{
-    auto lock = getLock();
-    client_info.quota_key = std::move(quota_key_);
 }
 
 
@@ -1279,7 +1302,7 @@ void Context::setCurrentProfiles(const SettingsProfilesInfo & profiles_info, boo
 {
     auto lock = getLock();
     if (check_constraints)
-        checkSettingsConstraints(profiles_info.settings);
+        checkSettingsConstraints(profiles_info.settings, SettingSource::PROFILE);
     applySettingsChanges(profiles_info.settings);
     settings_constraints_and_current_profiles = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
 }
@@ -1559,8 +1582,21 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     {
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
         {
+            auto query = table->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
+            NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression);
+            StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
+
+            ASTCreateQuery create;
+            create.select = query->as<ASTSelectWithUnionQuery>();
+            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, getQueryContext());
+            auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
+                                                     create,
+                                                     ColumnsDescription(sample_block.getNamesAndTypesList()),
+                                                     /* comment */ "",
+                                                     /* is_parameterized_view */ true);
+            res->startup();
             function->prefer_subquery_to_function_formatting = true;
-            return table;
+            return res;
         }
     }
     auto hash = table_expression->getTreeHash();
@@ -1820,29 +1856,29 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 }
 
 
-void Context::checkSettingsConstraints(const SettingsProfileElements & profile_elements) const
+void Context::checkSettingsConstraints(const SettingsProfileElements & profile_elements, SettingSource source) const
 {
-    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, profile_elements);
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, profile_elements, source);
 }
 
-void Context::checkSettingsConstraints(const SettingChange & change) const
+void Context::checkSettingsConstraints(const SettingChange & change, SettingSource source) const
 {
-    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, change);
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, change, source);
 }
 
-void Context::checkSettingsConstraints(const SettingsChanges & changes) const
+void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingSource source) const
 {
-    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, changes);
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, changes, source);
 }
 
-void Context::checkSettingsConstraints(SettingsChanges & changes) const
+void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source) const
 {
-    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, changes);
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, changes, source);
 }
 
-void Context::clampToSettingsConstraints(SettingsChanges & changes) const
+void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSource source) const
 {
-    getSettingsConstraintsAndCurrentProfiles()->constraints.clamp(settings, changes);
+    getSettingsConstraintsAndCurrentProfiles()->constraints.clamp(settings, changes, source);
 }
 
 void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
@@ -2214,9 +2250,9 @@ BackupsWorker & Context::getBackupsWorker() const
     const bool allow_concurrent_restores = this->getConfigRef().getBool("backups.allow_concurrent_restores", true);
 
     const auto & config = getConfigRef();
-    const auto & settings_ = getSettingsRef();
-    UInt64 backup_threads = config.getUInt64("backup_threads", settings_.backup_threads);
-    UInt64 restore_threads = config.getUInt64("restore_threads", settings_.restore_threads);
+    const auto & settings_ref = getSettingsRef();
+    UInt64 backup_threads = config.getUInt64("backup_threads", settings_ref.backup_threads);
+    UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref.restore_threads);
 
     if (!shared->backups_worker)
         shared->backups_worker.emplace(backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
@@ -2674,7 +2710,10 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     if (!shared->zookeeper)
         shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
-    else if (shared->zookeeper->expired())
+    else if (shared->zookeeper->hasReachedDeadline())
+        shared->zookeeper->finalize("ZooKeeper session has reached its deadline");
+
+    if (shared->zookeeper->expired())
     {
         Stopwatch watch;
         LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
@@ -2882,16 +2921,6 @@ std::map<String, zkutil::ZooKeeperPtr> Context::getAuxiliaryZooKeepers() const
 }
 
 #if USE_ROCKSDB
-MergeTreeMetadataCachePtr Context::getMergeTreeMetadataCache() const
-{
-    auto cache = tryGetMergeTreeMetadataCache();
-    if (!cache)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Merge tree metadata cache is not initialized, please add config merge_tree_metadata_cache in config.xml and restart");
-    return cache;
-}
-
 MergeTreeMetadataCachePtr Context::tryGetMergeTreeMetadataCache() const
 {
     return shared->merge_tree_metadata_cache;
@@ -3188,6 +3217,12 @@ void Context::initializeMergeTreeMetadataCache(const String & dir, size_t size)
     shared->merge_tree_metadata_cache = MergeTreeMetadataCache::create(dir, size);
 }
 #endif
+
+/// Call after unexpected crash happen.
+void Context::handleCrash() const
+{
+    shared->system_logs->handleCrash();
+}
 
 bool Context::hasTraceCollector() const
 {
@@ -3669,6 +3704,36 @@ void Context::reloadConfig() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't reload config because config_reload_callback is not set.");
 
     shared->config_reload_callback();
+}
+
+void Context::setStartServersCallback(StartStopServersCallback && callback)
+{
+    /// Is initialized at server startup, so lock isn't required. Otherwise use mutex.
+    shared->start_servers_callback = std::move(callback);
+}
+
+void Context::setStopServersCallback(StartStopServersCallback && callback)
+{
+    /// Is initialized at server startup, so lock isn't required. Otherwise use mutex.
+    shared->stop_servers_callback = std::move(callback);
+}
+
+void Context::startServers(const ServerType & server_type) const
+{
+    /// Use mutex if callback may be changed after startup.
+    if (!shared->start_servers_callback)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't start servers because start_servers_callback is not set.");
+
+    shared->start_servers_callback(server_type);
+}
+
+void Context::stopServers(const ServerType & server_type) const
+{
+    /// Use mutex if callback may be changed after startup.
+    if (!shared->stop_servers_callback)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't stop servers because stop_servers_callback is not set.");
+
+    shared->stop_servers_callback(server_type);
 }
 
 
@@ -4487,10 +4552,10 @@ ReadSettings Context::getReadSettings() const
 
 ReadSettings Context::getBackupReadSettings() const
 {
-    ReadSettings settings_ = getReadSettings();
-    settings_.remote_throttler = getBackupsThrottler();
-    settings_.local_throttler = getBackupsThrottler();
-    return settings_;
+    ReadSettings read_settings = getReadSettings();
+    read_settings.remote_throttler = getBackupsThrottler();
+    read_settings.local_throttler = getBackupsThrottler();
+    return read_settings;
 }
 
 WriteSettings Context::getWriteSettings() const
@@ -4519,14 +4584,13 @@ std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
 
 Context::ParallelReplicasMode Context::getParallelReplicasMode() const
 {
-    const auto & settings_ = getSettingsRef();
+    const auto & settings_ref = getSettingsRef();
 
     using enum Context::ParallelReplicasMode;
-    if (!settings_.parallel_replicas_custom_key.value.empty())
+    if (!settings_ref.parallel_replicas_custom_key.value.empty())
         return CUSTOM_KEY;
 
-    if (settings_.allow_experimental_parallel_reading_from_replicas > 0
-        && !settings_.use_hedged_requests)
+    if (settings_ref.allow_experimental_parallel_reading_from_replicas > 0 && !settings_ref.use_hedged_requests)
         return READ_TASKS;
 
     return SAMPLE_KEY;
@@ -4534,17 +4598,15 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
 
 bool Context::canUseParallelReplicasOnInitiator() const
 {
-    const auto & settings_ = getSettingsRef();
-    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
-        && settings_.max_parallel_replicas > 1
+    const auto & settings_ref = getSettingsRef();
+    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS && settings_ref.max_parallel_replicas > 1
         && !getClientInfo().collaborate_with_initiator;
 }
 
 bool Context::canUseParallelReplicasOnFollower() const
 {
-    const auto & settings_ = getSettingsRef();
-    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
-        && settings_.max_parallel_replicas > 1
+    const auto & settings_ref = getSettingsRef();
+    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS && settings_ref.max_parallel_replicas > 1
         && getClientInfo().collaborate_with_initiator;
 }
 
