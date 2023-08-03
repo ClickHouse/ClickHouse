@@ -1022,6 +1022,7 @@ def test_memory_leak(started_cluster):
         clickhouse_node.query("DROP DATABASE test_database")
         clickhouse_node.restart_clickhouse()
 
+
 def test_password_leak(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
@@ -1038,4 +1039,6 @@ def test_password_leak(started_cluster):
         clickhouse_node.query(
             "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse') SETTINGS connection_auto_close = 1"
         )
-        assert "clickhouse" not in clickhouse_node.query("SHOW CREATE test_database.test_table")
+        assert "clickhouse" not in clickhouse_node.query(
+            "SHOW CREATE test_database.test_table"
+        )
