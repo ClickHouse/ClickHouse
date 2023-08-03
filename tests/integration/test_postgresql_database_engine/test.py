@@ -406,14 +406,17 @@ def test_postgresql_password_leak(started_cluster):
     )
     cursor = conn.cursor()
 
+    cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
     cursor.execute("CREATE SCHEMA test_schema")
     cursor.execute("CREATE TABLE test_schema.table1 (a integer)")
     cursor.execute("CREATE TABLE table2 (a integer)")
 
+    node1.query("DROP DATABASE IF EXISTS postgres_database")
     node1.query(
         "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword', 'test_schema')"
     )
 
+    node1.query("DROP DATABASE IF EXISTS postgres_database2")
     node1.query(
         "CREATE DATABASE postgres_database2 ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
     )
