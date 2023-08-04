@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
-# If tests run in parallel, results can become flaky.
-# Because each test starts many processes and waits for the query to run.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
