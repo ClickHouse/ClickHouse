@@ -1408,9 +1408,9 @@ public:
         }
 
 
-        if constexpr (is_plus || is_minus)
+        if (isArray(arguments[0]) && isArray(arguments[1]))
         {
-            if (isArray(arguments[0]) && isArray(arguments[1]))
+            if constexpr (is_plus || is_minus)
             {
                 DataTypes new_arguments {
                         static_cast<const DataTypeArray &>(*arguments[0]).getNestedType(),
@@ -1418,9 +1418,10 @@ public:
                 };
                 return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
             }
+            else
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot use this operation on arrays");
         }
-        else
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot use this operation on arrays");
+
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1], context))
