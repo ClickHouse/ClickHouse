@@ -1,35 +1,17 @@
 #include <gtest/gtest.h>
 
 #include <Common/ProxyConfigurationResolverProvider.h>
-#include <Interpreters/Context.h>
+#include <Common/tests/gtest_global_context.h>
 
 using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
-class ProxyConfigurationResolverProviderTests : public ::testing::Test
+namespace
 {
-protected:
-
-    static void SetUpTestSuite() {
-        shared_idk = DB::Context::createShared();
-        context = DB::Context::createGlobal(shared_idk.get());
-        context->makeGlobalContext();
-    }
-
-    static void TearDownTestSuite() {
-        context->shutdown();
-    }
-
-    static DB::SharedContextHolder shared_idk;
-    static DB::ContextMutablePtr context;
-
     Poco::URI http_proxy_server = Poco::URI("http://http_environment_proxy:3128");
     Poco::URI https_proxy_server = Poco::URI("http://https_environment_proxy:3128");
-};
+}
 
-DB::SharedContextHolder ProxyConfigurationResolverProviderTests::shared_idk;
-DB::ContextMutablePtr ProxyConfigurationResolverProviderTests::context;
-
-TEST_F(ProxyConfigurationResolverProviderTests, EnvironmentResolverShouldBeUsedIfNoSettings)
+TEST(ProxyConfigurationResolverProviderTests, EnvironmentResolverShouldBeUsedIfNoSettings)
 {
     setenv("http_proxy", http_proxy_server.toString().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
     setenv("https_proxy", https_proxy_server.toString().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
@@ -49,8 +31,11 @@ TEST_F(ProxyConfigurationResolverProviderTests, EnvironmentResolverShouldBeUsedI
     unsetenv("https_proxy"); // NOLINT(concurrency-mt-unsafe)
 }
 
-TEST_F(ProxyConfigurationResolverProviderTests, LIST_HTTP_ONLY)
+TEST(ProxyConfigurationResolverProviderTests, LIST_HTTP_ONLY)
 {
+    const auto & context_holder = getContext();
+    auto context = context_holder.context;
+
     ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
 
     config->setString("proxy", "");
@@ -71,8 +56,11 @@ TEST_F(ProxyConfigurationResolverProviderTests, LIST_HTTP_ONLY)
     ASSERT_EQ(https_proxy_configuration.port, 0);
 }
 
-TEST_F(ProxyConfigurationResolverProviderTests, LIST_HTTPS_ONLY)
+TEST(ProxyConfigurationResolverProviderTests, LIST_HTTPS_ONLY)
 {
+    const auto & context_holder = getContext();
+    auto context = context_holder.context;
+
     ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
 
     config->setString("proxy", "");
@@ -94,8 +82,11 @@ TEST_F(ProxyConfigurationResolverProviderTests, LIST_HTTPS_ONLY)
     ASSERT_EQ(https_proxy_configuration.port, 3128);
 }
 
-TEST_F(ProxyConfigurationResolverProviderTests, LIST_HTTP_BOTH)
+TEST(ProxyConfigurationResolverProviderTests, LIST_HTTP_BOTH)
 {
+    const auto & context_holder = getContext();
+    auto context = context_holder.context;
+
     ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
 
     config->setString("proxy", "");
