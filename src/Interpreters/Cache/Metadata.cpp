@@ -25,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 FileSegmentMetadata::FileSegmentMetadata(FileSegmentPtr && file_segment_)
@@ -197,6 +198,8 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
             return locked_metadata;
 
         if (key_not_found_policy == KeyNotFoundPolicy::THROW)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key `{}` in cache", key);
+        else if (key_not_found_policy == KeyNotFoundPolicy::THROW_LOGICAL)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key);
 
         if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
@@ -566,11 +569,11 @@ bool LockedKey::isLastOwnerOfFileSegment(size_t offset) const
     return file_segment_metadata->file_segment.use_count() == 2;
 }
 
-void LockedKey::removeAllReleasable()
+void LockedKey::removeAll(bool if_releasable)
 {
     for (auto it = key_metadata->begin(); it != key_metadata->end();)
     {
-        if (!it->second->releasable())
+        if (if_releasable && !it->second->releasable())
         {
             ++it;
             continue;
@@ -591,17 +594,32 @@ void LockedKey::removeAllReleasable()
     }
 }
 
+KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset)
+{
+    auto it = key_metadata->find(offset);
+    if (it == key_metadata->end())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no offset {}", offset);
+
+    auto file_segment = it->second->file_segment;
+    return removeFileSegmentImpl(it, file_segment->lock());
+}
+
 KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegmentGuard::Lock & segment_lock)
 {
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no offset {}", offset);
 
+    return removeFileSegmentImpl(it, segment_lock);
+}
+
+KeyMetadata::iterator LockedKey::removeFileSegmentImpl(KeyMetadata::iterator it, const FileSegmentGuard::Lock & segment_lock)
+{
     auto file_segment = it->second->file_segment;
 
     LOG_DEBUG(
         key_metadata->log, "Remove from cache. Key: {}, offset: {}, size: {}",
-        getKey(), offset, file_segment->reserved_size);
+        getKey(), file_segment->offset(), file_segment->reserved_size);
 
     chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
 
