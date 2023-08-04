@@ -27,13 +27,13 @@ public:
         : path_to_archive(path_to_archive_), lock_on_reading(lock_on_reading_)
     {
         current_archive = open(path_to_archive);
-        current_entry = archive_entry_new();
     }
 
     Handle(const Handle &) = delete;
     Handle(Handle && other) noexcept
         : current_archive(other.current_archive)
         , current_entry(other.current_entry)
+        , lock_on_reading(other.lock_on_reading)
     {
         other.current_archive = nullptr;
         other.current_entry = nullptr;
@@ -110,6 +110,7 @@ public:
 
     const String & getFileName() const
     {
+        chassert(current_entry);
         if (!file_name)
             file_name.emplace(archive_entry_pathname(current_entry));
 
@@ -118,6 +119,7 @@ public:
 
     const FileInfo & getFileInfo() const
     {
+        chassert(current_entry);
         if (!file_info)
         {
             file_info.emplace();
@@ -130,7 +132,7 @@ public:
     }
 
     struct archive * current_archive;
-    struct archive_entry * current_entry;
+    struct archive_entry * current_entry = nullptr;
 private:
     void checkError(int error) const
     {
@@ -185,7 +187,7 @@ private:
 
     /// for some archive types when we are reading headers static variables are used
     /// which are not thread-safe
-    const bool lock_on_reading = false;
+    const bool lock_on_reading;
     static inline std::mutex read_lock;
 
     mutable std::optional<String> file_name;
