@@ -1407,17 +1407,17 @@ public:
             return getReturnTypeImplStatic(new_arguments, context);
         }
 
-        if (isArray(arguments[0]) && isArray(arguments[1]))
-        {
-            if constexpr (!is_plus && !is_minus)
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot use this operation on arrays");
+        
+        if constexpr (is_plus || is_minus) {
+             if (isArray(arguments[0]) && isArray(arguments[1]))
+             {
+                 DataTypes new_arguments {
+                         static_cast<const DataTypeArray &>(*arguments[0]).getNestedType(),
+                         static_cast<const DataTypeArray &>(*arguments[1]).getNestedType(),
+                 };
 
-            DataTypes new_arguments {
-                    static_cast<const DataTypeArray &>(*arguments[0]).getNestedType(),
-                    static_cast<const DataTypeArray &>(*arguments[1]).getNestedType(),
-            };
-
-            return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
+                 return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
+             }
         }
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
