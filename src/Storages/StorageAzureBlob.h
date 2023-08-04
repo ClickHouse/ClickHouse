@@ -11,6 +11,7 @@
 #include <Storages/StorageConfiguration.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/prepareReadingFromFormat.h>
 
 namespace DB
 {
@@ -65,7 +66,7 @@ public:
         ASTPtr partition_by_);
 
     static StorageAzureBlob::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
-    static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration);
+    static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration, bool is_read_only);
 
     static AzureObjectStorage::SettingsPtr createSettings(ContextPtr local_context);
 
@@ -93,7 +94,7 @@ public:
 
     bool supportsPartitionBy() const override;
 
-    bool supportsSubcolumns() const override;
+    bool supportsSubcolumns() const override { return true; }
 
     bool supportsSubsetOfColumns() const override;
 
@@ -222,13 +223,11 @@ public:
     };
 
     StorageAzureBlobSource(
-        const std::vector<NameAndTypePair> & requested_virtual_columns_,
+        const ReadFromFormatInfo & info,
         const String & format_,
         String name_,
-        const Block & sample_block_,
         ContextPtr context_,
         std::optional<FormatSettings> format_settings_,
-        const ColumnsDescription & columns_,
         UInt64 max_block_size_,
         String compression_hint_,
         AzureObjectStorage * object_storage_,
@@ -241,10 +240,9 @@ public:
 
     String getName() const override;
 
-    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
-
 private:
-    std::vector<NameAndTypePair> requested_virtual_columns;
+    NamesAndTypesList requested_columns;
+    NamesAndTypesList requested_virtual_columns;
     String format;
     String name;
     Block sample_block;

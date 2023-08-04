@@ -3199,7 +3199,6 @@ class ClickHouseInstance:
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
-        self.base_dir = base_path
         self.docker_id = cluster.get_instance_docker_id(self.name)
         self.cluster = cluster
         self.hostname = hostname if hostname is not None else self.name
@@ -4193,14 +4192,6 @@ class ClickHouseInstance:
         self.exec_in_container(
             ["bash", "-c", f"sed -i 's/{replace}/{replacement}/g' {path_to_config}"]
         )
-
-    def put_users_config(self, config_path):
-        """Put new config (useful if you cannot put it at the start)"""
-
-        instance_config_dir = p.abspath(p.join(self.path, "configs"))
-        users_d_dir = p.abspath(p.join(instance_config_dir, "users.d"))
-        config_path = p.join(self.base_dir, config_path)
-        shutil.copy(config_path, users_d_dir)
 
     def create_dir(self):
         """Create the instance directory and all the needed files there."""
