@@ -292,7 +292,7 @@ FileSegments FileCache::splitRangeIntoFileSegments(
         remaining_size -= current_file_segment_size;
 
         auto file_segment_metadata_it = addFileSegment(
-            locked_key, current_pos, current_file_segment_size, state, settings, nullptr, nullptr);
+            locked_key, current_pos, current_file_segment_size, state, settings, nullptr);
         file_segments.push_back(file_segment_metadata_it->second->file_segment);
 
         current_pos += current_file_segment_size;
@@ -415,7 +415,7 @@ FileSegmentsHolderPtr FileCache::set(
     {
         /// If the file is unbounded, we can create a single file_segment_metadata for it.
         auto file_segment_metadata_it = addFileSegment(
-            *locked_key, offset, size, FileSegment::State::EMPTY, settings, nullptr, nullptr);
+            *locked_key, offset, size, FileSegment::State::EMPTY, settings, nullptr);
         file_segments = {file_segment_metadata_it->second->file_segment};
     }
     else
@@ -501,7 +501,6 @@ KeyMetadata::iterator FileCache::addFileSegment(
     size_t size,
     FileSegment::State state,
     const CreateFileSegmentSettings & settings,
-    PriorityIterator cache_it,
     const CacheGuard::Lock * lock)
 {
     /// Create a file_segment_metadata and put it in `files` map by [key][offset].
@@ -555,36 +554,18 @@ KeyMetadata::iterator FileCache::addFileSegment(
         result_state = state;
     }
 
-    if (cache_it == nullptr && state == FileSegment::State::DOWNLOADED)
+    auto file_segment = std::make_shared<FileSegment>(key, offset, size, result_state, settings, this, locked_key.getKeyMetadata());
+    auto file_segment_metadata = std::make_shared<FileSegmentMetadata>(std::move(file_segment));
+
+    auto [file_segment_metadata_it, inserted] = locked_key.getKeyMetadata()->emplace(offset, file_segment_metadata);
+    if (!inserted)
     {
-        cache_it = main_priority->add(locked_key.getKeyMetadata(), offset, size, *lock);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Failed to insert {}:{}: entry already exists", key, offset);
     }
 
-    try
-    {
-        auto file_segment = std::make_shared<FileSegment>(
-            key, offset, size, result_state, settings, this, locked_key.getKeyMetadata(), cache_it);
-        auto file_segment_metadata = std::make_shared<FileSegmentMetadata>(std::move(file_segment));
-
-        auto [file_segment_metadata_it, inserted] = locked_key.getKeyMetadata()->emplace(offset, file_segment_metadata);
-        if (!inserted)
-        {
-            if (cache_it)
-                cache_it->remove(*lock);
-
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Failed to insert {}:{}: entry already exists", key, offset);
-        }
-
-        return file_segment_metadata_it;
-    }
-    catch (...)
-    {
-        if (cache_it)
-            cache_it->remove(*lock);
-        throw;
-    }
+    return file_segment_metadata_it;
 }
 
 bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
@@ -1041,17 +1022,26 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
                 KeyMetadata::iterator file_segment_metadata_it;
                 try
                 {
-                    file_segment_metadata_it = addFileSegment(
-                        *key_metadata->lock(), offset, size, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings(segment_kind), cache_it, nullptr);
+                    auto file_segment = std::make_shared<FileSegment>(key, offset, size,
+                                                                      FileSegment::State::DOWNLOADED,
+                                                                      CreateFileSegmentSettings(segment_kind),
+                                                                      this,
+                                                                      key_metadata,
+                                                                      cache_it);
+
+                    auto [_, inserted] = key_metadata->emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment)));
+                    if (!inserted)
+                    {
+                        cache_it->remove(lockCache());
+                        chassert(false);
+                    }
                 }
                 catch (...)
                 {
                     tryLogCurrentException(__PRETTY_FUNCTION__);
                     chassert(false);
 
-                    if (cache_it)
-                        cache_it->remove(lockCache());
-
+                    cache_it->remove(lockCache());
                     fs::remove(offset_it->path());
                     continue;
                 }

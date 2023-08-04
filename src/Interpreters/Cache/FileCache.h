@@ -221,7 +221,6 @@ private:
         size_t size,
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
-        PriorityIterator cache_it,
         const CacheGuard::Lock *);
 
     void cleanupThreadFunc();
