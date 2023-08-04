@@ -1089,52 +1089,32 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-void Context::setUser(const UUID & user_id_, bool set_current_profiles_, bool set_current_roles_, bool set_current_database_)
+void Context::setUser(const UUID & user_id_, const std::optional<const std::vector<UUID>> & current_roles_)
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
+    /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
+    /// so Context::getLock() must be unlocked while we're doing this.
 
-    std::shared_ptr<const User> user;
-    std::shared_ptr<const ContextAccess> temp_access;
-    if (set_current_profiles_ || set_current_roles_ || set_current_database_)
-    {
-        std::optional<ContextAccessParams> params;
-        {
-            auto lock = getLock();
-            params.emplace(ContextAccessParams{user_id_, /* full_access= */ false, /* use_default_roles = */ true, {}, settings, current_database, client_info });
-        }
-        /// `temp_access` is used here only to extract information about the user, not to actually check access.
-        /// NOTE: AccessControl::getContextAccess() may require some IO work, so Context::getLock() must be unlocked while we're doing this.
-        temp_access = getAccessControl().getContextAccess(*params);
-        user = temp_access->getUser();
-    }
+    auto user = getAccessControl().read<User>(user_id_);
 
-    std::shared_ptr<const SettingsProfilesInfo> profiles;
-    if (set_current_profiles_)
-        profiles = temp_access->getDefaultProfileInfo();
-
-    std::optional<std::vector<UUID>> roles;
-    if (set_current_roles_)
-        roles = user->granted_roles.findGranted(user->default_roles);
-
-    String database;
-    if (set_current_database_)
-        database = user->default_database;
+    auto new_current_roles = current_roles_ ? user->granted_roles.findGranted(*current_roles_) : user->granted_roles.findGranted(user->default_roles);
+    auto enabled_roles = getAccessControl().getEnabledRolesInfo(new_current_roles, {});
+    auto enabled_profiles = getAccessControl().getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
+    const auto & database = user->default_database;
 
     /// Apply user's profiles, constraints, settings, roles.
+
     auto lock = getLock();
 
     setUserID(user_id_);
 
-    if (profiles)
-    {
-        /// A profile can specify a value and a readonly constraint for same setting at the same time,
-        /// so we shouldn't check constraints here.
-        setCurrentProfiles(*profiles, /* check_constraints= */ false);
-    }
+    /// A profile can specify a value and a readonly constraint for same setting at the same time,
+    /// so we shouldn't check constraints here.
+    setCurrentProfiles(*enabled_profiles, /* check_constraints= */ false);
 
-    if (roles)
-        setCurrentRoles(*roles);
+    setCurrentRoles(new_current_roles);
 
+    /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
         setCurrentDatabase(database);
 }
@@ -4548,14 +4528,6 @@ ReadSettings Context::getReadSettings() const
     res.mmap_cache = getMMappedFileCache().get();
 
     return res;
-}
-
-ReadSettings Context::getBackupReadSettings() const
-{
-    ReadSettings read_settings = getReadSettings();
-    read_settings.remote_throttler = getBackupsThrottler();
-    read_settings.local_throttler = getBackupsThrottler();
-    return read_settings;
 }
 
 WriteSettings Context::getWriteSettings() const
