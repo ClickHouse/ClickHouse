@@ -207,8 +207,8 @@ def test_postgres_session(started_cluster):
 def test_parallel_sessions(started_cluster):
     thread_list = []
     for _ in range(10):
-        # Sleep time does not dignificantly matters here,
-        # test should pass even without sleeping
+        # Sleep time does not significantly matter here,
+        # test should pass even without sleeping.
         for function in [postgres_query, grpc_query, mysql_query]:
             thread = threading.Thread(
                 target=function,
