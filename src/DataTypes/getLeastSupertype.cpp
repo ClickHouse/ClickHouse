@@ -692,12 +692,14 @@ void optimizeTypeIds(const DataTypes & types, TypeIndexSet & type_ids)
             case TypeIndex::UInt64:
                 if (try_change_unsigned)
                     return type_id;
+                break ;
             case TypeIndex::Int8:
             case TypeIndex::Int16:
             case TypeIndex::Int32:
             case TypeIndex::Int64:
                 if (!try_change_unsigned)
                     return type_id;
+                break ;
             default:
                 return type_id;
         }
