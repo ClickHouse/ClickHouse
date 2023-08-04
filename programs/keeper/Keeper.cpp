@@ -288,13 +288,27 @@ try
     std::string path;
 
     if (config().has("keeper_server.storage_path"))
+    {
         path = config().getString("keeper_server.storage_path");
+    }
+    else if (std::filesystem::is_directory(std::filesystem::path{config().getString("path", DBMS_DEFAULT_PATH)} / "coordination"))
+    {
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                        "By default 'keeper.storage_path' could be assigned to {}, but the directory {} already exists. Please specify 'keeper.storage_path' in the keeper configuration explicitly",
+                        KEEPER_DEFAULT_PATH, String{std::filesystem::path{config().getString("path", DBMS_DEFAULT_PATH)} / "coordination"});
+    }
     else if (config().has("keeper_server.log_storage_path"))
+    {
         path = std::filesystem::path(config().getString("keeper_server.log_storage_path")).parent_path();
+    }
     else if (config().has("keeper_server.snapshot_storage_path"))
+    {
         path = std::filesystem::path(config().getString("keeper_server.snapshot_storage_path")).parent_path();
+    }
     else
+    {
         path = KEEPER_DEFAULT_PATH;
+    }
 
     std::filesystem::create_directories(path);
 
