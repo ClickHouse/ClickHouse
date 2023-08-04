@@ -597,7 +597,7 @@ void RemoteQueryExecutor::finish()
 
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
     /// We do this manually instead of calling drain() because we want to process Log, ProfileEvents and Progress
-    /// packets that had been sent before the connection is fully finished in oder to have final statistics of what
+    /// packets that had been sent before the connection is fully finished in order to have final statistics of what
     /// was executed in the remote queries
     while (connections->hasActiveConnections() && !finished)
     {
