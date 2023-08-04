@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
-# If tests run in parallel, results can become flaky.
-# Because each test starts many processes and waits for the query to run.
+# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -10,10 +8,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 readonly PID=$$
 
 # Each user uses a separate thread.
-readonly TCP_USERS=( "TCP_USER_${PID}"_{1,2} ) # 2 concurrent TCP users
-readonly HTTP_USERS=( "HTTP_USER_${PID}" )
-readonly HTTP_WITH_SESSION_ID_SESSION_USERS=( "HTTP_WITH_SESSION_ID_USER_${PID}" )
-readonly MYSQL_USERS=( "MYSQL_USER_${PID}")
+readonly TCP_USERS=( "02833_TCP_USER_${PID}"_{1,2} ) # 2 concurrent TCP users
+readonly HTTP_USERS=( "02833_HTTP_USER_${PID}" )
+readonly HTTP_WITH_SESSION_ID_SESSION_USERS=( "02833_HTTP_WITH_SESSION_ID_USER_${PID}" )
+readonly MYSQL_USERS=( "02833_MYSQL_USER_${PID}")
 readonly ALL_USERS=( "${TCP_USERS[@]}" "${HTTP_USERS[@]}" "${HTTP_WITH_SESSION_ID_SESSION_USERS[@]}" "${MYSQL_USERS[@]}" )
 
 readonly TCP_USERS_SQL_COLLECTION_STRING="$( echo "${TCP_USERS[*]}" | sed "s/[^[:space:]]\+/'&'/g" | sed 's/[[:space:]]/,/g' )"
@@ -34,14 +32,13 @@ done
 # These functions try to create a session with successful login and logout.
 # Sleep a small, random amount of time to make concurrency more intense.
 # and try to login with an invalid password.
-# test is actually not timing dependent. it should work even without sleep at all.
 function tcp_session() 
 {
     local user=$1
     local i=0
     while (( (i++) < 10 )); do
         # login logout
-        ${CLICKHOUSE_CLIENT} -q "SELECT 1, sleep(0.02${RANDOM})" --user="${user}" --password="pass"
+        ${CLICKHOUSE_CLIENT} -q "SELECT 1, sleep(0.01${RANDOM})" --user="${user}" --password="pass"
         # login failure
         ${CLICKHOUSE_CLIENT} -q "SELECT 2" --user="${user}" --password 'invalid'
     done
@@ -53,7 +50,7 @@ function http_session()
     local i=0
     while (( (i++) < 10 )); do
         # login logout
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&password=pass" -d "SELECT 3, sleep(0.02${RANDOM})"
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&password=pass" -d "SELECT 3, sleep(0.01${RANDOM})"
 
         # login failure
         ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&password=wrong" -d "SELECT 4"
@@ -66,7 +63,7 @@ function http_with_session_id_session()
     local i=0
     while (( (i++) < 10 )); do
         # login logout
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${user}&user=${user}&password=pass" -d "SELECT 5, sleep 0.02${RANDOM}"
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${user}&user=${user}&password=pass" -d "SELECT 5, sleep 0.01${RANDOM}"
 
         # login failure
         ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${user}&user=${user}&password=wrong" -d "SELECT 6"
@@ -79,7 +76,7 @@ function mysql_session()
     local i=0
     while (( (i++) < 10 )); do
         # login logout
-        ${CLICKHOUSE_CLIENT} -q "SELECT 1, sleep(0.02${RANDOM}) FROM mysql('127.0.0.1:9004', 'system', 'one', '${user}', 'pass')"
+        ${CLICKHOUSE_CLIENT} -q "SELECT 1, sleep(0.01${RANDOM}) FROM mysql('127.0.0.1:9004', 'system', 'one', '${user}', 'pass')"
 
         # login failure
         ${CLICKHOUSE_CLIENT} -q "SELECT 1 FROM mysql('127.0.0.1:9004', 'system', 'one', '${user}', 'wrong', SETTINGS connection_max_tries=1)"
