@@ -129,7 +129,7 @@ public:
 
     Chunk generate() override
     {
-        if (is_valuer_emitted.exchange(true))
+        if (is_value_emitted.exchange(true))
             return {};
         auto block = getSingleValueBlock(result_value);
         return Chunk(block.getColumns(), block.rows());
@@ -137,7 +137,7 @@ public:
 
 private:
     std::atomic<UInt8> result_value{1};
-    std::atomic_bool is_valuer_emitted{false};
+    std::atomic_bool is_value_emitted{false};
 };
 
 }
@@ -194,7 +194,7 @@ BlockIO InterpreterCheckQuery::execute()
         if (settings.check_query_single_value_result)
         {
             auto emitter_processor = std::make_shared<TableCheckResultEmitter>();
-            auto input_port = &emitter_processor->getInputPort();
+            auto * input_port = &emitter_processor->getInputPort();
             processors->emplace_back(emitter_processor);
 
             connect(*resize_outport, *input_port);

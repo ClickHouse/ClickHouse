@@ -8499,7 +8499,7 @@ IStorage::DataValidationTasksPtr StorageReplicatedMergeTree::getCheckTaskList(co
 CheckResult StorageReplicatedMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list, bool & has_nothing_to_do)
 {
 
-    if (auto part = static_cast<DataValidationTasks *>(check_task_list.get())->next())
+    if (auto part = assert_cast<DataValidationTasks *>(check_task_list.get())->next())
     {
         try
         {
