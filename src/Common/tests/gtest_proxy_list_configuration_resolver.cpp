@@ -18,9 +18,9 @@ TEST(ProxyListConfigurationResolver, SimpleTest)
 
     ASSERT_EQ(configuration1.host, proxy_server1.getHost());
     ASSERT_EQ(configuration1.port, proxy_server1.getPort());
-    ASSERT_EQ(configuration1.protocol, DB::ProxyConfiguration::fromString(proxy_server1.getScheme()));
+    ASSERT_EQ(configuration1.protocol, DB::ProxyConfiguration::protocolFromString(proxy_server1.getScheme()));
 
     ASSERT_EQ(configuration2.host, proxy_server2.getHost());
     ASSERT_EQ(configuration2.port, proxy_server2.getPort());
-    ASSERT_EQ(configuration2.protocol, DB::ProxyConfiguration::fromString(proxy_server2.getScheme()));
+    ASSERT_EQ(configuration2.protocol, DB::ProxyConfiguration::protocolFromString(proxy_server2.getScheme()));
 }

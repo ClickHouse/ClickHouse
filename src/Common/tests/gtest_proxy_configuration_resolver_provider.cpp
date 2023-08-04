@@ -5,49 +5,63 @@
 
 using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
-namespace
+class ProxyConfigurationResolverProviderTests : public ::testing::Test
 {
-    Poco::URI http_proxy_server = Poco::URI("http://http_environment_proxy:3128");
-    Poco::URI https_proxy_server = Poco::URI("http://https_environment_proxy:3128");
-}
+protected:
 
-TEST(ProxyConfigurationResolverProviderTests, EnvironmentResolverShouldBeUsedIfNoSettings)
+    static void SetUpTestSuite() {
+        context = getContext().context;
+    }
+
+    static void TearDownTestSuite() {
+        context->setConfig(ConfigurationPtr());
+    }
+
+    static DB::ContextMutablePtr context;
+};
+
+DB::ContextMutablePtr ProxyConfigurationResolverProviderTests::context;
+
+Poco::URI http_env_proxy_server = Poco::URI("http://http_environment_proxy:3128");
+Poco::URI https_env_proxy_server = Poco::URI("http://https_environment_proxy:3128");
+
+Poco::URI http_list_proxy_server = Poco::URI("http://http_list_proxy:3128");
+Poco::URI https_list_proxy_server = Poco::URI("http://https_list_proxy:3128");
+
+TEST_F(ProxyConfigurationResolverProviderTests, EnvironmentResolverShouldBeUsedIfNoSettings)
 {
-    setenv("http_proxy", http_proxy_server.toString().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
-    setenv("https_proxy", https_proxy_server.toString().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+    setenv("http_proxy", http_env_proxy_server.toString().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+    setenv("https_proxy", https_env_proxy_server.toString().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
 
     auto http_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTP)->resolve();
     auto https_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTPS)->resolve();
 
-    ASSERT_EQ(http_configuration.host, http_proxy_server.getHost());
-    ASSERT_EQ(http_configuration.port, http_proxy_server.getPort());
-    ASSERT_EQ(http_configuration.protocol, DB::ProxyConfiguration::fromString(http_proxy_server.getScheme()));
+    ASSERT_EQ(http_configuration.host, http_env_proxy_server.getHost());
+    ASSERT_EQ(http_configuration.port, http_env_proxy_server.getPort());
+    ASSERT_EQ(http_configuration.protocol, DB::ProxyConfiguration::protocolFromString(http_env_proxy_server.getScheme()));
 
-    ASSERT_EQ(https_configuration.host, https_proxy_server.getHost());
-    ASSERT_EQ(https_configuration.port, https_proxy_server.getPort());
-    ASSERT_EQ(https_configuration.protocol, DB::ProxyConfiguration::fromString(https_proxy_server.getScheme()));
+    ASSERT_EQ(https_configuration.host, https_env_proxy_server.getHost());
+    ASSERT_EQ(https_configuration.port, https_env_proxy_server.getPort());
+    ASSERT_EQ(https_configuration.protocol, DB::ProxyConfiguration::protocolFromString(https_env_proxy_server.getScheme()));
 
     unsetenv("http_proxy"); // NOLINT(concurrency-mt-unsafe)
     unsetenv("https_proxy"); // NOLINT(concurrency-mt-unsafe)
 }
 
-TEST(ProxyConfigurationResolverProviderTests, LIST_HTTP_ONLY)
+TEST_F(ProxyConfigurationResolverProviderTests, LIST_HTTP_ONLY)
 {
-    const auto & context_holder = getContext();
-    auto context = context_holder.context;
-
     ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
 
     config->setString("proxy", "");
     config->setString("proxy.http", "");
-    config->setString("proxy.http.uri", http_proxy_server.toString());
+    config->setString("proxy.http.uri", http_list_proxy_server.toString());
     context->setConfig(config);
 
     auto http_proxy_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTP)->resolve();
 
-    ASSERT_EQ(http_proxy_configuration.host, http_proxy_server.getHost());
-    ASSERT_EQ(http_proxy_configuration.port, http_proxy_server.getPort());
-    ASSERT_EQ(http_proxy_configuration.protocol, DB::ProxyConfiguration::fromString(http_proxy_server.getScheme()));
+    ASSERT_EQ(http_proxy_configuration.host, http_list_proxy_server.getHost());
+    ASSERT_EQ(http_proxy_configuration.port, http_list_proxy_server.getPort());
+    ASSERT_EQ(http_proxy_configuration.protocol, DB::ProxyConfiguration::protocolFromString(http_list_proxy_server.getScheme()));
 
     auto https_proxy_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTPS)->resolve();
 
@@ -56,16 +70,13 @@ TEST(ProxyConfigurationResolverProviderTests, LIST_HTTP_ONLY)
     ASSERT_EQ(https_proxy_configuration.port, 0);
 }
 
-TEST(ProxyConfigurationResolverProviderTests, LIST_HTTPS_ONLY)
+TEST_F(ProxyConfigurationResolverProviderTests, LIST_HTTPS_ONLY)
 {
-    const auto & context_holder = getContext();
-    auto context = context_holder.context;
-
     ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
 
     config->setString("proxy", "");
     config->setString("proxy.https", "");
-    config->setString("proxy.https.uri", "http://list_proxy1:3128");
+    config->setString("proxy.https.uri", https_list_proxy_server.toString());
     context->setConfig(config);
 
     auto http_proxy_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTP)->resolve();
@@ -75,43 +86,40 @@ TEST(ProxyConfigurationResolverProviderTests, LIST_HTTPS_ONLY)
 
     auto https_proxy_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTPS)->resolve();
 
-    ASSERT_EQ(https_proxy_configuration.host, "list_proxy1");
+    ASSERT_EQ(https_proxy_configuration.host, https_list_proxy_server.getHost());
 
     // still HTTP because the proxy host is not HTTPS
-    ASSERT_EQ(https_proxy_configuration.protocol, DB::ProxyConfiguration::Protocol::HTTP);
-    ASSERT_EQ(https_proxy_configuration.port, 3128);
+    ASSERT_EQ(https_proxy_configuration.protocol, DB::ProxyConfiguration::protocolFromString(https_list_proxy_server.getScheme()));
+    ASSERT_EQ(https_proxy_configuration.port, https_list_proxy_server.getPort());
 }
 
-TEST(ProxyConfigurationResolverProviderTests, LIST_HTTP_BOTH)
+TEST_F(ProxyConfigurationResolverProviderTests, LIST_HTTP_BOTH)
 {
-    const auto & context_holder = getContext();
-    auto context = context_holder.context;
-
     ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
 
     config->setString("proxy", "");
     config->setString("proxy.http", "");
-    config->setString("proxy.http.uri", "http://http_proxy:3128");
+    config->setString("proxy.http.uri", http_list_proxy_server.toString());
 
     config->setString("proxy", "");
     config->setString("proxy.https", "");
-    config->setString("proxy.https.uri", "https://https_proxy:3128");
+    config->setString("proxy.https.uri", https_list_proxy_server.toString());
 
     context->setConfig(config);
 
     auto http_proxy_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTP)->resolve();
 
-    ASSERT_EQ(http_proxy_configuration.host, "http_proxy");
-    ASSERT_EQ(http_proxy_configuration.protocol, DB::ProxyConfiguration::Protocol::HTTP);
-    ASSERT_EQ(http_proxy_configuration.port, 3128);
+    ASSERT_EQ(http_proxy_configuration.host, http_list_proxy_server.getHost());
+    ASSERT_EQ(http_proxy_configuration.protocol, DB::ProxyConfiguration::protocolFromString(http_list_proxy_server.getScheme()));
+    ASSERT_EQ(http_proxy_configuration.port, http_list_proxy_server.getPort());
 
     auto https_proxy_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTPS)->resolve();
 
-    ASSERT_EQ(https_proxy_configuration.host, "https_proxy");
+    ASSERT_EQ(https_proxy_configuration.host, https_list_proxy_server.getHost());
 
     // still HTTP because the proxy host is not HTTPS
-    ASSERT_EQ(https_proxy_configuration.protocol, DB::ProxyConfiguration::Protocol::HTTPS);
-    ASSERT_EQ(https_proxy_configuration.port, 3128);
+    ASSERT_EQ(https_proxy_configuration.protocol, DB::ProxyConfiguration::protocolFromString(https_list_proxy_server.getScheme()));
+    ASSERT_EQ(https_proxy_configuration.port, https_list_proxy_server.getPort());
 }
 
 // remote resolver is tricky to be tested in unit tests

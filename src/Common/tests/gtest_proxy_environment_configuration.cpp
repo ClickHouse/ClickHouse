@@ -18,7 +18,9 @@ TEST(EnvironmentProxyConfigurationResolver, TestHTTP)
 
     ASSERT_EQ(configuration.host, proxy_server.getHost());
     ASSERT_EQ(configuration.port, proxy_server.getPort());
-    ASSERT_EQ(configuration.protocol, DB::ProxyConfiguration::fromString(proxy_server.getScheme()));
+    ASSERT_EQ(configuration.protocol, DB::ProxyConfiguration::protocolFromString(proxy_server.getScheme()));
+
+    setenv("http_proxy", proxy_server.toString().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
 }
 
 TEST(EnvironmentProxyConfigurationResolver, TestHTTPNoEnv)
@@ -44,7 +46,9 @@ TEST(EnvironmentProxyConfigurationResolver, TestHTTPs)
 
     ASSERT_EQ(configuration.host, proxy_server.getHost());
     ASSERT_EQ(configuration.port, proxy_server.getPort());
-    ASSERT_EQ(configuration.protocol, DB::ProxyConfiguration::fromString(proxy_server.getScheme()));
+    ASSERT_EQ(configuration.protocol, DB::ProxyConfiguration::protocolFromString(proxy_server.getScheme()));
+
+    unsetenv("https_proxy"); // NOLINT(concurrency-mt-unsafe)
 }
 
 TEST(EnvironmentProxyConfigurationResolver, TestHTTPsNoEnv)

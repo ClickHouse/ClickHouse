@@ -93,7 +93,7 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 
         LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Use proxy: {}://{}:{}", proxy_protocol, proxy_host, proxy_port);
 
-        cached_config.protocol = ProxyConfiguration::fromString(proxy_protocol);
+        cached_config.protocol = ProxyConfiguration::protocolFromString(proxy_protocol);
         cached_config.host = proxy_host;
         cached_config.port = proxy_port;
         cache_timestamp = std::chrono::system_clock::now();

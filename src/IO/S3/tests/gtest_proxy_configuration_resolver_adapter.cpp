@@ -16,7 +16,7 @@ struct ProxyConfigurationResolverMock : public DB::ProxyConfigurationResolver
     {
         return DB::ProxyConfiguration {
             host,
-            DB::ProxyConfiguration::fromString(scheme),
+            DB::ProxyConfiguration::protocolFromString(scheme),
             port
         };
     }

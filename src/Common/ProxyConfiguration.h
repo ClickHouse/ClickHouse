@@ -14,8 +14,7 @@ struct ProxyConfiguration
         ANY
     };
 
-    // TODO rename protocolFromString
-    static auto fromString(const std::string & str)
+    static auto protocolFromString(const std::string & str)
     {
         if (str == "http")
         {
@@ -31,7 +30,7 @@ struct ProxyConfiguration
         }
     }
 
-    static auto toString(Protocol protocol)
+    static auto protocolToString(Protocol protocol)
     {
         switch (protocol)
         {

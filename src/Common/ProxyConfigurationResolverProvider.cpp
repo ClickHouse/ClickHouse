@@ -48,7 +48,7 @@ namespace
             {
                 auto config_protocol = configuration.getString(config_prefix + ".resolver.proxy_scheme");
 
-                if (ProxyConfiguration::Protocol::ANY == protocol || config_protocol == ProxyConfiguration::toString(protocol))
+                if (ProxyConfiguration::Protocol::ANY == protocol || config_protocol == ProxyConfiguration::protocolToString(protocol))
                 {
                     return getRemoteResolver(config_prefix + "." + key, configuration);
                 }

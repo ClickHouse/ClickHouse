@@ -27,7 +27,7 @@ ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve()
 
         LOG_DEBUG(&Poco::Logger::get("EnvironmentProxyConfigurationResolver"), "Use proxy from environment: {}://{}:{}", scheme, host, port);
 
-        return ProxyConfiguration {host, ProxyConfiguration::fromString(scheme), port};
+        return ProxyConfiguration {host, ProxyConfiguration::protocolFromString(scheme), port};
     }
 
     return {};
