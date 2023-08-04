@@ -24,8 +24,7 @@ namespace ErrorCodes
 
 void ITableFunctionFileLike::parseFirstArguments(const ASTPtr & arg, const ContextPtr &)
 {
-    String path = checkAndGetLiteralArgument<String>(arg, "source");
-    StorageFile::parseFileSource(std::move(path), filename, path_to_archive);
+    filename = checkAndGetLiteralArgument<String>(arg, "source");
 }
 
 String ITableFunctionFileLike::getFormatFromFirstArgument()
