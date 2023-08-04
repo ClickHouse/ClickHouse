@@ -51,6 +51,7 @@ ${CLICKHOUSE_CLIENT} -q "DELETE FROM system.session_log WHERE user = '${TEST_USE
 
 # DROP USE CASE
 ${CLICKHOUSE_CLIENT} -q "CREATE USER IF NOT EXISTS ${TEST_USER}"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON system.numbers TO ${TEST_USER}"
 
 export -f tcp_session;
 export -f http_session;
@@ -69,6 +70,7 @@ wait
 # DROP ROLE CASE
 ${CLICKHOUSE_CLIENT} -q "CREATE ROLE IF NOT EXISTS ${TEST_ROLE}"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${TEST_USER} DEFAULT ROLE ${TEST_ROLE}"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON system.numbers TO ${TEST_USER}"
 
 timeout 10s bash -c "tcp_session ${TEST_USER}" >/dev/null 2>&1 &
 timeout 10s bash -c "http_session ${TEST_USER}" >/dev/null 2>&1 &
@@ -85,6 +87,7 @@ wait
 # DROP PROFILE CASE
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE IF NOT EXISTS '${TEST_PROFILE}'"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${TEST_USER} SETTINGS PROFILE '${TEST_PROFILE}'"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON system.numbers TO ${TEST_USER}"
 
 timeout 10s bash -c "tcp_session ${TEST_USER}" >/dev/null 2>&1 &
 timeout 10s bash -c "http_session ${TEST_USER}" >/dev/null 2>&1 &
