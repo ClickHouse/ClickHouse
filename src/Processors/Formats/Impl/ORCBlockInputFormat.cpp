@@ -125,16 +125,12 @@ void ORCBlockInputFormat::prepareReader()
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
         getPort().getHeader(),
         "ORC",
-        format_settings.orc.import_nested,
         format_settings.orc.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.orc.case_insensitive_column_matching);
 
     const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
-    std::unordered_set<String> nested_table_names;
-    if (format_settings.orc.import_nested)
-        nested_table_names = Nested::getAllTableNames(getPort().getHeader(), ignore_case);
-
+    std::unordered_set<String> nested_table_names = Nested::getAllTableNames(getPort().getHeader(), ignore_case);
     for (int i = 0; i < schema->num_fields(); ++i)
     {
         const auto & name = schema->field(i)->name();
@@ -171,7 +167,6 @@ void registerInputFormatORC(FormatFactory & factory)
             {
                 return std::make_shared<ORCBlockInputFormat>(buf, sample, settings);
             });
-    factory.markFormatSupportsSubcolumns("ORC");
     factory.markFormatSupportsSubsetOfColumns("ORC");
 }
 
