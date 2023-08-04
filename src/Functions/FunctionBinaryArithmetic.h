@@ -1407,8 +1407,9 @@ public:
             return getReturnTypeImplStatic(new_arguments, context);
         }
 
-        
-        if constexpr (is_plus || is_minus) {
+
+        if constexpr (is_plus || is_minus) 
+        {
              if (isArray(arguments[0]) && isArray(arguments[1]))
              {
                  DataTypes new_arguments {
