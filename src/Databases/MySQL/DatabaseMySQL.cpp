@@ -77,6 +77,8 @@ DatabaseMySQL::DatabaseMySQL(
             throw;
     }
 
+    fs::create_directories(metadata_path);
+
     thread = ThreadFromGlobalPool{&DatabaseMySQL::cleanOutdatedTables, this};
 }
 
@@ -144,6 +146,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
     auto table_storage_define = database_engine_define->clone();
     {
         ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
+        ast_storage->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
         ASTs storage_children = ast_storage->children;
         auto storage_engine_arguments = ast_storage->engine->arguments;
 
