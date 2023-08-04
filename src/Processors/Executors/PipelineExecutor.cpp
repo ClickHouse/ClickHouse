@@ -210,6 +210,25 @@ void PipelineExecutor::finalizeExecution()
             all_processors_finished = false;
             break;
         }
+        else
+        {
+            /// Some executors might have reported progress as part of their finish() call
+            /// For example, when reading from parallel replicas the coordinator will cancel the queries as soon as it
+            /// enough data (on LIMIT), but as the progress report is asynchronous it might not be reported until the
+            /// connection is cancelled and all packets drained
+            /// To cover these cases we check if there is any pending progress in the processors to report
+            if (auto read_progress = node->processor->getReadProgress())
+            {
+                if (read_progress->counters.total_rows_approx)
+                    read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
+
+                if (read_progress->counters.total_bytes)
+                    read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
+
+                read_progress_callback->onProgress(
+                    read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits);
+            }
+        }
     }
 
     if (!all_processors_finished)
