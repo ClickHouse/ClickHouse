@@ -861,7 +861,7 @@ public:
             {
                 if (!storage->use_table_fd)
                 {
-                    if (!files_iterator->fromArchive())
+                    if (files_iterator->fromArchive())
                     {
                         auto [archive, filename] = files_iterator->nextFileFromArchive();
                         if (archive.empty())
@@ -878,7 +878,7 @@ public:
                         if (file_enumerator == nullptr)
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a file in archive {}", archive);
 
-                        while (file_enumerator->getFileName() != filename)
+                        while (file_enumerator->getFileName() != current_path)
                         {
                             if (!file_enumerator->nextFile())
                                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected file {} is missing from archive {}", filename, archive);

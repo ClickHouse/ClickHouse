@@ -91,12 +91,13 @@ public:
             close(archive);
         );
 
-        auto * entry = archive_entry_new();
+        struct archive_entry * entry = nullptr;
 
         std::vector<std::string> files;
         int error = readNextHeader(archive, &entry);
         while (error == ARCHIVE_OK || error == ARCHIVE_RETRY)
         {
+            chassert(entry != nullptr);
             std::string name = archive_entry_pathname(entry);
             if (!filter || filter(name))
                 files.push_back(std::move(name));
