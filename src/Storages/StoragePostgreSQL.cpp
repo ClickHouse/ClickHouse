@@ -549,13 +549,15 @@ void registerStoragePostgreSQL(StorageFactory & factory)
 {
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
     {
-        PostgreSQLSettings postgresql_settings; /// TODO: move some arguments from the arguments to the SETTINGS.
+        PostgreSQLSettings postgresql_settings;
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), postgresql_settings);
         if (args.storage_def->settings)
             postgresql_settings.loadFromQuery(*args.storage_def);
         const auto & settings = args.getContext()->getSettingsRef();
         if (!settings.postgresql_connection_pool_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");
+        if (!postgresql_settings.connection_pool_size)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "connection_pool_size cannot be zero.");
         auto pool = std::make_shared<postgres::PoolWithFailover>(configuration,
             settings.postgresql_connection_pool_size,
             settings.postgresql_connection_pool_wait_timeout,

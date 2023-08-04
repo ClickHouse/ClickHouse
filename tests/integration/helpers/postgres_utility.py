@@ -90,7 +90,11 @@ def create_postgres_table(
     drop_postgres_table(cursor, name)
     query = template.format(name)
     if len(settings) > 0:
-        query = query + " SETTINGS " + (','.join(k+'='+repr(v) for k, v in settings.items()))
+        query = (
+            query
+            + " SETTINGS "
+            + (",".join(k + "=" + repr(v) for k, v in settings.items()))
+        )
     cursor.execute(query)
     print(f"Query: {query}")
     if replica_identity_full:
