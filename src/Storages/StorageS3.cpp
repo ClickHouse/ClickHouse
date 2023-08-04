@@ -1252,7 +1252,8 @@ void StorageS3::Configuration::connect(ContextPtr context)
         context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         request_settings.get_request_throttler,
-        request_settings.put_request_throttler);
+        request_settings.put_request_throttler,
+        url.uri.getScheme());
 
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.maxConnections = static_cast<unsigned>(request_settings.max_connections);

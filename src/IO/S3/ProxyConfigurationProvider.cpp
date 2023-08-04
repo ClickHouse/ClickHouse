@@ -39,9 +39,9 @@ std::shared_ptr<ProxyConfiguration> ProxyConfigurationProvider::get(
     return adapt(ProxyConfigurationResolverProvider::get(Protocol::ANY));
 }
 
-std::shared_ptr<ProxyConfiguration> ProxyConfigurationProvider::get()
+std::shared_ptr<ProxyConfiguration> ProxyConfigurationProvider::get(const String & protocol)
 {
-    return adapt(ProxyConfigurationResolverProvider::get(Protocol::ANY));
+    return adapt(ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::fromString(protocol)));
 }
 
 }

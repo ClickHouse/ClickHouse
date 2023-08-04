@@ -48,6 +48,9 @@ std::unique_ptr<S3::Client> getClient(
     ContextPtr context,
     const S3ObjectStorageSettings & settings)
 {
+    String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+    S3::URI uri(endpoint);
+
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         config.getString(config_prefix + ".region", ""),
         context->getRemoteHostFilter(),
@@ -55,10 +58,9 @@ std::unique_ptr<S3::Client> getClient(
         context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
         /* for_disk_s3 = */ true,
         settings.request_settings.get_request_throttler,
-        settings.request_settings.put_request_throttler);
+        settings.request_settings.put_request_throttler,
+        uri.uri.getScheme());
 
-    String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
-    S3::URI uri(endpoint);
     if (uri.key.back() != '/')
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 path must ends with '/', but '{}' doesn't.", uri.key);
 

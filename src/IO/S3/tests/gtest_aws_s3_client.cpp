@@ -135,7 +135,8 @@ void testServerSideEncryption(
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         /* get_request_throttler = */ {},
-        /* put_request_throttler = */ {}
+        /* put_request_throttler = */ {},
+        uri.uri.getScheme()
     );
 
     client_configuration.endpointOverride = uri.endpoint;
