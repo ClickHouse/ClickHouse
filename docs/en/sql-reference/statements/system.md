@@ -314,6 +314,22 @@ Provides possibility to start background fetch tasks from replication queues whi
 SYSTEM START REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
 ```
 
+### STOP PULLING REPLICATION LOG
+
+Stops loading new entries from replication log to replication queue in a `ReplicatedMergeTree` table.
+
+``` sql
+SYSTEM STOP PULLING REPLICATION LOG [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+### START PULLING REPLICATION LOG
+
+Cancels `SYSTEM STOP PULLING REPLICATION LOG`.
+
+``` sql
+SYSTEM START PULLING REPLICATION LOG [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
 ### SYNC REPLICA
 
 Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a cluster, but no more than `receive_timeout` seconds.
