@@ -1146,10 +1146,7 @@ class FunctionBinaryArithmetic : public IFunction
         const auto * return_type_array = checkAndGetDataType<DataTypeArray>(result_type.get());
 
         if (!return_type_array)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Return type for function {} must be array.", getName());
-
-        if constexpr (!is_plus && !is_minus)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot use this operation on arrays");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Return type for function {} must be array.", getName());
 
         auto num_args = arguments.size();
         DataTypes data_types;
@@ -1189,7 +1186,7 @@ class FunctionBinaryArithmetic : public IFunction
             if (left_offsets[offset_index] != right_offsets[offset_index])
             {
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                "Cannot apply operation for arguments of different sizes. Size of the first argument: {}, size of the second argument: {}",
+                "Cannot apply operation for arrays of different sizes. Size of the first argument: {}, size of the second argument: {}",
                 *left_array_col->getOffsets().data(),
                 *right_array_col ->getOffsets().data());
             }
@@ -1203,10 +1200,9 @@ class FunctionBinaryArithmetic : public IFunction
 
         result_array_type = typeid_cast<const DataTypeArray *>(result_type.get())->getNestedType();
 
-        const auto & offsets = typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsets();
         size_t rows_count = 0;
-        if (!offsets.empty())
-            rows_count = offsets.back();
+        if (!left_offsets.empty())
+            rows_count = left_offsets.back();
         auto res = executeImpl(new_arguments, result_array_type, rows_count);
 
         return ColumnArray::create(res, typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
@@ -1415,6 +1411,9 @@ public:
 
         if (isArray(arguments[0]) && isArray(arguments[1]))
         {
+            if constexpr (!is_plus && !is_minus)
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot use this operation on arrays");
+
             DataTypes new_arguments {
                     static_cast<const DataTypeArray &>(*arguments[0]).getNestedType(),
                     static_cast<const DataTypeArray &>(*arguments[1]).getNestedType(),
