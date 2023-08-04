@@ -162,7 +162,9 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         || type == Type::STOP_REPLICATION_QUEUES
         || type == Type::START_REPLICATION_QUEUES
         || type == Type::STOP_DISTRIBUTED_SENDS
-        || type == Type::START_DISTRIBUTED_SENDS)
+        || type == Type::START_DISTRIBUTED_SENDS
+        || type == Type::STOP_PULLING_REPLICATION_LOG
+        || type == Type::START_PULLING_REPLICATION_LOG)
     {
         if (table)
             print_database_table();
