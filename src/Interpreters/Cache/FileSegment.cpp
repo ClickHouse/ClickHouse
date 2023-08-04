@@ -186,9 +186,7 @@ bool FileSegment::isDownloaded() const
 
 String FileSegment::getCallerId()
 {
-    if (!CurrentThread::isInitialized()
-        || !CurrentThread::get().getQueryContext()
-        || CurrentThread::getQueryId().empty())
+    if (!CurrentThread::isInitialized() || CurrentThread::getQueryId().empty())
         return "None:" + toString(getThreadId());
 
     return std::string(CurrentThread::getQueryId()) + ":" + toString(getThreadId());
@@ -258,6 +256,9 @@ void FileSegment::resetDownloader()
 
 void FileSegment::resetDownloaderUnlocked(const FileSegmentGuard::Lock &)
 {
+    if (downloader_id.empty())
+        return;
+
     LOG_TEST(log, "Resetting downloader from {}", downloader_id);
     downloader_id.clear();
 }
@@ -266,7 +267,6 @@ void FileSegment::assertIsDownloaderUnlocked(const std::string & operation, cons
 {
     auto caller = getCallerId();
     auto current_downloader = getDownloaderUnlocked(lock);
-    LOG_TEST(log, "Downloader id: {}, caller id: {}, operation: {}", current_downloader, caller, operation);
 
     if (caller != current_downloader)
     {
