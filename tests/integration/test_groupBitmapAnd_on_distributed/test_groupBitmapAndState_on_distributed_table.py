@@ -20,6 +20,7 @@ node4 = cluster.add_instance(
     tag="21.6",
     with_installed_binary=True,
     with_zookeeper=True,
+    allow_analyzer=False,
 )
 
 
