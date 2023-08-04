@@ -48,7 +48,7 @@ TEST_F(ProxyConfigurationResolverProviderTests, EnvironmentResolverShouldBeUsedI
     unsetenv("https_proxy"); // NOLINT(concurrency-mt-unsafe)
 }
 
-TEST_F(ProxyConfigurationResolverProviderTests, LIST_HTTP_ONLY)
+TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPOnly)
 {
     ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
 
@@ -70,7 +70,7 @@ TEST_F(ProxyConfigurationResolverProviderTests, LIST_HTTP_ONLY)
     ASSERT_EQ(https_proxy_configuration.port, 0);
 }
 
-TEST_F(ProxyConfigurationResolverProviderTests, LIST_HTTPS_ONLY)
+TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPSOnly)
 {
     ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
 
@@ -93,7 +93,7 @@ TEST_F(ProxyConfigurationResolverProviderTests, LIST_HTTPS_ONLY)
     ASSERT_EQ(https_proxy_configuration.port, https_list_proxy_server.getPort());
 }
 
-TEST_F(ProxyConfigurationResolverProviderTests, LIST_HTTP_BOTH)
+TEST_F(ProxyConfigurationResolverProviderTests, ListBoth)
 {
     ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
 
