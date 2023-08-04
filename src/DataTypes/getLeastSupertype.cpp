@@ -683,6 +683,7 @@ void optimizeTypeIds(const DataTypes & types, TypeIndexSet & type_ids)
 
     auto optimize_type_id = [&is_unsigned](const DataTypePtr & type, bool try_change_unsigned)
     {
+        TypeIndex type_id = type->getTypeId();
         switch (type_id)
         {
             case TypeIndex::UInt8:
@@ -717,7 +718,8 @@ void optimizeTypeIds(const DataTypes & types, TypeIndexSet & type_ids)
     // optimize type_ids, Example:
     // if only_signed. UInt64(possible: Int64), Int64 = Int64, Int64
     // if only_unsigned. Int64(possible: UInt64), UInt64 = UInt64, UInt64
-    if (!(only_unsigned && only_signed) && (both || only_unsigned || only_signed)) {
+    if (!(only_unsigned && only_signed) && (both || only_unsigned || only_signed))
+    {
         type_ids.clear();
         for (const auto & type : types)
         {
