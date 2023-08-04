@@ -184,6 +184,9 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
         total_servers++;
     }
 
+    /// this will only apply to fresh clusters
+    result.cluster_config->set_async_replication(true);
+
     if (!result.config && !allow_without_us)
         throw Exception(ErrorCodes::RAFT_ERROR, "Our server id {} not found in raft_configuration section", my_server_id);
 
