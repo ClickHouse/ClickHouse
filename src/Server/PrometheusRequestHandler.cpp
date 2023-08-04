@@ -18,7 +18,7 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     try
     {
         const auto & config = server.config();
-        unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
+        unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
 
         setResponseDefaultHeaders(response, keep_alive_timeout);
 

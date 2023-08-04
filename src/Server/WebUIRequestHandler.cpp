@@ -30,7 +30,7 @@ WebUIRequestHandler::WebUIRequestHandler(IServer & server_)
 
 void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    auto keep_alive_timeout = server.config().getUInt("keep_alive_timeout", 10);
+    auto keep_alive_timeout = server.config().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
 
     response.setContentType("text/html; charset=UTF-8");
 

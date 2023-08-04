@@ -596,7 +596,7 @@ void HTTPHandler::processQuery(
     size_t buffer_size_http = DBMS_DEFAULT_BUFFER_SIZE;
     size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
 
-    unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
+    unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
 
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
         response,
