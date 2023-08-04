@@ -14,7 +14,7 @@ protected:
     }
 
     static void TearDownTestSuite() {
-        context->setConfig(ConfigurationPtr());
+        context->setConfig(Poco::AutoPtr(new Poco::Util::MapConfiguration()));
     }
 
     static DB::ContextMutablePtr context;
