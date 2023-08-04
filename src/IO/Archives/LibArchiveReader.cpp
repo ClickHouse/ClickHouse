@@ -1,9 +1,11 @@
 #include <IO/Archives/LibArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/quoteString.h>
+#include <Common/scope_guard_safe.h>
 
 #include <IO/Archives/ArchiveUtils.h>
 
+#include <mutex>
 
 namespace DB
 {
@@ -18,12 +20,11 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-
-template <typename ArchiveInfo>
-class LibArchiveReader<ArchiveInfo>::Handle
+class LibArchiveReader::Handle
 {
 public:
-    explicit Handle(const String & path_to_archive_) : path_to_archive(path_to_archive_)
+    explicit Handle(std::string path_to_archive_, bool lock_on_reading_)
+        : path_to_archive(path_to_archive_), lock_on_reading(lock_on_reading_)
     {
         current_archive = open(path_to_archive);
         current_entry = archive_entry_new();
@@ -40,11 +41,7 @@ public:
 
     ~Handle()
     {
-        if (current_archive)
-        {
-            archive_read_close(current_archive);
-            archive_read_free(current_archive);
-        }
+        close(current_archive);
     }
 
     bool locateFile(const std::string & filename)
@@ -58,7 +55,7 @@ public:
         int err = ARCHIVE_OK;
         while (true)
         {
-            err = archive_read_next_header(current_archive, &current_entry);
+            err = readNextHeader(current_archive, &current_entry);
 
             if (err == ARCHIVE_RETRY)
                 continue;
@@ -80,57 +77,35 @@ public:
         int err = ARCHIVE_OK;
         do
         {
-            err = archive_read_next_header(current_archive, &current_entry);
+            err = readNextHeader(current_archive, &current_entry);
         } while (err == ARCHIVE_RETRY);
 
         checkError(err);
         return err == ARCHIVE_OK;
     }
 
-    static struct archive * open(const String & path_to_archive)
-    {
-        auto * archive = archive_read_new();
-        archive_read_support_filter_all(archive);
-        archive_read_support_format_all(archive);
-        if (archive_read_open_filename(archive, path_to_archive.c_str(), 10240) != ARCHIVE_OK)
-            throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't open {} archive: {}", ArchiveInfo::name, quoteString(path_to_archive));
-
-        return archive;
-    }
-
     std::vector<std::string> getAllFiles(NameFilter filter)
     {
         auto * archive = open(path_to_archive);
+        SCOPE_EXIT(
+            close(archive);
+        );
+
         auto * entry = archive_entry_new();
 
         std::vector<std::string> files;
-        int error = archive_read_next_header(archive, &entry);
+        int error = readNextHeader(archive, &entry);
         while (error == ARCHIVE_OK || error == ARCHIVE_RETRY)
         {
             std::string name = archive_entry_pathname(entry);
             if (!filter || filter(name))
                 files.push_back(std::move(name));
 
-            error = archive_read_next_header(archive, &entry);
+            error = readNextHeader(archive, &entry);
         }
-
-        archive_read_close(archive);
-        archive_read_free(archive);
 
         checkError(error);
         return files;
-    }
-
-    void checkError(int error)
-    {
-        if (error == ARCHIVE_FATAL)
-            throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Failed to read archive while fetching all files: {}", archive_error_string(current_archive));
-    }
-
-    void resetFileInfo()
-    {
-        file_name.reset();
-        file_info.reset();
     }
 
     const String & getFileName() const
@@ -157,13 +132,67 @@ public:
     struct archive * current_archive;
     struct archive_entry * current_entry;
 private:
+    void checkError(int error) const
+    {
+        if (error == ARCHIVE_FATAL)
+            throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Failed to read archive while fetching all files: {}", archive_error_string(current_archive));
+    }
+
+    void resetFileInfo()
+    {
+        file_name.reset();
+        file_info.reset();
+    }
+
+    static struct archive * open(const String & path_to_archive)
+    {
+        auto * archive = archive_read_new();
+        try
+        {
+            archive_read_support_filter_all(archive);
+            archive_read_support_format_all(archive);
+            if (archive_read_open_filename(archive, path_to_archive.c_str(), 10240) != ARCHIVE_OK)
+                throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't open archive: {}", quoteString(path_to_archive));
+        }
+        catch (...)
+        {
+            close(archive);
+            throw;
+        }
+
+        return archive;
+    }
+
+    static void close(struct archive * archive)
+    {
+        if (archive)
+        {
+            archive_read_close(archive);
+            archive_read_free(archive);
+        }
+    }
+
+    int readNextHeader(struct archive * archive, struct archive_entry ** entry) const
+    {
+        std::unique_lock lock(Handle::read_lock, std::defer_lock);
+        if (lock_on_reading)
+            lock.lock();
+
+        return archive_read_next_header(archive, entry);
+    }
+
     const String path_to_archive;
+
+    /// for some archive types when we are reading headers static variables are used
+    /// which are not thread-safe
+    const bool lock_on_reading = false;
+    static inline std::mutex read_lock;
+
     mutable std::optional<String> file_name;
     mutable std::optional<FileInfo> file_info;
 };
 
-template <typename ArchiveInfo>
-class LibArchiveReader<ArchiveInfo>::FileEnumeratorImpl : public FileEnumerator
+class LibArchiveReader::FileEnumeratorImpl : public FileEnumerator
 {
 public:
     explicit FileEnumeratorImpl(Handle handle_) : handle(std::move(handle_)) {}
@@ -178,8 +207,7 @@ private:
     Handle handle;
 };
 
-template <typename ArchiveInfo>
-class LibArchiveReader<ArchiveInfo>::ReadBufferFromLibArchive : public ReadBufferFromFileBase
+class LibArchiveReader::ReadBufferFromLibArchive : public ReadBufferFromFileBase
 {
 public:
     explicit ReadBufferFromLibArchive(Handle handle_, std::string path_to_archive_)
@@ -228,63 +256,55 @@ private:
     size_t total_bytes_read = 0;
 };
 
-template <typename ArchiveInfo>
-LibArchiveReader<ArchiveInfo>::LibArchiveReader(const String & path_to_archive_) : path_to_archive(path_to_archive_)
+LibArchiveReader::LibArchiveReader(std::string archive_name_, bool lock_on_reading_, std::string path_to_archive_)
+    : archive_name(std::move(archive_name_)), lock_on_reading(lock_on_reading_), path_to_archive(std::move(path_to_archive_))
 {}
 
-template <typename ArchiveInfo>
-LibArchiveReader<ArchiveInfo>::~LibArchiveReader() = default;
+LibArchiveReader::~LibArchiveReader() = default;
 
-template <typename ArchiveInfo>
-const std::string & LibArchiveReader<ArchiveInfo>::getPath() const
+const std::string & LibArchiveReader::getPath() const
 {
     return path_to_archive;
 }
 
-template <typename ArchiveInfo>
-bool LibArchiveReader<ArchiveInfo>::fileExists(const String & filename)
+bool LibArchiveReader::fileExists(const String & filename)
 {
-    Handle handle(path_to_archive);
+    Handle handle(path_to_archive, lock_on_reading);
     return handle.locateFile(filename);
 }
 
-template <typename ArchiveInfo>
-LibArchiveReader<ArchiveInfo>::FileInfo LibArchiveReader<ArchiveInfo>::getFileInfo(const String & filename)
+LibArchiveReader::FileInfo LibArchiveReader::getFileInfo(const String & filename)
 {
-    Handle handle(path_to_archive);
+    Handle handle(path_to_archive, lock_on_reading);
     if (!handle.locateFile(filename))
         throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't unpack archive {}: file not found", path_to_archive);
     return handle.getFileInfo();
 }
 
-template <typename ArchiveInfo>
-std::unique_ptr<typename LibArchiveReader<ArchiveInfo>::FileEnumerator> LibArchiveReader<ArchiveInfo>::firstFile()
+std::unique_ptr<LibArchiveReader::FileEnumerator> LibArchiveReader::firstFile()
 {
-    Handle handle(path_to_archive);
+    Handle handle(path_to_archive, lock_on_reading);
     if (!handle.nextFile())
         return nullptr;
 
     return std::make_unique<FileEnumeratorImpl>(std::move(handle));
 }
 
-template <typename ArchiveInfo>
-std::unique_ptr<ReadBufferFromFileBase> LibArchiveReader<ArchiveInfo>::readFile(const String & filename)
+std::unique_ptr<ReadBufferFromFileBase> LibArchiveReader::readFile(const String & filename)
 {
     return readFile([&](const std::string & file) { return file == filename; });
 }
 
-template <typename ArchiveInfo>
-std::unique_ptr<ReadBufferFromFileBase> LibArchiveReader<ArchiveInfo>::readFile(NameFilter filter)
+std::unique_ptr<ReadBufferFromFileBase> LibArchiveReader::readFile(NameFilter filter)
 {
-    Handle handle(path_to_archive);
+    Handle handle(path_to_archive, lock_on_reading);
     if (!handle.locateFile(filter))
         throw Exception(
             ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't unpack archive {}: no file found satisfying the filter", path_to_archive);
     return std::make_unique<ReadBufferFromLibArchive>(std::move(handle), path_to_archive);
 }
 
-template <typename ArchiveInfo>
-std::unique_ptr<ReadBufferFromFileBase> LibArchiveReader<ArchiveInfo>::readFile(std::unique_ptr<FileEnumerator> enumerator)
+std::unique_ptr<ReadBufferFromFileBase> LibArchiveReader::readFile(std::unique_ptr<FileEnumerator> enumerator)
 {
     if (!dynamic_cast<FileEnumeratorImpl *>(enumerator.get()))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong enumerator passed to readFile()");
@@ -293,8 +313,7 @@ std::unique_ptr<ReadBufferFromFileBase> LibArchiveReader<ArchiveInfo>::readFile(
     return std::make_unique<ReadBufferFromLibArchive>(std::move(handle), path_to_archive);
 }
 
-template <typename ArchiveInfo> std::unique_ptr<typename LibArchiveReader<ArchiveInfo>::FileEnumerator>
-LibArchiveReader<ArchiveInfo>::nextFile(std::unique_ptr<ReadBuffer> read_buffer)
+std::unique_ptr<LibArchiveReader::FileEnumerator> LibArchiveReader::nextFile(std::unique_ptr<ReadBuffer> read_buffer)
 {
     if (!dynamic_cast<ReadBufferFromLibArchive *>(read_buffer.get()))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong ReadBuffer passed to nextFile()");
@@ -305,27 +324,21 @@ LibArchiveReader<ArchiveInfo>::nextFile(std::unique_ptr<ReadBuffer> read_buffer)
     return std::make_unique<FileEnumeratorImpl>(std::move(handle));
 }
 
-template <typename ArchiveInfo>
-std::vector<std::string> LibArchiveReader<ArchiveInfo>::getAllFiles()
+std::vector<std::string> LibArchiveReader::getAllFiles()
 {
     return getAllFiles({});
 }
 
-template <typename ArchiveInfo>
-std::vector<std::string> LibArchiveReader<ArchiveInfo>::getAllFiles(NameFilter filter)
+std::vector<std::string> LibArchiveReader::getAllFiles(NameFilter filter)
 {
-    Handle handle(path_to_archive);
+    Handle handle(path_to_archive, lock_on_reading);
     return handle.getAllFiles(filter);
 }
 
-template <typename ArchiveInfo>
-void LibArchiveReader<ArchiveInfo>::setPassword(const String & /*password_*/)
+void LibArchiveReader::setPassword(const String & /*password_*/)
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not set password to {} archive", ArchiveInfo::name);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not set password to {} archive", archive_name);
 }
-
-template class LibArchiveReader<TarArchiveInfo>;
-template class LibArchiveReader<SevenZipArchiveInfo>;
 
 #endif
 

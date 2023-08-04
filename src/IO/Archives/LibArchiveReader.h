@@ -16,13 +16,9 @@ class ReadBufferFromFileBase;
 class SeekableReadBuffer;
 
 /// Implementation of IArchiveReader for reading archives using libarchive.
-template <typename ArchiveInfo>
 class LibArchiveReader : public IArchiveReader
 {
 public:
-    /// Constructs an archive's reader that will read from a file in the local filesystem.
-    explicit LibArchiveReader(const String & path_to_archive_);
-
     ~LibArchiveReader() override;
 
     const std::string & getPath() const override;
@@ -52,18 +48,31 @@ public:
     /// Sets password used to decrypt the contents of the files in the archive.
     void setPassword(const String & password_) override;
 
+protected:
+    /// Constructs an archive's reader that will read from a file in the local filesystem.
+    LibArchiveReader(std::string archive_name_, bool lock_on_reading_, std::string path_to_archive_);
+
 private:
     class ReadBufferFromLibArchive;
     class Handle;
     class FileEnumeratorImpl;
 
+    const std::string archive_name;
+    const bool lock_on_reading;
     const String path_to_archive;
 };
 
-struct TarArchiveInfo { static constexpr std::string_view name = "tar"; };
-using TarArchiveReader = LibArchiveReader<TarArchiveInfo>;
-struct SevenZipArchiveInfo { static constexpr std::string_view name = "7z"; };
-using SevenZipArchiveReader = LibArchiveReader<SevenZipArchiveInfo>;
+class TarArchiveReader : public LibArchiveReader
+{
+public:
+    explicit TarArchiveReader(std::string path_to_archive) : LibArchiveReader("tar", /*lock_on_reading_=*/ true, std::move(path_to_archive)) { }
+};
+
+class SevenZipArchiveReader : public LibArchiveReader
+{
+public:
+    explicit SevenZipArchiveReader(std::string path_to_archive) : LibArchiveReader("7z", /*lock_on_reading_=*/ false, std::move(path_to_archive)) { }
+};
 
 #endif
 

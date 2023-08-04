@@ -25,6 +25,7 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
     if (context->getApplicationType() != Context::ApplicationType::LOCAL)
     {
         ITableFunctionFileLike::parseFirstArguments(arg, context);
+        StorageFile::parseFileSource(std::move(filename), filename, path_to_archive);
         return;
     }
 
