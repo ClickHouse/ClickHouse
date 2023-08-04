@@ -445,24 +445,8 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         return {};
     }
 
-    StoragePtr table;
-    if (exception)
-    {
-        try
-        {
-            table = database->getTable(table_id.table_name, context_);
-        }
-        catch (const Exception & e)
-        {
-            exception->emplace(e);
-        }
-    }
-    else
-    {
-        table = database->tryGetTable(table_id.table_name, context_);
-    }
-
-    if (!table && exception && !exception->has_value())
+    auto table = database->tryGetTable(table_id.table_name, context_);
+    if (!table && exception)
     {
         TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
         std::vector<String> names = hints.getHints(table_id.getTableName());
@@ -475,7 +459,6 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist. Maybe you meant {}?", table_id.getNameForLogs(), backQuoteIfNeed(names[0])));
         }
     }
-
     if (!table)
         database = nullptr;
 
