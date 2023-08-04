@@ -294,7 +294,7 @@ try
     else if (config().has("keeper_server.snapshot_storage_path"))
         path = std::filesystem::path(config().getString("keeper_server.snapshot_storage_path")).parent_path();
     else
-        path = config().getString("path", KEEPER_DEFAULT_PATH);
+        path = KEEPER_DEFAULT_PATH;
 
     std::filesystem::create_directories(path);
 
