@@ -596,39 +596,51 @@ void RemoteQueryExecutor::finish()
         return;
 
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
-    Packet packet = connections->drain();
-    switch (packet.type)
+    /// We do this manually instead of calling drain() because we want to process Log, ProfileEvents and Progress
+    /// packets that had been sent before the connection is fully finished in oder to have final statistics of what
+    /// was executed in the remote queries
+    while (connections->hasActiveConnections() && !finished)
     {
-        case Protocol::Server::EndOfStream:
-            finished = true;
-            break;
+        Packet packet = connections->receivePacket();
 
-        case Protocol::Server::Log:
-            /// Pass logs from remote server to client
-            if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
-                log_queue->pushBlock(std::move(packet.block));
-            break;
+        switch (packet.type)
+        {
+            case Protocol::Server::EndOfStream:
+                finished = true;
+                break;
 
-        case Protocol::Server::Exception:
-            got_exception_from_replica = true;
-            packet.exception->rethrow();
-            break;
+            case Protocol::Server::Exception:
+                got_exception_from_replica = true;
+                packet.exception->rethrow();
+                break;
 
-        case Protocol::Server::ProfileEvents:
-            /// Pass profile events from remote server to client
-            if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
-                if (!profile_queue->emplace(std::move(packet.block)))
-                    throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
-            break;
+            case Protocol::Server::Log:
+                /// Pass logs from remote server to client
+                if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
+                    log_queue->pushBlock(std::move(packet.block));
+                break;
 
-        case Protocol::Server::TimezoneUpdate:
-            break;
+            case Protocol::Server::ProfileEvents:
+                /// Pass profile events from remote server to client
+                if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
+                    if (!profile_queue->emplace(std::move(packet.block)))
+                        throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
+                break;
 
-        default:
-            got_unknown_packet_from_replica = true;
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from one of the following replicas: {}",
-                toString(packet.type),
-                connections->dumpAddresses());
+            case Protocol::Server::ProfileInfo:
+                /// Use own (client-side) info about read bytes, it is more correct info than server-side one.
+                if (profile_info_callback)
+                    profile_info_callback(packet.profile_info);
+                break;
+
+            case Protocol::Server::Progress:
+                if (progress_callback)
+                    progress_callback(packet.progress);
+                break;
+
+            default:
+                break;
+        }
     }
 }
 
