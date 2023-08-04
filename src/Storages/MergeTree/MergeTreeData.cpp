@@ -382,7 +382,7 @@ MergeTreeData::MergeTreeData(
     checkTTLExpressions(metadata_, metadata_);
 
     String reason;
-    if (!canUsePolymorphicParts(*settings, &reason) && !reason.empty())
+    if (!canUsePolymorphicParts(*settings, reason) && !reason.empty())
         LOG_WARNING(log, "{} Settings 'min_rows_for_wide_part'and 'min_bytes_for_wide_part' will be ignored.", reason);
 
 #if !USE_ROCKSDB
@@ -3323,7 +3323,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 MergeTreeSettings copy = *getSettings();
                 copy.applyChange(changed_setting);
                 String reason;
-                if (!canUsePolymorphicParts(copy, &reason) && !reason.empty())
+                if (!canUsePolymorphicParts(copy, reason) && !reason.empty())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't change settings. Reason: {}", reason);
             }
 
@@ -3348,7 +3348,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 auto copy = getDefaultSettings();
                 copy->applyChanges(new_changes);
                 String reason;
-                if (!canUsePolymorphicParts(*copy, &reason) && !reason.empty())
+                if (!canUsePolymorphicParts(*copy, reason) && !reason.empty())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't change settings. Reason: {}", reason);
             }
 
@@ -3390,8 +3390,9 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(size_t bytes_uncompresse
     using PartType = MergeTreeDataPartType;
     using PartStorageType = MergeTreeDataPartStorageType;
 
-     const auto settings = getSettings();
-     if (!canUsePolymorphicParts(*settings))
+    String out_reason;
+    const auto settings = getSettings();
+    if (!canUsePolymorphicParts(*settings, out_reason))
         return {PartType::Wide, PartStorageType::Full};
 
     auto satisfies = [&](const auto & min_bytes_for, const auto & min_rows_for)
@@ -5147,12 +5148,12 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
     const DataPartsVector & data_parts,
     const String & data_path_in_backup,
     const BackupSettings & backup_settings,
+    const ReadSettings & read_settings,
     const ContextPtr & local_context)
 {
     MergeTreeData::PartsBackupEntries res;
     std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>> temp_dirs;
     TableLockHolder table_lock;
-    ReadSettings read_settings = local_context->getBackupReadSettings();
 
     for (const auto & part : data_parts)
     {
@@ -5186,6 +5187,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
             part->getFileNamesWithoutChecksums(),
             data_path_in_backup,
             backup_settings,
+            read_settings,
             make_temporary_hard_links,
             backup_entries_from_part,
             &temp_dirs);
@@ -5198,6 +5200,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
                 projection_part->getFileNamesWithoutChecksums(),
                 fs::path{data_path_in_backup} / part->name,
                 backup_settings,
+                read_settings,
                 make_temporary_hard_links,
                 backup_entries_from_part,
                 &temp_dirs);
@@ -5265,7 +5268,7 @@ public:
         auto it = temp_dirs.find(disk);
         if (it == temp_dirs.end())
             it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/")).first;
-        return it->second->getPath();
+        return it->second->getRelativePath();
     }
 
 private:
@@ -5692,6 +5695,10 @@ bool MergeTreeData::supportsLightweightDelete() const
     auto lock = lockParts();
     for (const auto & part : data_parts_by_info)
     {
+        if (part->getState() == MergeTreeDataPartState::Outdated
+            || part->getState() == MergeTreeDataPartState::Deleting)
+            continue;
+
         if (!part->supportLightweightDeleteMutate())
             return false;
     }
@@ -7770,7 +7777,7 @@ try
         LOG_WARNING(log, "Profile counters are not set");
     }
 
-    part_log->add(part_log_elem);
+    part_log->add(std::move(part_log_elem));
 }
 catch (...)
 {
@@ -8010,22 +8017,23 @@ bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const 
 
 bool MergeTreeData::canUsePolymorphicParts() const
 {
-    return canUsePolymorphicParts(*getSettings(), nullptr);
+    String unused;
+    return canUsePolymorphicParts(*getSettings(), unused);
 }
 
-bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason) const
+bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, String & out_reason) const
 {
     if (!canUseAdaptiveGranularity())
     {
-        if (out_reason && (settings.min_rows_for_wide_part != 0 || settings.min_bytes_for_wide_part != 0
+        if ((settings.min_rows_for_wide_part != 0 || settings.min_bytes_for_wide_part != 0
             || settings.min_rows_for_compact_part != 0 || settings.min_bytes_for_compact_part != 0))
         {
-            *out_reason = fmt::format(
-                    "Table can't create parts with adaptive granularity, but settings"
-                    " min_rows_for_wide_part = {}"
-                    ", min_bytes_for_wide_part = {}"
-                    ". Parts with non-adaptive granularity can be stored only in Wide (default) format.",
-                    settings.min_rows_for_wide_part, settings.min_bytes_for_wide_part);
+            out_reason = fmt::format(
+                "Table can't create parts with adaptive granularity, but settings"
+                " min_rows_for_wide_part = {}"
+                ", min_bytes_for_wide_part = {}"
+                ". Parts with non-adaptive granularity can be stored only in Wide (default) format.",
+                settings.min_rows_for_wide_part, settings.min_bytes_for_wide_part);
         }
 
         return false;
