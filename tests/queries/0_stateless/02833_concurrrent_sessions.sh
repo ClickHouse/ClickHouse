@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -92,19 +92,19 @@ export -f http_with_session_id_session;
 export -f mysql_session;
 
 for user in "${TCP_USERS[@]}"; do
-    timeout 30s bash -c "tcp_session ${user}" >/dev/null 2>&1 &
+    timeout 60s bash -c "tcp_session ${user}" >/dev/null 2>&1 &
 done
 
 for user in "${HTTP_USERS[@]}"; do
-    timeout 30s bash -c "http_session ${user}" >/dev/null 2>&1 &
+    timeout 60s bash -c "http_session ${user}" >/dev/null 2>&1 &
 done
 
 for user in "${HTTP_WITH_SESSION_ID_SESSION_USERS[@]}"; do
-    timeout 30s bash -c "http_with_session_id_session ${user}" >/dev/null 2>&1 &
+    timeout 60s bash -c "http_with_session_id_session ${user}" >/dev/null 2>&1 &
 done
 
 for user in "${MYSQL_USERS[@]}"; do
-    timeout 30s bash -c "mysql_session ${user}" >/dev/null 2>&1 &
+    timeout 60s bash -c "mysql_session ${user}" >/dev/null 2>&1 &
 done
 
 wait
