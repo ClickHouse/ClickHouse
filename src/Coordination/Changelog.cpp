@@ -1014,8 +1014,60 @@ void Changelog::writeThread()
 {
     WriteOperation write_operation;
     bool batch_append_ok = true;
-    while (write_operations.pop(write_operation))
+    size_t pending_appends = 0;
+    bool try_batch_flush = false;
+
+    /// turn into setting
+    static constexpr size_t max_flush_batch_size = 1000;
+
+    const auto flush_logs = [&](const auto & flush)
     {
+        LOG_INFO(log, "Flushing {} logs", pending_appends);
+
+        {
+            std::lock_guard writer_lock(writer_mutex);
+            current_writer->flush();
+        }
+
+        {
+            std::lock_guard lock{durable_idx_mutex};
+            last_durable_idx = flush.index;
+        }
+
+        pending_appends = 0;
+    };
+
+    const auto notify_append_completion = [&]
+    {
+        durable_idx_cv.notify_all();
+
+        // we need to call completion callback in another thread because it takes a global lock for the NuRaft server
+        // NuRaft will in some places wait for flush to be done while having the same global lock leading to deadlock
+        // -> future write operations are blocked by flush that cannot be completed because it cannot take NuRaft lock
+        // -> NuRaft won't leave lock until its flush is done
+        if (!append_completion_queue.push(batch_append_ok))
+            LOG_WARNING(log, "Changelog is shut down");
+    };
+
+    while (true)
+    {
+        if (try_batch_flush)
+        {
+            try_batch_flush = false;
+            if (!write_operations.tryPop(write_operation))
+            {
+                chassert(batch_append_ok);
+                const auto & flush = std::get<Flush>(write_operation);
+                flush_logs(flush);
+                notify_append_completion();
+                continue;
+            }
+        }
+        else if (!write_operations.pop(write_operation))
+        {
+            break;
+        }
+
         assert(initialized);
 
         if (auto * append_log = std::get_if<AppendLog>(&write_operation))
@@ -1027,6 +1079,7 @@ void Changelog::writeThread()
             assert(current_writer);
 
             batch_append_ok = current_writer->appendRecord(buildRecord(append_log->index, append_log->log_entry));
+            ++pending_appends;
         }
         else
         {
@@ -1034,30 +1087,19 @@ void Changelog::writeThread()
 
             if (batch_append_ok)
             {
+                /// we can try batching more logs for flush
+                if (pending_appends < max_flush_batch_size)
                 {
-                    std::lock_guard writer_lock(writer_mutex);
-                    current_writer->flush();
+                    try_batch_flush = true;
+                    continue;
                 }
-
-                {
-                    std::lock_guard lock{durable_idx_mutex};
-                    last_durable_idx = flush.index;
-                }
+                flush_logs(flush);
             }
             else
             {
                 *flush.failed = true;
             }
-
-            durable_idx_cv.notify_all();
-
-            // we need to call completion callback in another thread because it takes a global lock for the NuRaft server
-            // NuRaft will in some places wait for flush to be done while having the same global lock leading to deadlock
-            // -> future write operations are blocked by flush that cannot be completed because it cannot take NuRaft lock
-            // -> NuRaft won't leave lock until its flush is done
-            if (!append_completion_queue.push(batch_append_ok))
-                LOG_WARNING(log, "Changelog is shut down");
-
+            notify_append_completion();
             batch_append_ok = true;
         }
     }
