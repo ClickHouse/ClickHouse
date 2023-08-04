@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-CH_URL='$CLICKHOUSE_URL&http_write_exception_in_output_format=1&allow_experimental_analyzer=0'
+CH_URL="$CLICKHOUSE_URL&http_write_exception_in_output_format=1&allow_experimental_analyzer=0"
 
 echo "One block"
 for parallel in 0 1
