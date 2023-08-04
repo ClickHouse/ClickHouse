@@ -242,7 +242,7 @@ IMergeTreeReader::ColumnNameLevel IMergeTreeReader::findColumnForOffsets(const N
 
     /// Find column that has maximal number of matching
     /// offsets columns with required_column.
-    for (const auto & part_column : data_part_info_for_read->getColumns())
+    for (const auto & part_column : Nested::convertToSubcolumns(data_part_info_for_read->getColumns()))
     {
         auto name_in_storage = Nested::extractTableName(part_column.name);
         if (name_in_storage != required_name_in_storage)

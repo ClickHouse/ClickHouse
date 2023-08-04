@@ -52,6 +52,12 @@ private:
 
     MergeTreeMarksLoader marks_loader;
 
+    /// Storage columns with collected separate arrays of Nested to columns of Nested type.
+    /// They maybe be needed for finding offsets of missed Nested columns in parts.
+    /// They are rarely used and are heavy to initialized, so we create them
+    /// only on demand and cache in this field.
+    std::optional<ColumnsDescription> storage_columns_with_collected_nested;
+
     /// Positions of columns in part structure.
     using ColumnPositions = std::vector<std::optional<size_t>>;
     ColumnPositions column_positions;
@@ -85,7 +91,6 @@ private:
 
     ReadBufferFromFileBase::ProfileCallback profile_callback;
     clockid_t clock_type;
-
     bool initialized = false;
 };
 

@@ -105,10 +105,10 @@ protected:
 
     NameSet partially_read_columns;
 
-private:
     /// Alter conversions, which must be applied on fly if required
     AlterConversionsPtr alter_conversions;
 
+private:
     /// Columns that are requested to read.
     NamesAndTypesList requested_columns;
 
