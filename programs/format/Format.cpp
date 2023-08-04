@@ -58,7 +58,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("backslash", "add a backslash at the end of each line of the formatted query")
             ("allow_settings_after_format_in_insert", "Allow SETTINGS after FORMAT, but note, that this is not always safe")
             ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
-            ("hide-secrets", "nothing interesting")
+            ("show-secrets" , "show secret parts of the AST")
         ;
 
         Settings cmd_settings;
@@ -75,7 +75,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
         if (options.count("help"))
         {
-            std::cout << "Usage: " << argv[0] << " [options] < query" << std::endl;
+            std::cout << "Usage: " << argv[0] << " [options] < query " << std::endl;
             std::cout << desc << std::endl;
             return 1;
         }
@@ -86,6 +86,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         bool multiple = options.count("multiquery");
         bool obfuscate = options.count("obfuscate");
         bool backslash = options.count("backslash");
+        bool show_secrets = options.count("show-secrets");
         bool allow_settings_after_format_in_insert = options.count("allow_settings_after_format_in_insert");
 
         if (quiet && (hilite || oneline || obfuscate))
@@ -176,7 +177,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     if (!backslash)
                     {
                         WriteBufferFromOStream res_buf(std::cout, 4096);
-                        formatAST(*res, res_buf, hilite, oneline);
+                        formatAST(*res, res_buf, hilite, oneline, show_secrets);
                         res_buf.finalize();
                         if (multiple)
                             std::cout << "\n;\n";
