@@ -47,7 +47,7 @@
 /// the number is unmotivated
 #define DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT 15
 
-#define DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT 10
+#define DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT 30
 
 #define DBMS_DEFAULT_PATH "/var/lib/clickhouse/"
 
