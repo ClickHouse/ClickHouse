@@ -709,20 +709,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
-        else if (dialect == Dialect::kusto_auto && !internal)
-        {
-            try {
-            ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
-
-            /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
-            }
-            catch (...)
-            {
-                ParserKQLStatement parser(end, settings.allow_settings_after_format_in_insert);
-                ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
-            }
-        }
         else if (settings.dialect == Dialect::prql && !internal)
         {
             ParserPRQLQuery parser(max_query_size, settings.max_parser_depth);
