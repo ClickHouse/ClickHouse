@@ -876,7 +876,7 @@ IStorage::DataValidationTasksPtr StorageLog::getCheckTaskList(const ASTPtr & /* 
 
 CheckResult StorageLog::checkDataNext(DataValidationTasksPtr & check_task_list, bool & has_nothing_to_do)
 {
-    return file_checker.checkNextEntry(static_cast<DataValidationTasks *>(check_task_list.get())->file_checker_tasks, has_nothing_to_do);
+    return file_checker.checkNextEntry(assert_cast<DataValidationTasks *>(check_task_list.get())->file_checker_tasks, has_nothing_to_do);
 }
 
 IStorage::ColumnSizeByName StorageLog::getColumnSizes() const

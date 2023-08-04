@@ -2213,9 +2213,9 @@ IStorage::DataValidationTasksPtr StorageMergeTree::getCheckTaskList(const ASTPtr
 
 CheckResult StorageMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list, bool & has_nothing_to_do)
 {
-    auto local_context = static_cast<DataValidationTasks *>(check_task_list.get())->context;
-
-    if (auto part = static_cast<DataValidationTasks *>(check_task_list.get())->next())
+    auto * data_validation_tasks = assert_cast<DataValidationTasks *>(check_task_list.get());
+    auto local_context = data_validation_tasks->context;
+    if (auto part = data_validation_tasks->next())
     {
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         static constexpr auto checksums_path = "checksums.txt";
