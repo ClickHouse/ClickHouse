@@ -149,11 +149,34 @@ void MergeTreeReaderCompact::fillColumnPositions()
                 position.reset();
         }
 
+        /// If array of Nested column is missing in part,
+        /// we have to read its offsets if they exist.
         if (!position && is_array)
         {
-            /// If array of Nested column is missing in part,
-            /// we have to read its offsets if they exist.
-            auto name_level_for_offsets = findColumnForOffsets(column_to_read);
+            NameAndTypePair column_to_read_with_subcolumns = column_to_read;
+            auto [name_in_storage, subcolumn_name] = Nested::splitName(column_to_read.name);
+
+            /// If it is a part of Nested, we need to get the column from
+            /// storage metatadata which is converted to Nested type with subcolumns.
+            /// It is required for proper counting of shared streams.
+            if (!subcolumn_name.empty())
+            {
+                /// If column is renamed get the new name from storage metadata.
+                if (alter_conversions->columnHasNewName(name_in_storage))
+                    name_in_storage = alter_conversions->getColumnNewName(name_in_storage);
+
+                if (!storage_columns_with_collected_nested)
+                    storage_columns_with_collected_nested = ColumnsDescription(
+                        Nested::collect(metadata_snapshot->getColumns().getAllPhysical()));
+
+                column_to_read_with_subcolumns = storage_columns_with_collected_nested
+                    ->getColumnOrSubcolumn(
+                        GetColumnsOptions::All,
+                        Nested::concatenateName(name_in_storage, subcolumn_name));
+            }
+
+            auto name_level_for_offsets = findColumnForOffsets(column_to_read_with_subcolumns);
+
             if (name_level_for_offsets.has_value())
             {
                 column_positions[i] = data_part_info_for_read->getColumnPosition(name_level_for_offsets->first);
@@ -162,7 +185,9 @@ void MergeTreeReaderCompact::fillColumnPositions()
             }
         }
         else
+        {
             column_positions[i] = std::move(position);
+        }
     }
 }
 
@@ -297,6 +322,8 @@ void MergeTreeReaderCompact::readData(
     };
 
     ISerialization::DeserializeBinaryBulkStatePtr state;
+    ISerialization::DeserializeBinaryBulkStatePtr state_for_prefix;
+
     ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
 
@@ -306,14 +333,18 @@ void MergeTreeReaderCompact::readData(
 
         /// In case of reading onlys offset use the correct serialization for reading of the prefix
         auto serialization = getSerializationInPart(name_type_in_storage);
-        auto serialization_for_prefix = column_for_offsets ? getSerializationInPart(*column_for_offsets) : serialization;
-
         ColumnPtr temp_column = name_type_in_storage.type->createColumn(*serialization);
 
-        deserialize_settings.getter = buffer_getter_for_prefix;
-        serialization_for_prefix->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
+        if (column_for_offsets)
+        {
+            auto serialization_for_prefix = getSerializationInPart(*column_for_offsets);
+
+            deserialize_settings.getter = buffer_getter_for_prefix;
+            serialization_for_prefix->deserializeBinaryBulkStatePrefix(deserialize_settings, state_for_prefix);
+        }
 
         deserialize_settings.getter = buffer_getter;
+        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
         serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
 
         auto subcolumn = name_type_in_storage.type->getSubcolumn(name_and_type.getSubcolumnName(), temp_column);
@@ -328,12 +359,17 @@ void MergeTreeReaderCompact::readData(
     {
         /// In case of reading only offsets use the correct serialization for reading the prefix
         auto serialization = getSerializationInPart(name_and_type);
-        auto serialization_for_prefix = column_for_offsets ? getSerializationInPart(*column_for_offsets) : serialization;
 
-        deserialize_settings.getter = buffer_getter_for_prefix;
-        serialization_for_prefix->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
+        if (column_for_offsets)
+        {
+            auto serialization_for_prefix = getSerializationInPart(*column_for_offsets);
+
+            deserialize_settings.getter = buffer_getter_for_prefix;
+            serialization_for_prefix->deserializeBinaryBulkStatePrefix(deserialize_settings, state_for_prefix);
+        }
 
         deserialize_settings.getter = buffer_getter;
+        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
         serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state, nullptr);
     }
 
