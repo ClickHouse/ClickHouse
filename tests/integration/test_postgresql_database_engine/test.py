@@ -65,6 +65,15 @@ def test_postgres_database_engine_with_postgres_ddl(started_cluster):
 
     create_postgres_table(cursor, "test_table")
     assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
+    create_postgres_table(
+        cursor,
+        "test_table",
+        suffix=""" SETTINGS
+        connection_pool_size = 50,
+        connection_pool_auto_close = true
+        """,
+    )
+    assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
 
     cursor.execute("ALTER TABLE test_table ADD COLUMN data Text")
     assert "data" in node1.query(
