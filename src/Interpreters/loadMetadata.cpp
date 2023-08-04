@@ -240,6 +240,8 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
 
     if (!async_load_databases)
     {
+        LOG_INFO(log, "Start synchronous loading of databases");
+
         // Note that wait implicitly calls schedule
         waitLoad(AsyncLoaderPoolId::Foreground, load_tasks); // First prioritize, schedule and wait all the load table tasks
         waitLoad(AsyncLoaderPoolId::Foreground, startup_tasks); // Only then prioritize, schedule and wait all the startup tasks
@@ -247,6 +249,8 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     }
     else
     {
+        LOG_INFO(log, "Start asynchronous loading of databases");
+
         // Schedule all the jobs.
         // Note that to achieve behaviour similar to synchronous case (postponing of merges) we use priorities.
         // All startup jobs are assigned to pool with lower priority than load jobs pool.
