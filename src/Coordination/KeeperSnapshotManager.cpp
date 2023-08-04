@@ -56,7 +56,7 @@ namespace
         std::filesystem::path path(snapshot_path);
         std::string filename = path.stem();
         Strings name_parts;
-        splitInto<'_'>(name_parts, filename);
+        splitInto<'_', '.'>(name_parts, filename);
         return parse<uint64_t>(name_parts[1]);
     }
 
@@ -439,7 +439,6 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
             }
         }
     }
-
 
     size_t active_sessions_size;
     readBinary(active_sessions_size, in);
