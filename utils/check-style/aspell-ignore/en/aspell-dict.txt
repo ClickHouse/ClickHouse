@@ -41,6 +41,7 @@ AsynchronousMetricsUpdateInterval
 AsynchronousReadWait
 Authenticator
 Authenticators
+AutoFDO
 AutoML
 Autocompletion
 AvroConfluent
@@ -98,6 +99,7 @@ BlockWriteOps
 BlockWriteTime
 Bool
 BrokenDistributedFilesToInsert
+Bugfix
 BuildID
 BuilderBinAarch
 BuilderBinAmd
@@ -146,6 +148,7 @@ ChannelID
 Cidr
 Ciphertext
 CityHash
+ClickBench
 ClickCat
 ClickHouse
 ClickHouse's
@@ -1158,6 +1161,7 @@ brotli
 bson
 bsoneachrow
 buffersize
+bugfix
 buildId
 buildable
 builtins
