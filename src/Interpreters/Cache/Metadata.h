@@ -115,6 +115,11 @@ public:
         KeyNotFoundPolicy key_not_found_policy,
         bool is_initial_load = false);
 
+    KeyMetadataPtr getKeyMetadata(
+        const Key & key,
+        KeyNotFoundPolicy key_not_found_policy,
+        bool is_initial_load = false);
+
     void doCleanup();
 
     void downloadThreadFunc();
