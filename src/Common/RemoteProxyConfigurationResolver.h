@@ -23,7 +23,7 @@ public:
         unsigned cache_ttl_
     );
 
-    ProxyConfiguration resolve(Protocol protocol) override;
+    ProxyConfiguration resolve() override;
 
     void errorReport(const ProxyConfiguration & config) override;
 
@@ -44,4 +44,3 @@ private:
 };
 
 }
-

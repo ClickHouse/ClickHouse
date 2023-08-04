@@ -26,7 +26,7 @@ RemoteProxyConfigurationResolver::RemoteProxyConfigurationResolver(
 {
 }
 
-ProxyConfiguration RemoteProxyConfigurationResolver::resolve(Protocol)
+ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 {
     LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Obtain proxy using resolver: {}", endpoint.toString());
 

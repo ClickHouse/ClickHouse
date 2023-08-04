@@ -16,6 +16,8 @@ namespace
     }
 }
 
+using Protocol = ProxyConfigurationResolverProvider::Protocol;
+
 std::shared_ptr<ProxyConfiguration> ProxyConfigurationProvider::get(
     const String & config_prefix,
     const Poco::Util::AbstractConfiguration & configuration
@@ -25,7 +27,7 @@ std::shared_ptr<ProxyConfiguration> ProxyConfigurationProvider::get(
      * First try to get it from settings only using the combination of config_prefix and configuration.
      * This logic exists for backward compatibility with old S3 storage specific proxy configuration.
      * */
-    if (auto resolver = ProxyConfigurationResolverProvider::getFromSettings(config_prefix, configuration))
+    if (auto resolver = ProxyConfigurationResolverProvider::getFromSettings(Protocol::ANY, config_prefix, configuration))
     {
         return adapt(resolver);
     }
@@ -34,12 +36,12 @@ std::shared_ptr<ProxyConfiguration> ProxyConfigurationProvider::get(
      * In case the combination of config_prefix and configuration does not provide a resolver, try to get it from general / new settings.
      * Falls back to Environment resolver if no configuration is found.
      * */
-    return adapt(ProxyConfigurationResolverProvider::get());
+    return adapt(ProxyConfigurationResolverProvider::get(Protocol::ANY));
 }
 
 std::shared_ptr<ProxyConfiguration> ProxyConfigurationProvider::get()
 {
-    return adapt(ProxyConfigurationResolverProvider::get());
+    return adapt(ProxyConfigurationResolverProvider::get(Protocol::ANY));
 }
 
 }

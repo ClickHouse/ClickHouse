@@ -33,12 +33,9 @@ namespace
     }
 }
 
-ClientConfigurationPerRequest ProxyConfigurationResolverAdapter::getConfiguration(const Aws::Http::HttpRequest & request)
+ClientConfigurationPerRequest ProxyConfigurationResolverAdapter::getConfiguration(const Aws::Http::HttpRequest &)
 {
-    bool is_https = request.GetUri().GetScheme() == Aws::Http::Scheme::HTTPS;
-    auto method = is_https ? ProxyConfigurationResolver::Protocol::HTTPS : ProxyConfigurationResolver::Protocol::HTTP;
-
-    auto proxy_configuration = resolver->resolve(method);
+    auto proxy_configuration = resolver->resolve();
 
     return ClientConfigurationPerRequest {
         protocolToAWSScheme(proxy_configuration.protocol),

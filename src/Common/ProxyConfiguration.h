@@ -14,6 +14,7 @@ struct ProxyConfiguration
         ANY
     };
 
+    // TODO rename protocolFromString
     static auto fromString(const std::string & str)
     {
         if (str == "http")

@@ -9,7 +9,11 @@ namespace DB
 static constexpr auto PROXY_HTTP_ENVIRONMENT_VARIABLE = "http_proxy";
 static constexpr auto PROXY_HTTPS_ENVIRONMENT_VARIABLE = "https_proxy";
 
-ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve(Protocol protocol)
+EnvironmentProxyConfigurationResolver::EnvironmentProxyConfigurationResolver(Protocol protocol_)
+    : protocol(protocol_)
+{}
+
+ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve()
 {
     bool https = protocol == Protocol::HTTPS;
 

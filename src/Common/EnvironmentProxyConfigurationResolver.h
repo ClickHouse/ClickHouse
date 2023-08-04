@@ -11,8 +11,13 @@ namespace DB
 class EnvironmentProxyConfigurationResolver : public ProxyConfigurationResolver
 {
 public:
-    ProxyConfiguration resolve(Protocol protocol) override;
+    explicit EnvironmentProxyConfigurationResolver(Protocol protocol_);
+
+    ProxyConfiguration resolve() override;
     void errorReport(const ProxyConfiguration &) override {}
+
+private:
+    Protocol protocol;
 };
 
 }
