@@ -129,14 +129,14 @@ void FileCache::initialize()
         throw;
     }
 
-    is_initialized = true;
-
     for (size_t i = 0; i < background_download_threads; ++i)
          download_threads.emplace_back([this] { metadata.downloadThreadFunc(); });
 
     cleanup_task = Context::getGlobalContextInstance()->getSchedulePool().createTask("FileCacheCleanup", [this]{ cleanupThreadFunc(); });
     cleanup_task->activate();
     cleanup_task->scheduleAfter(delayed_cleanup_interval_ms);
+
+    is_initialized = true;
 }
 
 CacheGuard::Lock FileCache::lockCache() const
@@ -973,7 +973,10 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
         }
 
         const auto key = Key(unhexUInt<UInt128>(key_directory.filename().string().data()));
-        auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY, /* is_initial_load */true);
+        auto key_metadata = metadata.getKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY, /* is_initial_load */true);
+
+        const size_t size_limit = main_priority->getSizeLimit();
+        const size_t elements_limit = main_priority->getElementsLimit();
 
         for (fs::directory_iterator offset_it{key_directory}; offset_it != fs::directory_iterator(); ++offset_it)
         {
@@ -1017,13 +1020,16 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
             IFileCachePriority::Iterator cache_it;
             {
                 auto lock = lockCache();
-                limits_satisfied = (main_priority->getSizeLimit() == 0
-                                            || main_priority->getSize(lock) + size <= main_priority->getSizeLimit())
-                    && (main_priority->getElementsLimit() == 0
-                        || main_priority->getElementsCount(lock) + 1 <= main_priority->getElementsLimit());
+                limits_satisfied = (size_limit == 0 || main_priority->getSize(lock) + size <= size_limit)
+                    && (elements_limit == 0 || main_priority->getElementsCount(lock) + 1 <= elements_limit);
 
                 if (limits_satisfied)
-                    cache_it = main_priority->add(locked_key->getKeyMetadata(), offset, size, lock);
+                    cache_it = main_priority->add(key_metadata, offset, size, lock);
+
+                /// TODO: we can get rid of this lockCache() if we first load everything in parallel
+                /// without any mutual lock between loading threads, and only after do removeOverflow().
+                /// This will be better because overflow here may
+                /// happen only if cache configuration changed and max_size because less than it was.
             }
 
             if (limits_satisfied)
@@ -1032,7 +1038,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
                 try
                 {
                     file_segment_metadata_it = addFileSegment(
-                        *locked_key, offset, size, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings(segment_kind), cache_it, nullptr);
+                        *key_metadata->lock(), offset, size, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings(segment_kind), cache_it, nullptr);
                 }
                 catch (...)
                 {
