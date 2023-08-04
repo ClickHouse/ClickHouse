@@ -1,4 +1,4 @@
--- Tags: no-upgrade-check, no-fasttest
+-- Tags: no-fasttest
 
 DROP TABLE IF EXISTS partslost_0;
 DROP TABLE IF EXISTS partslost_1;

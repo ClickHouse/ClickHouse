@@ -39,8 +39,8 @@ public:
     ~TestKeeper() override;
 
     bool isExpired() const override { return expired; }
+    bool hasReachedDeadline() const override { return false; }
     int64_t getSessionID() const override { return 0; }
-    Poco::Net::SocketAddress getConnectedAddress() const override { return connected_zk_address; }
 
 
     void create(
@@ -134,8 +134,6 @@ private:
     Container container;
 
     zkutil::ZooKeeperArgs args;
-
-    Poco::Net::SocketAddress connected_zk_address;
 
     std::mutex push_request_mutex;
     std::atomic<bool> expired{false};
