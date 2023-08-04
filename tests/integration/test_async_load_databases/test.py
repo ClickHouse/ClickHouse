@@ -12,7 +12,10 @@ DICTIONARY_FILES = [
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
-    "instance", main_configs=["configs/config.xml"], dictionaries=DICTIONARY_FILES, stay_alive=True
+    "instance",
+    main_configs=["configs/config.xml"],
+    dictionaries=DICTIONARY_FILES,
+    stay_alive=True,
 )
 
 
@@ -154,11 +157,14 @@ def test_dependent_tables(started_cluster):
     query("drop database a")
     query("drop database lazy")
 
+
 def test_multiple_tables(started_cluster):
     query = instance.query
     tables_count = 20
     for i in range(tables_count):
-        query(f"create table test.table_{i} (n UInt64, s String) engine=MergeTree order by n as select number, randomString(100) from numbers(100)")
+        query(
+            f"create table test.table_{i} (n UInt64, s String) engine=MergeTree order by n as select number, randomString(100) from numbers(100)"
+        )
 
     instance.restart_clickhouse()
 
