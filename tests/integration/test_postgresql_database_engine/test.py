@@ -68,10 +68,10 @@ def test_postgres_database_engine_with_postgres_ddl(started_cluster):
     create_postgres_table(
         cursor,
         "test_table",
-        suffix=""" SETTINGS
-        connection_pool_size = 50,
-        connection_pool_auto_close = true
-        """,
+        settings={
+            "connection_pool_size": 50,
+            "connection_pool_auto_close": True,
+        },
     )
     assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
 
