@@ -87,7 +87,7 @@ struct CacheMetadata : public std::unordered_map<FileCacheKey, KeyMetadataPtr>, 
 {
 public:
     using Key = FileCacheKey;
-    using IterateCacheMetadataFunc = std::function<void(const LockedKey &)>;
+    using IterateCacheMetadataFunc = std::function<void(LockedKey &)>;
 
     explicit CacheMetadata(const std::string & path_);
 
@@ -106,6 +106,7 @@ public:
     enum class KeyNotFoundPolicy
     {
         THROW,
+        THROW_LOGICAL,
         CREATE_EMPTY,
         RETURN_NULL,
     };
@@ -169,9 +170,10 @@ struct LockedKey : private boost::noncopyable
     std::shared_ptr<const KeyMetadata> getKeyMetadata() const { return key_metadata; }
     std::shared_ptr<KeyMetadata> getKeyMetadata() { return key_metadata; }
 
-    void removeAllReleasable();
+    void removeAll(bool if_releasable = true);
 
     KeyMetadata::iterator removeFileSegment(size_t offset, const FileSegmentGuard::Lock &);
+    KeyMetadata::iterator removeFileSegment(size_t offset);
 
     void shrinkFileSegmentToDownloadedSize(size_t offset, const FileSegmentGuard::Lock &);
 
@@ -188,6 +190,8 @@ struct LockedKey : private boost::noncopyable
     std::string toString() const;
 
 private:
+    KeyMetadata::iterator removeFileSegmentImpl(KeyMetadata::iterator it, const FileSegmentGuard::Lock &);
+
     const std::shared_ptr<KeyMetadata> key_metadata;
     KeyGuard::Lock lock; /// `lock` must be destructed before `key_metadata`.
 };
