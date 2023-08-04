@@ -6887,13 +6887,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 scope.scope_node->formatASTForErrorMessage());
     }
 
-    std::erase_if(with_nodes, [](const QueryTreeNodePtr & node)
-    {
-        auto * subquery_node = node->as<QueryNode>();
-        auto * union_node = node->as<UnionNode>();
-
-        return (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
-    });
+    /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions
+      * and CTE for other sections to use.
+      *
+      * Example: WITH 1 AS constant, (x -> x + 1) AS lambda, a AS (SELECT * FROM test_table);
+      */
+    query_node_typed.getWith().getNodes().clear();
 
     for (auto & window_node : query_node_typed.getWindow().getNodes())
     {
@@ -6951,9 +6950,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 "Empty list of columns in projection. In scope {}",
                 scope.scope_node->formatASTForErrorMessage());
     }
-
-    if (query_node_typed.hasWith())
-        resolveExpressionNodeList(query_node_typed.getWithNode(), scope, true /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     if (query_node_typed.getPrewhere())
         resolveExpressionNode(query_node_typed.getPrewhere(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -7122,13 +7118,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 column.type->getName(),
                 scope.scope_node->formatASTForErrorMessage());
     }
-
-    /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions
-      * and CTE for other sections to use.
-      *
-      * Example: WITH 1 AS constant, (x -> x + 1) AS lambda, a AS (SELECT * FROM test_table);
-      */
-    query_node_typed.getWith().getNodes().clear();
 
     /** WINDOW section can be safely removed, because WINDOW section can only provide window definition to window functions.
       *
