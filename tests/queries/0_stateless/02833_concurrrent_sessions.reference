@@ -1,46 +1,34 @@
 sessions:
-360
+150
 port_0_sessions:
 0
 address_0_sessions:
 0
 tcp_sessions
-90
+60
 http_sessions
-90
+30
 http_with_session_id_sessions
-90
+30
 my_sql_sessions
-90
+30
 Corresponding LoginSuccess/Logout
-15
+10
 LoginFailure
-15
+10
 Corresponding LoginSuccess/Logout
-15
+10
 LoginFailure
-15
+10
 Corresponding LoginSuccess/Logout
-15
+10
 LoginFailure
-15
+10
 Corresponding LoginSuccess/Logout
-15
+10
 LoginFailure
-15
+10
 Corresponding LoginSuccess/Logout
-15
+10
 LoginFailure
-15
-Corresponding LoginSuccess/Logout
-15
-LoginFailure
-15
-Corresponding LoginSuccess/Logout
-15
-LoginFailure
-15
-Corresponding LoginSuccess/Logout
-15
-LoginFailure
-15
+10

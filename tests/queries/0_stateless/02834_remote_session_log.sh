@@ -37,8 +37,8 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count(*) FROM system.session_log WHERE user = '$
 echo "login failures:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count(*) FROM system.session_log WHERE user = '${TEST_USER}' and type = 'LoginFailure'"
 
-# remote(...) function sometimes reuse old cached sessions for query execution.
-# This makes LoginSuccess/Logout entries count unsable but success and logouts must always match.
+# remote(...) function sometimes reuses old cached sessions for query execution.
+# This makes LoginSuccess/Logout entries count unstable, but success and logouts must always match.
 
 for interface in 'TCP' 'HTTP' 'MySQL'
 do

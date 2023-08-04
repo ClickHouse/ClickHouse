@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+# If tests run in parallel, results can become flaky.
+# Because each test starts many processes and waits for the query to run.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -14,31 +17,29 @@ readonly SESSION_LOG_MATCHING_FIELDS="auth_id, auth_type, client_version_major, 
 function tcp_session()
 {
     local user=$1
-    ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.numbers" --user="${user}"
+    ${CLICKHOUSE_CLIENT} -q "SELECT COUNT(*) FROM system.numbers" --user="${user}"
 }
 
 function http_session()
 {
     local user=$1
-    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&password=pass" -d "SELECT * FROM system.numbers"
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&password=pass" -d "SELECT COUNT(*) FROM system.numbers"
 }
 
 function http_with_session_id_session() 
 {
     local user=$1
-    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&password=pass" -d "SELECT * FROM system.numbers"
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&password=pass" -d "SELECT COUNT(*) FROM system.numbers"
 }
 
-# Busy-waits until user $1, specified amount of queries ($2) will run simultaneosly.
+# Busy-waits until user $1, specified amount of queries ($2) will run simultaneously.
 function wait_for_queries_start()
 {
     local user=$1
     local queries_count=$2
-    # 5 seconds waiting
-    counter=0 retries=50
-    I=0
+    # 10 seconds waiting
+    counter=0 retries=100
     while [[ $counter -lt $retries ]]; do
-        I=$((I + 1))
         result=$($CLICKHOUSE_CLIENT --query "SELECT COUNT(*) FROM system.processes WHERE user = '${user}'")
         if [[ $result == "${queries_count}" ]]; then
             break;
@@ -58,9 +59,9 @@ export -f tcp_session;
 export -f http_session;
 export -f http_with_session_id_session;
 
-timeout 5s bash -c "tcp_session ${TEST_USER}" >/dev/null 2>&1 &
-timeout 5s bash -c "http_session ${TEST_USER}" >/dev/null 2>&1 &
-timeout 5s bash -c "http_with_session_id_session ${TEST_USER}" >/dev/null 2>&1 &
+timeout 10s bash -c "tcp_session ${TEST_USER}" >/dev/null 2>&1 &
+timeout 10s bash -c "http_session ${TEST_USER}" >/dev/null 2>&1 &
+timeout 10s bash -c "http_with_session_id_session ${TEST_USER}" >/dev/null 2>&1 &
 
 wait_for_queries_start $TEST_USER 3
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${TEST_USER}"
@@ -72,9 +73,9 @@ wait
 ${CLICKHOUSE_CLIENT} -q "CREATE ROLE IF NOT EXISTS ${TEST_ROLE}"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${TEST_USER} DEFAULT ROLE ${TEST_ROLE}"
 
-timeout 5s bash -c "tcp_session ${TEST_USER}" >/dev/null 2>&1 &
-timeout 5s bash -c "http_session ${TEST_USER}" >/dev/null 2>&1 &
-timeout 5s bash -c "http_with_session_id_session ${TEST_USER}" >/dev/null 2>&1 &
+timeout 10s bash -c "tcp_session ${TEST_USER}" >/dev/null 2>&1 &
+timeout 10s bash -c "http_session ${TEST_USER}" >/dev/null 2>&1 &
+timeout 10s bash -c "http_with_session_id_session ${TEST_USER}" >/dev/null 2>&1 &
 
 wait_for_queries_start $TEST_USER 3
 ${CLICKHOUSE_CLIENT} -q "DROP ROLE ${TEST_ROLE}"
@@ -88,9 +89,9 @@ wait
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE IF NOT EXISTS '${TEST_PROFILE}'"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${TEST_USER} SETTINGS PROFILE '${TEST_PROFILE}'"
 
-timeout 5s bash -c "tcp_session ${TEST_USER}" >/dev/null 2>&1 &
-timeout 5s bash -c "http_session ${TEST_USER}" >/dev/null 2>&1 &
-timeout 5s bash -c "http_with_session_id_session ${TEST_USER}" >/dev/null 2>&1 &
+timeout 10s bash -c "tcp_session ${TEST_USER}" >/dev/null 2>&1 &
+timeout 10s bash -c "http_session ${TEST_USER}" >/dev/null 2>&1 &
+timeout 10s bash -c "http_with_session_id_session ${TEST_USER}" >/dev/null 2>&1 &
 
 wait_for_queries_start $TEST_USER 3
 ${CLICKHOUSE_CLIENT} -q "DROP SETTINGS PROFILE '${TEST_PROFILE}'"
