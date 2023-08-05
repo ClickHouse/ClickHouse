@@ -131,8 +131,6 @@ protected:
     using Base::queue;
 
 private:
-
-
     /* Saving thread data */
     const StorageID table_id;
     const String storage_def;
