@@ -93,6 +93,9 @@ struct SystemLogSettings
     SystemLogQueueSettings queue_settings;
 
     String engine;
+
+    /// Create the table eagerly at startup or lazily on first record.
+    bool create_at_startup = false;
 };
 
 template <typename LogElement>
