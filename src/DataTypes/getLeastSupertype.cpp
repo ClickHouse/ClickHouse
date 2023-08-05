@@ -641,6 +641,8 @@ void optimizeTypeIds(const DataTypes & types, TypeIndexSet & type_ids)
     bool only_unsigned = false;
     bool only_signed = false;
     bool both = false;
+    bool has_unsigned = false;
+    bool has_signed = false;
 
     // Determine the distribution of maximum signed and unsigned, Example:
     // Int64, Int64 = only_signed.
@@ -672,6 +674,11 @@ void optimizeTypeIds(const DataTypes & types, TypeIndexSet & type_ids)
                     break;
                 }
             }
+
+            if (type_is_unsigned)
+                has_unsigned = true;
+            else
+                has_signed = true;
 
             if (type_is_both)
                 both = true;
@@ -718,22 +725,23 @@ void optimizeTypeIds(const DataTypes & types, TypeIndexSet & type_ids)
         return type_id;
     };
 
-    // optimize type_ids, Example:
-    // if only_signed. UInt64(possible: Int64), Int64 = Int64, Int64
-    // if only_unsigned. Int64(possible: UInt64), UInt64 = UInt64, UInt64
-    if (!(only_unsigned && only_signed) && (both || only_unsigned || only_signed))
+    // optimize type_ids
+    if (both)
     {
-        type_ids.clear();
-        for (const auto & type : types)
+        // Example: UInt64(possible: Int64), Int64 = Int64, Int64
+        if (only_unsigned && !only_signed)
         {
-            if (only_unsigned)
-            {
+            type_ids.clear();
+            for (const auto & type : types)
                 type_ids.insert(optimize_type_id(type, true));
-            }
-            else if (both || only_signed)
-            {
+        }
+        // Example: Int64(possible: UInt32), UInt64 = UInt32, UInt64
+        //          Int64(possible: UInt32), UInt64(possible: Int64) = Int64, Int64
+        else if ((only_signed && !only_unsigned) || (has_unsigned && has_signed && !only_signed && !only_unsigned))
+        {
+            type_ids.clear();
+            for (const auto & type : types)
                 type_ids.insert(optimize_type_id(type, false));
-            }
         }
     }
 }
