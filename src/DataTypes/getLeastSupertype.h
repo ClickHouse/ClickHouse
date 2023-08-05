@@ -18,7 +18,7 @@ enum class LeastSupertypeOnError
   * Examples: there is no least common supertype for Array(UInt8), Int8.
   */
 template <LeastSupertypeOnError on_error = LeastSupertypeOnError::Throw>
-DataTypePtr getLeastSupertype(const DataTypes & types);
+DataTypePtr getLeastSupertype(const DataTypes & types, bool optimize_type_ids = false);
 
 /// Same as above but return String type instead of throwing exception.
 /// All types can be casted to String, because they can be serialized to String.
