@@ -173,6 +173,8 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
     size_t command_write_timeout_milliseconds = config.getUInt64(key_in_config + ".command_write_timeout", 10000);
     ExternalCommandStderrReaction stderr_reaction
         = parseExternalCommandStderrReaction(config.getString(key_in_config + ".stderr_reaction", "none"));
+    ExternalCommandErrorExitReaction error_exit_reaction
+        = parseExternalCommandErrorExitReaction(config.getString(key_in_config + ".error_exit_reaction", "none"));
 
     size_t pool_size = 0;
     size_t max_command_execution_time = 0;
@@ -241,6 +243,7 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
         .command_read_timeout_milliseconds = command_read_timeout_milliseconds,
         .command_write_timeout_milliseconds = command_write_timeout_milliseconds,
         .stderr_reaction = stderr_reaction,
+        .error_exit_reaction = error_exit_reaction,
         .pool_size = pool_size,
         .max_command_execution_time_seconds = max_command_execution_time,
         .is_executable_pool = is_executable_pool,

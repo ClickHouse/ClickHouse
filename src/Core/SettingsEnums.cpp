@@ -186,4 +186,9 @@ IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},
      {"log", ExternalCommandStderrReaction::LOG},
      {"throw", ExternalCommandStderrReaction::THROW}})
+
+IMPLEMENT_SETTING_ENUM(ExternalCommandErrorExitReaction, ErrorCodes::BAD_ARGUMENTS,
+    {{"none", ExternalCommandErrorExitReaction::NONE},
+     {"log_first", ExternalCommandErrorExitReaction::LOG_FIRST},
+     {"log_last", ExternalCommandErrorExitReaction::LOG_LAST}})
 }

@@ -34,9 +34,6 @@ struct ShellCommandSourceConfiguration
     size_t number_of_rows_to_read = 0;
     /// Max block size
     size_t max_block_size = DEFAULT_BLOCK_SIZE;
-    /// Will throw if the command exited with
-    /// non-zero status code
-    size_t check_exit_code = false;
 };
 
 class ShellCommandSourceCoordinator
@@ -60,6 +57,13 @@ public:
 
         /// Reaction when external command outputs data to its stderr.
         ExternalCommandStderrReaction stderr_reaction = ExternalCommandStderrReaction::NONE;
+
+        /// Reaction when external command exits with non-zero code.
+        ExternalCommandErrorExitReaction error_exit_reaction = ExternalCommandErrorExitReaction::NONE;
+
+        /// Will throw if the command exited with
+        /// non-zero status code
+        size_t check_exit_code = false;
 
         /// Pool size valid only if executable_pool = true
         size_t pool_size = 16;

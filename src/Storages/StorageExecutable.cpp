@@ -93,6 +93,7 @@ StorageExecutable::StorageExecutable(
         .command_read_timeout_milliseconds = settings.command_read_timeout,
         .command_write_timeout_milliseconds = settings.command_write_timeout,
         .stderr_reaction = settings.stderr_reaction,
+        .error_exit_reaction = settings.error_exit_reaction,
 
         .pool_size = settings.pool_size,
         .max_command_execution_time_seconds = settings.max_command_execution_time,
