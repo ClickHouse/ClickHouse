@@ -79,5 +79,5 @@ def test_chroot_with_different_root(started_cluster):
 
     node1.query("SYSTEM SYNC REPLICA simple_different")
     assert_eq_with_retry(node1, "select count() from simple_different", "1")
-    node2.query("SYSTEM SYNC REPLICA simple_different")
+    node3.query("SYSTEM SYNC REPLICA simple_different")
     assert_eq_with_retry(node3, "select count() from simple_different", "1")
