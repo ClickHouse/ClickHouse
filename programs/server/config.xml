@@ -1037,6 +1037,9 @@
 
         <!-- example of using a different storage policy for a system table -->
         <!-- storage_policy>local_ssd</storage_policy -->
+
+        <!-- Create the table at startup or lazily on first record (the default is lazy) -->
+        <create_at_startup>false</create_at_startup>
     </query_log>
 
     <!-- Trace log. Stores stack traces collected by query profilers.

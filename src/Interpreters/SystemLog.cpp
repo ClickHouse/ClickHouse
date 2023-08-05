@@ -129,8 +129,11 @@ std::shared_ptr<TSystemLog> createSystemLog(
               "Creating {}.{} from {}", default_database_name, default_table_name, config_prefix);
 
     SystemLogSettings log_settings;
+
     log_settings.queue_settings.database = config.getString(config_prefix + ".database", default_database_name);
     log_settings.queue_settings.table = config.getString(config_prefix + ".table", default_table_name);
+
+    log_settings.create_at_startup = config.getBool(config_prefix + ".create_at_startup", false);
 
     if (log_settings.queue_settings.database != default_database_name)
     {
@@ -381,6 +384,9 @@ SystemLog<LogElement>::SystemLog(
     , create_query(serializeAST(*getCreateTableQuery()))
 {
     assert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
+
+    if (settings_.create_at_startup)
+        prepareTable();
 }
 
 template <typename LogElement>
