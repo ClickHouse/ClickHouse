@@ -345,4 +345,28 @@
         <command>input_always_error.py</command>
         <stderr_reaction>log</stderr_reaction>
     </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_always_error_exit_log_first_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_log_error.py</command>
+        <error_exit_reaction>log_first</error_exit_reaction>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_always_error_exit_log_last_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_log_error.py</command>
+        <error_exit_reaction>log_last</error_exit_reaction>
+    </function>
 </functions>

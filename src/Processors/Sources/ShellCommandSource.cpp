@@ -103,18 +103,23 @@ class TimeoutReadBufferFromFileDescriptor : public BufferWithOwnMemory<ReadBuffe
 {
 public:
     explicit TimeoutReadBufferFromFileDescriptor(
-        int stdout_fd_, int stderr_fd_, size_t timeout_milliseconds_, ExternalCommandStderrReaction stderr_reaction_)
+        int stdout_fd_,
+        int stderr_fd_,
+        size_t timeout_milliseconds_,
+        ExternalCommandStderrReaction stderr_reaction_,
+        ExternalCommandErrorExitReaction error_exit_reaction_)
         : stdout_fd(stdout_fd_)
         , stderr_fd(stderr_fd_)
         , timeout_milliseconds(timeout_milliseconds_)
         , stderr_reaction(stderr_reaction_)
+        , error_exit_reaction(error_exit_reaction_)
     {
         makeFdNonBlocking(stdout_fd);
         makeFdNonBlocking(stderr_fd);
 
 #if defined(OS_LINUX)
         epoll.add(stdout_fd);
-        if (stderr_reaction != ExternalCommandStderrReaction::NONE)
+        if (stderr_reaction != ExternalCommandStderrReaction::NONE || error_exit_reaction != ExternalCommandErrorExitReaction::NONE)
             epoll.add(stderr_fd);
 #endif
     }
@@ -124,7 +129,7 @@ public:
         size_t bytes_read = 0;
 
 #if defined(OS_LINUX)
-        static constexpr size_t STDERR_BUFFER_SIZE = 16_KiB;
+        static constexpr size_t BUFFER_SIZE = 4_KiB;
 
         while (!bytes_read)
         {
@@ -146,7 +151,7 @@ public:
 
             if (has_stderr)
             {
-                stderr_buf.resize(STDERR_BUFFER_SIZE);
+                stderr_buf.resize(BUFFER_SIZE);
                 ssize_t res = ::read(stderr_fd, stderr_buf.data(), stderr_buf.size());
 
                 if (res > 0)
@@ -157,6 +162,25 @@ public:
                     else if (stderr_reaction == ExternalCommandStderrReaction::LOG)
                         LOG_WARNING(
                             &::Poco::Logger::get("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", stderr_buf);
+
+                    if (error_exit_reaction == ExternalCommandErrorExitReaction::LOG_FIRST)
+                    {
+                        if (BUFFER_SIZE - error_exit_buf.size() < size_t(res))
+                            res = BUFFER_SIZE - error_exit_buf.size();
+
+                        if (res > 0)
+                            error_exit_buf.append(stderr_buf.begin(), stderr_buf.begin() + res);
+                    }
+                    else if (error_exit_reaction == ExternalCommandErrorExitReaction::LOG_LAST)
+                    {
+                        if (res + error_exit_buf.size() > BUFFER_SIZE)
+                        {
+                            std::shift_left(error_exit_buf.begin(), error_exit_buf.end(), res + error_exit_buf.size() - BUFFER_SIZE);
+                            error_exit_buf.resize(BUFFER_SIZE - res);
+                        }
+
+                        error_exit_buf += stderr_buf;
+                    }
                 }
             }
 
@@ -218,11 +242,14 @@ public:
         tryMakeFdBlocking(stderr_fd);
     }
 
+    String error_exit_buf;
+
 private:
     int stdout_fd;
     int stderr_fd;
     size_t timeout_milliseconds;
     [[maybe_unused]] ExternalCommandStderrReaction stderr_reaction;
+    [[maybe_unused]] ExternalCommandErrorExitReaction error_exit_reaction;
 
 #if defined(OS_LINUX)
     Epoll epoll;
@@ -322,6 +349,8 @@ namespace
             const std::string & format_,
             size_t command_read_timeout_milliseconds,
             ExternalCommandStderrReaction stderr_reaction,
+            ExternalCommandErrorExitReaction error_exit_reaction,
+            bool check_exit_code_,
             const Block & sample_block_,
             std::unique_ptr<ShellCommand> && command_,
             std::vector<SendDataTask> && send_data_tasks = {},
@@ -335,12 +364,10 @@ namespace
             , command(std::move(command_))
             , configuration(configuration_)
             , timeout_command_out(
-                  command->out.getFD(),
-                  command->err.getFD(),
-                  command_read_timeout_milliseconds,
-                  stderr_reaction)
+                  command->out.getFD(), command->err.getFD(), command_read_timeout_milliseconds, stderr_reaction, error_exit_reaction)
             , command_holder(std::move(command_holder_))
             , process_pool(process_pool_)
+            , check_exit_code(check_exit_code_ || error_exit_reaction != ExternalCommandErrorExitReaction::NONE)
         {
             for (auto && send_data_task : send_data_tasks)
             {
@@ -389,7 +416,12 @@ namespace
                     thread.join();
 
             if (command_is_invalid)
+            {
                 command = nullptr;
+                if (!timeout_command_out.error_exit_buf.empty())
+                    LOG_ERROR(
+                        &::Poco::Logger::get("ShellCommandSource"), "Executable fails with stderr: {}", timeout_command_out.error_exit_buf);
+            }
 
             if (command_holder && process_pool)
             {
@@ -431,7 +463,7 @@ namespace
 
                 if (!executor->pull(chunk))
                 {
-                    if (configuration.check_exit_code)
+                    if (check_exit_code)
                         command->wait();
                     return {};
                 }
@@ -490,6 +522,8 @@ namespace
 
         ShellCommandHolderPtr command_holder;
         std::shared_ptr<ProcessPool> process_pool;
+
+        bool check_exit_code = false;
 
         QueryPipeline pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
@@ -650,6 +684,8 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         configuration.format,
         configuration.command_read_timeout_milliseconds,
         configuration.stderr_reaction,
+        configuration.error_exit_reaction,
+        configuration.check_exit_code,
         std::move(sample_block),
         std::move(process),
         std::move(tasks),
