@@ -159,7 +159,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             {
                 if (arg_num >= args.size())
                 {
-                    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table name is missing");
+                    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table name was not found in function arguments. {}", help_message);
                 }
                 else
                 {
