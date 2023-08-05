@@ -1818,15 +1818,18 @@ arrayRemove(Function,arr 1,...)
 Query:
 
 ``` sql
-SELECT arrayRemove(x->x<2, [2,10,11,12]) AS x;
+SELECT arrayRemove(
+        ( x) -> x LIKE '%World%',
+        ['Hello', 'abc World'] AS arr)
+    AS res
 ```
 
 Result:
 
 ``` text
-┌─x────────────┐
-│ [2,10,11,12] │
-└──────────────┘
+┌─res───────┐
+│ ['Hello'] │
+└───────────┘
 ```
 
 ``` sql

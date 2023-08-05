@@ -29,19 +29,11 @@ ColumnPtr ArrayRemoveImpl::execute(const ColumnArray & array, ColumnPtr mapped)
     }
 
     const IColumn::Filter & filter = column_filter->getData();
-
-    // Create a new filter with the negated values, handling NULLs separately.
-    IColumn::Filter negated_filter(filter.size());
+    IColumn::Filter negated_filter(filter.size()); // Create a new filter with the negated values, handling NULLs separately.
 
     for (size_t i = 0; i < filter.size(); ++i)
     {
-        // if (filter[i] && !array.isNullAt(i))
-        //     negated_filter[i] = false; // Include non-NULL values that satisfy the predicate
-        // else
-        //     negated_filter[i] = true;  // Exclude NULLs.
-
-        if(filter[i]==NULL) continue;
-        else negated_filter[i] = true;
+            negated_filter[i] = !filter[i];
     }
 
     ColumnPtr filtered = array.getData().filter(negated_filter, -1);
