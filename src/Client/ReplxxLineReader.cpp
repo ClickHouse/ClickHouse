@@ -287,8 +287,10 @@ ReplxxLineReader::ReplxxLineReader(
     bool multiline_,
     Patterns extenders_,
     Patterns delimiters_,
+    const char word_break_characters_[],
     replxx::Replxx::highlighter_callback_t highlighter_)
     : LineReader(history_file_path_, multiline_, std::move(extenders_), std::move(delimiters_)), highlighter(std::move(highlighter_))
+    , word_break_characters(word_break_characters_)
     , editor(getEditor())
 {
     using namespace std::placeholders;
@@ -326,9 +328,9 @@ ReplxxLineReader::ReplxxLineReader(
 
     rx.install_window_change_handler();
 
-    auto callback = [&suggest] (const String & context, size_t context_size)
+    auto callback = [&suggest, this] (const String & context, size_t context_size)
     {
-        return suggest.getCompletions(context, context_size);
+        return suggest.getCompletions(context, context_size, word_break_characters);
     };
 
     rx.set_completion_callback(callback);

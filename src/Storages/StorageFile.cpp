@@ -881,7 +881,7 @@ public:
                         while (file_enumerator->getFileName() != current_path)
                         {
                             if (!file_enumerator->nextFile())
-                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected file {} is missing from archive {}", filename, archive);
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected file {} is missing from archive {}", current_path, archive);
                         }
                     }
                     else
