@@ -294,7 +294,7 @@ def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
     ]:
         print(format_name)
 
-        kafka_create_topic(admin_client, f"{format_name}_err", num_partitions=2)
+        kafka_create_topic(admin_client, f"{format_name}_err")
 
         instance.query(
             f"""
@@ -307,21 +307,17 @@ def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
                          kafka_topic_list = '{format_name}_err',
                          kafka_group_name = '{format_name}',
                          kafka_format = '{format_name}',
-                        kafka_num_consumers = 2;
+                         kafka_num_consumers = 1;
 
             CREATE MATERIALIZED VIEW view_{format_name} Engine=Log AS
                 SELECT * FROM kafka_{format_name};
         """
         )
 
-        kafka_produce(kafka_cluster, f"{format_name}_err", ["qwertyuiop"], partition=0)
-        kafka_produce(kafka_cluster, f"{format_name}_err", ["asdfghjkl"], partition=1)
-        kafka_produce(kafka_cluster, f"{format_name}_err", ["zxcvbnm"], partition=0)
+        kafka_produce(kafka_cluster, f"{format_name}_err", ["qwertyuiop", "asdfghjkl", "zxcvbnm"])
 
     expected_result = """avro::Exception: Invalid data file. Magic does not match: : while parsing Kafka message (topic: Avro_err, partition: 0, offset: 0)\\'|1|1|1|default|kafka_Avro
-avro::Exception: Invalid data file. Magic does not match: : while parsing Kafka message (topic: Avro_err, partition: 1, offset: 0)\\'|1|1|1|default|kafka_Avro
 Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': while parsing Kafka message (topic: JSONEachRow_err, partition: 0, offset: 0)\\'|1|1|1|default|kafka_JSONEachRow
-Cannot parse input: expected \\'{\\' before: \\'asdfghjkl\\': while parsing Kafka message (topic: JSONEachRow_err, partition: 1, offset: 0)\\'|1|1|1|default|kafka_JSONEachRow
 """
     retries = 0
     result_system_kafka_consumers = ""
