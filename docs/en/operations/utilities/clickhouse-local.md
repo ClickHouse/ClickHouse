@@ -34,7 +34,13 @@ The binary you just downloaded can run all sorts of ClickHouse tools and utiliti
 
 A common use of `clickhouse-local` is to run ad-hoc queries on files: where you don't have to insert the data into a table. `clickhouse-local` can stream the data from a file into a temporary table and execute your SQL.
 
-If the file is sitting on the same machine as `clickhouse-local`, use the `file` table engine. The following `reviews.tsv` file contains a sampling of Amazon product reviews:
+If the file is sitting on the same machine as `clickhouse-local`, you can simple specify the file to load. The following `reviews.tsv` file contains a sampling of Amazon product reviews:
+
+```bash
+./clickhouse local -q "SELECT * FROM 'reviews.tsv'"
+```
+
+This command is a shortcut of:
 
 ```bash
 ./clickhouse local -q "SELECT * FROM file('reviews.tsv')"
