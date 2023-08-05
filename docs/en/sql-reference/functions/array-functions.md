@@ -1796,22 +1796,22 @@ Return value type is always [Float64](../../sql-reference/data-types/float.md). 
 ```
 ## arrayRemove
 
-- Returns the array/arrays after removing the elements that pass the given predicate.
+- Returns the array after removing the elements that pass the given predicate.
 
 **Syntax**
 
 ``` sql
-arrayRemove(Function,arr 1,...)
+arrayRemove(Function,arr)
 ```
 
 **Arguments**
 
-- `arr 1` – Array 1
+- `arr` – Array
 - `Function` – Condition/Predicate to remove elements from the array
 
 **Returned value**
 
-- Arrays that contains only those elements which failed the predicate.
+- Array that contains only those elements which failed the predicate.
 
 **Examples**
 
