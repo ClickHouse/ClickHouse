@@ -67,4 +67,4 @@ def test_s3_with_proxy_list(cluster):
     )
 
     for proxy in ["proxy1", "proxy2"]:
-        check_proxy_logs(cluster, proxy, ["PUT", "GET"])
+        check_proxy_logs(cluster, proxy)

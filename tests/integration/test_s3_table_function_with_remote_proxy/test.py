@@ -71,4 +71,4 @@ def test_s3_with_remote_resolver(cluster):
         == "('color','red'),('size','10')"
     )
 
-    check_proxy_logs(cluster, "proxy1", ["PUT", "GET"])
+    check_proxy_logs(cluster, "proxy1")
