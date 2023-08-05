@@ -57,8 +57,9 @@ def test_chroot_with_same_root(started_cluster):
         for j in range(2):  # Second insert to test deduplication
             node.query("INSERT INTO simple VALUES ({0}, {0})".format(i))
 
-    # Replication might take time
+    node1.query("SYSTEM SYNC REPLICA simple")
     assert_eq_with_retry(node1, "select count() from simple", "2")
+    node2.query("SYSTEM SYNC REPLICA simple")
     assert_eq_with_retry(node2, "select count() from simple", "2")
 
 
@@ -76,6 +77,7 @@ def test_chroot_with_different_root(started_cluster):
         for j in range(2):  # Second insert to test deduplication
             node.query("INSERT INTO simple_different VALUES ({0}, {0})".format(i))
 
-    # Replication might take time
+    node1.query("SYSTEM SYNC REPLICA simple_different")
     assert_eq_with_retry(node1, "select count() from simple_different", "1")
+    node2.query("SYSTEM SYNC REPLICA simple_different")
     assert_eq_with_retry(node3, "select count() from simple_different", "1")
