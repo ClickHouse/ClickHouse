@@ -314,7 +314,9 @@ def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
         """
         )
 
-        kafka_produce(kafka_cluster, f"{format_name}_err", ["qwertyuiop", "asdfghjkl", "zxcvbnm"])
+        kafka_produce(
+            kafka_cluster, f"{format_name}_err", ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
+        )
 
     expected_result = """avro::Exception: Invalid data file. Magic does not match: : while parsing Kafka message (topic: Avro_err, partition: 0, offset: 0)\\'|1|1|1|default|kafka_Avro
 Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': while parsing Kafka message (topic: JSONEachRow_err, partition: 0, offset: 0)\\'|1|1|1|default|kafka_JSONEachRow
