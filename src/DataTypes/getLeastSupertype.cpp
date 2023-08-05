@@ -201,7 +201,7 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
 }
 
 template <LeastSupertypeOnError on_error>
-DataTypePtr getLeastSupertype(const DataTypes & types)
+DataTypePtr getLeastSupertype(const DataTypes & types, bool optimize_type_ids)
 {
     /// Trivial cases
 
@@ -592,7 +592,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
     /// For numeric types, the most complicated part.
     {
-        optimizeTypeIds(types, type_ids);
+        if (optimize_type_ids)
+            optimizeTypeIds(types, type_ids);
         auto numeric_type = getNumericType<on_error>(type_ids);
         if (numeric_type)
             return numeric_type;
@@ -798,7 +799,7 @@ DataTypePtr tryGetLeastSupertype(const TypeIndexSet & types)
     return getLeastSupertype<LeastSupertypeOnError::Null>(types);
 }
 
-template DataTypePtr getLeastSupertype<LeastSupertypeOnError::Throw>(const DataTypes & types);
+template DataTypePtr getLeastSupertype<LeastSupertypeOnError::Throw>(const DataTypes & types, bool optimize_type_ids);
 template DataTypePtr getLeastSupertype<LeastSupertypeOnError::Throw>(const TypeIndexSet & types);
 
 }
