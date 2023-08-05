@@ -186,9 +186,7 @@ bool FileSegment::isDownloaded() const
 
 String FileSegment::getCallerId()
 {
-    if (!CurrentThread::isInitialized()
-        || !CurrentThread::get().getQueryContext()
-        || CurrentThread::getQueryId().empty())
+    if (!CurrentThread::isInitialized() || CurrentThread::getQueryId().empty())
         return "None:" + toString(getThreadId());
 
     return std::string(CurrentThread::getQueryId()) + ":" + toString(getThreadId());
