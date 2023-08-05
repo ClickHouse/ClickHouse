@@ -58,8 +58,8 @@ def test_chroot_with_same_root(started_cluster):
             node.query("INSERT INTO simple VALUES ({0}, {0})".format(i))
 
     # Replication might take time
-    assert_eq_with_retry(node1, "select count() from simple", "2\n")
-    assert_eq_with_retry(node2, "select count() from simple", "2\n")
+    assert_eq_with_retry(node1, "select count() from simple", "2")
+    assert_eq_with_retry(node2, "select count() from simple", "2")
 
 
 def test_chroot_with_different_root(started_cluster):
@@ -77,5 +77,5 @@ def test_chroot_with_different_root(started_cluster):
             node.query("INSERT INTO simple_different VALUES ({0}, {0})".format(i))
 
     # Replication might take time
-    assert_eq_with_retry(node1, "select count() from simple_different", "1\n")
-    assert_eq_with_retry(node3, "select count() from simple_different", "1\n")
+    assert_eq_with_retry(node1, "select count() from simple_different", "1")
+    assert_eq_with_retry(node3, "select count() from simple_different", "1")
