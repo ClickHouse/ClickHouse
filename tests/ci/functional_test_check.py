@@ -17,7 +17,7 @@ from build_download_helper import download_all_deb_packages
 from clickhouse_helper import (
     ClickHouseHelper,
     prepare_tests_results_for_clickhouse,
-    get_instance_type
+    get_instance_type,
 )
 from commit_status_helper import (
     NotSet,
