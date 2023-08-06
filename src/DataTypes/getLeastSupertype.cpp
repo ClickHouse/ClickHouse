@@ -728,14 +728,14 @@ void optimizeTypeIds(const DataTypes & types, TypeIndexSet & type_ids)
     // optimize type_ids
     if (both)
     {
-        // Example: UInt64(possible: Int64), Int64 = Int64, Int64
+        // Example: Int64(possible: UInt32), UInt64 = UInt32, UInt64
         if (only_unsigned && !only_signed)
         {
             type_ids.clear();
             for (const auto & type : types)
                 type_ids.insert(optimize_type_id(type, true));
         }
-        // Example: Int64(possible: UInt32), UInt64 = UInt32, UInt64
+        // Example: UInt64(possible: Int64), Int64 = Int64, Int64
         //          Int64(possible: UInt32), UInt64(possible: Int64) = Int64, Int64
         else if ((only_signed && !only_unsigned) || (has_unsigned && has_signed && !only_signed && !only_unsigned))
         {
