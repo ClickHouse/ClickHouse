@@ -36,6 +36,22 @@ fi
 ./setup_minio.sh stateless
 ./setup_hdfs_minicluster.sh
 
+# Setup a cluster for logs export to ClickHouse Cloud
+# Note: these variables are provided to the Docker run command by the Python script in tests/ci
+if [ -n "${CLICKHOUSE_CI_LOGS_HOST}" ]
+then
+    echo "
+    remote_servers:
+        system_logs_export:
+            shard:
+                replica:
+                    secure: 1
+                    user: ci
+                    host: '${CLICKHOUSE_CI_LOGS_HOST}'
+                    password: '${CLICKHOUSE_CI_LOGS_PASSWORD}'
+    " > /etc/clickhouse-server/config.d/system_logs_export.yaml
+fi
+
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
     export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
@@ -92,6 +108,25 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     MAX_RUN_TIME=$((MAX_RUN_TIME != 0 ? MAX_RUN_TIME : 9000))    # set to 2.5 hours if 0 (unlimited)
 fi
 
+
+# Wait for the server to start
+while true
+do
+    clickhouse-client --query "SELECT 1" && break
+    sleep 1
+done
+
+# Initialize export of system logs to ClickHouse Cloud
+if [ -n "${CLICKHOUSE_CI_LOGS_HOST}" ]
+then
+    EXTRA_COLUMNS_EXPRESSION="$PULL_REQUEST_NUMBER AS pull_request_number, '$COMMIT_SHA' AS commit_sha, '$CHECK_START_TIME' AS check_start_time, '$CHECK_NAME' AS check_name, '$INSTANCE_TYPE' AS instance_type"
+    # TODO: Check if the password will appear in the logs.
+    CONNECTION_PARAMETERS="--secure --user ci --host '${CLICKHOUSE_CI_LOGS_HOST}' --password '${CLICKHOUSE_CI_LOGS_PASSWORD}'"
+
+    /repository/utils/export-logs-in-ci/setup.sh
+fi
+
+# TODO what is this? Remove it.
 sleep 5
 
 attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
