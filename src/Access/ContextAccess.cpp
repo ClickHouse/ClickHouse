@@ -756,11 +756,11 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
                 show_error(ErrorCodes::ACCESS_DENIED,
                            "Not enough privileges. "
                            "Role {} is granted, but without ADMIN option. "
-                           "to execute this query, it's necessary to have the role {} granted with ADMIN option.",
+                           "To execute this query, it's necessary to have the role {} granted with ADMIN option.",
                            backQuote(*role_name), backQuoteIfNeed(*role_name));
             else
                 show_error(ErrorCodes::ACCESS_DENIED, "Not enough privileges. "
-                           "to execute this query, it's necessary to have the role {} granted with ADMIN option.",
+                           "To execute this query, it's necessary to have the role {} granted with ADMIN option.",
                            backQuoteIfNeed(*role_name));
         }
 
