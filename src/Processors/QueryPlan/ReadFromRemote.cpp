@@ -246,7 +246,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
         // establish a connection to a replica on the shard, the replica will instantiate coordinator to manage parallel reading from replicas on the shard.
         // The coordinator will return query result from the shard.
         // Only one coordinator per shard is necessary. Therefore using PoolMode::GET_ONE to establish only one connection per shard.
-        // Using PoolMode::GET_MANY for this mode will(can) lead to instatiation of several coordinators (depends on max_parallel_replicas setting)
+        // Using PoolMode::GET_MANY for this mode will(can) lead to instantiation of several coordinators (depends on max_parallel_replicas setting)
         // each will execute parallel reading from replicas, so the query result will be multiplied by the number of created coordinators
         remote_query_executor->setPoolMode(PoolMode::GET_ONE);
     else
