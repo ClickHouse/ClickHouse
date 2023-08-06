@@ -309,7 +309,10 @@ def test_executable_function_always_error_python(started_cluster):
 
     query_id = uuid.uuid4().hex
     try:
-        node.query("SELECT test_function_always_error_exit_log_first_python(1)", query_id=query_id)
+        node.query(
+            "SELECT test_function_always_error_exit_log_first_python(1)",
+            query_id=query_id,
+        )
         assert False, "Exception have to be thrown"
     except Exception as ex:
         assert "DB::Exception: Child process was exited with return code 1" in str(ex)
@@ -319,7 +322,10 @@ def test_executable_function_always_error_python(started_cluster):
 
     query_id = uuid.uuid4().hex
     try:
-        node.query("SELECT test_function_always_error_exit_log_last_python(1)", query_id=query_id)
+        node.query(
+            "SELECT test_function_always_error_exit_log_last_python(1)",
+            query_id=query_id,
+        )
         assert False, "Exception have to be thrown"
     except Exception as ex:
         assert "DB::Exception: Child process was exited with return code 1" in str(ex)
