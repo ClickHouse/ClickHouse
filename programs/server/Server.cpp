@@ -1650,9 +1650,9 @@ try
         database_catalog.initializeAndLoadTemporaryDatabase();
         loadMetadataSystem(global_context);
         maybeConvertSystemDatabase(global_context);
-        startupSystemTables();
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
+        startupSystemTables();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
         /// Build loggers before tables startup to make log messages from tables
         /// attach available in system.text_log
