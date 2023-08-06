@@ -550,12 +550,12 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
             return access_denied(ErrorCodes::ACCESS_DENIED,
                 "{}: Not enough privileges. "
                 "The required privileges have been granted, but without grant option. "
-                "To execute this query it's necessary to have grant {} WITH GRANT OPTION",
+                "To execute this query, it's necessary to have the grant {} WITH GRANT OPTION",
                 AccessRightsElement{flags, args...}.toStringWithoutOptions());
         }
 
         return access_denied(ErrorCodes::ACCESS_DENIED,
-            "{}: Not enough privileges. To execute this query it's necessary to have grant {}",
+            "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
             AccessRightsElement{flags, args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
     }
 
@@ -756,11 +756,11 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
                 show_error(ErrorCodes::ACCESS_DENIED,
                            "Not enough privileges. "
                            "Role {} is granted, but without ADMIN option. "
-                           "To execute this query it's necessary to have the role {} granted with ADMIN option.",
+                           "to execute this query, it's necessary to have the role {} granted with ADMIN option.",
                            backQuote(*role_name), backQuoteIfNeed(*role_name));
             else
                 show_error(ErrorCodes::ACCESS_DENIED, "Not enough privileges. "
-                           "To execute this query it's necessary to have the role {} granted with ADMIN option.",
+                           "to execute this query, it's necessary to have the role {} granted with ADMIN option.",
                            backQuoteIfNeed(*role_name));
         }
 

@@ -296,7 +296,7 @@ BlockIO InterpreterKillQueryQuery::execute()
 
         if (res_columns[0]->empty() && access_denied)
             throw Exception(ErrorCodes::ACCESS_DENIED, "Not allowed to kill mutation. "
-                "To execute this query it's necessary to have the grant {}", required_access_rights.toString());
+                "to execute this query, it's necessary to have the grant {}", required_access_rights.toString());
 
         res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
 
@@ -360,7 +360,7 @@ BlockIO InterpreterKillQueryQuery::execute()
 
         if (res_columns[0]->empty() && access_denied)
             throw Exception(ErrorCodes::ACCESS_DENIED, "Not allowed to kill move partition. "
-                "To execute this query it's necessary to have the grant {}", required_access_rights.toString());
+                "to execute this query, it's necessary to have the grant {}", required_access_rights.toString());
 
         res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
 
