@@ -561,7 +561,7 @@ def test_required_privileges():
     node1.query("GRANT CLUSTER ON *.* TO u1")
 
     backup_name = new_backup_name()
-    expected_error = "necessary to have grant BACKUP ON default.tbl"
+    expected_error = "necessary to have the grant BACKUP ON default.tbl"
     assert expected_error in node1.query_and_get_error(
         f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}", user="u1"
     )
@@ -571,7 +571,7 @@ def test_required_privileges():
 
     node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
 
-    expected_error = "necessary to have grant INSERT, CREATE TABLE ON default.tbl2"
+    expected_error = "necessary to have the grant INSERT, CREATE TABLE ON default.tbl2"
     assert expected_error in node1.query_and_get_error(
         f"RESTORE TABLE tbl AS tbl2 ON CLUSTER 'cluster' FROM {backup_name}", user="u1"
     )
@@ -587,7 +587,7 @@ def test_required_privileges():
     node1.query(f"DROP TABLE tbl2 ON CLUSTER 'cluster' SYNC")
     node1.query("REVOKE ALL FROM u1")
 
-    expected_error = "necessary to have grant INSERT, CREATE TABLE ON default.tbl"
+    expected_error = "necessary to have the grant INSERT, CREATE TABLE ON default.tbl"
     assert expected_error in node1.query_and_get_error(
         f"RESTORE ALL ON CLUSTER 'cluster' FROM {backup_name}", user="u1"
     )
@@ -607,7 +607,7 @@ def test_system_users():
     node1.query("CREATE USER u2 SETTINGS allow_backup=false")
     node1.query("GRANT CLUSTER ON *.* TO u2")
 
-    expected_error = "necessary to have grant BACKUP ON system.users"
+    expected_error = "necessary to have the grant BACKUP ON system.users"
     assert expected_error in node1.query_and_get_error(
         f"BACKUP TABLE system.users ON CLUSTER 'cluster' TO {backup_name}", user="u2"
     )
@@ -619,14 +619,14 @@ def test_system_users():
 
     node1.query("DROP USER u1")
 
-    expected_error = "necessary to have grant CREATE USER ON *.*"
+    expected_error = "necessary to have the grant CREATE USER ON *.*"
     assert expected_error in node1.query_and_get_error(
         f"RESTORE TABLE system.users ON CLUSTER 'cluster' FROM {backup_name}", user="u2"
     )
 
     node1.query("GRANT CREATE USER ON *.* TO u2")
 
-    expected_error = "necessary to have grant SELECT ON default.tbl WITH GRANT OPTION"
+    expected_error = "necessary to have the grant SELECT ON default.tbl WITH GRANT OPTION"
     assert expected_error in node1.query_and_get_error(
         f"RESTORE TABLE system.users ON CLUSTER 'cluster' FROM {backup_name}", user="u2"
     )
