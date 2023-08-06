@@ -113,7 +113,6 @@ struct FormatSettings
     {
         UInt64 row_group_size = 1000000;
         bool low_cardinality_as_dictionary = false;
-        bool import_nested = false;
         bool allow_missing_columns = false;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
@@ -227,7 +226,6 @@ struct FormatSettings
     {
         UInt64 row_group_rows = 1000000;
         UInt64 row_group_bytes = 512 * 1024 * 1024;
-        bool import_nested = false;
         bool allow_missing_columns = false;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
@@ -338,7 +336,6 @@ struct FormatSettings
 
     struct
     {
-        bool import_nested = false;
         bool allow_missing_columns = false;
         int64_t row_batch_size = 100'000;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
