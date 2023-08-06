@@ -124,6 +124,11 @@ then
     export CONNECTION_PARAMETERS="--secure --user ci --host ${CLICKHOUSE_CI_LOGS_HOST} --password ${CLICKHOUSE_CI_LOGS_PASSWORD}"
 
     /repository/utils/export-logs-in-ci/setup.sh
+
+    # Unset variables after use
+    export CONNECTION_PARAMETERS=''
+    export CLICKHOUSE_CI_LOGS_HOST=''
+    export CLICKHOUSE_CI_LOGS_PASSWORD=''
 fi
 
 # TODO what is this? Remove it.
