@@ -26,28 +26,22 @@ namespace
         assertBinary(name, argument_types);
 
         WhichDataType whichColumnX(argument_types[0]);
-        WhichDataType whichColumnY(argument_types[1]);
 
-        if (!(whichColumnX.idx == TypeIndex::DateTime64))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Aggregate function {} only supports DateTime as arg 1", name);
+        if (!(whichColumnX.idx == TypeIndex::DateTime64 || whichColumnX.idx == TypeIndex::DateTime || isNumber(argument_types[0])))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Aggregate function {} only supports DateTime, DateTime64 or Number as arg 1", name);
 
-        if (!(whichColumnY.idx == TypeIndex::Float64))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Aggregate function {} only supports Float64 as arg 2", name);
+        if (!isNumber(argument_types[1]))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Aggregate function {} only supports Numbers as arg 2", name);
 
         int scale;
         if (const auto * datetime64_type = typeid_cast<const DataTypeDateTime64 *>(argument_types[0].get()))
         {
             scale = datetime64_type->getScale();
-        }
-        else
+        } else
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected first argument of type DateTime64, got {}", argument_types[0]->getName());
+            scale = 0;
         }
-
-        if (whichColumnX.idx == TypeIndex::DateTime64 && whichColumnY.idx == TypeIndex::Float64)
-            return std::make_shared<AggregateFunctionLTTBDateTime64Float64>(argument_types, parameters, scale);
-
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Aggregate function {} only supports DateTime as arg 1 and Float64 as arg 2", name);
+        return std::make_shared<AggregateFunctionLTTB>(argument_types, parameters, scale, whichColumnX.idx);
     }
 
 }

@@ -47,25 +47,27 @@ struct ComparePairFirst final
     }
 };
 
-struct LTTBDataDateTime64Float64WithSort final
+struct LTTBData final
 {
-    using DataPair = std::pair<DateTime64, Float64>;
+    using DataPair = std::pair<Float64, Float64>;
     using ComparatorLess = ComparePairFirst<std::less>;
     using ComparatorGreater = ComparePairFirst<std::greater>;
     using AllocatorSample = MixedAlignedArenaAllocator<alignof(DataPair), 4096>;
     using DataList = PODArray<DataPair, 32, AllocatorSample>;
 
+//    using ResultType = PODArray<std::pair<Float64, Float64>, 32, MixedAlignedArenaAllocator<alignof(std::pair<Float64, Float64>), 4096>>;
+
     bool sorted = true;
 
     DataList dataList{};
 
-    void add(const DateTime64 x, const Float64 y, Arena * arena)
+    void add(const Float64 x, const Float64 y, Arena * arena)
     {
         dataList.push_back(std::make_pair(x, y), arena);
         sorted = false;
     }
 
-    void merge(const LTTBDataDateTime64Float64WithSort & other, Arena * arena)
+    void merge(const LTTBData & other, Arena * arena)
     {
         if (other.dataList.empty())
             return;
@@ -111,7 +113,7 @@ struct LTTBDataDateTime64Float64WithSort final
 
         for (size_t i = 0; i < size; ++i)
         {
-            DateTime64 x;
+            Float64 x;
             readBinary(x, buf);
 
             Float64 y;
@@ -121,70 +123,11 @@ struct LTTBDataDateTime64Float64WithSort final
         }
     }
 
-    PODArray<std::pair<DateTime64, Float64>> getResult(UInt64 total_buckets)
-    {
-        sort(true);
-
-        unsigned long int_total_buckets = total_buckets;
-        PODArray<std::pair<DateTime64, Float64>> result;
-
-        if (dataList.size() <= int_total_buckets)
-        {
-            for (unsigned long i = 0; i < dataList.size(); ++i)
-            {
-                result.emplace_back(std::make_pair(dataList[i].first, dataList[i].second));
-            }
-            return result;
-        }
-
-        // find the size of each bucket
-        unsigned long single_bucket_size = dataList.size() / total_buckets;
-
-        for (unsigned long i = 0; i < int_total_buckets; ++i)
-        {
-            unsigned long start_index = i * single_bucket_size;
-            unsigned long end_index = (i + 1) * single_bucket_size;
-            if (i == int_total_buckets - 1)
-            {
-                end_index = dataList.size();
-            }
-
-            //            int center_index = (start_index + end_index) / 2;
-            unsigned long max_index = start_index;
-            Float64 max_value = dataList[start_index].second;
-            for (unsigned long j = start_index; j < end_index; ++j)
-            {
-                if (dataList[j].second > max_value)
-                {
-                    max_value = dataList[j].second;
-                    max_index = j;
-                }
-            }
-            result.emplace_back(std::make_pair(dataList[max_index].first, dataList[max_index].second));
-
-            unsigned long last_index = max_index;
-            Float64 area = 0.0;
-            for (unsigned long j = max_index + 1; j < end_index; ++j)
-            {
-                Float64 this_area
-                    = 0.5 * (dataList[j].first - dataList[last_index].first) * (dataList[j].second - dataList[last_index].second);
-                if (this_area > area)
-                {
-                    result.emplace_back(std::make_pair(dataList[j].first, dataList[j].second));
-                    last_index = j;
-                    area = this_area;
-                }
-            }
-        }
-
-        return result;
-    }
-
-    PODArray<std::pair<DateTime64, Float64>> getResult2(UInt64 total_buckets)
+    PODArray<std::pair<Float64,Float64>> getResult(UInt64 total_buckets)
     {
         sort(true);
         unsigned long int_total_buckets = total_buckets;
-        PODArray<std::pair<DateTime64, Float64>> result;
+        PODArray<std::pair<Float64,Float64>> result{};
 
         // Handle special cases for small dataList
         if (dataList.size() <= int_total_buckets)
@@ -208,7 +151,7 @@ struct LTTBDataDateTime64Float64WithSort final
             unsigned long end_index = (i + 1) * single_bucket_size;
 
             // Compute the average point in the next bucket
-            DateTime64 avg_x = 0;
+            Float64 avg_x = 0;
             Float64 avg_y = 0;
             for (unsigned long j = end_index; j < (i + 2) * single_bucket_size; ++j)
             {
@@ -247,16 +190,19 @@ struct LTTBDataDateTime64Float64WithSort final
     }
 };
 
-class AggregateFunctionLTTBDateTime64Float64 final
-    : public IAggregateFunctionDataHelper<LTTBDataDateTime64Float64WithSort, AggregateFunctionLTTBDateTime64Float64>
+class AggregateFunctionLTTB final
+    : public IAggregateFunctionDataHelper<LTTBData, AggregateFunctionLTTB>
 {
 private:
     UInt64 total_buckets{0};
-
+    TypeIndex x_type;
 public:
-    explicit AggregateFunctionLTTBDateTime64Float64(const DataTypes & arguments, const Array & params, int scale)
-        : IAggregateFunctionDataHelper<LTTBDataDateTime64Float64WithSort, AggregateFunctionLTTBDateTime64Float64>(
-            {arguments}, {}, createResultType(scale))
+    explicit AggregateFunctionLTTB(const DataTypes & arguments, const Array & params, int xScale ,TypeIndex xType)
+        : IAggregateFunctionDataHelper<LTTBData, AggregateFunctionLTTB>(
+            {arguments},
+            {},
+            createResultType(xScale, xType)
+            )
     {
         if (params.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require one parameter", getName());
@@ -266,18 +212,37 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require first parameter to be a UInt64", getName());
 
         total_buckets = params[0].get<UInt64>();
+
+        this->x_type = xType;
     }
 
-    String getName() const override { return "lttb"; }
+    String getName() const override { return "lttb2"; }
 
     bool allocatesMemoryInArena() const override { return true; }
 
-    static DataTypePtr createResultType(int scale)
+    static DataTypePtr createResultType(int x_scale, TypeIndex xType)
     {
-        DataTypes types{
-            std::make_shared<DataTypeDateTime64>(scale),
-            std::make_shared<DataTypeNumber<Float64>>(),
-        };
+        DataTypes types;
+        if (xType == TypeIndex::DateTime64)
+        {
+            types = {
+                std::make_shared<DataTypeDateTime64>(x_scale),
+                std::make_shared<DataTypeNumber<Float64>>(),
+            };
+        } else if (xType == TypeIndex::DateTime)
+        {
+            types = {
+                std::make_shared<DataTypeDateTime>(),
+                std::make_shared<DataTypeNumber<Float64>>(),
+            };
+        }
+        else
+        {
+             types = {
+                std::make_shared<DataTypeNumber<Float64>>(),
+                std::make_shared<DataTypeNumber<Float64>>(),
+            };
+        }
 
         Strings names{"x", "y"};
 
@@ -288,7 +253,19 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        const auto x = static_cast<const ColumnDateTime64 &>(*columns[0]).getData()[row_num];
+        Float64 x = 0;
+        if (this->x_type == TypeIndex::DateTime64)
+        {
+            x = static_cast<const ColumnDateTime64 &>(*columns[0]).getData()[row_num];
+        }
+        else if (this->x_type == TypeIndex::DateTime)
+        {
+            x = static_cast<const ColumnDateTime &>(*columns[0]).getData()[row_num];
+        }
+        else
+        {
+            x = columns[0]->getFloat64(row_num);
+        }
         const auto y = columns[1]->getFloat64(row_num);
         this->data(place).add(x, y, arena);
     }
@@ -313,17 +290,33 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        auto res = this->data(place).getResult2(total_buckets);
+        auto res = this->data(place).getResult(total_buckets);
         auto & col = assert_cast<ColumnArray &>(to);
         auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
 
         for (size_t i = 0; i < res.size(); ++i)
         {
             auto & column_tuple = assert_cast<ColumnTuple &>(col.getData());
-            auto & column_x = assert_cast<ColumnDateTime64 &>(column_tuple.getColumn(0));
-            auto & column_y = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(1));
 
-            column_x.getData().push_back(res[i].first);
+            if (x_type == TypeIndex::DateTime64)
+            {
+                auto & column_x = assert_cast<ColumnDateTime64 &>(column_tuple.getColumn(0));
+                DateTime64 val = DateTime64(static_cast<long long>(res[i].first));
+                column_x.getData().push_back(val);
+            }
+            else if (x_type == TypeIndex::DateTime)
+            {
+                auto & column_x = assert_cast<ColumnDateTime &>(column_tuple.getColumn(0));
+                unsigned int val =static_cast<unsigned int>(res[i].first);
+                column_x.getData().push_back(val);
+            }
+            else
+            {
+                auto & column_x = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(0));
+                column_x.getData().push_back(res[i].first);
+            }
+
+            auto & column_y = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(1));
             column_y.getData().push_back(res[i].second);
         }
 
