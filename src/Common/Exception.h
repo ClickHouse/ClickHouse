@@ -20,6 +20,10 @@ namespace DB
 
 void abortOnFailedAssertion(const String & description);
 
+/// This flag can be set for testing purposes - to check that no exceptions are thrown.
+extern bool terminate_on_any_exception;
+
+
 class Exception : public Poco::Exception
 {
 public:
@@ -27,17 +31,23 @@ public:
 
     Exception()
     {
+        if (terminate_on_any_exception)
+            std::terminate();
         capture_thread_frame_pointers = thread_frame_pointers;
     }
 
     Exception(const PreformattedMessage & msg, int code): Exception(msg.text, code)
     {
+        if (terminate_on_any_exception)
+            std::terminate();
         capture_thread_frame_pointers = thread_frame_pointers;
         message_format_string = msg.format_string;
     }
 
     Exception(PreformattedMessage && msg, int code): Exception(std::move(msg.text), code)
     {
+        if (terminate_on_any_exception)
+            std::terminate();
         capture_thread_frame_pointers = thread_frame_pointers;
         message_format_string = msg.format_string;
     }
