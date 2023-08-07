@@ -223,7 +223,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             if (arg_num < args.size())
             {
                 if (sharding_key)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "user and password should be string literal (in single quotes)");
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Arguments `user` and `password` should be string literals (in single quotes)");
                 sharding_key = args[arg_num];
                 ++arg_num;
             }
