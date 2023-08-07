@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 DROP TABLE IF EXISTS test;
 DROP TABLE IF EXISTS test_1;
 DROP TABLE IF EXISTS test_2;
