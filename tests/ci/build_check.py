@@ -374,9 +374,44 @@ def main():
     instance_type = get_instance_type()
     query = urllib.parse.quote(
         f"""
-        INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_type, file, library, time, pid, tid, ph, ts, dur, cat, name, detail, count, avgMs, args_name)
+        INSERT INTO build_time_trace
+        (
+            pull_request_number, 
+            commit_sha, 
+            check_start_time, 
+            check_name, 
+            instance_type, 
+            file, 
+            library, 
+            time, 
+            pid, 
+            tid, 
+            ph, 
+            ts, 
+            dur, 
+            cat, 
+            name, 
+            detail, 
+            count, 
+            avgMs, 
+            args_name
+        )
         SELECT {pr_info.number}, '{pr_info.sha}', '{stopwatch.start_time_str}', '{build_name}', '{instance_type}', *
-        FROM input('file String, library String, time DateTime64(6), pid UInt32, tid UInt32, ph String, ts UInt64, dur UInt64, cat String, name String, detail String, count UInt64, avgMs UInt64, args_name String')
+        FROM input('
+            file String, 
+            library String, 
+            time DateTime64(6), 
+            pid UInt32, 
+            tid UInt32, 
+            ph String, 
+            ts UInt64,
+            dur UInt64, 
+            cat String, 
+            name String, 
+            detail String, 
+            count UInt64, 
+            avgMs UInt64, 
+            args_name String')
         FORMAT JSONEachRow
     """
     )
@@ -388,7 +423,7 @@ def main():
     print(f"::notice ::Log Uploading profile data, path: {file_path}, query: {query}")
 
     with open(file_path, "rb") as file:
-        response = requests.post(url, data=file)
+        requests.post(url, data=file)
 
     # Upload statistics to CI database
 
