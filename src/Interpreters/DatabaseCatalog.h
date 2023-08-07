@@ -6,7 +6,10 @@
 #include <Databases/TablesDependencyGraph.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
+#include "Common/NamePrompter.h"
 #include <Common/SharedMutex.h>
+#include "Storages/IStorage.h"
+#include "Databases/IDatabase.h"
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
@@ -26,6 +29,32 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+
+class TableNameHints : public IHints<1, TableNameHints>
+{
+public:
+    TableNameHints(DatabasePtr database_, ContextPtr context_)
+        : context(context_),
+        database(database_)
+    {
+    }
+    Names getAllRegisteredNames() const override 
+    {
+        Names result;
+        if (database)
+        {
+            for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
+            {
+                const auto & storage_id = table_it->table()->getStorageID();
+                result.emplace_back(storage_id.getTableName());
+            }
+        }
+        return result;
+    }
+private:
+    ContextPtr context;
+    DatabasePtr database;
+};
 
 class IDatabase;
 class Exception;

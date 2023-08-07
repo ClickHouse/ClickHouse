@@ -25,6 +25,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
 
+#include "Interpreters/Context_fwd.h"
 #include "config.h"
 
 #if USE_MYSQL
@@ -81,35 +82,6 @@ public:
     }
 private:
     const DatabaseCatalog & database_catalog;
-};
-
-class TableNameHints : public IHints<1, TableNameHints>
-{
-public:
-    TableNameHints(const DatabaseCatalog & database_catalog_, ContextPtr context_, const String & database_name_)
-        : database_catalog(database_catalog_)
-        , context(context_)
-        , database_name(database_name_)
-    {
-    }
-    Names getAllRegisteredNames() const override
-    {
-        Names result;
-        DatabasePtr database = database_catalog.tryGetDatabase(database_name);
-        if (database)
-        {
-            for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
-            {
-                const auto & storage_id = table_it->table()->getStorageID();
-                result.emplace_back(storage_id.getTableName());
-            }
-        }
-        return result;
-    }
-private:
-    const DatabaseCatalog & database_catalog;
-    ContextPtr context;
-    String database_name;
 };
 
 TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
@@ -367,7 +339,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             assert(!db_and_table.first && !db_and_table.second);
             if (exception)
             {
-                TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
+                TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), getContext());
                 std::vector<String> names = hints.getHints(table_id.getTableName());
                 if (!names.empty())
                 {
@@ -448,7 +420,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     auto table = database->tryGetTable(table_id.table_name, context_);
     if (!table && exception)
     {
-        TableNameHints hints(*this, getContext(), table_id.getDatabaseName());
+        TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), getContext());
         std::vector<String> names = hints.getHints(table_id.getTableName());
         if (names.empty())
         {
