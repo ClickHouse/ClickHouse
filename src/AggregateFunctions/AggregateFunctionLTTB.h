@@ -22,6 +22,7 @@
 #include <base/types.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/assert_cast.h>
+#include <numeric>
 
 #include <boost/math/distributions/normal.hpp>
 
@@ -36,114 +37,86 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/// helper type for comparing `std::pair`s using solely the .first member
-template <template <typename> class Comparator>
-struct ComparePairFirst final
-{
-    template <typename T1, typename T2>
-    bool operator()(const std::pair<T1, T2> & lhs, const std::pair<T1, T2> & rhs) const
-    {
-        return Comparator<T1>{}(lhs.first, rhs.first);
-    }
-};
 
 struct LTTBData final
 {
-    using DataPair = std::pair<Float64, Float64>;
-    using ComparatorLess = ComparePairFirst<std::less>;
-    using ComparatorGreater = ComparePairFirst<std::greater>;
-    using AllocatorSample = MixedAlignedArenaAllocator<alignof(DataPair), 4096>;
-    using DataList = PODArray<DataPair, 32, AllocatorSample>;
+    using AllocatorSample = MixedAlignedArenaAllocator<alignof(Float64), 4096>;
+    using DataList = PODArray<Float64, 32, AllocatorSample>;
 
-//    using ResultType = PODArray<std::pair<Float64, Float64>, 32, MixedAlignedArenaAllocator<alignof(std::pair<Float64, Float64>), 4096>>;
-
-    bool sorted = true;
-
-    DataList dataList{};
+    DataList dataList_x{};
+    DataList dataList_y{};
 
     void add(const Float64 x, const Float64 y, Arena * arena)
     {
-        dataList.push_back(std::make_pair(x, y), arena);
-        sorted = false;
+        dataList_x.push_back(x, arena);
+        dataList_y.push_back(y, arena);
     }
 
     void merge(const LTTBData & other, Arena * arena)
     {
-        if (other.dataList.empty())
+        if (other.dataList_x.empty() || other.dataList_y.empty())
             return;
 
-        dataList.insert(std::begin(other.dataList), std::end(other.dataList), arena);
-        sorted = false;
-    }
-
-    void sort(bool ascending)
-    {
-        if (sorted)
-            return;
-
-        if (ascending)
-            ::sort(std::begin(dataList), std::end(dataList), ComparatorLess{});
-        else
-            ::sort(std::begin(dataList), std::end(dataList), ComparatorGreater{});
-
-        sorted = true;
+        dataList_x.insert(std::begin(other.dataList_x), std::end(other.dataList_x), arena);
+        dataList_y.insert(std::begin(other.dataList_y), std::end(other.dataList_y), arena);
     }
 
     void serialize(WriteBuffer & buf) const
     {
-        writeBinary(sorted, buf);
-        writeBinary(dataList.size(), buf);
+        writeBinary(dataList_x.size(), buf);
 
-        for (const auto & events : dataList)
-        {
-            writeBinary(events.first, buf);
-            writeBinary(events.second, buf);
-        }
+        for (const auto & x : dataList_x)
+            writeBinary(x, buf);
+
+        for (const auto & y : dataList_y)
+            writeBinary(y, buf);
     }
 
     void deserialize(ReadBuffer & buf, Arena * arena)
     {
-        readBinary(sorted, buf);
-
         size_t size;
         readBinary(size, buf);
 
-        dataList.clear();
-        dataList.reserve(size, arena);
+        dataList_x.clear();
+        dataList_y.clear();
+        dataList_x.reserve(size, arena);
+        dataList_y.reserve(size, arena);
 
         for (size_t i = 0; i < size; ++i)
         {
             Float64 x;
             readBinary(x, buf);
+            dataList_x.push_back(x, arena);
+        }
 
+        for (size_t i = 0; i < size; ++i)
+        {
             Float64 y;
             readBinary(y, buf);
-
-            dataList.push_back(std::make_pair(x, y), arena);
+            dataList_y.push_back(y, arena);
         }
     }
 
-    PODArray<std::pair<Float64,Float64>> getResult(UInt64 total_buckets)
+    PODArray<std::pair<Float64, Float64>> getResult(UInt64 total_buckets)
     {
-        sort(true);
         unsigned long int_total_buckets = total_buckets;
-        PODArray<std::pair<Float64,Float64>> result{};
+        PODArray<std::pair<Float64, Float64>> result;
 
         // Handle special cases for small dataList
-        if (dataList.size() <= int_total_buckets)
+        if (dataList_x.size() <= int_total_buckets)
         {
-            for (unsigned long i = 0; i < dataList.size(); ++i)
+            for (unsigned long i = 0; i < dataList_x.size(); ++i)
             {
-                result.emplace_back(std::make_pair(dataList[i].first, dataList[i].second));
+                result.emplace_back(std::make_pair(dataList_x[i], dataList_y[i]));
             }
             return result;
         }
 
         // Find the size of each bucket
-        unsigned long single_bucket_size = dataList.size() / total_buckets;
+        unsigned long single_bucket_size = dataList_x.size() / total_buckets;
 
         // Include the first data point
-        result.emplace_back(dataList[0]);
+        result.emplace_back(std::make_pair(dataList_x[0], dataList_y[0]));
 
         for (unsigned long i = 1; i < int_total_buckets - 1; ++i) // Skip the first and last bucket
         {
@@ -155,8 +128,8 @@ struct LTTBData final
             Float64 avg_y = 0;
             for (unsigned long j = end_index; j < (i + 2) * single_bucket_size; ++j)
             {
-                avg_x += dataList[j].first;
-                avg_y += dataList[j].second;
+                avg_x += dataList_x[j];
+                avg_y += dataList_y[j];
             }
             avg_x /= single_bucket_size;
             avg_y /= single_bucket_size;
@@ -166,12 +139,10 @@ struct LTTBData final
             Float64 max_area = 0.0;
             for (unsigned long j = start_index; j < end_index; ++j)
             {
-                Float64 area = std::abs(0.5 * (result.back().first * dataList[j].second +
-                                               dataList[j].first * avg_y +
-                                               avg_x * result.back().second -
-                                               result.back().first * avg_y -
-                                               dataList[j].first * result.back().second -
-                                               avg_x * dataList[j].second));
+                Float64 area = std::abs(
+                    0.5
+                    * (result.back().first * dataList_y[j] + dataList_x[j] * avg_y + avg_x * result.back().second
+                       - result.back().first * avg_y - dataList_x[j] * result.back().second - avg_x * dataList_y[j]));
                 if (area > max_area)
                 {
                     max_area = area;
@@ -180,11 +151,11 @@ struct LTTBData final
             }
 
             // Include the selected point
-            result.emplace_back(dataList[max_index]);
+            result.emplace_back(std::make_pair(dataList_x[max_index], dataList_y[max_index]));
         }
 
         // Include the last data point
-        result.emplace_back(dataList.back());
+        result.emplace_back(std::make_pair(dataList_x.back(), dataList_y.back()));
 
         return result;
     }
@@ -196,12 +167,14 @@ class AggregateFunctionLTTB final
 private:
     UInt64 total_buckets{0};
     TypeIndex x_type;
+    TypeIndex y_type;
+
 public:
-    explicit AggregateFunctionLTTB(const DataTypes & arguments, const Array & params, int xScale ,TypeIndex xType)
+    explicit AggregateFunctionLTTB(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<LTTBData, AggregateFunctionLTTB>(
             {arguments},
             {},
-            createResultType(xScale, xType)
+            createResultType(arguments)
             )
     {
         if (params.size() != 1)
@@ -213,61 +186,82 @@ public:
 
         total_buckets = params[0].get<UInt64>();
 
-        this->x_type = xType;
+        this->x_type = WhichDataType(arguments[0]).idx;
+        this->y_type = WhichDataType(arguments[1]).idx;
+
     }
 
-    String getName() const override { return "lttb2"; }
+    String getName() const override { return "lttb"; }
 
     bool allocatesMemoryInArena() const override { return true; }
 
-    static DataTypePtr createResultType(int x_scale, TypeIndex xType)
+    static DataTypePtr createResultType(const DataTypes & arguments)
     {
-        DataTypes types;
-        if (xType == TypeIndex::DateTime64)
+        TypeIndex xType = arguments[0]->getTypeId();
+        TypeIndex yType = arguments[1]->getTypeId();
+
+        UInt32 xScale = 0;
+        UInt32 yScale = 0;
+
+        if (const auto * datetime64_type = typeid_cast<const DataTypeDateTime64 *>(arguments[0].get()))
         {
-            types = {
-                std::make_shared<DataTypeDateTime64>(x_scale),
-                std::make_shared<DataTypeNumber<Float64>>(),
-            };
-        } else if (xType == TypeIndex::DateTime)
-        {
-            types = {
-                std::make_shared<DataTypeDateTime>(),
-                std::make_shared<DataTypeNumber<Float64>>(),
-            };
-        }
-        else
-        {
-             types = {
-                std::make_shared<DataTypeNumber<Float64>>(),
-                std::make_shared<DataTypeNumber<Float64>>(),
-            };
+            xScale = datetime64_type->getScale();
         }
 
-        Strings names{"x", "y"};
+        if (const auto * datetime64_type = typeid_cast<const DataTypeDateTime64 *>(arguments[1].get()))
+        {
+            yScale = datetime64_type->getScale();
+        }
 
-        auto tuple = std::make_shared<DataTypeTuple>(std::move(types), std::move(names));
+
+        DataTypes types = {getDataTypeFromTypeIndex(xType, xScale), getDataTypeFromTypeIndex(yType, yScale)};
+
+        auto tuple = std::make_shared<DataTypeTuple>(std::move(types));
 
         return std::make_shared<DataTypeArray>(tuple);
     }
 
+    static DataTypePtr getDataTypeFromTypeIndex(TypeIndex typeIndex, UInt32 scale) {
+        DataTypePtr data_type;
+        switch (typeIndex) {
+            case TypeIndex::Date:
+                data_type = std::make_shared<DataTypeDate>();
+                break;
+            case TypeIndex::Date32:
+                data_type =  std::make_shared<DataTypeDate32>();
+                break;
+            case TypeIndex::DateTime:
+                data_type =  std::make_shared<DataTypeDateTime>();
+                break;
+            case TypeIndex::DateTime64:
+                data_type =  std::make_shared<DataTypeDateTime64>(scale);
+                break;
+            default:
+                data_type =  std::make_shared<DataTypeNumber<Float64>>();
+        }
+        return data_type;
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        Float64 x = 0;
-        if (this->x_type == TypeIndex::DateTime64)
-        {
-            x = static_cast<const ColumnDateTime64 &>(*columns[0]).getData()[row_num];
-        }
-        else if (this->x_type == TypeIndex::DateTime)
-        {
-            x = static_cast<const ColumnDateTime &>(*columns[0]).getData()[row_num];
-        }
-        else
-        {
-            x = columns[0]->getFloat64(row_num);
-        }
-        const auto y = columns[1]->getFloat64(row_num);
+        Float64 x = getFloat64DataFromColumn(columns[0], row_num, this->x_type);
+        Float64 y = getFloat64DataFromColumn(columns[1], row_num, this->y_type);
         this->data(place).add(x, y, arena);
+    }
+
+    Float64 getFloat64DataFromColumn(const IColumn * column, size_t row_num, TypeIndex typeIndex) const {
+        switch (typeIndex) {
+            case TypeIndex::Date:
+                return static_cast<const ColumnDate &>(*column).getData()[row_num];
+            case TypeIndex::Date32:
+                return static_cast<const ColumnDate32 &>(*column).getData()[row_num];
+            case TypeIndex::DateTime:
+                return static_cast<const ColumnDateTime &>(*column).getData()[row_num];
+            case TypeIndex::DateTime64:
+                return static_cast<const ColumnDateTime64 &>(*column).getData()[row_num];
+            default:
+                return column->getFloat64(row_num);
+        }
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -294,33 +288,47 @@ public:
         auto & col = assert_cast<ColumnArray &>(to);
         auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
 
+        auto column_x_adder_func = getColumnAdderFunc(x_type);
+        auto column_y_adder_func = getColumnAdderFunc(y_type);
+
         for (size_t i = 0; i < res.size(); ++i)
         {
             auto & column_tuple = assert_cast<ColumnTuple &>(col.getData());
-
-            if (x_type == TypeIndex::DateTime64)
-            {
-                auto & column_x = assert_cast<ColumnDateTime64 &>(column_tuple.getColumn(0));
-                DateTime64 val = DateTime64(static_cast<long long>(res[i].first));
-                column_x.getData().push_back(val);
-            }
-            else if (x_type == TypeIndex::DateTime)
-            {
-                auto & column_x = assert_cast<ColumnDateTime &>(column_tuple.getColumn(0));
-                unsigned int val =static_cast<unsigned int>(res[i].first);
-                column_x.getData().push_back(val);
-            }
-            else
-            {
-                auto & column_x = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(0));
-                column_x.getData().push_back(res[i].first);
-            }
-
-            auto & column_y = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(1));
-            column_y.getData().push_back(res[i].second);
+            column_x_adder_func(column_tuple.getColumn(0), res[i].first);
+            column_y_adder_func(column_tuple.getColumn(1), res[i].second);
         }
 
         col_offsets.getData().push_back(col.getData().size());
+    }
+
+    std::function<void(IColumn &, Float64)> getColumnAdderFunc(TypeIndex typeIndex) const {
+        switch (typeIndex) {
+            case TypeIndex::Date:
+                return [](IColumn & column, Float64 value) {
+                    auto & col = assert_cast<ColumnDate &>(column);
+                    col.getData().push_back(static_cast<UInt16>(value));
+                };
+            case TypeIndex::Date32:
+                return [](IColumn & column, Float64 value) {
+                    auto & col = assert_cast<ColumnDate32 &>(column);
+                    col.getData().push_back(static_cast<UInt32>(value));
+                };
+            case TypeIndex::DateTime:
+                return [](IColumn & column, Float64 value) {
+                    auto & col = assert_cast<ColumnDateTime &>(column);
+                    col.getData().push_back(static_cast<UInt32>(value));
+                };
+            case TypeIndex::DateTime64:
+                return [](IColumn & column, Float64 value) {
+                    auto & col = assert_cast<ColumnDateTime64 &>(column);
+                    col.getData().push_back(static_cast<UInt64>(value));
+                };
+            default:
+                return [](IColumn & column, Float64 value) {
+                    auto & col = assert_cast<ColumnFloat64 &>(column);
+                    col.getData().push_back(value);
+                };
+        }
     }
 };
 
