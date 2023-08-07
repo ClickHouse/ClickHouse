@@ -4,9 +4,7 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 nodes = [
-    cluster.add_instance(
-        f"n{i}", main_configs=["configs/remote_servers.xml"]
-    )
+    cluster.add_instance(f"n{i}", main_configs=["configs/remote_servers.xml"])
     for i in (1, 2, 3, 4)
 ]
 
@@ -40,21 +38,11 @@ def create_tables(cluster):
             """
     )
 
-    nodes[0].query(
-        f"INSERT INTO test_table SELECT number, number FROM numbers(1000)"
-    )
-    nodes[1].query(
-        f"INSERT INTO test_table SELECT number, number FROM numbers(2000)"
-    )
-    nodes[2].query(
-        f"INSERT INTO test_table SELECT -number, -number FROM numbers(1000)"
-    )
-    nodes[3].query(
-        f"INSERT INTO test_table SELECT -number, -number FROM numbers(2000)"
-    )
-    nodes[0].query(
-        f"INSERT INTO test_table SELECT number, number FROM numbers(1)"
-    )
+    nodes[0].query(f"INSERT INTO test_table SELECT number, number FROM numbers(1000)")
+    nodes[1].query(f"INSERT INTO test_table SELECT number, number FROM numbers(2000)")
+    nodes[2].query(f"INSERT INTO test_table SELECT -number, -number FROM numbers(1000)")
+    nodes[3].query(f"INSERT INTO test_table SELECT -number, -number FROM numbers(2000)")
+    nodes[0].query(f"INSERT INTO test_table SELECT number, number FROM numbers(1)")
 
 
 @pytest.mark.parametrize(
@@ -62,7 +50,6 @@ def create_tables(cluster):
     ["test_multiple_shards_multiple_replicas", "test_single_shard_multiple_replicas"],
 )
 def test_parallel_replicas_custom_key(start_cluster, cluster):
-
     create_tables(cluster)
 
     expected_result = f"6001\t-1999\t1999\t0\n"
