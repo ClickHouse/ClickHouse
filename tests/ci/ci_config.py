@@ -372,7 +372,7 @@ REQUIRED_CHECKS = [
     "Stress test (msan)",
     "Stress test (tsan)",
     "Stress test (ubsan)",
-    "Upgrade check (debug)",
+    "Upgrade check (asan)",
     "Style Check",
     "Unit tests (asan)",
     "Unit tests (msan)",
