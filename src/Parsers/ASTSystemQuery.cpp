@@ -162,7 +162,9 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         || type == Type::STOP_REPLICATION_QUEUES
         || type == Type::START_REPLICATION_QUEUES
         || type == Type::STOP_DISTRIBUTED_SENDS
-        || type == Type::START_DISTRIBUTED_SENDS)
+        || type == Type::START_DISTRIBUTED_SENDS
+        || type == Type::STOP_PULLING_REPLICATION_LOG
+        || type == Type::START_PULLING_REPLICATION_LOG)
     {
         if (table)
             print_database_table();
@@ -210,7 +212,15 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     else if (type == Type::DROP_FILESYSTEM_CACHE)
     {
         if (!filesystem_cache_name.empty())
+        {
             settings.ostr << (settings.hilite ? hilite_none : "") << " " << filesystem_cache_name;
+            if (!key_to_drop.empty())
+            {
+                settings.ostr << (settings.hilite ? hilite_none : "") << " KEY " << key_to_drop;
+                if (offset_to_drop.has_value())
+                    settings.ostr << (settings.hilite ? hilite_none : "") << " OFFSET " << offset_to_drop.value();
+            }
+        }
     }
     else if (type == Type::UNFREEZE)
     {
