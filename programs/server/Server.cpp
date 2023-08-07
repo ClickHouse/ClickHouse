@@ -1650,6 +1650,7 @@ try
         database_catalog.initializeAndLoadTemporaryDatabase();
         loadMetadataSystem(global_context);
         maybeConvertSystemDatabase(global_context);
+        startupSystemTables();
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
@@ -1668,7 +1669,6 @@ try
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
         convertDatabasesEnginesIfNeed(global_context);
-        startupSystemTables();
         database_catalog.startupBackgroundCleanup();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
@@ -2045,27 +2045,26 @@ void Server::createServers(
 
     for (const auto & protocol : protocols)
     {
-        if (!server_type.shouldStart(ServerType::Type::CUSTOM, protocol))
+        std::string prefix = "protocols." + protocol + ".";
+        std::string port_name = prefix + "port";
+        std::string description {"<undefined> protocol"};
+        if (config.has(prefix + "description"))
+            description = config.getString(prefix + "description");
+
+        if (!config.has(prefix + "port"))
+            continue;
+
+        if (!server_type.shouldStart(ServerType::Type::CUSTOM, port_name))
             continue;
 
         std::vector<std::string> hosts;
-        if (config.has("protocols." + protocol + ".host"))
-            hosts.push_back(config.getString("protocols." + protocol + ".host"));
+        if (config.has(prefix + "host"))
+            hosts.push_back(config.getString(prefix + "host"));
         else
             hosts = listen_hosts;
 
         for (const auto & host : hosts)
         {
-            std::string conf_name = "protocols." + protocol;
-            std::string prefix = conf_name + ".";
-
-            if (!config.has(prefix + "port"))
-                continue;
-
-            std::string description {"<undefined> protocol"};
-            if (config.has(prefix + "description"))
-                description = config.getString(prefix + "description");
-            std::string port_name = prefix + "port";
             bool is_secure = false;
             auto stack = buildProtocolStackFromConfig(config, protocol, http_params, async_metrics, is_secure);
 
