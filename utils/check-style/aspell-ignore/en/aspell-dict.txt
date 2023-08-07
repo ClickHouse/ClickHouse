@@ -1098,6 +1098,7 @@ avro
 avx
 aws
 azureBlobStorage
+azureBlobStorageCluster
 backend
 backoff
 backticks
