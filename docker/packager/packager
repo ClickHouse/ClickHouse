@@ -364,6 +364,7 @@ def parse_args() -> argparse.Namespace:
         help="ClickHouse git repository",
     )
     parser.add_argument("--output-dir", type=dir_name, required=True)
+    parser.add_argument("--profile-dir", type=dir_name, required=True)
     parser.add_argument("--debug-build", action="store_true")
 
     parser.add_argument(
