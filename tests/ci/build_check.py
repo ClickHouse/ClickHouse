@@ -8,7 +8,7 @@ import os
 import sys
 import time
 import urllib.parse
-import requests
+import requests  # type: ignore
 
 from ci_config import CI_CONFIG, BuildConfig
 from docker_pull_helper import get_image_with_version
