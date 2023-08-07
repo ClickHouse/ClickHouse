@@ -1,4 +1,3 @@
-#include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/MergeSortingPartialResultTransform.h>
 
 namespace DB

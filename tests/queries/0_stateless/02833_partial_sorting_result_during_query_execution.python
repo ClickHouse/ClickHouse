@@ -8,13 +8,13 @@ import sys
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(CURDIR, "helpers"))
 
-from tcp_client import TCPClient, assertPacket
+from tcp_client import TCPClient
 
 
 def main():
     with TCPClient() as client:
         client.sendQuery(
-            f"SELECT number FROM numbers_mt(1e7+1) ORDER BY -number LIMIT 15 SETTINGS max_threads = 1, partial_result_update_duration_ms=1, max_rows_in_partial_result=10"
+            "SELECT number FROM numbers_mt(1e7+1) ORDER BY -number LIMIT 15 SETTINGS max_threads = 1, partial_result_update_duration_ms = 1, max_rows_in_partial_result = 10"
         )
 
         # external tables
@@ -23,13 +23,13 @@ def main():
 
         # Partial result
         _, partial_result = client.readDataWithoutProgress()[0]
-
-        assert_message = (
-            "There should be at least one block of data with partial result"
-        )
-        assert len(partial_result) > 0, assert_message
+        assert len(partial_result) > 0, "Expected at least one block with a non-empty partial result before getting the full result"
 
         while True:
+            assert all(
+                a >= b for a, b in zip(partial_result, partial_result[1:])
+            ), "Partial result always should be sorted for this test"
+
             _, new_partial_result = client.readDataWithoutProgress(
                 need_print_info=False
             )[0]
@@ -37,15 +37,22 @@ def main():
                 break
 
             data_size = len(partial_result)
-            assert_message = f"New block contains more info about the full data so sorted results should not be less then in the previous iteration. New result {new_partial_result}. Previous result {partial_result}"
+
             assert all(
                 partial_result[i] <= new_partial_result[i] for i in range(data_size)
-            ), assert_message
+            ), f"New partial result values should always be greater then old one because a new block contains more information about the full data. New result {new_partial_result}. Previous result {partial_result}"
+
 
             partial_result = new_partial_result
 
         # Full result
         _, full_result = client.readDataWithoutProgress()[0]
+
+        data_size = len(partial_result)
+        assert all(
+                partial_result[i] <= full_result[i] for i in range(data_size)
+            ), f"Full result values should always be greater then partial result values. Full result {full_result}. Partial result {partial_result}"
+
         for result in full_result:
             print(result)
 

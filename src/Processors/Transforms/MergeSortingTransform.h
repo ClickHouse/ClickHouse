@@ -33,6 +33,8 @@ public:
 
     String getName() const override { return "MergeSortingTransform"; }
 
+    bool supportPartialResultProcessor() const override { return true; }
+
 protected:
     void consume(Chunk chunk) override;
     void serialize() override;
@@ -40,7 +42,6 @@ protected:
 
     Processors expandPipeline() override;
 
-    bool supportPartialResultProcessor() const override { return true; }
     ProcessorPtr getPartialResultProcessor(const ProcessorPtr & current_processor, UInt64 partial_result_limit, UInt64 partial_result_duration_ms) override;
 
 private:
@@ -61,10 +62,10 @@ private:
     /// Merge all accumulated blocks to keep no more than limit rows.
     void remerge();
 
+    ProcessorPtr external_merging_sorted;
+
     friend class MergeSortingPartialResultTransform;
     std::mutex snapshot_mutex;
-
-    ProcessorPtr external_merging_sorted;
 };
 
 }

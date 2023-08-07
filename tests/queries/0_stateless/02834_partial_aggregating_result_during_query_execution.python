@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+
+import os
+import sys
+
+CURDIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(CURDIR, "helpers"))
+
+from tcp_client import TCPClient, assertPacket
+
+def run_query_without_errors(query, support_partial_result, invariants=None):
+    if invariants is None:
+        invariants = {}
+
+    with TCPClient() as client:
+        client.sendQuery(query)
+
+        # external tables
+        client.sendEmptyBlock()
+        client.readHeader()
+
+        # Partial result
+        partial_results = client.readDataWithoutProgress()
+        if support_partial_result:
+            assert len(partial_results[0][1]) > 0, "Expected at least one block with a non-empty partial result before getting the full result"
+            while True:
+                new_partial_results = client.readDataWithoutProgress(need_print_info=False)
+                if len(new_partial_results[0][1]) == 0:
+                    break
+
+                for new_result, old_result in zip(new_partial_results, partial_results):
+                    assert new_result[0] == old_result[0], "Keys in blocks should be in the same order"
+                    key = new_result[0]
+                    if key in invariants:
+                        old_value = old_result[1]
+                        new_value = new_result[1]
+                        assert invariants[key](old_value, new_value), f"Problem with the invariant between old and new versions of a partial result for key: {key}. Old value {old_value}, new value {new_value}"
+        else:
+            assert len(partial_results[0][1]) == 0, "Expected no non-empty partial result blocks before getting the full result"
+
+        # Full result
+        full_results = client.readDataWithoutProgress()
+        if support_partial_result:
+            for full_result, partial_result in zip(full_results, partial_results):
+                    assert full_result[0] == partial_result[0], "Keys in blocks should be in the same order"
+                    key = full_result[0]
+                    if key in invariants:
+                        full_value = full_result[1]
+                        partial_value = partial_result[1]
+                        assert invariants[key](partial_value, full_value), f"Problem with the invariant between full and partial result for key: {key}. Partial value {partial_value}. Full value {full_value}"
+
+        for key, value in full_results:
+            if isinstance(value[0], int):
+                print(key, value)
+
+
+def supported_scenarios():
+    query = "select median(number), stddevSamp(number), stddevPop(number), max(number), min(number), any(number), count(number), avg(number), sum(number) from numbers_mt(1e7+1) settings max_threads = 1, partial_result_update_duration_ms = 1"
+    invariants = {
+        "median(number)": lambda old_value, new_value: old_value <= new_value,
+        "max(number)": lambda old_value, new_value: old_value <= new_value,
+        "min(number)": lambda old_value, new_value: old_value >= new_value,
+        "count(number)": lambda old_value, new_value: old_value <= new_value,
+        "avg(number)": lambda old_value, new_value: old_value <= new_value,
+        "sum(number)": lambda old_value, new_value: old_value <= new_value,
+    }
+    run_query_without_errors(query, support_partial_result=True, invariants=invariants)
+
+
+def unsupported_scenarios():
+    # Currently aggregator for partial result supports only single thread aggregation without key
+    # Update test when multithreading or aggregation with GROUP BY will be supported for partial result updates
+    multithread_query = "select sum(number) from numbers_mt(1e7+1) settings max_threads = 2, partial_result_update_duration_ms = 1"
+    run_query_without_errors(multithread_query, support_partial_result=False)
+
+    group_with_key_query = "select mod2, sum(number) from numbers_mt(1e7+1) group by number % 2 as mod2 settings max_threads = 1, partial_result_update_duration_ms = 1"
+    run_query_without_errors(group_with_key_query, support_partial_result=False)
+
+
+def main():
+    supported_scenarios()
+    unsupported_scenarios()
+
+
+if __name__ == "__main__":
+    main()

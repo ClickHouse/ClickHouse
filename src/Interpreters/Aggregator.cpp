@@ -2273,6 +2273,29 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
     return block;
 }
 
+Block Aggregator::prepareBlockAndFillWithoutKeySnapshot(AggregatedDataVariants & data_variants) const
+{
+    size_t rows = 1;
+    bool final = true;
+
+    auto && out_cols
+        = prepareOutputBlockColumns(params, aggregate_functions, getHeader(final), data_variants.aggregates_pools, final, rows);
+    auto && [key_columns, raw_key_columns, aggregate_columns, final_aggregate_columns, aggregate_columns_data] = out_cols;
+
+    AggregatedDataWithoutKey & data = data_variants.without_key;
+
+    /// Always single-thread. It's safe to pass current arena from 'aggregates_pool'.
+    for (size_t insert_i = 0; insert_i < params.aggregates_size; ++insert_i)
+        aggregate_functions[insert_i]->insertResultInto(
+            data + offsets_of_aggregate_states[insert_i],
+            *final_aggregate_columns[insert_i],
+            data_variants.aggregates_pool);
+
+    Block block = finalizeBlock(params, getHeader(final), std::move(out_cols), final, rows);
+
+    return block;
+}
+
 template <bool return_single_block>
 Aggregator::ConvertToBlockRes<return_single_block>
 Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const
