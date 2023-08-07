@@ -1165,6 +1165,7 @@ def produce_alter_move(node, name):
     except QueryRuntimeException as ex:
         pass
 
+
 @pytest.mark.parametrize(
     "name,engine",
     [
