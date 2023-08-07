@@ -19,7 +19,7 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     shellcheck \
     yamllint \
     locales \
-    && pip3 install black==23.1.0 boto3 codespell==2.2.1 mypy==1.3.0 PyGithub unidiff pylint==2.6.2 \
+    && pip3 install black==23.1.0 boto3 codespell==2.2.1 mypy==1.3.0 PyGithub unidiff pylint==2.6.2 types-requests=2.31.0.2 types-urllib3=1.26.25.14 \
     && apt-get clean \
     && rm -rf /root/.cache/pip 
 
