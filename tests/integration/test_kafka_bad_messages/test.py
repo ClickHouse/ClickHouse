@@ -300,6 +300,7 @@ def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
             f"""
             DROP TABLE IF EXISTS view_{format_name};
             DROP TABLE IF EXISTS kafka_{format_name};
+            DROP TABLE IF EXISTS kafka;
 
             CREATE TABLE kafka_{format_name} (key UInt64, value UInt64)
                 ENGINE = Kafka
