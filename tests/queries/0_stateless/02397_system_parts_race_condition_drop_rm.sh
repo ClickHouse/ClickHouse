@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper, no-parallel, no-upgrade-check, disabled
+# Tags: race, zookeeper, no-parallel, disabled
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

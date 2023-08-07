@@ -148,22 +148,12 @@ StorageS3QueueSource::KeyWithInfo StorageS3QueueSource::QueueGlobIterator::next(
     return KeyWithInfo();
 }
 
-Block StorageS3QueueSource::getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns)
-{
-    for (const auto & virtual_column : requested_virtual_columns)
-        sample_block.insert({virtual_column.type->createColumn(), virtual_column.type, virtual_column.name});
-
-    return sample_block;
-}
-
 StorageS3QueueSource::StorageS3QueueSource(
-    const std::vector<NameAndTypePair> & requested_virtual_columns_,
+    const ReadFromFormatInfo & info,
     const String & format_,
     String name_,
-    const Block & sample_block_,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
-    const ColumnsDescription & columns_,
     UInt64 max_block_size_,
     const S3Settings::RequestSettings & request_settings_,
     String compression_hint_,
@@ -174,28 +164,27 @@ StorageS3QueueSource::StorageS3QueueSource(
     std::shared_ptr<S3QueueFilesMetadata> files_metadata_,
     const S3QueueAction & action_,
     const size_t download_thread_num_)
-    : ISource(getHeader(sample_block_, requested_virtual_columns_))
+    : ISource(info.source_header)
     , WithContext(context_)
     , name(std::move(name_))
     , bucket(bucket_)
     , version_id(version_id_)
     , format(format_)
-    , columns_desc(columns_)
+    , columns_desc(info.columns_description)
     , request_settings(request_settings_)
     , client(client_)
     , files_metadata(files_metadata_)
-    , requested_virtual_columns(requested_virtual_columns_)
+    , requested_virtual_columns(info.requested_virtual_columns)
+    , requested_columns(info.requested_columns)
     , file_iterator(file_iterator_)
     , action(action_)
 {
     internal_source = std::make_shared<StorageS3Source>(
-        requested_virtual_columns_,
+        info,
         format_,
         name_,
-        sample_block_,
         context_,
         format_settings_,
-        columns_,
         max_block_size_,
         request_settings_,
         compression_hint_,
