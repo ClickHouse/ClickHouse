@@ -82,6 +82,7 @@
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
 #include <Storages/System/StorageSystemDroppedTables.h>
 #include <Storages/System/StorageSystemZooKeeperConnection.h>
+#include <Storages/System/StorageSystemJemalloc.h>
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
@@ -89,7 +90,6 @@
 
 #if USE_ROCKSDB
 #include <Storages/RocksDB/StorageSystemRocksDB.h>
-#include <Storages/System/StorageSystemMergeTreeMetadataCache.h>
 #endif
 
 
@@ -149,7 +149,6 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
 #endif
 #if USE_ROCKSDB
     attach<StorageSystemRocksDB>(context, system_database, "rocksdb");
-    attach<StorageSystemMergeTreeMetadataCache>(context, system_database, "merge_tree_metadata_cache");
 #endif
 }
 
@@ -187,6 +186,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemCertificates>(context, system_database, "certificates");
     attach<StorageSystemNamedCollections>(context, system_database, "named_collections");
     attach<StorageSystemUserProcesses>(context, system_database, "user_processes");
+    attach<StorageSystemJemallocBins>(context, system_database, "jemalloc_bins");
 
     if (has_zookeeper)
     {

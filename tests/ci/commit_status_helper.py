@@ -7,7 +7,7 @@ from typing import Dict, List, Literal, Optional, Union
 import logging
 
 from github import Github
-from github.GithubObject import _NotSetType, NotSet as NotSet  # type: ignore
+from github.GithubObject import _NotSetType, NotSet as NotSet
 from github.Commit import Commit
 from github.CommitStatus import CommitStatus
 from github.IssueComment import IssueComment
@@ -51,7 +51,8 @@ class RerunHelper:
 
 
 def override_status(status: str, check_name: str, invert: bool = False) -> str:
-    if CI_CONFIG["tests_config"].get(check_name, {}).get("force_tests", False):
+    test_config = CI_CONFIG.test_configs.get(check_name)
+    if test_config and test_config.force_tests:
         return "success"
 
     if invert:
@@ -369,8 +370,6 @@ def update_mergeable_check(gh: Github, pr_info: PRInfo, check_name: str) -> None
 
     if fail:
         description = "failed: " + ", ".join(fail)
-        if success:
-            description += "; succeeded: " + ", ".join(success)
         description = format_description(description)
         if mergeable_status is None or mergeable_status.description != description:
             set_mergeable_check(commit, description, "failure")

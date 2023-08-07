@@ -92,6 +92,7 @@ add_contrib (google-protobuf-cmake google-protobuf)
 add_contrib (openldap-cmake openldap)
 add_contrib (grpc-cmake grpc)
 add_contrib (msgpack-c-cmake msgpack-c)
+add_contrib (libarchive-cmake libarchive)
 
 add_contrib (corrosion-cmake corrosion)
 
@@ -146,7 +147,7 @@ add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
 if (NOT OS_DARWIN)
     add_contrib (curl-cmake curl)
-    add_contrib (azure-cmake azure)
+    add_contrib (azure-cmake azure) # requires: curl
     add_contrib (sentry-native-cmake sentry-native) # requires: curl
 endif()
 add_contrib (fmtlib-cmake fmtlib)
@@ -157,21 +158,20 @@ add_contrib (librdkafka-cmake librdkafka) # requires: libgsasl
 add_contrib (nats-io-cmake nats-io)
 add_contrib (isa-l-cmake isa-l)
 add_contrib (libhdfs3-cmake libhdfs3) # requires: google-protobuf, krb5, isa-l
-add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift/avro/arrow/libhdfs3
+add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift, avro, arrow, libhdfs3
 add_contrib (cppkafka-cmake cppkafka)
 add_contrib (libpqxx-cmake libpqxx)
 add_contrib (libpq-cmake libpq)
 add_contrib (nuraft-cmake NuRaft)
 add_contrib (fast_float-cmake fast_float)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
-add_contrib (hashidsxx-cmake hashidsxx)
+add_contrib (incbin-cmake incbin)
 
 option(ENABLE_NLP "Enable NLP functions support" ${ENABLE_LIBRARIES})
 if (ENABLE_NLP)
     add_contrib (libstemmer-c-cmake libstemmer_c)
     add_contrib (wordnet-blast-cmake wordnet-blast)
     add_contrib (lemmagen-c-cmake lemmagen-c)
-    add_contrib (nlp-data-cmake nlp-data)
     add_contrib (cld2-cmake cld2)
 endif()
 

@@ -33,8 +33,8 @@ public:
         const String & log_name,
         MetadataStoragePtr metadata_storage_,
         ObjectStoragePtr object_storage_,
-        bool send_metadata_,
-        uint64_t thread_pool_size_);
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix);
 
     /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
@@ -53,11 +53,9 @@ public:
 
     const std::string & getCacheName() const override { return object_storage->getCacheName(); }
 
-    UInt64 getTotalSpace() const override { return std::numeric_limits<UInt64>::max(); }
-
-    UInt64 getAvailableSpace() const override { return std::numeric_limits<UInt64>::max(); }
-
-    UInt64 getUnreservedSpace() const override { return std::numeric_limits<UInt64>::max(); }
+    std::optional<UInt64> getTotalSpace() const override { return {}; }
+    std::optional<UInt64> getAvailableSpace() const override { return {}; }
+    std::optional<UInt64> getUnreservedSpace() const override { return {}; }
 
     UInt64 getKeepingFreeSpace() const override { return 0; }
 
@@ -152,7 +150,11 @@ public:
     Strings getBlobPath(const String & path) const override;
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
 
-    void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
+    void copyFile( /// NOLINT
+        const String & from_file_path,
+        IDisk & to_disk,
+        const String & to_file_path,
+        const WriteSettings & settings = {}) override;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
 
@@ -181,22 +183,22 @@ public:
     /// MergeTree table on this disk.
     bool isWriteOnce() const override;
 
-    /// Add a cache layer.
-    /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
-    /// There can be any number of cache layers:
-    /// DiskObjectStorage(CachedObjectStorage(...CacheObjectStorage(S3ObjectStorage)...))
-    void wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name);
-
     /// Get structure of object storage this disk works with. Examples:
     /// DiskObjectStorage(S3ObjectStorage)
     /// DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// DiskObjectStorage(CachedObjectStorage(CachedObjectStorage(S3ObjectStorage)))
     String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storage->getName()); }
 
+#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+    /// Add a cache layer.
+    /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
+    /// There can be any number of cache layers:
+    /// DiskObjectStorage(CachedObjectStorage(...CacheObjectStorage(S3ObjectStorage)...))
+    void wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name);
+
     /// Get names of all cache layers. Name is how cache is defined in configuration file.
     NameSet getCacheLayersNames() const override;
-
-    static std::shared_ptr<Executor> getAsyncExecutor(const std::string & log_name, size_t size);
+#endif
 
     bool supportsStat() const override { return metadata_storage->supportsStat(); }
     struct stat stat(const String & path) const override;
@@ -220,10 +222,9 @@ private:
     UInt64 reservation_count = 0;
     std::mutex reservation_mutex;
 
-    std::optional<UInt64> tryReserve(UInt64 bytes);
+    bool tryReserve(UInt64 bytes);
 
     const bool send_metadata;
-    size_t threadpool_size;
 
     std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
 };
@@ -241,7 +242,7 @@ public:
 
     UInt64 getSize() const override { return size; }
 
-    UInt64 getUnreservedSpace() const override { return unreserved_space; }
+    std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
 
     DiskPtr getDisk(size_t i) const override;
 

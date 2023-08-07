@@ -87,25 +87,37 @@ def main():
 
     report_path = result_path / "html_report"
     logging.info("Report path %s", report_path)
+
     s3_path_prefix = "codebrowser"
+    index_template = (
+        f'<a href="{S3_DOWNLOAD}/{S3_TEST_REPORTS_BUCKET}/{s3_path_prefix}/index.html">'
+        "{}</a>"
+    )
+    additional_logs = [path.absolute() for path in result_path.glob("*.log")]
+    test_results = [
+        TestResult(
+            index_template.format("Generate codebrowser site"),
+            state,
+            stopwatch.duration_seconds,
+            additional_logs,
+        )
+    ]
+
     if state == "success":
+        stopwatch.reset()
         _ = s3_helper.fast_parallel_upload_dir(
             report_path, s3_path_prefix, S3_TEST_REPORTS_BUCKET
         )
-
-    index_html = (
-        f'<a href="{S3_DOWNLOAD}/{S3_TEST_REPORTS_BUCKET}/codebrowser/index.html">'
-        "Generate codebrowser site</a>"
-    )
-
-    additional_logs = [path.absolute() for path in result_path.glob("*.log")]
-
-    test_results = [
-        TestResult(index_html, state, stopwatch.duration_seconds, additional_logs)
-    ]
+        test_results.append(
+            TestResult(
+                index_template.format("Upload codebrowser site"),
+                state,
+                stopwatch.duration_seconds,
+            )
+        )
 
     # Check if the run log contains `FATAL Error:`, that means the code problem
-    stopwatch = Stopwatch()
+    stopwatch.reset()
     fatal_error = "FATAL Error:"
     logging.info("Search for '%s' in %s", fatal_error, run_log_path)
     with open(run_log_path, "r", encoding="utf-8") as rlfd:

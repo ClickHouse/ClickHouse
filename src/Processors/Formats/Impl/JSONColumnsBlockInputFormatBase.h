@@ -53,6 +53,8 @@ public:
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
+    size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
+
 protected:
     Chunk generate() override;
 
@@ -65,6 +67,7 @@ protected:
     Serializations serializations;
     std::unique_ptr<JSONColumnsReaderBase> reader;
     BlockMissingValues block_missing_values;
+    size_t approx_bytes_read_for_chunk = 0;
 };
 
 

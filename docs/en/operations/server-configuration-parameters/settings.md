@@ -1,11 +1,19 @@
 ---
 slug: /en/operations/server-configuration-parameters/settings
 sidebar_position: 57
-sidebar_label: Server Settings
+sidebar_label: Global Server Settings
 description: This section contains descriptions of server settings that cannot be changed at the session or query level.
 ---
 
-# Server Settings
+# Global Server Settings
+
+This section contains descriptions of server settings that cannot be changed at the session or query level.
+
+These settings are stored in the `config.xml` file on the ClickHouse server.
+
+Other settings are described in the “[Settings](../../operations/settings/index.md#session-settings-intro)” section.
+
+Before studying the settings, read the [Configuration files](../../operations/configuration-files.md#configuration_files) section and note the use of substitutions (the `incl` and `optional` attributes).
 
 ## allow_use_jemalloc_memory
 
@@ -504,7 +512,7 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
                 <type>cache</type>
                 <disk>local_disk</disk>
                 <path>/tiny_local_cache/</path>
-                <max_size>10M</max_size>
+                <max_size_rows>10M</max_size_rows>
                 <max_file_segment_size>1M</max_file_segment_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
@@ -1193,13 +1201,58 @@ Keys:
 - `console` – Send `log` and `errorlog` to the console instead of file. To enable, set to `1` or `true`.
 - `stream_compress` – Compress `log` and `errorlog` with `lz4` stream compression. To enable, set to `1` or `true`.
 
+Both log and error log file names (only file names, not directories) support date and time format specifiers.
+
+**Format specifiers**
+Using the following format specifiers, you can define a pattern for the resulting file name. “Example” column shows possible results for `2023-07-06 18:32:07`.
+
+| Specifier   | Description                                                                                                         | Example                  |
+|-------------|---------------------------------------------------------------------------------------------------------------------|--------------------------|
+| %%          | Literal %                                                                                                           | %                        |
+| %n          | New-line character                                                                                                  |                          |
+| %t          | Horizontal tab character                                                                                            |                          |
+| %Y          | Year as a decimal number, e.g. 2017                                                                                 | 2023                     |
+| %y          | Last 2 digits of year as a decimal number (range [00,99])                                                           | 23                       |
+| %C          | First 2 digits of year as a decimal number (range [00,99])                                                          | 20                       |
+| %G          | Four-digit [ISO 8601 week-based year](https://en.wikipedia.org/wiki/ISO_8601#Week_dates), i.e. the year that contains the specified week. Normally useful only with %V  | 2023       |
+| %g          | Last 2 digits of [ISO 8601 week-based year](https://en.wikipedia.org/wiki/ISO_8601#Week_dates), i.e. the year that contains the specified week.                         | 23         |
+| %b          | Abbreviated month name, e.g. Oct (locale dependent)                                                                 | Jul                      |
+| %h          | Synonym of %b                                                                                                       | Jul                      |
+| %B          | Full month name, e.g. October (locale dependent)                                                                    | July                     |
+| %m          | Month as a decimal number (range [01,12])                                                                           | 07                       |
+| %U          | Week of the year as a decimal number (Sunday is the first day of the week) (range [00,53])                          | 27                       |
+| %W          | Week of the year as a decimal number (Monday is the first day of the week) (range [00,53])                          | 27                       |
+| %V          | ISO 8601 week number (range [01,53])                                                                                | 27                       |
+| %j          | Day of the year as a decimal number (range [001,366])                                                               | 187                      |
+| %d          | Day of the month as a zero-padded decimal number (range [01,31]). Single digit is preceded by zero.                 | 06                       |
+| %e          | Day of the month as a space-padded decimal number (range [1,31]). Single digit is preceded by a space.              | &nbsp; 6                 |
+| %a          | Abbreviated weekday name, e.g. Fri (locale dependent)                                                               | Thu                      |
+| %A          | Full weekday name, e.g. Friday (locale dependent)                                                                   | Thursday                 |
+| %w          | Weekday as a integer number with Sunday as 0 (range [0-6])                                                          | 4                        |
+| %u          | Weekday as a decimal number, where Monday is 1 (ISO 8601 format) (range [1-7])                                      | 4                        |
+| %H          | Hour as a decimal number, 24 hour clock (range [00-23])                                                             | 18                       |
+| %I          | Hour as a decimal number, 12 hour clock (range [01,12])                                                             | 06                       |
+| %M          | Minute as a decimal number (range [00,59])                                                                          | 32                       |
+| %S          | Second as a decimal number (range [00,60])                                                                          | 07                       |
+| %c          | Standard date and time string, e.g. Sun Oct 17 04:41:13 2010 (locale dependent)                                     | Thu Jul  6 18:32:07 2023 |
+| %x          | Localized date representation (locale dependent)                                                                    | 07/06/23                 |
+| %X          | Localized time representation, e.g. 18:40:20 or 6:40:20 PM (locale dependent)                                       | 18:32:07                 |
+| %D          | Short MM/DD/YY date, equivalent to %m/%d/%y                                                                         | 07/06/23                 |
+| %F          | Short YYYY-MM-DD date, equivalent to %Y-%m-%d                                                                       | 2023-07-06               |
+| %r          | Localized 12-hour clock time (locale dependent)                                                                     | 06:32:07 PM              |
+| %R          | Equivalent to "%H:%M"                                                                                               | 18:32                    |
+| %T          | Equivalent to "%H:%M:%S" (the ISO 8601 time format)                                                                 | 18:32:07                 |
+| %p          | Localized a.m. or p.m. designation (locale dependent)                                                               | PM                       |
+| %z          | Offset from UTC in the ISO 8601 format (e.g. -0430), or no characters if the time zone information is not available | +0800                    |
+| %Z          | Locale-dependent time zone name or abbreviation, or no characters if the time zone information is not available     | Z AWST                   |
+
 **Example**
 
 ``` xml
 <logger>
     <level>trace</level>
-    <log>/var/log/clickhouse-server/clickhouse-server.log</log>
-    <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+    <log>/var/log/clickhouse-server/clickhouse-server-%F-%T.log</log>
+    <errorlog>/var/log/clickhouse-server/clickhouse-server-%F-%T.err.log</errorlog>
     <size>1000M</size>
     <count>10</count>
     <stream_compress>true</stream_compress>
@@ -1539,6 +1592,10 @@ To manually turn on metrics history collection [`system.metric_log`](../../opera
         <table>metric_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </metric_log>
 </clickhouse>
 ```
@@ -1594,7 +1651,7 @@ Keys for server/client settings:
 - requireTLSv1_2 (default: false) – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 - fips (default: false) – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
 - privateKeyPassphraseHandler (default: `KeyConsoleHandler`)– Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
-- invalidCertificateHandler (default: `ConsoleCertificateHandler`) – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
+- invalidCertificateHandler (default: `RejectCertificateHandler`) – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>` .
 - disableProtocols (default: "") – Protocols that are not allowed to use.
 - preferServerCiphers (default: false) – Preferred server ciphers on the client.
 
@@ -1642,6 +1699,14 @@ Use the following parameters to configure logging:
 - `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
 - `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.
+Default: 1048576.
+- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
+Default: 8192.
+- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
+Default: `max_size_rows / 2`.
+- `flush_on_crash` - Indication whether logs should be dumped to the disk in case of a crash.
+Default: false.
 - `storage_policy` – Name of storage policy to use for the table (optional)
 - `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
 
@@ -1653,6 +1718,10 @@ Use the following parameters to configure logging:
     <table>part_log</table>
     <partition_by>toMonday(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
 </part_log>
 ```
 
@@ -1720,6 +1789,14 @@ Use the following parameters to configure logging:
 - `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
 - `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.
+Default: 1048576.
+- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
+Default: 8192.
+- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
+Default: `max_size_rows / 2`.
+- `flush_on_crash` - Indication whether logs should be dumped to the disk in case of a crash.
+Default: false.
 - `storage_policy` – Name of storage policy to use for the table (optional)
 - `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
 
@@ -1733,6 +1810,10 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <table>query_log</table>
     <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
 </query_log>
 ```
 
@@ -1778,6 +1859,14 @@ Use the following parameters to configure logging:
 - `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
 - `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size_rows, logs dumped to the disk.
+Default: 1048576.
+- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
+Default: 8192.
+- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
+Default: `max_size_rows / 2`.
+- `flush_on_crash` - Indication whether logs should be dumped to the disk in case of a crash.
+Default: false.
 - `storage_policy` – Name of storage policy to use for the table (optional)
 - `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
 
@@ -1791,6 +1880,10 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <table>query_thread_log</table>
     <partition_by>toMonday(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>  
+    <flush_on_crash>false</flush_on_crash>
 </query_thread_log>
 ```
 
@@ -1808,6 +1901,14 @@ Use the following parameters to configure logging:
 - `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
 - `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.
+Default: 1048576.
+- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
+Default: 8192.
+- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
+Default: `max_size_rows / 2`.
+- `flush_on_crash` - Indication whether logs should be dumped to the disk in case of a crash.
+Default: false.
 - `storage_policy` – Name of storage policy to use for the table (optional)
 - `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
 
@@ -1821,6 +1922,10 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <table>query_views_log</table>
     <partition_by>toYYYYMM(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
 </query_views_log>
 ```
 
@@ -1837,6 +1942,14 @@ Parameters:
 - `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
 - `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.
+Default: 1048576.
+- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
+Default: 8192.
+- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
+Default: `max_size_rows / 2`.
+- `flush_on_crash` - Indication whether logs should be dumped to the disk in case of a crash.
+Default: false.
 - `storage_policy` – Name of storage policy to use for the table (optional)
 - `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
 
@@ -1848,12 +1961,15 @@ Parameters:
         <database>system</database>
         <table>text_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
         <!-- <partition_by>event_date</partition_by> -->
         <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine>
     </text_log>
 </clickhouse>
 ```
-
 
 ## trace_log {#server_configuration_parameters-trace_log}
 
@@ -1867,6 +1983,12 @@ Parameters:
 - `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
 - `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/index.md) for a system table. Can't be used if `partition_by` or `order_by` defined.
 - `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.
+Default: 1048576.
+- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
+Default: 8192.
+- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
+Default: `max_size_rows / 2`.
 - `storage_policy` – Name of storage policy to use for the table (optional)
 - `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
 
@@ -1878,6 +2000,10 @@ The default server configuration file `config.xml` contains the following settin
     <table>trace_log</table>
     <partition_by>toYYYYMM(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
 </trace_log>
 ```
 
@@ -1892,9 +2018,18 @@ Parameters:
 - `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 - `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
 - `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.
+Default: 1048576.
+- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
+Default: 8192.
+- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
+Default: `max_size_rows / 2`.
+- `flush_on_crash` - Indication whether logs should be dumped to the disk in case of a crash.
+Default: false.
 - `storage_policy` – Name of storage policy to use for the table (optional)
 
 **Example**
+
 ```xml
 <clickhouse>
     <asynchronous_insert_log>
@@ -1902,9 +2037,51 @@ Parameters:
         <table>asynchronous_insert_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <partition_by>toYYYYMM(event_date)</partition_by>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
         <!-- <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine> -->
     </asynchronous_insert_log>
 </clickhouse>
+```
+
+## crash_log {#server_configuration_parameters-crash_log}
+
+Settings for the [crash_log](../../operations/system-tables/crash-log.md) system table operation.
+
+Parameters:
+
+- `database` — Database for storing a table.
+- `table` — Table name.
+- `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
+- `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/index.md) for a system table. Can't be used if `partition_by` or `order_by` defined.
+- `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.
+Default: 1048576.
+- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
+Default: 8192.
+- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
+Default: `max_size_rows / 2`.
+- `flush_on_crash` - Indication whether logs should be dumped to the disk in case of a crash.
+Default: false.
+- `storage_policy` – Name of storage policy to use for the table (optional)
+- `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).
+
+The default server configuration file `config.xml` contains the following settings section:
+
+``` xml
+<crash_log>
+    <database>system</database>
+    <table>crash_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1024</max_size_rows>
+    <reserved_size_rows>1024</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>512</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+</crash_log>
 ```
 
 ## query_masking_rules {#query-masking-rules}
@@ -1966,6 +2143,10 @@ The time zone is necessary for conversions between String and DateTime formats w
 ``` xml
 <timezone>Asia/Istanbul</timezone>
 ```
+
+**See also**
+
+- [session_timezone](../settings/settings.md#session_timezone)
 
 ## tcp_port {#server_configuration_parameters-tcp_port}
 
@@ -2107,8 +2288,16 @@ This section contains the following parameters:
 - `session_timeout_ms` — Maximum timeout for the client session in milliseconds.
 - `operation_timeout_ms` — Maximum timeout for one operation in milliseconds.
 - `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
+- `fallback_session_lifetime.min` - If the first zookeeper host resolved by zookeeper_load_balancing strategy is unavailable, limit the lifetime of a zookeeper session to the fallback node. This is done for load-balancing purposes to avoid excessive load on one of zookeeper hosts. This setting sets the minimal duration of the fallback session. Set in seconds. Optional. Default is 3 hours.
+- `fallback_session_lifetime.max` - If the first zookeeper host resolved by zookeeper_load_balancing strategy is unavailable, limit the lifetime of a zookeeper session to the fallback node. This is done for load-balancing purposes to avoid excessive load on one of zookeeper hosts. This setting sets the maximum duration of the fallback session. Set in seconds. Optional. Default is 6 hours.
 - `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
-
+- zookeeper_load_balancing - Specifies the algorithm of ZooKeeper node selection.
+  * random - randomly selects one of ZooKeeper nodes.
+  * in_order - selects the first ZooKeeper node, if it's not available then the second, and so on.
+  * nearest_hostname - selects a ZooKeeper node with a hostname that is most similar to the server’s hostname.
+  * first_or_random - selects the first ZooKeeper node, if it's not available then randomly selects one of remaining ZooKeeper nodes.
+  * round_robin - selects the first ZooKeeper node, if reconnection happens selects the next.
+    
 **Example configuration**
 
 ``` xml
@@ -2127,6 +2316,8 @@ This section contains the following parameters:
     <root>/path/to/zookeeper/node</root>
     <!-- Optional. Zookeeper digest ACL string. -->
     <identity>user:password</identity>
+    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / first_or_random / round_robin</zookeeper_load_balancing>-->
+    <zookeeper_load_balancing>random</zookeeper_load_balancing>
 </zookeeper>
 ```
 

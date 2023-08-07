@@ -44,6 +44,8 @@
 #include <Poco/String.h>
 #include <Poco/Net/SocketAddress.h>
 
+#include <re2/re2.h>
+
 #include <chrono>
 #include <sstream>
 
@@ -289,14 +291,15 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 
     for (auto & write_buf : write_buffers)
     {
-        IReadableWriteBuffer * write_buf_concrete;
-        ReadBufferPtr reread_buf;
+        if (!write_buf)
+            continue;
 
-        if (write_buf
-            && (write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
-            && (reread_buf = write_buf_concrete->tryGetReadBuffer()))
+        IReadableWriteBuffer * write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get());
+        if (write_buf_concrete)
         {
-            read_buffers.emplace_back(wrapReadBufferPointer(reread_buf));
+            ReadBufferPtr reread_buf = write_buf_concrete->tryGetReadBuffer();
+            if (reread_buf)
+                read_buffers.emplace_back(wrapReadBufferPointer(reread_buf));
         }
     }
 
@@ -471,7 +474,6 @@ bool HTTPHandler::authenticateUser(
     }
 
     /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
-    ClientInfo & client_info = session->getClientInfo();
 
     ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
     if (request.getMethod() == HTTPServerRequest::HTTP_GET)
@@ -479,15 +481,13 @@ bool HTTPHandler::authenticateUser(
     else if (request.getMethod() == HTTPServerRequest::HTTP_POST)
         http_method = ClientInfo::HTTPMethod::POST;
 
-    client_info.http_method = http_method;
-    client_info.http_user_agent = request.get("User-Agent", "");
-    client_info.http_referer = request.get("Referer", "");
-    client_info.forwarded_for = request.get("X-Forwarded-For", "");
-    client_info.quota_key = quota_key;
+    session->setHttpClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""));
+    session->setForwardedFor(request.get("X-Forwarded-For", ""));
+    session->setQuotaClientKey(quota_key);
 
     /// Extract the last entry from comma separated list of forwarded_for addresses.
     /// Only the last proxy can be trusted (if any).
-    String forwarded_address = client_info.getLastForwardedFor();
+    String forwarded_address = session->getClientInfo().getLastForwardedFor();
     try
     {
         if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
@@ -561,8 +561,7 @@ void HTTPHandler::processQuery(
         session->makeSessionContext();
     }
 
-    auto client_info = session->getClientInfo();
-    auto context = session->makeQueryContext(std::move(client_info));
+    auto context = session->makeQueryContext();
 
     /// This parameter is used to tune the behavior of output formats (such as Native) for compatibility.
     if (params.has("client_protocol_version"))
@@ -638,7 +637,7 @@ void HTTPHandler::processQuery(
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected MemoryWriteBuffer");
 
                 auto rdbuf = prev_memory_buffer->tryGetReadBuffer();
-                copyData(*rdbuf , *next_buffer);
+                copyData(*rdbuf, *next_buffer);
 
                 return next_buffer;
             };
@@ -764,7 +763,7 @@ void HTTPHandler::processQuery(
         context->setDefaultFormat(default_format);
 
     /// For external data we also want settings
-    context->checkSettingsConstraints(settings_changes);
+    context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
 
     /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
@@ -815,7 +814,11 @@ void HTTPHandler::processQuery(
 
     /// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
     /// Note that we add it unconditionally so the progress is available for `X-ClickHouse-Summary`
-    append_callback([&used_output](const Progress & progress) { used_output.out->onProgress(progress); });
+    append_callback([&used_output](const Progress & progress)
+    {
+        const auto& thread_group = CurrentThread::getGroup();
+        used_output.out->onProgress(progress, thread_group->memory_tracker.getPeak());
+    });
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
     {
@@ -900,7 +903,12 @@ try
     {
         /// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
         if (used_output.hasDelayed())
+        {
+            /// do not call finalize here for CascadeWriteBuffer used_output.out_maybe_delayed_and_compressed,
+            /// exception is written into used_output.out_maybe_compressed later
+            /// HTTPHandler::trySendExceptionToClient is called with exception context, it is Ok to destroy buffers
             used_output.out_maybe_delayed_and_compressed.reset();
+        }
 
         /// Send the error message into already used (and possibly compressed) stream.
         /// Note that the error message will possibly be sent after some data.
@@ -980,22 +988,22 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         }
 
         // Parse the OpenTelemetry traceparent header.
-        ClientInfo& client_info = session->getClientInfo();
+        auto & client_trace_context = session->getClientTraceContext();
         if (request.has("traceparent"))
         {
             std::string opentelemetry_traceparent = request.get("traceparent");
             std::string error;
-            if (!client_info.client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
+            if (!client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
             {
                 LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", opentelemetry_traceparent, error);
             }
-            client_info.client_trace_context.tracestate = request.get("tracestate", "");
+            client_trace_context.tracestate = request.get("tracestate", "");
         }
 
         // Setup tracing context for this thread
         auto context = session->sessionOrGlobalContext();
         thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("HTTPHandler",
-            client_info.client_trace_context,
+            client_trace_context,
             context->getSettingsRef(),
             context->getOpenTelemetrySpanLog());
         thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
@@ -1156,8 +1164,8 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
     {
         int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
 
-        re2::StringPiece matches[num_captures];
-        re2::StringPiece input(begin, end - begin);
+        std::string_view matches[num_captures];
+        std::string_view input(begin, end - begin);
         if (compiled_regex->Match(input, 0, end - begin, re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures))
         {
             for (const auto & [capturing_name, capturing_index] : compiled_regex->NamedCapturingGroups())
