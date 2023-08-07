@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int DIRECTORY_ALREADY_EXISTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
@@ -138,8 +139,11 @@ MutableDataPartStoragePtr MergeTreeDataPartInMemory::flushToDisk(const String & 
     return new_data_part_storage;
 }
 
-DataPartStoragePtr MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const
+DataPartStoragePtr MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot,
+                                                                  const DiskTransactionPtr & disk_transaction) const
 {
+    if (disk_transaction)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "InMemory parts are not compatible with disk transactions");
     String detached_path = *getRelativePathForDetachedPart(prefix, /* broken */ false);
     return flushToDisk(detached_path, metadata_snapshot);
 }

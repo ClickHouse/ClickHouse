@@ -2619,8 +2619,50 @@ size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirectory()
     if (detached_parts.empty())
         return 0;
 
-    PartsTemporaryRename renamed_parts(*this, "detached/");
+    auto get_last_touched_time = [&](const DetachedPartInfo & part_info) -> time_t
+    {
+        auto path = fs::path(relative_data_path) / "detached" / part_info.dir_name;
+        time_t last_change_time = part_info.disk->getLastChanged(path);
+        time_t last_modification_time = part_info.disk->getLastModified(path).epochTime();
+        return std::max(last_change_time, last_modification_time);
+    };
 
+    time_t ttl_seconds = getSettings()->merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds;
+
+    size_t unfinished_deleting_parts = 0;
+    time_t current_time = time(nullptr);
+    for (const auto & part_info : detached_parts)
+    {
+        if (!part_info.dir_name.starts_with("deleting_"))
+            continue;
+
+        time_t startup_time = current_time + static_cast<time_t>(Context::getGlobalContextInstance()->getUptimeSeconds());
+        time_t last_touch_time = get_last_touched_time(part_info);
+
+        /// Maybe it's being deleted right now (for example, in ALTER DROP DETACHED)
+        bool had_restart = last_touch_time < startup_time;
+        bool ttl_expired = last_touch_time + ttl_seconds <= current_time;
+        if (!had_restart && !ttl_expired)
+            continue;
+
+        /// We were trying to delete this detached part but did not finish deleting, probably because the server crashed
+        LOG_INFO(log, "Removing detached part {} that we failed to remove previously", part_info.dir_name);
+        try
+        {
+            removeDetachedPart(part_info.disk, fs::path(relative_data_path) / "detached" / part_info.dir_name / "", part_info.dir_name);
+            ++unfinished_deleting_parts;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+    }
+
+    if (!getSettings()->merge_tree_enable_clear_old_broken_detached)
+        return unfinished_deleting_parts;
+
+    const auto full_path = fs::path(relative_data_path) / "detached";
+    size_t removed_count = 0;
     for (const auto & part_info : detached_parts)
     {
         if (!part_info.valid_name || part_info.prefix.empty())
@@ -2635,31 +2677,24 @@ size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirectory()
         if (!can_be_removed_by_timeout)
             continue;
 
-        time_t current_time = time(nullptr);
-        ssize_t threshold = current_time - getSettings()->merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds;
-        auto path = fs::path(relative_data_path) / "detached" / part_info.dir_name;
-        time_t last_change_time = part_info.disk->getLastChanged(path);
-        time_t last_modification_time = part_info.disk->getLastModified(path).epochTime();
-        time_t last_touch_time = std::max(last_change_time, last_modification_time);
+        ssize_t threshold = current_time - ttl_seconds;
+        time_t last_touch_time = get_last_touched_time(part_info);
 
         if (last_touch_time == 0 || last_touch_time >= threshold)
             continue;
 
-        renamed_parts.addPart(part_info.dir_name, "deleting_" + part_info.dir_name, part_info.disk);
-    }
+        const String & old_name = part_info.dir_name;
+        String new_name = "deleting_" + part_info.dir_name;
+        part_info.disk->moveFile(fs::path(full_path) / old_name, fs::path(full_path) / new_name);
 
-    LOG_INFO(log, "Will clean up {} detached parts", renamed_parts.old_and_new_names.size());
-
-    renamed_parts.tryRenameAll();
-
-    for (auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
-    {
-        removeDetachedPart(disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name);
+        removeDetachedPart(part_info.disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name);
         LOG_WARNING(log, "Removed broken detached part {} due to a timeout for broken detached parts", old_name);
-        old_name.clear();
+        ++removed_count;
     }
 
-    return renamed_parts.old_and_new_names.size();
+    LOG_INFO(log, "Cleaned up {} detached parts", removed_count);
+
+    return removed_count + unfinished_deleting_parts;
 }
 
 size_t MergeTreeData::clearOldWriteAheadLogs()
