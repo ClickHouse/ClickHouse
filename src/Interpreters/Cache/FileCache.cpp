@@ -568,7 +568,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
     return file_segment_metadata_it;
 }
 
-bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
+bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCacheReserveStat & reserve_stat)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheReserveMicroseconds);
 
@@ -634,6 +634,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
     {
         chassert(segment_metadata->file_segment->assertCorrectness());
 
+        auto & stat_by_kind = reserve_stat.stat_by_kind[segment_metadata->file_segment->getKind()];
         if (segment_metadata->releasable())
         {
             const auto & key = segment_metadata->file_segment->key();
@@ -642,9 +643,18 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
                 it = to_delete.emplace(key, locked_key.getKeyMetadata()).first;
             it->second.add(segment_metadata);
 
+            stat_by_kind.releasable_size += segment_metadata->size();
+            ++stat_by_kind.releasable_count;
+
             freeable_space += segment_metadata->size();
             ++freeable_count;
         }
+        else
+        {
+            stat_by_kind.non_releasable_size += segment_metadata->size();
+            ++stat_by_kind.non_releasable_count;
+        }
+
         return PriorityIterationResult::CONTINUE;
     };
 
@@ -698,6 +708,10 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
 
         return is_overflow;
     };
+
+    /// If we have enough space in query_priority, we are not interested about stat there anymore.
+    /// Clean the stat before iterating main_priority to avoid calculating any segment stat twice.
+    reserve_stat.stat_by_kind.clear();
 
     if (is_main_priority_overflow())
     {

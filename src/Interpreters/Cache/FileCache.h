@@ -30,6 +30,22 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+/// Track acquired space in cache during reservation
+/// to make error messages when no space left more informative.
+struct FileCacheReserveStat
+{
+    struct Stat
+    {
+        size_t releasable_size;
+        size_t releasable_count;
+
+        size_t non_releasable_size;
+        size_t non_releasable_count;
+    };
+
+    std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
+};
+
 /// Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
 /// Different caching algorithms are implemented using IFileCachePriority.
 class FileCache : private boost::noncopyable
@@ -106,7 +122,7 @@ public:
 
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
-    bool tryReserve(FileSegment & file_segment, size_t size);
+    bool tryReserve(FileSegment & file_segment, size_t size, FileCacheReserveStat & stat);
 
     FileSegmentsHolderPtr getSnapshot();
 

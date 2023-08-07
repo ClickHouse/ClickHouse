@@ -266,8 +266,16 @@ void KeeperClient::runInteractive()
 
     LineReader::Patterns query_extenders = {"\\"};
     LineReader::Patterns query_delimiters = {};
+    char word_break_characters[] = " \t\v\f\a\b\r\n/";
 
-    ReplxxLineReader lr(suggest, history_file, false, query_extenders, query_delimiters, {});
+    ReplxxLineReader lr(
+        suggest,
+        history_file,
+        /* multiline= */ false,
+        query_extenders,
+        query_delimiters,
+        word_break_characters,
+        /* highlighter_= */ {});
     lr.enableBracketedPaste();
 
     while (true)
