@@ -3,8 +3,12 @@
 namespace DB
 {
 
+
 PartialResultTransform::PartialResultTransform(const Block & header, UInt64 partial_result_limit_, UInt64 partial_result_duration_ms_)
-    : IProcessor({header}, {header})
+    : PartialResultTransform(header, header, partial_result_limit_, partial_result_duration_ms_) {}
+
+PartialResultTransform::PartialResultTransform(const Block & input_header, const Block & output_header, UInt64 partial_result_limit_, UInt64 partial_result_duration_ms_)
+    : IProcessor({input_header}, {output_header})
     , input(inputs.front())
     , output(outputs.front())
     , partial_result_limit(partial_result_limit_)

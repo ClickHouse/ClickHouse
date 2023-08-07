@@ -1,6 +1,7 @@
 import socket
 import os
 import uuid
+import struct
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "900000"))
@@ -104,6 +105,15 @@ class TCPClient(object):
 
     def readUInt64(self):
         return self.readUInt(8)
+
+    def readFloat16(self):
+        return struct.unpack("e", self.readStrict(2))
+
+    def readFloat32(self):
+        return struct.unpack("f", self.readStrict(4))
+
+    def readFloat64(self):
+        return struct.unpack("d", self.readStrict(8))
 
     def readVarUInt(self):
         x = 0
@@ -250,12 +260,22 @@ class TCPClient(object):
             print("Column {} type {}".format(col_name, type_name))
 
     def readRow(self, row_type, rows):
-        if row_type == "UInt64":
-            row = [self.readUInt64() for _ in range(rows)]
+        supported_row_types = {
+            "UInt8": self.readUInt8,
+            "UInt16": self.readUInt16,
+            "UInt32": self.readUInt32,
+            "UInt64": self.readUInt64,
+            "Float16": self.readFloat16,
+            "Float32": self.readFloat32,
+            "Float64": self.readFloat64,
+        }
+        if row_type in supported_row_types:
+            read_type = supported_row_types[row_type]
+            row = [read_type() for _ in range(rows)]
             return row
         else:
             raise RuntimeError(
-                "Currently python version of tcp client doesn't support the following type of row: {}".format(
+                "Current python version of tcp client doesn't support the following type of row: {}".format(
                     row_type
                 )
             )

@@ -285,17 +285,6 @@ void MergeSortingTransform::remerge()
 
 ProcessorPtr MergeSortingTransform::getPartialResultProcessor(const ProcessorPtr & current_processor, UInt64 partial_result_limit, UInt64 partial_result_duration_ms)
 {
-    if (getName() != current_processor->getName() || current_processor.get() != this)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "To create partial result processor variable current_processor should use " \
-            "the same class and pointer as in the original processor with class {} and pointer {}. " \
-            "But current_processor has another class {} or pointer {} then original.",
-            getName(),
-            static_cast<void*>(this),
-            current_processor->getName(),
-            static_cast<void*>(current_processor.get()));
-
     const auto & header = inputs.front().getHeader();
     auto merge_sorting_processor = std::dynamic_pointer_cast<MergeSortingTransform>(current_processor);
     return std::make_shared<MergeSortingPartialResultTransform>(header, std::move(merge_sorting_processor), partial_result_limit, partial_result_duration_ms);

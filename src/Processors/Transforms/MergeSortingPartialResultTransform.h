@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialResultTransform.h>
 
 namespace DB

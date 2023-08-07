@@ -33,10 +33,11 @@ public:
 
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota_) { quota = quota_; }
 
+    bool supportPartialResultProcessor() const override { return true; }
+
 protected:
     void transform(Chunk & chunk) override;
 
-    bool supportPartialResultProcessor() const override { return true; }
     ProcessorPtr getPartialResultProcessor(const ProcessorPtr & current_processor, UInt64 partial_result_limit, UInt64 partial_result_duration_ms) override;
 
 private:

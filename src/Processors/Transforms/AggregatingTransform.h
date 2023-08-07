@@ -170,8 +170,12 @@ public:
     void work() override;
     Processors expandPipeline() override;
 
+    bool supportPartialResultProcessor() const override { return true; }
+
 protected:
     void consume(Chunk chunk);
+
+    ProcessorPtr getPartialResultProcessor(const ProcessorPtr & current_processor, UInt64 partial_result_limit, UInt64 partial_result_duration_ms) override;
 
 private:
     /// To read the data that was flushed into the temporary data file.
@@ -211,6 +215,9 @@ private:
     bool read_current_chunk = false;
 
     bool is_consume_started = false;
+
+    friend class AggregatingPartialResultTransform;
+    std::mutex snapshot_mutex;
 
     void initGenerate();
 };
