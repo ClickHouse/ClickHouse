@@ -80,7 +80,7 @@ def create_tables(cluster, table_name):
     "cluster",
     ["test_single_shard_multiple_replicas", "test_multiple_shards_multiple_replicas"],
 )
-def test_parallel_replicas_custom_key(start_cluster, cluster):
+def test_parallel_replicas_over_distributed(start_cluster, cluster):
     table_name = "test_table"
     create_tables(cluster, table_name)
 
