@@ -17,7 +17,7 @@ namespace ErrorCodes
 MergeTreeReaderCompact::MergeTreeReaderCompact(
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
     NamesAndTypesList columns_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
     MarkRanges mark_ranges_,
@@ -29,7 +29,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     : IMergeTreeReader(
         data_part_info_for_read_,
         columns_,
-        metadata_snapshot_,
+        storage_snapshot_,
         uncompressed_cache_,
         mark_cache_,
         mark_ranges_,
@@ -166,8 +166,11 @@ void MergeTreeReaderCompact::fillColumnPositions()
                     name_in_storage = alter_conversions->getColumnNewName(name_in_storage);
 
                 if (!storage_columns_with_collected_nested)
-                    storage_columns_with_collected_nested = ColumnsDescription(
-                        Nested::collect(metadata_snapshot->getColumns().getAllPhysical()));
+                {
+                    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
+                    auto storage_columns_list = Nested::collect(storage_snapshot->getColumns(options));
+                    storage_columns_with_collected_nested = ColumnsDescription(std::move(storage_columns_list));
+                }
 
                 column_to_read_with_subcolumns = storage_columns_with_collected_nested
                     ->getColumnOrSubcolumn(

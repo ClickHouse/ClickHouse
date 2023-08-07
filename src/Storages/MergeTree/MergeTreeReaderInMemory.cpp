@@ -19,13 +19,13 @@ MergeTreeReaderInMemory::MergeTreeReaderInMemory(
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
     DataPartInMemoryPtr data_part_,
     NamesAndTypesList columns_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     MarkRanges mark_ranges_,
     MergeTreeReaderSettings settings_)
     : IMergeTreeReader(
         data_part_info_for_read_,
         columns_,
-        metadata_snapshot_,
+        storage_snapshot_,
         nullptr,
         nullptr,
         mark_ranges_,

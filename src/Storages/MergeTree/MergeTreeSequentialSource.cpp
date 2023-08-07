@@ -150,7 +150,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         mark_ranges.emplace(MarkRanges{MarkRange(0, data_part->getMarksCount())});
 
     reader = data_part->getReader(
-        columns_for_reader, storage_snapshot->metadata,
+        columns_for_reader, storage_snapshot,
         *mark_ranges, /* uncompressed_cache = */ nullptr,
         mark_cache.get(), alter_conversions, reader_settings, {}, {});
 }
