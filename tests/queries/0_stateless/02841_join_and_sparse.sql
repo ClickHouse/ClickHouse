@@ -15,7 +15,12 @@ INSERT INTO t2 SELECT if (number % 14 = 0, toString(number), '') FROM numbers(20
 SELECT countIf(ignore(*) == 0) FROM t1 JOIN t2 ON t1.s = t2.s;
 
 SET join_algorithm = 'full_sorting_merge', max_rows_in_set_to_optimize_join = 100_000;
+SELECT countIf(ignore(*) == 0) FROM t1 JOIN t2 ON t1.s = t2.s;
 
+SET max_bytes_in_join = 100, join_algorithm = 'auto';
+SELECT countIf(ignore(*) == 0) FROM t1 JOIN t2 ON t1.s = t2.s;
+
+SET max_bytes_in_join = 100000, join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 4;
 SELECT countIf(ignore(*) == 0) FROM t1 JOIN t2 ON t1.s = t2.s;
 
 DROP TABLE t1;
