@@ -1053,7 +1053,7 @@ create table metric_devation engine File(TSVWithNamesAndTypes,
     from (
         select
             test, query_index,
-            (q[3] - q[1])/q[2] d,
+            if(q[2] < 1e-9, 1e9, (q[3] - q[1])/q[2]) d,
             quantilesExact(0, 0.5, 1)(value) q, metric
         from (select * from unstable_run_metrics
             union all select * from unstable_run_traces

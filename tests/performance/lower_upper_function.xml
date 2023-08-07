@@ -1,11 +1,11 @@
 <test>
-    <query>select lower(randomString(16))</query>
-    <query>select lower(randomString(32))</query>
-    <query>select lower(randomString(64))</query>
-    <query>select lower(randomString(128))</query>
-    <query>select lower(randomString(256))</query>
-    <query>select lower(randomString(512))</query>
-    <query>select lower(randomString(1024))</query>
-    <query>select lower(randomString(832))</query>
-    <query>select lower(randomString(416))</query>
+    <query>select lower(randomString(16)) format Null</query>
+    <query>select lower(randomString(32)) format Null</query>
+    <query>select lower(randomString(64)) format Null</query>
+    <query>select lower(randomString(128)) format Null</query>
+    <query>select lower(randomString(256)) format Null</query>
+    <query>select lower(randomString(512)) format Null</query>
+    <query>select lower(randomString(1024)) format Null</query>
+    <query>select lower(randomString(832)) format Null</query>
+    <query>select lower(randomString(416)) format Null</query>
 </test>
