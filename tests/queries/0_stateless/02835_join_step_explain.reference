@@ -17,9 +17,9 @@ Positions: 4 0 2 1
           value_1_1 String
           value_1_3 String
           id_2 UInt64
-  Kind: INNER
+  Type: INNER
   Strictness: ALL
-  Type: HashJoin
+  Algorithm: HashJoin
   Clauses: [(id_0) = (id_2)]
     Expression ((JOIN actions + Change column names to column identifiers))
     Header: id_0 UInt64
@@ -73,9 +73,9 @@ Positions: 6 0 3 1
           value_1_3 String
           value_2_5 UInt64
           id_2 UInt64
-  Kind: INNER
+  Type: INNER
   Strictness: ASOF
-  Type: HashJoin
+  Algorithm: HashJoin
   ASOF inequality: LESS
   Clauses: [(id_0, value_2_4) = (id_2, value_2_5)]
     Expression ((JOIN actions + Change column names to column identifiers))

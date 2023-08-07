@@ -70,9 +70,9 @@ void JoinStep::describeActions(FormatSettings & settings) const
     String prefix(settings.offset, ' ');
 
     const auto & table_join = join->getTableJoin();
-    settings.out << prefix << "Kind: " << toString(table_join.kind()) << '\n';
+    settings.out << prefix << "Type: " << toString(table_join.kind()) << '\n';
     settings.out << prefix << "Strictness: " << toString(table_join.strictness()) << '\n';
-    settings.out << prefix << "Type: " << join->getName() << '\n';
+    settings.out << prefix << "Algorithm: " << join->getName() << '\n';
 
     if (table_join.strictness() == JoinStrictness::Asof)
         settings.out << prefix << "ASOF inequality: " << toString(table_join.getAsofInequality()) << '\n';
@@ -84,9 +84,9 @@ void JoinStep::describeActions(FormatSettings & settings) const
 void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     const auto & table_join = join->getTableJoin();
-    map.add("Kind", toString(table_join.kind()));
+    map.add("Type", toString(table_join.kind()));
     map.add("Strictness", toString(table_join.strictness()));
-    map.add("Type", join->getName());
+    map.add("Algorithm", join->getName());
 
     if (table_join.strictness() == JoinStrictness::Asof)
         map.add("ASOF inequality", toString(table_join.getAsofInequality()));
