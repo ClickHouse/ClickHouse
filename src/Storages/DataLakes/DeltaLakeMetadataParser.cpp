@@ -281,7 +281,6 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
 
         ArrowColumnToCHColumn column_reader(
             header, "Parquet",
-            format_settings.parquet.import_nested,
             format_settings.parquet.allow_missing_columns,
             /* null_as_default */true,
             /* case_insensitive_column_matching */false);
