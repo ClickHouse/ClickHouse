@@ -2,30 +2,24 @@
 
 #include "config.h"
 
-#if USE_MINIZIP
 #include <IO/Archives/IArchiveReader.h>
-#include <mutex>
-#include <vector>
 
+#include <iostream>
 
 namespace DB
 {
+
+#if USE_LIBARCHIVE
+
 class ReadBuffer;
 class ReadBufferFromFileBase;
 class SeekableReadBuffer;
 
-/// Implementation of IArchiveReader for reading zip archives.
-class ZipArchiveReader : public IArchiveReader
+/// Implementation of IArchiveReader for reading archives using libarchive.
+class LibArchiveReader : public IArchiveReader
 {
 public:
-    /// Constructs an archive's reader that will read from a file in the local filesystem.
-    explicit ZipArchiveReader(const String & path_to_archive_);
-
-    /// Constructs an archive's reader that will read by making a read buffer by using
-    /// a specified function.
-    ZipArchiveReader(const String & path_to_archive_, const ReadArchiveFunction & archive_read_function_, UInt64 archive_size_);
-
-    ~ZipArchiveReader() override;
+    ~LibArchiveReader() override;
 
     const std::string & getPath() const override;
 
@@ -54,34 +48,32 @@ public:
     /// Sets password used to decrypt the contents of the files in the archive.
     void setPassword(const String & password_) override;
 
+protected:
+    /// Constructs an archive's reader that will read from a file in the local filesystem.
+    LibArchiveReader(std::string archive_name_, bool lock_on_reading_, std::string path_to_archive_);
+
 private:
-    class ReadBufferFromZipArchive;
+    class ReadBufferFromLibArchive;
+    class Handle;
     class FileEnumeratorImpl;
-    class HandleHolder;
-    using RawHandle = void *;
 
-    void init();
-
-    struct FileInfoImpl : public FileInfo
-    {
-        int compression_method;
-    };
-
-    HandleHolder acquireHandle();
-    RawHandle acquireRawHandle();
-    void releaseRawHandle(RawHandle handle_);
-
-    void checkResult(int code) const;
-    [[noreturn]] void showError(const String & message) const;
-
+    const std::string archive_name;
+    const bool lock_on_reading;
     const String path_to_archive;
-    const ReadArchiveFunction archive_read_function;
-    const UInt64 archive_size = 0;
-    String password;
-    std::vector<RawHandle> free_handles;
-    mutable std::mutex mutex;
 };
 
-}
+class TarArchiveReader : public LibArchiveReader
+{
+public:
+    explicit TarArchiveReader(std::string path_to_archive) : LibArchiveReader("tar", /*lock_on_reading_=*/ true, std::move(path_to_archive)) { }
+};
+
+class SevenZipArchiveReader : public LibArchiveReader
+{
+public:
+    explicit SevenZipArchiveReader(std::string path_to_archive) : LibArchiveReader("7z", /*lock_on_reading_=*/ false, std::move(path_to_archive)) { }
+};
 
 #endif
+
+}
