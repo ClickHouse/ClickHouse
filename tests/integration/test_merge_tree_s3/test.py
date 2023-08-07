@@ -855,6 +855,11 @@ def test_s3_engine_heavy_write_check_mem(
     memory = in_flight_memory[1]
 
     node = cluster.instances[node_name]
+
+    # it's bad idea to test something related to memory with sanitizers
+    if node.is_built_with_sanitizer():
+        pytest.skip("Disabled for sanitizers")
+
     node.query("DROP TABLE IF EXISTS s3_test SYNC")
     node.query(
         "CREATE TABLE s3_test"
