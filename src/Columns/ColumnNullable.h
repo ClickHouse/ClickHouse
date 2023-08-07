@@ -6,6 +6,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
+#include "Core/TypeId.h"
 #include "config.h"
 
 
@@ -213,8 +214,7 @@ private:
     WrappedPtr nested_column;
     WrappedPtr null_map;
     // optimize serializeValueIntoArena
-    bool is_string;
-    bool is_fixed_size_column;
+    TypeIndex nested_type;
 
     template <bool negative>
     void applyNullMapImpl(const NullMap & map);

@@ -4,6 +4,10 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
+#include "ColumnDecimal.h"
+#include "ColumnFixedString.h"
+#include "ColumnsDateTime.h"
+#include "ColumnsNumber.h"
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
@@ -34,8 +38,7 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
 {
     /// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
     nested_column = getNestedColumn().convertToFullColumnIfConst();
-    is_string = isString(nested_column->getDataType());
-    is_fixed_size_column = nested_column->valuesHaveFixedSize();
+    nested_type = nested_column->getDataType();
 
     if (!getNestedColumn().canBeInsideNullable())
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} cannot be inside Nullable column", getNestedColumn().getName());
@@ -141,29 +144,72 @@ StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char 
     const auto & arr = getNullMapData();
     static constexpr auto s = sizeof(arr[0]);
     char * pos;
-    if (is_string)
+
+    switch (nested_type)
     {
-        const auto * column_string = static_cast<const ColumnString *>(nested_column.get());
-        return column_string->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::UInt8:
+            return static_cast<const ColumnUInt8 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::UInt16:
+            return static_cast<const ColumnUInt16 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::UInt32:
+            return static_cast<const ColumnUInt32 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::UInt64:
+            return static_cast<const ColumnUInt64 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::UInt128:
+            return static_cast<const ColumnUInt128 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::UInt256:
+            return static_cast<const ColumnUInt256 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Int8:
+            return static_cast<const ColumnInt8 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Int16:
+            return static_cast<const ColumnInt16 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Int32:
+            return static_cast<const ColumnInt32 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Int64:
+            return static_cast<const ColumnInt64 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Int128:
+            return static_cast<const ColumnInt128 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Int256:
+            return static_cast<const ColumnInt256 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Float32:
+            return static_cast<const ColumnFloat32 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Float64:
+            return static_cast<const ColumnFloat64 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Date:
+            return static_cast<const ColumnDate *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Date32:
+            return static_cast<const ColumnDate32 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::DateTime:
+            return static_cast<const ColumnDateTime *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::DateTime64:
+            return static_cast<const ColumnDateTime64 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::String:
+            return static_cast<const ColumnString *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::FixedString:
+            return static_cast<const ColumnFixedString *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Decimal32:
+            return static_cast<const ColumnDecimal<Decimal32> *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Decimal64:
+            return static_cast<const ColumnDecimal<Decimal64> *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Decimal128:
+            return static_cast<const ColumnDecimal<Decimal128> *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::Decimal256:
+            return static_cast<const ColumnDecimal<Decimal256> *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::UUID:
+            return static_cast<const ColumnUUID *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::IPv4:
+            return static_cast<const ColumnIPv4 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::IPv6:
+            return static_cast<const ColumnIPv6 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        default:
+            pos = arena.allocContinue(s, begin);
+            memcpy(pos, &arr[n], s);
+            if (arr[n])
+                return StringRef(pos, s);
+            auto nested_ref = getNestedColumn().serializeValueIntoArena(n, arena, begin);
+            /// serializeValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
+            return StringRef(nested_ref.data - s, nested_ref.size + s);
     }
-    else if (is_fixed_size_column)
-    {
-        return nested_column->serializeValueIntoArena(n, arena, begin, &arr[n]);
-    }
-    else
-    {
-        pos = arena.allocContinue(s, begin);
-        memcpy(pos, &arr[n], s);
-
-        if (arr[n])
-            return StringRef(pos, s);
-
-        auto nested_ref = getNestedColumn().serializeValueIntoArena(n, arena, begin);
-
-        /// serializeValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
-        return StringRef(nested_ref.data - s, nested_ref.size + s);
-    }
-
 }
 
 const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
