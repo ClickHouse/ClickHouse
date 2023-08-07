@@ -45,7 +45,8 @@ keeper foo bar
 -   `ls [path]` -- Lists the nodes for the given path (default: cwd)
 -   `cd [path]` -- Change the working path (default `.`)
 -   `set <path> <value> [version]` -- Updates the node's value. Only update if version matches (default: -1)
--   `create <path> <value>` -- Creates new node
+-   `create <path> <value> [mode]` -- Creates new node with the set value
+-   `touch <path>` -- Creates new node with an empty string as value. Doesn't throw an exception if the node already exists
 -   `get <path>` -- Returns the node's value
 -   `remove <path>` -- Remove the node
 -   `rmr <path>` -- Recursively deletes path. Confirmation required
@@ -53,5 +54,5 @@ keeper foo bar
 -   `help` -- Prints this message
 -   `get_stat [path]` -- Returns the node's stat (default `.`)
 -   `find_super_nodes <threshold> [path]` -- Finds nodes with number of children larger than some threshold for the given path (default `.`)
--   `delete_stable_backups` -- Deletes ClickHouse nodes used for backups that are now inactive
+-   `delete_stale_backups` -- Deletes ClickHouse nodes used for backups that are now inactive
 -   `find_big_family [path] [n]` -- Returns the top n nodes with the biggest family in the subtree (default path = `.` and n = 10)
