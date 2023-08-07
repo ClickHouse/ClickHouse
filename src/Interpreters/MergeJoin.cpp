@@ -530,8 +530,24 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     addConditionJoinColumn(right_sample_block, JoinTableSide::Right);
     JoinCommon::splitAdditionalColumns(key_names_right, right_sample_block, right_table_keys, right_columns_to_add);
 
+    const NameSet required_right_keys = table_join->requiredRightKeys();
     for (const auto & right_key : key_names_right)
     {
+        if (table_join->hasUsing() && !required_right_keys.contains(right_key))
+        {
+            /*
+             * If the column from the 'USING' clause has low cardinality only on the right-hand side,
+             * we would not need to keep its low cardinality.
+             * Example:
+             *   SELECT a FROM (SELECT 1 :: LowCardinality(UInt32) AS a) t1
+             *   JOIN (SELECT 1 :: UInt32 AS a) t2 USING (a);
+             * In that case result `a` will be supertype of `t1.a` and `t2.a`, just `UInt32`
+             * If column in the left hand side is also lowcardinality, we will restore propery in joinBlock.
+             * Not aplicable to allow_experimental_analyzer since column are disambiguated.
+             */
+            continue;
+        }
+
         if (right_sample_block.getByName(right_key).type->lowCardinality())
             lowcard_right_keys.push_back(right_key);
     }
@@ -539,7 +555,6 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     JoinCommon::convertToFullColumnsInplace(right_table_keys);
     JoinCommon::convertToFullColumnsInplace(right_sample_block, key_names_right);
 
-    const NameSet required_right_keys = table_join->requiredRightKeys();
     for (const auto & column : right_table_keys)
         if (required_right_keys.contains(column.name))
             right_columns_to_add.insert(ColumnWithTypeAndName{nullptr, column.type, column.name});
