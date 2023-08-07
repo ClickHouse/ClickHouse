@@ -50,7 +50,7 @@ namespace
             context->getRemoteHostFilter(),
             static_cast<unsigned>(context->getGlobalContext()->getSettingsRef().s3_max_redirects),
             context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
-            /* for_disk_s3 = */ false, /* get_request_throttler = */ {}, /* put_request_throttler = */ {},
+            /* for_disk_s3 = */ false, settings.request_settings.get_request_throttler, settings.request_settings.put_request_throttler,
             s3_uri.uri.getScheme());
 
         client_configuration.endpointOverride = s3_uri.endpoint;
@@ -102,8 +102,14 @@ namespace
 
 
 BackupReaderS3::BackupReaderS3(
-    const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, bool allow_s3_native_copy, const ContextPtr & context_)
-    : BackupReaderDefault(&Poco::Logger::get("BackupReaderS3"), context_)
+    const S3::URI & s3_uri_,
+    const String & access_key_id_,
+    const String & secret_access_key_,
+    bool allow_s3_native_copy,
+    const ReadSettings & read_settings_,
+    const WriteSettings & write_settings_,
+    const ContextPtr & context_)
+    : BackupReaderDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupReaderS3"))
     , s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
     , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
@@ -179,8 +185,15 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
 
 
 BackupWriterS3::BackupWriterS3(
-    const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, bool allow_s3_native_copy, const String & storage_class_name, const ContextPtr & context_)
-    : BackupWriterDefault(&Poco::Logger::get("BackupWriterS3"), context_)
+    const S3::URI & s3_uri_,
+    const String & access_key_id_,
+    const String & secret_access_key_,
+    bool allow_s3_native_copy,
+    const String & storage_class_name,
+    const ReadSettings & read_settings_,
+    const WriteSettings & write_settings_,
+    const ContextPtr & context_)
+    : BackupWriterDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupWriterS3"))
     , s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
     , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
