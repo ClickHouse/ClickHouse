@@ -1436,6 +1436,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             ConstraintsDescription{},
             String{},
             {},
+            String{},
         };
         StoragePtr storage = std::make_shared<StorageFile>(in_file, global_context->getUserFilesPath(), args);
         storage->startup();
@@ -2312,15 +2313,28 @@ void ClientBase::runInteractive()
 
     LineReader::Patterns query_extenders = {"\\"};
     LineReader::Patterns query_delimiters = {";", "\\G", "\\G;"};
+    char word_break_characters[] = " \t\v\f\a\b\r\n`~!@#$%^&*()-=+[{]}\\|;:'\",<.>/?";
 
 #if USE_REPLXX
     replxx::Replxx::highlighter_callback_t highlight_callback{};
     if (config().getBool("highlight", true))
         highlight_callback = highlight;
 
-    ReplxxLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters, highlight_callback);
+    ReplxxLineReader lr(
+        *suggest,
+        history_file,
+        config().has("multiline"),
+        query_extenders,
+        query_delimiters,
+        word_break_characters,
+        highlight_callback);
 #else
-    LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
+    LineReader lr(
+        history_file,
+        config().has("multiline"),
+        query_extenders,
+        query_delimiters,
+        word_break_characters);
 #endif
 
     static const std::initializer_list<std::pair<String, String>> backslash_aliases =
