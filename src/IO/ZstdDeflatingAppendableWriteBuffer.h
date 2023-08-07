@@ -22,7 +22,7 @@ namespace DB
 ///    said that there is no risks of compatibility issues https://github.com/facebook/zstd/issues/2090#issuecomment-620158967.
 /// 2) Doesn't support internal ZSTD check-summing, because ZSTD checksums written at the end of frame (frame epilogue).
 ///
-class ZstdDeflatingAppendableWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
+class ZstdDeflatingAppendableWriteBuffer : public WriteBufferWithOwnMemoryDecorator
 {
 public:
     using ZSTDLastBlock = const std::array<char, 3>;
@@ -30,7 +30,7 @@ public:
     static inline constexpr ZSTDLastBlock ZSTD_CORRECT_TERMINATION_LAST_BLOCK = {0x01, 0x00, 0x00};
 
     ZstdDeflatingAppendableWriteBuffer(
-        std::unique_ptr<WriteBufferFromFileBase> out_,
+        std::unique_ptr<WriteBuffer> out_,
         int compression_level,
         bool append_to_existing_file_,
         std::function<std::unique_ptr<ReadBufferFromFileBase>()> read_buffer_creator_,
@@ -46,11 +46,11 @@ public:
         out->sync();
     }
 
-    WriteBuffer * getNestedBuffer() { return out.get(); }
-
 private:
     /// NOTE: will fill compressed data to the out.working_buffer, but will not call out.next method until the buffer is full
     void nextImpl() override;
+
+    void flush(ZSTD_EndDirective mode);
 
     /// Write terminating ZSTD_e_end: empty block + frame epilogue. BTW it
     /// should be almost noop, because frame epilogue contains only checksums,
@@ -58,10 +58,8 @@ private:
     /// Flush all pending data and write zstd footer to the underlying buffer.
     /// After the first call to this function, subsequent calls will have no effect and
     /// an attempt to write to this buffer will result in exception.
-    void finalizeImpl() override;
-    void finalizeBefore();
-    void finalizeAfter();
-    void finalizeZstd();
+    void finalizeBefore() override;
+    void finalizeAfter() override;
 
     /// Read three last bytes from non-empty compressed file and compares them with
     /// ZSTD_CORRECT_TERMINATION_LAST_BLOCK.
@@ -70,7 +68,6 @@ private:
     /// Adding zstd empty block (ZSTD_CORRECT_TERMINATION_LAST_BLOCK) to out.working_buffer
     void addEmptyBlock();
 
-    std::unique_ptr<WriteBufferFromFileBase> out;
     std::function<std::unique_ptr<ReadBufferFromFileBase>()> read_buffer_creator;
 
     bool append_to_existing_file = false;

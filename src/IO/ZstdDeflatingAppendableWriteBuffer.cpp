@@ -12,15 +12,14 @@ namespace ErrorCodes
 }
 
 ZstdDeflatingAppendableWriteBuffer::ZstdDeflatingAppendableWriteBuffer(
-    std::unique_ptr<WriteBufferFromFileBase> out_,
+    std::unique_ptr<WriteBuffer> out_,
     int compression_level,
     bool append_to_existing_file_,
     std::function<std::unique_ptr<ReadBufferFromFileBase>()> read_buffer_creator_,
     size_t buf_size,
     char * existing_memory,
     size_t alignment)
-    : BufferWithOwnMemory(buf_size, existing_memory, alignment)
-    , out(std::move(out_))
+    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
     , read_buffer_creator(std::move(read_buffer_creator_))
     , append_to_existing_file(append_to_existing_file_)
 {
@@ -42,15 +41,18 @@ void ZstdDeflatingAppendableWriteBuffer::nextImpl()
     if (!offset())
         return;
 
+    if (first_write && append_to_existing_file && isNeedToAddEmptyBlock())
+        addEmptyBlock();
+    first_write = false;
+
+    flush(ZSTD_e_flush);
+}
+
+void ZstdDeflatingAppendableWriteBuffer::flush(ZSTD_EndDirective mode)
+{
     input.src = reinterpret_cast<unsigned char *>(working_buffer.begin());
     input.size = offset();
     input.pos = 0;
-
-    if (first_write && append_to_existing_file && isNeedToAddEmptyBlock())
-    {
-        addEmptyBlock();
-        first_write = false;
-    }
 
     try
     {
@@ -63,14 +65,13 @@ void ZstdDeflatingAppendableWriteBuffer::nextImpl()
             output.size = out->buffer().size();
             output.pos = out->offset();
 
-            size_t compression_result = ZSTD_compressStream2(cctx, &output, &input, ZSTD_e_flush);
+            size_t compression_result = ZSTD_compressStream2(cctx, &output, &input, mode);
             if (ZSTD_isError(compression_result))
                 throw Exception(
                                 ErrorCodes::ZSTD_ENCODER_FAILED,
                                 "ZSTD stream decoding failed: error code: {}; ZSTD version: {}",
                                 ZSTD_getErrorName(compression_result), ZSTD_VERSION_STRING);
 
-            first_write = false;
             out->position() = out->buffer().begin() + output.pos;
 
             bool everything_was_compressed = (input.pos == input.size);
@@ -85,7 +86,6 @@ void ZstdDeflatingAppendableWriteBuffer::nextImpl()
         out->position() = out->buffer().begin();
         throw;
     }
-
 }
 
 ZstdDeflatingAppendableWriteBuffer::~ZstdDeflatingAppendableWriteBuffer()
@@ -93,77 +93,24 @@ ZstdDeflatingAppendableWriteBuffer::~ZstdDeflatingAppendableWriteBuffer()
     finalize();
 }
 
-void ZstdDeflatingAppendableWriteBuffer::finalizeImpl()
-{
-    if (first_write)
-    {
-        /// To free cctx
-        finalizeZstd();
-        /// Nothing was written
-    }
-    else
-    {
-        try
-        {
-            finalizeBefore();
-            out->finalize();
-            finalizeAfter();
-        }
-        catch (...)
-        {
-            /// Do not try to flush next time after exception.
-            out->position() = out->buffer().begin();
-            throw;
-        }
-    }
-}
-
 void ZstdDeflatingAppendableWriteBuffer::finalizeBefore()
 {
+    if (first_write && offset() == 0)
+        return;
+
+    /// This may look redundant given the flush() below, but it's not: we have to flush any pending
+    /// data using ZSTD_e_flush rather than ZSTD_e_end, otherwise the resulting frame won't necessarily
+    /// be compatible with ZSTD_CORRECT_TERMINATION_LAST_BLOCK.
     next();
 
-    out->nextIfAtEnd();
-
-    input.src = reinterpret_cast<unsigned char *>(working_buffer.begin());
-    input.size = offset();
-    input.pos = 0;
-
-    output.dst = reinterpret_cast<unsigned char *>(out->buffer().begin());
-    output.size = out->buffer().size();
-    output.pos = out->offset();
-
-    /// Actually we can use ZSTD_e_flush here and add empty termination
-    /// block on each new buffer creation for non-empty file unconditionally (without isNeedToAddEmptyBlock).
+    /// Actually we can use ZSTD_e_flush here and add empty termination block on each new buffer
+    /// creation for non-empty file unconditionally (without isNeedToAddEmptyBlock).
     /// However ZSTD_decompressStream is able to read non-terminated frame (we use it in reader buffer),
     /// but console zstd utility cannot.
-    size_t remaining = ZSTD_compressStream2(cctx, &output, &input, ZSTD_e_end);
-    while (remaining != 0)
-    {
-        if (ZSTD_isError(remaining))
-            throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED,
-                            "ZSTD stream encoder end failed: error: '{}' ZSTD version: {}",
-                            ZSTD_getErrorName(remaining), ZSTD_VERSION_STRING);
-
-        remaining = ZSTD_compressStream2(cctx, &output, &input, ZSTD_e_end);
-
-        out->position() = out->buffer().begin() + output.pos;
-
-        if (!out->hasPendingData())
-        {
-            out->next();
-            output.dst = reinterpret_cast<unsigned char *>(out->buffer().begin());
-            output.size = out->buffer().size();
-            output.pos = out->offset();
-        }
-    }
+    flush(ZSTD_e_end);
 }
 
 void ZstdDeflatingAppendableWriteBuffer::finalizeAfter()
-{
-    finalizeZstd();
-}
-
-void ZstdDeflatingAppendableWriteBuffer::finalizeZstd()
 {
     try
     {
@@ -184,14 +131,7 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeZstd()
 void ZstdDeflatingAppendableWriteBuffer::addEmptyBlock()
 {
     /// HACK: https://github.com/facebook/zstd/issues/2090#issuecomment-620158967
-
-    if (out->buffer().size() - out->offset() < ZSTD_CORRECT_TERMINATION_LAST_BLOCK.size())
-        out->next();
-
-    std::memcpy(out->buffer().begin() + out->offset(),
-                ZSTD_CORRECT_TERMINATION_LAST_BLOCK.data(), ZSTD_CORRECT_TERMINATION_LAST_BLOCK.size());
-
-    out->position() = out->buffer().begin() + out->offset() + ZSTD_CORRECT_TERMINATION_LAST_BLOCK.size();
+    out->write(ZSTD_CORRECT_TERMINATION_LAST_BLOCK.data(), ZSTD_CORRECT_TERMINATION_LAST_BLOCK.size());
 }
 
 
@@ -215,7 +155,7 @@ bool ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock()
         throw Exception(
             ErrorCodes::ZSTD_ENCODER_FAILED,
             "Trying to write to non-empty file '{}' with tiny size {}. It can lead to data corruption",
-            out->getFileName(), fsize);
+            reader->getFileName(), fsize);
     }
     return false;
 }
