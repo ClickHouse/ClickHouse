@@ -1,4 +1,5 @@
 <clickhouse>
+    <filesystem_caches_path>/filesystem_caches/</filesystem_caches_path>
     <storage_configuration>
         <disks>
             <s3_disk>
