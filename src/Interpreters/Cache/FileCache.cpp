@@ -924,6 +924,10 @@ void FileCache::loadMetadataImpl()
 
     if (first_exception)
         std::rethrow_exception(first_exception);
+
+#ifdef ABORT_ON_LOGICAL_ERROR
+    assertCacheCorrectness();
+#endif
 }
 
 void FileCache::loadMetadataForKeys(const fs::path & keys_dir)

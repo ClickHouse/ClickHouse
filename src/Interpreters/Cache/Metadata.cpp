@@ -185,6 +185,8 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
     bool is_initial_load)
 {
     auto key_metadata = getKeyMetadata(key, key_not_found_policy, is_initial_load);
+    if (!key_metadata)
+        return nullptr;
 
     {
         LockedKeyPtr locked_metadata;
