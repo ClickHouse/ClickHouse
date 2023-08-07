@@ -48,6 +48,11 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+namespace ActionLocks
+{
+    extern const StorageActionBlockType PartsMerge;
+}
+
 namespace
 {
     class StorageWithComment : public IAST
@@ -559,6 +564,10 @@ void SystemLog<LogElement>::prepareTable()
                 create_query);
 
             rename->elements.emplace_back(std::move(elem));
+
+            ActionLock merges_lock;
+            if (DatabaseCatalog::instance().getDatabase(table_id.database_name)->getUUID() == UUIDHelpers::Nil)
+                merges_lock = table->getActionLock(ActionLocks::PartsMerge);
 
             auto query_context = Context::createCopy(context);
             /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
