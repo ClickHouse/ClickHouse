@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from typing import List, Tuple
 import subprocess
 import logging
 import json
@@ -8,7 +9,6 @@ import sys
 import time
 import urllib.parse
 import requests
-from typing import List, Tuple
 
 from ci_config import CI_CONFIG, BuildConfig
 from docker_pull_helper import get_image_with_version
