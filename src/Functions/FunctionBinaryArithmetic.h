@@ -1408,9 +1408,9 @@ public:
         }
 
 
-        if (isArray(arguments[0]) && isArray(arguments[1]))
+        if constexpr (is_plus || is_minus)
         {
-            if constexpr (is_plus || is_minus)
+            if (isArray(arguments[0]) && isArray(arguments[1]))
             {
                 DataTypes new_arguments {
                         static_cast<const DataTypeArray &>(*arguments[0]).getNestedType(),
@@ -1418,8 +1418,6 @@ public:
                 };
                 return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
             }
-            else
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot use this operation on arrays");
         }
 
 
