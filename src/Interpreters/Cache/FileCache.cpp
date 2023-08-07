@@ -1023,7 +1023,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
 
             if (limits_satisfied)
             {
-                KeyMetadata::iterator file_segment_metadata_it;
+                bool inserted = false;
                 try
                 {
                     auto file_segment = std::make_shared<FileSegment>(key, offset, size,
@@ -1033,21 +1033,20 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
                                                                       key_metadata,
                                                                       cache_it);
 
-                    auto [_, inserted] = key_metadata->emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment)));
-                    if (!inserted)
-                    {
-                        cache_it->remove(lockCache());
-                        chassert(false);
-                    }
+                    inserted = key_metadata->emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment))).second;
+                    
                 }
                 catch (...)
                 {
                     tryLogCurrentException(__PRETTY_FUNCTION__);
                     chassert(false);
+                }
 
+                if (!inserted)
+                {
                     cache_it->remove(lockCache());
                     fs::remove(offset_it->path());
-                    continue;
+                    chassert(false);
                 }
             }
             else
