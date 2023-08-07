@@ -20,7 +20,7 @@ public:
         return name;
     }
 
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
     std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
     {
