@@ -167,7 +167,10 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nur
         request_for_session->zxid = log_idx;
 
     preprocess(*request_for_session);
-    return nullptr;
+    auto result = nuraft::buffer::alloc(8);
+    nuraft::buffer_serializer ss(result);
+    ss.put_u64(log_idx);
+    return result;
 }
 
 std::shared_ptr<KeeperStorage::RequestForSession> KeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version)
@@ -433,7 +436,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     last_committed_idx = log_idx;
 
     if (commit_callback)
-        commit_callback(*request_for_session);
+        commit_callback(log_idx, *request_for_session);
     return nullptr;
 }
 
