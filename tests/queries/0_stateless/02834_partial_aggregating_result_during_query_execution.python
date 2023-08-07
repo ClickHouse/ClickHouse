@@ -48,7 +48,9 @@ def run_query_without_errors(query, support_partial_result, invariants=None):
                     if key in invariants:
                         old_value = old_result[1]
                         new_value = new_result[1]
-                        assert invariants[key](old_value, new_value), f"Problem with the invariant between old and new versions of a partial result for key: {key}. Old value {old_value}, new value {new_value}"
+                        assert (
+                            invariants[key](old_value, new_value)
+                        ), f"Problem with the invariant between old and new versions of a partial result for key: {key}. Old value {old_value}, new value {new_value}"
         else:
             assert (
                 len(partial_results[0][1]) == 0
@@ -66,8 +68,8 @@ def run_query_without_errors(query, support_partial_result, invariants=None):
                 if key in invariants:
                     full_value = full_result[1]
                     partial_value = partial_result[1]
-                    assert (
-                        invariants[key](partial_value, full_value)
+                    assert invariants[key](
+                        partial_value, full_value
                     ), f"Problem with the invariant between full and partial result for key: {key}. Partial value {partial_value}. Full value {full_value}"
 
         for key, value in full_results:
