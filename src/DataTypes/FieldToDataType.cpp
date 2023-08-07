@@ -155,7 +155,7 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Array & x) const
     for (const Field & elem : x)
         element_types.emplace_back(applyVisitor(*this, elem));
 
-    return std::make_shared<DataTypeArray>(getLeastSupertype<on_error>(element_types, true));
+    return std::make_shared<DataTypeArray>(getLeastSupertype<on_error>(element_types, false));
 }
 
 template <LeastSupertypeOnError on_error>
