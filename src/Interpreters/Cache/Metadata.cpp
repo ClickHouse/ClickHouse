@@ -455,12 +455,12 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     if (file_segment.getOrSetDownloader() != FileSegment::getCallerId())
         return;
 
-    if (file_segment.getDownloadedSize(false) == file_segment.range().size())
+    if (file_segment.getDownloadedSize() == file_segment.range().size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
 
     LOG_TEST(
         log, "Downloading {} bytes for file segment {}",
-        file_segment.range().size() - file_segment.getDownloadedSize(false), file_segment.getInfoForLog());
+        file_segment.range().size() - file_segment.getDownloadedSize(), file_segment.getInfoForLog());
 
     auto reader = file_segment.getRemoteFileReader();
 
@@ -481,7 +481,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         reader->set(memory->data(), memory->size());
     }
 
-    size_t offset = file_segment.getCurrentWriteOffset(false);
+    size_t offset = file_segment.getCurrentWriteOffset();
     if (offset != static_cast<size_t>(reader->getPosition()))
         reader->seek(offset, SEEK_SET);
 
@@ -495,7 +495,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
                 log, "Failed to reserve space during background download "
                 "for {}:{} (downloaded size: {}/{})",
                 file_segment.key(), file_segment.offset(),
-                file_segment.getDownloadedSize(false), file_segment.range().size());
+                file_segment.getDownloadedSize(), file_segment.range().size());
             return;
         }
 
@@ -639,7 +639,7 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
     const auto & file_segment = metadata->file_segment;
     chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
 
-    const size_t downloaded_size = file_segment->getDownloadedSize(false);
+    const size_t downloaded_size = file_segment->getDownloadedSize();
     if (downloaded_size == file_segment->range().size())
     {
         throw Exception(
