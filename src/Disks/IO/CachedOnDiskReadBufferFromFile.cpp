@@ -111,7 +111,7 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
             break;
     }
 
-    cache_log->add(elem);
+    cache_log->add(std::move(elem));
 }
 
 void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
@@ -1089,6 +1089,10 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         read_until_position,
         first_offset,
         file_segments->toString());
+
+    /// Release buffer a little bit earlier.
+    if (read_until_position == file_offset_of_buffer_end)
+        implementation_buffer.reset();
 
     return result;
 }

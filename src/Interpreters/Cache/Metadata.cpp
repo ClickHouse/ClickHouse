@@ -62,11 +62,13 @@ KeyMetadata::KeyMetadata(
     CleanupQueue & cleanup_queue_,
     DownloadQueue & download_queue_,
     Poco::Logger * log_,
+    std::shared_mutex & key_prefix_directory_mutex_,
     bool created_base_directory_)
     : key(key_)
     , key_path(key_path_)
     , cleanup_queue(cleanup_queue_)
     , download_queue(download_queue_)
+    , key_prefix_directory_mutex(key_prefix_directory_mutex_)
     , created_base_directory(created_base_directory_)
     , log(log_)
 {
@@ -102,16 +104,21 @@ bool KeyMetadata::createBaseDirectory()
     {
         try
         {
+            std::shared_lock lock(key_prefix_directory_mutex);
             fs::create_directories(key_path);
         }
-        catch (...)
+        catch (const fs::filesystem_error & e)
         {
-            /// Avoid errors like
-            /// std::__1::__fs::filesystem::filesystem_error: filesystem error: in create_directories: No space left on device
-            /// and mark file segment with SKIP_CACHE state
-            tryLogCurrentException(__PRETTY_FUNCTION__);
             created_base_directory = false;
-            return false;
+
+            if (e.code() == std::errc::no_space_on_device)
+            {
+                LOG_TRACE(log, "Failed to create base directory for key {}, "
+                          "because no space left on device", key);
+
+                return false;
+            }
+            throw;
         }
     }
     return true;
@@ -200,7 +207,7 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
 
             it = emplace(
                 key, std::make_shared<KeyMetadata>(
-                    key, getPathForKey(key), *cleanup_queue, *download_queue, log, is_initial_load)).first;
+                    key, getPathForKey(key), *cleanup_queue, *download_queue, log, key_prefix_directory_mutex, is_initial_load)).first;
         }
 
         key_metadata = it->second;
@@ -315,16 +322,9 @@ void CacheMetadata::doCleanup()
 
         try
         {
+            std::unique_lock mutex(key_prefix_directory_mutex);
             if (fs::exists(key_prefix_directory) && fs::is_empty(key_prefix_directory))
                 fs::remove(key_prefix_directory);
-        }
-        catch (const fs::filesystem_error & e)
-        {
-            /// Key prefix directory can become non-empty just now, it is expected.
-            if (e.code() == std::errc::directory_not_empty)
-                continue;
-            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(true));
-            chassert(false);
         }
         catch (...)
         {
@@ -342,7 +342,7 @@ public:
     {
         {
             std::lock_guard lock(mutex);
-            queue.emplace(file_segment->key(), file_segment->offset(), file_segment);
+            queue.push(DownloadInfo{file_segment->key(), file_segment->offset(), file_segment});
         }
 
         CurrentMetrics::add(CurrentMetrics::FilesystemCacheDownloadQueueElements);
@@ -365,6 +365,9 @@ private:
 
     struct DownloadInfo
     {
+        DownloadInfo(const CacheMetadata::Key & key_, const size_t & offset_, const std::weak_ptr<FileSegment> & file_segment_)
+            : key(key_), offset(offset_), file_segment(file_segment_) {}
+
         CacheMetadata::Key key;
         size_t offset;
         /// We keep weak pointer to file segment

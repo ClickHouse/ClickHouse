@@ -42,6 +42,7 @@
 #if USE_SSL
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
+#    include <Server/CertificateReloader.h>
 #endif
 
 #include <Server/ProtocolServerAdapter.h>
@@ -287,13 +288,27 @@ try
     std::string path;
 
     if (config().has("keeper_server.storage_path"))
+    {
         path = config().getString("keeper_server.storage_path");
+    }
+    else if (std::filesystem::is_directory(std::filesystem::path{config().getString("path", DBMS_DEFAULT_PATH)} / "coordination"))
+    {
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                        "By default 'keeper.storage_path' could be assigned to {}, but the directory {} already exists. Please specify 'keeper.storage_path' in the keeper configuration explicitly",
+                        KEEPER_DEFAULT_PATH, String{std::filesystem::path{config().getString("path", DBMS_DEFAULT_PATH)} / "coordination"});
+    }
     else if (config().has("keeper_server.log_storage_path"))
+    {
         path = std::filesystem::path(config().getString("keeper_server.log_storage_path")).parent_path();
+    }
     else if (config().has("keeper_server.snapshot_storage_path"))
+    {
         path = std::filesystem::path(config().getString("keeper_server.snapshot_storage_path")).parent_path();
+    }
     else
-        path = std::filesystem::path{KEEPER_DEFAULT_PATH};
+    {
+        path = KEEPER_DEFAULT_PATH;
+    }
 
     std::filesystem::create_directories(path);
 
@@ -329,6 +344,7 @@ try
     auto global_context = Context::createGlobal(shared_context.get());
 
     global_context->makeGlobalContext();
+    global_context->setApplicationType(Context::ApplicationType::KEEPER);
     global_context->setPath(path);
     global_context->setRemoteHostFilter(config());
 
@@ -364,7 +380,7 @@ try
     }
 
     /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
-    global_context->initializeKeeperDispatcher(/* start_async = */ true);
+    global_context->initializeKeeperDispatcher(/* start_async = */ false);
     FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
 
     auto config_getter = [&] () -> const Poco::Util::AbstractConfiguration &
@@ -451,10 +467,20 @@ try
 
     zkutil::EventPtr unused_event = std::make_shared<Poco::Event>();
     zkutil::ZooKeeperNodeCache unused_cache([] { return nullptr; });
+
+    const std::string cert_path = config().getString("openSSL.server.certificateFile", "");
+    const std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
+
+    std::vector<std::string> extra_paths = {include_from_path};
+    if (!cert_path.empty())
+        extra_paths.emplace_back(cert_path);
+    if (!key_path.empty())
+        extra_paths.emplace_back(key_path);
+
     /// ConfigReloader have to strict parameters which are redundant in our case
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
-        include_from_path,
+        extra_paths,
         config().getString("path", ""),
         std::move(unused_cache),
         unused_event,
@@ -462,6 +488,10 @@ try
         {
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);
+
+#if USE_SSL
+            CertificateReloader::instance().tryLoad(*config);
+#endif
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
@@ -485,7 +515,7 @@ try
             LOG_INFO(log, "Closed all listening sockets.");
 
         if (current_connections > 0)
-            current_connections = waitServersToFinish(*servers, config().getInt("shutdown_wait_unfinished", 5));
+            current_connections = waitServersToFinish(*servers, servers_lock, config().getInt("shutdown_wait_unfinished", 5));
 
         if (current_connections)
             LOG_INFO(log, "Closed connections to Keeper. But {} remain. Probably some users cannot finish their connections after context shutdown.", current_connections);

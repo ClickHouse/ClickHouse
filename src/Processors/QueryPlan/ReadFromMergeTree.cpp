@@ -137,6 +137,69 @@ static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
     return true;
 }
 
+/// build sort description for output stream
+static void updateSortDescriptionForOutputStream(
+    DataStream & output_stream, const Names & sorting_key_columns, const int sort_direction, InputOrderInfoPtr input_order_info, PrewhereInfoPtr prewhere_info)
+{
+    /// Updating sort description can be done after PREWHERE actions are applied to the header.
+    /// Aftert PREWHERE actions are applied, column names in header can differ from storage column names due to aliases
+    /// To mitigate it, we're trying to build original header and use it to deduce sorting description
+    /// TODO: this approach is fragile, it'd be more robust to update sorting description for the whole plan during plan optimization
+    Block original_header = output_stream.header.cloneEmpty();
+    if (prewhere_info)
+    {
+        if (prewhere_info->prewhere_actions)
+        {
+            FindOriginalNodeForOutputName original_column_finder(prewhere_info->prewhere_actions);
+            for (auto & column : original_header)
+            {
+                const auto * original_node = original_column_finder.find(column.name);
+                if (original_node)
+                    column.name = original_node->result_name;
+            }
+        }
+
+        if (prewhere_info->row_level_filter)
+        {
+            FindOriginalNodeForOutputName original_column_finder(prewhere_info->row_level_filter);
+            for (auto & column : original_header)
+            {
+                const auto * original_node = original_column_finder.find(column.name);
+                if (original_node)
+                    column.name = original_node->result_name;
+            }
+        }
+    }
+
+    SortDescription sort_description;
+    const Block & header = output_stream.header;
+    for (const auto & sorting_key : sorting_key_columns)
+    {
+        const auto it = std::find_if(
+            original_header.begin(), original_header.end(), [&sorting_key](const auto & column) { return column.name == sorting_key; });
+        if (it == original_header.end())
+            break;
+
+        const size_t column_pos = std::distance(original_header.begin(), it);
+        sort_description.emplace_back((header.begin() + column_pos)->name, sort_direction);
+    }
+
+    if (!sort_description.empty())
+    {
+        if (input_order_info)
+        {
+            output_stream.sort_scope = DataStream::SortScope::Stream;
+            const size_t used_prefix_of_sorting_key_size = input_order_info->used_prefix_of_sorting_key_size;
+            if (sort_description.size() > used_prefix_of_sorting_key_size)
+                sort_description.resize(used_prefix_of_sorting_key_size);
+        }
+        else
+            output_stream.sort_scope = DataStream::SortScope::Chunk;
+    }
+
+    output_stream.sort_description = std::move(sort_description);
+}
+
 void ReadFromMergeTree::AnalysisResult::checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const
 {
 
@@ -250,33 +313,12 @@ ReadFromMergeTree::ReadFromMergeTree(
     /// Add explicit description.
     setStepDescription(data.getStorageID().getFullNameNotQuoted());
 
-    { /// build sort description for output stream
-        SortDescription sort_description;
-        const Names & sorting_key_columns = metadata_for_reading->getSortingKeyColumns();
-        const Block & header = output_stream->header;
-        const int sort_direction = getSortDirection();
-        for (const auto & column_name : sorting_key_columns)
-        {
-            if (std::find_if(header.begin(), header.end(), [&](ColumnWithTypeAndName const & col) { return col.name == column_name; })
-                == header.end())
-                break;
-            sort_description.emplace_back(column_name, sort_direction);
-        }
-        if (!sort_description.empty())
-        {
-            if (query_info.getInputOrderInfo())
-            {
-                output_stream->sort_scope = DataStream::SortScope::Stream;
-                const size_t used_prefix_of_sorting_key_size = query_info.getInputOrderInfo()->used_prefix_of_sorting_key_size;
-                if (sort_description.size() > used_prefix_of_sorting_key_size)
-                    sort_description.resize(used_prefix_of_sorting_key_size);
-            }
-            else
-                output_stream->sort_scope = DataStream::SortScope::Chunk;
-        }
-
-        output_stream->sort_description = std::move(sort_description);
-    }
+    updateSortDescriptionForOutputStream(
+        *output_stream,
+        storage_snapshot->getMetadataForQuery()->getSortingKeyColumns(),
+        getSortDirection(),
+        query_info.getInputOrderInfo(),
+        prewhere_info);
 }
 
 
@@ -982,6 +1024,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     RangesInDataParts lonely_parts;
     size_t sum_marks_in_lonely_parts = 0;
 
+    auto sorting_expr = std::make_shared<ExpressionActions>(metadata_for_reading->getSortingKey().expression->getActionsDAG().clone());
+
     for (size_t range_index = 0; range_index < parts_to_merge_ranges.size() - 1; ++range_index)
     {
         Pipes pipes;
@@ -1025,25 +1069,26 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                         info.use_uncompressed_cache);
                 };
                 pipes = buildPipesForReadingByPKRanges(
-                    metadata_for_reading->getPrimaryKey(), std::move(new_parts), num_streams, context, std::move(reading_step_getter));
+                    metadata_for_reading->getPrimaryKey(),
+                    sorting_expr,
+                    std::move(new_parts),
+                    num_streams,
+                    context,
+                    std::move(reading_step_getter));
             }
             else
             {
                 pipes.emplace_back(read(
                     std::move(new_parts), column_names, ReadFromMergeTree::ReadType::InOrder, num_streams, 0, info.use_uncompressed_cache));
+
+                pipes.back().addSimpleTransform([sorting_expr](const Block & header)
+                                                { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
             }
 
             /// Drop temporary columns, added by 'sorting_key_expr'
             if (!out_projection)
                 out_projection = createProjection(pipes.front().getHeader());
         }
-
-        auto sorting_expr = std::make_shared<ExpressionActions>(
-            metadata_for_reading->getSortingKey().expression->getActionsDAG().clone());
-
-        for (auto & pipe : pipes)
-            pipe.addSimpleTransform([sorting_expr](const Block & header)
-                                    { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
 
         /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
         /// with level > 0 then we won't postprocess this part
@@ -1100,9 +1145,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         /// Drop temporary columns, added by 'sorting_key_expr'
         if (!out_projection)
             out_projection = createProjection(pipe.getHeader());
-
-        auto sorting_expr = std::make_shared<ExpressionActions>(
-            metadata_for_reading->getSortingKey().expression->getActionsDAG().clone());
 
         pipe.addSimpleTransform([sorting_expr](const Block & header)
         {
@@ -1564,6 +1606,12 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
         prewhere_info_value,
         data.getPartitionValueType(),
         virt_column_names)};
+    updateSortDescriptionForOutputStream(
+        *output_stream,
+        storage_snapshot->getMetadataForQuery()->getSortingKeyColumns(),
+        getSortDirection(),
+        query_info.getInputOrderInfo(),
+        prewhere_info);
 }
 
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
@@ -1761,6 +1809,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                 fmt::format("{}.{}", data.getStorageID().getFullNameNotQuoted(), part.data_part->info.partition_id));
         }
         context->getQueryContext()->addQueryAccessInfo(partition_names);
+
+        if (storage_snapshot->projection)
+            context->getQueryContext()->addQueryAccessInfo(
+                Context::QualifiedProjectionName{.storage_id = data.getStorageID(), .projection_name = storage_snapshot->projection->name});
     }
 
     ProfileEvents::increment(ProfileEvents::SelectedParts, result.selected_parts);
