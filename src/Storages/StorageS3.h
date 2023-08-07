@@ -21,6 +21,7 @@
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/StorageConfiguration.h>
+#include <Storages/prepareReadingFromFormat.h>
 
 namespace Aws::S3
 {
@@ -115,16 +116,12 @@ public:
         ReadTaskCallback callback;
     };
 
-    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
-
     StorageS3Source(
-        const std::vector<NameAndTypePair> & requested_virtual_columns_,
+        const ReadFromFormatInfo & info,
         const String & format,
         String name_,
-        const Block & sample_block,
         ContextPtr context_,
         std::optional<FormatSettings> format_settings_,
-        const ColumnsDescription & columns_,
         UInt64 max_block_size_,
         const S3Settings::RequestSettings & request_settings_,
         String compression_hint_,
@@ -148,6 +145,7 @@ private:
     String version_id;
     String format;
     ColumnsDescription columns_desc;
+    NamesAndTypesList requested_columns;
     UInt64 max_block_size;
     S3Settings::RequestSettings request_settings;
     String compression_hint;
@@ -215,7 +213,7 @@ private:
 
     ReaderHolder reader;
 
-    std::vector<NameAndTypePair> requested_virtual_columns;
+    NamesAndTypesList requested_virtual_columns;
     std::shared_ptr<IIterator> file_iterator;
     size_t download_thread_num = 1;
 
@@ -358,7 +356,7 @@ private:
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx);
 
-    bool supportsSubcolumns() const override;
+    bool supportsSubcolumns() const override { return true; }
 
     bool supportsSubsetOfColumns() const override;
 
