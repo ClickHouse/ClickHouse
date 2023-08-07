@@ -6133,8 +6133,9 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
     /// TODO Allow to use quorum here.
-    ReplicatedMergeTreeSink output(*this, metadata_snapshot, 0, 0, 0, false, false, false, query_context,
-        /*is_attach*/true);
+    ReplicatedMergeTreeSink output(*this, metadata_snapshot, /* quorum */ 0, /* quorum_timeout_ms */ 0, /* max_parts_per_block */ 0,
+                                   /* quorum_parallel */ false, query_context->getSettingsRef().insert_deduplicate,
+                                   /* majority_quorum */ false, query_context, /*is_attach*/true);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
