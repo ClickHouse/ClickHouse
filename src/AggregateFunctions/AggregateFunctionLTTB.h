@@ -42,10 +42,13 @@ struct LTTBData final
     DataList data_list_x{};
     DataList data_list_y{};
 
+    bool sorted = true;
+
     void add(const Float64 x, const Float64 y, Arena * arena)
     {
         data_list_x.push_back(x, arena);
         data_list_y.push_back(y, arena);
+        sorted = false;
     }
 
     void merge(const LTTBData & other, Arena * arena)
@@ -55,10 +58,12 @@ struct LTTBData final
 
         data_list_x.insert(std::begin(other.data_list_x), std::end(other.data_list_x), arena);
         data_list_y.insert(std::begin(other.data_list_y), std::end(other.data_list_y), arena);
+        sorted = false;
     }
 
     void serialize(WriteBuffer & buf) const
     {
+        writeBinary(sorted, buf);
         writeBinary(data_list_x.size(), buf);
 
         for (const auto & x : data_list_x)
@@ -70,6 +75,7 @@ struct LTTBData final
 
     void deserialize(ReadBuffer & buf, Arena * arena)
     {
+        readBinary(sorted, buf);
         size_t size;
         readBinary(size, buf);
 
@@ -93,8 +99,38 @@ struct LTTBData final
         }
     }
 
+    void sort()
+    {
+        if (sorted)
+            return;
+
+        // sort the data_list_x and data_list_y in ascending order of data_list_x using index
+        std::vector<size_t> index(data_list_x.size());
+        std::iota(index.begin(), index.end(), 0);
+        std::sort(index.begin(), index.end(), [&](size_t i1, size_t i2) { return data_list_x[i1] < data_list_x[i2]; });
+
+        PODArray<Float64> data_list_x_temp;
+        PODArray<Float64> data_list_y_temp;
+
+        for (size_t i = 0; i < data_list_x.size(); ++i)
+        {
+            data_list_x_temp.push_back(data_list_x[index[i]]);
+            data_list_y_temp.push_back(data_list_y[index[i]]);
+        }
+
+        for (size_t i = 0; i < data_list_x.size(); ++i)
+        {
+            data_list_x[i] = data_list_x_temp[i];
+            data_list_y[i] = data_list_y_temp[i];
+        }
+
+        sorted = true;
+    }
+
     PODArray<std::pair<Float64, Float64>> getResult(unsigned long total_buckets)
     {
+        sort();
+
         PODArray<std::pair<Float64, Float64>> result;
 
         // Handle special cases for small data list
