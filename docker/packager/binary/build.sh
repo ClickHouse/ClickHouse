@@ -74,10 +74,10 @@ then
     rm -f CMakeCache.txt
 
     # Build the rest of binaries
-    cmake --debug-trycompile -DBUILD_STANDALONE_KEEPER=0 -DCREATE_KEEPER_SYMLINK=0 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
+    cmake --debug-trycompile -DBUILD_STANDALONE_KEEPER=0 -DCREATE_KEEPER_SYMLINK=0 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_BUILD_PROFILING=1 "${CMAKE_FLAGS[@]}" ..
 else
     # Build everything
-    cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
+    cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_BUILD_PROFILING=1 "${CMAKE_FLAGS[@]}" ..
 fi
 
 # No quotes because I want it to expand to nothing if empty.
@@ -180,5 +180,10 @@ then
     # files in place, and will fail because this directory is not writable.
     tar -cv -I pixz -f /output/ccache.log.txz "$CCACHE_LOGFILE"
 fi
+
+# Prepare profile info (time-trace)
+mkdir -p /profile-tmp
+../utils/prepare-time-trace/prepare-time-trace.sh . /profile-tmp
+cat /profile-tmp/* > /profile/profile.json
 
 ls -l /output
