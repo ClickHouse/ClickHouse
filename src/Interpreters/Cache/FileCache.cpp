@@ -1034,7 +1034,6 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
                                                                       cache_it);
 
                     inserted = key_metadata->emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment))).second;
-                    
                 }
                 catch (...)
                 {
