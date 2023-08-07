@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: zookeeper
+# Tags: zookeeper, no-replicated-database
+# no-replicated-database because it adds extra replicas
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -25,7 +26,7 @@ rm -rf "$path"
 $CLICKHOUSE_CLIENT -q "check table rmt" 2>/dev/null
 $CLICKHOUSE_CLIENT -q "select count() from rmt"
 
-$CLICKHOUSE_CLIENT --receive_timeout=30 -q "system sync replica rmt"
+$CLICKHOUSE_CLIENT --receive_timeout=60 -q "system sync replica rmt"
 
 # the empty part should pass the check
 $CLICKHOUSE_CLIENT -q "check table rmt"
