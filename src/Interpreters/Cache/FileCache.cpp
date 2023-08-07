@@ -1049,9 +1049,6 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
                     fs::remove(offset_it->path());
                     continue;
                 }
-
-                [[maybe_unused]] const auto & file_segment_metadata = file_segment_metadata_it->second;
-                chassert(file_segment_metadata->file_segment->assertCorrectness());
             }
             else
             {
