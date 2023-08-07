@@ -70,20 +70,22 @@ def test_select_all(cluster):
     )
     print(get_azure_file_content("test_cluster_select_all.csv"))
 
-    pure_azure = azure_query( node,
+    pure_azure = azure_query(
+        node,
         """
     SELECT * from azureBlobStorage(
         'http://azurite1:10000/devstoreaccount1', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1',
         'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',
-        'auto')"""
+        'auto')""",
     )
     print(pure_azure)
-    distributed_azure = azure_query( node,
+    distributed_azure = azure_query(
+        node,
         """
     SELECT * from azureBlobStorageCluster(
         'simple_cluster', 'http://azurite1:10000/devstoreaccount1', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1',
         'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',
-        'auto')"""
+        'auto')""",
     )
     print(distributed_azure)
     assert TSV(pure_azure) == TSV(distributed_azure)
@@ -100,20 +102,22 @@ def test_count(cluster):
     )
     print(get_azure_file_content("test_cluster_count.csv"))
 
-    pure_azure = azure_query( node,
+    pure_azure = azure_query(
+        node,
         """
     SELECT count(*) from azureBlobStorage(
         'http://azurite1:10000/devstoreaccount1', 'cont', 'test_cluster_count.csv', 'devstoreaccount1',
         'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',
-        'auto', 'key UInt64')"""
+        'auto', 'key UInt64')""",
     )
     print(pure_azure)
-    distributed_azure = azure_query( node,
+    distributed_azure = azure_query(
+        node,
         """
     SELECT count(*) from azureBlobStorageCluster(
         'simple_cluster', 'http://azurite1:10000/devstoreaccount1', 'cont', 'test_cluster_count.csv', 'devstoreaccount1',
         'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',
-        'auto', 'key UInt64')"""
+        'auto', 'key UInt64')""",
     )
     print(distributed_azure)
     assert TSV(pure_azure) == TSV(distributed_azure)
@@ -129,7 +133,8 @@ def test_union_all(cluster):
         "'auto', 'a Int32, b String') VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd')",
     )
 
-    pure_azure = azure_query( node,
+    pure_azure = azure_query(
+        node,
         """
     SELECT * FROM
     (
@@ -144,9 +149,10 @@ def test_union_all(cluster):
             'auto', 'a Int32, b String')
     )
     ORDER BY (a)
-    """
+    """,
     )
-    azure_distributed = azure_query( node,
+    azure_distributed = azure_query(
+        node,
         """
     SELECT * FROM
     (
@@ -163,7 +169,7 @@ def test_union_all(cluster):
             'auto', 'a Int32, b String')
     )
     ORDER BY (a)
-    """
+    """,
     )
 
     assert TSV(pure_azure) == TSV(azure_distributed)
@@ -178,14 +184,15 @@ def test_skip_unavailable_shards(cluster):
         "'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', "
         "'auto', 'a UInt64') VALUES (1), (2)",
     )
-    result = azure_query( node,
+    result = azure_query(
+        node,
         """
     SELECT count(*) from azureBlobStorageCluster(
         'cluster_non_existent_port',
         'http://azurite1:10000/devstoreaccount1', 'cont', 'test_skip_unavailable.csv', 'devstoreaccount1',
         'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==')
     SETTINGS skip_unavailable_shards = 1
-    """
+    """,
     )
 
     assert result == "2\n"
@@ -201,13 +208,14 @@ def test_unset_skip_unavailable_shards(cluster):
         "'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', "
         "'auto', 'a UInt64') VALUES (1), (2)",
     )
-    result = azure_query( node,
+    result = azure_query(
+        node,
         """
     SELECT count(*) from azureBlobStorageCluster(
         'cluster_non_existent_port',
         'http://azurite1:10000/devstoreaccount1', 'cont', 'test_skip_unavailable.csv', 'devstoreaccount1',
         'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==')
-    """
+    """,
     )
 
     assert result == "2\n"
@@ -224,19 +232,21 @@ def test_cluster_with_named_collection(cluster):
         "'auto', 'a UInt64') VALUES (1), (2)",
     )
 
-    pure_azure = azure_query( node,
+    pure_azure = azure_query(
+        node,
         """
     SELECT * from azureBlobStorage(
         'http://azurite1:10000/devstoreaccount1', 'cont', 'test_cluster_with_named_collection.csv', 'devstoreaccount1',
         'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==')
-    """
+    """,
     )
 
-    azure_cluster = azure_query( node,
+    azure_cluster = azure_query(
+        node,
         """
     SELECT * from azureBlobStorageCluster(
         'simple_cluster', azure_conf2, container='cont', blob_path='test_cluster_with_named_collection.csv')
-    """
+    """,
     )
 
     assert TSV(pure_azure) == TSV(azure_cluster)
@@ -258,12 +268,13 @@ def test_partition_parallel_readig_withcluster(cluster):
     assert "3,2,1\n" == get_azure_file_content("test_tf_1.csv")
     assert "78,43,45\n" == get_azure_file_content("test_tf_45.csv")
 
-    azure_cluster = azure_query( node,
+    azure_cluster = azure_query(
+        node,
         """
     SELECT count(*) from azureBlobStorageCluster(
         'simple_cluster',
         azure_conf2, container='cont', blob_path='test_tf_*.csv', format='CSV', compression='auto', structure='column1 UInt32, column2 UInt32, column3 UInt32')
-    """
+    """,
     )
 
     assert azure_cluster == "3\n"
