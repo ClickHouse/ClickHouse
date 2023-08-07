@@ -21,6 +21,7 @@ public:
     ASTPtr codec;
     ASTPtr ttl;
     ASTPtr collation;
+    bool primary_key_specifier = false;
 
     String getID(char delim) const override { return "ColumnDeclaration" + (delim + name); }
 

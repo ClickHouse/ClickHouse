@@ -587,7 +587,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
     }
 }
 
-bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
+bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCacheReserveStat & reserve_stat)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheReserveMicroseconds);
 
@@ -653,6 +653,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
     {
         chassert(segment_metadata->file_segment->assertCorrectness());
 
+        auto & stat_by_kind = reserve_stat.stat_by_kind[segment_metadata->file_segment->getKind()];
         if (segment_metadata->releasable())
         {
             const auto & key = segment_metadata->file_segment->key();
@@ -661,9 +662,18 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
                 it = to_delete.emplace(key, locked_key.getKeyMetadata()).first;
             it->second.add(segment_metadata);
 
+            stat_by_kind.releasable_size += segment_metadata->size();
+            ++stat_by_kind.releasable_count;
+
             freeable_space += segment_metadata->size();
             ++freeable_count;
         }
+        else
+        {
+            stat_by_kind.non_releasable_size += segment_metadata->size();
+            ++stat_by_kind.non_releasable_count;
+        }
+
         return PriorityIterationResult::CONTINUE;
     };
 
@@ -717,6 +727,10 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
 
         return is_overflow;
     };
+
+    /// If we have enough space in query_priority, we are not interested about stat there anymore.
+    /// Clean the stat before iterating main_priority to avoid calculating any segment stat twice.
+    reserve_stat.stat_by_kind.clear();
 
     if (is_main_priority_overflow())
     {
@@ -874,13 +888,12 @@ void FileCache::loadMetadata()
     }
 
     size_t total_size = 0;
-    for (auto key_prefix_it = fs::directory_iterator{metadata.getBaseDirectory()};
-         key_prefix_it != fs::directory_iterator();)
+    for (auto key_prefix_it = fs::directory_iterator{metadata.getBaseDirectory()}; key_prefix_it != fs::directory_iterator();
+         key_prefix_it++)
     {
         const fs::path key_prefix_directory = key_prefix_it->path();
-        key_prefix_it++;
 
-        if (!fs::is_directory(key_prefix_directory))
+        if (!key_prefix_it->is_directory())
         {
             if (key_prefix_directory.filename() != "status")
             {
@@ -891,19 +904,19 @@ void FileCache::loadMetadata()
             continue;
         }
 
-        if (fs::is_empty(key_prefix_directory))
+        fs::directory_iterator key_it{key_prefix_directory};
+        if (key_it == fs::directory_iterator{})
         {
             LOG_DEBUG(log, "Removing empty key prefix directory: {}", key_prefix_directory.string());
             fs::remove(key_prefix_directory);
             continue;
         }
 
-        for (fs::directory_iterator key_it{key_prefix_directory}; key_it != fs::directory_iterator();)
+        for (/* key_it already initialized to verify emptiness */; key_it != fs::directory_iterator(); key_it++)
         {
             const fs::path key_directory = key_it->path();
-            ++key_it;
 
-            if (!fs::is_directory(key_directory))
+            if (!key_it->is_directory())
             {
                 LOG_DEBUG(
                     log,
@@ -912,7 +925,7 @@ void FileCache::loadMetadata()
                 continue;
             }
 
-            if (fs::is_empty(key_directory))
+            if (fs::directory_iterator{key_directory} == fs::directory_iterator{})
             {
                 LOG_DEBUG(log, "Removing empty key directory: {}", key_directory.string());
                 fs::remove(key_directory);

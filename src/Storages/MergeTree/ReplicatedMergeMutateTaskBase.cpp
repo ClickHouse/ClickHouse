@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int PART_IS_TEMPORARILY_LOCKED;
 }
 
-StorageID ReplicatedMergeMutateTaskBase::getStorageID()
+StorageID ReplicatedMergeMutateTaskBase::getStorageID() const
 {
     return storage.getStorageID();
 }
@@ -174,7 +174,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 
             part_log_writer = prepare_result.part_log_writer;
 
-            /// Avoid resheduling, execute fetch here, in the same thread.
+            /// Avoid rescheduling, execute fetch here, in the same thread.
             if (!prepare_result.prepared_successfully)
                 return execute_fetch(prepare_result.need_to_check_missing_part_in_fetch);
 

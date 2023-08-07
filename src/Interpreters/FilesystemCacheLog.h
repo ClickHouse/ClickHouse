@@ -11,16 +11,7 @@
 
 namespace DB
 {
-///
-/// -------- Column --------- Type ------
-/// |  event_date         |  DateTime   |
-/// |  event_time         |  UInt64     |
-/// |  query_id           |  String     |
-/// |  remote_file_path   |  String     |
-/// |  segment_range      |  Tuple      |
-/// |  read_type          |  String     |
-/// -------------------------------------
-///
+
 struct FilesystemCacheLogElement
 {
     enum class CacheType

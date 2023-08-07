@@ -13,7 +13,7 @@ $CLICKHOUSE_CLIENT -nm --query """
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (a Int32, b String)
 ENGINE = MergeTree() ORDER BY tuple()
-SETTINGS disk = disk_$disk_name(type = cache, max_size = '100Ki', path = ${CLICKHOUSE_TEST_UNIQUE_NAME}, disk = s3_disk);
+SETTINGS disk = disk(name = '$disk_name', type = cache, max_size = '100Ki', path = ${CLICKHOUSE_TEST_UNIQUE_NAME}, disk = s3_disk);
 
 INSERT INTO test SELECT 1, 'test';
 """
@@ -21,6 +21,10 @@ INSERT INTO test SELECT 1, 'test';
 query_id=$RANDOM
 
 $CLICKHOUSE_CLIENT --query_id "$query_id" --query "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1"
+
+$CLICKHOUSE_CLIENT -nm --query """
+SYSTEM DROP FILESYSTEM CACHE '$disk_name' KEY kek;
+""" 2>&1 | grep -q "Invalid cache key hex: kek" && echo "OK" || echo "FAIL"
 
 ${CLICKHOUSE_CLIENT} -q " system flush logs"
 

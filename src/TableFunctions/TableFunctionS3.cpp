@@ -18,6 +18,8 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/TableFunctionNode.h>
 
 #include <boost/algorithm/string.hpp>
 
@@ -32,6 +34,24 @@ namespace ErrorCodes
 }
 
 
+std::vector<size_t> TableFunctionS3::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
+{
+    auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
+    auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
+    size_t table_function_arguments_size = table_function_arguments_nodes.size();
+
+    std::vector<size_t> result;
+
+    for (size_t i = 0; i < table_function_arguments_size; ++i)
+    {
+        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
+        if (function_node && function_node->getFunctionName() == "headers")
+            result.push_back(i);
+    }
+
+    return result;
+}
+
 /// This is needed to avoid copy-pase. Because s3Cluster arguments only differ in additional argument (first) - cluster name
 void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context)
 {
@@ -41,12 +61,13 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
     }
     else
     {
-        if (args.empty() || args.size() > 6)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "The signature of table function {} shall be the following:\n{}", getName(), getSignature());
 
         auto * header_it = StorageURL::collectHeaders(args, configuration.headers_from_ast, context);
         if (header_it != args.end())
             args.erase(header_it);
+
+        if (args.empty() || args.size() > 6)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "The signature of table function {} shall be the following:\n{}", getName(), getSignature());
 
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
@@ -160,7 +181,7 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
     configuration.keys = {configuration.url.key};
 
     if (configuration.format == "auto")
-        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.url.uri.getPath(), true);
+        configuration.format = FormatFactory::instance().getFormatFromFileName(Poco::URI(configuration.url.uri.getPath()).getPath(), true);
 }
 
 void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -292,7 +313,7 @@ void TableFunctionS3::addColumnsStructureToArguments(ASTs & args, const String &
     }
 }
 
-ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     if (configuration.structure == "auto")
     {
@@ -309,7 +330,7 @@ bool TableFunctionS3::supportsReadingSubsetOfColumns()
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
 }
 
-StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool /*is_insert_query*/) const
 {
     S3::URI s3_uri (configuration.url);
 
