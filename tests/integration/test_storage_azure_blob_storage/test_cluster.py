@@ -17,6 +17,7 @@ from helpers.test_tools import TSV
 from helpers.network import PartitionManager
 from helpers.mock_servers import start_mock_servers
 from helpers.test_tools import exec_query_with_retry
+from test_storage_azure_blob_storage.test import azure_query
 
 
 @pytest.fixture(scope="module")
@@ -48,26 +49,6 @@ def cluster():
         cluster.shutdown()
 
 
-def azure_query(node, query, try_num=3, settings={}):
-    for i in range(try_num):
-        try:
-            return node.query(query, settings=settings)
-        except Exception as ex:
-            retriable_errors = [
-                "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response"
-            ]
-            retry = False
-            for error in retriable_errors:
-                if error in str(ex):
-                    retry = True
-                    print(f"Try num: {i}. Having retriable error: {ex}")
-                    time.sleep(i)
-                    break
-            if not retry or i == try_num - 1:
-                raise Exception(ex)
-            continue
-
-
 def get_azure_file_content(filename):
     container_name = "cont"
     connection_string = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
@@ -89,7 +70,7 @@ def test_select_all(cluster):
     )
     print(get_azure_file_content("test_cluster_select_all.csv"))
 
-    pure_azure = node.query(
+    pure_azure = azure_query( node,
         """
     SELECT * from azureBlobStorage(
         'http://azurite1:10000/devstoreaccount1', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1',
@@ -97,7 +78,7 @@ def test_select_all(cluster):
         'auto')"""
     )
     print(pure_azure)
-    distributed_azure = node.query(
+    distributed_azure = azure_query( node,
         """
     SELECT * from azureBlobStorageCluster(
         'simple_cluster', 'http://azurite1:10000/devstoreaccount1', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1',
@@ -119,7 +100,7 @@ def test_count(cluster):
     )
     print(get_azure_file_content("test_cluster_count.csv"))
 
-    pure_azure = node.query(
+    pure_azure = azure_query( node,
         """
     SELECT count(*) from azureBlobStorage(
         'http://azurite1:10000/devstoreaccount1', 'cont', 'test_cluster_count.csv', 'devstoreaccount1',
@@ -127,7 +108,7 @@ def test_count(cluster):
         'auto', 'key UInt64')"""
     )
     print(pure_azure)
-    distributed_azure = node.query(
+    distributed_azure = azure_query( node,
         """
     SELECT count(*) from azureBlobStorageCluster(
         'simple_cluster', 'http://azurite1:10000/devstoreaccount1', 'cont', 'test_cluster_count.csv', 'devstoreaccount1',
@@ -148,7 +129,7 @@ def test_union_all(cluster):
         "'auto', 'a Int32, b String') VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd')",
     )
 
-    pure_azure = node.query(
+    pure_azure = azure_query( node,
         """
     SELECT * FROM
     (
@@ -165,7 +146,7 @@ def test_union_all(cluster):
     ORDER BY (a)
     """
     )
-    azure_distributed = node.query(
+    azure_distributed = azure_query( node,
         """
     SELECT * FROM
     (
@@ -197,7 +178,7 @@ def test_skip_unavailable_shards(cluster):
         "'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', "
         "'auto', 'a UInt64') VALUES (1), (2)",
     )
-    result = node.query(
+    result = azure_query( node,
         """
     SELECT count(*) from azureBlobStorageCluster(
         'cluster_non_existent_port',
@@ -220,7 +201,7 @@ def test_unset_skip_unavailable_shards(cluster):
         "'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', "
         "'auto', 'a UInt64') VALUES (1), (2)",
     )
-    result = node.query(
+    result = azure_query( node,
         """
     SELECT count(*) from azureBlobStorageCluster(
         'cluster_non_existent_port',
@@ -243,7 +224,7 @@ def test_cluster_with_named_collection(cluster):
         "'auto', 'a UInt64') VALUES (1), (2)",
     )
 
-    pure_azure = node.query(
+    pure_azure = azure_query( node,
         """
     SELECT * from azureBlobStorage(
         'http://azurite1:10000/devstoreaccount1', 'cont', 'test_cluster_with_named_collection.csv', 'devstoreaccount1',
@@ -251,7 +232,7 @@ def test_cluster_with_named_collection(cluster):
     """
     )
 
-    azure_cluster = node.query(
+    azure_cluster = azure_query( node,
         """
     SELECT * from azureBlobStorageCluster(
         'simple_cluster', azure_conf2, container='cont', blob_path='test_cluster_with_named_collection.csv')
@@ -277,7 +258,7 @@ def test_partition_parallel_readig_withcluster(cluster):
     assert "3,2,1\n" == get_azure_file_content("test_tf_1.csv")
     assert "78,43,45\n" == get_azure_file_content("test_tf_45.csv")
 
-    azure_cluster = node.query(
+    azure_cluster = azure_query( node,
         """
     SELECT count(*) from azureBlobStorageCluster(
         'simple_cluster',
