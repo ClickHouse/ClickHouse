@@ -59,7 +59,7 @@ if [ "$BUILD_MUSL_KEEPER" == "1" ]
 then
     # build keeper with musl separately
     # and without rust bindings
-    cmake --debug-trycompile -DENABLE_RUST=OFF -DBUILD_STANDALONE_KEEPER=1 -DENABLE_CLICKHOUSE_KEEPER=1 -DCMAKE_VERBOSE_MAKEFILE=1 -DUSE_MUSL=1 -LA -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-x86_64-musl.cmake "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
+    cmake --debug-trycompile -DENABLE_RUST=OFF -DBUILD_STANDALONE_KEEPER=1 -DENABLE_CLICKHOUSE_KEEPER=1 -DCMAKE_VERBOSE_MAKEFILE=1 -DUSE_MUSL=1 -LA -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-x86_64-musl.cmake "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_BUILD_PROFILING=1 "${CMAKE_FLAGS[@]}" ..
     # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
     ninja $NINJA_FLAGS clickhouse-keeper
 
@@ -182,8 +182,8 @@ then
 fi
 
 # Prepare profile info (time-trace)
-mkdir -p /profile-tmp
-../utils/prepare-time-trace/prepare-time-trace.sh . /profile-tmp
-cat /profile-tmp/* > /profile/profile.json
+mkdir -p profile-tmp
+../utils/prepare-time-trace/prepare-time-trace.sh . profile-tmp
+cat profile-tmp/* > /profile/profile.json
 
 ls -l /output
