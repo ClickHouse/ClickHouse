@@ -72,7 +72,13 @@ namespace ZeroTraits
 {
 
 template <typename T>
-bool check(const T x) { return x == T{}; }
+bool check(const T & x) { return x == T{}; }
+
+template<>
+inline bool check<DB::AdaptiveKeysHolder>(const DB::AdaptiveKeysHolder & x)
+{
+    return !x.value_id && !x.serialized_keys.data;
+}
 
 template <typename T>
 void set(T & x) { x = T{}; }
@@ -485,7 +491,6 @@ protected:
             ++collisions;
 #endif
         }
-
         return place_value;
     }
 

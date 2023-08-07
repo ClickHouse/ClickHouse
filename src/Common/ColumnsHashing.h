@@ -6,6 +6,7 @@
 #include <Common/Arena.h>
 #include <Common/CacheBase.h>
 #include <Common/assert_cast.h>
+#include <Common/HashValueIdGenerator.h>
 #include <base/unaligned.h>
 
 #include <Columns/ColumnString.h>
@@ -40,7 +41,7 @@ struct HashMethodOneNumber
     const char * vec;
 
     /// If the keys of a fixed length then key_sizes contains their lengths, empty otherwise.
-    HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
+    HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, UInt64 id[[maybe_unused]]  = 0) : Base(key_columns[0])
     {
         if constexpr (nullable)
         {
@@ -100,7 +101,7 @@ struct HashMethodString
     const IColumn::Offset * offsets;
     const UInt8 * chars;
 
-    HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
+    HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, UInt64 id[[maybe_unused]]  = 0) : Base(key_columns[0])
     {
         const IColumn * column;
         if constexpr (nullable)
@@ -148,7 +149,7 @@ struct HashMethodFixedString
     size_t n;
     const ColumnFixedString::Chars * chars;
 
-    HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
+    HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, UInt64 id[[maybe_unused]]  = 0) : Base(key_columns[0])
     {
         const IColumn * column;
         if constexpr (nullable)
@@ -273,19 +274,19 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     {
         const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(column);
         if (!low_cardinality_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid aggregation key type for HashMethodSingleLowCardinalityColumn method. "
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid aggregation key type for HashMethodSingleLowCardinalityColumn method. "
                             "Excepted LowCardinality, got {}", column->getName());
         return *low_cardinality_column;
     }
 
     HashMethodSingleLowCardinalityColumn(
-        const ColumnRawPtrs & key_columns_low_cardinality, const Sizes & key_sizes, const HashMethodContextPtr & context)
+        const ColumnRawPtrs & key_columns_low_cardinality, const Sizes & key_sizes, const HashMethodContextPtr & context, UInt64 id[[maybe_unused]]  = 0)
         : Base({getLowCardinalityColumn(key_columns_low_cardinality[0]).getDictionary().getNestedNotNullableColumn().get()}, key_sizes, context)
     {
         const auto * column = &getLowCardinalityColumn(key_columns_low_cardinality[0]);
 
         if (!context)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache wasn't created for HashMethodSingleLowCardinalityColumn");
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cache wasn't created for HashMethodSingleLowCardinalityColumn");
 
         LowCardinalityDictionaryCache * lcd_cache;
         if constexpr (use_cache)
@@ -294,7 +295,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             if (!lcd_cache)
             {
                 const auto & cached_val = *context;
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid type for HashMethodSingleLowCardinalityColumn cache: {}",
+                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid type for HashMethodSingleLowCardinalityColumn cache: {}",
                                 demangle(typeid(cached_val).name()));
             }
         }
@@ -355,7 +356,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             case sizeof(UInt16): return assert_cast<const ColumnUInt16 *>(positions)->getElement(row);
             case sizeof(UInt32): return assert_cast<const ColumnUInt32 *>(positions)->getElement(row);
             case sizeof(UInt64): return assert_cast<const ColumnUInt64 *>(positions)->getElement(row);
-            default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
+            default: throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
         }
     }
 
@@ -542,7 +543,7 @@ struct HashMethodKeysFixed
         return true;
     }
 
-    HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &)
+    HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &, UInt64 id[[maybe_unused]]  = 0)
         : Base(key_columns), key_sizes(key_sizes_), keys_size(key_columns.size())
     {
         if constexpr (has_low_cardinality)
@@ -697,7 +698,7 @@ struct HashMethodSerialized
     ColumnRawPtrs key_columns;
     size_t keys_size;
 
-    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
+    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, UInt64 id[[maybe_unused]] = 0)
         : key_columns(key_columns_), keys_size(key_columns_.size()) {}
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
@@ -708,6 +709,137 @@ struct HashMethodSerialized
             serializeKeysToPoolContiguous(row, keys_size, key_columns, pool),
             pool};
     }
+};
+
+class AdaptiveHashMethodContext : public HashMethodContext
+{
+public:
+    struct HashValueIdGeneratorState
+    {
+        // shared_keys_holder_state is shared between all AdaptiveKeysHolder.
+        AdaptiveKeysHolder::State shared_keys_holder_state;
+
+        using HashValueIdGenerators = std::vector<std::unique_ptr<HashValueIdGenerator>>;
+        HashValueIdGenerators value_id_generators;
+    };
+    /// Each processor will have its own State.
+    std::mutex mutex;
+    std::unordered_map<UInt64, HashValueIdGeneratorState> value_id_generators;
+};
+
+template <typename Value, typename Mapped>
+struct HashMethodKeysAdaptive
+    : public columns_hashing_impl::HashMethodBase<HashMethodKeysAdaptive<Value, Mapped>, Value, Mapped, false>
+{
+    using Self = HashMethodKeysAdaptive<Value, Mapped>;
+    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
+
+    static constexpr bool has_cheap_key_calculation = false;
+    static constexpr size_t max_value_id_number = 65536;
+
+    ColumnRawPtrs key_columns;
+    size_t keys_size;
+    HashMethodContextPtr ctx;
+    AdaptiveHashMethodContext::HashValueIdGeneratorState * value_id_generators_state = nullptr;
+
+    struct ValueIdCache
+    {
+        StringRef serialized_keys;
+        ValueIdCache() = default;
+        ValueIdCache(const StringRef & serialized_keys_) : serialized_keys(serialized_keys_) { }
+    };
+
+    using ValueIdCacheMap = HashMap<UInt64, std::shared_ptr<ValueIdCache>>;
+    mutable ValueIdCacheMap value_id_cache;
+    std::vector<UInt64> value_ids;
+
+    HashMethodKeysAdaptive(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & ctx_, UInt64 variant_index)
+        : key_columns(key_columns_), keys_size(key_columns_.size()), ctx(ctx_)
+    {
+        if (!variant_index)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "variant_index is zero");
+        auto * adaptive_ctx = static_cast<DB::ColumnsHashing::AdaptiveHashMethodContext *>(ctx.get());
+        {
+            /// Find the corresponding HashValueIdGeneratorState.
+            std::lock_guard lock(adaptive_ctx->mutex);
+            auto it = adaptive_ctx->value_id_generators.find(variant_index);
+            if (it == adaptive_ctx->value_id_generators.end())
+            {
+                adaptive_ctx->value_id_generators[variant_index] = AdaptiveHashMethodContext::HashValueIdGeneratorState();
+                value_id_generators_state = &adaptive_ctx->value_id_generators[variant_index];
+                value_id_generators_state->shared_keys_holder_state.pool = std::make_shared<Arena>();
+            }
+            else
+            {
+                value_id_generators_state = &it->second;
+            }
+        }
+        if (value_id_generators_state->value_id_generators.empty())
+        {
+            for (size_t i = 0, n = key_columns.size(); i < n; ++i)
+            {
+                value_id_generators_state->value_id_generators.emplace_back(
+                    std::make_unique<HashValueIdGenerator>(&(value_id_generators_state->shared_keys_holder_state)));
+            }
+        }
+
+        if (value_id_cache.size() >= max_value_id_number)
+        {
+            value_id_generators_state->shared_keys_holder_state.hash_mode = AdaptiveKeysHolder::State::HASH;
+        }
+
+        if (value_id_generators_state->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
+        {
+            value_ids.resize(key_columns[0]->size(), 0);
+            for (size_t i = 0; i < keys_size; ++i)
+            {
+                value_id_generators_state->value_id_generators[i]->computeValueId(key_columns[i], value_ids);
+            }
+        }
+    }
+
+    friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
+
+    ALWAYS_INLINE AdaptiveKeysHolder getKeyHolder(size_t row, Arena & pool [[maybe_unused]]) const
+    {
+        if (value_id_generators_state->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
+        {
+            auto & value_id = value_ids[row];
+            StringRef serialized_keys;
+            auto cache_it = value_id_cache.find(value_id);
+            if (!cache_it) [[unlikely]]
+            {
+                serialized_keys
+                    = serializeKeysToPoolContiguous(row, keys_size, key_columns, *value_id_generators_state->shared_keys_holder_state.pool);
+                typename ValueIdCacheMap::LookupResult insert_result;
+                bool inserted = false;
+                value_id_cache.emplace(value_id, insert_result, inserted);
+                insert_result->getMapped() = std::make_shared<ValueIdCache>(serialized_keys);
+            }
+            else
+            {
+                const auto & mapped = cache_it->getMapped();
+                serialized_keys = mapped->serialized_keys;
+            }
+            if (!serialized_keys.data) [[unlikely]]
+            {
+                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "serialized_key.data is null");
+            }
+            return AdaptiveKeysHolder{value_id, serialized_keys, &value_id_generators_state->shared_keys_holder_state};
+        }
+        else
+        {
+            auto serialized_keys
+                = serializeKeysToPoolContiguous(row, keys_size, key_columns, *value_id_generators_state->shared_keys_holder_state.pool);
+            return AdaptiveKeysHolder{0, serialized_keys, &value_id_generators_state->shared_keys_holder_state};
+        }
+    }
+
+    static HashMethodContextPtr createContext(const HashMethodContext::Settings & settings[[maybe_unused]])
+    {
+        return std::make_shared<AdaptiveHashMethodContext>();
+    }
+
 };
 
 /// For the case when there is one string key.

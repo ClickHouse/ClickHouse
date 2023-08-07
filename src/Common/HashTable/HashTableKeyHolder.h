@@ -3,6 +3,8 @@
 #include <base/StringRef.h>
 
 #include <Common/Arena.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/Exception.h>
 
 /**
   * In some aggregation scenarios, when adding a key to the hash table, we
@@ -132,4 +134,85 @@ inline void ALWAYS_INLINE keyHolderDiscardKey(DB::SerializedKeyHolder & holder)
     holder.key.data = nullptr;
     holder.key.size = 0;
 }
+namespace DB
+{
+namespace ColumnsHashing
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+class HashMethodContext;
+}
+struct AdaptiveKeysHolder
+{
+    /// State is shared between all AdaptiveKeysHolder instances.
+    /// Different hash_mode will have different behavior
+    struct State
+    {
+        /// There are two modes.
+        /// - VALUE_ID. For low cardinality keys. We allocate unique value_ids for each grouping keys.
+        ///   This could avoid a lot of memory copying and is more efficient. This is mode is used
+        ///   at the first.
+        /// - HASH. It's like SerializedKeyHolder. After inserting some keys into the hash table, if
+        ///   we found that the hash table size is to large, we will switch to this mode.
+        enum HashMode
+        {
+            VALUE_ID = 0,
+            HASH,
+        };
+        HashMode hash_mode = VALUE_ID;
+        std::shared_ptr<Arena> pool;
+    };
 
+    /// be careful with all fields, their default value must be zero bits.
+    /// since hash table allocs cell buffer without calling cell constructor.
+    UInt64 value_id = 0;
+    StringRef serialized_keys;
+    State * state = nullptr;
+};
+}
+
+inline bool ALWAYS_INLINE operator==(const DB::AdaptiveKeysHolder &a, const DB::AdaptiveKeysHolder &b)
+{
+    if (a.state->hash_mode != b.state->hash_mode)
+    {
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "hash_mode is not equal");
+    }
+    /// a and b may come from different aggregate variants during the merging phase, in this case
+    /// we cannot compare the value_ids.
+    if (a.state->hash_mode == DB::AdaptiveKeysHolder::State::VALUE_ID && a.state == b.state)
+    {
+        return a.value_id == b.value_id;
+    }
+    return a.serialized_keys == b.serialized_keys;
+}
+
+inline DB::AdaptiveKeysHolder & ALWAYS_INLINE keyHolderGetKey(DB::AdaptiveKeysHolder & holder)
+{
+    return holder;
+}
+
+inline void ALWAYS_INLINE keyHolderPersistKey(DB::AdaptiveKeysHolder &)
+{
+}
+
+inline void ALWAYS_INLINE keyHolderDiscardKey(DB::AdaptiveKeysHolder & holder)
+{
+    if (holder.state->hash_mode != DB::AdaptiveKeysHolder::State::VALUE_ID)
+    {
+        [[maybe_unused]] void * new_head = holder.state->pool->rollback(holder.serialized_keys.size);
+        assert(new_head == holder.serialized_keys.data);
+        holder.serialized_keys.data = nullptr;
+        holder.serialized_keys.size = 0;
+    }
+}
+
+template<>
+struct DefaultHash<DB::AdaptiveKeysHolder>
+{
+    inline size_t operator()(const DB::AdaptiveKeysHolder & key) const
+    {
+        return ::DefaultHash<StringRef>()(key.serialized_keys);
+    }
+};

@@ -73,8 +73,8 @@ struct HashMapCell
 
     /// Get the key (externally).
     const Key & getKey() const { return value.first; }
-    Mapped & getMapped() { return value.second; }
-    const Mapped & getMapped() const { return value.second; }
+    ALWAYS_INLINE Mapped & getMapped() { return value.second; }
+    ALWAYS_INLINE const Mapped & getMapped() const { return value.second; }
     const value_type & getValue() const { return value; }
 
     /// Get the key (internally).

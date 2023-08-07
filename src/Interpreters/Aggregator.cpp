@@ -733,6 +733,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     types_removed_nullable.reserve(params.keys.size());
     bool has_nullable_key = false;
     bool has_low_cardinality = false;
+    bool is_all_number_or_string = true;
 
     for (const auto & key : params.keys)
     {
@@ -748,6 +749,11 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         {
             has_nullable_key = true;
             type = removeNullable(type);
+        }
+
+        if (!isColumnedAsNumber(*type) && !isStringOrFixedString(*type))
+        {
+            is_all_number_or_string = false;
         }
 
         types_removed_nullable.push_back(type);
@@ -833,7 +839,14 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         }
 
         /// Fallback case.
-        return AggregatedDataVariants::Type::serialized;
+        if (is_all_number_or_string && params.keys_size <= max_adaptive_aggregating_keys)
+        {
+            return AggregatedDataVariants::Type::adaptive;
+        }
+        else
+        {
+            return AggregatedDataVariants::Type::serialized;
+        }
     }
 
     /// No key has been found to be nullable.
@@ -915,7 +928,14 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
             return AggregatedDataVariants::Type::key_string;
     }
 
-    return AggregatedDataVariants::Type::serialized;
+    if (is_all_number_or_string && params.keys_size <= max_adaptive_aggregating_keys)
+    {
+        return AggregatedDataVariants::Type::adaptive;
+    }
+    else
+    {
+        return AggregatedDataVariants::Type::serialized;
+    }
 }
 
 template <bool skip_compiled_aggregate_functions>
@@ -3406,7 +3426,7 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
     const Block & source,
     std::vector<Block> & destinations) const
 {
-    typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+    typename Method::State state(key_columns, key_sizes, aggregation_state_cache, reinterpret_cast<UInt64>(&method));
 
     size_t rows = source.rows();
     size_t columns = source.columns();

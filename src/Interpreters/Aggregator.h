@@ -7,6 +7,7 @@
 
 
 #include <base/StringRef.h>
+#include <Common/ColumnsHashing.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
@@ -14,7 +15,6 @@
 #include <Common/HashTable/TwoLevelStringHashMap.h>
 
 #include <Common/ThreadPool.h>
-#include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
 #include <Core/ColumnNumbers.h>
@@ -44,6 +44,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
+    extern const int LOGICAL_ERROR;
 }
 
 class Arena;
@@ -80,6 +81,7 @@ using AggregatedDataWithUInt64Key = HashMap<UInt64, AggregateDataPtr, HashCRC32<
 using AggregatedDataWithShortStringKey = StringHashMap<AggregateDataPtr>;
 
 using AggregatedDataWithStringKey = HashMapWithSavedHash<StringRef, AggregateDataPtr>;
+using AggregateDataWithKeys = HashMapWithSavedHash<AdaptiveKeysHolder, AggregateDataPtr>;
 
 using AggregatedDataWithKeys128 = HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256 = HashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
@@ -90,6 +92,7 @@ using AggregatedDataWithUInt64KeyTwoLevel = TwoLevelHashMap<UInt64, AggregateDat
 using AggregatedDataWithShortStringKeyTwoLevel = TwoLevelStringHashMap<AggregateDataPtr>;
 
 using AggregatedDataWithStringKeyTwoLevel = TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr>;
+using AggregateDataWithKeysTwoLevel = TwoLevelHashMapWithSavedHash<AdaptiveKeysHolder, AggregateDataPtr>;
 
 using AggregatedDataWithKeys128TwoLevel = TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
@@ -598,6 +601,44 @@ struct AggregationMethodSerialized
     }
 };
 
+template<typename TData>
+struct AggregationMethodAdaptive
+{
+    using Data = TData;
+    using Key = typename Data::key_type;
+    using Mapped = typename Data::mapped_type;
+
+    Data data;
+    AggregationMethodAdaptive() = default;
+
+    explicit AggregationMethodAdaptive(size_t size_hint) : data(size_hint) { }
+
+    template <typename Other>
+    explicit AggregationMethodAdaptive(const Other & other) : data(other.data)
+    {
+    }
+
+    using State = ColumnsHashing::HashMethodKeysAdaptive<typename Data::value_type, Mapped>;
+
+    static const bool low_cardinality_optimization = false;
+    static const bool one_key_nullable_optimization = false;
+
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
+
+    static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    {
+        const auto & serialized_key = key.serialized_keys;
+        const auto * pos = serialized_key.data;
+        if (!pos) [[unlikely]]
+        {
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "AggregationMethodAdaptive. key is nullptr");
+            //return;
+        }
+        for (auto & column : key_columns)
+            pos = column->deserializeAndInsertFromArena(pos);
+    }
+
+};
 
 class Aggregator;
 
@@ -656,6 +697,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128>>                   keys128;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256>>                   keys256;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKey>>                serialized;
+    std::unique_ptr<AggregationMethodAdaptive<AggregateDataWithKeys>>                        adaptive;
 
     std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>> key32_two_level;
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>> key64_two_level;
@@ -666,6 +708,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel>>           keys128_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel>>           keys256_two_level;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel>>        serialized_two_level;
+    std::unique_ptr<AggregationMethodAdaptive<AggregateDataWithKeysTwoLevel>>                adaptive_two_level;
 
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyHash64>>   key64_hash64;
     std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKeyHash64>>              key_string_hash64;
@@ -724,6 +767,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys128,                    false) \
         M(keys256,                    false) \
         M(serialized,                 false) \
+        M(adaptive,                   false) \
         M(key32_two_level,            true) \
         M(key64_two_level,            true) \
         M(key_string_two_level,       true) \
@@ -733,6 +777,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys128_two_level,          true) \
         M(keys256_two_level,          true) \
         M(serialized_two_level,       true) \
+        M(adaptive_two_level,         true) \
         M(key64_hash64,               false) \
         M(key_string_hash64,          false) \
         M(key_fixed_string_hash64,    false) \
@@ -863,6 +908,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys128)          \
         M(keys256)          \
         M(serialized)       \
+        M(adaptive)         \
         M(nullable_key32) \
         M(nullable_key64) \
         M(nullable_key_string) \
@@ -925,6 +971,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys128_two_level)          \
         M(keys256_two_level)          \
         M(serialized_two_level)       \
+        M(adaptive_two_level)         \
         M(nullable_key32_two_level) \
         M(nullable_key64_two_level) \
         M(nullable_key_string_two_level) \
@@ -1305,6 +1352,9 @@ private:
 #endif
 
     std::vector<bool> is_aggregate_function_compiled;
+
+    // Limit the max keys of adaptive aggregation. Avoid overflow the value id range.
+    static constexpr auto max_adaptive_aggregating_keys = 8l;
 
     /** Try to compile aggregate functions.
       */
