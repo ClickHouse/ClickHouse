@@ -1112,6 +1112,11 @@ private:
         bool c0_const = isColumnConst(*c0);
         bool c1_const = isColumnConst(*c1);
 
+        /// This is a paranoid check to protect from a broken query analysis.
+        if (c0->isNullable() != c1->isNullable())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Logical error: columns are assumed to be of identical types, but they are different in Nullable");
+
         if (c0_const && c1_const)
         {
             UInt8 res = 0;
@@ -1178,15 +1183,9 @@ public:
             || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
             || (arguments[0]->equals(*arguments[1]))))
         {
-            try
-            {
-                getLeastSupertype(arguments);
-            }
-            catch (const Exception &)
-            {
+            if (!tryGetLeastSupertype(arguments))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
                     " of function {}", arguments[0]->getName(), arguments[1]->getName(), getName());
-            }
         }
 
         if (left_tuple && right_tuple)
@@ -1382,37 +1381,6 @@ public:
             return executeGeneric(col_with_type_and_name_left, col_with_type_and_name_right);
         }
     }
-
-#if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & types) const override
-    {
-        if (2 != types.size())
-            return false;
-
-        WhichDataType data_type_lhs(types[0]);
-        WhichDataType data_type_rhs(types[1]);
-
-        auto is_big_integer = [](WhichDataType type) { return type.isUInt64() || type.isInt64(); };
-
-        if ((is_big_integer(data_type_lhs) && data_type_rhs.isFloat())
-            || (is_big_integer(data_type_rhs) && data_type_lhs.isFloat())
-            || (data_type_lhs.isDate() && data_type_rhs.isDateTime())
-            || (data_type_rhs.isDate() && data_type_lhs.isDateTime()))
-            return false; /// TODO: implement (double, int_N where N > double's mantissa width)
-
-        return isCompilableType(types[0]) && isCompilableType(types[1]);
-    }
-
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
-    {
-        assert(2 == types.size() && 2 == values.size());
-
-        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        auto [x, y] = nativeCastToCommon(b, types[0], values[0], types[1], values[1]);
-        auto * result = CompileOp<Op>::compile(b, x, y, typeIsSigned(*types[0]) || typeIsSigned(*types[1]));
-        return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
-    }
-#endif
 };
 
 }

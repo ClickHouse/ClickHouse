@@ -46,6 +46,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/PRQL/ParserPRQLQuery.h>
 
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -72,11 +73,11 @@
 #include <iostream>
 #include <filesystem>
 #include <map>
+#include <memory>
 #include <unordered_map>
 
 #include "config_version.h"
 #include "config.h"
-
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -103,6 +104,7 @@ namespace ErrorCodes
     extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_OPEN_FILE;
+    extern const int FILE_ALREADY_EXISTS;
 }
 
 }
@@ -338,6 +340,8 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
 
     if (dialect == Dialect::kusto)
         parser = std::make_unique<ParserKQLStatement>(end, global_context->getSettings().allow_settings_after_format_in_insert);
+    else if (dialect == Dialect::prql)
+        parser = std::make_unique<ParserPRQLQuery>(max_length, settings.max_parser_depth);
     else
         parser = std::make_unique<ParserQuery>(end, global_context->getSettings().allow_settings_after_format_in_insert);
 
@@ -362,7 +366,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
         std::cout << std::endl;
         WriteBufferFromOStream res_buf(std::cout, 4096);
         formatAST(*res, res_buf);
-        res_buf.next();
+        res_buf.finalize();
         std::cout << std::endl << std::endl;
     }
 
@@ -568,30 +572,19 @@ try
                 CompressionMethod compression_method = chooseCompressionMethod(out_file, compression_method_string);
                 UInt64 compression_level = 3;
 
-                if (query_with_output->is_outfile_append && compression_method != CompressionMethod::None)
-                {
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot append to compressed file. Please use uncompressed file or remove APPEND keyword.");
-                }
-
                 if (query_with_output->compression_level)
                 {
                     const auto & compression_level_node = query_with_output->compression_level->as<ASTLiteral &>();
-                    bool res = compression_level_node.value.tryGet<UInt64>(compression_level);
-                    auto range = getCompressionLevelRange(compression_method);
-
-                    if (!res || compression_level < range.first || compression_level > range.second)
-                        throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS,
-                            "Invalid compression level, must be positive integer in range {}-{}",
-                            range.first,
-                            range.second);
+                    compression_level_node.value.tryGet<UInt64>(compression_level);
                 }
 
                 auto flags = O_WRONLY | O_EXCL;
-                if (query_with_output->is_outfile_append)
+
+                auto file_exists = fs::exists(out_file);
+                if (file_exists && query_with_output->is_outfile_append)
                     flags |= O_APPEND;
+                else if (file_exists && query_with_output->is_outfile_truncate)
+                    flags |= O_TRUNC;
                 else
                     flags |= O_CREAT;
 
@@ -872,6 +865,67 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
         }
     }
 
+    // Run some local checks to make sure queries into output file will work before sending to server.
+    if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
+    {
+        String out_file;
+        if (query_with_output->out_file)
+        {
+            const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
+            out_file = out_file_node.value.safeGet<std::string>();
+
+            std::string compression_method_string;
+
+            if (query_with_output->compression)
+            {
+                const auto & compression_method_node = query_with_output->compression->as<ASTLiteral &>();
+                compression_method_string = compression_method_node.value.safeGet<std::string>();
+            }
+
+            CompressionMethod compression_method = chooseCompressionMethod(out_file, compression_method_string);
+            UInt64 compression_level = 3;
+
+            if (query_with_output->is_outfile_append && query_with_output->is_outfile_truncate)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot use INTO OUTFILE with APPEND and TRUNCATE simultaneously.");
+            }
+
+            if (query_with_output->is_outfile_append && compression_method != CompressionMethod::None)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot append to compressed file. Please use uncompressed file or remove APPEND keyword.");
+            }
+
+            if (query_with_output->compression_level)
+            {
+                const auto & compression_level_node = query_with_output->compression_level->as<ASTLiteral &>();
+                bool res = compression_level_node.value.tryGet<UInt64>(compression_level);
+                auto range = getCompressionLevelRange(compression_method);
+
+                if (!res || compression_level < range.first || compression_level > range.second)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid compression level, must be positive integer in range {}-{}",
+                        range.first,
+                        range.second);
+            }
+
+            if (fs::exists(out_file))
+            {
+                if (!query_with_output->is_outfile_append && !query_with_output->is_outfile_truncate)
+                {
+                    throw Exception(
+                        ErrorCodes::FILE_ALREADY_EXISTS,
+                        "File {} exists, consider using APPEND or TRUNCATE.",
+                        out_file);
+                }
+            }
+        }
+    }
+
     const auto & settings = global_context->getSettingsRef();
     const Int32 signals_before_stop = settings.partial_result_on_first_cancel ? 2 : 1;
 
@@ -896,7 +950,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
             if (send_external_tables)
                 sendExternalTables(parsed_query);
-
             receiveResult(parsed_query, signals_before_stop, settings.partial_result_on_first_cancel);
 
             break;
@@ -1048,6 +1101,10 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
             onProfileEvents(packet.block);
             return true;
 
+        case Protocol::Server::TimezoneUpdate:
+            onTimezoneUpdate(packet.server_timezone);
+            return true;
+
         default:
             throw Exception(
                 ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}", packet.type, connection->getDescription());
@@ -1068,6 +1125,11 @@ void ClientBase::onProgress(const Progress & value)
 
     if (need_render_progress && tty_buf)
         progress_indication.writeProgress(*tty_buf);
+}
+
+void ClientBase::onTimezoneUpdate(const String & tz)
+{
+    global_context->setSetting("session_timezone", tz);
 }
 
 
@@ -1133,6 +1195,8 @@ void ClientBase::onProfileEvents(Block & block)
                 thread_times[host_name].system_ms = value;
             else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
                 thread_times[host_name].memory_usage = value;
+            else if (event_name == MemoryTracker::PEAK_USAGE_EVENT_NAME)
+                thread_times[host_name].peak_memory_usage = value;
         }
         progress_indication.updateThreadEventData(thread_times);
 
@@ -1165,10 +1229,19 @@ void ClientBase::onProfileEvents(Block & block)
 /// Flush all buffers.
 void ClientBase::resetOutput()
 {
+    /// Order is important: format, compression, file
+
     if (output_format)
         output_format->finalize();
     output_format.reset();
+
     logs_out_stream.reset();
+
+    if (out_file_buf)
+    {
+        out_file_buf->finalize();
+        out_file_buf.reset();
+    }
 
     if (pager_cmd)
     {
@@ -1177,15 +1250,9 @@ void ClientBase::resetOutput()
     }
     pager_cmd = nullptr;
 
-    if (out_file_buf)
-    {
-        out_file_buf->next();
-        out_file_buf.reset();
-    }
-
     if (out_logs_buf)
     {
-        out_logs_buf->next();
+        out_logs_buf->finalize();
         out_logs_buf.reset();
     }
 
@@ -1218,9 +1285,13 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
                 columns_description = ColumnsDescription::parse(packet.multistring_message[1]);
                 return receiveSampleBlock(out, columns_description, parsed_query);
 
+            case Protocol::Server::TimezoneUpdate:
+                onTimezoneUpdate(packet.server_timezone);
+                break;
+
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                    "Unexpected packet from server (expected Data, Exception or Log, got {})",
+                    "Unexpected packet from server (expected Data, Exception, Log or TimezoneUpdate, got {})",
                     String(Protocol::Server::toString(packet.type)));
         }
     }
@@ -1365,6 +1436,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             ConstraintsDescription{},
             String{},
             {},
+            String{},
         };
         StoragePtr storage = std::make_shared<StorageFile>(in_file, global_context->getUserFilesPath(), args);
         storage->startup();
@@ -1535,7 +1607,9 @@ void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
 {
     auto packet_type = connection->checkPacket(0);
 
-    while (packet_type && (*packet_type == Protocol::Server::Log || *packet_type == Protocol::Server::ProfileEvents))
+    while (packet_type && (*packet_type == Protocol::Server::Log
+            || *packet_type == Protocol::Server::ProfileEvents
+            || *packet_type == Protocol::Server::TimezoneUpdate))
     {
         receiveAndProcessPacket(parsed_query, false);
         packet_type = connection->checkPacket(0);
@@ -1570,6 +1644,10 @@ bool ClientBase::receiveEndOfQuery()
 
             case Protocol::Server::ProfileEvents:
                 onProfileEvents(packet.block);
+                break;
+
+            case Protocol::Server::TimezoneUpdate:
+                onTimezoneUpdate(packet.server_timezone);
                 break;
 
             default:
@@ -2228,21 +2306,36 @@ void ClientBase::runInteractive()
         catch (const ErrnoException & e)
         {
             if (e.getErrno() != EEXIST)
-                throw;
+            {
+                std::cerr << getCurrentExceptionMessage(false) << '\n';
+            }
         }
     }
 
     LineReader::Patterns query_extenders = {"\\"};
     LineReader::Patterns query_delimiters = {";", "\\G", "\\G;"};
+    char word_break_characters[] = " \t\v\f\a\b\r\n`~!@#$%^&*()-=+[{]}\\|;:'\",<.>/?";
 
 #if USE_REPLXX
     replxx::Replxx::highlighter_callback_t highlight_callback{};
     if (config().getBool("highlight", true))
         highlight_callback = highlight;
 
-    ReplxxLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters, highlight_callback);
+    ReplxxLineReader lr(
+        *suggest,
+        history_file,
+        config().has("multiline"),
+        query_extenders,
+        query_delimiters,
+        word_break_characters,
+        highlight_callback);
 #else
-    LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
+    LineReader lr(
+        history_file,
+        config().has("multiline"),
+        query_extenders,
+        query_delimiters,
+        word_break_characters);
 #endif
 
     static const std::initializer_list<std::pair<String, String>> backslash_aliases =
@@ -2545,9 +2638,8 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
         throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
     }
 
-    /// Check positional options (options after ' -- ', ex: clickhouse-client -- <options>).
-    unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
-    if (unrecognized_options.size() > 1)
+    /// Check positional options.
+    if (std::ranges::count_if(parsed.options, [](const auto & op){ return !op.unregistered && op.string_key.empty() && !op.original_tokens[0].starts_with("--"); }) > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional options are not supported.");
 
     po::store(parsed, options);

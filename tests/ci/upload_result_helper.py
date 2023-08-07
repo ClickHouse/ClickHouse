@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 import os
 import logging
 
@@ -58,14 +58,19 @@ def upload_results(
     test_results: TestResults,
     additional_files: List[str],
     check_name: str,
+    additional_urls: Optional[List[str]] = None,
 ) -> str:
     normalized_check_name = check_name.lower()
     for r in ((" ", "_"), ("(", "_"), (")", "_"), (",", "_"), ("/", "_")):
         normalized_check_name = normalized_check_name.replace(*r)
+
+    # Preserve additional_urls to not modify the original one
+    original_additional_urls = additional_urls or []
     s3_path_prefix = f"{pr_number}/{commit_sha}/{normalized_check_name}"
     additional_urls = process_logs(
         s3_client, additional_files, s3_path_prefix, test_results
     )
+    additional_urls.extend(original_additional_urls)
 
     branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commits/master"
     branch_name = "master"

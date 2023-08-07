@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/postgresql
-sidebar_position: 11
+sidebar_position: 160
 sidebar_label: PostgreSQL
 ---
 

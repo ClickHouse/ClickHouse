@@ -6,7 +6,7 @@ SET insert_keeper_fault_injection_probability=0; -- disable fault injection; par
 drop table if exists rmt sync;
 -- cleanup code will perform extra Exists
 -- (so the .reference will not match)
-create table rmt (n int) engine=ReplicatedMergeTree('/test/01158/{database}/rmt', '1') order by n settings cleanup_delay_period=86400, replicated_can_become_leader=0;
+create table rmt (n int) engine=ReplicatedMergeTree('/test/01158/{database}/rmt', '1') order by n settings cleanup_delay_period=86400, max_cleanup_delay_period=86400, replicated_can_become_leader=0;
 system sync replica rmt;
 insert into rmt values (1);
 insert into rmt values (1);

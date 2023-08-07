@@ -848,6 +848,9 @@ ASTs QueryFuzzer::getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query)
 
 void QueryFuzzer::notifyQueryFailed(ASTPtr ast)
 {
+    if (ast == nullptr)
+        return;
+
     auto remove_fuzzed_table = [this](const auto & table_name)
     {
         auto pos = table_name.find("__fuzz_");
@@ -1244,7 +1247,7 @@ void QueryFuzzer::fuzzMain(ASTPtr & ast)
     std::cout << std::endl;
     WriteBufferFromOStream ast_buf(std::cout, 4096);
     formatAST(*ast, ast_buf, false /*highlight*/);
-    ast_buf.next();
+    ast_buf.finalize();
     std::cout << std::endl << std::endl;
 }
 

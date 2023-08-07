@@ -240,7 +240,7 @@ kill -TERM $PID_1
 kill -TERM $PID_2
 wait ||:
 
-wait_for_queries_to_finish
+wait_for_queries_to_finish 40
 
 $CLICKHOUSE_CLIENT -q "SELECT type, count(n) = countDistinct(n) FROM merge(currentDatabase(), '') GROUP BY type ORDER BY type"
 $CLICKHOUSE_CLIENT -q "SELECT DISTINCT arraySort(groupArrayIf(n, type=1)) = arraySort(groupArrayIf(n, type=2)) FROM merge(currentDatabase(), '') GROUP BY _table ORDER BY _table"

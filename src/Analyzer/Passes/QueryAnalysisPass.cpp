@@ -2383,7 +2383,6 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveTableIdentifierFromDatabaseCatalog(con
 
     auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
     auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
-
     auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
     if (is_temporary_table)
         result->setTemporaryTableName(table_name);
@@ -4900,7 +4899,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (!parameters.empty())
             {
-                throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", function_node.formatASTForErrorMessage());
+                throw Exception(
+                    ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", function_node.formatASTForErrorMessage());
             }
 
             auto lambda_expression_clone = lambda_expression_untyped->clone();
@@ -5019,12 +5019,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters);
-    bool is_executable_udf = false;
+    bool is_executable_udf = true;
 
     if (!function)
+    {
         function = FunctionFactory::instance().tryGet(function_name, scope.context);
-    else
-        is_executable_udf = true;
+        is_executable_udf = false;
+    }
 
     if (!function)
     {
@@ -5210,14 +5211,26 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             const auto & second_argument_constant_literal = second_argument_constant_node->getValue();
             const auto & second_argument_constant_type = second_argument_constant_node->getResultType();
 
-            auto set = makeSetForConstantValue(first_argument_constant_type,
+            const auto & settings = scope.context->getSettingsRef();
+
+            auto result_block = getSetElementsForConstantValue(first_argument_constant_type,
                 second_argument_constant_literal,
                 second_argument_constant_type,
-                scope.context->getSettingsRef());
+                settings.transform_null_in);
+
+            SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
+
+            auto set = std::make_shared<Set>(size_limits_for_set, 0, settings.transform_null_in);
+
+            set->setHeader(result_block.cloneEmpty().getColumnsWithTypeAndName());
+            set->insertFromBlock(result_block.getColumnsWithTypeAndName());
+            set->finishInsert();
+
+            auto future_set = std::make_shared<FutureSetFromStorage>(std::move(set));
 
             /// Create constant set column for constant folding
 
-            auto column_set = ColumnSet::create(1, FutureSet(std::move(set)));
+            auto column_set = ColumnSet::create(1, std::move(future_set));
             argument_columns[1].column = ColumnConst::create(std::move(column_set), 1);
         }
 
@@ -6227,7 +6240,11 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         const auto & insertion_table = scope_context->getInsertionTable();
         if (!insertion_table.empty())
         {
-            const auto & insert_structure = DatabaseCatalog::instance().getTable(insertion_table, scope_context)->getInMemoryMetadataPtr()->getColumns();
+            const auto & insert_structure = DatabaseCatalog::instance()
+                                                .getTable(insertion_table, scope_context)
+                                                ->getInMemoryMetadataPtr()
+                                                ->getColumns()
+                                                .getInsertable();
             DB::ColumnsDescription structure_hint;
 
             bool use_columns_from_insert_query = true;
@@ -6434,7 +6451,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     table_function_ptr->parseArguments(table_function_ast, scope_context);
 
     auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr);
-    table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context);
+    table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
 }
 
 /// Resolve array join node in scope
@@ -6477,55 +6494,69 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
 
         resolveExpressionNode(array_join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-        auto result_type = array_join_expression->getResultType();
-        bool is_array_type = isArray(result_type);
-        bool is_map_type = isMap(result_type);
-
-        if (!is_array_type && !is_map_type)
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "ARRAY JOIN {} requires expression {} with Array or Map type. Actual {}. In scope {}",
-                array_join_node_typed.formatASTForErrorMessage(),
-                array_join_expression->formatASTForErrorMessage(),
-                result_type->getName(),
-                scope.scope_node->formatASTForErrorMessage());
-
-        if (is_map_type)
-            result_type = assert_cast<const DataTypeMap &>(*result_type).getNestedType();
-
-        result_type = assert_cast<const DataTypeArray &>(*result_type).getNestedType();
-
-        String array_join_column_name;
-
-        if (!array_join_expression_alias.empty())
+        auto process_array_join_expression = [&](QueryTreeNodePtr & expression)
         {
-            array_join_column_name = array_join_expression_alias;
-        }
-        else if (auto * array_join_expression_inner_column = array_join_expression->as<ColumnNode>())
+            auto result_type = expression->getResultType();
+            bool is_array_type = isArray(result_type);
+            bool is_map_type = isMap(result_type);
+
+            if (!is_array_type && !is_map_type)
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "ARRAY JOIN {} requires expression {} with Array or Map type. Actual {}. In scope {}",
+                    array_join_node_typed.formatASTForErrorMessage(),
+                    expression->formatASTForErrorMessage(),
+                    result_type->getName(),
+                    scope.scope_node->formatASTForErrorMessage());
+
+            if (is_map_type)
+                result_type = assert_cast<const DataTypeMap &>(*result_type).getNestedType();
+
+            result_type = assert_cast<const DataTypeArray &>(*result_type).getNestedType();
+
+            String array_join_column_name;
+
+            if (!array_join_expression_alias.empty())
+            {
+                array_join_column_name = array_join_expression_alias;
+            }
+            else if (auto * array_join_expression_inner_column = array_join_expression->as<ColumnNode>())
+            {
+                array_join_column_name = array_join_expression_inner_column->getColumnName();
+            }
+            else if (!identifier_full_name.empty())
+            {
+                array_join_column_name = identifier_full_name;
+            }
+            else
+            {
+                array_join_column_name = "__array_join_expression_" + std::to_string(array_join_expressions_counter);
+                ++array_join_expressions_counter;
+            }
+
+            if (array_join_column_names.contains(array_join_column_name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ARRAY JOIN {} multiple columns with name {}. In scope {}",
+                    array_join_node_typed.formatASTForErrorMessage(),
+                    array_join_column_name,
+                    scope.scope_node->formatASTForErrorMessage());
+            array_join_column_names.emplace(array_join_column_name);
+
+            NameAndTypePair array_join_column(array_join_column_name, result_type);
+            auto array_join_column_node = std::make_shared<ColumnNode>(std::move(array_join_column), expression, array_join_node);
+            array_join_column_node->setAlias(array_join_expression_alias);
+            array_join_column_expressions.push_back(std::move(array_join_column_node));
+        };
+
+        // Support ARRAY JOIN COLUMNS(...). COLUMNS transformer is resolved to list of columns.
+        if (auto * columns_list = array_join_expression->as<ListNode>())
         {
-            array_join_column_name = array_join_expression_inner_column->getColumnName();
-        }
-        else if (!identifier_full_name.empty())
-        {
-            array_join_column_name = identifier_full_name;
+            for (auto & array_join_subexpression : columns_list->getNodes())
+                process_array_join_expression(array_join_subexpression);
         }
         else
         {
-            array_join_column_name = "__array_join_expression_" + std::to_string(array_join_expressions_counter);
-            ++array_join_expressions_counter;
+            process_array_join_expression(array_join_expression);
         }
-
-        if (array_join_column_names.contains(array_join_column_name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "ARRAY JOIN {} multiple columns with name {}. In scope {}",
-                array_join_node_typed.formatASTForErrorMessage(),
-                array_join_column_name,
-                scope.scope_node->formatASTForErrorMessage());
-        array_join_column_names.emplace(array_join_column_name);
-
-        NameAndTypePair array_join_column(array_join_column_name, result_type);
-        auto array_join_column_node = std::make_shared<ColumnNode>(std::move(array_join_column), array_join_expression, array_join_node);
-        array_join_column_node->setAlias(array_join_expression_alias);
-        array_join_column_expressions.push_back(std::move(array_join_column_node));
     }
 
     /** Allow to resolve ARRAY JOIN columns from aliases with types after ARRAY JOIN only after ARRAY JOIN expression list is resolved, because
@@ -6537,11 +6568,9 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
       * And it is expected that `value_element` inside projection expression list will be resolved as `value_element` expression
       * with type after ARRAY JOIN.
       */
-    for (size_t i = 0; i < array_join_nodes_size; ++i)
+    array_join_nodes = std::move(array_join_column_expressions);
+    for (auto & array_join_column_expression : array_join_nodes)
     {
-        auto & array_join_column_expression = array_join_nodes[i];
-        array_join_column_expression = std::move(array_join_column_expressions[i]);
-
         auto it = scope.alias_name_to_expression_node.find(array_join_column_expression->getAlias());
         if (it != scope.alias_name_to_expression_node.end())
         {
@@ -6858,13 +6887,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 scope.scope_node->formatASTForErrorMessage());
     }
 
-    std::erase_if(with_nodes, [](const QueryTreeNodePtr & node)
-    {
-        auto * subquery_node = node->as<QueryNode>();
-        auto * union_node = node->as<UnionNode>();
-
-        return (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
-    });
+    /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions
+      * and CTE for other sections to use.
+      *
+      * Example: WITH 1 AS constant, (x -> x + 1) AS lambda, a AS (SELECT * FROM test_table);
+      */
+    query_node_typed.getWith().getNodes().clear();
 
     for (auto & window_node : query_node_typed.getWindow().getNodes())
     {
@@ -6922,9 +6950,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 "Empty list of columns in projection. In scope {}",
                 scope.scope_node->formatASTForErrorMessage());
     }
-
-    if (query_node_typed.hasWith())
-        resolveExpressionNodeList(query_node_typed.getWithNode(), scope, true /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     if (query_node_typed.getPrewhere())
         resolveExpressionNode(query_node_typed.getPrewhere(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -7093,13 +7118,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 column.type->getName(),
                 scope.scope_node->formatASTForErrorMessage());
     }
-
-    /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions
-      * and CTE for other sections to use.
-      *
-      * Example: WITH 1 AS constant, (x -> x + 1) AS lambda, a AS (SELECT * FROM test_table);
-      */
-    query_node_typed.getWith().getNodes().clear();
 
     /** WINDOW section can be safely removed, because WINDOW section can only provide window definition to window functions.
       *

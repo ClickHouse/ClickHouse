@@ -147,7 +147,7 @@ StorageSet::StorageSet(
     const String & comment,
     bool persistent_)
     : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
-    , set(std::make_shared<Set>(SizeLimits(), false, true))
+    , set(std::make_shared<Set>(SizeLimits(), 0, true))
 {
     Block header = getInMemoryMetadataPtr()->getSampleBlock();
     set->setHeader(header.getColumnsWithTypeAndName());
@@ -176,7 +176,7 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
     Block header = metadata_snapshot->getSampleBlock();
 
     increment = 0;
-    set = std::make_shared<Set>(SizeLimits(), false, true);
+    set = std::make_shared<Set>(SizeLimits(), 0, true);
     set->setHeader(header.getColumnsWithTypeAndName());
 }
 

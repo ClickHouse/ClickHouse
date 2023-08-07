@@ -439,7 +439,7 @@ void ColumnSparse::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                     PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                     int direction, int nan_direction_hint) const
 {
-    if (row_indexes)
+    if (row_indexes || !typeid_cast<const ColumnSparse *>(&rhs))
     {
         /// TODO: implement without conversion to full column.
         auto this_full = convertToFullColumnIfSparse();
@@ -751,13 +751,13 @@ bool ColumnSparse::structureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnSparse::forEachSubcolumn(ColumnCallback callback) const
+void ColumnSparse::forEachSubcolumn(MutableColumnCallback callback)
 {
     callback(values);
     callback(offsets);
 }
 
-void ColumnSparse::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+void ColumnSparse::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
 {
     callback(*values);
     values->forEachSubcolumnRecursively(callback);
