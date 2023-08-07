@@ -4,7 +4,9 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 nodes = [
-    cluster.add_instance(f"n{i}", main_configs=["configs/remote_servers.xml"], with_zookeeper=True)
+    cluster.add_instance(
+        f"n{i}", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
+    )
     for i in (1, 2, 3, 4)
 ]
 
@@ -69,11 +71,26 @@ def create_tables(cluster, table_name):
     )
 
     # populate data
-    nodes[0].query(f"INSERT INTO {table_name}_d SELECT number, number FROM numbers(1000)", settings={"insert_distributed_sync": 1})
-    nodes[0].query(f"INSERT INTO {table_name}_d SELECT number, number FROM numbers(2000)", settings={"insert_distributed_sync": 1})
-    nodes[0].query(f"INSERT INTO {table_name}_d SELECT -number, -number FROM numbers(1000)", settings={"insert_distributed_sync": 1})
-    nodes[0].query(f"INSERT INTO {table_name}_d SELECT -number, -number FROM numbers(2000)", settings={"insert_distributed_sync": 1})
-    nodes[0].query(f"INSERT INTO {table_name}_d SELECT number, number FROM numbers(1)", settings={"insert_distributed_sync": 1})
+    nodes[0].query(
+        f"INSERT INTO {table_name}_d SELECT number, number FROM numbers(1000)",
+        settings={"insert_distributed_sync": 1},
+    )
+    nodes[0].query(
+        f"INSERT INTO {table_name}_d SELECT number, number FROM numbers(2000)",
+        settings={"insert_distributed_sync": 1},
+    )
+    nodes[0].query(
+        f"INSERT INTO {table_name}_d SELECT -number, -number FROM numbers(1000)",
+        settings={"insert_distributed_sync": 1},
+    )
+    nodes[0].query(
+        f"INSERT INTO {table_name}_d SELECT -number, -number FROM numbers(2000)",
+        settings={"insert_distributed_sync": 1},
+    )
+    nodes[0].query(
+        f"INSERT INTO {table_name}_d SELECT number, number FROM numbers(1)",
+        settings={"insert_distributed_sync": 1},
+    )
 
 
 @pytest.mark.parametrize(
@@ -89,9 +106,7 @@ def test_parallel_replicas_over_distributed(start_cluster, cluster):
 
     # w/o parallel replicas
     assert (
-        node.query(
-            f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d"
-        )
+        node.query(f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d")
         == expected_result
     )
 
