@@ -126,6 +126,21 @@ void CreateCommand::execute(const ASTKeeperQuery * query, KeeperClient * client)
         static_cast<int>(query->args[2].safeGet<Int64>()));
 }
 
+bool TouchCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+{
+    String arg;
+    if (!parseKeeperPath(pos, expected, arg))
+        return false;
+    node->args.push_back(std::move(arg));
+
+    return true;
+}
+
+void TouchCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+{
+    client->zookeeper->createIfNotExists(client->getAbsolutePath(query->args[0].safeGet<String>()), "");
+}
+
 bool GetCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String arg;
@@ -215,12 +230,12 @@ void FindSuperNodes::execute(const ASTKeeperQuery * query, KeeperClient * client
     }
 }
 
-bool DeleteStableBackups::parse(IParser::Pos & /* pos */, std::shared_ptr<ASTKeeperQuery> & /* node */, Expected & /* expected */) const
+bool DeleteStaleBackups::parse(IParser::Pos & /* pos */, std::shared_ptr<ASTKeeperQuery> & /* node */, Expected & /* expected */) const
 {
     return true;
 }
 
-void DeleteStableBackups::execute(const ASTKeeperQuery * /* query */, KeeperClient * client) const
+void DeleteStaleBackups::execute(const ASTKeeperQuery * /* query */, KeeperClient * client) const
 {
     client->askConfirmation(
         "You are going to delete all inactive backups in /clickhouse/backups.",
