@@ -45,7 +45,8 @@ def test_system_logs(flush_logs, table, exists):
     if exists:
         node.query(q)
     else:
-        assert "Table {} doesn't exist".format(table) in node.query_and_get_error(q)
+        response = node.query_and_get_error(q)
+        assert "Table {} doesn't exist".format(table) in response or "Unknown table expression identifier '{}'".format(table) in response
 
 
 # Logic is tricky, let's check that there is no hang in case of message queue
