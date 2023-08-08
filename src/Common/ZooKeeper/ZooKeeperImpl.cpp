@@ -313,8 +313,8 @@ ZooKeeper::~ZooKeeper()
 ZooKeeper::ZooKeeper(
     const Nodes & nodes,
     const zkutil::ZooKeeperArgs & args_,
-    std::shared_ptr<ZooKeeperLog> zk_log_)
-    : args(args_)
+    std::shared_ptr<ZooKeeperLog> zk_log_, std::optional<ConnectedCallback> && connected_callback_)
+    : args(args_), connected_callback(std::move(connected_callback_))
 {
     log = &Poco::Logger::get("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
@@ -395,8 +395,9 @@ void ZooKeeper::connect(
     WriteBufferFromOwnString fail_reasons;
     for (size_t try_no = 0; try_no < num_tries; ++try_no)
     {
-        for (const auto & node : nodes)
+        for (size_t i = 0; i < nodes.size(); ++i)
         {
+            const auto & node = nodes[i];
             try
             {
                 /// Reset the state of previous attempt.
@@ -443,9 +444,25 @@ void ZooKeeper::connect(
                     e.addMessage("while receiving handshake from ZooKeeper");
                     throw;
                 }
-
                 connected = true;
-                connected_zk_address = node.address;
+
+                if (connected_callback.has_value())
+                    (*connected_callback)(i, node);
+
+                if (i != 0)
+                {
+                    std::uniform_int_distribution<UInt32> fallback_session_lifetime_distribution
+                    {
+                        args.fallback_session_lifetime.min_sec,
+                        args.fallback_session_lifetime.max_sec,
+                    };
+                    UInt32 session_lifetime_seconds = fallback_session_lifetime_distribution(thread_local_rng);
+                    client_session_deadline = clock::now() + std::chrono::seconds(session_lifetime_seconds);
+
+                    LOG_DEBUG(log, "Connected to a suboptimal ZooKeeper host ({}, index {})."
+                    " To preserve balance in ZooKeeper usage, this ZooKeeper session will expire in {} seconds",
+                    node.address.toString(), i, session_lifetime_seconds);
+                }
 
                 break;
             }
@@ -462,7 +479,6 @@ void ZooKeeper::connect(
     if (!connected)
     {
         WriteBufferFromOwnString message;
-        connected_zk_address = Poco::Net::SocketAddress();
 
         message << "All connection tries failed while connecting to ZooKeeper. nodes: ";
         bool first = true;
@@ -1060,6 +1076,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 {
     try
     {
+        checkSessionDeadline();
         info.time = clock::now();
         if (zk_log)
         {
@@ -1480,6 +1497,17 @@ void ZooKeeper::setupFaultDistributions()
         recv_inject_sleep.emplace(args.recv_sleep_probability);
     }
     inject_setup.test_and_set();
+}
+
+void ZooKeeper::checkSessionDeadline() const
+{
+    if (unlikely(hasReachedDeadline()))
+        throw Exception(Error::ZSESSIONEXPIRED, "Session expired (force expiry client-side)");
+}
+
+bool ZooKeeper::hasReachedDeadline() const
+{
+    return client_session_deadline.has_value() && clock::now() >= client_session_deadline.value();
 }
 
 void ZooKeeper::maybeInjectSendFault()
