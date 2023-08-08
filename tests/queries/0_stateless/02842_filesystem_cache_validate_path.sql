@@ -17,7 +17,7 @@ ENGINE = MergeTree()
 ORDER BY tuple()
 SETTINGS disk = disk(type = cache,
                      max_size = '1Mi',
-                     path = '/filesystem_caches/../kek',
+                     path = '/var/lib/clickhouse/filesystem_caches/../kek',
                      disk = 'local_disk'); -- {serverError BAD_ARGUMENTS}
 
 CREATE TABLE test (a Int32)
@@ -33,7 +33,7 @@ ENGINE = MergeTree()
 ORDER BY tuple()
 SETTINGS disk = disk(type = cache,
                      max_size = '1Mi',
-                     path = '/filesystem_caches/kek',
+                     path = '/var/lib/clickhouse/filesystem_caches/kek',
                      disk = 'local_disk');
 
 CREATE TABLE test_2 (a Int32)
