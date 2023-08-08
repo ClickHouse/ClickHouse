@@ -748,8 +748,9 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 // just recalculate ttl_infos without remove expired data
                 auto all_columns_vec = all_columns.getNames();
-                auto new_dependencies = metadata_snapshot->getColumnDependencies(
-                    NameSet(all_columns_vec.begin(), all_columns_vec.end()), false, has_dependency);
+                auto all_columns_set = NameSet(all_columns_vec.begin(), all_columns_vec.end());
+                auto new_dependencies = metadata_snapshot->getColumnDependencies(all_columns_set, false, has_dependency);
+
                 for (const auto & dependency : new_dependencies)
                 {
                     if (dependency.kind == ColumnDependency::TTL_EXPRESSION)
@@ -774,8 +775,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 auto all_columns_vec = all_columns.getNames();
-                auto all_dependencies = getAllColumnDependencies(
-                    metadata_snapshot, NameSet(all_columns_vec.begin(), all_columns_vec.end()), has_dependency);
+                auto all_columns_set = NameSet(all_columns_vec.begin(), all_columns_vec.end());
+                auto all_dependencies = getAllColumnDependencies(metadata_snapshot, all_columns_set, has_dependency);
 
                 for (const auto & dependency : all_dependencies)
                 {
