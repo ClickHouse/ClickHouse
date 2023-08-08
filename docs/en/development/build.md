@@ -85,16 +85,16 @@ git clone --recursive --shallow-submodules https://github.com/ClickHouse/ClickHo
 
 ### Build ClickHouse {#build-clickhouse}
 
-:::tip
-By default, `cmake` will use only one thread, while `ninja` will automatically detect and use the appropriate number of threads for the current system. You can tweak `cmake` to use a specific number of threads with `-j` flag, for example, `cmake --build build -j 16`. Alternatively, you can generate build files with a specific number of jobs in advance to avoid setting the flag all the time: `cmake -DPARALLEL_COMPILE_JOBS=16 -S . -B build`, where `16` is the desired number of threads.
-:::
-
 ``` bash
 cd ClickHouse
 mkdir build
 cmake -S . -B build
 cmake --build build  # or: `cd build; ninja`
 ```
+
+:::tip
+In case `cmake` isn't able to detect the number of available logical cores, the build will be done by one thread. To overcome this, you can tweak `cmake` to use a specific number of threads with `-j` flag, for example, `cmake --build build -j 16`. Alternatively, you can generate build files with a specific number of jobs in advance to avoid always setting the flag: `cmake -DPARALLEL_COMPILE_JOBS=16 -S . -B build`, where `16` is the desired number of threads.
+:::
 
 To create an executable, run `cmake --build build --target clickhouse` (or: `cd build; ninja clickhouse`).
 This will create an executable `build/programs/clickhouse`, which can be used with `client` or `server` arguments.
