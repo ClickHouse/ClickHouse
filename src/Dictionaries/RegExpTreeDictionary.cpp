@@ -346,7 +346,7 @@ void RegExpTreeDictionary::loadData()
             ids[i] = static_cast<unsigned>(i+1);
 
         hs_error_t err = hs_compile_lit_multi(patterns.data(), flags.data(), ids.get(), lengths.data(), static_cast<unsigned>(patterns.size()), HS_MODE_BLOCK, nullptr, &db, &compile_error);
-        origin_db = (db);
+        origin_db.reset(db);
         if (err != HS_SUCCESS)
         {
             /// CompilerError is a unique_ptr, so correct memory free after the exception is thrown.
@@ -658,7 +658,7 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
             };
 
             hs_error_t err = hs_scan(
-                origin_db,
+                origin_db.get(),
                 reinterpret_cast<const char *>(keys_data.data()) + offset,
                 static_cast<unsigned>(length),
                 0,
