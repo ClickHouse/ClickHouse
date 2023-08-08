@@ -620,24 +620,6 @@ void optimizeTypeIds(const DataTypes & types, TypeIndexSet & type_ids)
         }
     };
 
-    auto maximize = [](size_t & what, size_t value, bool & only_unsigned, bool & only_signed, bool & both)
-    {
-        if (value > what)
-        {
-            what = value;
-            only_unsigned = false;
-            only_signed = false;
-            both = false;
-            return true;
-        }else if (value == what)
-        {
-            return true;
-        }
-
-        return false;
-    };
-
-    size_t max_bits_of_integer = 0;
     bool only_unsigned = false;
     bool only_signed = false;
     bool both = false;
@@ -652,41 +634,28 @@ void optimizeTypeIds(const DataTypes & types, TypeIndexSet & type_ids)
     for (const auto & type : types)
     {
         TypeIndex type_id = type->getTypeId();
-        bool is_max_bits = false;
-        if (type_id == TypeIndex::UInt8 || type_id == TypeIndex::Int8)
-            is_max_bits = maximize(max_bits_of_integer, 8, only_unsigned, only_signed, both);
-        else if (type_id == TypeIndex::UInt16 || type_id == TypeIndex::Int16)
-            is_max_bits = maximize(max_bits_of_integer, 16, only_unsigned, only_signed, both);
-        else if (type_id == TypeIndex::UInt32 || type_id == TypeIndex::Int32)
-            is_max_bits = maximize(max_bits_of_integer, 32, only_unsigned, only_signed, both);
-        else if (type_id == TypeIndex::UInt64 || type_id == TypeIndex::Int64)
-            is_max_bits = maximize(max_bits_of_integer, 64, only_unsigned, only_signed, both);
-
-        if (is_max_bits)
+        bool type_is_unsigned = is_unsigned(type_id);
+        bool type_is_both = false;
+        for (const auto & possible_type : type->getPossiblePtr())
         {
-            bool type_is_unsigned = is_unsigned(type_id);
-            bool type_is_both = false;
-            for (const auto & possible_type : type->getPossiblePtr())
+            if (type_is_unsigned != is_unsigned(possible_type->getTypeId()))
             {
-                if (type_is_unsigned != is_unsigned(possible_type->getTypeId()))
-                {
-                    type_is_both = true;
-                    break;
-                }
+                type_is_both = true;
+                break;
             }
-
-            if (type_is_unsigned)
-                has_unsigned = true;
-            else
-                has_signed = true;
-
-            if (type_is_both)
-                both = true;
-            else if (type_is_unsigned)
-                only_unsigned = true;
-            else
-                only_signed = true;
         }
+
+        if (type_is_unsigned)
+            has_unsigned = true;
+        else
+            has_signed = true;
+
+        if (type_is_both)
+            both = true;
+        else if (type_is_unsigned)
+            only_unsigned = true;
+        else
+            only_signed = true;
     }
 
     auto optimize_type_id = [&is_unsigned](const DataTypePtr & type, bool try_change_unsigned)
