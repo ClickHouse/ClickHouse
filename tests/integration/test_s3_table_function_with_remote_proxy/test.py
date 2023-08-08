@@ -48,7 +48,7 @@ def check_proxy_logs(cluster, proxy_instance, http_methods={"POST", "PUT", "GET"
         for http_method in http_methods:
             if logs.find(http_method + " http://minio1") >= 0:
                 return
-            time.sleep(1)
+            time.sleep(i)
         else:
             assert False, "http method not found in logs"
 

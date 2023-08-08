@@ -167,7 +167,7 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
         std::vector<String> config_keys;
         configuration.keys(proxy_prefix, config_keys);
 
-        if (auto resolver_configs = std::count(config_keys.begin(), config_keys.end(), "resolver"))
+        if (auto resolver_configs = std::count_if(config_keys.begin(), config_keys.end(), [](const std::string & k) { return startsWith(k, "resolver"); }))
         {
             if (resolver_configs > 2)
             {
