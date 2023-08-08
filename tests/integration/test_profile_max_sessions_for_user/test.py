@@ -8,6 +8,8 @@ import sys
 import threading
 
 from helpers.cluster import ClickHouseCluster, run_and_check
+from helpers.test_tools import assert_logs_contain_with_retry
+
 
 MAX_SESSIONS_FOR_USER = 2
 POSTGRES_SERVER_PORT = 5433
@@ -25,10 +27,7 @@ proto_dir = os.path.join(SCRIPT_DIR, "./protos")
 gen_dir = os.path.join(SCRIPT_DIR, "./_gen")
 os.makedirs(gen_dir, exist_ok=True)
 run_and_check(
-    "python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} \
-    {proto_dir}/clickhouse_grpc.proto".format(
-        proto_dir=proto_dir, gen_dir=gen_dir
-    ),
+    f"python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} {proto_dir}/clickhouse_grpc.proto",
     shell=True,
 )
 
@@ -49,12 +48,17 @@ instance = cluster.add_instance(
         "configs/server.key",
     ],
     user_configs=["configs/users.xml"],
-    env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
+    env_variables={
+        "UBSAN_OPTIONS": "print_stacktrace=1",
+        # Bug in TSAN reproduces in this test https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
+        "TSAN_OPTIONS": "report_atomic_races=0 "
+        + os.getenv("TSAN_OPTIONS", default=""),
+    },
 )
 
 
 def get_query(name, id):
-    return f"SElECT '{name}', {id}, sleep(1)"
+    return f"SElECT '{name}', {id}, number from system.numbers"
 
 
 def grpc_get_url():
@@ -83,21 +87,20 @@ def grpc_query(query_text, channel, session_id_):
 
 
 def threaded_run_test(sessions):
+    instance.rotate_logs()
     thread_list = []
     for i in range(len(sessions)):
         thread = ThreadWithException(target=sessions[i], args=(i,))
         thread_list.append(thread)
         thread.start()
 
+    if len(sessions) > MAX_SESSIONS_FOR_USER:
+        assert_logs_contain_with_retry(instance, "overflown session count")
+
+    instance.query(f"KILL QUERY WHERE user='{TEST_USER}' SYNC")
+
     for thread in thread_list:
         thread.join()
-
-    exception_count = 0
-    for i in range(len(sessions)):
-        if thread_list[i].run_exception != None:
-            exception_count += 1
-
-    assert exception_count == 1
 
 
 @pytest.fixture(scope="module")
@@ -110,16 +113,11 @@ def started_cluster():
 
 
 class ThreadWithException(threading.Thread):
-    run_exception = None
-
     def run(self):
         try:
             super().run()
         except:
-            self.run_exception = sys.exc_info()
-
-    def join(self):
-        super().join()
+            pass
 
 
 def postgres_session(id):
@@ -206,17 +204,5 @@ def test_profile_max_sessions_for_user_tcp_and_others(started_cluster):
     threaded_run_test([tcp_session, postgres_session, http_session])
 
 
-def test_profile_max_sessions_for_user_end_session(started_cluster):
-    for conection_func in [
-        tcp_session,
-        http_session,
-        grpc_session,
-        mysql_session,
-        postgres_session,
-    ]:
-        threaded_run_test([conection_func] * MAX_SESSIONS_FOR_USER)
-        threaded_run_test([conection_func] * MAX_SESSIONS_FOR_USER)
-
-
-def test_profile_max_sessions_for_user_end_session(started_cluster):
+def test_profile_max_sessions_for_user_setting_in_query(started_cluster):
     instance.query_and_get_error("SET max_sessions_for_user = 10")
