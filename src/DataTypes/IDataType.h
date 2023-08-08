@@ -73,7 +73,7 @@ public:
 
     DataTypePtr getPtr() const { return shared_from_this(); }
 
-    virtual DataTypes getPossiblePtr() const { return { shared_from_this() }; }
+    virtual DataTypes getPossiblePtr() const { return {}; }
 
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
