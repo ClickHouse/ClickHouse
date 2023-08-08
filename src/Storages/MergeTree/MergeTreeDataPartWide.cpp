@@ -271,7 +271,8 @@ std::optional<time_t> MergeTreeDataPartWide::getColumnModificationTime(const Str
 {
     try
     {
-        return getDataPartStorage().getFileLastModified(column_name + DATA_FILE_EXTENSION).epochTime();
+        auto name_on_disk = checksums.getFileNameOrHash(column_name);
+        return getDataPartStorage().getFileLastModified(name_on_disk + DATA_FILE_EXTENSION).epochTime();
     }
     catch (const fs::filesystem_error &)
     {
