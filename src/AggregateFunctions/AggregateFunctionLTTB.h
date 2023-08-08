@@ -159,7 +159,6 @@ struct LTTBData final
         }
 
 
-
         // Find the size of each bucket
         unsigned long single_bucket_size = data_list_x.size() / total_buckets;
 
