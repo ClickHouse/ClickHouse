@@ -394,12 +394,40 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_SYNC_FILESYSTEM_CACHE);
 
-            ColumnsDescription columns{StorageSystemFilesystemCache::getNamesAndTypes()};
+            ColumnsDescription columns{NamesAndTypesList{
+                {"cache_name", std::make_shared<DataTypeString>()},
+                {"path", std::make_shared<DataTypeString>()},
+                {"size", std::make_shared<DataTypeUInt64>()},
+                {"actual_size", std::make_shared<DataTypeUInt64>()}
+            }};
             Block sample_block;
             for (const auto & column : columns)
                 sample_block.insert({column.type->createColumn(), column.type, column.name});
 
             MutableColumns res_columns = sample_block.cloneEmptyColumns();
+
+            auto fill_data = [&](const std::string & cache_name, const FileCachePtr & cache, const FileSegments & file_segments)
+            {
+                for (const auto & file_segment : file_segments)
+                {
+                    size_t i = 0;
+                    const auto path = cache->getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->getKind());
+                    res_columns[i++]->insert(cache_name);
+                    res_columns[i++]->insert(path);
+                    res_columns[i++]->insert(file_segment->getDownloadedSize(false));
+                    try
+                    {
+                        if (fs::exists(path))
+                            res_columns[i++]->insert(fs::file_size(path));
+                        else
+                            res_columns[i++]->insertDefault();
+                    }
+                    catch (...)
+                    {
+                        res_columns[i++]->insertDefault();
+                    }
+                }
+            };
 
             if (query.filesystem_cache_name.empty())
             {
@@ -407,14 +435,14 @@ BlockIO InterpreterSystemQuery::execute()
                 for (const auto & [cache_name, cache_data] : caches)
                 {
                     auto file_segments = cache_data->cache->sync();
-                    StorageSystemFilesystemCache::fillDataImpl(res_columns, cache_data->cache, cache_name, file_segments);
+                    fill_data(cache_name, cache_data->cache, file_segments);
                 }
             }
             else
             {
                 auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name).cache;
                 auto file_segments = cache->sync();
-                StorageSystemFilesystemCache::fillDataImpl(res_columns, cache, query.filesystem_cache_name, file_segments);
+                fill_data(query.filesystem_cache_name, cache, file_segments);
             }
 
             size_t num_rows = res_columns[0]->size();
