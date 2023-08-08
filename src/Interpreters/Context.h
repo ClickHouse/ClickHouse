@@ -6,8 +6,10 @@
 #include <Common/isLocalAddress.h>
 #include <Common/MultiVersion.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Throttler_fwd.h>
+#include <Common/SettingSource.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -50,8 +52,8 @@ struct ContextSharedPart;
 class ContextAccess;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
+struct SettingsProfilesInfo;
 struct EnabledRolesInfo;
-class EnabledRowPolicies;
 struct RowPolicyFilter;
 using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
 class EnabledQuota;
@@ -133,6 +135,7 @@ using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
+class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 
@@ -200,6 +203,8 @@ using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
+class SessionTracker;
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -248,8 +253,8 @@ private:
     std::optional<UUID> user_id;
     std::shared_ptr<std::vector<UUID>> current_roles;
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
-    std::shared_ptr<const ContextAccess> access;
-    std::shared_ptr<const EnabledRowPolicies> row_policies_of_initial_user;
+    mutable std::shared_ptr<const ContextAccess> access;
+    mutable bool need_recalculate_access = true;
     String current_database;
     Settings settings;  /// Setting for query execution.
 
@@ -529,13 +534,11 @@ public:
 
     /// Sets the current user assuming that he/she is already authenticated.
     /// WARNING: This function doesn't check password!
-    void setUser(const UUID & user_id_);
-
+    void setUser(const UUID & user_id_, const std::optional<const std::vector<UUID>> & current_roles_ = {});
     UserPtr getUser() const;
-    String getUserName() const;
-    std::optional<UUID> getUserID() const;
 
-    void setQuotaKey(String quota_key_);
+    std::optional<UUID> getUserID() const;
+    String getUserName() const;
 
     void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();
@@ -543,8 +546,9 @@ public:
     boost::container::flat_set<UUID> getEnabledRoles() const;
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
 
-    void setCurrentProfile(const String & profile_name);
-    void setCurrentProfile(const UUID & profile_id);
+    void setCurrentProfile(const String & profile_name, bool check_constraints = true);
+    void setCurrentProfile(const UUID & profile_id, bool check_constraints = true);
+    void setCurrentProfiles(const SettingsProfilesInfo & profiles_info, bool check_constraints = true);
     std::vector<UUID> getCurrentProfiles() const;
     std::vector<UUID> getEnabledProfiles() const;
 
@@ -566,13 +570,6 @@ public:
     std::shared_ptr<const ContextAccess> getAccess() const;
 
     RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
-
-    /// Finds and sets extra row policies to be used based on `client_info.initial_user`,
-    /// if the initial user exists.
-    /// TODO: we need a better solution here. It seems we should pass the initial row policy
-    /// because a shard is allowed to not have the initial user or it might be another user
-    /// with the same name.
-    void enableRowPoliciesOfInitialUser();
 
     std::shared_ptr<const EnabledQuota> getQuota() const;
     std::optional<QuotaUsage> getQuotaUsage() const;
@@ -597,8 +594,32 @@ public:
     InputBlocksReader getInputBlocksReaderCallback() const;
     void resetInputCallbacks();
 
-    ClientInfo & getClientInfo() { return client_info; }
+    /// Returns information about the client executing a query.
     const ClientInfo & getClientInfo() const { return client_info; }
+
+    /// Modify stored in the context information about the client executing a query.
+    void setClientInfo(const ClientInfo & client_info_);
+    void setClientName(const String & client_name);
+    void setClientInterface(ClientInfo::Interface interface);
+    void setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
+    void setClientConnectionId(uint32_t connection_id);
+    void setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer);
+    void setForwardedFor(const String & forwarded_for);
+    void setQueryKind(ClientInfo::QueryKind query_kind);
+    void setQueryKindInitial();
+    void setQueryKindReplicatedDatabaseInternal();
+    void setCurrentUserName(const String & current_user_name);
+    void setCurrentAddress(const Poco::Net::SocketAddress & current_address);
+    void setInitialUserName(const String & initial_user_name);
+    void setInitialAddress(const Poco::Net::SocketAddress & initial_address);
+    void setInitialQueryId(const String & initial_query_id);
+    void setInitialQueryStartTime(std::chrono::time_point<std::chrono::system_clock> initial_query_start_time);
+    void setQuotaClientKey(const String & quota_key);
+    void setConnectionClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
+    void setReplicaInfo(bool collaborate_with_initiator, size_t all_replicas_count, size_t number_of_current_replica);
+    void increaseDistributedDepth();
+    const OpenTelemetry::TracingContext & getClientTraceContext() const { return client_info.client_trace_context; }
+    OpenTelemetry::TracingContext & getClientTraceContext() { return client_info.client_trace_context; }
 
     enum StorageNamespace
     {
@@ -636,6 +657,14 @@ public:
         const String & projection_name = {},
         const String & view_name = {});
     void addQueryAccessInfo(const Names & partition_names);
+
+    struct QualifiedProjectionName
+    {
+        StorageID storage_id = StorageID::createEmpty();
+        String projection_name;
+        explicit operator bool() const { return !projection_name.empty(); }
+    };
+    void addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name);
 
 
     /// Supported factories for records in query_log
@@ -705,11 +734,11 @@ public:
     void applySettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
-    void checkSettingsConstraints(const SettingsProfileElements & profile_elements) const;
-    void checkSettingsConstraints(const SettingChange & change) const;
-    void checkSettingsConstraints(const SettingsChanges & changes) const;
-    void checkSettingsConstraints(SettingsChanges & changes) const;
-    void clampToSettingsConstraints(SettingsChanges & changes) const;
+    void checkSettingsConstraints(const SettingsProfileElements & profile_elements, SettingSource source) const;
+    void checkSettingsConstraints(const SettingChange & change, SettingSource source) const;
+    void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source) const;
+    void checkSettingsConstraints(SettingsChanges & changes, SettingSource source) const;
+    void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source) const;
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to default value
@@ -765,6 +794,10 @@ public:
     /// Storage of allowed hosts from config.xml
     void setRemoteHostFilter(const Poco::Util::AbstractConfiguration & config);
     const RemoteHostFilter & getRemoteHostFilter() const;
+
+    /// Storage of forbidden HTTP headers from config.xml
+    void setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config);
+    const HTTPHeaderFilter & getHTTPHeaderFilter() const;
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
@@ -827,6 +860,8 @@ public:
 
     OvercommitTracker * getGlobalOvercommitTracker() const;
 
+    SessionTracker & getSessionTracker();
+
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
 
@@ -855,7 +890,6 @@ public:
     void setClientProtocolVersion(UInt64 version);
 
 #if USE_ROCKSDB
-    MergeTreeMetadataCachePtr getMergeTreeMetadataCache() const;
     MergeTreeMetadataCachePtr tryGetMergeTreeMetadataCache() const;
 #endif
 
@@ -964,6 +998,9 @@ public:
     void initializeMergeTreeMetadataCache(const String & dir, size_t size);
 #endif
 
+    /// Call after unexpected crash happen.
+    void handleCrash() const;
+
     bool hasTraceCollector() const;
 
     /// Nullptr if the query log is not ready for this moment.
@@ -1023,6 +1060,13 @@ public:
     using ConfigReloadCallback = std::function<void()>;
     void setConfigReloadCallback(ConfigReloadCallback && callback);
     void reloadConfig() const;
+
+    using StartStopServersCallback = std::function<void(const ServerType &)>;
+    void setStartServersCallback(StartStopServersCallback && callback);
+    void setStopServersCallback(StartStopServersCallback && callback);
+
+    void startServers(const ServerType & server_type) const;
+    void stopServers(const ServerType & server_type) const;
 
     void shutdown();
 
@@ -1122,9 +1166,6 @@ public:
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;
 
-    /** Get settings for reading from filesystem for BACKUPs. */
-    ReadSettings getBackupReadSettings() const;
-
     /** Get settings for writing to filesystem. */
     WriteSettings getWriteSettings() const;
 
@@ -1149,9 +1190,7 @@ private:
 
     void initGlobal();
 
-    /// Compute and set actual user settings, client_info.current_user should be set
-    void calculateAccessRights();
-    void recalculateAccessRightsIfNeeded(std::string_view setting_name);
+    void setUserID(const UUID & user_id_);
 
     template <typename... Args>
     void checkAccessImpl(const Args &... args) const;

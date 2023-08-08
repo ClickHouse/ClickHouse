@@ -13,7 +13,21 @@ function random {
 
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q "
 drop table if exists ttt;
-create table ttt (id Int32, value String) engine=MergeTree() order by tuple()  settings storage_policy='s3_cache_small_segment_size', min_bytes_for_wide_part=0;
+
+CREATE TABLE ttt (id Int32, value String)
+Engine=MergeTree()
+ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0,
+         disk = disk(
+            type = cache,
+            max_size = '128Mi',
+            max_file_segment_size = '10Ki',
+            path = '/var/lib/clickhouse/${CLICKHOUSE_TEST_UNIQUE_NAME}_cache',
+            cache_on_write_operations = 1,
+            enable_filesystem_query_cache_limit = 1,
+            delayed_cleanup_interval_ms = 100,
+            disk = 's3_disk');
+
 insert into ttt select number, toString(number) from numbers(100000) settings throw_on_error_from_cache_on_write_operations = 1;
 "
 

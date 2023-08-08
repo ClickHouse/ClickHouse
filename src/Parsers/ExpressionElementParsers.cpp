@@ -243,6 +243,38 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
+bool ParserTableAsStringLiteralIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (pos->type != TokenType::StringLiteral)
+        return false;
+
+    ReadBufferFromMemory in(pos->begin, pos->size());
+    String s;
+
+    if (!tryReadQuotedStringInto(s, in))
+    {
+        expected.add(pos, "string literal");
+        return false;
+    }
+
+    if (in.count() != pos->size())
+    {
+        expected.add(pos, "string literal");
+        return false;
+    }
+
+    if (s.empty())
+    {
+        expected.add(pos, "non-empty string literal");
+        return false;
+    }
+
+    node = std::make_shared<ASTTableIdentifier>(s);
+    ++pos;
+    return true;
+}
+
+
 bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr id_list;
@@ -1896,6 +1928,39 @@ bool ParserSubstitution::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ++pos;
     node = std::make_shared<ASTQueryParameter>(name, type);
+    return true;
+}
+
+
+bool ParserMySQLComment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (pos->type != TokenType::QuotedIdentifier && pos->type != TokenType::StringLiteral)
+        return false;
+    String s;
+    ReadBufferFromMemory in(pos->begin, pos->size());
+    try
+    {
+        if (pos->type == TokenType::StringLiteral)
+            readQuotedStringWithSQLStyle(s, in);
+        else
+            readDoubleQuotedStringWithSQLStyle(s, in);
+    }
+    catch (const Exception &)
+    {
+        expected.add(pos, "string literal or double quoted string");
+        return false;
+    }
+
+    if (in.count() != pos->size())
+    {
+        expected.add(pos, "string literal or double quoted string");
+        return false;
+    }
+
+    auto literal = std::make_shared<ASTLiteral>(s);
+    literal->begin = pos;
+    literal->end = ++pos;
+    node = literal;
     return true;
 }
 

@@ -9,14 +9,14 @@ namespace DB
 
 using ReadBufferIterator = std::function<std::unique_ptr<ReadBuffer>(ColumnsDescription &)>;
 
-/// Try to determine the schema of the data in specifying format.
+/// Try to determine the schema of the data in the specified format.
 /// For formats that have an external schema reader, it will
 /// use it and won't create a read buffer.
 /// For formats that have a schema reader from the data,
 /// read buffer will be created by the provided iterator and
 /// the schema will be extracted from the data. If schema reader
 /// couldn't determine the schema we will try the next read buffer
-/// from provided iterator if it makes sense. If format doesn't
+/// from the provided iterator if it makes sense. If the format doesn't
 /// have any schema reader or we couldn't determine the schema,
 /// an exception will be thrown.
 ColumnsDescription readSchemaFromFormat(

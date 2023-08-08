@@ -110,6 +110,9 @@ using CustomizeCountDistinctVisitor = InDepthNodeVisitor<OneTypeMatcher<Customiz
 char countifdistinct[] = "countifdistinct";
 using CustomizeCountIfDistinctVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<countifdistinct>>, true>;
 
+char countdistinctif[] = "countdistinctif";
+using CustomizeCountDistinctIfVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<countdistinctif>>, true>;
+
 char in[] = "in";
 using CustomizeInVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<in>>, true>;
 
@@ -299,11 +302,10 @@ using ReplacePositionalArgumentsVisitor = InDepthNodeVisitor<OneTypeMatcher<Repl
 /// Expand asterisks and qualified asterisks with column names.
 /// There would be columns in normal form & column aliases after translation. Column & column alias would be normalized in QueryNormalizer.
 void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query, const NameSet & source_columns_set,
-                             const TablesWithColumns & tables_with_columns, const NameToNameMap & parameter_values = {},
-                             const NameToNameMap & parameter_types = {})
+                             const TablesWithColumns & tables_with_columns)
 {
     LogAST log;
-    TranslateQualifiedNamesVisitor::Data visitor_data(source_columns_set, tables_with_columns, true/* has_columns */, parameter_values, parameter_types);
+    TranslateQualifiedNamesVisitor::Data visitor_data(source_columns_set, tables_with_columns, true/* has_columns */);
     TranslateQualifiedNamesVisitor visitor(visitor_data, log.stream());
     visitor.visit(query);
 
@@ -731,7 +733,7 @@ void expandGroupByAll(ASTSelectQuery * select_query)
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_expression_list);
 }
 
-std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
+ASTs getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
 {
     /// There can not be aggregate functions inside the WHERE and PREWHERE.
     if (select_query.where())
@@ -743,11 +745,12 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
     GetAggregatesVisitor(data).visit(query);
 
     /// There can not be other aggregate functions within the aggregate functions.
-    for (const ASTFunction * node : data.aggregates)
+    for (const ASTPtr & ast : data.aggregates)
     {
-        if (node->arguments)
+        const ASTFunction & node = typeid_cast<const ASTFunction &>(*ast);
+        if (node.arguments)
         {
-            for (auto & arg : node->arguments->children)
+            for (auto & arg : node.arguments->children)
             {
                 assertNoAggregates(arg, "inside another aggregate function");
                 // We also can't have window functions inside aggregate functions,
@@ -759,7 +762,7 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
     return data.aggregates;
 }
 
-std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSelectQuery & select_query)
+ASTs getWindowFunctions(ASTPtr & query, const ASTSelectQuery & select_query)
 {
     /// There can not be window functions inside the WHERE, PREWHERE and HAVING
     if (select_query.having())
@@ -777,20 +780,16 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
     /// Window functions cannot be inside aggregates or other window functions.
     /// Aggregate functions can be inside window functions because they are
     /// calculated earlier.
-    for (const ASTFunction * node : data.window_functions)
+    for (const ASTPtr & ast : data.window_functions)
     {
-        if (node->arguments)
-        {
-            for (auto & arg : node->arguments->children)
-            {
-                assertNoWindows(arg, "inside another window function");
-            }
-        }
+        const ASTFunction & node = typeid_cast<const ASTFunction &>(*ast);
 
-        if (node->window_definition)
-        {
-            assertNoWindows(node->window_definition, "inside window definition");
-        }
+        if (node.arguments)
+            for (auto & arg : node.arguments->children)
+                assertNoWindows(arg, "inside another window function");
+
+        if (node.window_definition)
+            assertNoWindows(node.window_definition, "inside window definition");
     }
 
     return data.window_functions;
@@ -1160,10 +1159,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     const SelectQueryOptions & select_options,
     const TablesWithColumns & tables_with_columns,
     const Names & required_result_columns,
-    std::shared_ptr<TableJoin> table_join,
-    bool is_parameterized_view,
-    const NameToNameMap parameter_values,
-    const NameToNameMap parameter_types) const
+    std::shared_ptr<TableJoin> table_join) const
 {
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
@@ -1201,7 +1197,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         result.analyzed_join->setColumnsFromJoinedTable(std::move(columns_from_joined_table), source_columns_set, right_table.table.getQualifiedNamePrefix());
     }
 
-    translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns, parameter_values, parameter_types);
+    translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
 
     /// Optimizes logical expressions.
     LogicalExpressionsOptimizer(select_query, tables_with_columns, settings.optimize_min_equality_disjunction_chain_length.value).perform();
@@ -1259,15 +1255,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     result.window_function_asts = getWindowFunctions(query, *select_query);
     result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
 
-    /// replaceQueryParameterWithValue is used for parameterized view (which are created using query parameters
-    /// and SELECT is used with substitution of these query parameters )
-    /// the replaced column names will be used in the next steps
-    if (is_parameterized_view)
-    {
-        for (auto & column : result.source_columns)
-            column.name = StorageView::replaceQueryParameterWithValue(column.name, parameter_values, parameter_types);
-    }
-
     result.collectUsedColumns(query, true, settings.query_plan_optimize_primary_key);
 
     result.required_source_columns_before_expanding_alias_columns = result.required_source_columns.getNames();
@@ -1287,6 +1274,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
         bool is_changed = replaceAliasColumnsInQuery(query, result.storage_snapshot->metadata->getColumns(),
                                                      result.array_join_result_to_source, getContext(), excluded_nodes);
+
         /// If query is changed, we need to redo some work to correct name resolution.
         if (is_changed)
         {
@@ -1356,8 +1344,8 @@ TreeRewriterResultPtr TreeRewriter::analyze(
         GetAggregatesVisitor(data).visit(query);
 
         /// There can not be other aggregate functions within the aggregate functions.
-        for (const ASTFunction * node : data.aggregates)
-            for (auto & arg : node->arguments->children)
+        for (const ASTPtr & node : data.aggregates)
+            for (auto & arg : typeid_cast<const ASTFunction &>(*node).arguments->children)
                 assertNoAggregates(arg, "inside another aggregate function");
         result.aggregates = data.aggregates;
     }
@@ -1382,6 +1370,12 @@ void TreeRewriter::normalize(
 
     CustomizeIfDistinctVisitor::Data data_distinct_if{"DistinctIf"};
     CustomizeIfDistinctVisitor(data_distinct_if).visit(query);
+
+    if (settings.rewrite_count_distinct_if_with_count_distinct_implementation)
+    {
+        CustomizeCountDistinctIfVisitor::Data data_count_distinct_if{settings.count_distinct_implementation.toString() + "If"};
+        CustomizeCountDistinctIfVisitor(data_count_distinct_if).visit(query);
+    }
 
     ExistsExpressionVisitor::Data exists;
     ExistsExpressionVisitor(exists).visit(query);

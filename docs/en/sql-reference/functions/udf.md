@@ -171,12 +171,13 @@ Result:
 └──────────────────────────────┘
 ```
 
-Executable user defined functions can take constant parameters configured in `command` setting (works only for user defined functions with `executable` type).
+Executable user defined functions can take constant parameters configured in `command` setting (works only for user defined functions with `executable` type). It also requires the `execute_direct` option (to ensure no shell argument expansion vulnerability).
 File `test_function_parameter_python.xml` (`/etc/clickhouse-server/test_function_parameter_python.xml` with default path settings).
 ```xml
 <functions>
     <function>
         <type>executable</type>
+        <execute_direct>true</execute_direct>
         <name>test_function_parameter_python</name>
         <return_type>String</return_type>
         <argument>
