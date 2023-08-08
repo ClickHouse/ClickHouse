@@ -416,7 +416,9 @@ def main():
     """
     )
     clickhouse_ci_logs_host = os.getenv("CLICKHOUSE_CI_LOGS_HOST")
-    maybe_clickhouse_ci_logs_password: str = os.getenv("CLICKHOUSE_CI_LOGS_PASSWORD") or ""
+    maybe_clickhouse_ci_logs_password: str = (
+        os.getenv("CLICKHOUSE_CI_LOGS_PASSWORD") or ""
+    )
     url = f"https://{clickhouse_ci_logs_host}/?query={query}"
     file_path = os.path.join(build_profile_path, "profile.json")
 
