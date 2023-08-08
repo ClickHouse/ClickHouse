@@ -38,11 +38,6 @@ public:
         database(database_)
     {
     }
-    TableNameHints(DatabasePtr database_, ContextPtr context_)
-        : context(context_),
-        database(database_)
-    {
-    }
     Names getAllRegisteredNames() const override
     {
         Names result;
@@ -58,7 +53,7 @@ public:
     }
 private:
     ContextPtr context;
-    DatabasePtr database;
+    ConstDatabasePtr database;
 };
 
 class IDatabase;
