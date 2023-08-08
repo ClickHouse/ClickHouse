@@ -4,10 +4,10 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
-#include "ColumnDecimal.h"
-#include "ColumnFixedString.h"
-#include "ColumnsDateTime.h"
-#include "ColumnsNumber.h"
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnsDateTime.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
