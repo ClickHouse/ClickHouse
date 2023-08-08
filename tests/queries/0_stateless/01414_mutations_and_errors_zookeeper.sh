@@ -9,6 +9,16 @@ for _ in {1..10}
 do
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS replicated_mutation_table"
 
+    $CLICKHOUSE_CLIENT --query "
+        CREATE TABLE replicated_mutation_table(
+            date Date,
+            key UInt64,
+            value String
+        )
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/mutation_table', '1')
+        ORDER BY tuple()
+        PARTITION BY date"
+
     $CLICKHOUSE_CLIENT --query "INSERT INTO replicated_mutation_table SELECT toDate('2019-10-02'), number, '42' FROM numbers(10)"
 
     $CLICKHOUSE_CLIENT --query "INSERT INTO replicated_mutation_table SELECT toDate('2019-10-02'), number, 'Hello' FROM numbers(10)"
