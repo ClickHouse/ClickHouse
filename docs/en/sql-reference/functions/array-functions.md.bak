@@ -1794,7 +1794,7 @@ Return value type is always [Float64](../../sql-reference/data-types/float.md). 
 │ 6   │ Float64                                                                                  │
 └─────┴──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-## array Remove
+## arrayRemove
 
 - Returns the array after removing the elements that pass the given predicate.
 
