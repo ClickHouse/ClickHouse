@@ -274,7 +274,7 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
 
     for (const auto & projection : getProjections())
     {
-        if (has_dependency(projection.getDirectoryName(), ColumnDependency::PROJECTION))
+        if (has_dependency(projection.name, ColumnDependency::PROJECTION))
             add_dependent_columns(&projection, projections_columns);
     }
 
