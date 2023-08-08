@@ -28,7 +28,7 @@ RemoteProxyConfigurationResolver::RemoteProxyConfigurationResolver(
 
 ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 {
-    LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Obtain proxy using resolver: {}", endpoint.toString());
+    LOG_DEBUG(&Poco::Logger::get("RemoteProxyConfigurationResolver"), "Obtain proxy using resolver: {}", endpoint.toString());
 
     std::lock_guard lock(cache_mutex);
 
@@ -91,7 +91,7 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
         /// Read proxy host as string from response body.
         Poco::StreamCopier::copyToString(response_body_stream, proxy_host);
 
-        LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Use proxy: {}://{}:{}", proxy_protocol, proxy_host, proxy_port);
+        LOG_DEBUG(&Poco::Logger::get("RemoteProxyConfigurationResolver"), "Use proxy: {}://{}:{}", proxy_protocol, proxy_host, proxy_port);
 
         cached_config.protocol = ProxyConfiguration::protocolFromString(proxy_protocol);
         cached_config.host = proxy_host;
@@ -103,7 +103,7 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
     }
     catch (...)
     {
-        tryLogCurrentException("AWSClient", "Failed to obtain proxy");
+        tryLogCurrentException("RemoteProxyConfigurationResolver", "Failed to obtain proxy");
         return {};
     }
 }
