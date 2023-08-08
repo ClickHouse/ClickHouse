@@ -60,14 +60,15 @@ Chunk ArrowBlockInputFormat::generate()
         if (record_batch_current >= record_batch_total)
             return res;
 
-        if (need_only_count)
-        {
-            auto rows = file_reader->RecordBatchCountRows(record_batch_current++);
-            if (!rows.ok())
-                throw ParsingException(
-                    ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data: {}", rows.status().ToString());
-            return getChunkForCount(*rows);
-        }
+//        TODO: Update arrow lib to add RecordBatchCountRows
+//        if (need_only_count)
+//        {
+//            auto rows = file_reader->RecordBatchCountRows(record_batch_current++);
+//            if (!rows.ok())
+//                throw ParsingException(
+//                    ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data: {}", rows.status().ToString());
+//            return getChunkForCount(*rows);
+//        }
 
         batch_result = file_reader->ReadRecordBatch(record_batch_current);
     }
