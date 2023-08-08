@@ -17,6 +17,23 @@ def run_resolver(cluster):
     )
     cluster.exec_in_container(container_id, ["python", "resolver.py"], detach=True)
 
+    for i in range(10):
+        response = cluster.exec_in_container(
+            container_id,
+            [
+                "curl",
+                "-s",
+                f"http://resolver:8080/hostname",
+            ],
+            nothrow=True,
+        )
+        if response == "proxy1" or response == "proxy2":
+            return
+        time.sleep(i)
+    else:
+        assert False, "Resolver is not up"
+
+
 
 @pytest.fixture(scope="module")
 def cluster():
