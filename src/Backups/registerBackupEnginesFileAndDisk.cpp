@@ -169,18 +169,18 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         {
             std::shared_ptr<IBackupReader> reader;
             if (engine_name == "File")
-                reader = std::make_shared<BackupReaderFile>(path, params.context);
+                reader = std::make_shared<BackupReaderFile>(path, params.read_settings, params.write_settings);
             else
-                reader = std::make_shared<BackupReaderDisk>(disk, path, params.context);
+                reader = std::make_shared<BackupReaderDisk>(disk, path, params.read_settings, params.write_settings);
             return std::make_unique<BackupImpl>(backup_name_for_logging, archive_params, params.base_backup_info, reader, params.context);
         }
         else
         {
             std::shared_ptr<IBackupWriter> writer;
             if (engine_name == "File")
-                writer = std::make_shared<BackupWriterFile>(path, params.context);
+                writer = std::make_shared<BackupWriterFile>(path, params.read_settings, params.write_settings);
             else
-                writer = std::make_shared<BackupWriterDisk>(disk, path, params.context);
+                writer = std::make_shared<BackupWriterDisk>(disk, path, params.read_settings, params.write_settings);
             return std::make_unique<BackupImpl>(
                 backup_name_for_logging,
                 archive_params,

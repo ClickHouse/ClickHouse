@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/System/StorageSystemTables.h>
+#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -587,23 +588,9 @@ Pipe StorageSystemTables::read(
     const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-
-    /// Create a mask of what columns are needed in the result.
-
-    NameSet names_set(column_names.begin(), column_names.end());
-
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
-    Block res_block;
 
-    std::vector<UInt8> columns_mask(sample_block.columns());
-    for (size_t i = 0, size = columns_mask.size(); i < size; ++i)
-    {
-        if (names_set.contains(sample_block.getByPosition(i).name))
-        {
-            columns_mask[i] = 1;
-            res_block.insert(sample_block.getByPosition(i));
-        }
-    }
+    auto [columns_mask, res_block] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
 
     ColumnPtr filtered_databases_column = getFilteredDatabases(query_info, context);
     ColumnPtr filtered_tables_column = getFilteredTables(query_info.query, filtered_databases_column, context);

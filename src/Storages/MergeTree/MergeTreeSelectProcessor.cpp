@@ -65,7 +65,7 @@ void MergeTreeSelectAlgorithm::initializeReaders()
 
     initializeMergeTreeReadersForPart(
         data_part, alter_conversions, task_columns,
-        storage_snapshot->getMetadataForQuery(), all_mark_ranges, {}, {});
+        all_mark_ranges, /*value_size_map=*/ {}, /*profile_callback=*/ {});
 }
 
 

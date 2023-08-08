@@ -90,13 +90,14 @@ namespace ErrorCodes
 
 namespace ActionLocks
 {
-    extern StorageActionBlockType PartsMerge;
-    extern StorageActionBlockType PartsFetch;
-    extern StorageActionBlockType PartsSend;
-    extern StorageActionBlockType ReplicationQueue;
-    extern StorageActionBlockType DistributedSend;
-    extern StorageActionBlockType PartsTTLMerge;
-    extern StorageActionBlockType PartsMove;
+    extern const StorageActionBlockType PartsMerge;
+    extern const StorageActionBlockType PartsFetch;
+    extern const StorageActionBlockType PartsSend;
+    extern const StorageActionBlockType ReplicationQueue;
+    extern const StorageActionBlockType DistributedSend;
+    extern const StorageActionBlockType PartsTTLMerge;
+    extern const StorageActionBlockType PartsMove;
+    extern const StorageActionBlockType PullReplicationLog;
 }
 
 
@@ -156,6 +157,8 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
         return AccessType::SYSTEM_TTL_MERGES;
     else if (action_type == ActionLocks::PartsMove)
         return AccessType::SYSTEM_MOVES;
+    else if (action_type == ActionLocks::PullReplicationLog)
+        return AccessType::SYSTEM_PULLING_REPLICATION_LOG;
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
 }
@@ -545,6 +548,12 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::START_DISTRIBUTED_SENDS:
             startStopAction(ActionLocks::DistributedSend, true);
+            break;
+        case Type::STOP_PULLING_REPLICATION_LOG:
+            startStopAction(ActionLocks::PullReplicationLog, false);
+            break;
+        case Type::START_PULLING_REPLICATION_LOG:
+            startStopAction(ActionLocks::PullReplicationLog, true);
             break;
         case Type::DROP_REPLICA:
             dropReplica(query);
@@ -1122,6 +1131,15 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_MOVES);
             else
                 required_access.emplace_back(AccessType::SYSTEM_MOVES, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::STOP_PULLING_REPLICATION_LOG:
+        case Type::START_PULLING_REPLICATION_LOG:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG, query.getDatabase(), query.getTable());
             break;
         }
         case Type::STOP_FETCHES:
