@@ -542,7 +542,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
              *   SELECT a FROM (SELECT 1 :: LowCardinality(UInt32) AS a) t1
              *   JOIN (SELECT 1 :: UInt32 AS a) t2 USING (a);
              * In that case result `a` will be supertype of `t1.a` and `t2.a`, just `UInt32`
-             * If column in the left hand side is also lowcardinality, we will restore propery in joinBlock.
+             * If column in the left hand side is also lowcardinality, we will restore property in joinBlock.
              * Not aplicable to allow_experimental_analyzer since column are disambiguated.
              */
             continue;
