@@ -457,11 +457,10 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
         if (arguments_size != 1)
             return nullptr;
 
-        auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
-        const auto & bit_wrapper_func_node = result_dag->addFunction(bit_wrapper_function, {arguments[0]}, {});
+        const ActionsDAG::Node * argument = &traverseDAG(*arguments[0], result_dag, context, node_to_result_node);
 
         auto bit_swap_last_two_function = FunctionFactory::instance().get("__bitSwapLastTwo", context);
-        return &result_dag->addFunction(bit_swap_last_two_function, {&bit_wrapper_func_node}, {});
+        return &result_dag->addFunction(bit_swap_last_two_function, {argument}, {});
     }
     else if (function_name == "and" || function_name == "indexHint" || function_name == "or")
     {
