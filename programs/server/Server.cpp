@@ -1650,6 +1650,7 @@ try
         database_catalog.initializeAndLoadTemporaryDatabase();
         loadMetadataSystem(global_context);
         maybeConvertSystemDatabase(global_context);
+        startupSystemTables();
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
@@ -1668,7 +1669,6 @@ try
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
         convertDatabasesEnginesIfNeed(global_context);
-        startupSystemTables();
         database_catalog.startupBackgroundCleanup();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
