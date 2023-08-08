@@ -2592,6 +2592,20 @@ def named_collections(clickhouse_node, mysql_node, service_name):
         f"/* expect: (1, 'a', 1), (2, 'b', 2) */ SELECT * FROM {db}.t1",
         "1\ta\t1\n2\tb\t2\n",
     )
+    clickhouse_node.query(f"ALTER NAMED COLLECTION {db} SET port=9999")
+    clickhouse_node.query(f"DETACH DATABASE {db}")
+    mysql_node.query(f"INSERT INTO {db}.t1 VALUES (3, 'c', 3)")
+    assert "ConnectionFailed:" in clickhouse_node.query_and_get_error(
+        f"ATTACH DATABASE {db}"
+    )
+    clickhouse_node.query(f"ALTER NAMED COLLECTION {db} SET port=3306")
+    clickhouse_node.query(f"ATTACH DATABASE {db}")
+    check_query(
+        clickhouse_node,
+        f"/* expect: (1, 'a', 1), (2, 'b', 2), (3, 'c', 3) */ SELECT * FROM {db}.t1",
+        "1\ta\t1\n2\tb\t2\n3\tc\t3\n",
+    )
+
     clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
     mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
 
