@@ -34,7 +34,6 @@ def run_resolver(cluster):
         assert False, "Resolver is not up"
 
 
-
 @pytest.fixture(scope="module")
 def cluster():
     try:
