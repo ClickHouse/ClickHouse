@@ -418,7 +418,24 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     }
 
     auto table = database->tryGetTable(table_id.table_name, context_);
-    if (!table && exception)
+    StoragePtr table;
+    if (exception)
+    {
+        try
+        {
+            table = database->getTable(table_id.table_name, context_);
+        }
+        catch (const Exception & e)
+        {
+            exception->emplace(e);
+        }
+    }
+    else
+    {
+        table = database->tryGetTable(table_id.table_name, context_);
+    }
+
+    if (!table && exception && !exception->has_value())
     {
         TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), getContext());
         std::vector<String> names = hints.getHints(table_id.getTableName());
