@@ -44,7 +44,7 @@ public:
             const S3::Client & client_,
             const S3::URI & globbed_uri_,
             ASTPtr query,
-            const Block & virtual_header,
+            const NamesAndTypesList & virtual_header,
             ContextPtr context,
             UInt64 & max_poll_size_,
             const S3Settings::RequestSettings & request_settings_ = {});

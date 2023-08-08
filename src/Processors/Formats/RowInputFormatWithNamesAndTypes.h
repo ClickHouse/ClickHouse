@@ -56,6 +56,8 @@ protected:
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
+    size_t countRows(size_t max_block_size) override;
+
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
     void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
 
@@ -64,11 +66,11 @@ private:
     bool is_binary;
     bool with_names;
     bool with_types;
-    std::unique_ptr<FormatWithNamesAndTypesReader> format_reader;
     bool try_detect_header;
     bool is_header_detected = false;
 
 protected:
+    std::unique_ptr<FormatWithNamesAndTypesReader> format_reader;
     Block::NameMap column_indexes_by_names;
 };
 
@@ -108,6 +110,16 @@ public:
     virtual void skipNames() = 0;
     /// Skip the whole row with types.
     virtual void skipTypes() = 0;
+
+    virtual size_t countRows(size_t /*max_block_size*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method countRows is not implemented for format reader");
+    }
+
+    virtual void skipRow()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipRow is not implemented for format reader");
+    }
 
     /// Skip delimiters, if any.
     virtual void skipPrefixBeforeHeader() {}

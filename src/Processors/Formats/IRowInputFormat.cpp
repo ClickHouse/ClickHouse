@@ -99,6 +99,19 @@ Chunk IRowInputFormat::generate()
     size_t chunk_start_offset = getDataOffsetMaybeCompressed(getReadBuffer());
     try
     {
+        if (need_only_count && supportsCountRows())
+        {
+            num_rows = countRows(params.max_block_size);
+            if (num_rows == 0)
+            {
+                readSuffix();
+                return {};
+            }
+            total_rows += num_rows;
+            approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(getReadBuffer()) - chunk_start_offset;
+            return getChunkForCount(num_rows);
+        }
+
         RowReadExtension info;
         bool continue_reading = true;
         for (size_t rows = 0; rows < params.max_block_size && continue_reading; ++rows)
@@ -248,7 +261,7 @@ Chunk IRowInputFormat::generate()
 
 void IRowInputFormat::syncAfterError()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method syncAfterError is not implemented for input format");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method syncAfterError is not implemented for input format {}", getName());
 }
 
 void IRowInputFormat::resetParser()
@@ -257,6 +270,11 @@ void IRowInputFormat::resetParser()
     total_rows = 0;
     num_errors = 0;
     block_missing_values.clear();
+}
+
+size_t IRowInputFormat::countRows(size_t)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method countRows is not implemented for input format {}", getName());
 }
 
 

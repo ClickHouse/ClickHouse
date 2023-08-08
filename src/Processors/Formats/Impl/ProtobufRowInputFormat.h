@@ -47,6 +47,9 @@ private:
     bool allowSyncAfterError() const override;
     void syncAfterError() override;
 
+    bool supportsCountRows() const override { return true; }
+    size_t countRows(size_t max_block_size) override;
+
     void createReaderAndSerializer();
 
     std::unique_ptr<ProtobufReader> reader;

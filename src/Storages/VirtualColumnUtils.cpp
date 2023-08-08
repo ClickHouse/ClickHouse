@@ -20,6 +20,8 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
 
+#include <DataTypes/DataTypesNumber.h>
+
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -264,6 +266,74 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
         ColumnPtr & column = block.safeGetByPosition(i).column;
         column = column->filter(*filter.data, -1);
     }
+}
+
+NamesAndTypesList getVirtualsForStorage(const NamesAndTypesList & storage_columns_, const NamesAndTypesList & default_virtuals_)
+{
+    auto default_virtuals = default_virtuals_;
+    auto storage_columns = storage_columns_;
+    default_virtuals.sort();
+    storage_columns.sort();
+
+    NamesAndTypesList result_virtuals;
+    std::set_difference(
+        default_virtuals.begin(), default_virtuals.end(), storage_columns.begin(), storage_columns.end(),
+        std::back_inserter(result_virtuals),
+        [](const NameAndTypePair & lhs, const NameAndTypePair & rhs){ return lhs.name < rhs.name; });
+
+    return result_virtuals;
+}
+
+static void addPathAndFileToVirtualColumns(Block & block, const String & path, size_t idx)
+{
+    if (block.has("_path"))
+        block.getByName("_path").column->assumeMutableRef().insert(path);
+
+    if (block.has("_file"))
+    {
+        auto pos = path.find_last_of('/');
+        assert(pos != std::string::npos);
+
+        auto file = path.substr(pos + 1);
+        block.getByName("_file").column->assumeMutableRef().insert(file);
+    }
+
+    block.getByName("_idx").column->assumeMutableRef().insert(idx);
+}
+
+ASTPtr createPathAndFileFilterAst(const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
+{
+    if (!query || virtual_columns.empty())
+        return {};
+
+    Block block;
+    for (const auto & column : virtual_columns)
+        block.insert({column.type->createColumn(), column.type, column.name});
+    /// Create a block with one row to construct filter
+    /// Append "idx" column as the filter result
+    block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
+    addPathAndFileToVirtualColumns(block, "path/file", 0);
+    ASTPtr filter_ast;
+    prepareFilterBlockWithQuery(query, context, block, filter_ast);
+    return filter_ast;
+}
+
+std::vector<UInt64> filterPaths(const std::vector<String> & paths, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context, ASTPtr filter_ast)
+{
+    Block block;
+    for (const auto & column : virtual_columns)
+        block.insert({column.type->createColumn(), column.type, column.name});
+    block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
+
+    for (size_t i = 0; i != paths.size(); ++i)
+        addPathAndFileToVirtualColumns(block, paths[i], i);
+
+    filterBlockWithQuery(query, block, context, filter_ast);
+
+    const auto & idxs = typeid_cast<const ColumnUInt64 &>(*block.getByName("_idx").column);
+
+    std::vector<UInt64> indexes(idxs.getData().begin(), idxs.getData().end());
+    return indexes;
 }
 
 }

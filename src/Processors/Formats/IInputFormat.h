@@ -55,10 +55,16 @@ public:
 
     virtual size_t getApproxBytesReadForChunk() const { return 0; }
 
+    void needOnlyCount() { need_only_count = true; }
+
 protected:
+    virtual Chunk getChunkForCount(size_t rows);
+
     ColumnMappingPtr column_mapping{};
 
     InputFormatErrorsLoggerPtr errors_logger;
+
+    bool need_only_count = false;
 
 private:
     /// Number of currently parsed chunk (if parallel parsing is enabled)

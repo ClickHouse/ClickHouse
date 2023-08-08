@@ -16,7 +16,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
-#include <Storages/getVirtualsForStorage.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/Exception.h>
 #include <Parsers/queryToString.h>
 #include <TableFunctions/TableFunctionAzureBlobStorageCluster.h>
@@ -65,9 +65,7 @@ StorageAzureBlobCluster::StorageAzureBlobCluster(
         {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 
     auto columns = storage_metadata.getSampleBlock().getNamesAndTypesList();
-    virtual_columns = getVirtualsForStorage(columns, default_virtuals);
-    for (const auto & column : virtual_columns)
-        virtual_block.insert({column.type->createColumn(), column.type, column.name});
+    virtual_columns = VirtualColumnUtils::getVirtualsForStorage(columns, default_virtuals);
 }
 
 void StorageAzureBlobCluster::addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context)
@@ -83,7 +81,7 @@ RemoteQueryExecutor::Extension StorageAzureBlobCluster::getTaskIteratorExtension
 {
     auto iterator = std::make_shared<StorageAzureBlobSource::GlobIterator>(
         object_storage.get(), configuration.container, configuration.blob_path,
-        query, virtual_block, context, nullptr);
+        query, virtual_columns, context, nullptr);
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String{ return iterator->next().relative_path; });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }

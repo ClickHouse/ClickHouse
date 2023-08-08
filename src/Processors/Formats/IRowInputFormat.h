@@ -52,6 +52,9 @@ protected:
       */
     virtual bool readRow(MutableColumns & columns, RowReadExtension & extra) = 0;
 
+    virtual size_t countRows(size_t max_block_size);
+    virtual bool supportsCountRows() const { return false; }
+
     virtual void readPrefix() {}                /// delimiter before begin of result
     virtual void readSuffix() {}                /// delimiter after end of result
 

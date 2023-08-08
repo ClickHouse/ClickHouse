@@ -46,6 +46,12 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
     return res;
 }
 
+NamesAndTypesList getVirtualsForStorage(const NamesAndTypesList & storage_columns_, const NamesAndTypesList & default_virtuals_);
+
+ASTPtr createPathAndFileFilterAst(const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
+
+std::vector<UInt64> filterPaths(const std::vector<String> & paths, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context, ASTPtr filter_ast);
+
 }
 
 }

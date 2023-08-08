@@ -218,7 +218,7 @@ std::vector<String> CustomSeparatedFormatReader::readRowImpl()
     return values;
 }
 
-void CustomSeparatedFormatReader::skipHeaderRow()
+void CustomSeparatedFormatReader::skipRow()
 {
     skipRowStartDelimiter();
     bool first = true;

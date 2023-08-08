@@ -306,6 +306,16 @@ Chunk ParquetBlockInputFormat::generate()
 {
     initializeIfNeeded();
 
+    if (is_stopped || row_groups_completed == row_groups.size())
+        return {};
+
+    if (need_only_count)
+    {
+        is_stopped = true;
+        return getChunkForCount(metadata->num_rows());
+//        return getChunkForCount(metadata->RowGroup(static_cast<int>(row_groups_completed++))->num_rows());
+    }
+
     std::unique_lock lock(mutex);
 
     while (true)

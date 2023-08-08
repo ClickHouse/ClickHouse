@@ -29,7 +29,7 @@
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/PartitionedSink.h>
-#include <Storages/getVirtualsForStorage.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Formats/ReadSchemaUtils.h>
@@ -296,7 +296,7 @@ StorageHDFS::StorageHDFS(
         {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 
     auto columns = storage_metadata.getSampleBlock().getNamesAndTypesList();
-    virtual_columns = getVirtualsForStorage(columns, default_virtuals);
+    virtual_columns = VirtualColumnUtils::getVirtualsForStorage(columns, default_virtuals);
 }
 
 ColumnsDescription StorageHDFS::getTableStructureFromData(
@@ -363,17 +363,43 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
 class HDFSSource::DisclosedGlobIterator::Impl
 {
 public:
-    Impl(ContextPtr context_, const String & uri)
+    Impl(const String & uri, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
     {
         const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
-        uris = getPathsList(path_from_uri, uri_without_path, context_);
-        auto file_progress_callback = context_->getFileProgressCallback();
-        for (auto & elem : uris)
+        uris = getPathsList(path_from_uri, uri_without_path, context);
+        auto filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, context);
+        auto file_progress_callback = context->getFileProgressCallback();
+        if (filter_ast)
         {
-            elem.path = uri_without_path + elem.path;
-            if (file_progress_callback && elem.info)
-                file_progress_callback(FileProgress(0, elem.info->size));
+            std::vector<String> paths;
+            paths.reserve(uris.size());
+            for (const auto & path_with_info : uris)
+                paths.push_back(path_with_info.path);
+
+            auto indexes = VirtualColumnUtils::filterPaths(paths, query, virtual_columns, context, filter_ast);
+
+            std::vector<StorageHDFS::PathWithInfo> filtered_uris;
+            filtered_uris.reserve(indexes.size());
+            for (UInt64 i : indexes)
+            {
+                if (file_progress_callback && uris[i].info)
+                    file_progress_callback(FileProgress(0, uris[i].info->size));
+                filtered_uris.emplace_back(std::move(uris[i]));
+                filtered_uris.back().path = uri_without_path + filtered_uris.back().path;
+            }
+            
+            uris = std::move(filtered_uris);
         }
+        else
+        {
+            for (auto & elem : uris)
+            {
+                elem.path = uri_without_path + elem.path;
+                if (file_progress_callback && elem.info)
+                    file_progress_callback(FileProgress(0, elem.info->size));
+            }
+        }
+
         uris_iter = uris.begin();
     }
 
@@ -397,9 +423,30 @@ private:
 class HDFSSource::URISIterator::Impl : WithContext
 {
 public:
-    explicit Impl(const std::vector<String> & uris_, ContextPtr context_)
+    explicit Impl(const std::vector<String> & uris_, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context_)
         : WithContext(context_), uris(uris_), file_progress_callback(context_->getFileProgressCallback())
     {
+        auto filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, getContext());
+        if (filter_ast)
+        {
+            std::vector<String> paths;
+            paths.reserve(uris.size());
+            for (const auto & uri : uris)
+            {
+                auto [path, _] = getPathFromUriAndUriWithoutPath(uri);
+                paths.push_back(path);
+            }
+
+            auto indexes = VirtualColumnUtils::filterPaths(paths, query, virtual_columns, getContext(), filter_ast);
+
+            std::vector<String> filtered_uris;
+            filtered_uris.reserve(indexes.size());
+            for (UInt64 i : indexes)
+                filtered_uris.push_back(uris[i]);
+
+            uris = std::move(filtered_uris);
+        }
+
         if (!uris.empty())
         {
             auto path_and_uri = getPathFromUriAndUriWithoutPath(uris[0]);
@@ -444,16 +491,16 @@ private:
     std::function<void(FileProgress)> file_progress_callback;
 };
 
-HDFSSource::DisclosedGlobIterator::DisclosedGlobIterator(ContextPtr context_, const String & uri)
-    : pimpl(std::make_shared<HDFSSource::DisclosedGlobIterator::Impl>(context_, uri)) {}
+HDFSSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
+    : pimpl(std::make_shared<HDFSSource::DisclosedGlobIterator::Impl>(uri, query, virtual_columns, context)) {}
 
 StorageHDFS::PathWithInfo HDFSSource::DisclosedGlobIterator::next()
 {
     return pimpl->next();
 }
 
-HDFSSource::URISIterator::URISIterator(const std::vector<String> & uris_, ContextPtr context)
-    : pimpl(std::make_shared<HDFSSource::URISIterator::Impl>(uris_, context))
+HDFSSource::URISIterator::URISIterator(const std::vector<String> & uris_, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
+    : pimpl(std::make_shared<HDFSSource::URISIterator::Impl>(uris_, query, virtual_columns, context))
 {
 }
 
@@ -467,7 +514,8 @@ HDFSSource::HDFSSource(
     StorageHDFSPtr storage_,
     ContextPtr context_,
     UInt64 max_block_size_,
-    std::shared_ptr<IteratorWrapper> file_iterator_)
+    std::shared_ptr<IteratorWrapper> file_iterator_,
+    bool need_only_count_)
     : ISource(info.source_header, false)
     , WithContext(context_)
     , storage(std::move(storage_))
@@ -477,6 +525,7 @@ HDFSSource::HDFSSource(
     , max_block_size(max_block_size_)
     , file_iterator(file_iterator_)
     , columns_description(info.columns_description)
+    , need_only_count(need_only_count_)
 {
     initialize();
 }
@@ -513,8 +562,14 @@ bool HDFSSource::initialize()
     }
 
     current_path = path_with_info.path;
+    std::optional<size_t> max_parsing_threads;
+    if (need_only_count)
+        max_parsing_threads = 1;
 
-    input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
+    input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, std::nullopt, max_parsing_threads);
+
+    if (need_only_count)
+        input_format->needOnlyCount();
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
@@ -727,7 +782,7 @@ bool StorageHDFS::supportsSubsetOfColumns() const
 Pipe StorageHDFS::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
@@ -744,7 +799,7 @@ Pipe StorageHDFS::read(
     else if (is_path_with_globs)
     {
         /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(context_, uris[0]);
+        auto glob_iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(uris[0], query_info.query, virtual_columns, context_);
         iterator_wrapper = std::make_shared<HDFSSource::IteratorWrapper>([glob_iterator]()
         {
             return glob_iterator->next();
@@ -752,7 +807,7 @@ Pipe StorageHDFS::read(
     }
     else
     {
-        auto uris_iterator = std::make_shared<HDFSSource::URISIterator>(uris, context_);
+        auto uris_iterator = std::make_shared<HDFSSource::URISIterator>(uris, query_info.query, virtual_columns, context_);
         iterator_wrapper = std::make_shared<HDFSSource::IteratorWrapper>([uris_iterator]()
         {
             return uris_iterator->next();
@@ -760,6 +815,9 @@ Pipe StorageHDFS::read(
     }
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+        && context_->getSettingsRef().optimize_count_from_files;
+
     Pipes pipes;
     auto this_ptr = std::static_pointer_cast<StorageHDFS>(shared_from_this());
     for (size_t i = 0; i < num_streams; ++i)
@@ -769,7 +827,8 @@ Pipe StorageHDFS::read(
             this_ptr,
             context_,
             max_block_size,
-            iterator_wrapper));
+            iterator_wrapper,
+            need_only_count));
     }
     return Pipe::unitePipes(std::move(pipes));
 }

@@ -6,11 +6,13 @@
 #include <Storages/Distributed/DistributedAsyncInsertSource.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -36,6 +38,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Formats/IRowCounter.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ResizeProcessor.h>
@@ -699,6 +702,13 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     storage_metadata.setConstraints(args.constraints);
     storage_metadata.setComment(args.comment);
     setInMemoryMetadata(storage_metadata);
+
+    auto default_virtuals = NamesAndTypesList{
+        {"_path", std::make_shared<DataTypeString>()},
+        {"_file", std::make_shared<DataTypeString>()}};
+
+    auto columns = storage_metadata.getSampleBlock().getNamesAndTypesList();
+    virtual_columns = VirtualColumnUtils::getVirtualsForStorage(columns, default_virtuals);
 }
 
 
@@ -721,9 +731,41 @@ public:
     {
     public:
         explicit FilesIterator(
-            const Strings & files_, std::vector<std::string> archives_, std::vector<std::pair<uint64_t, std::string>> files_in_archive_)
-            : files(files_), archives(std::move(archives_)), files_in_archive(std::move(files_in_archive_))
+            const Strings & files_,
+            std::vector<std::string> archives_,
+            std::vector<std::pair<uint64_t, std::string>> files_in_archive_,
+            ASTPtr query,
+            const NamesAndTypesList & virtual_columns,
+            ContextPtr context_)
+            : archives(std::move(archives_))
         {
+            auto filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, context_);
+            if (filter_ast)
+            {
+                if (files_in_archive_.empty())
+                {
+                    auto indexes = VirtualColumnUtils::filterPaths(files_, query, virtual_columns, context_, filter_ast);
+                    files.reserve(indexes.size());
+                    for (auto i : indexes)
+                        files.push_back(files_[i]);
+                }
+                else
+                {
+                    Strings file_names;
+                    file_names.reserve(files_in_archive_.size());
+                    for (const auto & [_, file] : files_in_archive_)
+                        file_names.push_back(file);
+                    auto indexes = VirtualColumnUtils::filterPaths(files_, query, virtual_columns, context_, filter_ast);
+                    files_in_archive.reserve(indexes.size());
+                    for (auto i : indexes)
+                        files_in_archive.push_back(files_in_archive_[i]);
+                }
+            }
+            else
+            {
+                files = files_;
+                files_in_archive = std::move(files_in_archive_);
+            }
         }
 
         String next()
@@ -766,7 +808,8 @@ public:
         ContextPtr context_,
         UInt64 max_block_size_,
         FilesIteratorPtr files_iterator_,
-        std::unique_ptr<ReadBuffer> read_buf_)
+        std::unique_ptr<ReadBuffer> read_buf_,
+        bool need_only_count_)
         : ISource(info.source_header, false)
         , storage(std::move(storage_))
         , storage_snapshot(storage_snapshot_)
@@ -778,6 +821,7 @@ public:
         , block_for_format(info.format_header)
         , context(context_)
         , max_block_size(max_block_size_)
+        , need_only_count(need_only_count_)
     {
         if (!storage->use_table_fd)
         {
@@ -925,7 +969,9 @@ public:
                 const Settings & settings = context->getSettingsRef();
                 chassert(!storage->paths.empty());
                 const auto max_parsing_threads = std::max<size_t>(settings.max_threads/ storage->paths.size(), 1UL);
-                input_format = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, max_parsing_threads);
+                input_format = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, need_only_count ? 1 : max_parsing_threads);
+                if (need_only_count)
+                    input_format->needOnlyCount();
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(input_format));
@@ -1020,6 +1066,7 @@ private:
     UInt64 max_block_size;
 
     bool finished_generate = false;
+    bool need_only_count = false;
 
     std::shared_lock<std::shared_timed_mutex> shared_lock;
 };
@@ -1028,7 +1075,7 @@ private:
 Pipe StorageFile::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
@@ -1093,7 +1140,7 @@ Pipe StorageFile::read(
         files_in_archive_num = files_in_archive.size();
     }
 
-    auto files_iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, paths_to_archive, std::move(files_in_archive));
+    auto files_iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, paths_to_archive, std::move(files_in_archive), query_info.query, virtual_columns, context);
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
     size_t num_streams = max_num_streams;
@@ -1112,6 +1159,8 @@ Pipe StorageFile::read(
         progress_callback(FileProgress(0, total_bytes_to_read));
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+        && context->getSettingsRef().optimize_count_from_files;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -1130,7 +1179,8 @@ Pipe StorageFile::read(
             context,
             max_block_size,
             files_iterator,
-            std::move(read_buffer)));
+            std::move(read_buffer),
+            need_only_count));
     }
 
     return Pipe::unitePipes(std::move(pipes));
@@ -1646,14 +1696,6 @@ void registerStorageFile(StorageFactory & factory)
                 return std::make_shared<StorageFile>(source_path, factory_args.getContext()->getUserFilesPath(), storage_args);
         },
         storage_features);
-}
-
-
-NamesAndTypesList StorageFile::getVirtuals() const
-{
-    return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
 SchemaCache & StorageFile::getSchemaCache(const ContextPtr & context)

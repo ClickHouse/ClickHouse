@@ -300,6 +300,49 @@ bool TabSeparatedFormatReader::checkForSuffix()
     return false;
 }
 
+void TabSeparatedFormatReader::skipRow()
+{
+    ReadBuffer & istr = *buf;
+    while (!istr.eof())
+    {
+        char * pos;
+        if (is_raw)
+            pos = find_first_symbols<'\r', '\n'>(istr.position(), istr.buffer().end());
+        else
+            pos = find_first_symbols<'\\', '\r', '\n'>(istr.position(), istr.buffer().end());
+
+        istr.position() = pos;
+
+        if (istr.position() > istr.buffer().end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
+        else if (pos == istr.buffer().end())
+            continue;
+
+        if (!is_raw && *istr.position() == '\\')
+        {
+            ++istr.position();
+            if (!istr.eof())
+                ++istr.position();
+            continue;
+        }
+
+        if (*istr.position() == '\n')
+        {
+            ++istr.position();
+            if (!istr.eof() && *istr.position() == '\r')
+                ++istr.position();
+            return;
+        }
+        else if (*istr.position() == '\r')
+        {
+            ++istr.position();
+            if (!istr.eof() && *istr.position() == '\n')
+                ++istr.position();
+            return;
+        }
+    }
+}
+
 TabSeparatedSchemaReader::TabSeparatedSchemaReader(
     ReadBuffer & in_, bool with_names_, bool with_types_, bool is_raw_, const FormatSettings & format_settings_)
     : FormatWithNamesAndTypesSchemaReader(

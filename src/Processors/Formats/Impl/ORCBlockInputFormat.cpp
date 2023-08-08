@@ -42,6 +42,9 @@ Chunk ORCBlockInputFormat::generate()
     if (stripe_current >= stripe_total)
         return {};
 
+    if (need_only_count)
+        return getChunkForCount(file_reader->GetRawORCReader()->getStripe(stripe_current++)->getNumberOfRows());
+
     auto batch_result = file_reader->ReadStripe(stripe_current, include_indices);
     if (!batch_result.ok())
         throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to create batch reader: {}", batch_result.status().ToString());

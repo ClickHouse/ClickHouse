@@ -32,7 +32,6 @@
 #    include <Storages/StorageS3.h>
 #    include <Storages/StorageSnapshot.h>
 #    include <Storages/VirtualColumnUtils.h>
-#    include <Storages/getVirtualsForStorage.h>
 #    include <Storages/prepareReadingFromFormat.h>
 #    include <Common/NamedCollections/NamedCollections.h>
 
@@ -177,9 +176,7 @@ StorageS3Queue::StorageS3Queue(
         {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 
     auto columns = storage_metadata.getSampleBlock().getNamesAndTypesList();
-    virtual_columns = getVirtualsForStorage(columns, default_virtuals);
-    for (const auto & column : virtual_columns)
-        virtual_block.insert({column.type->createColumn(), column.type, column.name});
+    virtual_columns = VirtualColumnUtils::getVirtualsForStorage(columns, default_virtuals);
 
     auto poll_thread = getContext()->getSchedulePool().createTask("S3QueueStreamingTask", [this] { threadFunc(); });
     task = std::make_shared<TaskContext>(std::move(poll_thread));
@@ -527,7 +524,7 @@ StorageS3Queue::createFileIterator(ContextPtr local_context, ASTPtr query)
         *configuration.client,
         configuration.url,
         query,
-        virtual_block,
+        virtual_columns,
         local_context,
         s3queue_settings->s3queue_polling_size.value,
         configuration.request_settings);

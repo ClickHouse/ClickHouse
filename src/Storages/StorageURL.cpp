@@ -2,6 +2,7 @@
 #include <Storages/PartitionedSink.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
@@ -125,6 +126,13 @@ IStorageURLBase::IStorageURLBase(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
+
+    auto default_virtuals = NamesAndTypesList{
+        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
+
+    auto columns = storage_metadata.getSampleBlock().getNamesAndTypesList();
+    virtual_columns = VirtualColumnUtils::getVirtualsForStorage(columns, default_virtuals);
 }
 
 
@@ -158,9 +166,27 @@ namespace
 class StorageURLSource::DisclosedGlobIterator::Impl
 {
 public:
-    Impl(const String & uri, size_t max_addresses)
+    Impl(const String & uri_, size_t max_addresses, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
     {
-        uris = parseRemoteDescription(uri, 0, uri.size(), ',', max_addresses);
+        uris = parseRemoteDescription(uri_, 0, uri_.size(), ',', max_addresses);
+
+        auto filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, context);
+
+        if (filter_ast)
+        {
+            std::vector<String> paths;
+            paths.reserve(uris.size());
+            for (const auto & uri : uris)
+                paths.push_back(Poco::URI(uri).getPath());
+
+            auto indexes = VirtualColumnUtils::filterPaths(paths, query, virtual_columns, context, filter_ast);
+
+            Strings filtered_uris;
+            filtered_uris.reserve(indexes.size());
+            for (auto i : indexes)
+                filtered_uris.emplace_back(uris[i]);
+            uris = std::move(filtered_uris);
+        }
     }
 
     String next()
@@ -182,8 +208,8 @@ private:
     std::atomic_size_t index = 0;
 };
 
-StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, size_t max_addresses)
-    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, max_addresses)) {}
+StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, size_t max_addresses, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
+    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, max_addresses, query, virtual_columns, context)) {}
 
 String StorageURLSource::DisclosedGlobIterator::next()
 {
@@ -224,7 +250,8 @@ StorageURLSource::StorageURLSource(
     size_t download_threads,
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
-    bool glob_url)
+    bool glob_url,
+    bool need_only_count_)
     : ISource(info.source_header, false)
     , name(std::move(name_))
     , columns_description(info.columns_description)
@@ -232,6 +259,7 @@ StorageURLSource::StorageURLSource(
     , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
     , uri_iterator(uri_iterator_)
+    , need_only_count(need_only_count_)
 {
     auto headers = getHeaders(headers_);
 
@@ -282,10 +310,13 @@ StorageURLSource::StorageURLSource(
             context,
             max_block_size,
             format_settings,
-            download_threads,
+            need_only_count ? 1 : download_threads,
             /*max_download_threads*/ std::nullopt,
             /* is_remote_fs */ true,
             compression_method);
+
+        if (need_only_count)
+            input_format->needOnlyCount();
 
         QueryPipelineBuilder builder;
         builder.init(Pipe(input_format));
@@ -723,7 +754,7 @@ Pipe IStorageURLBase::read(
     else if (is_url_with_globs)
     {
         /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(uri, max_addresses);
+        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(uri, max_addresses, query_info.query, virtual_columns, local_context);
         iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>([glob_iterator, max_addresses]()
         {
             String next_uri = glob_iterator->next();
@@ -737,9 +768,17 @@ Pipe IStorageURLBase::read(
     }
     else
     {
-        iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>([&, max_addresses, done = false]() mutable
+        auto filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query_info.query, virtual_columns, local_context);
+        bool filter_uri = false;
+        if (filter_ast)
         {
-            if (done)
+            auto indexes = VirtualColumnUtils::filterPaths({Poco::URI(uri).getPath()}, query_info.query, virtual_columns, local_context, filter_ast);
+            filter_uri = indexes.empty();
+        }
+
+        iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>([&, max_addresses, filter_uri, done = false]() mutable
+        {
+            if (done || filter_uri)
                 return StorageURLSource::FailoverOptions{};
             done = true;
             return getFailoverOptions(uri, max_addresses);
@@ -748,6 +787,8 @@ Pipe IStorageURLBase::read(
     }
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+        && local_context->getSettingsRef().optimize_count_from_files;
 
     Pipes pipes;
     pipes.reserve(num_streams);
@@ -776,7 +817,8 @@ Pipe IStorageURLBase::read(
             download_threads,
             headers,
             params,
-            is_url_with_globs));
+            is_url_with_globs,
+            need_only_count));
     }
 
     return Pipe::unitePipes(std::move(pipes));
@@ -861,13 +903,6 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             headers,
             http_method);
     }
-}
-
-NamesAndTypesList IStorageURLBase::getVirtuals() const
-{
-    return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
 SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)

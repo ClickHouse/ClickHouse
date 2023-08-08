@@ -47,7 +47,7 @@ public:
 
     bool supportsPartitionBy() const override { return true; }
 
-    NamesAndTypesList getVirtuals() const override;
+    NamesAndTypesList getVirtuals() const override { return virtual_columns; }
 
     static ColumnsDescription getTableStructureFromData(
         const String & format,
@@ -88,6 +88,8 @@ protected:
     ASTPtr partition_by;
     bool distributed_processing;
 
+    NamesAndTypesList virtual_columns;
+
     virtual std::string getReadMethod() const;
 
     virtual std::vector<std::pair<std::string, std::string>> getReadURIParams(
@@ -111,6 +113,8 @@ protected:
     bool prefersLargeBlocks() const override;
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
+
+    bool supportsTrivialCountOptimization() const override { return true; }
 
 private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
@@ -146,7 +150,8 @@ public:
     class DisclosedGlobIterator
     {
     public:
-        DisclosedGlobIterator(const String & uri_, size_t max_addresses);
+        DisclosedGlobIterator(const String & uri_, size_t max_addresses, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
+
         String next();
         size_t size();
     private:
@@ -173,7 +178,8 @@ public:
         size_t download_threads,
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
-        bool glob_url = false);
+        bool glob_url = false,
+        bool need_only_count_ = false);
 
     String getName() const override { return name; }
 
@@ -205,6 +211,7 @@ private:
     Block block_for_format;
     std::shared_ptr<IteratorWrapper> uri_iterator;
     Poco::URI curr_uri;
+    bool need_only_count;
 
     std::unique_ptr<ReadBuffer> read_buf;
     std::shared_ptr<IInputFormat> input_format;
