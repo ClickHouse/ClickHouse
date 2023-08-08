@@ -38,8 +38,6 @@ public:
 
     static NamesAndTypesList getNamesAndTypes();
 
-    static void fillDataImpl(MutableColumns & res_columns, FileCachePtr cache, const std::string & cache_name, const FileSegments & file_segments);
-
 protected:
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 };

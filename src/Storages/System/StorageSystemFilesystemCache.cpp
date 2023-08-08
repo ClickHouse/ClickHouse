@@ -46,44 +46,39 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
     {
         const auto & cache = cache_data->cache;
         const auto file_segments = cache->getSnapshot();
-        fillDataImpl(res_columns, cache, cache_name, file_segments);
-    }
-}
-
-void StorageSystemFilesystemCache::fillDataImpl(MutableColumns & res_columns, FileCachePtr cache, const std::string & cache_name, const FileSegments & file_segments)
-{
-    for (const auto & file_segment : file_segments)
-    {
-        size_t i = 0;
-        res_columns[i++]->insert(cache_name);
-        res_columns[i++]->insert(cache->getBasePath());
-
-        /// Do not use `file_segment->getPathInLocalCache` here because it will lead to nullptr dereference
-        /// (because file_segments in getSnapshot doesn't have `cache` field set)
-        const auto path = cache->getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->getKind());
-        res_columns[i++]->insert(path);
-        res_columns[i++]->insert(file_segment->key().toString());
-
-        const auto & range = file_segment->range();
-        res_columns[i++]->insert(range.left);
-        res_columns[i++]->insert(range.right);
-        res_columns[i++]->insert(range.size());
-        res_columns[i++]->insert(FileSegment::stateToString(file_segment->state()));
-        res_columns[i++]->insert(file_segment->getHitsCount());
-        res_columns[i++]->insert(file_segment->getRefCount());
-        res_columns[i++]->insert(file_segment->getDownloadedSize(false));
-        res_columns[i++]->insert(toString(file_segment->getKind()));
-        res_columns[i++]->insert(file_segment->isUnbound());
-        try
+        for (const auto & file_segment : file_segments)
         {
-            if (fs::exists(path))
-                res_columns[i++]->insert(fs::file_size(path));
-            else
+            size_t i = 0;
+            res_columns[i++]->insert(cache_name);
+            res_columns[i++]->insert(cache->getBasePath());
+
+            /// Do not use `file_segment->getPathInLocalCache` here because it will lead to nullptr dereference
+            /// (because file_segments in getSnapshot doesn't have `cache` field set)
+            const auto path = cache->getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->getKind());
+            res_columns[i++]->insert(path);
+            res_columns[i++]->insert(file_segment->key().toString());
+
+            const auto & range = file_segment->range();
+            res_columns[i++]->insert(range.left);
+            res_columns[i++]->insert(range.right);
+            res_columns[i++]->insert(range.size());
+            res_columns[i++]->insert(FileSegment::stateToString(file_segment->state()));
+            res_columns[i++]->insert(file_segment->getHitsCount());
+            res_columns[i++]->insert(file_segment->getRefCount());
+            res_columns[i++]->insert(file_segment->getDownloadedSize(false));
+            res_columns[i++]->insert(toString(file_segment->getKind()));
+            res_columns[i++]->insert(file_segment->isUnbound());
+            try
+            {
+                if (fs::exists(path))
+                    res_columns[i++]->insert(fs::file_size(path));
+                else
+                    res_columns[i++]->insertDefault();
+            }
+            catch (...)
+            {
                 res_columns[i++]->insertDefault();
-        }
-        catch (...)
-        {
-            res_columns[i++]->insertDefault();
+            }
         }
     }
 }
