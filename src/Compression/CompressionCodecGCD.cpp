@@ -40,7 +40,8 @@ T gcd_func(T a, T b)
     {
         a = -a;
     }
-    if (b < 0) {
+    if (b < 0)
+    {
         b = -b;
     }
     while (b != 0)
@@ -144,9 +145,8 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
     if (source_size % sizeof(T) != 0)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot GCD decompress, data size {}  is not aligned to {}", source_size, sizeof(T));
 
-    if (source_size < sizeof(T)) {
+    if (source_size < sizeof(T))
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot GCD decompress, data size {} is less than {}", source_size, sizeof(T));
-    }
 
     const char * const source_end = source + source_size;
     const T gcd = unalignedLoad<T>(source);
