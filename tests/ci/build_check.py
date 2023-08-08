@@ -421,8 +421,9 @@ def main():
     )
     url = f"https://{clickhouse_ci_logs_host}/?query={query}"
     file_path = os.path.join(build_profile_path, "profile.json")
+    file_size = os.path.getsize(file_path)
 
-    print(f"::notice ::Log Uploading profile data, path: {file_path}, query: {query}")
+    print(f"::notice ::Log Uploading profile data, path: {file_path}, size: {file_size}, query: {query}")
 
     with open(file_path, "rb") as file:
         requests.post(url, data=file, auth=("ci", maybe_clickhouse_ci_logs_password))
