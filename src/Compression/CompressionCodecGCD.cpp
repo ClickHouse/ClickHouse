@@ -65,7 +65,7 @@ public:
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override { return uncompressed_size + 2; }
+    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
  
     bool isCompression() const override { return false; }
     bool isGenericCompression() const override { return false; }
@@ -82,6 +82,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int ILLEGAL_CODEC_PARAMETER;
     extern const int BAD_ARGUMENTS;
+}
+
+ UInt32 CompressionCodecGCD::getMaxCompressedDataSize(UInt32 uncompressed_size) const override
+ {
+    return uncompressed_size + 2;
 }
 
 CompressionCodecGCD::CompressionCodecGCD(Int8 gcd_bytes_size_)
@@ -336,7 +341,9 @@ Int8 getGCDBytesSize(const IDataType * column_type)
         else if (column_type->getName() == "Int256")
         {
             return static_cast<Int8>(GCDTypes::Int256_type);
-        } else {
+        }
+        else
+        {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec GCD is only applicable for data types of size 1, 2, 4, 8, 16, 32 bytes. Given type {}",
             column_type->getName());
         }
