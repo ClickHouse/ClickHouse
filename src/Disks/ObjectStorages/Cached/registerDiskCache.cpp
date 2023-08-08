@@ -55,8 +55,8 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
             if (!pathStartsWith(file_cache_settings.base_path, config_fs_caches_dir))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Filesystem cache path must lie inside default filesystem cache path `{}`",
-                                config_fs_caches_dir);
+                                "Filesystem cache path {} must lie inside default filesystem cache path `{}`",
+                                file_cache_settings.base_path, config_fs_caches_dir);
             }
         }
 
