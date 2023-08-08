@@ -3,6 +3,9 @@ name: BackportPR
 env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
+  # Export system tables to ClickHouse Cloud
+  CLICKHOUSE_CI_LOGS_HOST: ${{ secrets.CLICKHOUSE_CI_LOGS_HOST }}
+  CLICKHOUSE_CI_LOGS_PASSWORD: ${{ secrets.CLICKHOUSE_CI_LOGS_PASSWORD }}
 
 on: # yamllint disable-line rule:truthy
   push:
