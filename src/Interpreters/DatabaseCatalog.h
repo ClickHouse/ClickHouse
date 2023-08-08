@@ -38,7 +38,7 @@ public:
         database(database_)
     {
     }
-    Names getAllRegisteredNames() const override 
+    Names getAllRegisteredNames() const override
     {
         Names result;
         if (database)
