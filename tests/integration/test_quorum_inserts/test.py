@@ -192,6 +192,9 @@ def test_insert_quorum_with_drop_partition(started_cluster, add_new_data):
     """
     )
 
+    # Sync second replica not to have `REPLICA_IS_NOT_IN_QUORUM` error
+    second.query(f"SYSTEM SYNC REPLICA {table_name}")
+
     print("Select from updated partition.")
     if add_new_data:
         assert TSV("2\t2011-01-01\n") == TSV(zero.query(f"SELECT * FROM {table_name}"))
@@ -269,6 +272,9 @@ def test_insert_quorum_with_move_partition(started_cluster, add_new_data):
     SELECT * FROM system.zookeeper WHERE path = p FORMAT Vertical
     """
     )
+
+    # Sync second replica not to have `REPLICA_IS_NOT_IN_QUORUM` error
+    second.query(f"SYSTEM SYNC REPLICA {source_table_name}")
 
     print("Select from updated partition.")
     if add_new_data:
