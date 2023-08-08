@@ -256,10 +256,6 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         if (!key_columns.contains(name))
             key_columns.insert(name);
 
-    ASTPtr ast_filter_node = buildFilterNode(query_info.query);
-    if (!ast_filter_node)
-        return;
-
     if (context->getSettingsRef().allow_experimental_analyzer)
     {
         if (!query_info.filter_actions_dag)
@@ -280,6 +276,10 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     }
     else
     {
+        ASTPtr ast_filter_node = buildFilterNode(query_info.query);
+        if (!ast_filter_node)
+            return;
+
         if (checkASTUseless(ast_filter_node))
             return;
 
