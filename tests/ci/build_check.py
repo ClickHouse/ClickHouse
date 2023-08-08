@@ -417,14 +417,13 @@ def main():
     )
     clickhouse_ci_logs_host = os.getenv("CLICKHOUSE_CI_LOGS_HOST")
     maybe_clickhouse_ci_logs_password: str = os.getenv("CLICKHOUSE_CI_LOGS_PASSWORD") or ""
-    clickhouse_ci_logs_password = urllib.parse.quote(maybe_clickhouse_ci_logs_password)
-    url = f"https://ci:{clickhouse_ci_logs_password}@{clickhouse_ci_logs_host}/?query={query}"
+    url = f"https://{clickhouse_ci_logs_host}/?query={query}"
     file_path = os.path.join(build_profile_path, "profile.json")
 
     print(f"::notice ::Log Uploading profile data, path: {file_path}, query: {query}")
 
     with open(file_path, "rb") as file:
-        requests.post(url, data=file)
+        requests.post(url, data=file, auth=("ci", maybe_clickhouse_ci_logs_password))
 
     # Upload statistics to CI database
 
