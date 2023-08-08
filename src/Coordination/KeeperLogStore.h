@@ -14,7 +14,7 @@ namespace DB
 class KeeperLogStore : public nuraft::log_store
 {
 public:
-    KeeperLogStore(LogFileSettings log_file_settings, KeeperContextPtr keeper_context);
+    KeeperLogStore(LogFileSettings log_file_settings, FlushSettings flush_settings, KeeperContextPtr keeper_context);
 
     /// Read log storage from filesystem starting from last_commited_log_index
     void init(uint64_t last_commited_log_index, uint64_t logs_to_keep);
