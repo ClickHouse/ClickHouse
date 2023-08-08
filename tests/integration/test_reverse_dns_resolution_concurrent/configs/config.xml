@@ -1,4 +1,5 @@
 <clickhouse>
     <max_concurrent_queries>250</max_concurrent_queries>
     <dns_cache_update_period>1</dns_cache_update_period>
+    <allow_reverse_dns_query_function>1</allow_reverse_dns_query_function>
 </clickhouse>
