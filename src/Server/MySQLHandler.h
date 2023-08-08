@@ -56,6 +56,12 @@ protected:
 
     void authenticate(const String & user_name, const String & auth_plugin_name, const String & auth_response);
 
+    void comStmtPrepare(ReadBuffer & payload);
+
+    void comStmtExecute(ReadBuffer & payload);
+
+    void comStmtClose(ReadBuffer & payload);
+
     virtual void authPluginSSL();
     virtual void finishHandshakeSSL(size_t packet_size, char * buf, size_t pos, std::function<void(size_t)> read_bytes, MySQLProtocol::ConnectionPhase::HandshakeResponse & packet);
 
@@ -75,6 +81,10 @@ protected:
     using ReplacementFn = std::function<String(const String & query)>;
     using Replacements = std::unordered_map<std::string, ReplacementFn>;
     Replacements replacements;
+
+    uint32_t current_prepared_statement_id = 0;
+    using PreparedStatementsMap = std::unordered_map<uint32_t, String>;
+    PreparedStatementsMap prepared_statements_map;
 
     std::unique_ptr<MySQLProtocol::Authentication::IPlugin> auth_plugin;
     std::shared_ptr<ReadBufferFromPocoSocket> in;
