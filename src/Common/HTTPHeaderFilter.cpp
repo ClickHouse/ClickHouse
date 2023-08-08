@@ -20,7 +20,7 @@ void HTTPHeaderFilter::checkHeaders(const HTTPHeaderEntries & entries) const
     {
         if (entry.name.contains('\n') || entry.value.contains('\n'))
            throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has invalid character", entry.name);
-           
+
         if (forbidden_headers.contains(entry.name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
                                                     "see <http_forbid_headers>", entry.name);
