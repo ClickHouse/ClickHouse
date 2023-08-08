@@ -208,28 +208,33 @@ void KeeperServer::loadLatestConfig()
 {
     auto latest_snapshot_config = state_machine->getClusterConfig();
     auto latest_log_store_config = state_manager->getLatestConfigFromLogStore();
+    auto async_replication = coordination_settings->async_replication;
 
     if (latest_snapshot_config && latest_log_store_config)
     {
         if (latest_snapshot_config->get_log_idx() > latest_log_store_config->get_log_idx())
         {
             LOG_INFO(log, "Will use config from snapshot with log index {}", latest_snapshot_config->get_log_idx());
+            latest_snapshot_config->set_async_replication(async_replication);
             state_manager->save_config(*latest_snapshot_config);
         }
         else
         {
-            LOG_INFO(log, "Will use config from log store with log index {}", latest_snapshot_config->get_log_idx());
+            LOG_INFO(log, "Will use config from log store with log index {}", latest_log_store_config->get_log_idx());
+            latest_log_store_config->set_async_replication(async_replication);
             state_manager->save_config(*latest_log_store_config);
         }
     }
     else if (latest_snapshot_config)
     {
         LOG_INFO(log, "No config in log store, will use config from snapshot with log index {}", latest_snapshot_config->get_log_idx());
+        latest_snapshot_config->set_async_replication(async_replication);
         state_manager->save_config(*latest_snapshot_config);
     }
     else if (latest_log_store_config)
     {
         LOG_INFO(log, "No config in snapshot, will use config from log store with log index {}", latest_log_store_config->get_log_idx());
+        latest_log_store_config->set_async_replication(async_replication);
         state_manager->save_config(*latest_log_store_config);
     }
     else
@@ -413,7 +418,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
     loadLatestConfig();
 
-    last_local_config = state_manager->parseServersConfiguration(config, true).cluster_config;
+    last_local_config = state_manager->parseServersConfiguration(config, true, coordination_settings->async_replication).cluster_config;
 
     launchRaftServer(config, enable_ipv6);
 
@@ -837,12 +842,12 @@ bool KeeperServer::applyConfigUpdate(const ClusterUpdateAction & action)
 
 ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config)
 {
-    auto diff = state_manager->getRaftConfigurationDiff(config);
+    auto diff = state_manager->getRaftConfigurationDiff(config, coordination_settings);
 
     if (!diff.empty())
     {
         std::lock_guard lock{server_write_mutex};
-        last_local_config = state_manager->parseServersConfiguration(config, true).cluster_config;
+        last_local_config = state_manager->parseServersConfiguration(config, true, coordination_settings->async_replication).cluster_config;
     }
 
     return diff;

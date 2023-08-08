@@ -586,13 +586,15 @@ private:
     std::unique_ptr<ReadBuffer> read_buf;
 };
 
-Changelog::Changelog(Poco::Logger * log_, LogFileSettings log_file_settings, KeeperContextPtr keeper_context_)
+Changelog::Changelog(
+    Poco::Logger * log_, LogFileSettings log_file_settings, FlushSettings flush_settings_, KeeperContextPtr keeper_context_)
     : changelogs_detached_dir("detached")
     , rotate_interval(log_file_settings.rotate_interval)
     , log(log_)
     , write_operations(std::numeric_limits<size_t>::max())
     , append_completion_queue(std::numeric_limits<size_t>::max())
     , keeper_context(std::move(keeper_context_))
+    , flush_settings(flush_settings_)
 {
     if (auto latest_log_disk = getLatestLogDisk();
         log_file_settings.force_sync && dynamic_cast<const DiskLocal *>(latest_log_disk.get()) == nullptr)
@@ -1017,12 +1019,9 @@ void Changelog::writeThread()
     size_t pending_appends = 0;
     bool try_batch_flush = false;
 
-    /// turn into setting
-    static constexpr size_t max_flush_batch_size = 1000;
-
     const auto flush_logs = [&](const auto & flush)
     {
-        LOG_INFO(log, "Flushing {} logs", pending_appends);
+        LOG_TRACE(log, "Flushing {} logs", pending_appends);
 
         {
             std::lock_guard writer_lock(writer_mutex);
@@ -1088,7 +1087,7 @@ void Changelog::writeThread()
             if (batch_append_ok)
             {
                 /// we can try batching more logs for flush
-                if (pending_appends < max_flush_batch_size)
+                if (pending_appends < flush_settings.max_flush_batch_size)
                 {
                     try_batch_flush = true;
                     continue;
