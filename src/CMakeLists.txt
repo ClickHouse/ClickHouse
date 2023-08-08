@@ -248,6 +248,7 @@ add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_storages_windowview Storages/WindowView)
+add_object_library(clickhouse_storages_s3queue Storages/S3Queue)
 add_object_library(clickhouse_client Client)
 add_object_library(clickhouse_bridge BridgeHelper)
 add_object_library(clickhouse_server Server)
@@ -573,6 +574,10 @@ endif()
 
 if (TARGET ch_contrib::bzip2)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::bzip2)
+endif()
+
+if (TARGET ch_contrib::libarchive)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::libarchive)
 endif()
 
 if (TARGET ch_contrib::minizip)
