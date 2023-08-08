@@ -412,7 +412,7 @@ FilterDAGInfo buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
     const auto & query_context = planner_context->getQueryContext();
 
     auto row_policy_filter = query_context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-    if (!row_policy_filter)
+    if (!row_policy_filter || row_policy_filter->empty())
         return {};
 
     return buildFilterInfo(row_policy_filter->expression, table_expression_query_info.table_expression, planner_context);
