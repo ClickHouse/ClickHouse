@@ -116,18 +116,14 @@ def wait_for_fail_backup(node, backup_id, backup_name):
         "Concurrent backups not supported",
         f"Backup {backup_name} already exists",
     ]
-    status = (
-        node
-        .query(f"SELECT status FROM system.backups WHERE id == '{backup_id}'")
-        .rstrip("\n")
-    )
+    status = node.query(
+        f"SELECT status FROM system.backups WHERE id == '{backup_id}'"
+    ).rstrip("\n")
     # It is possible that the second backup was picked up first, and then the async backup
     if status == "BACKUP_FAILED":
-        error = (
-            node
-            .query(f"SELECT error FROM system.backups WHERE id == '{backup_id}'")
-            .rstrip("\n")
-        )
+        error = node.query(
+            f"SELECT error FROM system.backups WHERE id == '{backup_id}'"
+        ).rstrip("\n")
         assert any([expected_error in error for expected_error in expected_errors])
         return
     elif status == "CREATING_BACKUP":
@@ -138,12 +134,10 @@ def wait_for_fail_backup(node, backup_id, backup_name):
             sleep_time=2,
             retry_count=50,
         )
-        error = (
-            node
-            .query(f"SELECT error FROM system.backups WHERE id == '{backup_id}'")
-            .rstrip("\n")
-        )
-        assert re.search(f"Backup {backup_name} already exists",error)
+        error = node.query(
+            f"SELECT error FROM system.backups WHERE id == '{backup_id}'"
+        ).rstrip("\n")
+        assert re.search(f"Backup {backup_name} already exists", error)
         return
     else:
         assert False, "Concurrent backups both passed, when one is expected to fail"
@@ -154,18 +148,14 @@ def wait_for_fail_restore(node, restore_id):
         "Concurrent restores not supported",
         "Cannot restore the table default.tbl because it already contains some data",
     ]
-    status = (
-        node
-        .query(f"SELECT status FROM system.backups WHERE id == '{restore_id}'")
-        .rstrip("\n")
-    )
+    status = node.query(
+        f"SELECT status FROM system.backups WHERE id == '{restore_id}'"
+    ).rstrip("\n")
     # It is possible that the second backup was picked up first, and then the async backup
     if status == "RESTORE_FAILED":
-        error = (
-            node
-            .query(f"SELECT error FROM system.backups WHERE id == '{restore_id}'")
-            .rstrip("\n")
-        )
+        error = node.query(
+            f"SELECT error FROM system.backups WHERE id == '{restore_id}'"
+        ).rstrip("\n")
         assert any([expected_error in error for expected_error in expected_errors])
         return
     elif status == "RESTORING":
@@ -176,12 +166,13 @@ def wait_for_fail_restore(node, restore_id):
             sleep_time=2,
             retry_count=50,
         )
-        error = (
-            node
-            .query(f"SELECT error FROM system.backups WHERE id == '{backup_id}'")
-            .rstrip("\n")
+        error = node.query(
+            f"SELECT error FROM system.backups WHERE id == '{backup_id}'"
+        ).rstrip("\n")
+        assert re.search(
+            "Cannot restore the table default.tbl because it already contains some data",
+            error,
         )
-        assert re.search("Cannot restore the table default.tbl because it already contains some data",error)
         return
     else:
         assert False, "Concurrent restores both passed, when one is expected to fail"
@@ -219,7 +210,7 @@ def test_concurrent_backups_on_same_node():
         f"Backup {backup_name} already exists",
     ]
     if not error:
-        wait_for_fail_backup(nodes[0],id,backup_name)
+        wait_for_fail_backup(nodes[0], id, backup_name)
 
     assert any([expected_error in error for expected_error in expected_errors])
 
@@ -270,7 +261,7 @@ def test_concurrent_backups_on_different_nodes():
     ]
 
     if not error:
-        wait_for_fail_backup(nodes[1],id,backup_name)
+        wait_for_fail_backup(nodes[1], id, backup_name)
 
     assert any([expected_error in error for expected_error in expected_errors])
 
@@ -320,7 +311,7 @@ def test_concurrent_restores_on_same_node():
     ]
 
     if not error:
-        wait_for_fail_restore(nodes[0],restore_id)
+        wait_for_fail_restore(nodes[0], restore_id)
 
     assert any([expected_error in error for expected_error in expected_errors])
 
@@ -370,7 +361,7 @@ def test_concurrent_restores_on_different_node():
     ]
 
     if not error:
-        wait_for_fail_restore(nodes[0],restore_id)
+        wait_for_fail_restore(nodes[0], restore_id)
 
     assert any([expected_error in error for expected_error in expected_errors])
 
