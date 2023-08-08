@@ -379,6 +379,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATED_SENDS:
         case Type::STOP_REPLICATION_QUEUES:
         case Type::START_REPLICATION_QUEUES:
+        case Type::STOP_PULLING_REPLICATION_LOG:
+        case Type::START_PULLING_REPLICATION_LOG:
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);

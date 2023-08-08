@@ -5,6 +5,7 @@
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
+#include <shared_mutex>
 
 namespace DB
 {
@@ -50,6 +51,7 @@ struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
         CleanupQueue & cleanup_queue_,
         DownloadQueue & download_queue_,
         Poco::Logger * log_,
+        std::shared_mutex & key_prefix_directory_mutex_,
         bool created_base_directory_ = false);
 
     enum class KeyState
@@ -76,6 +78,7 @@ private:
     KeyGuard guard;
     CleanupQueue & cleanup_queue;
     DownloadQueue & download_queue;
+    std::shared_mutex & key_prefix_directory_mutex;
     std::atomic<bool> created_base_directory = false;
     Poco::Logger * log;
 };
@@ -128,6 +131,7 @@ private:
     mutable CacheMetadataGuard guard;
     const CleanupQueuePtr cleanup_queue;
     const DownloadQueuePtr download_queue;
+    std::shared_mutex key_prefix_directory_mutex;
     Poco::Logger * log;
 
     void downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory);
