@@ -21,7 +21,7 @@ StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
 {
     if (auto storage = tryGetTable(name, context))
         return storage;
-    TableNameHints hints(const_cast<IDatabase *>(this)->shared_from_this(), context);
+    TableNameHints hints(this->shared_from_this(), context);
     std::vector<String> names = hints.getHints(name);
     if (!names.empty())
     {

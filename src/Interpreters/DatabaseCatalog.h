@@ -33,7 +33,7 @@ namespace DB
 class TableNameHints : public IHints<1, TableNameHints>
 {
 public:
-    TableNameHints(DatabasePtr database_, ContextPtr context_)
+    TableNameHints(ConstDatabasePtr database_, ContextPtr context_)
         : context(context_),
         database(database_)
     {
