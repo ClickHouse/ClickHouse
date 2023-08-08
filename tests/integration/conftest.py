@@ -23,7 +23,9 @@ def tune_local_port_range():
     try:
         run_and_check(["sysctl net.ipv4.ip_local_port_range='55000 65535'"], shell=True)
     except Exception as ex:
-        logging.warning("Failed to run sysctl, tests may fail with EADDRINUSE %s", str(ex))
+        logging.warning(
+            "Failed to run sysctl, tests may fail with EADDRINUSE %s", str(ex)
+        )
 
 
 @pytest.fixture(autouse=True, scope="session")
