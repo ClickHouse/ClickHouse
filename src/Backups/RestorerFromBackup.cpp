@@ -322,6 +322,7 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
     read_buffer.reset();
     ParserCreateQuery create_parser;
     ASTPtr create_table_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    applyCustomStoragePolicy(create_table_query);
     renameDatabaseAndTableNameInCreateQuery(create_table_query, renaming_map, context->getGlobalContext());
 
     QualifiedTableName table_name = renaming_map.getNewTableName(table_name_in_backup);
@@ -622,6 +623,24 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
     {
         e.addMessage("While checking database {}", backQuoteIfNeed(database_name));
         throw;
+    }
+}
+
+void RestorerFromBackup::applyCustomStoragePolicy(ASTPtr query_ptr)
+{
+    constexpr auto setting_name = "storage_policy";
+    if (query_ptr && restore_settings.storage_policy.has_value())
+    {
+        ASTStorage * storage = query_ptr->as<ASTCreateQuery &>().storage;
+        if (storage && storage->settings)
+        {
+            if (restore_settings.storage_policy.value().empty())
+                /// it has been set to "" deliberately, so the source storage policy is erased
+                storage->settings->changes.removeSetting(setting_name);
+            else
+                /// it has been set to a custom value, so it either overwrites the existing value or is added as a new one
+                storage->settings->changes.setSetting(setting_name, restore_settings.storage_policy.value());
+        }
     }
 }
 
