@@ -184,6 +184,6 @@ fi
 # Prepare profile info (time-trace)
 mkdir -p profile-tmp
 ../utils/prepare-time-trace/prepare-time-trace.sh . profile-tmp
-ls -1 profile-tmp | xargs cat > /profile/profile.json
+find profile-tmp -type f -print0 | xargs -0 cat > /profile/profile.json
 
 ls -l /output
