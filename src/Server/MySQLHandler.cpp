@@ -4,6 +4,7 @@
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Core/MySQL/PacketsGeneric.h>
+#include <Core/MySQL/PacketsPreparedStatements.h>
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/NamesAndTypes.h>
@@ -40,6 +41,7 @@ using namespace MySQLProtocol;
 using namespace MySQLProtocol::Generic;
 using namespace MySQLProtocol::ProtocolText;
 using namespace MySQLProtocol::ConnectionPhase;
+using namespace MySQLProtocol::PreparedStatements;
 
 #if USE_SSL
 using Poco::Net::SecureStreamSocket;
@@ -181,6 +183,15 @@ void MySQLHandler::run()
                     case COM_PING:
                         comPing();
                         break;
+                    case COM_STMT_PREPARE:
+                        comStmtPrepare(payload);
+                        break;
+                    case COM_STMT_EXECUTE:
+                        comStmtExecute(payload);
+                        break;
+                    case COM_STMT_CLOSE:
+                        comStmtClose(payload);
+                        break;
                     default:
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Command {} is not implemented.", command);
                 }
@@ -254,7 +265,8 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
 {
     try
     {
-        // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible (if password is specified using double SHA1). Otherwise SHA256 plugin is used.
+        // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible
+        // (if password is specified using double SHA1). Otherwise, SHA256 plugin is used.
         if (session->getAuthenticationTypeOrLogInFailure(user_name) == DB::AuthenticationType::SHA256_PASSWORD)
         {
             authPluginSSL();
@@ -370,6 +382,68 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
             packet_endpoint->sendPacket(OKPacket(0x00, client_capabilities, affected_rows, 0, 0), true);
     }
 }
+
+void MySQLHandler::comStmtPrepare(DB::ReadBuffer & payload)
+{
+    String query;
+    readStringUntilEOF(query, payload);
+
+    uint32_t statement_id = current_prepared_statement_id;
+    if (current_prepared_statement_id == std::numeric_limits<uint32_t>::max())
+    {
+        current_prepared_statement_id = 0;
+    }
+    else
+    {
+        current_prepared_statement_id++;
+    }
+
+    // Key collisions should not happen here, as we remove the elements from the map with COM_STMT_CLOSE,
+    // and we have quite a big range of available identifiers with 32-bit unsigned integer
+    if (prepared_statements_map.contains(statement_id)) [[unlikely]]
+    {
+        LOG_ERROR(
+            log,
+            "Failed to store a new statement `{}` with id {}; it is already taken by `{}`",
+            query,
+            statement_id,
+            prepared_statements_map.at(statement_id));
+        packet_endpoint->sendPacket(ERRPacket(), true);
+        return;
+    }
+    prepared_statements_map.emplace(statement_id, query);
+
+    packet_endpoint->sendPacket(PrepareStatementResponseOK(statement_id, 0, 0, 0), true);
+}
+
+void MySQLHandler::comStmtExecute(ReadBuffer & payload)
+{
+    uint32_t statement_id;
+    payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
+
+    if (!prepared_statements_map.contains(statement_id)) [[unlikely]]
+    {
+        LOG_ERROR(log, "Could not find prepared statement with id {}", statement_id);
+        packet_endpoint->sendPacket(ERRPacket(), true);
+        return;
+    }
+
+    // Temporary workaround as we work only with queries that do not bind any parameters atm
+    ReadBufferFromString com_query_payload(prepared_statements_map.at(statement_id));
+    MySQLHandler::comQuery(com_query_payload);
+};
+
+void MySQLHandler::comStmtClose([[maybe_unused]] ReadBuffer & payload) {
+    uint32_t statement_id;
+    payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
+
+    if (prepared_statements_map.contains(statement_id)) {
+        prepared_statements_map.erase(statement_id);
+    }
+
+    // https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_stmt_close.html
+    // No response packet is sent back to the client.
+};
 
 void MySQLHandler::authPluginSSL()
 {
