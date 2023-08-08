@@ -321,7 +321,7 @@ AuthenticationType Session::getAuthenticationTypeOrLogInFailure(const String & u
     }
     catch (const Exception & e)
     {
-        LOG_DEBUG(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
+        LOG_ERROR(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
         if (auto session_log = getSessionLog())
             session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e);
 
