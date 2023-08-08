@@ -412,7 +412,7 @@ def main():
             count UInt64,
             avgMs UInt64,
             args_name String')
-        FORMAT JSONEachRow
+        FORMAT JSONCompactEachRow
     """
     )
     clickhouse_ci_logs_host = os.getenv("CLICKHOUSE_CI_LOGS_HOST")
