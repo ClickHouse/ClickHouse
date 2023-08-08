@@ -16,6 +16,8 @@ def run_resolver(cluster):
         "resolver.py",
     )
     cluster.exec_in_container(container_id, ["python", "resolver.py"], detach=True)
+    # maybe it make sense to wait until resolver is up
+    time.sleep(30)
 
 
 @pytest.fixture(scope="module")
@@ -48,7 +50,7 @@ def check_proxy_logs(cluster, proxy_instance, http_methods={"POST", "PUT", "GET"
         for http_method in http_methods:
             if logs.find(http_method + " http://minio1") >= 0:
                 return
-            time.sleep(i)
+            time.sleep(1)
         else:
             assert False, "http method not found in logs"
 
