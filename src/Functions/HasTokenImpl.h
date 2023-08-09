@@ -13,6 +13,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
 }
 
 /** Token search the string, means that needle must be surrounded by some separator chars, like whitespace or puctuation.
