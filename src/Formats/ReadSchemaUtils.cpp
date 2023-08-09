@@ -217,6 +217,8 @@ try
 }
 catch (Exception & e)
 {
+    if (!buf)
+        throw;
     auto file_name = getFileNameFromReadBuffer(*buf);
     if (!file_name.empty())
         e.addMessage(fmt::format("(in file/uri {})", file_name));
