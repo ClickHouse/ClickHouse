@@ -13,7 +13,7 @@ $CLICKHOUSE_LOCAL -q "select * from numbers(100000) format JSONEachRow" > $FILE_
 
 $CLICKHOUSE_LOCAL -q "desc file('$FILE_DIR/*', One)"
 $CLICKHOUSE_LOCAL -q "select * from file('$FILE_DIR/*', One)"
-$CLICKHOUSE_LOCAL -q "select _file from file('$FILE_DIR/*', One)"
+$CLICKHOUSE_LOCAL -q "select _file from file('$FILE_DIR/*', One) order by _file"
 $CLICKHOUSE_LOCAL -q "select * from file('$FILE_DIR/*', One, 'x UInt8')"
 $CLICKHOUSE_LOCAL -q "select * from file('$FILE_DIR/*', One, 'x UInt64')" 2>&1 | grep "BAD_ARGUMENTS" -c
 $CLICKHOUSE_LOCAL -q "select * from file('$FILE_DIR/*', One, 'x UInt8, y UInt8')" 2>&1 | grep "BAD_ARGUMENTS" -c
