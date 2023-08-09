@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 
 import logging
-import time
-import sys
 import os
 import shutil
 from pathlib import Path
 
-import requests  # type: ignore
-
+from build_download_helper import download_build_with_progress
 from compress_files import decompress_fast, compress_fast
 from env_helper import S3_DOWNLOAD, S3_BUILDS_BUCKET
 from s3_helper import S3Helper
@@ -16,56 +13,15 @@ from s3_helper import S3Helper
 DOWNLOAD_RETRIES_COUNT = 5
 
 
-def dowload_file_with_progress(url, path):
-    logging.info("Downloading from %s to temp path %s", url, path)
-    for i in range(DOWNLOAD_RETRIES_COUNT):
-        try:
-            with open(path, "wb") as f:
-                response = requests.get(url, stream=True)
-                response.raise_for_status()
-                total_length = response.headers.get("content-length")
-                if total_length is None or int(total_length) == 0:
-                    logging.info(
-                        "No content-length, will download file without progress"
-                    )
-                    f.write(response.content)
-                else:
-                    dl = 0
-                    total_length = int(total_length)
-                    logging.info("Content length is %ld bytes", total_length)
-                    for data in response.iter_content(chunk_size=4096):
-                        dl += len(data)
-                        f.write(data)
-                        if sys.stdout.isatty():
-                            done = int(50 * dl / total_length)
-                            percent = int(100 * float(dl) / total_length)
-                            eq_str = "=" * done
-                            space_str = " " * (50 - done)
-                            sys.stdout.write(f"\r[{eq_str}{space_str}] {percent}%")
-                            sys.stdout.flush()
-            break
-        except Exception as ex:
-            sys.stdout.write("\n")
-            time.sleep(3)
-            logging.info("Exception while downloading %s, retry %s", ex, i + 1)
-            if os.path.exists(path):
-                os.remove(path)
-    else:
-        raise Exception(f"Cannot download dataset from {url}, all retries exceeded")
-
-    sys.stdout.write("\n")
-    logging.info("Downloading finished")
-
-
 def get_ccache_if_not_exists(
-    path_to_ccache_dir: str,
+    path_to_ccache_dir: Path,
     s3_helper: S3Helper,
     current_pr_number: int,
-    temp_path: str,
+    temp_path: Path,
     release_pr: int,
 ) -> int:
     """returns: number of PR for downloaded PR. -1 if ccache not found"""
-    ccache_name = os.path.basename(path_to_ccache_dir)
+    ccache_name = path_to_ccache_dir.name
     cache_found = False
     prs_to_check = [current_pr_number]
     # Release PR is either 0 or defined
@@ -94,11 +50,11 @@ def get_ccache_if_not_exists(
 
         logging.info("Found ccache on path %s", obj)
         url = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{obj}"
-        compressed_cache = os.path.join(temp_path, os.path.basename(obj))
-        dowload_file_with_progress(url, compressed_cache)
+        compressed_cache = temp_path / os.path.basename(obj)
+        download_build_with_progress(url, compressed_cache)
 
-        path_to_decompress = str(Path(path_to_ccache_dir).parent)
-        if not os.path.exists(path_to_decompress):
+        path_to_decompress = path_to_ccache_dir.parent
+        if not path_to_decompress.exists():
             os.makedirs(path_to_decompress)
 
         if os.path.exists(path_to_ccache_dir):
@@ -106,7 +62,7 @@ def get_ccache_if_not_exists(
             logging.info("Ccache already exists, removing it")
 
         logging.info("Decompressing cache to path %s", path_to_decompress)
-        decompress_fast(compressed_cache, path_to_decompress)
+        decompress_fast(compressed_cache.as_posix(), path_to_decompress.as_posix())
         logging.info("Files on path %s", os.listdir(path_to_decompress))
         cache_found = True
         ccache_pr = pr_number
