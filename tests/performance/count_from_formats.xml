@@ -4,7 +4,7 @@
     <substitution>
         <name>format</name>
         <values>
-<!--            <value>TabSeparated</value>
+            <value>TabSeparated</value>
             <value>TabSeparatedWithNames</value>
             <value>TabSeparatedWithNamesAndTypes</value>
             <value>CSV</value>
@@ -26,7 +26,7 @@
             <value>JSONObjectEachRow</value>
             <value>BSONEachRow</value>
             <value>TSKV</value>
-            <value>Avro</value> -->
+            <value>Avro</value>
             <value>MsgPack</value>
         </values>
     </substitution>
