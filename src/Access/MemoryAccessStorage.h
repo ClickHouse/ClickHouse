@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <boost/container/flat_set.hpp>
 
 
 namespace DB
