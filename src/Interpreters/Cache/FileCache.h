@@ -30,6 +30,22 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+/// Track acquired space in cache during reservation
+/// to make error messages when no space left more informative.
+struct FileCacheReserveStat
+{
+    struct Stat
+    {
+        size_t releasable_size;
+        size_t releasable_count;
+
+        size_t non_releasable_size;
+        size_t non_releasable_count;
+    };
+
+    std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
+};
+
 /// Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
 /// Different caching algorithms are implemented using IFileCachePriority.
 class FileCache : private boost::noncopyable
@@ -83,13 +99,19 @@ public:
 
     FileSegmentsHolderPtr set(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
 
-    /// Remove files by `key`. Removes files which might be used at the moment.
+    /// Remove file segment by `key` and `offset`. Throws if file segment does not exist.
+    void removeFileSegment(const Key & key, size_t offset);
+
+    /// Remove files by `key`. Throws if key does not exist.
+    void removeKey(const Key & key);
+
+    /// Remove files by `key`.
     void removeKeyIfExists(const Key & key);
 
-    /// Removes files by `path`. Removes files which might be used at the moment.
+    /// Removes files by `path`.
     void removePathIfExists(const String & path);
 
-    /// Remove files by `key`. Will not remove files which are used at the moment.
+    /// Remove files by `key`.
     void removeAllReleasable();
 
     std::vector<String> tryGetCachePaths(const Key & key);
@@ -100,7 +122,7 @@ public:
 
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
-    bool tryReserve(FileSegment & file_segment, size_t size);
+    bool tryReserve(FileSegment & file_segment, size_t size, FileCacheReserveStat & stat);
 
     FileSegmentsHolderPtr getSnapshot();
 
