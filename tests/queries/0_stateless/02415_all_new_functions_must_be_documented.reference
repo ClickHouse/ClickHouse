@@ -881,6 +881,7 @@ tumble
 tumbleEnd
 tumbleStart
 tuple
+tupleConcat
 tupleDivide
 tupleDivideByNumber
 tupleElement
