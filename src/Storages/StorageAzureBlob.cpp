@@ -300,6 +300,7 @@ void registerStorageAzureBlob(StorageFactory & factory)
             args.constraints,
             args.comment,
             format_settings,
+            /* distributed_processing */ false,
             partition_by);
     },
     {
@@ -448,12 +449,13 @@ StorageAzureBlob::StorageAzureBlob(
     const ConstraintsDescription & constraints_,
     const String & comment,
     std::optional<FormatSettings> format_settings_,
+    bool distributed_processing_,
     ASTPtr partition_by_)
     : IStorage(table_id_)
     , name("AzureBlobStorage")
     , configuration(configuration_)
     , object_storage(std::move(object_storage_))
-    , distributed_processing(false)
+    , distributed_processing(distributed_processing_)
     , format_settings(format_settings_)
     , partition_by(partition_by_)
 {
@@ -463,7 +465,7 @@ StorageAzureBlob::StorageAzureBlob(
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
     {
-        auto columns = getTableStructureFromData(object_storage.get(), configuration, format_settings, context);
+        auto columns = getTableStructureFromData(object_storage.get(), configuration, format_settings, context, distributed_processing);
         storage_metadata.setColumns(columns);
     }
     else
@@ -672,7 +674,12 @@ Pipe StorageAzureBlob::read(
     Pipes pipes;
 
     std::shared_ptr<StorageAzureBlobSource::IIterator> iterator_wrapper;
-    if (configuration.withGlobs())
+    if (distributed_processing)
+    {
+        iterator_wrapper = std::make_shared<StorageAzureBlobSource::ReadIterator>(local_context,
+            local_context->getReadTaskCallback());
+    }
+    else if (configuration.withGlobs())
     {
         /// Iterate through disclosed globs and make a source for each file
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::GlobIterator>(
@@ -845,6 +852,7 @@ StorageAzureBlobSource::GlobIterator::GlobIterator(
         blobs_with_metadata.emplace_back(blob_path_with_globs, object_metadata);
         if (outer_blobs)
             outer_blobs->emplace_back(blobs_with_metadata.back());
+        is_finished = true;
         return;
     }
 
@@ -863,8 +871,10 @@ RelativePathWithMetadata StorageAzureBlobSource::GlobIterator::next()
 {
     std::lock_guard lock(next_mutex);
 
-    if (is_finished)
+    if (is_finished && index >= blobs_with_metadata.size())
+    {
         return {};
+    }
 
     bool need_new_batch = blobs_with_metadata.empty() || index >= blobs_with_metadata.size();
 
@@ -1184,11 +1194,17 @@ ColumnsDescription StorageAzureBlob::getTableStructureFromData(
     AzureObjectStorage * object_storage,
     const Configuration & configuration,
     const std::optional<FormatSettings> & format_settings,
-    ContextPtr ctx)
+    ContextPtr ctx,
+    bool distributed_processing)
 {
     RelativePathsWithMetadata read_keys;
     std::shared_ptr<StorageAzureBlobSource::IIterator> file_iterator;
-    if (configuration.withGlobs())
+    if (distributed_processing)
+    {
+        file_iterator = std::make_shared<StorageAzureBlobSource::ReadIterator>(ctx,
+            ctx->getReadTaskCallback());
+    }
+    else if (configuration.withGlobs())
     {
         file_iterator = std::make_shared<StorageAzureBlobSource::GlobIterator>(
             object_storage, configuration.container, configuration.blob_path, nullptr, Block{}, ctx, &read_keys);
