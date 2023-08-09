@@ -534,18 +534,15 @@ struct JavaHashImpl
             static_cast<uint32_t>(x) ^ static_cast<uint32_t>(static_cast<uint64_t>(x) >> 32));
     }
 
-    template <class T, typename std::enable_if<std::is_same_v<T, int8_t>
-                                                   || std::is_same_v<T, int16_t>
-                                                   || std::is_same_v<T, int32_t>, T>::type * = nullptr>
+    template <class T, T * = nullptr>
+    requires std::same_as<T, int8_t> || std::same_as<T, int16_t> || std::same_as<T, int32_t>
     static ReturnType apply(T x)
     {
         return x;
     }
 
-    template <typename T, typename std::enable_if<!std::is_same_v<T, int8_t>
-                                                      && !std::is_same_v<T, int16_t>
-                                                      && !std::is_same_v<T, int32_t>
-                                                      && !std::is_same_v<T, int64_t>, T>::type * = nullptr>
+    template <class T, T * = nullptr>
+    requires(!std::same_as<T, int8_t> && !std::same_as<T, int16_t> && !std::same_as<T, int32_t>)
     static ReturnType apply(T x)
     {
         if (std::is_unsigned_v<T>)
