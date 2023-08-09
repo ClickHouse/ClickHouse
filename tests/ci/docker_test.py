@@ -18,7 +18,7 @@ import docker_server as ds
 
 class TestDockerImageCheck(unittest.TestCase):
     docker_images_path = os.path.join(
-        os.path.dirname(__file__), "tests/docker_images.json"
+        os.path.dirname(__file__), "tests/docker_images_for_tests.json"
     )
 
     def test_get_changed_docker_images(self):
