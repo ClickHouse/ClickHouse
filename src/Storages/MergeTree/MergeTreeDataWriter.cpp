@@ -39,6 +39,7 @@ namespace ProfileEvents
     extern const Event MergeTreeDataProjectionWriterRows;
     extern const Event MergeTreeDataProjectionWriterUncompressedBytes;
     extern const Event MergeTreeDataProjectionWriterCompressedBytes;
+    extern const Event RejectedInserts;
 }
 
 namespace DB
@@ -58,7 +59,8 @@ void buildScatterSelector(
         const ColumnRawPtrs & columns,
         PODArray<size_t> & partition_num_to_first_row,
         IColumn::Selector & selector,
-        size_t max_parts)
+        size_t max_parts,
+        ContextPtr context)
 {
     /// Use generic hashed variant since partitioning is unlikely to be a bottleneck.
     using Data = HashMap<UInt128, size_t, UInt128TrivialHash>;
@@ -66,6 +68,8 @@ void buildScatterSelector(
 
     size_t num_rows = columns[0]->size();
     size_t partitions_count = 0;
+    size_t throw_on_limit = context->getSettingsRef().throw_on_max_partitions_per_insert_block;
+
     for (size_t i = 0; i < num_rows; ++i)
     {
         Data::key_type key = hash128(i, columns.size(), columns);
@@ -75,7 +79,9 @@ void buildScatterSelector(
 
         if (inserted)
         {
-            if (max_parts && partitions_count >= max_parts)
+            if (max_parts && partitions_count >= max_parts && throw_on_limit)
+            {
+                ProfileEvents::increment(ProfileEvents::RejectedInserts);
                 throw Exception(ErrorCodes::TOO_MANY_PARTS,
                                 "Too many partitions for single INSERT block (more than {}). "
                                 "The limit is controlled by 'max_partitions_per_insert_block' setting. "
@@ -85,6 +91,7 @@ void buildScatterSelector(
                                 "for a table is under 1000..10000. Please note, that partitioning is not intended "
                                 "to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). "
                                 "Partitions are intended for data manipulation (DROP PARTITION, etc).", max_parts);
+            }
 
             partition_num_to_first_row.push_back(i);
             it->getMapped() = partitions_count;
@@ -101,6 +108,18 @@ void buildScatterSelector(
 
         if (partitions_count > 1)
             selector[i] = it->getMapped();
+    }
+    // Checking partitions per insert block again here outside the loop above
+    // so we can log the total number of partitions that would have parts created
+    if (max_parts && partitions_count >= max_parts && !throw_on_limit)
+    {
+        const auto & client_info = context->getClientInfo();
+        Poco::Logger * log = &Poco::Logger::get("MergeTreeDataWriter");
+
+        LOG_WARNING(log, "INSERT query from initial_user {} (query ID: {}) inserted a block "
+                         "that created parts in {} partitions. This is being logged "
+                         "rather than throwing an exception as throw_on_max_partitions_per_insert_block=false.",
+                         client_info.initial_user, client_info.initial_query_id, partitions_count);
     }
 }
 
@@ -240,7 +259,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     PODArray<size_t> partition_num_to_first_row;
     IColumn::Selector selector;
-    buildScatterSelector(partition_columns, partition_num_to_first_row, selector, max_parts);
+    buildScatterSelector(partition_columns, partition_num_to_first_row, selector, max_parts, context);
 
     auto async_insert_info_with_partition = scatterAsyncInsertInfoBySelector(async_insert_info, selector, partition_num_to_first_row.size());
 
