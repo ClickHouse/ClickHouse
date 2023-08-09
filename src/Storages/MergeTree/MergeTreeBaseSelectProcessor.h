@@ -120,7 +120,6 @@ protected:
 
     /// Sets up data readers for each step of prewhere and where
     void initializeMergeTreeReadersForCurrentTask(
-        const StorageMetadataPtr & metadata_snapshot,
         const IMergeTreeReader::ValueSizeMap & value_size_map,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback);
 
@@ -128,7 +127,6 @@ protected:
         const MergeTreeData::DataPartPtr & data_part,
         const AlterConversionsPtr & alter_conversions,
         const MergeTreeReadTaskColumns & task_columns,
-        const StorageMetadataPtr & metadata_snapshot,
         const MarkRanges & mark_ranges,
         const IMergeTreeReader::ValueSizeMap & value_size_map,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback);
@@ -207,7 +205,6 @@ private:
         const MergeTreeData::DataPartPtr & data_part,
         const AlterConversionsPtr & alter_conversions,
         const MergeTreeReadTaskColumns & task_columns,
-        const StorageMetadataPtr & metadata_snapshot,
         const MarkRanges & mark_ranges,
         const IMergeTreeReader::ValueSizeMap & value_size_map,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback);
