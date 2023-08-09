@@ -387,7 +387,7 @@ public:
                 filtered_uris.emplace_back(std::move(uris[i]));
                 filtered_uris.back().path = uri_without_path + filtered_uris.back().path;
             }
-            
+
             uris = std::move(filtered_uris);
         }
         else

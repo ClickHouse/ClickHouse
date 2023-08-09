@@ -1450,9 +1450,7 @@ void Aggregator::prepareAggregateInstructions(
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
             const auto pos = header.getPositionByName(params.aggregates[i].argument_names[j]);
-            std::cerr << "start convertToFullColumnIfConst " << columns.at(pos)->getName() << "\n";
             materialized_columns.push_back(columns.at(pos)->convertToFullColumnIfConst());
-            std::cerr << "finish convertToFullColumnIfConst\n";
             aggregate_columns[i][j] = materialized_columns.back().get();
 
             /// Sparse columns without defaults may be handled incorrectly.
