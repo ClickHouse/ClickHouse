@@ -364,6 +364,10 @@ void registerCodecGCD(CompressionCodecFactory & factory)
         {
             gcd_bytes_size = getGCDBytesSize(column_type);
         }
+        else
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Not specified type for codec GCD");
+        }
 
         return std::make_shared<CompressionCodecGCD>(gcd_bytes_size);
     };
