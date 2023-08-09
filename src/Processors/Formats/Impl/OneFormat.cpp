@@ -54,7 +54,4 @@ void registerOneSchemaReader(FormatFactory & factory)
     });
 }
 
-
-
-
 }
