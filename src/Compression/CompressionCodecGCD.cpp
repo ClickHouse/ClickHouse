@@ -36,19 +36,14 @@ enum class GCDTypes : Int8
 template <typename T>
 T gcd_func(T a, T b)
 {
-    if (a < 0)
-    {
-        a = -a;
-    }
-    if (b < 0)
-    {
-        b = -b;
-    }
     while (b != 0)
     {
         T c = a % b;
         a = b;
         b = c;
+    }
+    if (a == T(-1)) {
+        return -a;
     }
     return a;
 }
@@ -165,7 +160,6 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
         source += sizeof(T);
         dest += sizeof(T);
     }
-
 }
 
 }
@@ -372,13 +366,13 @@ void registerCodecGCD(CompressionCodecFactory & factory)
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
-            if (!literal || literal->value.getType() != Field::Types::Which::UInt64)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "GCD codec argument must be unsigned integer");
+            if (!literal || (literal->value.getType() != Field::Types::Which::Int64 && literal->value.getType() != Field::Types::Which::UInt64))
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "GCD codec argument must be integer");
 
             Int64 user_bytes_size = literal->value.safeGet<Int64>();
             if (user_bytes_size != 1 && user_bytes_size != 2 && user_bytes_size != 4 && user_bytes_size != 8 && user_bytes_size != 16 && user_bytes_size != 32 &&
                 user_bytes_size != -1 && user_bytes_size != -2 && user_bytes_size != -4 && user_bytes_size != -8 && user_bytes_size != -16 && user_bytes_size != -32)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "GCD value for GCD codec can be 1, 2, 4 or 8, given {}", user_bytes_size);
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "GCD value for GCD codec can be +-1, +-2, +-4, +-8, +-16 or +-32, given {}", user_bytes_size);
             gcd_bytes_size = static_cast<Int8>(user_bytes_size);
         }
         else if (column_type)
