@@ -105,7 +105,7 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
 
     auto handle_exception = [&, this](const auto & e, size_t i)
     {
-        LOG_INFO(log, "Exception caught during Azure Read for file {} at attempt {}: {}", path, i, e.Message);
+        LOG_INFO(log, "Exception caught during Azure Read for file {} at attempt {}/{}: {}", path, i + 1, max_single_read_retries, e.Message);
         if (i + 1 == max_single_read_retries)
             throw;
 
@@ -224,7 +224,7 @@ void ReadBufferFromAzureBlobStorage::initialize()
 
     auto handle_exception = [&, this](const auto & e, size_t i)
     {
-        LOG_INFO(log, "Exception caught during Azure Download for file {} at offset {} at attempt {} : {}", path, offset, i + 1, e.Message);
+        LOG_INFO(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_read_retries, e.Message);
         if (i + 1 == max_single_download_retries)
             throw;
 
