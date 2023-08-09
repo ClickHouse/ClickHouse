@@ -10,7 +10,6 @@ public:
 
     enum Type
     {
-        UNKNOWN,
         TCP,
         TCP_WITH_PROXY,
         TCP_SECURE,
@@ -34,7 +33,8 @@ public:
 
     static const char * serverTypeToString(Type type);
 
-    bool shouldStart(Type server_type, const std::string & custom_name_ = "") const;
+    /// Checks whether provided in the arguments type should be started or stopped based on current server type.
+    bool shouldStart(Type server_type, const std::string & server_custom_name = "") const;
     bool shouldStop(const std::string & port_name) const;
 
     Type type;

@@ -24,7 +24,7 @@ class ReadBuffer;
 class CapnProtoRowInputFormat final : public IRowInputFormat
 {
 public:
-    CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const FormatSchemaInfo & info, const FormatSettings & format_settings_);
+    CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const CapnProtoSchemaInfo & info, const FormatSettings & format_settings);
 
     String getName() const override { return "CapnProtoRowInputFormat"; }
 

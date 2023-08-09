@@ -11,7 +11,7 @@ namespace DB
 class BackupReaderFile : public BackupReaderDefault
 {
 public:
-    explicit BackupReaderFile(const String & root_path_, const ContextPtr & context_);
+    explicit BackupReaderFile(const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_);
 
     bool fileExists(const String & file_name) override;
     UInt64 getFileSize(const String & file_name) override;
@@ -29,7 +29,7 @@ private:
 class BackupWriterFile : public BackupWriterDefault
 {
 public:
-    BackupWriterFile(const String & root_path_, const ContextPtr & context_);
+    BackupWriterFile(const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_);
 
     bool fileExists(const String & file_name) override;
     UInt64 getFileSize(const String & file_name) override;
