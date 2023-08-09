@@ -355,18 +355,18 @@ Int8 getGCDBytesSize(const IDataType * column_type)
 void registerCodecGCD(CompressionCodecFactory & factory)
 {
     UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::GCD);
-    auto codec_builder = [&](const ASTPtr &, const IDataType * column_type) -> CompressionCodecPtr
+    auto codec_builder = [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
+
+        if (arguments && !arguments->children.empty() && !arguments->children.empty())
+            throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "Delta codec must have 0 parameters, given {}", arguments->children.size());
+
         /// Default bytes size is 1.
         Int8 gcd_bytes_size = 1;
 
         if (column_type)
         {
             gcd_bytes_size = getGCDBytesSize(column_type);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Not specified type for codec GCD");
         }
 
         return std::make_shared<CompressionCodecGCD>(gcd_bytes_size);
