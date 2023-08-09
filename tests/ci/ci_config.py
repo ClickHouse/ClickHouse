@@ -177,6 +177,11 @@ CI_CONFIG = CiConfig(
             package_type="binary",
             static_binary_name="riscv64",
         ),
+        "binary_s390x": BuildConfig(
+            compiler="clang-16-s390x",
+            package_type="binary",
+            static_binary_name="s390x",
+        ),
     },
     builds_report_config={
         "ClickHouse build check": [
@@ -198,6 +203,7 @@ CI_CONFIG = CiConfig(
             "binary_darwin_aarch64",
             "binary_ppc64le",
             "binary_riscv64",
+            "binary_s390x",
             "binary_amd64_compat",
         ],
     },

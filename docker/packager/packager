@@ -142,6 +142,7 @@ def parse_env_variables(
     FREEBSD_SUFFIX = "-freebsd"
     PPC_SUFFIX = "-ppc64le"
     RISCV_SUFFIX = "-riscv64"
+    S390X_SUFFIX = "-s390x"
     AMD64_COMPAT_SUFFIX = "-amd64-compat"
 
     result = []
@@ -215,6 +216,11 @@ def parse_env_variables(
         cc = compiler[: -len(RISCV_SUFFIX)]
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-riscv64.cmake"
+        )
+    elif is_cross_s390x:
+        cc = compiler[: -len(S390X_SUFFIX)]
+        cmake_flags.append(
+            "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-s390x.cmake"
         )
     elif is_amd64_compat:
         cc = compiler[: -len(AMD64_COMPAT_SUFFIX)]
@@ -377,6 +383,7 @@ def parse_args() -> argparse.Namespace:
             "clang-16-aarch64-v80compat",
             "clang-16-ppc64le",
             "clang-16-riscv64",
+            "clang-16-s390x",
             "clang-16-amd64-compat",
             "clang-16-freebsd",
         ),
