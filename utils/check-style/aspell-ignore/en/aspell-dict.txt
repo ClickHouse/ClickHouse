@@ -2567,3 +2567,5 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+downsampling
+lttb
