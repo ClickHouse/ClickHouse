@@ -40,7 +40,7 @@ const char * ServerType::serverTypeToString(ServerType::Type type)
     return type_name.data();
 }
 
-bool ServerType::shouldStart(Type server_type, const std::string & custom_name_) const
+bool ServerType::shouldStart(Type server_type, const std::string & server_custom_name) const
 {
     if (type == Type::QUERIES_ALL)
         return true;
@@ -77,13 +77,15 @@ bool ServerType::shouldStart(Type server_type, const std::string & custom_name_)
         }
     }
 
-    return type == server_type && custom_name == custom_name_;
+    if (type == Type::CUSTOM)
+        return server_type == type && server_custom_name == "protocols." + custom_name + ".port";
+
+    return server_type == type;
 }
 
 bool ServerType::shouldStop(const std::string & port_name) const
 {
     Type port_type;
-    std::string port_custom_name;
 
     if (port_name == "http_port")
         port_type = Type::HTTP;
@@ -119,20 +121,12 @@ bool ServerType::shouldStop(const std::string & port_name) const
         port_type = Type::INTERSERVER_HTTPS;
 
     else if (port_name.starts_with("protocols.") && port_name.ends_with(".port"))
-    {
-        constexpr size_t protocols_size = std::string_view("protocols.").size();
-        constexpr size_t port_size = std::string_view("protocols.").size();
-
         port_type = Type::CUSTOM;
-        port_custom_name = port_name.substr(protocols_size, port_name.size() - port_size);
-    }
-    else
-        port_type = Type::UNKNOWN;
 
-    if (port_type == Type::UNKNOWN)
+    else
         return false;
 
-    return shouldStart(type, port_custom_name);
+    return shouldStart(port_type, port_name);
 }
 
 }

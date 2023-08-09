@@ -25,6 +25,7 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
     if (context->getApplicationType() != Context::ApplicationType::LOCAL)
     {
         ITableFunctionFileLike::parseFirstArguments(arg, context);
+        StorageFile::parseFileSource(std::move(filename), filename, path_to_archive);
         return;
     }
 
@@ -39,6 +40,8 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
             fd = STDOUT_FILENO;
         else if (filename == "stderr")
             fd = STDERR_FILENO;
+        else
+            StorageFile::parseFileSource(std::move(filename), filename, path_to_archive);
     }
     else if (type == Field::Types::Int64 || type == Field::Types::UInt64)
     {
@@ -76,22 +79,31 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
         ConstraintsDescription{},
         String{},
         global_context->getSettingsRef().rename_files_after_processing,
+        path_to_archive,
     };
+
     if (fd >= 0)
         return std::make_shared<StorageFile>(fd, args);
 
     return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), args);
 }
 
-ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     if (structure == "auto")
     {
         if (fd >= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema inference is not supported for table function '{}' with file descriptor", getName());
         size_t total_bytes_to_read = 0;
-        Strings paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
-        return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context);
+
+        Strings paths;
+        Strings paths_to_archives;
+        if (path_to_archive.empty())
+            paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
+        else
+            paths_to_archives = StorageFile::getPathsList(path_to_archive, context->getUserFilesPath(), context, total_bytes_to_read);
+
+        return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context, paths_to_archives);
     }
 
 

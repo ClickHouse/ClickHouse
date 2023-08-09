@@ -108,7 +108,7 @@ def main():
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
 
-    description_error, category = check_pr_description(pr_info.body)
+    description_error, category = check_pr_description(pr_info.body, GITHUB_REPOSITORY)
     pr_labels_to_add = []
     pr_labels_to_remove = []
     if (

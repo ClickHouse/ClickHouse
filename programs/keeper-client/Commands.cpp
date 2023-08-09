@@ -77,7 +77,7 @@ void SetCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) co
         client->zookeeper->set(
             client->getAbsolutePath(query->args[0].safeGet<String>()),
             query->args[1].safeGet<String>(),
-            static_cast<Int32>(query->args[2].safeGet<Int64>()));
+            static_cast<Int32>(query->args[2].get<Int32>()));
 }
 
 bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const

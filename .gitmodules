@@ -331,6 +331,10 @@
 [submodule "contrib/liburing"]
 	path = contrib/liburing
 	url = https://github.com/axboe/liburing
+[submodule "contrib/libarchive"]
+	path = contrib/libarchive
+	url = https://github.com/libarchive/libarchive.git
+	ignore = dirty
 [submodule "contrib/libfiu"]
 	path = contrib/libfiu
 	url = https://github.com/ClickHouse/libfiu.git
