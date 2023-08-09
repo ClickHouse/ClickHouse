@@ -219,8 +219,8 @@ bool MergeTreeMutationEntry::affectsPartition(const String & partition_id) const
 {
     bool affected = !partition_ids.has_value() ||
         std::binary_search(partition_ids->begin(), partition_ids->end(), partition_id);
-    // LOG_TRACE(&Poco::Logger::get("MergeTreeMutationEntry"), "Partition {} {}affected by mutation {}",
-    //     partition_id, affected?"":"not ", block_number);
+    LOG_TRACE(&Poco::Logger::get("MergeTreeMutationEntry"), "Partition {} {}affected by mutation {}",
+        partition_id, affected?"":"not ", block_number);
     return affected;
 }
 
