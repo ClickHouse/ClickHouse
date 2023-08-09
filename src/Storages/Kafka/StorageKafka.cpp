@@ -939,14 +939,14 @@ void registerStorageKafka(StorageFactory & factory)
                 /* move engine args to settings */                          \
                 else                                                        \
                 {                                                           \
-                    if ((EVAL) == 1)                                        \
+                    if constexpr ((EVAL) == 1)                              \
                     {                                                       \
                         engine_args[(ARG_NUM)-1] =                          \
                             evaluateConstantExpressionAsLiteral(            \
                                 engine_args[(ARG_NUM)-1],                   \
                                 args.getLocalContext());                    \
                     }                                                       \
-                    if ((EVAL) == 2)                                        \
+                    if constexpr ((EVAL) == 2)                              \
                     {                                                       \
                         engine_args[(ARG_NUM)-1] =                          \
                            evaluateConstantExpressionOrIdentifierAsLiteral( \
