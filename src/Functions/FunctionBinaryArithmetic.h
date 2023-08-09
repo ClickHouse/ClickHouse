@@ -1180,7 +1180,7 @@ class FunctionBinaryArithmetic : public IFunction
         /// Unpacking non-const arrays and checking sizes of them.
         for (auto offset_index = 0U; offset_index < left_offsets.size(); ++offset_index)
         {
-            if (left_offsets[offset_index] != right_offsets[offset_index])
+            if (right_array_col->hasEqualOffsets(*left_array_col))
             {
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                 "Cannot apply operation for arrays of different sizes. Size of the first argument: {}, size of the second argument: {}",
