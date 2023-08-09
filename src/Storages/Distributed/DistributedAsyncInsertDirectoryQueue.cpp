@@ -419,7 +419,7 @@ catch (...)
     throw;
 }
 
-void DistributedAsyncInsertDirectoryQueue::processFile(const std::string & file_path)
+void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path)
 {
     OpenTelemetry::TracingContextHolderPtr thread_trace_context;
 
@@ -459,7 +459,7 @@ void DistributedAsyncInsertDirectoryQueue::processFile(const std::string & file_
         if (isDistributedSendBroken(e.code(), e.isRemoteException()))
         {
             markAsBroken(file_path);
-            current_file.clear();
+            file_path.clear();
         }
         throw;
     }
@@ -473,8 +473,8 @@ void DistributedAsyncInsertDirectoryQueue::processFile(const std::string & file_
 
     auto dir_sync_guard = getDirectorySyncGuard(relative_path);
     markAsSend(file_path);
-    current_file.clear();
     LOG_TRACE(log, "Finished processing `{}` (took {} ms)", file_path, watch.elapsedMilliseconds());
+    file_path.clear();
 }
 
 struct DistributedAsyncInsertDirectoryQueue::BatchHeader
