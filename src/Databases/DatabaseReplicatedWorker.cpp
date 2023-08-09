@@ -91,18 +91,21 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     if (zookeeper->tryGet(database->replica_path + "/digest", digest_str))
     {
         digest = parse<UInt64>(digest_str);
-        LOG_TRACE(log, "Metadata digest in ZooKeeper: {}", digest);
         std::lock_guard lock{database->metadata_mutex};
         local_digest = database->tables_metadata_digest;
     }
     else
     {
+        LOG_WARNING(log, "Did not find digest in ZooKeeper, creating it");
         /// Database was created by old ClickHouse versions, let's create the node
         std::lock_guard lock{database->metadata_mutex};
         digest = local_digest = database->tables_metadata_digest;
         digest_str = toString(digest);
         zookeeper->create(database->replica_path + "/digest", digest_str, zkutil::CreateMode::Persistent);
     }
+
+    LOG_TRACE(log, "Trying to initialize replication: our_log_ptr={}, max_log_ptr={}, local_digest={}, zk_digest={}",
+              our_log_ptr, max_log_ptr, local_digest, digest);
 
     bool is_new_replica = our_log_ptr == 0;
     bool lost_according_to_log_ptr = our_log_ptr + logs_to_keep < max_log_ptr;
@@ -158,7 +161,7 @@ bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeo
         LOG_TRACE(log, "Waiting for worker thread to process all entries before {}, current task is {}", max_log, current_task);
         bool processed = wait_current_task_change.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&]()
         {
-            return zookeeper->expired() || current_task == max_log || stop_flag;
+            return zookeeper->expired() || current_task >= max_log || stop_flag;
         });
 
         if (!processed)

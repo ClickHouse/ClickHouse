@@ -74,9 +74,14 @@ private:
         /// the lower the better
         Float64 selectivity = 0;
 
+        /// Does the condition contain primary key column?
+        /// If so, it is better to move it further to the end of PREWHERE chain depending on minimal position in PK of any
+        /// column in this condition because this condition have bigger chances to be already satisfied by PK analysis.
+        Int64 min_position_in_primary_key = std::numeric_limits<Int64>::max() - 1;
+
         auto tuple() const
         {
-            return std::make_tuple(!viable, selectivity, columns_size, table_columns.size());
+            return std::make_tuple(!viable, selectivity, -min_position_in_primary_key, columns_size, table_columns.size());
         }
 
         /// Is condition a better candidate for moving to PREWHERE?
@@ -93,6 +98,7 @@ private:
         ContextPtr context;
         NameSet array_joined_names;
         bool move_all_conditions_to_prewhere = false;
+        bool move_primary_key_columns_to_end_of_prewhere = false;
         bool is_final = false;
     };
 
@@ -145,6 +151,7 @@ private:
     const Names queried_columns;
     const std::optional<NameSet> supported_columns;
     const NameSet sorting_key_names;
+    const NameToIndexMap primary_key_names_positions;
     Poco::Logger * log;
     std::unordered_map<std::string, UInt64> column_sizes;
     UInt64 total_size_of_queried_columns = 0;

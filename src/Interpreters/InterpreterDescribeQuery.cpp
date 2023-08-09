@@ -96,7 +96,7 @@ BlockIO InterpreterDescribeQuery::execute()
     else if (table_expression.table_function)
     {
         TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression.table_function, getContext());
-        auto table_function_column_descriptions = table_function_ptr->getActualTableStructure(getContext());
+        auto table_function_column_descriptions = table_function_ptr->getActualTableStructure(getContext(), /*is_insert_query*/ true);
         for (const auto & table_function_column_description : table_function_column_descriptions)
             columns.emplace_back(table_function_column_description);
     }

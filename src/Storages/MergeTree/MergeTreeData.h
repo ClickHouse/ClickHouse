@@ -434,6 +434,8 @@ public:
 
     bool areAsynchronousInsertsEnabled() const override { return getSettings()->async_insert; }
 
+    bool supportsTrivialCountOptimization() const override { return !hasLightweightDeletedMask(); }
+
     NamesAndTypesList getVirtuals() const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr, const StorageMetadataPtr & metadata_snapshot) const override;
@@ -504,12 +506,13 @@ public:
 
     /// Returns a part in Active state with the given name or a part containing it. If there is no such part, returns nullptr.
     DataPartPtr getActiveContainingPart(const String & part_name) const;
+    DataPartPtr getActiveContainingPart(const String & part_name, DataPartsLock & lock) const;
     DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info) const;
     DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, DataPartsLock & lock) const;
 
     /// Swap part with it's identical copy (possible with another path on another disk).
     /// If original part is not active or doesn't exist exception will be thrown.
-    void swapActivePart(MergeTreeData::DataPartPtr part_copy);
+    void swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPartsLock &);
 
     /// Returns all parts in specified partition
     DataPartsVector getVisibleDataPartsVectorInPartition(MergeTreeTransaction * txn, const String & partition_id, DataPartsLock * acquired_lock = nullptr) const;
@@ -521,10 +524,10 @@ public:
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, DataPartsLock * acquired_lock = nullptr) const;
 
     /// Returns the part with the given name and state or nullptr if no such part.
-    DataPartPtr getPartIfExistsUnlocked(const String & part_name, const DataPartStates & valid_states, DataPartsLock & acquired_lock);
-    DataPartPtr getPartIfExistsUnlocked(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, DataPartsLock & acquired_lock);
-    DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states);
-    DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states);
+    DataPartPtr getPartIfExistsUnlocked(const String & part_name, const DataPartStates & valid_states, DataPartsLock & acquired_lock) const;
+    DataPartPtr getPartIfExistsUnlocked(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, DataPartsLock & acquired_lock) const;
+    DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states) const;
+    DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states) const;
 
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
@@ -654,7 +657,7 @@ public:
     virtual void forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(const String & /*part_name*/) {}
 
     /// Outdate broken part, set remove time to zero (remove as fast as possible) and make clone in detached directory.
-    void outdateBrokenPartAndCloneToDetached(const DataPartPtr & part, const String & prefix);
+    void outdateUnexpectedPartAndCloneToDetached(const DataPartPtr & part);
 
     /// If the part is Obsolete and not used by anybody else, immediately delete it from filesystem and remove from memory.
     void tryRemovePartImmediately(DataPartPtr && part);
@@ -828,21 +831,10 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
-    struct HardlinkedFiles
-    {
-        /// Shared table uuid where hardlinks live
-        std::string source_table_shared_id;
-        /// Hardlinked from part
-        std::string source_part_name;
-        /// Hardlinked files list
-        NameSet hardlinks_from_source_part;
-    };
-
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPartOnSameDisk(
         const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
         const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeTransactionPtr & txn, HardlinkedFiles * hardlinked_files,
-        bool copy_instead_of_hardlink, const NameSet & files_to_copy_instead_of_hardlinks);
+        const IDataPartStorage::ClonePartParams & params);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
@@ -1040,7 +1032,7 @@ public:
 
     /// Fetch part only if some replica has it on shared storage like S3
     /// Overridden in StorageReplicatedMergeTree
-    virtual MutableDataPartStoragePtr tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) { return nullptr; }
+    virtual MutableDataPartPtr tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) { return nullptr; }
 
     /// Check shared data usage on other replicas for detached/freezed part
     /// Remove local files and remote files if needed
@@ -1239,7 +1231,7 @@ protected:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
-    void checkProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach = false, ContextPtr local_context = nullptr) const;
+    void checkProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach, bool allow_empty_sorting_key, ContextPtr local_context) const;
 
     void setProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach = false, ContextPtr local_context = nullptr);
 
@@ -1344,7 +1336,7 @@ protected:
     using PartsBackupEntries = std::vector<PartBackupEntries>;
 
     /// Makes backup entries to backup the parts of this table.
-    PartsBackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ContextPtr & local_context);
+    PartsBackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ReadSettings & read_settings, const ContextPtr & local_context);
 
     class RestoredPartsHolder;
 
@@ -1494,7 +1486,7 @@ private:
     /// Check selected parts for movements. Used by ALTER ... MOVE queries.
     CurrentlyMovingPartsTaggerPtr checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
 
-    bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason = nullptr) const;
+    bool canUsePolymorphicParts(const MergeTreeSettings & settings, String & out_reason) const;
 
     std::mutex write_ahead_log_mutex;
     WriteAheadLogPtr write_ahead_log;

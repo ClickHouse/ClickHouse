@@ -176,7 +176,7 @@ private:
             const Names & deduplicate_by_columns,
             bool cleanup,
             const MergeTreeTransactionPtr & txn,
-            String * out_disable_reason = nullptr,
+            String & out_disable_reason,
             bool optimize_skip_merged_partitions = false);
 
     void renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
@@ -191,7 +191,7 @@ private:
     /// and into in-memory structures. Wake up merge-mutation task.
     Int64 startMutation(const MutationCommands & commands, ContextPtr query_context);
     /// Wait until mutation with version will finish mutation for all parts
-    void waitForMutation(Int64 version, bool wait_for_another_mutation = false);
+    void waitForMutation(Int64 version, bool wait_for_another_mutation);
     void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override;
     void waitForMutation(Int64 version, const String & mutation_id, bool wait_for_another_mutation = false);
     void setMutationCSN(const String & mutation_id, CSN csn) override;
@@ -203,7 +203,7 @@ private:
         bool aggressive,
         const String & partition_id,
         bool final,
-        String * disable_reason,
+        String & disable_reason,
         TableLockHolder & table_lock_holder,
         std::unique_lock<std::mutex> & lock,
         const MergeTreeTransactionPtr & txn,
@@ -212,7 +212,7 @@ private:
 
 
     MergeMutateSelectedEntryPtr selectPartsToMutate(
-        const StorageMetadataPtr & metadata_snapshot, String * disable_reason,
+        const StorageMetadataPtr & metadata_snapshot, String & disable_reason,
         TableLockHolder & table_lock_holder, std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock);
 
     /// For current mutations queue, returns maximum version of mutation for a part,
@@ -237,6 +237,7 @@ private:
     void dropPartNoWaitNoThrow(const String & part_name) override;
     void dropPart(const String & part_name, bool detach, ContextPtr context) override;
     void dropPartition(const ASTPtr & partition, bool detach, ContextPtr context) override;
+    void dropPartsImpl(DataPartsVector && parts_to_remove, bool detach);
     PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr context) override;
 
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) override;

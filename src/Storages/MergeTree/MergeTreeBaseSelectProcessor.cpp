@@ -145,9 +145,6 @@ bool IMergeTreeSelectAlgorithm::getNewTask()
 
 ChunkAndProgress IMergeTreeSelectAlgorithm::read()
 {
-    size_t num_read_rows = 0;
-    size_t num_read_bytes = 0;
-
     while (!is_cancelled)
     {
         try
@@ -178,10 +175,6 @@ ChunkAndProgress IMergeTreeSelectAlgorithm::read()
                 ordered_columns.push_back(res.block.getByName(name).column);
             }
 
-            /// Account a progress from previous empty chunks.
-            res.num_read_rows += num_read_rows;
-            res.num_read_bytes += num_read_bytes;
-
             return ChunkAndProgress{
                 .chunk = Chunk(ordered_columns, res.row_count),
                 .num_read_rows = res.num_read_rows,
@@ -194,11 +187,10 @@ ChunkAndProgress IMergeTreeSelectAlgorithm::read()
         }
     }
 
-    return {Chunk(), num_read_rows, num_read_bytes, true};
+    return {Chunk(), 0, 0, true};
 }
 
 void IMergeTreeSelectAlgorithm::initializeMergeTreeReadersForCurrentTask(
-    const StorageMetadataPtr & metadata_snapshot,
     const IMergeTreeReader::ValueSizeMap & value_size_map,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
@@ -213,7 +205,7 @@ void IMergeTreeSelectAlgorithm::initializeMergeTreeReadersForCurrentTask(
     else
     {
         reader = task->data_part->getReader(
-            task->task_columns.columns, metadata_snapshot, task->mark_ranges,
+            task->task_columns.columns, storage_snapshot, task->mark_ranges,
             owned_uncompressed_cache.get(), owned_mark_cache.get(),
             task->alter_conversions, reader_settings, value_size_map, profile_callback);
     }
@@ -229,8 +221,8 @@ void IMergeTreeSelectAlgorithm::initializeMergeTreeReadersForCurrentTask(
     {
         initializeMergeTreePreReadersForPart(
             task->data_part, task->alter_conversions,
-            task->task_columns, metadata_snapshot,
-            task->mark_ranges, value_size_map, profile_callback);
+            task->task_columns, task->mark_ranges,
+            value_size_map, profile_callback);
     }
 }
 
@@ -238,18 +230,17 @@ void IMergeTreeSelectAlgorithm::initializeMergeTreeReadersForPart(
     const MergeTreeData::DataPartPtr & data_part,
     const AlterConversionsPtr & alter_conversions,
     const MergeTreeReadTaskColumns & task_columns,
-    const StorageMetadataPtr & metadata_snapshot,
     const MarkRanges & mark_ranges,
     const IMergeTreeReader::ValueSizeMap & value_size_map,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
     reader = data_part->getReader(
-        task_columns.columns, metadata_snapshot, mark_ranges,
+        task_columns.columns, storage_snapshot, mark_ranges,
         owned_uncompressed_cache.get(), owned_mark_cache.get(),
         alter_conversions, reader_settings, value_size_map, profile_callback);
 
     initializeMergeTreePreReadersForPart(
-        data_part, alter_conversions, task_columns, metadata_snapshot,
+        data_part, alter_conversions, task_columns,
         mark_ranges, value_size_map, profile_callback);
 }
 
@@ -257,7 +248,6 @@ void IMergeTreeSelectAlgorithm::initializeMergeTreePreReadersForPart(
     const MergeTreeData::DataPartPtr & data_part,
     const AlterConversionsPtr & alter_conversions,
     const MergeTreeReadTaskColumns & task_columns,
-    const StorageMetadataPtr & metadata_snapshot,
     const MarkRanges & mark_ranges,
     const IMergeTreeReader::ValueSizeMap & value_size_map,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback)
@@ -269,7 +259,7 @@ void IMergeTreeSelectAlgorithm::initializeMergeTreePreReadersForPart(
     {
         pre_reader_for_step.push_back(
             data_part->getReader(
-                {LightweightDeleteDescription::FILTER_COLUMN}, metadata_snapshot,
+                {LightweightDeleteDescription::FILTER_COLUMN}, storage_snapshot,
                 mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(),
                 alter_conversions, reader_settings, value_size_map, profile_callback));
     }
@@ -278,7 +268,7 @@ void IMergeTreeSelectAlgorithm::initializeMergeTreePreReadersForPart(
     {
         pre_reader_for_step.push_back(
             data_part->getReader(
-                pre_columns_per_step, metadata_snapshot, mark_ranges,
+                pre_columns_per_step, storage_snapshot, mark_ranges,
                 owned_uncompressed_cache.get(), owned_mark_cache.get(),
                 alter_conversions, reader_settings, value_size_map, profile_callback));
     }

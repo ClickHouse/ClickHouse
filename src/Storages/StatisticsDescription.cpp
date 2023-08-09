@@ -99,7 +99,7 @@ String StatisticsDescriptions::toString() const
     for (const auto & statistic : *this)
         list.children.push_back(statistic.definition_ast);
 
-    return serializeAST(list, true);
+    return serializeAST(list);
 }
 
 StatisticsDescriptions StatisticsDescriptions::parse(const String & str, const ColumnsDescription & columns, ContextPtr context)

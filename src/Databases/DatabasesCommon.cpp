@@ -294,7 +294,7 @@ void DatabaseWithOwnTablesBase::shutdown()
 
     for (const auto & kv : tables_snapshot)
     {
-        kv.second->flush();
+        kv.second->flushAndPrepareForShutdown();
     }
 
     for (const auto & kv : tables_snapshot)

@@ -171,7 +171,7 @@ void FileSegmentRangeWriter::appendFilesystemCacheLog(const FileSegment & file_s
         .profile_counters = nullptr,
     };
 
-    cache_log->add(elem);
+    cache_log->add(std::move(elem));
 }
 
 void FileSegmentRangeWriter::completeFileSegment()

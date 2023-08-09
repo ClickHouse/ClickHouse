@@ -45,7 +45,7 @@ int main(int, char **)
     {
         auto flipped = flipBit(str, pos);
         auto checksum = CityHash_v1_0_2::CityHash128(flipped.data(), flipped.size());
-        std::cout << getHexUIntLowercase(checksum.high64) << getHexUIntLowercase(checksum.low64) << "\t" << pos / 8 << ", " << pos % 8 << "\n";
+        std::cout << getHexUIntLowercase(checksum) << "\t" << pos / 8 << ", " << pos % 8 << "\n";
     }
 
     return 0;

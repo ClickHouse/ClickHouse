@@ -34,6 +34,19 @@ protected:
 };
 
 
+/** An identifier for tables written as string literal, for example, 'mytable.avro'
+  */
+class ParserTableAsStringLiteralIdentifier : public IParserBase
+{
+public:
+    explicit ParserTableAsStringLiteralIdentifier() {}
+
+protected:
+    const char * getName() const override { return "string literal table identifier"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
 /** An identifier, possibly containing a dot, for example, x_yz123 or `something special` or Hits.EventTime,
  *  possibly with UUID clause like `db name`.`table name` UUID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
   */
@@ -363,6 +376,21 @@ class ParserSubstitution : public IParserBase
 {
 protected:
     const char * getName() const override { return "substitution"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
+/** MySQL comment:
+  *  CREATE TABLE t (
+  *  i INT PRIMARY KEY,
+  *  first_name VARCHAR(255) COMMENT 'FIRST_NAME',
+  *  last_name VARCHAR(255) COMMENT "LAST_NAME"
+  *  )
+  */
+class ParserMySQLComment : public IParserBase
+{
+protected:
+    const char * getName() const override { return "MySQL comment parser"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
