@@ -2084,9 +2084,11 @@ static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const 
 
 static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const MutationCommand & command, const ContextPtr & context)
 {
+    LOG_TRACE(&Poco::Logger::get("canSkipMutationCommandForPart"), "Top of canSkipMutationCommandForPart");
     if (command.partition)
     {
         auto command_partition_id = part->storage.getPartitionIDFromQuery(command.partition, context);
+        LOG_TRACE(&Poco::Logger::get("canSkipMutationCommandForPart"), "canSkipMutationCommandForPart: {} vs {}", part->info.partition_id, command_partition_id);
         if (part->info.partition_id != command_partition_id)
             return true;
     }
