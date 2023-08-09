@@ -38,6 +38,8 @@ struct AlterCommand
         DROP_CONSTRAINT,
         ADD_PROJECTION,
         DROP_PROJECTION,
+        ADD_STATISTIC,
+        DROP_STATISTIC,
         MODIFY_TTL,
         MODIFY_SETTING,
         RESET_SETTING,
@@ -117,6 +119,10 @@ struct AlterCommand
 
     /// For ADD/DROP PROJECTION
     String projection_name;
+
+    ASTPtr statistic_decl = nullptr;
+    String after_statistic_name;
+    String statistic_name;
 
     /// For MODIFY TTL
     ASTPtr ttl = nullptr;

@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <boost/noncopyable.hpp>
+#include "Storages/Statistic/Statistic.h"
 
 #include <memory>
 #include <set>
@@ -37,6 +38,7 @@ public:
     MergeTreeWhereOptimizer(
         std::unordered_map<std::string, UInt64> column_sizes_,
         const StorageMetadataPtr & metadata_snapshot,
+        const ConditionEstimator & estimator_,
         const Names & queried_columns_,
         const std::optional<NameSet> & supported_columns_,
         Poco::Logger * log_);
@@ -69,12 +71,12 @@ private:
         /// Can condition be moved to prewhere?
         bool viable = false;
 
-        /// Does the condition presumably have good selectivity?
-        bool good = false;
+        /// the lower the better
+        Float64 selectivity = 0;
 
         auto tuple() const
         {
-            return std::make_tuple(!viable, !good, columns_size, table_columns.size());
+            return std::make_tuple(!viable, selectivity, columns_size, table_columns.size());
         }
 
         /// Is condition a better candidate for moving to PREWHERE?
@@ -136,6 +138,8 @@ private:
     bool cannotBeMoved(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
 
     static NameSet determineArrayJoinedNames(const ASTSelectQuery & select);
+
+    const ConditionEstimator estimator;
 
     const NameSet table_columns;
     const Names queried_columns;

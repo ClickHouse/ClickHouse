@@ -20,16 +20,18 @@ namespace DB
 
 /// Conditions like "x = N" are considered good if abs(N) > threshold.
 /// This is used to assume that condition is likely to have good selectivity.
-static constexpr auto threshold = 2;
+/// static constexpr auto threshold = 2;
 
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     std::unordered_map<std::string, UInt64> column_sizes_,
     const StorageMetadataPtr & metadata_snapshot,
+    const ConditionEstimator & estimator_,
     const Names & queried_columns_,
     const std::optional<NameSet> & supported_columns_,
     Poco::Logger * log_)
-    : table_columns{collections::map<std::unordered_set>(
+    : estimator(estimator_)
+    , table_columns{collections::map<std::unordered_set>(
         metadata_snapshot->getColumns().getAllPhysical(), [](const NameAndTypePair & col) { return col.name; })}
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
@@ -132,66 +134,66 @@ static void collectColumns(const RPNBuilderTreeNode & node, const NameSet & colu
     }
 }
 
-static bool isConditionGood(const RPNBuilderTreeNode & condition, const NameSet & columns_names)
-{
-    if (!condition.isFunction())
-        return false;
-
-    auto function_node = condition.toFunctionNode();
-
-    /** We are only considering conditions of form `equals(one, another)` or `one = another`,
-      * especially if either `one` or `another` is ASTIdentifier
-      */
-    if (function_node.getFunctionName() != "equals" || function_node.getArgumentsSize() != 2)
-        return false;
-
-    auto lhs_argument = function_node.getArgumentAt(0);
-    auto rhs_argument = function_node.getArgumentAt(1);
-
-    auto lhs_argument_column_name = lhs_argument.getColumnName();
-    auto rhs_argument_column_name = rhs_argument.getColumnName();
-
-    bool lhs_argument_is_column = columns_names.contains(lhs_argument_column_name);
-    bool rhs_argument_is_column = columns_names.contains(rhs_argument_column_name);
-
-    bool lhs_argument_is_constant = lhs_argument.isConstant();
-    bool rhs_argument_is_constant = rhs_argument.isConstant();
-
-    RPNBuilderTreeNode * constant_node = nullptr;
-
-    if (lhs_argument_is_column && rhs_argument_is_constant)
-        constant_node = &rhs_argument;
-    else if (lhs_argument_is_constant && rhs_argument_is_column)
-        constant_node = &lhs_argument;
-    else
-        return false;
-
-    Field output_value;
-    DataTypePtr output_type;
-    if (!constant_node->tryGetConstant(output_value, output_type))
-        return false;
-
-    const auto type = output_value.getType();
-
-    /// check the value with respect to threshold
-    if (type == Field::Types::UInt64)
-    {
-        const auto value = output_value.get<UInt64>();
-        return value > threshold;
-    }
-    else if (type == Field::Types::Int64)
-    {
-        const auto value = output_value.get<Int64>();
-        return value < -threshold || threshold < value;
-    }
-    else if (type == Field::Types::Float64)
-    {
-        const auto value = output_value.get<Float64>();
-        return value < threshold || threshold < value;
-    }
-
-    return false;
-}
+/// static bool isConditionGood(const RPNBuilderTreeNode & condition, const NameSet & columns_names)
+/// {
+///     if (!condition.isFunction())
+///         return false;
+///
+///     auto function_node = condition.toFunctionNode();
+///
+///     /** We are only considering conditions of form `equals(one, another)` or `one = another`,
+///       * especially if either `one` or `another` is ASTIdentifier
+///       */
+///     if (function_node.getFunctionName() != "equals" || function_node.getArgumentsSize() != 2)
+///         return false;
+///
+///     auto lhs_argument = function_node.getArgumentAt(0);
+///     auto rhs_argument = function_node.getArgumentAt(1);
+///
+///     auto lhs_argument_column_name = lhs_argument.getColumnName();
+///     auto rhs_argument_column_name = rhs_argument.getColumnName();
+///
+///     bool lhs_argument_is_column = columns_names.contains(lhs_argument_column_name);
+///     bool rhs_argument_is_column = columns_names.contains(rhs_argument_column_name);
+///
+///     bool lhs_argument_is_constant = lhs_argument.isConstant();
+///     bool rhs_argument_is_constant = rhs_argument.isConstant();
+///
+///     RPNBuilderTreeNode * constant_node = nullptr;
+///
+///     if (lhs_argument_is_column && rhs_argument_is_constant)
+///         constant_node = &rhs_argument;
+///     else if (lhs_argument_is_constant && rhs_argument_is_column)
+///         constant_node = &lhs_argument;
+///     else
+///         return false;
+///
+///     Field output_value;
+///     DataTypePtr output_type;
+///     if (!constant_node->tryGetConstant(output_value, output_type))
+///         return false;
+///
+///     const auto type = output_value.getType();
+///
+///     /// check the value with respect to threshold
+///     if (type == Field::Types::UInt64)
+///     {
+///         const auto value = output_value.get<UInt64>();
+///         return value > threshold;
+///     }
+///     else if (type == Field::Types::Int64)
+///     {
+///         const auto value = output_value.get<Int64>();
+///         return value < -threshold || threshold < value;
+///     }
+///     else if (type == Field::Types::Float64)
+///     {
+///         const auto value = output_value.get<Float64>();
+///         return value < threshold || threshold < value;
+///     }
+///
+///     return false;
+/// }
 
 void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const
 {
@@ -229,7 +231,10 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             && cond.table_columns.size() < queried_columns.size();
 
         if (cond.viable)
-            cond.good = isConditionGood(node, table_columns);
+            cond.selectivity = estimator.estimateSelectivity(node);
+
+        ///if (cond.viable)
+        ///    cond.good = isConditionGood(node, table_columns);
 
         res.emplace_back(std::move(cond));
     }

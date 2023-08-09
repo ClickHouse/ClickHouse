@@ -43,6 +43,7 @@ namespace ErrorCodes
 template <typename T>
 class QuantileTDigest
 {
+    friend class TDigestStatistic;
     using Value = Float32;
     using Count = Float32;
     using BetterFloat = Float64; // For intermediate results and sum(Count). Must have better precision, than Count
@@ -332,6 +333,16 @@ public:
         centroids.erase(it, centroids.end());
 
         compress(); // Allows reading/writing TDigests with different epsilon/max_centroids params
+    }
+
+    Float64 getCountLessThan(Float64 value) const
+    {
+
+        ///Count sum = 0;
+        ///Value prev_mean = centroids.front().mean;
+        ///Count prev_count = centroids.front().count;
+
+        return value;
     }
 
     /** Calculates the quantile q [0, 1] based on the digest.

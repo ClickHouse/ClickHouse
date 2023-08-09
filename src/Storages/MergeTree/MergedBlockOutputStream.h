@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Columns/ColumnArray.h>
 #include <IO/WriteSettings.h>
+#include <Storages/Statistic/Statistic.h>
 
 
 namespace DB
@@ -19,6 +20,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & skip_indices,
+        const Statistics & statistics,
         CompressionCodecPtr default_codec_,
         const MergeTreeTransactionPtr & txn,
         bool reset_columns_ = false,

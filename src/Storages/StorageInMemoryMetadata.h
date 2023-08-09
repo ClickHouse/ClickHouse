@@ -5,6 +5,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/StatisticsDescription.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/SelectQueryDescription.h>
@@ -24,6 +25,8 @@ struct StorageInMemoryMetadata
     ColumnsDescription columns;
     /// Table indices. Currently supported for MergeTree only.
     IndicesDescription secondary_indices;
+
+    StatisticsDescriptions statistics;
     /// Table constraints. Currently supported for MergeTree only.
     ConstraintsDescription constraints;
     /// Table projections. Currently supported for MergeTree only.
@@ -75,6 +78,9 @@ struct StorageInMemoryMetadata
     /// Sets secondary indices
     void setSecondaryIndices(IndicesDescription secondary_indices_);
 
+    /// Sets statistics
+    void setStatistics(StatisticsDescriptions statistics_);
+
     /// Sets constraints
     void setConstraints(ConstraintsDescription constraints_);
 
@@ -104,6 +110,8 @@ struct StorageInMemoryMetadata
 
     /// Returns secondary indices
     const IndicesDescription & getSecondaryIndices() const;
+
+    const StatisticsDescriptions & getStatistics() const;
 
     /// Has at least one non primary index
     bool hasSecondaryIndices() const;

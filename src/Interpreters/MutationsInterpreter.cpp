@@ -479,6 +479,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// TODO Should we get columns, indices and projections from the part itself? Table metadata may be different
     const ColumnsDescription & columns_desc = metadata_snapshot->getColumns();
     const IndicesDescription & indices_desc = metadata_snapshot->getSecondaryIndices();
+    const StatisticsDescriptions & statistics_desc = metadata_snapshot->getStatistics();
     const ProjectionsDescription & projections_desc = metadata_snapshot->getProjections();
 
     auto storage_snapshot = std::make_shared<StorageSnapshot>(*source.getStorage(), metadata_snapshot);
@@ -682,7 +683,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
             auto it = std::find_if(
                     std::cbegin(indices_desc), std::end(indices_desc),
                     [&](const IndexDescription & index)
@@ -703,9 +704,25 @@ void MutationsInterpreter::prepare(bool dry_run)
                 materialized_indices.emplace(command.index_name);
             }
         }
+        else if (command.type == MutationCommand::MATERIALIZE_STATISTIC)
+        {
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
+            auto it = std::find_if(
+                    std::cbegin(statistics_desc), std::end(statistics_desc),
+                    [&](const StatisticDescription & statistic)
+                    {
+                        return statistic.name == command.statistic_name;
+                    });
+            if (it == std::cend(statistics_desc))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statistic: {}", command.statistic_name);
+
+            for (const auto & column : it->column_names)
+                dependencies.emplace(column, ColumnDependency::STATISTIC);
+            materialized_statistics.emplace(command.statistic_name);
+        }
         else if (command.type == MutationCommand::MATERIALIZE_PROJECTION)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
             const auto & projection = projections_desc.get(command.projection_name);
             if (!source.hasIndexOrProjection(projection.getDirectoryName()))
             {
@@ -716,12 +733,17 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::DROP_INDEX)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
             materialized_indices.erase(command.index_name);
+        }
+        else if (command.type == MutationCommand::DROP_STATISTIC)
+        {
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
+            materialized_statistics.erase(command.statistic_name);
         }
         else if (command.type == MutationCommand::DROP_PROJECTION)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
             materialized_projections.erase(command.projection_name);
         }
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
@@ -770,7 +792,9 @@ void MutationsInterpreter::prepare(bool dry_run)
                 auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true, has_index_or_projection);
                 for (const auto & dependency : new_dependencies)
                 {
-                    if (dependency.kind == ColumnDependency::SKIP_INDEX || dependency.kind == ColumnDependency::PROJECTION)
+                    if (dependency.kind == ColumnDependency::SKIP_INDEX
+                        || dependency.kind == ColumnDependency::PROJECTION
+                        || dependency.kind == ColumnDependency::STATISTIC)
                         dependencies.insert(dependency);
                 }
             }
@@ -1288,7 +1312,7 @@ QueryPipelineBuilder MutationsInterpreter::execute()
 Block MutationsInterpreter::getUpdatedHeader() const
 {
     // If it's an index/projection materialization, we don't write any data columns, thus empty header is used
-    return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_PROJECTION ? Block{} : *updated_header;
+    return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION ? Block{} : *updated_header;
 }
 
 const ColumnDependencies & MutationsInterpreter::getColumnDependencies() const

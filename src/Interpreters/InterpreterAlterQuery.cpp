@@ -287,6 +287,21 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_SAMPLE_BY, database, table);
             break;
         }
+        case ASTAlterCommand::ADD_STATISTIC:
+        {
+            required_access.emplace_back(AccessType::ALTER_ADD_STATISTIC, database, table);
+            break;
+        }
+        case ASTAlterCommand::DROP_STATISTIC:
+        {
+            required_access.emplace_back(AccessType::ALTER_DROP_STATISTIC, database, table);
+            break;
+        }
+        case ASTAlterCommand::MATERIALIZE_STATISTIC:
+        {
+            required_access.emplace_back(AccessType::ALTER_MATERIALIZE_STATISTIC, database, table);
+            break;
+        }
         case ASTAlterCommand::ADD_INDEX:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_INDEX, database, table);

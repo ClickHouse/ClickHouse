@@ -4,6 +4,7 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/quoteString.h>
 #include <Common/StringUtils/StringUtils.h>
+#include "Storages/StatisticsDescription.h"
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -28,6 +29,7 @@ namespace ErrorCodes
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
     : columns(other.columns)
     , secondary_indices(other.secondary_indices)
+    , statistics(other.statistics)
     , constraints(other.constraints)
     , projections(other.projections.clone())
     , minmax_count_projection(
@@ -52,6 +54,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
 
     columns = other.columns;
     secondary_indices = other.secondary_indices;
+    statistics = other.statistics;
     constraints = other.constraints;
     projections = other.projections.clone();
     if (other.minmax_count_projection)
@@ -89,6 +92,11 @@ void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)
 void StorageInMemoryMetadata::setSecondaryIndices(IndicesDescription secondary_indices_)
 {
     secondary_indices = std::move(secondary_indices_);
+}
+
+void StorageInMemoryMetadata::setStatistics(StatisticsDescriptions statistics_)
+{
+    statistics = std::move(statistics_);
 }
 
 void StorageInMemoryMetadata::setConstraints(ConstraintsDescription constraints_)
@@ -144,6 +152,11 @@ const ColumnsDescription & StorageInMemoryMetadata::getColumns() const
 const IndicesDescription & StorageInMemoryMetadata::getSecondaryIndices() const
 {
     return secondary_indices;
+}
+
+const StatisticsDescriptions & StorageInMemoryMetadata::getStatistics() const
+{
+    return statistics;
 }
 
 bool StorageInMemoryMetadata::hasSecondaryIndices() const

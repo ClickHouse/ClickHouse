@@ -123,6 +123,9 @@ const char * ASTAlterCommand::typeToString(ASTAlterCommand::Type type)
         case LIVE_VIEW_REFRESH: return "LIVE_VIEW_REFRESH";
         case MODIFY_DATABASE_SETTING: return "MODIFY_DATABASE_SETTING";
         case MODIFY_COMMENT: return "MODIFY_COMMENT";
+        case ADD_STATISTIC: return "ADD_STATISTIC";
+        case DROP_STATISTIC: return "DROP_STATISTIC";
+        case MATERIALIZE_STATISTIC: return "MATERIALIZE_STATISTIC";
     }
     UNREACHABLE();
 }
@@ -242,6 +245,41 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "MATERIALIZE INDEX " << (settings.hilite ? hilite_none : "");
         index->formatImpl(settings, state, frame);
+        if (partition)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->formatImpl(settings, state, frame);
+        }
+    }
+    else if (type == ASTAlterCommand::ADD_STATISTIC)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD STATISTIC " << (if_not_exists ? "IF NOT EXISTS " : "")
+                      << (settings.hilite ? hilite_none : "");
+        statistic_decl->formatImpl(settings, state, frame);
+
+        if (first)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FIRST " << (settings.hilite ? hilite_none : "");
+        else if (statistic) /// AFTER
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " AFTER " << (settings.hilite ? hilite_none : "");
+            statistic->formatImpl(settings, state, frame);
+        }
+    }
+    else if (type == ASTAlterCommand::DROP_STATISTIC)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << (clear_statistic ? "CLEAR " : "DROP ") << "INDEX "
+                      << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
+        statistic->formatImpl(settings, state, frame);
+        if (partition)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->formatImpl(settings, state, frame);
+        }
+    }
+    else if (type == ASTAlterCommand::MATERIALIZE_STATISTIC)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MATERIALIZE STATISTIC " << (settings.hilite ? hilite_none : "");
+        statistic->formatImpl(settings, state, frame);
         if (partition)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");

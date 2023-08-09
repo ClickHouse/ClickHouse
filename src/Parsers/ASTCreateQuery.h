@@ -53,6 +53,7 @@ class ASTColumns : public IAST
 public:
     ASTExpressionList * columns = nullptr;
     ASTExpressionList * indices = nullptr;
+    ASTExpressionList * stats = nullptr;
     ASTExpressionList * constraints = nullptr;
     ASTExpressionList * projections = nullptr;
     IAST              * primary_key = nullptr;
@@ -66,7 +67,7 @@ public:
     bool empty() const
     {
         return (!columns || columns->children.empty()) && (!indices || indices->children.empty()) && (!constraints || constraints->children.empty())
-            && (!projections || projections->children.empty());
+            && (!projections || projections->children.empty()) && (!stats || stats->children.empty());
     }
 
     void forEachPointerToChild(std::function<void(void**)> f) override

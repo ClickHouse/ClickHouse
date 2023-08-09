@@ -736,7 +736,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     }
 
     MergedBlockOutputStream part_out(
-        new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {},
+        new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {}, {},
         CompressionCodecFactory::instance().get("NONE", {}), NO_TRANSACTION_PTR);
 
     part_out.write(block);

@@ -21,6 +21,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTProjectionDeclaration.h>
+#include <Parsers/ASTStatisticDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/queryToString.h>
@@ -232,6 +233,25 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::ADD_STATISTIC)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.statistic_decl = command_ast->statistic_decl;
+        command.type = AlterCommand::ADD_STATISTIC;
+
+        const auto & ast_stat_decl = command_ast->statistic_decl->as<ASTStatisticDeclaration &>();
+
+        command.statistic_name = ast_stat_decl.name;
+
+        if (command_ast->statistic)
+            command.after_statistic_name = command_ast->statistic->as<ASTIdentifier &>().name();
+
+        command.if_not_exists = command_ast->if_not_exists;
+        command.first = command_ast->first;
+
+        return command;
+    }
     else if (command_ast->type == ASTAlterCommand::ADD_CONSTRAINT)
     {
         AlterCommand command;
@@ -285,6 +305,20 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.if_exists = command_ast->if_exists;
         if (command_ast->clear_index)
             command.clear = true;
+
+        if (command_ast->partition)
+            command.partition = command_ast->partition;
+
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::DROP_STATISTIC)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::DROP_STATISTIC;
+        command.statistic_name = command_ast->statistic->as<ASTIdentifier &>().name();
+        command.if_exists = command_ast->if_exists;
+        command.clear = command_ast->clear_statistic;
 
         if (command_ast->partition)
             command.partition = command_ast->partition;
@@ -551,6 +585,68 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             }
 
             metadata.secondary_indices.erase(erase_it);
+        }
+    }
+    else if (type == ADD_STATISTIC)
+    {
+        if (std::any_of(
+                metadata.statistics.cbegin(),
+                metadata.statistics.cend(),
+                [this](const auto & statistic)
+                {
+                    return statistic.name == statistic_name;
+                }))
+        {
+            if (if_not_exists)
+                return;
+            else
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add statistic {} : statistic with this name already exists", statistic_name);
+        }
+
+        auto insert_it = metadata.statistics.end();
+
+        /// insert the index in the beginning of the indices list
+        if (first)
+            insert_it = metadata.statistics.begin();
+
+        if (!after_statistic_name.empty())
+        {
+            insert_it = std::find_if(
+                    metadata.statistics.begin(),
+                    metadata.statistics.end(),
+                    [this](const auto & statistic)
+                    {
+                        return statistic.name == after_statistic_name;
+                    });
+
+            if (insert_it == metadata.statistics.end())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong statistic name. Cannot find statistic {} to insert after", backQuote(after_statistic_name));
+
+            ++insert_it;
+        }
+
+        metadata.statistics.emplace(insert_it, StatisticDescription::getStatisticFromAST(statistic_decl, metadata.columns, context));
+    }
+    else if (type == DROP_STATISTIC)
+    {
+        if (!partition && !clear)
+        {
+            auto erase_it = std::find_if(
+                    metadata.statistics.begin(),
+                    metadata.statistics.end(),
+                    [this](const auto & statistic)
+                    {
+                        return statistic.name == statistic_name;
+                    });
+
+            if (erase_it == metadata.statistics.end())
+            {
+                if (if_exists)
+                    return;
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong statistic name. Cannot find statistic {} to drop", backQuote(statistic_name));
+            }
+
+            metadata.statistics.erase(erase_it);
         }
     }
     else if (type == ADD_CONSTRAINT)
@@ -877,6 +973,10 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
             result.partition = partition;
 
         result.predicate = nullptr;
+    }
+    else if (type == DROP_STATISTIC)
+    {
+
     }
     else if (type == DROP_PROJECTION)
     {

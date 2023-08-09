@@ -380,6 +380,18 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/** name BY columns TYPE typename(arg1, arg2, ...) */
+/** name BY columns */
+class ParserStatisticDeclaration : public IParserBase
+{
+public:
+    ParserStatisticDeclaration() = default;
+
+protected:
+    const char * getName() const override { return "statistics declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 class ParserConstraintDeclaration : public IParserBase
 {
 protected:

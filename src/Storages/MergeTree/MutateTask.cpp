@@ -4,6 +4,7 @@
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/Statistic/Statistic.h>
 #include <Columns/ColumnsNumber.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/SquashingTransform.h>
@@ -71,6 +72,7 @@ static void splitAndModifyMutationCommands(
         for (const auto & command : commands)
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
+                || command.type == MutationCommand::Type::MATERIALIZE_STATISTIC
                 || command.type == MutationCommand::Type::MATERIALIZE_COLUMN
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
@@ -190,6 +192,7 @@ static void splitAndModifyMutationCommands(
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
                 || command.type == MutationCommand::Type::MATERIALIZE_COLUMN
+                || command.type == MutationCommand::Type::MATERIALIZE_STATISTIC
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::DELETE
@@ -437,6 +440,20 @@ static ExecuteTTLType shouldExecuteTTL(const StorageMetadataPtr & metadata_snaps
     return has_ttl_expression ? ExecuteTTLType::RECALCULATE : ExecuteTTLType::NONE;
 }
 
+static std::set<StatisticPtr> getStatisticsToRecalculate(const StorageMetadataPtr & metadata_snapshot, const NameSet & materialized_stats)
+{
+    const auto & stats_factory = MergeTreeStatisticFactory::instance();
+    std::set<StatisticPtr> stats_to_recalc;
+    const auto & stats = metadata_snapshot->getStatistics();
+    for (const auto & stat_desc : stats)
+    {
+        if (materialized_stats.contains(stat_desc.name))
+        {
+            stats_to_recalc.insert(stats_factory.get(stat_desc));
+        }
+    }
+    return stats_to_recalc;
+}
 
 /// Return set of indices which should be recalculated during mutation also
 /// wraps input stream into additional expression stream
@@ -527,7 +544,8 @@ static NameSet collectFilesToSkip(
     const Block & updated_header,
     const std::set<MergeTreeIndexPtr> & indices_to_recalc,
     const String & mrk_extension,
-    const std::set<ProjectionDescriptionRawPtr> & projections_to_recalc)
+    const std::set<ProjectionDescriptionRawPtr> & projections_to_recalc,
+    const std::set<StatisticPtr> & stats_to_recalc)
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
@@ -543,6 +561,9 @@ static NameSet collectFilesToSkip(
 
     for (const auto & projection : projections_to_recalc)
         files_to_skip.insert(projection->getDirectoryName());
+
+    for (const auto & stat : stats_to_recalc)
+        files_to_skip.insert(stat->getFileName() + STAT_FILE_SUFFIX);
 
     if (isWidePart(source_part))
     {
@@ -620,6 +641,11 @@ static NameToNameVector collectFilesForRenames(
             if (source_part->checksums.has(command.column_name + ".proj"))
                 add_rename(command.column_name + ".proj", "");
         }
+        //else if (command.type == MutationCommand::Type::DROP_STATISTICS)
+        //{
+        //    if (source_part->checksums.has(command.column_name + ".stat"))
+        //        add_rename(command.column_name + ".stat", "");
+        //}
         else if (isWidePart(source_part))
         {
             if (command.type == MutationCommand::Type::DROP_COLUMN)
@@ -830,6 +856,7 @@ struct MutationContext
     NamesAndTypesList storage_columns;
     NameSet materialized_indices;
     NameSet materialized_projections;
+    NameSet materialized_statistics;
 
     MergeTreeData::MutableDataPartPtr new_data_part;
     IMergedBlockOutputStreamPtr out{nullptr};
@@ -840,6 +867,7 @@ struct MutationContext
     IMergeTreeDataPart::MinMaxIndexPtr minmax_idx{nullptr};
 
     std::set<MergeTreeIndexPtr> indices_to_recalc;
+    std::set<StatisticPtr> stats_to_recalc;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
     MergeTreeData::DataPart::Checksums existing_indices_checksums;
     NameSet files_to_skip;
@@ -1292,6 +1320,30 @@ private:
             }
         }
 
+        Statistics stats;
+        const auto & statistics = ctx->metadata_snapshot->getStatistics();
+        for (const auto & stat : statistics)
+        {
+            if (ctx->materialized_statistics.contains(stat.name))
+            {
+                stats.push_back(MergeTreeStatisticFactory::instance().get(stat));
+            }
+            else
+            {
+                auto prefix = fmt::format("{}{}.", STAT_FILE_PREFIX, stat.name);
+                auto it = ctx->source_part->checksums.files.upper_bound(prefix);
+                while (it != ctx->source_part->checksums.files.end())
+                {
+                    if (!startsWith(it->first, prefix))
+                        break;
+
+                    entries_to_hardlink.insert(it->first);
+                    ctx->existing_indices_checksums.addFile(it->first, it->second.file_size, it->second.file_hash);
+                    ++it;
+                }
+            }
+        }
+
         NameSet removed_projections;
         for (const auto & command : ctx->for_file_renames)
         {
@@ -1376,11 +1428,13 @@ private:
 
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
 
+        LOG_TRACE(ctx->log, "going to write {} stats", stats.size());
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
             ctx->metadata_snapshot,
             ctx->new_data_part->getColumns(),
             skip_indices,
+            stats,
             ctx->compression_codec,
             ctx->txn,
             /*reset_columns=*/ true,
@@ -1575,6 +1629,7 @@ private:
                 ctx->updated_header,
                 ctx->compression_codec,
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
+                Statistics(ctx->stats_to_recalc.begin(), ctx->stats_to_recalc.end()),
                 nullptr,
                 ctx->source_part->index_granularity,
                 &ctx->source_part->index_granularity_info
@@ -1840,6 +1895,8 @@ bool MutateTask::prepare()
             ctx->metadata_snapshot->getColumns().getNamesOfPhysical(), context_for_reading, settings);
 
         ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
+        ctx->materialized_statistics = ctx->interpreter->grabMaterializedStatistics();
+        LOG_INFO(ctx->log, "stats number {}", ctx->materialized_statistics.size());
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
@@ -1904,13 +1961,16 @@ bool MutateTask::prepare()
 
         ctx->projections_to_recalc = MutationHelpers::getProjectionsToRecalculate(ctx->metadata_snapshot, ctx->materialized_projections);
 
+        ctx->stats_to_recalc = MutationHelpers::getStatisticsToRecalculate(ctx->metadata_snapshot, ctx->materialized_statistics);
+
         ctx->files_to_skip = MutationHelpers::collectFilesToSkip(
             ctx->source_part,
             ctx->new_data_part,
             ctx->updated_header,
             ctx->indices_to_recalc,
             ctx->mrk_extension,
-            ctx->projections_to_recalc);
+            ctx->projections_to_recalc,
+            ctx->stats_to_recalc);
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->source_part,
