@@ -983,6 +983,28 @@ void StorageMergeTree::loadMutations()
         increment.value = std::max(increment.value.load(), current_mutations_by_version.rbegin()->first);
 }
 
+bool StorageMergeTree::mutationVersionsEquivalent(const DataPartPtr & left, const DataPartPtr & right, std::unique_lock<std::mutex> & lock)
+{
+    auto leftMutationVersion = getCurrentMutationVersion(left, lock);
+    auto rightMutationVersion = getCurrentMutationVersion(right, lock);
+
+    if (leftMutationVersion != rightMutationVersion)
+    {
+        const auto & follower_part = leftMutationVersion < rightMutationVersion ? left : right;
+        auto mutations_it = current_mutations_by_version.upper_bound(std::min(leftMutationVersion, rightMutationVersion));
+        auto mutations_end_it = current_mutations_by_version.upper_bound(std::max(leftMutationVersion, rightMutationVersion));
+
+        for (; mutations_it != mutations_end_it; ++mutations_it)
+        {
+            if (mutations_it->second.affectsPartition(follower_part->info.partition_id))
+                return false;
+        }
+    }
+
+    return true;
+}
+
+
 MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
     const StorageMetadataPtr & metadata_snapshot,
     bool aggressive,
@@ -1047,7 +1069,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
             return false;
         }
 
-        if (getCurrentMutationVersion(left, lock) != getCurrentMutationVersion(right, lock))
+        if (!mutationVersionsEquivalent(left, right, lock))
         {
             disable_reason = PreformattedMessage::create("Some parts have different mutation versions");
             return false;
