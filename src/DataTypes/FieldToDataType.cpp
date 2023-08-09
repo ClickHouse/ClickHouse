@@ -33,34 +33,19 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Null &) const
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const UInt64 & x) const
 {
-    if (x <= std::numeric_limits<Int8>::max()) return std::make_shared<DataTypeUInt8>(DataTypes{ std::make_shared<DataTypeInt8>() });
     if (x <= std::numeric_limits<UInt8>::max()) return std::make_shared<DataTypeUInt8>();
-    if (x <= std::numeric_limits<Int16>::max()) return std::make_shared<DataTypeUInt16>(DataTypes{ std::make_shared<DataTypeInt16>() });
     if (x <= std::numeric_limits<UInt16>::max()) return std::make_shared<DataTypeUInt16>();
-    if (x <= std::numeric_limits<Int32>::max()) return std::make_shared<DataTypeUInt32>(DataTypes{ std::make_shared<DataTypeInt32>() });
     if (x <= std::numeric_limits<UInt32>::max()) return std::make_shared<DataTypeUInt32>();
-    if (x <= std::numeric_limits<Int64>::max()) return std::make_shared<DataTypeUInt64>(DataTypes{ std::make_shared<DataTypeInt64>() });
+    if (x <= std::numeric_limits<Int64>::max()) return std::make_shared<DataTypeUInt64>(std::make_shared<DataTypeInt64>());
     return std::make_shared<DataTypeUInt64>();
 }
 
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Int64 & x) const
 {
-    if (x >= 0)
-    {
-        if (x <= std::numeric_limits<Int8>::max()) return std::make_shared<DataTypeInt8>();
-        if (x <= std::numeric_limits<UInt8>::max()) return std::make_shared<DataTypeInt16>(DataTypes{ std::make_shared<DataTypeUInt8>() });
-        if (x <= std::numeric_limits<Int16>::max()) return std::make_shared<DataTypeInt16>();
-        if (x <= std::numeric_limits<UInt16>::max()) return std::make_shared<DataTypeInt32>(DataTypes{ std::make_shared<DataTypeUInt16>() });
-        if (x <= std::numeric_limits<Int32>::max()) return std::make_shared<DataTypeInt32>();
-        if (x <= std::numeric_limits<UInt32>::max()) return std::make_shared<DataTypeInt64>(DataTypes{ std::make_shared<DataTypeUInt32>() });
-    }
-    else
-    {
-        if (x >= std::numeric_limits<Int8>::min()) return std::make_shared<DataTypeInt8>();
-        if (x >= std::numeric_limits<Int16>::min()) return std::make_shared<DataTypeInt16>();
-        if (x >= std::numeric_limits<Int32>::min()) return std::make_shared<DataTypeInt32>();
-    }
+    if (x <= std::numeric_limits<Int8>::max() && x >= std::numeric_limits<Int8>::min()) return std::make_shared<DataTypeInt8>();
+    if (x <= std::numeric_limits<Int16>::max() && x >= std::numeric_limits<Int16>::min()) return std::make_shared<DataTypeInt16>();
+    if (x <= std::numeric_limits<Int32>::max() && x >= std::numeric_limits<Int32>::min()) return std::make_shared<DataTypeInt32>();
     return std::make_shared<DataTypeInt64>();
 }
 
