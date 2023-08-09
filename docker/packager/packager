@@ -156,6 +156,7 @@ def parse_env_variables(
     is_cross_arm_v80compat = compiler.endswith(ARM_V80COMPAT_SUFFIX)
     is_cross_ppc = compiler.endswith(PPC_SUFFIX)
     is_cross_riscv = compiler.endswith(RISCV_SUFFIX)
+    is_cross_s390x = compiler.endswith(S390X_SUFFIX)
     is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
     is_amd64_compat = compiler.endswith(AMD64_COMPAT_SUFFIX)
 
