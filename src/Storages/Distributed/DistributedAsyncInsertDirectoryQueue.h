@@ -100,7 +100,7 @@ private:
     void addFile(const std::string & file_path);
     void initializeFilesFromDisk();
     void processFiles();
-    void processFile(const std::string & file_path);
+    void processFile(std::string & file_path);
     void processFilesWithBatching();
 
     void markAsBroken(const std::string & file_path);
