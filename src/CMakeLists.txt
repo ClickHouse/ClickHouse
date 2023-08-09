@@ -576,6 +576,10 @@ if (TARGET ch_contrib::bzip2)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::bzip2)
 endif()
 
+if (TARGET ch_contrib::libarchive)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::libarchive)
+endif()
+
 if (TARGET ch_contrib::minizip)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::minizip)
 endif ()
