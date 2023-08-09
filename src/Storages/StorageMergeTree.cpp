@@ -919,7 +919,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
 
         if (getCurrentMutationVersion(left, lock) != getCurrentMutationVersion(right, lock))
         {
-            disable_reason = "Some parts have differ mmutatuon version";
+            disable_reason = "Some parts have different mutation version";
             return false;
         }
 
