@@ -18,9 +18,10 @@ class DataTypeNumber final : public DataTypeNumberBase<T>
 public:
     DataTypeNumber() = default;
 
-    explicit DataTypeNumber(DataTypes data_types)
+    explicit DataTypeNumber(DataTypePtr opposite_sign_data_type_)
         : DataTypeNumberBase<T>()
-        , possible_data_types(std::move(data_types))
+        , opposite_sign_data_type(std::move(opposite_sign_data_type_))
+        , has_opposite_sign_data_type(true)
     {
     }
 
@@ -39,15 +40,23 @@ public:
         return std::make_shared<PromotedType>();
     }
 
+    bool hasOppositeSignDataType() const override { return has_opposite_sign_data_type; }
+    DataTypePtr oppositeSignDataType() const override
+    {
+        if (!has_opposite_sign_data_type)
+            IDataType::oppositeSignDataType();
+
+        return opposite_sign_data_type;
+    }
+
     SerializationPtr doGetDefaultSerialization() const override
     {
         return std::make_shared<SerializationNumber<T>>();
     }
 
-    DataTypes getPossiblePtr() const override { return possible_data_types; }
-
 private:
-    DataTypes possible_data_types;
+    DataTypePtr opposite_sign_data_type;
+    bool has_opposite_sign_data_type = false;
 };
 
 using DataTypeUInt8 = DataTypeNumber<UInt8>;

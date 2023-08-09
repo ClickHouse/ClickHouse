@@ -605,113 +605,50 @@ DataTypePtr getLeastSupertype(const DataTypes & types, bool optimize_type_ids)
 
 void optimizeTypeIds(const DataTypes & types, TypeIndexSet & type_ids)
 {
-    // Determine whether the type_id is UInt
-    auto is_unsigned = [](const TypeIndex & type_id)
+    auto is_signed_int = [](const TypeIndex & type_id)
     {
         switch (type_id)
         {
-            case TypeIndex::UInt8:
-            case TypeIndex::UInt16:
-            case TypeIndex::UInt32:
-            case TypeIndex::UInt64:
+            case TypeIndex::Int8:
+            case TypeIndex::Int16:
+            case TypeIndex::Int32:
+            case TypeIndex::Int64:
                 return true;
             default:
                 return false;
         }
     };
 
-    bool only_unsigned = false;
-    bool only_signed = false;
-    bool both = false;
-    bool has_unsigned = false;
-    bool has_signed = false;
+    bool has_signed_int = false;
+    bool has_uint64_and_has_opposite = false;
+    TypeIndexSet opposite_type_ids;
 
-    // Determine the distribution of maximum signed and unsigned, Example:
-    // Int64, Int64 = only_signed.
-    // UInt64, UInt64 = only_unsigned.
-    // UInt64(possible: Int64), Int64(possible: UInt64) = both.
-    // UInt64(possible: Int64), Int64 = both, only_signed.
+    // Determine whether UInt64 in type_ids needs to change its sign.
     for (const auto & type : types)
     {
-        TypeIndex type_id = type->getTypeId();
-        bool type_is_unsigned = is_unsigned(type_id);
-        bool type_is_both = false;
-        for (const auto & possible_type : type->getPossiblePtr())
+        auto type_id = type->getTypeId();
+
+        if (!has_signed_int)
+            has_signed_int = is_signed_int(type_id);
+
+        if (type_id == TypeIndex::UInt64)
         {
-            if (type_is_unsigned != is_unsigned(possible_type->getTypeId()))
+            if (!type->hasOppositeSignDataType())
             {
-                type_is_both = true;
-                break;
+                has_uint64_and_has_opposite = false;
+                break ;
+            }else
+            {
+                has_uint64_and_has_opposite = true;
+                opposite_type_ids.insert(type->oppositeSignDataType()->getTypeId());
             }
         }
-
-        if (type_is_unsigned)
-            has_unsigned = true;
-        else
-            has_signed = true;
-
-        if (type_is_both)
-            both = true;
-        else if (type_is_unsigned)
-            only_unsigned = true;
-        else
-            only_signed = true;
     }
 
-    auto optimize_type_id = [&is_unsigned](const DataTypePtr & type, bool try_change_unsigned)
+    if (has_uint64_and_has_opposite && has_signed_int)
     {
-        TypeIndex type_id = type->getTypeId();
-        switch (type_id)
-        {
-            case TypeIndex::UInt8:
-            case TypeIndex::UInt16:
-            case TypeIndex::UInt32:
-            case TypeIndex::UInt64:
-                if (try_change_unsigned)
-                    return type_id;
-                break ;
-            case TypeIndex::Int8:
-            case TypeIndex::Int16:
-            case TypeIndex::Int32:
-            case TypeIndex::Int64:
-                if (!try_change_unsigned)
-                    return type_id;
-                break ;
-            default:
-                return type_id;
-        }
-
-        for (const auto & other_type : type->getPossiblePtr())
-        {
-            TypeIndex other_type_id = other_type->getTypeId();
-            if ((try_change_unsigned && is_unsigned(other_type_id))
-                || (!try_change_unsigned && !is_unsigned(other_type_id)))
-            {
-                return other_type_id;
-            }
-        }
-
-        return type_id;
-    };
-
-    // optimize type_ids
-    if (both)
-    {
-        // Example: Int64(possible: UInt32), UInt64 = UInt32, UInt64
-        if (only_unsigned && !only_signed)
-        {
-            type_ids.clear();
-            for (const auto & type : types)
-                type_ids.insert(optimize_type_id(type, true));
-        }
-        // Example: UInt64(possible: Int64), Int64 = Int64, Int64
-        //          Int64(possible: UInt32), UInt64(possible: Int64) = Int64, Int64
-        else if ((only_signed && !only_unsigned) || (has_unsigned && has_signed && !only_signed && !only_unsigned))
-        {
-            type_ids.clear();
-            for (const auto & type : types)
-                type_ids.insert(optimize_type_id(type, false));
-        }
+        type_ids.erase(TypeIndex::UInt64);
+        type_ids.insert(opposite_type_ids.begin(), opposite_type_ids.end());
     }
 }
 

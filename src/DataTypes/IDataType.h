@@ -73,8 +73,6 @@ public:
 
     DataTypePtr getPtr() const { return shared_from_this(); }
 
-    virtual DataTypes getPossiblePtr() const { return {}; }
-
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
     /// Name of corresponding data type in MySQL (exampe: Bigint, Blob, etc)
@@ -159,6 +157,15 @@ public:
     /** Return the promoted numeric data type of the current data type. Throw an exception if `canBePromoted() == false`.
       */
     virtual DataTypePtr promoteNumericType() const;
+
+    /** The data type has an opposite sign DataTypePtr type.
+      * Data types that can have an opposite sign are typically signed or unsigned types.
+      */
+    virtual bool hasOppositeSignDataType() const { return false; }
+
+    /** Return the opposite sign data type of the current data type. Throw an exception if `hasOppositeSignDataType() == false`.
+      */
+    virtual DataTypePtr oppositeSignDataType() const;
 
     /** Directly insert default value into a column. Default implementation use method IColumn::insertDefault.
       * This should be overridden if data type default value differs from column default value (example: Enum data types).
