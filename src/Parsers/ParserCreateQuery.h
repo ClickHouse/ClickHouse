@@ -135,7 +135,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_remove{"REMOVE"};
     ParserKeyword s_type{"TYPE"};
     ParserKeyword s_collate{"COLLATE"};
-    ParserKeyword s_primary_key{"PRIMARY KEY"};
     ParserExpression expr_parser;
     ParserStringLiteral string_literal_parser;
     ParserLiteral literal_parser;
@@ -178,7 +177,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr codec_expression;
     ASTPtr ttl_expression;
     ASTPtr collation_expression;
-    bool primary_key_specifier = false;
 
     auto null_check_without_moving = [&]() -> bool
     {
@@ -200,7 +198,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         && !s_ephemeral.checkWithoutMoving(pos, expected)
         && !s_alias.checkWithoutMoving(pos, expected)
         && !s_auto_increment.checkWithoutMoving(pos, expected)
-        && !s_primary_key.checkWithoutMoving(pos, expected)
         && (require_type
             || (!s_comment.checkWithoutMoving(pos, expected)
                 && !s_codec.checkWithoutMoving(pos, expected))))
@@ -269,6 +266,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             ParserDataType().parse(tmp_pos, type, tmp_expected);
         }
     }
+
     /// This will rule out unusual expressions like *, t.* that cannot appear in DEFAULT
     if (default_expression && !dynamic_cast<const ASTWithAlias *>(default_expression.get()))
         return false;
@@ -305,11 +303,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     {
         if (!expression_parser.parse(pos, ttl_expression, expected))
             return false;
-    }
-
-    if (s_primary_key.ignore(pos, expected))
-    {
-        primary_key_specifier = true;
     }
 
     node = column_declaration;
@@ -352,8 +345,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->collation = collation_expression;
         column_declaration->children.push_back(std::move(collation_expression));
     }
-
-    column_declaration->primary_key_specifier = primary_key_specifier;
 
     return true;
 }
@@ -548,7 +539,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// CREATE NAMED COLLECTION name [ON CLUSTER cluster]
 class ParserCreateNamedCollectionQuery : public IParserBase
 {
 protected:

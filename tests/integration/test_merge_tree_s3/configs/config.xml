@@ -8,5 +8,4 @@
     </s3>
 
     <enable_system_unfreeze>true</enable_system_unfreeze>
-    <allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
 </clickhouse>

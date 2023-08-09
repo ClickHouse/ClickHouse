@@ -42,15 +42,6 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/Arena.h>
-#include <Core/ColumnWithTypeAndName.h>
-#include <base/types.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/IColumn.h>
-#include <Core/ColumnsWithTypeAndName.h>
-#include <DataTypes/IDataType.h>
-#include <DataTypes/getMostSubtype.h>
-#include <base/TypeLists.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/Context.h>
 
@@ -71,7 +62,6 @@ namespace ErrorCodes
     extern const int DECIMAL_OVERFLOW;
     extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
 namespace traits_
@@ -111,9 +101,6 @@ template <typename DataType> constexpr bool IsIntegralOrExtendedOrDecimal =
 template <typename DataType> constexpr bool IsFloatingPoint = false;
 template <> inline constexpr bool IsFloatingPoint<DataTypeFloat32> = true;
 template <> inline constexpr bool IsFloatingPoint<DataTypeFloat64> = true;
-
-template <typename DataType> constexpr bool IsArray = false;
-template <> inline constexpr bool IsArray<DataTypeArray> = true;
 
 template <typename DataType> constexpr bool IsDateOrDateTime = false;
 template <> inline constexpr bool IsDateOrDateTime<DataTypeDate> = true;
@@ -1138,73 +1125,6 @@ class FunctionBinaryArithmetic : public IFunction
         return function->execute(arguments, result_type, input_rows_count);
     }
 
-    ColumnPtr executeArrayImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
-    {
-        const auto * return_type_array = checkAndGetDataType<DataTypeArray>(result_type.get());
-
-        if (!return_type_array)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Return type for function {} must be array.", getName());
-
-        auto num_args = arguments.size();
-        DataTypes data_types;
-
-        ColumnsWithTypeAndName new_arguments {num_args};
-        DataTypePtr result_array_type;
-
-        const auto * left_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
-        const auto * right_const = typeid_cast<const ColumnConst *>(arguments[1].column.get());
-
-        /// Unpacking arrays if both are constants.
-        if (left_const && right_const)
-        {
-            new_arguments[0] = {left_const->getDataColumnPtr(), arguments[0].type, arguments[0].name};
-            new_arguments[1] = {right_const->getDataColumnPtr(), arguments[1].type, arguments[1].name};
-            auto col = executeImpl(new_arguments, result_type, 1);
-            return ColumnConst::create(std::move(col), input_rows_count);
-        }
-
-        /// Unpacking arrays if at least one column is constant.
-        if (left_const || right_const)
-        {
-            new_arguments[0] = {arguments[0].column->convertToFullColumnIfConst(), arguments[0].type, arguments[0].name};
-            new_arguments[1] = {arguments[1].column->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name};
-            return executeImpl(new_arguments, result_type, input_rows_count);
-        }
-
-        const auto * left_array_col = typeid_cast<const ColumnArray *>(arguments[0].column.get());
-        const auto * right_array_col = typeid_cast<const ColumnArray *>(arguments[1].column.get());
-        const auto & left_offsets = left_array_col->getOffsets();
-        const auto & right_offsets = right_array_col->getOffsets();
-
-        chassert(left_offsets.size() == right_offsets.size() && "Unexpected difference in number of offsets");
-        /// Unpacking non-const arrays and checking sizes of them.
-        for (auto offset_index = 0U; offset_index < left_offsets.size(); ++offset_index)
-        {
-            if (left_offsets[offset_index] != right_offsets[offset_index])
-            {
-                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                "Cannot apply operation for arrays of different sizes. Size of the first argument: {}, size of the second argument: {}",
-                *left_array_col->getOffsets().data(),
-                *right_array_col ->getOffsets().data());
-            }
-        }
-
-        const auto & left_array_type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
-        new_arguments[0] = {left_array_col->getDataPtr(), left_array_type, arguments[0].name};
-
-        const auto & right_array_type = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
-        new_arguments[1] = {right_array_col->getDataPtr(), right_array_type, arguments[1].name};
-
-        result_array_type = typeid_cast<const DataTypeArray *>(result_type.get())->getNestedType();
-
-        size_t rows_count = 0;
-        if (!left_offsets.empty())
-            rows_count = left_offsets.back();
-        auto res = executeImpl(new_arguments, result_array_type, rows_count);
-
-        return ColumnArray::create(res, typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
-    }
-
     ColumnPtr executeTupleNumberOperator(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
                                                size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
     {
@@ -1405,20 +1325,6 @@ public:
 
             return getReturnTypeImplStatic(new_arguments, context);
         }
-
-
-        if constexpr (is_plus || is_minus)
-        {
-            if (isArray(arguments[0]) && isArray(arguments[1]))
-            {
-                DataTypes new_arguments {
-                        static_cast<const DataTypeArray &>(*arguments[0]).getNestedType(),
-                        static_cast<const DataTypeArray &>(*arguments[1]).getNestedType(),
-                };
-                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
-            }
-        }
-
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1], context))
@@ -2125,9 +2031,6 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 return (res = executeNumeric(arguments, left, right, right_nullmap)) != nullptr;
         });
 
-        if (isArray(result_type))
-            return executeArrayImpl(arguments, result_type, input_rows_count);
-
         if (!valid)
         {
             // This is a logical error, because the types should have been checked
@@ -2143,68 +2046,51 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
     }
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & result_type) const override
+    bool isCompilableImpl(const DataTypes & arguments) const override
     {
         if (2 != arguments.size())
-            return false;
-
-        if (!canBeNativeType(*arguments[0]) || !canBeNativeType(*arguments[1]) || !canBeNativeType(*result_type))
-            return false;
-
-        WhichDataType data_type_lhs(arguments[0]);
-        WhichDataType data_type_rhs(arguments[1]);
-        if ((data_type_lhs.isDateOrDate32() || data_type_lhs.isDateTime()) ||
-            (data_type_rhs.isDateOrDate32() || data_type_rhs.isDateTime()))
             return false;
 
         return castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
         {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
-            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> &&
-                !std::is_same_v<DataTypeFixedString, RightDataType> &&
-                !std::is_same_v<DataTypeString, LeftDataType> &&
-                !std::is_same_v<DataTypeString, RightDataType>)
+            if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType> || std::is_same_v<DataTypeFixedString, RightDataType> || std::is_same_v<DataTypeString, LeftDataType> || std::is_same_v<DataTypeString, RightDataType>)
+                return false;
+            else
             {
                 using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
                 using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-                if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable)
-                    return true;
+                return !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable;
             }
-            return false;
         });
     }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
     {
-        assert(2 == arguments.size());
+        assert(2 == types.size() && 2 == values.size());
 
         llvm::Value * result = nullptr;
-        castBothTypes(arguments[0].type.get(), arguments[1].type.get(), [&](const auto & left, const auto & right)
+        castBothTypes(types[0].get(), types[1].get(), [&](const auto & left, const auto & right)
         {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
-            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> &&
-                !std::is_same_v<DataTypeFixedString, RightDataType> &&
-                !std::is_same_v<DataTypeString, LeftDataType> &&
-                !std::is_same_v<DataTypeString, RightDataType>)
+            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType> && !std::is_same_v<DataTypeString, LeftDataType> && !std::is_same_v<DataTypeString, RightDataType>)
             {
                 using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
                 using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
                 if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable)
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                    auto * lval = nativeCast(b, arguments[0], result_type);
-                    auto * rval = nativeCast(b, arguments[1], result_type);
+                    auto type = std::make_shared<ResultDataType>();
+                    auto * lval = nativeCast(b, types[0], values[0], type);
+                    auto * rval = nativeCast(b, types[1], values[1], type);
                     result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
-
                     return true;
                 }
             }
-
             return false;
         });
-
         return result;
     }
 #endif

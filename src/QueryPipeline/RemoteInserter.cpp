@@ -130,7 +130,7 @@ void RemoteInserter::onFinish()
             break;
         else if (Protocol::Server::Exception == packet.type)
             packet.exception->rethrow();
-        else if (Protocol::Server::Log == packet.type || Protocol::Server::TimezoneUpdate == packet.type)
+        else if (Protocol::Server::Log == packet.type)
         {
             // Do nothing
         }

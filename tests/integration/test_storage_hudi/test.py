@@ -51,7 +51,6 @@ def started_cluster():
         cluster.add_instance(
             "node1",
             main_configs=["configs/config.d/named_collections.xml"],
-            user_configs=["configs/users.d/users.xml"],
             with_minio=True,
         )
 
@@ -80,7 +79,7 @@ def run_query(instance, query, stdin=None, settings=None):
 
 
 def write_hudi_from_df(spark, table_name, df, result_path, mode="overwrite"):
-    if mode == "overwrite":
+    if mode is "overwrite":
         hudi_write_mode = "insert_overwrite"
     else:
         hudi_write_mode = "upsert"

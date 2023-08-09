@@ -23,7 +23,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/DDLTask.h>
 
 
 namespace DB
@@ -685,10 +684,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
-        bool need_check_table_structure = true;
-        if (auto txn = args.getLocalContext()->getZooKeeperMetadataTransaction())
-            need_check_table_structure = txn->isInitialQuery();
-
         return std::make_shared<StorageReplicatedMergeTree>(
             zookeeper_path,
             replica_name,
@@ -701,8 +696,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             merging_params,
             std::move(storage_settings),
             args.has_force_restore_data_flag,
-            renaming_restrictions,
-            need_check_table_structure);
+            renaming_restrictions);
     }
     else
         return std::make_shared<StorageMergeTree>(

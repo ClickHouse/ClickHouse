@@ -24,7 +24,7 @@ public:
     IMergeTreeReader(
         MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
         const NamesAndTypesList & columns_,
-        const StorageSnapshotPtr & storage_snapshot_,
+        const StorageMetadataPtr & metadata_snapshot_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
         const MarkRanges & all_mark_ranges_,
@@ -74,8 +74,6 @@ protected:
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 
-    String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
-
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;
     /// Stores states for IDataType::deserializeBinaryBulk
@@ -92,23 +90,22 @@ protected:
 
     MergeTreeReaderSettings settings;
 
-    StorageSnapshotPtr storage_snapshot;
+    StorageMetadataPtr metadata_snapshot;
     MarkRanges all_mark_ranges;
 
     /// Position and level (of nesting).
-    using ColumnNameLevel = std::optional<std::pair<String, size_t>>;
-
+    using ColumnPositionLevel = std::optional<std::pair<size_t, size_t>>;
     /// In case of part of the nested column does not exists, offsets should be
     /// read, but only the offsets for the current column, that is why it
     /// returns pair of size_t, not just one.
-    ColumnNameLevel findColumnForOffsets(const NameAndTypePair & column) const;
+    ColumnPositionLevel findColumnForOffsets(const NameAndTypePair & column) const;
 
     NameSet partially_read_columns;
 
+private:
     /// Alter conversions, which must be applied on fly if required
     AlterConversionsPtr alter_conversions;
 
-private:
     /// Columns that are requested to read.
     NamesAndTypesList requested_columns;
 

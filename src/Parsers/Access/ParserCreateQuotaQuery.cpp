@@ -108,8 +108,7 @@ namespace
         });
     }
 
-    template <typename T>
-    requires std::same_as<T, double> || std::same_as<T, QuotaValue>
+    template <typename T, typename = std::enable_if_t<std::is_same_v<T, double> || std::is_same_v<T, QuotaValue>>>
     T fieldToNumber(const Field & f)
     {
         if (f.getType() == Field::Types::String)

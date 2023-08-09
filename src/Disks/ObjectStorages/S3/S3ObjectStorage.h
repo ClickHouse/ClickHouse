@@ -39,16 +39,6 @@ struct S3ObjectStorageSettings
 
 class S3ObjectStorage : public IObjectStorage
 {
-public:
-    struct Clients
-    {
-        std::shared_ptr<S3::Client> client;
-        std::shared_ptr<S3::Client> client_with_long_timeout;
-
-        Clients() = default;
-        Clients(std::shared_ptr<S3::Client> client, const S3ObjectStorageSettings & settings);
-    };
-
 private:
     friend class S3PlainObjectStorage;
 
@@ -61,7 +51,7 @@ private:
         String bucket_,
         String connection_string)
         : bucket(bucket_)
-        , clients(std::make_unique<Clients>(std::move(client_), *s3_settings_))
+        , client(std::move(client_))
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
         , version_id(std::move(version_id_))
@@ -169,12 +159,14 @@ public:
 private:
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
 
+    void setNewClient(std::unique_ptr<S3::Client> && client_);
+
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
     std::string bucket;
 
-    MultiVersion<Clients> clients;
+    MultiVersion<S3::Client> client;
     MultiVersion<S3ObjectStorageSettings> s3_settings;
     S3Capabilities s3_capabilities;
 

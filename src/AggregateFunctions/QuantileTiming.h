@@ -78,14 +78,14 @@ namespace detail
 
         void serialize(WriteBuffer & buf) const
         {
-            writeBinaryLittleEndian(count, buf);
+            writeBinary(count, buf);
             buf.write(reinterpret_cast<const char *>(elems), count * sizeof(elems[0]));
         }
 
         void deserialize(ReadBuffer & buf)
         {
             UInt16 new_count = 0;
-            readBinaryLittleEndian(new_count, buf);
+            readBinary(new_count, buf);
             if (new_count > TINY_MAX_ELEMS)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "The number of elements {} for the 'tiny' kind of quantileTiming is exceeding the maximum of {}", new_count, TINY_MAX_ELEMS);
             buf.readStrict(reinterpret_cast<char *>(elems), new_count * sizeof(elems[0]));
@@ -164,14 +164,14 @@ namespace detail
 
         void serialize(WriteBuffer & buf) const
         {
-            writeBinaryLittleEndian(elems.size(), buf);
+            writeBinary(elems.size(), buf);
             buf.write(reinterpret_cast<const char *>(elems.data()), elems.size() * sizeof(elems[0]));
         }
 
         void deserialize(ReadBuffer & buf)
         {
             size_t size = 0;
-            readBinaryLittleEndian(size, buf);
+            readBinary(size, buf);
             if (size > 10'000)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "The number of elements {} for the 'medium' kind of quantileTiming is too large", size);
 
@@ -341,7 +341,7 @@ namespace detail
 
         void serialize(WriteBuffer & buf) const
         {
-            writeBinaryLittleEndian(count, buf);
+            writeBinary(count, buf);
 
             if (count * 2 > SMALL_THRESHOLD + BIG_SIZE)
             {
@@ -356,8 +356,8 @@ namespace detail
                 {
                     if (count_small[i])
                     {
-                        writeBinaryLittleEndian(UInt16(i), buf);
-                        writeBinaryLittleEndian(count_small[i], buf);
+                        writeBinary(UInt16(i), buf);
+                        writeBinary(count_small[i], buf);
                     }
                 }
 
@@ -365,19 +365,19 @@ namespace detail
                 {
                     if (count_big[i])
                     {
-                        writeBinaryLittleEndian(UInt16(i + SMALL_THRESHOLD), buf);
-                        writeBinaryLittleEndian(count_big[i], buf);
+                        writeBinary(UInt16(i + SMALL_THRESHOLD), buf);
+                        writeBinary(count_big[i], buf);
                     }
                 }
 
                 /// Symbolizes end of data.
-                writeBinaryLittleEndian(UInt16(BIG_THRESHOLD), buf);
+                writeBinary(UInt16(BIG_THRESHOLD), buf);
             }
         }
 
         void deserialize(ReadBuffer & buf)
         {
-            readBinaryLittleEndian(count, buf);
+            readBinary(count, buf);
 
             if (count * 2 > SMALL_THRESHOLD + BIG_SIZE)
             {
@@ -388,12 +388,12 @@ namespace detail
                 while (true)
                 {
                     UInt16 index = 0;
-                    readBinaryLittleEndian(index, buf);
+                    readBinary(index, buf);
                     if (index == BIG_THRESHOLD)
                         break;
 
                     UInt64 elem_count = 0;
-                    readBinaryLittleEndian(elem_count, buf);
+                    readBinary(elem_count, buf);
 
                     if (index < SMALL_THRESHOLD)
                         count_small[index] = elem_count;
@@ -692,7 +692,7 @@ public:
     void serialize(WriteBuffer & buf) const
     {
         auto kind = which();
-        writeBinaryLittleEndian(kind, buf);
+        DB::writePODBinary(kind, buf);
 
         if (kind == Kind::Tiny)
             tiny.serialize(buf);
@@ -706,7 +706,7 @@ public:
     void deserialize(ReadBuffer & buf)
     {
         Kind kind;
-        readBinaryLittleEndian(kind, buf);
+        DB::readPODBinary(kind, buf);
 
         if (kind == Kind::Tiny)
         {

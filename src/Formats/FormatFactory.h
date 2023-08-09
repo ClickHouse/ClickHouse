@@ -153,7 +153,6 @@ public:
     ///  * Parallel reading.
     ///    To enable it, make sure `buf` is a SeekableReadBuffer implementing readBigAt().
     ///  * Parallel parsing.
-    /// `buf` must outlive the returned IInputFormat.
     InputFormatPtr getInput(
         const String & name,
         ReadBuffer & buf,
@@ -228,8 +227,10 @@ public:
 
     void markOutputFormatSupportsParallelFormatting(const String & name);
     void markOutputFormatPrefersLargeBlocks(const String & name);
+    void markFormatSupportsSubcolumns(const String & name);
     void markFormatSupportsSubsetOfColumns(const String & name);
 
+    bool checkIfFormatSupportsSubcolumns(const String & name) const;
     bool checkIfFormatSupportsSubsetOfColumns(const String & name) const;
 
     bool checkIfFormatHasSchemaReader(const String & name) const;

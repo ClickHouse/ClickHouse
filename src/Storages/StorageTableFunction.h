@@ -79,11 +79,11 @@ public:
             nested->shutdown();
     }
 
-    void flushAndPrepareForShutdown() override
+    void flush() override
     {
         std::lock_guard lock{nested_mutex};
         if (nested)
-            nested->flushAndPrepareForShutdown();
+            nested->flush();
     }
 
     void drop() override

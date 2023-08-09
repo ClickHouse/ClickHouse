@@ -38,7 +38,6 @@
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
-#include <Interpreters/AsynchronousInsertQueue.h>
 #include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
@@ -89,14 +88,13 @@ namespace ErrorCodes
 
 namespace ActionLocks
 {
-    extern const StorageActionBlockType PartsMerge;
-    extern const StorageActionBlockType PartsFetch;
-    extern const StorageActionBlockType PartsSend;
-    extern const StorageActionBlockType ReplicationQueue;
-    extern const StorageActionBlockType DistributedSend;
-    extern const StorageActionBlockType PartsTTLMerge;
-    extern const StorageActionBlockType PartsMove;
-    extern const StorageActionBlockType PullReplicationLog;
+    extern StorageActionBlockType PartsMerge;
+    extern StorageActionBlockType PartsFetch;
+    extern StorageActionBlockType PartsSend;
+    extern StorageActionBlockType ReplicationQueue;
+    extern StorageActionBlockType DistributedSend;
+    extern StorageActionBlockType PartsTTLMerge;
+    extern StorageActionBlockType PartsMove;
 }
 
 
@@ -156,8 +154,6 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
         return AccessType::SYSTEM_TTL_MERGES;
     else if (action_type == ActionLocks::PartsMove)
         return AccessType::SYSTEM_MOVES;
-    else if (action_type == ActionLocks::PullReplicationLog)
-        return AccessType::SYSTEM_PULLING_REPLICATION_LOG;
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
 }
@@ -374,18 +370,7 @@ BlockIO InterpreterSystemQuery::execute()
             else
             {
                 auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name).cache;
-                if (query.key_to_drop.empty())
-                {
-                    cache->removeAllReleasable();
-                }
-                else
-                {
-                    auto key = FileCacheKey::fromKeyString(query.key_to_drop);
-                    if (query.offset_to_drop.has_value())
-                        cache->removeFileSegment(key, query.offset_to_drop.value());
-                    else
-                        cache->removeKey(key);
-                }
+                cache->removeAllReleasable();
             }
             break;
         }
@@ -474,6 +459,16 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_USERS);
             system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL);
             break;
+        case Type::RELOAD_SYMBOLS:
+        {
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_SYMBOLS);
+            SymbolIndex::reload();
+            break;
+#else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM RELOAD SYMBOLS is not supported on current platform");
+#endif
+        }
         case Type::STOP_MERGES:
             startStopAction(ActionLocks::PartsMerge, false);
             break;
@@ -515,12 +510,6 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::START_DISTRIBUTED_SENDS:
             startStopAction(ActionLocks::DistributedSend, true);
-            break;
-        case Type::STOP_PULLING_REPLICATION_LOG:
-            startStopAction(ActionLocks::PullReplicationLog, false);
-            break;
-        case Type::START_PULLING_REPLICATION_LOG:
-            startStopAction(ActionLocks::PullReplicationLog, true);
             break;
         case Type::DROP_REPLICA:
             dropReplica(query);
@@ -576,25 +565,9 @@ BlockIO InterpreterSystemQuery::execute()
             );
             break;
         }
-        case Type::STOP_LISTEN:
-            getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
-            getContext()->stopServers(query.server_type);
-            break;
-        case Type::START_LISTEN:
-            getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
-            getContext()->startServers(query.server_type);
-            break;
-        case Type::FLUSH_ASYNC_INSERT_QUEUE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
-            auto * queue = getContext()->getAsynchronousInsertQueue();
-            if (!queue)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot flush asynchronous insert queue because it is not initialized");
-
-            queue->flushAll();
-            break;
-        }
+        case Type::STOP_LISTEN_QUERIES:
+        case Type::START_LISTEN_QUERIES:
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported yet", query.type);
         case Type::STOP_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::stop();
@@ -1072,6 +1045,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_USERS);
             break;
         }
+        case Type::RELOAD_SYMBOLS:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RELOAD_SYMBOLS);
+            break;
+        }
         case Type::STOP_MERGES:
         case Type::START_MERGES:
         {
@@ -1097,15 +1075,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_MOVES);
             else
                 required_access.emplace_back(AccessType::SYSTEM_MOVES, query.getDatabase(), query.getTable());
-            break;
-        }
-        case Type::STOP_PULLING_REPLICATION_LOG:
-        case Type::START_PULLING_REPLICATION_LOG:
-        {
-            if (!query.table)
-                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG);
-            else
-                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG, query.getDatabase(), query.getTable());
             break;
         }
         case Type::STOP_FETCHES:
@@ -1195,11 +1164,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_LOGS);
             break;
         }
-        case Type::FLUSH_ASYNC_INSERT_QUEUE:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
-            break;
-        }
         case Type::RESTART_DISK:
         {
             required_access.emplace_back(AccessType::SYSTEM_RESTART_DISK);
@@ -1215,12 +1179,8 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_SYNC_FILE_CACHE);
             break;
         }
-        case Type::STOP_LISTEN:
-        case Type::START_LISTEN:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_LISTEN);
-            break;
-        }
+        case Type::STOP_LISTEN_QUERIES:
+        case Type::START_LISTEN_QUERIES:
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
         case Type::ENABLE_FAILPOINT:

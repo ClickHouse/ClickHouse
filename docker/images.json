@@ -161,9 +161,5 @@
     "docker/test/sqllogic": {
         "name": "clickhouse/sqllogic-test",
         "dependent": []
-    },
-    "docker/test/integration/nginx_dav": {
-        "name": "clickhouse/nginx-dav",
-        "dependent": []
     }
 }

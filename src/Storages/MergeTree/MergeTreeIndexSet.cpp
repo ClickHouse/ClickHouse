@@ -457,11 +457,8 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
         if (arguments_size != 1)
             return nullptr;
 
-        auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
-        const auto & bit_wrapper_func_node = result_dag->addFunction(bit_wrapper_function, {arguments[0]}, {});
-
         auto bit_swap_last_two_function = FunctionFactory::instance().get("__bitSwapLastTwo", context);
-        return &result_dag->addFunction(bit_swap_last_two_function, {&bit_wrapper_func_node}, {});
+        return &result_dag->addFunction(bit_swap_last_two_function, {arguments[0]}, {});
     }
     else if (function_name == "and" || function_name == "indexHint" || function_name == "or")
     {
@@ -557,10 +554,7 @@ void MergeTreeIndexConditionSet::traverseAST(ASTPtr & node) const
     if (atomFromAST(node))
     {
         if (node->as<ASTIdentifier>() || node->as<ASTFunction>())
-            /// __bitWrapperFunc* uses default implementation for Nullable types
-            /// Here we additionally convert Null to 0,
-            /// otherwise condition 'something OR NULL' will always return Null and filter everything.
-            node = makeASTFunction("__bitWrapperFunc", makeASTFunction("ifNull", node, std::make_shared<ASTLiteral>(Field(0))));
+            node = makeASTFunction("__bitWrapperFunc", node);
     }
     else
         node = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);

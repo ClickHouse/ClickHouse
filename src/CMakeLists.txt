@@ -206,11 +206,12 @@ add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::jemalloc)
-    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::jemalloc)
-    target_link_libraries (clickhouse_storages_system PRIVATE ch_contrib::jemalloc)
 endif()
 
-target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash ch_contrib::incbin)
+if (TARGET ch_contrib::jemalloc)
+    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::jemalloc)
+endif()
+target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash)
 
 add_subdirectory(Access/Common)
 add_subdirectory(Common/ZooKeeper)
@@ -248,7 +249,6 @@ add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_storages_windowview Storages/WindowView)
-add_object_library(clickhouse_storages_s3queue Storages/S3Queue)
 add_object_library(clickhouse_client Client)
 add_object_library(clickhouse_bridge BridgeHelper)
 add_object_library(clickhouse_server Server)
@@ -267,10 +267,6 @@ add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Alg
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
 add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
-
-if (USE_PARQUET)
-    add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
-endif()
 
 if (TARGET ch_contrib::nuraft)
     add_object_library(clickhouse_coordination Coordination)
@@ -417,7 +413,6 @@ dbms_target_link_libraries (
         boost::system
         clickhouse_common_io
         Poco::MongoDB
-        Poco::Redis
 )
 
 if (TARGET ch::mysqlxx)
@@ -566,6 +561,7 @@ if (ENABLE_NLP)
     dbms_target_link_libraries (PUBLIC ch_contrib::stemmer)
     dbms_target_link_libraries (PUBLIC ch_contrib::wnb)
     dbms_target_link_libraries (PUBLIC ch_contrib::lemmagen)
+    dbms_target_link_libraries (PUBLIC ch_contrib::nlp_data)
 endif()
 
 if (TARGET ch_contrib::ulid)
@@ -574,10 +570,6 @@ endif()
 
 if (TARGET ch_contrib::bzip2)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::bzip2)
-endif()
-
-if (TARGET ch_contrib::libarchive)
-    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::libarchive)
 endif()
 
 if (TARGET ch_contrib::minizip)
