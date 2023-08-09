@@ -33,10 +33,11 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    explicit CastOverloadResolverImpl(ContextPtr context_, std::optional<Diagnostic> diagnostic_, bool keep_nullable_, const DataTypeValidationSettings & data_type_validation_settings_)
+    explicit CastOverloadResolverImpl(ContextPtr context_, std::optional<Diagnostic> diagnostic_, bool keep_nullable_, bool validate_type_, const DataTypeValidationSettings & data_type_validation_settings_)
         : context(context_)
         , diagnostic(std::move(diagnostic_))
         , keep_nullable(keep_nullable_)
+        , validate_type(validate_type_)
         , data_type_validation_settings(data_type_validation_settings_)
     {
     }
@@ -46,21 +47,24 @@ public:
         const auto & settings_ref = context->getSettingsRef();
 
         if constexpr (internal)
-            return createImpl(context, {}, false /*keep_nullable*/);
+            return createImpl(context, {}, false /*keep_nullable*/, false /*validate_type*/);
 
-        return createImpl(context, {}, settings_ref.cast_keep_nullable, DataTypeValidationSettings(settings_ref));
+        /// Don't validate data type on attach query.
+
+        bool validate_types = !context->isAttachQuery();
+        return createImpl(context, {}, settings_ref.cast_keep_nullable, validate_types, DataTypeValidationSettings(settings_ref));
     }
 
-    static FunctionOverloadResolverPtr createImpl(ContextPtr context, std::optional<Diagnostic> diagnostic = {}, bool keep_nullable = false, const DataTypeValidationSettings & data_type_validation_settings = {})
+    static FunctionOverloadResolverPtr createImpl(ContextPtr context, std::optional<Diagnostic> diagnostic = {}, bool keep_nullable = false, bool validate_type_ = true, const DataTypeValidationSettings & data_type_validation_settings = {})
     {
         assert(!internal || !keep_nullable);
-        return std::make_unique<CastOverloadResolverImpl>(context, std::move(diagnostic), keep_nullable, data_type_validation_settings);
+        return std::make_unique<CastOverloadResolverImpl>(context, std::move(diagnostic), keep_nullable, validate_type_, data_type_validation_settings);
     }
 
-    static FunctionOverloadResolverPtr createImpl(std::optional<Diagnostic> diagnostic = {}, bool keep_nullable = false, const DataTypeValidationSettings & data_type_validation_settings = {})
+    static FunctionOverloadResolverPtr createImpl(std::optional<Diagnostic> diagnostic = {}, bool keep_nullable = false, bool validate_type_ = true, const DataTypeValidationSettings & data_type_validation_settings = {})
     {
         assert(!internal || !keep_nullable);
-        return std::make_unique<CastOverloadResolverImpl>(ContextPtr(), std::move(diagnostic), keep_nullable, data_type_validation_settings);
+        return std::make_unique<CastOverloadResolverImpl>(ContextPtr(), std::move(diagnostic), keep_nullable, validate_type_, data_type_validation_settings);
     }
 
 protected:
@@ -89,7 +93,8 @@ protected:
                 "Instead there is a column with the following structure: {}", getName(), column->dumpStructure());
 
         DataTypePtr type = DataTypeFactory::instance().get(type_col->getValue<String>());
-        validateDataType(type, data_type_validation_settings);
+        if (validate_type)
+            validateDataType(type, data_type_validation_settings);
 
         if constexpr (cast_type == CastType::accurateOrNull)
             return makeNullable(type);
@@ -111,6 +116,7 @@ private:
     ContextPtr context;
     std::optional<Diagnostic> diagnostic;
     bool keep_nullable;
+    bool validate_type;
     DataTypeValidationSettings data_type_validation_settings;
 };
 

@@ -268,6 +268,7 @@ private:
     bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
     StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
     bool is_distributed = false;  /// Whether the current context it used for distributed query
+    bool is_attach_query = false;  /// Whether the current context is used for attach query
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
@@ -713,6 +714,9 @@ public:
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
+
+    void setAttachQuery(bool is_attach_query_) { is_attach_query = is_attach_query_; }
+    bool isAttachQuery() const { return is_attach_query; }
 
     String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.
     void setDefaultFormat(const String & name);
