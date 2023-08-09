@@ -9,14 +9,22 @@
 #include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorWriteBinary.h>
+#include <base/EnumReflection.h>
 
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int CANNOT_RESTORE_FROM_FIELD_DUMP;
     extern const int DECIMAL_OVERFLOW;
+}
+
+/// Keep in mind, that "magic_enum" is very expensive for compiler.
+std::string_view Field::getTypeName() const
+{
+    return magic_enum::enum_name(which);
 }
 
 inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
