@@ -389,7 +389,7 @@ void MySQLHandler::comStmtPrepare(DB::ReadBuffer & payload)
     readStringUntilEOF(query, payload);
 
     uint32_t statement_id = current_prepared_statement_id;
-    if (current_prepared_statement_id == std::numeric_limits<uint32_t>::max())
+    if (current_prepared_statement_id == std::numeric_limits<uint32_t>::max()) [[unlikely]]
     {
         current_prepared_statement_id = 0;
     }
