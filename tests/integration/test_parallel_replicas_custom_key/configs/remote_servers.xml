@@ -2,7 +2,7 @@
     <remote_servers>
         <test_multiple_shards_multiple_replicas>
             <shard>
-                <internal_replication>false</internal_replication>
+                <internal_replication>true</internal_replication>
                 <replica>
                     <host>n1</host>
                     <port>9000</port>
@@ -13,7 +13,7 @@
                 </replica>
             </shard>
             <shard>
-                <internal_replication>false</internal_replication>
+                <internal_replication>true</internal_replication>
                 <replica>
                     <host>n3</host>
                     <port>9000</port>
@@ -26,7 +26,7 @@
         </test_multiple_shards_multiple_replicas>
         <test_single_shard_multiple_replicas>
             <shard>
-                <internal_replication>false</internal_replication>
+                <internal_replication>true</internal_replication>
                 <replica>
                     <host>n1</host>
                     <port>9000</port>
