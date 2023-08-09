@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Parsers/IParser.h>
 
 #include <gtest/gtest.h>

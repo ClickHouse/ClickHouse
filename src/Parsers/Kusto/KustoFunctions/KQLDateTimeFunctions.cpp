@@ -154,7 +154,7 @@ bool DayOfWeek::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     const String datetime_str = getConvertedArgument(fn_name, pos);
 
-    out = std::format("concat((toDayOfWeek({})%7)::String , '.00:00:00')", datetime_str);
+    out = std::format("concat((toDayOfWeek({})%7)::String, '.00:00:00')", datetime_str);
     return true;
 }
 
@@ -399,7 +399,7 @@ bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)
                 formatspecifier = formatspecifier + "%i";
             else if (arg == "h" || arg == "hh")
             {
-                if (is_hour_zero) //To handle the CH limit for 12hr format(01-12). If not handled , 1.00:00:00 returned as 1.12:00:00(in 12 hr format)
+                if (is_hour_zero) //To handle the CH limit for 12hr format(01-12). If not handled, 1.00:00:00 returned as 1.12:00:00(in 12 hr format)
                     formatspecifier = formatspecifier + "%h";
                 else
                     formatspecifier = formatspecifier + "%H";
@@ -574,7 +574,7 @@ bool MakeTimeSpan::convertImpl(String & out, IParser::Pos & pos)
     datetime_str = "0000-00-00 " + datetime_str;
 
     out = std::format(
-        "CONCAT('{}',toString(SUBSTRING(toString(toTime(parseDateTime64BestEffortOrNull('{}', 9 ,'UTC'))),12)))", day, datetime_str);
+        "CONCAT('{}',toString(SUBSTRING(toString(toTime(parseDateTime64BestEffortOrNull('{}', 9,'UTC'))),12)))", day, datetime_str);
     return true;
 }
 
@@ -604,7 +604,7 @@ bool MakeDateTime::convertImpl(String & out, IParser::Pos & pos)
     if (arg_count < 7)
     {
         for (int i = arg_count; i < 7; ++i)
-            arguments = arguments + "0 ,";
+            arguments = arguments + "0,";
     }
 
     arguments = arguments + "7,'UTC'";
@@ -646,7 +646,7 @@ bool StartOfDay::convertImpl(String & out, IParser::Pos & pos)
         ++pos;
         offset = getConvertedArgument(fn_name, pos);
     }
-    out = std::format("date_add(DAY,{}, parseDateTime64BestEffortOrNull(toString((toStartOfDay({}))) , 9 , 'UTC')) ", offset, datetime_str);
+    out = std::format("date_add(DAY,{}, parseDateTime64BestEffortOrNull(toString((toStartOfDay({}))), 9, 'UTC')) ", offset, datetime_str);
     return true;
 }
 
@@ -666,7 +666,7 @@ bool StartOfMonth::convertImpl(String & out, IParser::Pos & pos)
         offset = getConvertedArgument(fn_name, pos);
     }
     out = std::format(
-        "date_add(MONTH,{}, parseDateTime64BestEffortOrNull(toString((toStartOfMonth({}))) , 9 , 'UTC')) ", offset, datetime_str);
+        "date_add(MONTH,{}, parseDateTime64BestEffortOrNull(toString((toStartOfMonth({}))), 9, 'UTC')) ", offset, datetime_str);
     return true;
 }
 
@@ -686,7 +686,7 @@ bool StartOfWeek::convertImpl(String & out, IParser::Pos & pos)
         offset = getConvertedArgument(fn_name, pos);
     }
     out = std::format(
-        "date_add(Week,{}, parseDateTime64BestEffortOrNull(toString((toStartOfWeek({}))) , 9 , 'UTC')) ", offset, datetime_str);
+        "date_add(Week,{}, parseDateTime64BestEffortOrNull(toString((toStartOfWeek({}))), 9, 'UTC')) ", offset, datetime_str);
     return true;
 }
 
@@ -706,7 +706,7 @@ bool StartOfYear::convertImpl(String & out, IParser::Pos & pos)
         offset = getConvertedArgument(fn_name, pos);
     }
     out = std::format(
-        "date_add(YEAR,{}, parseDateTime64BestEffortOrNull(toString((toStartOfYear({}, 'UTC'))) , 9 , 'UTC'))", offset, datetime_str);
+        "date_add(YEAR,{}, parseDateTime64BestEffortOrNull(toString((toStartOfYear({}, 'UTC'))), 9, 'UTC'))", offset, datetime_str);
     return true;
 }
 
@@ -762,8 +762,8 @@ bool UnixTimeSecondsToDateTime::convertImpl(String & out, IParser::Pos & pos)
     String expression = getConvertedArgument(fn_name, pos);
     out = std::format(
         " if(toTypeName({0}) = 'Int64' OR toTypeName({0}) = 'Int32'OR toTypeName({0}) = 'Float64' OR  toTypeName({0}) = 'UInt32' OR  "
-        "toTypeName({0}) = 'UInt64', toDateTime64({0}, 9, 'UTC') , toDateTime64(throwIf(true, '{1} only accepts Int , Long and double type "
-        "of arguments'),9,'UTC'))",
+        "toTypeName({0}) = 'UInt64', toDateTime64({0}, 9, 'UTC'), toDateTime64(throwIf(true, '{1} only accepts Int, Long and double type "
+        "of arguments'), 9, 'UTC'))",
         expression,
         fn_name);
 

@@ -52,7 +52,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserKQLTest,
         },
         {
             "print unixtime_seconds_todatetime(1546300899)",
-            "SELECT if((toTypeName(1546300899) = 'Int64') OR (toTypeName(1546300899) = 'Int32') OR (toTypeName(1546300899) = 'Float64') OR (toTypeName(1546300899) = 'UInt32') OR (toTypeName(1546300899) = 'UInt64'), toDateTime64(1546300899, 9, 'UTC'), toDateTime64(throwIf(true, 'unixtime_seconds_todatetime only accepts Int , Long and double type of arguments'), 9, 'UTC'))"
+            "SELECT if((toTypeName(1546300899) = 'Int64') OR (toTypeName(1546300899) = 'Int32') OR (toTypeName(1546300899) = 'Float64') OR (toTypeName(1546300899) = 'UInt32') OR (toTypeName(1546300899) = 'UInt64'), toDateTime64(1546300899, 9, 'UTC'), toDateTime64(throwIf(true, 'unixtime_seconds_todatetime only accepts Int, Long and double type of arguments'), 9, 'UTC'))"
         },
         {
             "print dayofweek(datetime(2015-12-20))",

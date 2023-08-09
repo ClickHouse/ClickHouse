@@ -606,7 +606,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserKQLTest,
             "SELECT\n    * EXCEPT duration,\n    endTime - startTime AS duration\nFROM\n(\n    SELECT\n        endTime,\n        startTime\n    FROM T\n)"
         },
         {
-            "T | extend c =c*2, b-a, d = a +b , a*b",
+            "T | extend c =c*2, b-a, d = a + b, a*b",
             "SELECT\n    * EXCEPT c EXCEPT d,\n    c * 2 AS c,\n    b - a AS Column1,\n    a + b AS d,\n    a * b AS Column2\nFROM T"
         }
 })));
