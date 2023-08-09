@@ -72,8 +72,10 @@ public:
     void * alloc(size_t size, size_t alignment = 0)
     {
         checkSize(size);
-        CurrentMemoryTracker::alloc(size);
-        return allocNoTrack(size, alignment);
+        auto trace = CurrentMemoryTracker::alloc(size);
+        void * ptr = allocNoTrack(size, alignment);
+        trace.onAlloc(ptr, size);
+        return ptr;
     }
 
     /// Free memory range.
@@ -82,8 +84,9 @@ public:
         try
         {
             checkSize(size);
-            freeNoTrack(buf);
-            CurrentMemoryTracker::free(size);
+            freeNoTrack(buf, size);
+            auto trace = CurrentMemoryTracker::free(size);
+            trace.onFree(buf, size);
         }
         catch (...)
         {
@@ -108,7 +111,9 @@ public:
         else if (alignment <= MALLOC_MIN_ALIGNMENT)
         {
             /// Resize malloc'd memory region with no special alignment requirement.
-            CurrentMemoryTracker::realloc(old_size, new_size);
+            auto trace_free = CurrentMemoryTracker::free(old_size);
+            auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
+            trace_free.onFree(buf, old_size);
 
             void * new_buf = ::realloc(buf, new_size);
             if (nullptr == new_buf)
@@ -118,6 +123,8 @@ public:
             }
 
             buf = new_buf;
+            trace_alloc.onAlloc(buf, new_size);
+
             if constexpr (clear_memory)
                 if (new_size > old_size)
                     memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
