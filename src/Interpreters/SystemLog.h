@@ -147,7 +147,7 @@ private:
       * Renames old table if its structure is not suitable.
       * This cannot be done in constructor to avoid deadlock while renaming a table under locked Context when SystemLog object is created.
       */
-    void prepareTable() override;
+    void prepareTable(bool if_not_exists) override;
 
     void savingThreadFunction() override;
 
