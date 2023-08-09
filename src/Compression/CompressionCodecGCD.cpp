@@ -355,28 +355,12 @@ Int8 getGCDBytesSize(const IDataType * column_type)
 void registerCodecGCD(CompressionCodecFactory & factory)
 {
     UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::GCD);
-    auto codec_builder = [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
+    auto codec_builder = [&](const ASTPtr &, const IDataType * column_type) -> CompressionCodecPtr
     {
         /// Default bytes size is 1.
         Int8 gcd_bytes_size = 1;
 
-        if (arguments && !arguments->children.empty())
-        {
-            if (arguments->children.size() > 1)
-                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "GCD codec must have 1 parameter, given {}", arguments->children.size());
-
-            const auto children = arguments->children;
-            const auto * literal = children[0]->as<ASTLiteral>();
-            if (!literal || (literal->value.getType() != Field::Types::Which::Int64 && literal->value.getType() != Field::Types::Which::UInt64))
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "GCD codec argument must be integer");
-
-            Int64 user_bytes_size = literal->value.safeGet<Int64>();
-            if (user_bytes_size != 1 && user_bytes_size != 2 && user_bytes_size != 4 && user_bytes_size != 8 && user_bytes_size != 16 && user_bytes_size != 32 &&
-                user_bytes_size != -1 && user_bytes_size != -2 && user_bytes_size != -4 && user_bytes_size != -8 && user_bytes_size != -16 && user_bytes_size != -32)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "GCD value for GCD codec can be +-1, +-2, +-4, +-8, +-16 or +-32, given {}", user_bytes_size);
-            gcd_bytes_size = static_cast<Int8>(user_bytes_size);
-        }
-        else if (column_type)
+        if (column_type)
         {
             gcd_bytes_size = getGCDBytesSize(column_type);
         }
