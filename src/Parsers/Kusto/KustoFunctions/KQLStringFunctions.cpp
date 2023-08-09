@@ -294,7 +294,7 @@ bool ExtractJson::convertImpl(String & out, IParser::Pos & pos)
     if (datatype == "Decimal")
     {
         out = std::format("countSubstrings({0}, '.') > 1 ? NULL: length(substr({0}, position({0},'.') + 1)))", json_val);
-        out = std::format("toDecimal128OrNull({0}::String ,{1})", json_val, out);
+        out = std::format("toDecimal128OrNull({0}::String, {1})", json_val, out);
     }
     else
     {
@@ -563,7 +563,7 @@ bool Split::convertImpl(String & out, IParser::Pos & pos)
         requested_index = std::stoi(arg);
         requested_index += 1;
         out = std::format(
-            "multiIf(length({0}) >= {1} AND {1} > 0 , arrayPushBack([],arrayElement({0}, {1})) , {1}=0 ,{0} , arrayPushBack([] "
+            "multiIf(length({0}) >= {1} AND {1} > 0, arrayPushBack([],arrayElement({0}, {1})), {1}=0, {0}, arrayPushBack([] "
             ",arrayElement(NULL,1)))",
             split_res,
             requested_index);
@@ -712,7 +712,7 @@ bool Translate::convertImpl(String & out, IParser::Pos & pos)
 
     String len_diff = std::format("length({}) - length({})", from, to);
     String to_str = std::format(
-        "multiIf(length({1}) = 0, {0}, {2} > 0, concat({1},repeat(substr({1},length({1}),1),toUInt16({2}))),{2} < 0 , "
+        "multiIf(length({1}) = 0, {0}, {2} > 0, concat({1},repeat(substr({1},length({1}),1),toUInt16({2}))),{2} < 0, "
         "substr({1},1,length({0})),{1})",
         from,
         to,
