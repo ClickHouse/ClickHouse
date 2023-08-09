@@ -82,8 +82,8 @@ public:
 
 private:
     static Float64 apply(
-        const IColumn & data1,
-        const IColumn & data2,
+        const IColumn & scores,
+        const IColumn & labels,
         ColumnArray::Offset current_offset,
         ColumnArray::Offset next_offset)
     {
@@ -98,8 +98,8 @@ private:
 
         for (size_t i = 0; i < size; ++i)
         {
-            bool label = data2.getFloat64(current_offset + i) > 0;
-            sorted_labels[i].score = data1.getFloat64(current_offset + i);
+            bool label = labels.getFloat64(current_offset + i) > 0;
+            sorted_labels[i].score = scores.getFloat64(current_offset + i);
             sorted_labels[i].label = label;
         }
 
@@ -151,8 +151,6 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        // Basic type check
-        std::vector<DataTypePtr> nested_types(2, nullptr);
         for (size_t i = 0; i < getNumberOfArguments(); ++i)
         {
             const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
@@ -163,7 +161,6 @@ public:
             if (!isNativeNumber(nested_type) && !isEnum(nested_type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} cannot process values of type {}",
                                 getName(), nested_type->getName());
-            nested_types[i] = nested_type;
         }
 
         return std::make_shared<DataTypeFloat64>();
@@ -175,10 +172,14 @@ public:
         ColumnPtr col2 = arguments[1].column->convertToFullColumnIfConst();
 
         const ColumnArray * col_array1 = checkAndGetColumn<ColumnArray>(col1.get());
-        const ColumnArray * col_array2 = checkAndGetColumn<ColumnArray>(col2.get());
-        if (!col_array1 || !col_array2)
+        if (!col_array1)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
+
+        const ColumnArray * col_array2 = checkAndGetColumn<ColumnArray>(col2.get());
+        if (!col_array2)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of second argument of function {}", arguments[1].column->getName(), getName());
 
         if (!col_array1->hasEqualOffsets(*col_array2))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Array arguments for function {} must have equal sizes", getName());
