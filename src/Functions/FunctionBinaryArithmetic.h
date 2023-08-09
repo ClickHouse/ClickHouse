@@ -1173,21 +1173,8 @@ class FunctionBinaryArithmetic : public IFunction
 
         const auto * left_array_col = typeid_cast<const ColumnArray *>(arguments[0].column.get());
         const auto * right_array_col = typeid_cast<const ColumnArray *>(arguments[1].column.get());
-        const auto & left_offsets = left_array_col->getOffsets();
-        const auto & right_offsets = right_array_col->getOffsets();
-
-        chassert(left_offsets.size() == right_offsets.size() && "Unexpected difference in number of offsets");
-        /// Unpacking non-const arrays and checking sizes of them.
-        for (auto offset_index = 0U; offset_index < left_offsets.size(); ++offset_index)
-        {
-            if (right_array_col->hasEqualOffsets(*left_array_col))
-            {
-                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                "Cannot apply operation for arrays of different sizes. Size of the first argument: {}, size of the second argument: {}",
-                *left_array_col->getOffsets().data(),
-                *right_array_col ->getOffsets().data());
-            }
-        }
+        if (!left_array_col->hasEqualOffsets(*right_array_col))
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Two arguments for function {} must have equal sizes", getName());
 
         const auto & left_array_type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
         new_arguments[0] = {left_array_col->getDataPtr(), left_array_type, arguments[0].name};
@@ -1198,6 +1185,7 @@ class FunctionBinaryArithmetic : public IFunction
         result_array_type = typeid_cast<const DataTypeArray *>(result_type.get())->getNestedType();
 
         size_t rows_count = 0;
+        const auto & left_offsets = left_array_col->getOffsets();
         if (!left_offsets.empty())
             rows_count = left_offsets.back();
         auto res = executeImpl(new_arguments, result_array_type, rows_count);
