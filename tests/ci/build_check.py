@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 
-from typing import List, Tuple
 import subprocess
 import logging
 import json
 import os
 import sys
 import time
-import urllib.parse
-import requests  # type: ignore
+from typing import List, Tuple
 
 from ci_config import CI_CONFIG, BuildConfig
 from docker_pull_helper import get_image_with_version
@@ -32,7 +30,6 @@ from version_helper import (
 from clickhouse_helper import (
     ClickHouseHelper,
     prepare_tests_results_for_clickhouse,
-    get_instance_type,
 )
 from stopwatch import Stopwatch
 
@@ -54,7 +51,6 @@ def get_packager_cmd(
     build_config: BuildConfig,
     packager_path: str,
     output_path: str,
-    profile_path: str,
     build_version: str,
     image_version: str,
     official: bool,
@@ -63,8 +59,8 @@ def get_packager_cmd(
     comp = build_config.compiler
     cmake_flags = "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=1"
     cmd = (
-        f"cd {packager_path} && CMAKE_FLAGS='{cmake_flags}' ./packager --output-dir={output_path} --profile-dir={profile_path}"
-        f" --package-type={package_type} --compiler={comp}"
+        f"cd {packager_path} && CMAKE_FLAGS='{cmake_flags}' ./packager --output-dir={output_path} "
+        f"--package-type={package_type} --compiler={comp}"
     )
 
     if build_config.debug_build:
@@ -290,15 +286,10 @@ def main():
     if not os.path.exists(build_output_path):
         os.makedirs(build_output_path)
 
-    build_profile_path = os.path.join(TEMP_PATH, f"{build_name}_profile")
-    if not os.path.exists(build_profile_path):
-        os.makedirs(build_profile_path)
-
     packager_cmd = get_packager_cmd(
         build_config,
         os.path.join(REPO_COPY, "docker/packager"),
         build_output_path,
-        build_profile_path,
         version.string,
         image_version,
         official_flag,
@@ -368,69 +359,6 @@ def main():
     )
 
     upload_master_static_binaries(pr_info, build_config, s3_helper, build_output_path)
-
-    # Upload profile data
-
-    instance_type = get_instance_type()
-    query = urllib.parse.quote(
-        f"""
-        INSERT INTO build_time_trace
-        (
-            pull_request_number,
-            commit_sha,
-            check_start_time,
-            check_name,
-            instance_type,
-            file,
-            library,
-            time,
-            pid,
-            tid,
-            ph,
-            ts,
-            dur,
-            cat,
-            name,
-            detail,
-            count,
-            avgMs,
-            args_name
-        )
-        SELECT {pr_info.number}, '{pr_info.sha}', '{stopwatch.start_time_str}', '{build_name}', '{instance_type}', *
-        FROM input('
-            file String,
-            library String,
-            time DateTime64(6),
-            pid UInt32,
-            tid UInt32,
-            ph String,
-            ts UInt64,
-            dur UInt64,
-            cat String,
-            name String,
-            detail String,
-            count UInt64,
-            avgMs UInt64,
-            args_name String')
-        FORMAT JSONCompactEachRow
-    """
-    )
-    clickhouse_ci_logs_host = os.getenv("CLICKHOUSE_CI_LOGS_HOST")
-    maybe_clickhouse_ci_logs_password: str = (
-        os.getenv("CLICKHOUSE_CI_LOGS_PASSWORD") or ""
-    )
-    url = f"https://{clickhouse_ci_logs_host}/?query={query}"
-    file_path = os.path.join(build_profile_path, "profile.json")
-    file_size = os.path.getsize(file_path)
-
-    print(
-        f"::notice ::Log Uploading profile data, path: {file_path}, size: {file_size}, query: {query}"
-    )
-
-    with open(file_path, "rb") as file:
-        requests.post(url, data=file, auth=("ci", maybe_clickhouse_ci_logs_password))
-
-    # Upload statistics to CI database
 
     ch_helper = ClickHouseHelper()
     prepared_events = prepare_tests_results_for_clickhouse(
