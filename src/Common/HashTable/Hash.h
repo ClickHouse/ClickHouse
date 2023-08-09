@@ -408,7 +408,7 @@ struct UInt128TrivialHash
 
 struct UUIDTrivialHash
 {
-    size_t operator()(DB::UUID x) const { return DB::UUIDHelpers::getUUIDLow(x); }
+    size_t operator()(DB::UUID x) const { return DB::UUIDHelpers::getUUIDHigh(x); }
 };
 
 struct UInt256Hash

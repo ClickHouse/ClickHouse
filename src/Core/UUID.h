@@ -13,16 +13,16 @@ namespace UUIDHelpers
 
     const size_t HighBytes =
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        0;
-#else
         1;
+#else
+        0;
 #endif
 
     const size_t LowBytes =
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        1;
-#else
         0;
+#else
+        1;
 #endif
 
     inline void toLegacyFormat(UUID & uuid)

@@ -49,7 +49,12 @@ namespace
         md5.update(type_storage_chars, strlen(type_storage_chars));
         UUID result;
         memcpy(&result, md5.digest().data(), md5.digestLength());
-        UUIDHelpers::toLegacyFormat(result);
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        std::ranges::reverse(result.toUnderType().items);
+#else
+        std::ranges::for_each(result.toUnderType().items, std::byteswap<UInt64>);
+#endif
+        //UUIDHelpers::toLegacyFormat(result);
         return result;
     }
 

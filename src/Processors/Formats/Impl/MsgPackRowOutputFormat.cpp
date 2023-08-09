@@ -270,8 +270,8 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
                 {
                     WriteBufferFromOwnString buf;
                     UUID value = uuid_column.getElement(row_num);
-                    writeBinaryBigEndian(UUIDHelpers::getUUIDLow(value), buf);
                     writeBinaryBigEndian(UUIDHelpers::getUUIDHigh(value), buf);
+                    writeBinaryBigEndian(UUIDHelpers::getUUIDLow(value), buf);
                     std::string_view uuid_ext = buf.stringView();
                     packer.pack_ext(sizeof(UUID), int8_t(MsgPackExtensionTypes::UUIDType));
                     packer.pack_ext_body(uuid_ext.data(), static_cast<unsigned>(uuid_ext.size()));

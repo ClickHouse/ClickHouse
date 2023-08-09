@@ -280,7 +280,7 @@ private:
 
     static inline size_t getFirstLevelIdx(const UUID & uuid)
     {
-        return UUIDHelpers::getUUIDLow(uuid) >> (64 - bits_for_first_level);
+        return UUIDHelpers::getUUIDHigh(uuid) >> (64 - bits_for_first_level);
     }
 
     void dropTableDataTask();
