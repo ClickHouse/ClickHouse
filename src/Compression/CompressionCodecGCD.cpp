@@ -42,7 +42,8 @@ T gcd_func(T a, T b)
         a = b;
         b = c;
     }
-    if (a == T(-1)) {
+    if (a == T(-1))
+    {
         return -a;
     }
     return a;
@@ -79,7 +80,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
- UInt32 CompressionCodecGCD::getMaxCompressedDataSize(UInt32 uncompressed_size) const
+UInt32 CompressionCodecGCD::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     return uncompressed_size + 2;
 }
