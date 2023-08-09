@@ -199,6 +199,11 @@ private:
 
     friend struct CurrentlyMergingPartsTagger;
 
+    bool mutationVersionsEquivalent(
+        const DataPartPtr & left,
+        const DataPartPtr & right,
+        std::unique_lock<std::mutex> & lock);
+
     MergeMutateSelectedEntryPtr selectPartsToMerge(
         const StorageMetadataPtr & metadata_snapshot,
         bool aggressive,
