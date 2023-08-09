@@ -26,7 +26,7 @@ public:
         return !child->as<FunctionNode>();
     }
 
-    void enterImpl(QueryTreeNodePtr & node)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_group_by_function_keys)
             return;
@@ -36,9 +36,6 @@ public:
             return;
 
         if (!query->hasGroupBy())
-            return;
-
-        if (query->isGroupByWithCube() || query->isGroupByWithRollup())
             return;
 
         auto & group_by = query->getGroupBy().getNodes();

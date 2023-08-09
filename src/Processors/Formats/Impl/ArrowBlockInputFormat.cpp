@@ -24,7 +24,7 @@ namespace ErrorCodes
 }
 
 ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_, const FormatSettings & format_settings_)
-    : IInputFormat(header_, &in_), stream{stream_}, format_settings(format_settings_)
+    : IInputFormat(header_, in_), stream{stream_}, format_settings(format_settings_)
 {
 }
 
@@ -143,6 +143,7 @@ void ArrowBlockInputFormat::prepareReader()
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
         getPort().getHeader(),
         "Arrow",
+        format_settings.arrow.import_nested,
         format_settings.arrow.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.arrow.case_insensitive_column_matching);
@@ -189,6 +190,7 @@ void registerInputFormatArrow(FormatFactory & factory)
         {
             return std::make_shared<ArrowBlockInputFormat>(buf, sample, false, format_settings);
         });
+    factory.markFormatSupportsSubcolumns("Arrow");
     factory.markFormatSupportsSubsetOfColumns("Arrow");
     factory.registerInputFormat(
         "ArrowStream",

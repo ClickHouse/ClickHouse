@@ -66,7 +66,7 @@ void addNewWords(Words & to, const Words & from, Compare comp)
 namespace DB
 {
 
-replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length, const char * word_break_characters)
+replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length)
 {
     std::string_view last_word;
 
@@ -81,36 +81,18 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
 
     std::lock_guard lock(mutex);
 
-    Words to_search;
-    bool no_case = false;
     /// Only perform case sensitive completion when the prefix string contains any uppercase characters
     if (std::none_of(prefix.begin(), prefix.end(), [](char32_t x) { return iswupper(static_cast<wint_t>(x)); }))
-    {
-        to_search = words_no_case;
-        no_case = true;
-    }
-    else
-        to_search = words;
-
-    if (custom_completions_callback)
-    {
-        auto new_words = custom_completions_callback(prefix, prefix_length);
-        assert(std::is_sorted(new_words.begin(), new_words.end()));
-        addNewWords(to_search, new_words, std::less<std::string>{});
-    }
-
-    if (no_case)
         range = std::equal_range(
-            to_search.begin(), to_search.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
+            words_no_case.begin(), words_no_case.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
             {
                 return strncasecmp(s.data(), prefix_searched.data(), prefix_length) < 0;
             });
     else
-        range = std::equal_range(
-            to_search.begin(), to_search.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
-            {
-                return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0;
-            });
+        range = std::equal_range(words.begin(), words.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
+        {
+            return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0;
+        });
 
     return replxx::Replxx::completions_t(range.first, range.second);
 }
@@ -135,10 +117,7 @@ void LineReader::Suggest::addWords(Words && new_words)
 }
 
 LineReader::LineReader(const String & history_file_path_, bool multiline_, Patterns extenders_, Patterns delimiters_)
-    : history_file_path(history_file_path_)
-    , multiline(multiline_)
-    , extenders(std::move(extenders_))
-    , delimiters(std::move(delimiters_))
+    : history_file_path(history_file_path_), multiline(multiline_), extenders(std::move(extenders_)), delimiters(std::move(delimiters_))
 {
     /// FIXME: check extender != delimiter
 }

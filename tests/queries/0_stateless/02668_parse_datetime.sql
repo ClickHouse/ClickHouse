@@ -18,19 +18,12 @@ select parseDateTime('12345', '%c'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTime('jun', '%b', 'UTC') = toDateTime('2000-06-01', 'UTC');
 select parseDateTime('JUN', '%b', 'UTC') = toDateTime('2000-06-01', 'UTC');
 select parseDateTime('abc', '%b'); -- { serverError CANNOT_PARSE_DATETIME }
-set formatdatetime_parsedatetime_m_is_month_name = 1;
-select parseDateTime('may', '%M', 'UTC') = toDateTime('2000-05-01', 'UTC');
-select parseDateTime('MAY', '%M', 'UTC') = toDateTime('2000-05-01', 'UTC');
-select parseDateTime('september', '%M', 'UTC') = toDateTime('2000-09-01', 'UTC');
-select parseDateTime('summer', '%M'); -- { serverError CANNOT_PARSE_DATETIME }
-set formatdatetime_parsedatetime_m_is_month_name = 0;
 select parseDateTime('08', '%M', 'UTC') = toDateTime('1970-01-01 00:08:00', 'UTC');
 select parseDateTime('59', '%M', 'UTC') = toDateTime('1970-01-01 00:59:00', 'UTC');
 select parseDateTime('00/', '%M/', 'UTC') = toDateTime('1970-01-01 00:00:00', 'UTC');
 select parseDateTime('60', '%M', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTime('-1', '%M', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTime('123456789', '%M', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
-set formatdatetime_parsedatetime_m_is_month_name = 1;
 
 -- day of month
 select parseDateTime('07', '%d', 'UTC') = toDateTime('2000-01-07', 'UTC');
@@ -140,17 +133,10 @@ select parseDateTime('00/', '%s/', 'UTC') = toDateTime('1970-01-01 00:00:00', 'U
 select parseDateTime('60', '%s', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTime('-1', '%s', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTime('123456789', '%s', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
-
--- microsecond
-select parseDateTime('000000', '%f', 'UTC') = toDateTime('1970-01-01 00:00:00', 'UTC');
-select parseDateTime('456789', '%f', 'UTC') = toDateTime('1970-01-01 00:00:00', 'UTC');
-select parseDateTime('42', '%f', 'UTC') = toDateTime('1970-01-01 00:00:00', 'UTC'); -- { serverError NOT_ENOUGH_SPACE }
-select parseDateTime('12ABCD', '%f', 'UTC') = toDateTime('1970-01-01 00:00:00', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
-
 -- mixed YMD format
-select parseDateTime('2021-01-04+23:00:00.654321', '%Y-%m-%d+%H:%i:%s.%f', 'UTC') = toDateTime('2021-01-04 23:00:00', 'UTC');
-select parseDateTime('2019-07-03 11:04:10.975319', '%Y-%m-%d %H:%i:%s.%f', 'UTC') = toDateTime('2019-07-03 11:04:10', 'UTC');
-select parseDateTime('10:04:11 03-07-2019.242424', '%s:%i:%H %d-%m-%Y.%f', 'UTC') = toDateTime('2019-07-03 11:04:10', 'UTC');
+select parseDateTime('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s', 'UTC') = toDateTime('2021-01-04 23:00:00', 'UTC');
+select parseDateTime('2019-07-03 11:04:10', '%Y-%m-%d %H:%i:%s', 'UTC') = toDateTime('2019-07-03 11:04:10', 'UTC');
+select parseDateTime('10:04:11 03-07-2019', '%s:%i:%H %d-%m-%Y', 'UTC') = toDateTime('2019-07-03 11:04:10', 'UTC');
 
 -- *OrZero, *OrNull, str_to_date
 select parseDateTimeOrZero('10:04:11 03-07-2019', '%s:%i:%H %d-%m-%Y', 'UTC') = toDateTime('2019-07-03 11:04:10', 'UTC');
@@ -160,9 +146,5 @@ select parseDateTimeOrNull('10:04:11 invalid 03-07-2019', '%s:%i:%H %d-%m-%Y', '
 select str_to_date('10:04:11 03-07-2019', '%s:%i:%H %d-%m-%Y', 'UTC') = toDateTime('2019-07-03 11:04:10', 'UTC');
 select sTr_To_DaTe('10:04:11 03-07-2019', '%s:%i:%H %d-%m-%Y', 'UTC') = toDateTime('2019-07-03 11:04:10', 'UTC');
 select str_to_date('10:04:11 invalid 03-07-2019', '%s:%i:%H %d-%m-%Y', 'UTC') IS NULL;
-
--- Error handling
-select parseDateTime('12 AM'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-select parseDateTime('12 AM', '%h %p', 'UTC', 'a fourth argument'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 -- { echoOff }

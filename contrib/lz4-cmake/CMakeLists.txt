@@ -12,7 +12,6 @@ add_library (_lz4 ${SRCS})
 add_library (ch_contrib::lz4 ALIAS _lz4)
 
 target_compile_definitions (_lz4 PUBLIC LZ4_DISABLE_DEPRECATE_WARNINGS=1)
-target_compile_definitions (_lz4 PUBLIC LZ4_FAST_DEC_LOOP=1)
 if (SANITIZE STREQUAL "undefined")
     target_compile_options (_lz4 PRIVATE -fno-sanitize=undefined)
 endif ()

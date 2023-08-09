@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/nats
-sidebar_position: 140
+sidebar_position: 14
 sidebar_label: NATS
 ---
 
@@ -10,7 +10,7 @@ This engine allows integrating ClickHouse with [NATS](https://nats.io/).
 
 `NATS` lets you:
 
-- Publish or subscribe to message subjects.
+- Publish or subcribe to message subjects.
 - Process new messages as they become available.
 
 ## Creating a Table {#table_engine-redisstreams-creating-a-table}
@@ -45,9 +45,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Required parameters:
 
-- `nats_url` – host:port (for example, `localhost:5672`)..
-- `nats_subjects` – List of subject for NATS table to subscribe/publish to. Supports wildcard subjects like `foo.*.bar` or `baz.>`
-- `nats_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../../interfaces/formats.md) section.
+-   `nats_url` – host:port (for example, `localhost:5672`)..
+-   `nats_subjects` – List of subject for NATS table to subscribe/publsh to. Supports wildcard subjects like `foo.*.bar` or `baz.>`
+-   `nats_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../../interfaces/formats.md) section.
 
 Optional parameters:
 
@@ -83,12 +83,12 @@ You can select one of the subjects the table reads from and publish your data th
   CREATE TABLE queue (
     key UInt64,
     value UInt64
-  ) ENGINE = NATS
+  ) ENGINE = NATS 
     SETTINGS nats_url = 'localhost:4444',
              nats_subjects = 'subject1,subject2',
              nats_format = 'JSONEachRow';
 
-  INSERT INTO queue
+  INSERT INTO queue 
   SETTINGS stream_like_engine_insert_queue = 'subject2'
   VALUES (1, 1);
 ```
@@ -102,7 +102,7 @@ Example:
     key UInt64,
     value UInt64,
     date DateTime
-  ) ENGINE = NATS
+  ) ENGINE = NATS 
     SETTINGS nats_url = 'localhost:4444',
              nats_subjects = 'subject1',
              nats_format = 'JSONEachRow',
@@ -137,7 +137,7 @@ Example:
   CREATE TABLE queue (
     key UInt64,
     value UInt64
-  ) ENGINE = NATS
+  ) ENGINE = NATS 
     SETTINGS nats_url = 'localhost:4444',
              nats_subjects = 'subject1',
              nats_format = 'JSONEachRow',

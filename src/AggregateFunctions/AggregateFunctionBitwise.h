@@ -148,7 +148,7 @@ public:
         Data::compileCreate(builder, value_ptr);
     }
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes &, const std::vector<llvm::Value *> & argument_values) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
@@ -157,7 +157,8 @@ public:
         auto * value_ptr = aggregate_data_ptr;
         auto * value = b.CreateLoad(return_type, value_ptr);
 
-        auto * result_value = Data::compileUpdate(builder, value, arguments[0].value);
+        const auto & argument_value = argument_values[0];
+        auto * result_value = Data::compileUpdate(builder, value, argument_value);
 
         b.CreateStore(result_value, value_ptr);
     }

@@ -36,10 +36,6 @@ struct ExternalQueryBuilder
         const std::string & where_,
         IdentifierQuotingStyle quoting_style_);
 
-    ExternalQueryBuilder(const ExternalQueryBuilder &) = default;
-
-    virtual ~ExternalQueryBuilder() = default;
-
     /** Generate a query to load all data. */
     std::string composeLoadAllQuery() const;
 
@@ -65,10 +61,10 @@ struct ExternalQueryBuilder
     std::string composeLoadKeysQuery(const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix = 0) const;
 
 
-protected:
+private:
     const FormatSettings format_settings = {};
 
-    virtual void composeLoadAllQuery(WriteBuffer & out) const;
+    void composeLoadAllQuery(WriteBuffer & out) const;
 
     /// In the following methods `beg` and `end` specifies which columns to write in expression
 
@@ -96,7 +92,5 @@ protected:
     /// Write string with specified quoting style.
     void writeQuoted(const std::string & s, WriteBuffer & out) const;
 };
-
-using ExternalQueryBuilderPtr = std::shared_ptr<ExternalQueryBuilder>;
 
 }

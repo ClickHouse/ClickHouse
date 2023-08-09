@@ -1,5 +1,6 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/Algorithms.h>
@@ -203,10 +204,6 @@ public:
         if (isArray(arguments.at(0).type))
         {
             return FunctionFactory::instance().getImpl("arrayConcat", context)->build(arguments);
-        }
-        else if (isMap(arguments.at(0).type))
-        {
-            return FunctionFactory::instance().getImpl("mapConcat", context)->build(arguments);
         }
         else
             return std::make_unique<FunctionToFunctionBaseAdaptor>(

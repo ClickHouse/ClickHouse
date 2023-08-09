@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <istream>
 #include <ostream>
+#include "Poco/MemoryPool.h"
 #include "Poco/Net/HTTPBasicStreamBuf.h"
 #include "Poco/Net/Net.h"
 
@@ -79,6 +80,12 @@ namespace Net
     public:
         HTTPChunkedInputStream(HTTPSession & session);
         ~HTTPChunkedInputStream();
+
+        void * operator new(std::size_t size);
+        void operator delete(void * ptr);
+
+    private:
+        static Poco::MemoryPool _pool;
     };
 
 
@@ -88,6 +95,12 @@ namespace Net
     public:
         HTTPChunkedOutputStream(HTTPSession & session);
         ~HTTPChunkedOutputStream();
+
+        void * operator new(std::size_t size);
+        void operator delete(void * ptr);
+
+    private:
+        static Poco::MemoryPool _pool;
     };
 
 
