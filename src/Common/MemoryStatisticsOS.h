@@ -44,7 +44,7 @@ private:
     int fd;
 #endif
 #if defined(OS_FREEBSD)
-    size_t pagesize;
+    int pagesize;
     pid_t self;
 #endif
 };

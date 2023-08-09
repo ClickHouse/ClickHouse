@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/statements/select/format
 sidebar_label: FORMAT
 ---
 

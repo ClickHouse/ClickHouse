@@ -8,9 +8,6 @@ from helpers.test_tools import assert_eq_with_retry
 
 def fill_nodes(nodes):
     for node in nodes:
-        node.query("DROP TABLE IF EXISTS test SYNC")
-
-    for node in nodes:
         node.query(
             """
             CREATE TABLE test(n UInt32)
@@ -32,7 +29,11 @@ nodes = [node_1, node_2, node_3]
 
 
 def fill_table():
-    fill_nodes(nodes)
+    node_1.query("TRUNCATE TABLE test")
+
+    for node in nodes:
+        node.query("SYSTEM SYNC REPLICA test")
+
     check_data(0, 0)
 
     # it will create multiple parts in each partition and probably cause merges
@@ -42,18 +43,6 @@ def fill_table():
     node_1.query("INSERT INTO test SELECT number + 600 FROM numbers(200)")
     node_1.query("INSERT INTO test SELECT number + 800 FROM numbers(200)")
     check_data(499500, 1000)
-
-
-# kazoo.delete may throw NotEmptyError on concurrent modifications of the path
-def zk_rmr_with_retries(zk, path):
-    for i in range(1, 10):
-        try:
-            zk.delete(path, recursive=True)
-            return
-        except Exception as ex:
-            print(ex)
-            time.sleep(0.5)
-    assert False
 
 
 @pytest.fixture(scope="module")
@@ -96,7 +85,7 @@ def test_restore_replica_sequential(start_cluster):
     fill_table()
 
     print("Deleting root ZK path metadata")
-    zk_rmr_with_retries(zk, "/clickhouse/tables/test")
+    zk.delete("/clickhouse/tables/test", recursive=True)
     assert zk.exists("/clickhouse/tables/test") is None
 
     node_1.query("SYSTEM RESTART REPLICA test")
@@ -131,7 +120,7 @@ def test_restore_replica_parallel(start_cluster):
     fill_table()
 
     print("Deleting root ZK path metadata")
-    zk_rmr_with_retries(zk, "/clickhouse/tables/test")
+    zk.delete("/clickhouse/tables/test", recursive=True)
     assert zk.exists("/clickhouse/tables/test") is None
 
     node_1.query("SYSTEM RESTART REPLICA test")
@@ -159,12 +148,12 @@ def test_restore_replica_alive_replicas(start_cluster):
     fill_table()
 
     print("Deleting replica2 path, trying to restore replica1")
-    zk_rmr_with_retries(zk, "/clickhouse/tables/test/replicas/replica2")
+    zk.delete("/clickhouse/tables/test/replicas/replica2", recursive=True)
     assert zk.exists("/clickhouse/tables/test/replicas/replica2") is None
     node_1.query_and_get_error("SYSTEM RESTORE REPLICA test")
 
     print("Deleting replica1 path, trying to restore replica1")
-    zk_rmr_with_retries(zk, "/clickhouse/tables/test/replicas/replica1")
+    zk.delete("/clickhouse/tables/test/replicas/replica1", recursive=True)
     assert zk.exists("/clickhouse/tables/test/replicas/replica1") is None
 
     node_1.query("SYSTEM RESTART REPLICA test")

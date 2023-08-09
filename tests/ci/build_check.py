@@ -18,8 +18,8 @@ from env_helper import (
     S3_DOWNLOAD,
     TEMP_PATH,
 )
-from pr_info import PRInfo
 from s3_helper import S3Helper
+from pr_info import PRInfo
 from tee_popen import TeePopen
 from version_helper import (
     ClickHouseVersion,
@@ -27,22 +27,21 @@ from version_helper import (
     get_version_from_repo,
     update_version_local,
 )
-from clickhouse_helper import (
-    ClickHouseHelper,
-    prepare_tests_results_for_clickhouse,
-)
-from stopwatch import Stopwatch
 
 IMAGE_NAME = "clickhouse/binary-builder"
 BUILD_LOG_NAME = "build_log.log"
 
 
 def _can_export_binaries(build_config: BuildConfig) -> bool:
-    if build_config.package_type != "deb":
+    if build_config["package_type"] != "deb":
         return False
-    if build_config.sanitizer != "":
+    if build_config["bundled"] != "bundled":
+        return False
+    if build_config["libraries"] == "shared":
+        return False
+    if build_config["sanitizer"] != "":
         return True
-    if build_config.debug_build:
+    if build_config["build_type"] != "":
         return True
     return False
 
@@ -55,26 +54,27 @@ def get_packager_cmd(
     image_version: str,
     official: bool,
 ) -> str:
-    package_type = build_config.package_type
-    comp = build_config.compiler
-    cmake_flags = "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=1"
+    package_type = build_config["package_type"]
+    comp = build_config["compiler"]
     cmd = (
-        f"cd {packager_path} && CMAKE_FLAGS='{cmake_flags}' ./packager --output-dir={output_path} "
+        f"cd {packager_path} && ./packager --output-dir={output_path} "
         f"--package-type={package_type} --compiler={comp}"
     )
 
-    if build_config.debug_build:
-        cmd += " --debug-build"
-    if build_config.sanitizer:
-        cmd += f" --sanitizer={build_config.sanitizer}"
-    if build_config.tidy:
+    if build_config["build_type"]:
+        cmd += f" --build-type={build_config['build_type']}"
+    if build_config["sanitizer"]:
+        cmd += f" --sanitizer={build_config['sanitizer']}"
+    if build_config["libraries"] == "shared":
+        cmd += " --shared-libraries"
+    if build_config["tidy"] == "enable":
         cmd += " --clang-tidy"
 
     cmd += " --cache=sccache"
     cmd += " --s3-rw-access"
     cmd += f" --s3-bucket={S3_BUILDS_BUCKET}"
 
-    if build_config.additional_pkgs:
+    if "additional_pkgs" in build_config and build_config["additional_pkgs"]:
         cmd += " --additional-pkgs"
 
     cmd += f" --docker-image-version={image_version}"
@@ -124,7 +124,8 @@ def check_for_success_run(
     logged_prefix = os.path.join(S3_BUILDS_BUCKET, s3_prefix, "")
     logging.info("Checking for artifacts in %s", logged_prefix)
     try:
-        # Performance artifacts are now part of regular build, so we're safe
+        # TODO: theoretically, it would miss performance artifact for pr==0,
+        # but luckily we rerun only really failed tasks now, so we're safe
         build_results = s3_helper.list_prefix(s3_prefix)
     except Exception as ex:
         logging.info("Got exception while listing %s: %s\nRerun", logged_prefix, ex)
@@ -180,7 +181,7 @@ def create_json_artifact(
     result = {
         "log_url": log_url,
         "build_urls": build_urls,
-        "build_config": build_config.__dict__,
+        "build_config": build_config,
         "elapsed_seconds": elapsed,
         "status": success,
         "job_name": GITHUB_JOB,
@@ -220,7 +221,7 @@ def upload_master_static_binaries(
     build_output_path: str,
 ) -> None:
     """Upload binary artifacts to a static S3 links"""
-    static_binary_name = build_config.static_binary_name
+    static_binary_name = build_config.get("static_binary_name", False)
     if pr_info.number != 0:
         return
     elif not static_binary_name:
@@ -237,10 +238,9 @@ def upload_master_static_binaries(
 def main():
     logging.basicConfig(level=logging.INFO)
 
-    stopwatch = Stopwatch()
     build_name = sys.argv[1]
 
-    build_config = CI_CONFIG.build_config[build_name]
+    build_config = CI_CONFIG["build_config"][build_name]
 
     if not os.path.exists(TEMP_PATH):
         os.makedirs(TEMP_PATH)
@@ -257,7 +257,7 @@ def main():
     s3_path_prefix = "/".join((release_or_pr, pr_info.sha, build_name))
     # FIXME performance
     s3_performance_path = "/".join(
-        (performance_pr, pr_info.sha, build_name, "performance.tar.zst")
+        (performance_pr, pr_info.sha, build_name, "performance.tgz")
     )
 
     # If this is rerun, then we try to find already created artifacts and just
@@ -270,6 +270,8 @@ def main():
     logging.info("Got version from repo %s", version.string)
 
     official_flag = pr_info.number == 0
+    if "official" in build_config:
+        official_flag = build_config["official"]
 
     version_type = "testing"
     if "release" in pr_info.labels or "release-lts" in pr_info.labels:
@@ -320,13 +322,13 @@ def main():
 
     # FIXME performance
     performance_urls = []
-    performance_path = os.path.join(build_output_path, "performance.tar.zst")
+    performance_path = os.path.join(build_output_path, "performance.tgz")
     if os.path.exists(performance_path):
         performance_urls.append(
             s3_helper.upload_build_file_to_s3(performance_path, s3_performance_path)
         )
         logging.info(
-            "Uploaded performance.tar.zst to %s, now delete to avoid duplication",
+            "Uploaded performance.tgz to %s, now delete to avoid duplication",
             performance_urls[0],
         )
         os.remove(performance_path)
@@ -359,20 +361,7 @@ def main():
     )
 
     upload_master_static_binaries(pr_info, build_config, s3_helper, build_output_path)
-
-    ch_helper = ClickHouseHelper()
-    prepared_events = prepare_tests_results_for_clickhouse(
-        pr_info,
-        [],
-        "success" if success else "failure",
-        stopwatch.duration_seconds,
-        stopwatch.start_time_str,
-        log_url,
-        f"Build ({build_name})",
-    )
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
-
-    # Fail the build job if it didn't succeed
+    # Fail build job if not successeded
     if not success:
         sys.exit(1)
 

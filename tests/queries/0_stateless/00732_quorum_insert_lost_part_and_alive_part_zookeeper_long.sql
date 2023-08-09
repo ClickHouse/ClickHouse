@@ -1,4 +1,4 @@
--- Tags: long, zookeeper, no-replicated-database
+-- Tags: long, zookeeper, no-replicated-database, no-backward-compatibility-check
 -- Tag no-replicated-database: Fails due to additional replicas or shards
 
 SET send_logs_level = 'fatal';

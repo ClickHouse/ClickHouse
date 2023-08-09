@@ -15,10 +15,9 @@ class MergeTreeReaderInMemory : public IMergeTreeReader
 {
 public:
     MergeTreeReaderInMemory(
-        MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
         DataPartInMemoryPtr data_part_,
         NamesAndTypesList columns_,
-        const StorageSnapshotPtr & storage_snapshot_,
+        const StorageMetadataPtr & metadata_snapshot_,
         MarkRanges mark_ranges_,
         MergeTreeReaderSettings settings_);
 

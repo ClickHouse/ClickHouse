@@ -1,5 +1,3 @@
-SET allow_experimental_analyzer = 1;
-
 DROP TABLE IF EXISTS table1;
 DROP TABLE IF EXISTS table2;
 

@@ -48,14 +48,14 @@ struct JoinedElement
     void checkTableName(const DatabaseAndTableWithAlias & table, const String & current_database) const
     {
         if (!element.table_expression)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not a table expression in JOIN (ARRAY JOIN?)");
+            throw Exception("Not a table expression in JOIN (ARRAY JOIN?)", ErrorCodes::LOGICAL_ERROR);
 
         ASTTableExpression * table_expression = element.table_expression->as<ASTTableExpression>();
         if (!table_expression)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong table expression in JOIN");
+            throw Exception("Wrong table expression in JOIN", ErrorCodes::LOGICAL_ERROR);
 
         if (!table.same(DatabaseAndTableWithAlias(*table_expression, current_database)))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent table names");
+            throw Exception("Inconsistent table names", ErrorCodes::LOGICAL_ERROR);
     }
 
     void rewriteCommaToCross()
@@ -115,7 +115,7 @@ std::map<size_t, std::vector<ASTPtr>> moveExpressionToJoinOn(
     const Aliases & aliases)
 {
     std::map<size_t, std::vector<ASTPtr>> asts_to_join_on;
-    for (const auto & node : splitConjunctionsAst(ast))
+    for (const auto & node : collectConjunctions(ast))
     {
         if (const auto * func = node->as<ASTFunction>(); func && func->name == NameEquals::name)
         {
@@ -149,7 +149,7 @@ ASTPtr makeOnExpression(const std::vector<ASTPtr> & expressions)
     if (expressions.size() == 1)
         return expressions[0]->clone();
 
-    ASTs arguments;
+    std::vector<ASTPtr> arguments;
     arguments.reserve(expressions.size());
     for (const auto & ast : expressions)
         arguments.emplace_back(ast->clone());
@@ -178,7 +178,7 @@ std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
     {
         const auto * table_element = child->as<ASTTablesInSelectQueryElement>();
         if (!table_element)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: TablesInSelectQueryElement expected");
+            throw Exception("Logical error: TablesInSelectQueryElement expected", ErrorCodes::LOGICAL_ERROR);
 
         JoinedElement & t = joined_tables.emplace_back(*table_element);
         t.rewriteCommaToCross();
@@ -189,7 +189,7 @@ std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
         if (t.hasUsing())
         {
             if (has_using)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Multiple USING statements are not supported");
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Multuple USING statements are not supported");
             has_using = true;
         }
 

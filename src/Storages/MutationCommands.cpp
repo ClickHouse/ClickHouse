@@ -23,12 +23,6 @@ namespace ErrorCodes
     extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN;
 }
 
-
-bool MutationCommand::isBarrierCommand() const
-{
-    return type == RENAME_COLUMN;
-}
-
 std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool parse_alter_commands)
 {
     if (command->type == ASTAlterCommand::DELETE)
@@ -52,9 +46,8 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
             const auto & assignment = assignment_ast->as<ASTAssignment &>();
             auto insertion = res.column_to_update_expression.emplace(assignment.column_name, assignment.expression());
             if (!insertion.second)
-                throw Exception(ErrorCodes::MULTIPLE_ASSIGNMENTS_TO_COLUMN,
-                                "Multiple assignments in the single statement to column {}",
-                                backQuote(assignment.column_name));
+                throw Exception("Multiple assignments in the single statement to column " + backQuote(assignment.column_name),
+                    ErrorCodes::MULTIPLE_ASSIGNMENTS_TO_COLUMN);
         }
         return res;
     }
@@ -151,32 +144,23 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.partition = command->partition;
         return res;
     }
-    else
-    {
-        MutationCommand res;
-        res.ast = command->ptr();
-        res.type = ALTER_WITHOUT_MUTATION;
-        return res;
-    }
+    return {};
 }
 
 
-std::shared_ptr<ASTExpressionList> MutationCommands::ast(bool with_pure_metadata_commands) const
+std::shared_ptr<ASTExpressionList> MutationCommands::ast() const
 {
     auto res = std::make_shared<ASTExpressionList>();
     for (const MutationCommand & command : *this)
-    {
-        if (command.type != MutationCommand::ALTER_WITHOUT_MUTATION || with_pure_metadata_commands)
-            res->children.push_back(command.ast->clone());
-    }
+        res->children.push_back(command.ast->clone());
     return res;
 }
 
 
-void MutationCommands::writeText(WriteBuffer & out, bool with_pure_metadata_commands) const
+void MutationCommands::writeText(WriteBuffer & out) const
 {
     WriteBufferFromOwnString commands_buf;
-    formatAST(*ast(with_pure_metadata_commands), commands_buf, /* hilite = */ false, /* one_line = */ true);
+    formatAST(*ast(), commands_buf, /* hilite = */ false, /* one_line = */ true);
     writeEscapedString(commands_buf.str(), out);
 }
 
@@ -188,43 +172,14 @@ void MutationCommands::readText(ReadBuffer & in)
     ParserAlterCommandList p_alter_commands;
     auto commands_ast = parseQuery(
         p_alter_commands, commands_str.data(), commands_str.data() + commands_str.length(), "mutation commands list", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-
     for (const auto & child : commands_ast->children)
     {
         auto * command_ast = child->as<ASTAlterCommand>();
         auto command = MutationCommand::parse(command_ast, true);
         if (!command)
-            throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command_ast->type));
+            throw Exception("Unknown mutation command type: " + DB::toString<int>(command_ast->type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
         push_back(std::move(*command));
     }
-}
-
-std::string MutationCommands::toString() const
-{
-    WriteBufferFromOwnString commands_buf;
-    formatAST(*ast(), commands_buf, /* hilite = */ false, /* one_line = */ true);
-    return commands_buf.str();
-}
-
-
-bool MutationCommands::hasNonEmptyMutationCommands() const
-{
-    for (const auto & command : *this)
-    {
-        if (command.type != MutationCommand::Type::EMPTY && command.type != MutationCommand::Type::ALTER_WITHOUT_MUTATION)
-            return true;
-    }
-    return false;
-}
-
-bool MutationCommands::containBarrierCommand() const
-{
-    for (const auto & command : *this)
-    {
-        if (command.isBarrierCommand())
-            return true;
-    }
-    return false;
 }
 
 }

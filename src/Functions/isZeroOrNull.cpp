@@ -101,7 +101,7 @@ private:
     void processNotNullable(const InputData & input_data, ColumnUInt8::Container & result_data, size_t input_rows_count) const
     {
         for (size_t i = 0; i < input_rows_count; ++i)
-            result_data[i] = input_data[i] == 0;
+            result_data[i] = !input_data[i];
     }
 
     template <typename InputData>
@@ -109,7 +109,7 @@ private:
         ColumnUInt8::Container & result_data, size_t input_rows_count) const
     {
         for (size_t i = 0; i < input_rows_count; ++i)
-            result_data[i] = input_null_map[i] || input_data[i] == 0;
+            result_data[i] = input_null_map[i] || !input_data[i];
     }
 };
 
@@ -121,3 +121,4 @@ REGISTER_FUNCTION(IsZeroOrNull)
 }
 
 }
+

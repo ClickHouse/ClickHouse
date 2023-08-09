@@ -15,6 +15,9 @@ namespace ErrorCodes
 template <bool reverse>
 struct ArraySplitImpl
 {
+    using column_type = ColumnArray;
+    using data_type = DataTypeArray;
+
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
@@ -66,7 +69,7 @@ struct ArraySplitImpl
             const auto * column_cut_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_cut_const)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of cut column");
+                throw Exception("Unexpected type of cut column", ErrorCodes::ILLEGAL_COLUMN);
 
             if (column_cut_const->getValue<UInt8>())
             {

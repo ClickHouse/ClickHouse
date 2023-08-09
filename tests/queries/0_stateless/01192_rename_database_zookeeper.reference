@@ -14,7 +14,7 @@ renamed
 10	45
 10	45
 ok
-CREATE DICTIONARY test_01192_atomic.dict UUID \'00001192-0000-4000-8000-000000000002\'\n(\n    `n` UInt64,\n    `_part` String DEFAULT \'no\'\n)\nPRIMARY KEY n\nSOURCE(CLICKHOUSE(HOST \'localhost\' PORT 9000 USER \'default\' TABLE \'mt\' DB \'test_01192\'))\nLAYOUT(DIRECT())
+CREATE DICTIONARY test_01192_atomic.dict UUID \'00001192-0000-4000-8000-000000000002\'\n(\n    `n` UInt64,\n    `_part` String DEFAULT \'no\'\n)\nPRIMARY KEY n\nSOURCE(CLICKHOUSE(HOST \'localhost\' PORT tcpPort() USER \'default\' TABLE \'mt\' DB \'test_01192\'))\nLAYOUT(DIRECT())
 test_01192_atomic	dict	NOT_LOADED	00001192-0000-4000-8000-000000000002
 no
 ok

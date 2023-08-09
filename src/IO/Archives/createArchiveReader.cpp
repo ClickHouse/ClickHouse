@@ -1,6 +1,5 @@
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/ZipArchiveReader.h>
-#include <IO/Archives/LibArchiveReader.h>
 #include <Common/Exception.h>
 
 
@@ -29,29 +28,11 @@ std::shared_ptr<IArchiveReader> createArchiveReader(
 #if USE_MINIZIP
         return std::make_shared<ZipArchiveReader>(path_to_archive, archive_read_function, archive_size);
 #else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "minizip library is disabled");
-#endif
-    }
-    else if (path_to_archive.ends_with(".tar") || path_to_archive.ends_with("tar.gz"))
-    {
-#if USE_LIBARCHIVE
-        return std::make_shared<TarArchiveReader>(path_to_archive);
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "libarchive library is disabled");
-#endif
-    }
-    else if (path_to_archive.ends_with(".7z"))
-    {
-#if USE_LIBARCHIVE
-        return std::make_shared<SevenZipArchiveReader>(path_to_archive);
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "libarchive library is disabled");
+        throw Exception("minizip library is disabled", ErrorCodes::SUPPORT_IS_DISABLED);
 #endif
     }
     else
-    {
         throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Cannot determine the type of archive {}", path_to_archive);
-    }
 }
 
 }

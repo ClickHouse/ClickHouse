@@ -21,9 +21,9 @@ static String typeToString(FilesystemCacheLogElement::CacheType type)
         case FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE:
             return "READ_FROM_FS_BYPASSING_CACHE";
         case FilesystemCacheLogElement::CacheType::WRITE_THROUGH_CACHE:
-            return "WRITE_THROUGH_CACHE";
+            return "READ_FROM_FS_BYPASSING_CACHE";
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 NamesAndTypesList FilesystemCacheLogElement::getNamesAndTypes()
@@ -40,11 +40,9 @@ NamesAndTypesList FilesystemCacheLogElement::getNamesAndTypes()
         {"source_file_path", std::make_shared<DataTypeString>()},
         {"file_segment_range", std::make_shared<DataTypeTuple>(types)},
         {"total_requested_range", std::make_shared<DataTypeTuple>(types)},
-        {"key", std::make_shared<DataTypeString>()},
-        {"offset", std::make_shared<DataTypeUInt64>()},
         {"size", std::make_shared<DataTypeUInt64>()},
         {"read_type", std::make_shared<DataTypeString>()},
-        {"read_from_cache_attempted", std::make_shared<DataTypeUInt8>()},
+        {"cache_attempted", std::make_shared<DataTypeUInt8>()},
         {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
         {"read_buffer_id", std::make_shared<DataTypeString>()},
     };
@@ -62,11 +60,9 @@ void FilesystemCacheLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(source_file_path);
     columns[i++]->insert(Tuple{file_segment_range.first, file_segment_range.second});
     columns[i++]->insert(Tuple{requested_range.first, requested_range.second});
-    columns[i++]->insert(file_segment_key);
-    columns[i++]->insert(file_segment_offset);
     columns[i++]->insert(file_segment_size);
     columns[i++]->insert(typeToString(cache_type));
-    columns[i++]->insert(read_from_cache_attempted);
+    columns[i++]->insert(cache_attempted);
 
     if (profile_counters)
     {

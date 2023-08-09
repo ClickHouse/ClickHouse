@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_formats.h"
 
 #if USE_PROTOBUF
 #    include <Formats/FormatSchemaInfo.h>
@@ -28,12 +28,10 @@ public:
         ReadBuffer & in_,
         const Block & header_,
         const Params & params_,
-        const ProtobufSchemaInfo & schema_info_,
+        const FormatSchemaInfo & schema_info_,
         bool flatten_google_wrappers_);
 
     String getName() const override { return "ProtobufListInputFormat"; }
-
-    void setReadBuffer(ReadBuffer & in_) override;
 
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & row_read_extension) override;

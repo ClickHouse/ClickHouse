@@ -1,17 +1,18 @@
 include(${ClickHouse_SOURCE_DIR}/cmake/split_debug_symbols.cmake)
 
 set (CLICKHOUSE_LIBRARY_BRIDGE_SOURCES
-    CatBoostLibraryHandler.cpp
-    CatBoostLibraryHandlerFactory.cpp
     ExternalDictionaryLibraryAPI.cpp
     ExternalDictionaryLibraryHandler.cpp
     ExternalDictionaryLibraryHandlerFactory.cpp
     LibraryBridge.cpp
     LibraryBridgeHandlerFactory.cpp
     LibraryBridgeHandlers.cpp
-    SharedLibrary.cpp
     library-bridge.cpp
 )
+
+if (OS_LINUX)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic")
+endif ()
 
 clickhouse_add_executable(clickhouse-library-bridge ${CLICKHOUSE_LIBRARY_BRIDGE_SOURCES})
 

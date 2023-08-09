@@ -25,13 +25,12 @@ public:
     IAST * ttl_table = nullptr;
     ASTSetQuery * settings = nullptr;
 
+
     String getID(char) const override { return "Storage definition"; }
 
     ASTPtr clone() const override;
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
-
-    bool isExtendedStorageDefinition() const;
 
     void forEachPointerToChild(std::function<void(void**)> f) override
     {
@@ -56,7 +55,6 @@ public:
     ASTExpressionList * constraints = nullptr;
     ASTExpressionList * projections = nullptr;
     IAST              * primary_key = nullptr;
-    IAST              * primary_key_from_columns = nullptr;
 
     String getID(char) const override { return "Columns definition"; }
 
@@ -77,7 +75,7 @@ public:
         f(reinterpret_cast<void **>(&primary_key));
         f(reinterpret_cast<void **>(&constraints));
         f(reinterpret_cast<void **>(&projections));
-        f(reinterpret_cast<void **>(&primary_key_from_columns));
+        f(reinterpret_cast<void **>(&primary_key));
     }
 };
 
@@ -106,7 +104,7 @@ public:
     ASTPtr lateness_function;
     String as_database;
     String as_table;
-    IAST * as_table_function = nullptr;
+    ASTPtr as_table_function;
     ASTSelectWithUnionQuery * select = nullptr;
     IAST * comment = nullptr;
 
@@ -116,6 +114,7 @@ public:
     ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of
     ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
 
+    std::optional<UInt64> live_view_timeout;    /// For CREATE LIVE VIEW ... WITH TIMEOUT ...
     std::optional<UInt64> live_view_periodic_refresh;    /// For CREATE LIVE VIEW ... WITH [PERIODIC] REFRESH ...
 
     bool is_watermark_strictly_ascending{false}; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
@@ -141,8 +140,6 @@ public:
     }
 
     bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view || is_window_view; }
-
-    bool isParameterizedView() const;
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 

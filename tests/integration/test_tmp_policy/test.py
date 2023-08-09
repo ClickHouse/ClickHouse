@@ -23,7 +23,7 @@ def start_cluster():
         cluster.shutdown()
 
 
-def test_disk_selection(start_cluster):
+def test_different_versions(start_cluster):
     query = "SELECT count(ignore(*)) FROM (SELECT * FROM system.numbers LIMIT 1e7) GROUP BY number"
     settings = {
         "max_bytes_before_external_group_by": 1 << 20,

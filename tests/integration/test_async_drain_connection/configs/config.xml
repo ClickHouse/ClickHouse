@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+<clickhouse>
+  <max_concurrent_queries>10000</max_concurrent_queries>
+</clickhouse>

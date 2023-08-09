@@ -7,7 +7,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
 #include <Common/Exception.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 #include <QueryPipeline/BlockIO.h>
 
 #include <ctime>
@@ -134,7 +134,8 @@ public:
     /// You can call only once, right after the object is created.
     virtual void loadStoredObjects( /// NOLINT
         ContextMutablePtr /*context*/,
-        LoadingStrictnessLevel /*mode*/)
+        LoadingStrictnessLevel /*mode*/,
+        bool /* skip_startup_tables */)
     {
     }
 
@@ -169,7 +170,7 @@ public:
     /// Get the table for work. Return nullptr if there is no table.
     virtual StoragePtr tryGetTable(const String & name, ContextPtr context) const = 0;
 
-    virtual StoragePtr getTable(const String & name, ContextPtr context) const;
+    StoragePtr getTable(const String & name, ContextPtr context) const;
 
     virtual UUID tryGetTableUUID(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
 
@@ -182,8 +183,6 @@ public:
     /// Is the database empty.
     virtual bool empty() const = 0;
 
-    virtual bool isReadOnly() const { return false; }
-
     /// Add the table to the database. Record its presence in the metadata.
     virtual void createTable(
         ContextPtr /*context*/,
@@ -191,7 +190,7 @@ public:
         const StoragePtr & /*table*/,
         const ASTPtr & /*query*/)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no CREATE TABLE query for Database{}", getEngineName());
+        throw Exception("There is no CREATE TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Delete the table from the database, drop table and delete the metadata.
@@ -200,7 +199,7 @@ public:
         const String & /*name*/,
         [[maybe_unused]] bool sync = false)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DROP TABLE query for Database{}", getEngineName());
+        throw Exception("There is no DROP TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
@@ -208,27 +207,27 @@ public:
     /// Note: ATTACH TABLE statement actually uses createTable method.
     virtual void attachTable(ContextPtr /* context */, const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path = {}) /// NOLINT
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no ATTACH TABLE query for Database{}", getEngineName());
+        throw Exception("There is no ATTACH TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Forget about the table without deleting it, and return it. The database may not support this method.
     virtual StoragePtr detachTable(ContextPtr /* context */, const String & /*name*/)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DETACH TABLE query for Database{}", getEngineName());
+        throw Exception("There is no DETACH TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Forget about the table without deleting it's data, but rename metadata file to prevent reloading it
     /// with next restart. The database may not support this method.
     virtual void detachTablePermanently(ContextPtr /*context*/, const String & /*name*/)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DETACH TABLE PERMANENTLY query for Database{}", getEngineName());
+        throw Exception("There is no DETACH TABLE PERMANENTLY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Returns list of table names that were permanently detached.
     /// This list may not be updated in runtime and may be filled only on server startup
     virtual Strings getNamesOfPermanentlyDetachedTables() const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get names of permanently detached tables for Database{}", getEngineName());
+        throw Exception("Cannot get names of permanently detached tables for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Rename the table and possibly move the table to another database.
@@ -240,7 +239,7 @@ public:
         bool /*exchange*/,
         bool /*dictionary*/)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: renameTable() is not supported", getEngineName());
+        throw Exception(getEngineName() + ": renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     using ASTModifier = std::function<void(IAST &)>;
@@ -252,11 +251,8 @@ public:
         const StorageID & /*table_id*/,
         const StorageInMemoryMetadata & /*metadata*/)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: alterTable() is not supported", getEngineName());
+        throw Exception(getEngineName() + ": alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
-
-    /// Special method for ReplicatedMergeTree and DatabaseReplicated
-    virtual bool canExecuteReplicatedMetadataAlter() const { return true; }
 
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.
     virtual time_t getObjectMetadataModificationTime(const String & /*name*/) const
@@ -300,7 +296,7 @@ public:
 
     virtual void renameDatabase(ContextPtr, const String & /*new_name*/)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: RENAME DATABASE is not supported", getEngineName());
+        throw Exception(getEngineName() + ": RENAME DATABASE is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
@@ -362,7 +358,7 @@ protected:
     virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*context*/, bool throw_on_error) const
     {
         if (throw_on_error)
-            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "There is no SHOW CREATE TABLE query for Database{}", getEngineName());
+            throw Exception("There is no SHOW CREATE TABLE query for Database" + getEngineName(), ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
         return nullptr;
     }
 

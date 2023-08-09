@@ -1,9 +1,9 @@
 #pragma once
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/StorageMySQL.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #include <mysqlxx/Pool.h>
 
 
@@ -23,14 +23,14 @@ public:
         return name;
     }
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
     const char * getStorageTypeName() const override { return "MySQL"; }
 
-    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     mutable std::optional<mysqlxx::PoolWithFailover> pool;
-    std::optional<StorageMySQL::Configuration> configuration;
+    std::optional<StorageMySQLConfiguration> configuration;
 };
 
 }

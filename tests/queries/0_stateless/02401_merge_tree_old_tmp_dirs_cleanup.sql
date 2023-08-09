@@ -1,5 +1,3 @@
--- Tags: no-fasttest
-
 DROP TABLE IF EXISTS test_inserts;
 
 CREATE TABLE test_inserts (`key` Int, `part` Int) ENGINE = MergeTree PARTITION BY part ORDER BY key

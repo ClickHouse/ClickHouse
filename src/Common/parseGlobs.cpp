@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <re2/re2.h>
+#include <re2/stringpiece.h>
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
@@ -32,14 +33,14 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
     std::string escaped_with_globs = buf_for_escaping.str();
 
     static const re2::RE2 enum_or_range(R"({([\d]+\.\.[\d]+|[^{}*,]+,[^{}*]*[^{}*,])})");    /// regexp for {expr1,expr2,expr3} or {M..N}, where M and N - non-negative integers, expr's should be without "{", "}", "*" and ","
-    std::string_view input(escaped_with_globs);
-    std::string_view matched;
+    re2::StringPiece input(escaped_with_globs);
+    re2::StringPiece matched;
     std::ostringstream oss_for_replacing;       // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss_for_replacing.exceptions(std::ios::failbit);
     size_t current_index = 0;
     while (RE2::FindAndConsume(&input, enum_or_range, &matched))
     {
-        std::string buffer(matched);
+        std::string buffer = matched.ToString();
         oss_for_replacing << escaped_with_globs.substr(current_index, matched.data() - escaped_with_globs.data() - current_index - 1) << '(';
 
         if (buffer.find(',') == std::string::npos)
@@ -67,14 +68,14 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
                 output_width = std::max(range_begin_width, range_end_width);
 
             if (leading_zeros)
-                oss_for_replacing << std::setfill('0') << std::setw(static_cast<int>(output_width));
+                oss_for_replacing << std::setfill('0') << std::setw(output_width);
             oss_for_replacing << range_begin;
 
             for (size_t i = range_begin + 1; i <= range_end; ++i)
             {
                 oss_for_replacing << '|';
                 if (leading_zeros)
-                    oss_for_replacing << std::setfill('0') << std::setw(static_cast<int>(output_width));
+                    oss_for_replacing << std::setfill('0') << std::setw(output_width);
                 oss_for_replacing << i;
             }
         }
@@ -89,23 +90,17 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
     oss_for_replacing << escaped_with_globs.substr(current_index);
     std::string almost_res = oss_for_replacing.str();
     WriteBufferFromOwnString buf_final_processing;
-    char previous = ' ';
     for (const auto & letter : almost_res)
     {
-        if (previous == '*' && letter == '*')
-        {
-            buf_final_processing << "[^{}]";
-        }
-        else if ((letter == '?') || (letter == '*'))
+        if ((letter == '?') || (letter == '*'))
         {
             buf_final_processing << "[^/]";   /// '?' is any symbol except '/'
             if (letter == '?')
                 continue;
         }
-        else if ((letter == '.') || (letter == '{') || (letter == '}'))
+        if ((letter == '.') || (letter == '{') || (letter == '}'))
             buf_final_processing << '\\';
         buf_final_processing << letter;
-        previous = letter;
     }
     return buf_final_processing.str();
 }

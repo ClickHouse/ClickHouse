@@ -1,18 +1,8 @@
 #!/usr/bin/env python3
 import logging
-from dataclasses import dataclass
-from typing import Optional
 
 import boto3  # type: ignore
-from github import Github
-from github.AuthenticatedUser import AuthenticatedUser
-
-
-@dataclass
-class Token:
-    user: AuthenticatedUser
-    value: str
-    rest: int
+from github import Github  # type: ignore
 
 
 def get_parameter_from_ssm(name, decrypt=True, client=None):
@@ -21,13 +11,7 @@ def get_parameter_from_ssm(name, decrypt=True, client=None):
     return client.get_parameter(Name=name, WithDecryption=decrypt)["Parameter"]["Value"]
 
 
-ROBOT_TOKEN = None  # type: Optional[Token]
-
-
 def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
-    global ROBOT_TOKEN
-    if ROBOT_TOKEN is not None:
-        return ROBOT_TOKEN.value
     client = boto3.client("ssm", region_name="us-east-1")
     parameters = client.describe_parameters(
         ParameterFilters=[
@@ -35,6 +19,7 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
         ]
     )["Parameters"]
     assert parameters
+    token = {"login": "", "value": "", "rest": 0}
 
     for token_name in [p["Name"] for p in parameters]:
         value = get_parameter_from_ssm(token_name, True, client)
@@ -44,17 +29,12 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
         user = gh.get_user()
         rest, _ = gh.rate_limiting
         logging.info("Get token with %s remaining requests", rest)
-        if ROBOT_TOKEN is None:
-            ROBOT_TOKEN = Token(user, value, rest)
-            continue
-        if ROBOT_TOKEN.rest < rest:
-            ROBOT_TOKEN.user, ROBOT_TOKEN.value, ROBOT_TOKEN.rest = user, value, rest
+        if token["rest"] < rest:
+            token = {"user": user, "value": value, "rest": rest}
 
-    assert ROBOT_TOKEN
+    assert token["value"]
     logging.info(
-        "User %s with %s remaining requests is used",
-        ROBOT_TOKEN.user.login,
-        ROBOT_TOKEN.rest,
+        "User %s with %s remaining requests is used", token["user"].login, token["rest"]
     )
 
-    return ROBOT_TOKEN.value
+    return token["value"]

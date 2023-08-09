@@ -28,8 +28,6 @@ struct TextLogElement
     String source_file;
     UInt64 source_line{};
 
-    std::string_view message_format_string;
-
     static std::string name() { return "TextLog"; }
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
@@ -40,17 +38,12 @@ struct TextLogElement
 class TextLog : public SystemLog<TextLogElement>
 {
 public:
-    using Queue = SystemLogQueue<TextLogElement>;
-
-    explicit TextLog(ContextPtr context_, const SystemLogSettings & settings);
-
-    static std::shared_ptr<Queue> getLogQueue(const SystemLogQueueSettings & settings)
-    {
-        static std::shared_ptr<Queue> queue = std::make_shared<Queue>(settings);
-        return queue;
-    }
-
-    static consteval bool shouldTurnOffLogger() { return true; }
+    TextLog(
+        ContextPtr context_,
+        const String & database_name_,
+        const String & table_name_,
+        const String & storage_def_,
+        size_t flush_interval_milliseconds_);
 };
 
 }

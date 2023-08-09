@@ -1,12 +1,11 @@
 #include <IO/ZlibInflatingReadBuffer.h>
-#include <IO/WithFileName.h>
+
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int ZLIB_INFLATE_FAILED;
-    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 ZlibInflatingReadBuffer::ZlibInflatingReadBuffer(
@@ -18,11 +17,6 @@ ZlibInflatingReadBuffer::ZlibInflatingReadBuffer(
     : CompressedReadBufferWrapper(std::move(in_), buf_size, existing_memory, alignment)
     , eof_flag(false)
 {
-    if (buf_size > max_buffer_size)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-            "Zlib does not support decompression with buffer size greater than {}, got buffer size: {}",
-            max_buffer_size, buf_size);
-
     zstr.zalloc = nullptr;
     zstr.zfree = nullptr;
     zstr.opaque = nullptr;
@@ -37,7 +31,10 @@ ZlibInflatingReadBuffer::ZlibInflatingReadBuffer(
         window_bits += 16;
     }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
     int rc = inflateInit2(&zstr, window_bits);
+#pragma GCC diagnostic pop
 
     if (rc != Z_OK)
         throw Exception(ErrorCodes::ZLIB_INFLATE_FAILED, "inflateInit2 failed: {}; zlib version: {}.", zError(rc), ZLIB_VERSION);
@@ -64,22 +61,16 @@ bool ZlibInflatingReadBuffer::nextImpl()
         {
             in->nextIfAtEnd();
             zstr.next_in = reinterpret_cast<unsigned char *>(in->position());
-            zstr.avail_in = static_cast<BufferSizeType>(std::min(
-                static_cast<UInt64>(in->buffer().end() - in->position()),
-                static_cast<UInt64>(max_buffer_size)));
+            zstr.avail_in = in->buffer().end() - in->position();
         }
-
         /// init output bytes (place, where decompressed data will be)
         zstr.next_out = reinterpret_cast<unsigned char *>(internal_buffer.begin());
-        zstr.avail_out = static_cast<BufferSizeType>(internal_buffer.size());
+        zstr.avail_out = internal_buffer.size();
 
-        size_t old_total_in = zstr.total_in;
         int rc = inflate(&zstr, Z_NO_FLUSH);
 
         /// move in stream on place, where reading stopped
-        size_t bytes_read = zstr.total_in - old_total_in;
-        in->position() += bytes_read;
-
+        in->position() = in->buffer().end() - zstr.avail_in;
         /// change size of working buffer (it's size equal to internal_buffer size without unused uncompressed values)
         working_buffer.resize(internal_buffer.size() - zstr.avail_out);
 
@@ -99,22 +90,13 @@ bool ZlibInflatingReadBuffer::nextImpl()
             {
                 rc = inflateReset(&zstr);
                 if (rc != Z_OK)
-                    throw Exception(
-                        ErrorCodes::ZLIB_INFLATE_FAILED,
-                        "inflateReset failed: {}{}",
-                        zError(rc),
-                        getExceptionEntryWithFileName(*in));
+                    throw Exception(ErrorCodes::ZLIB_INFLATE_FAILED, "inflateReset failed: {}", zError(rc));
                 return true;
             }
         }
-
         /// If it is not end and not OK, something went wrong, throw exception
         if (rc != Z_OK)
-            throw Exception(
-                ErrorCodes::ZLIB_INFLATE_FAILED,
-                "inflate failed: {}{}",
-                zError(rc),
-                getExceptionEntryWithFileName(*in));
+            throw Exception(ErrorCodes::ZLIB_INFLATE_FAILED, "inflateReset failed: {}", zError(rc));
     }
     while (working_buffer.empty());
 

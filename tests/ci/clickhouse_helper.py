@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
-from typing import List
-import json
-import logging
 import time
+import logging
+import json
 
 import requests  # type: ignore
-
 from get_robot_token import get_parameter_from_ssm
-from pr_info import PRInfo
-from report import TestResults
 
 
 class InsertException(Exception):
@@ -41,8 +37,12 @@ class ClickHouseHelper:
                     url, params=params, data=json_str, headers=auth
                 )
             except Exception as e:
-                error = f"Received exception while sending data to {url} on {i} attempt: {e}"
-                logging.warning(error)
+                logging.warning(
+                    "Received exception while sending data to %s on %s attempt: %s",
+                    url,
+                    i,
+                    e,
+                )
                 continue
 
             logging.info("Response content '%s'", response.content)
@@ -132,32 +132,16 @@ class ClickHouseHelper:
         return result
 
 
-# Obtain the machine type from IMDS:
-def get_instance_type():
-    url = "http://169.254.169.254/latest/meta-data/instance-type"
-    for i in range(5):
-        try:
-            response = requests.get(url, timeout=1)
-            if response.status_code == 200:
-                return response.text
-        except Exception as e:
-            error = (
-                f"Received exception while sending data to {url} on {i} attempt: {e}"
-            )
-            logging.warning(error)
-            continue
-    return ""
-
-
 def prepare_tests_results_for_clickhouse(
-    pr_info: PRInfo,
-    test_results: TestResults,
-    check_status: str,
-    check_duration: float,
-    check_start_time: str,
-    report_url: str,
-    check_name: str,
-) -> List[dict]:
+    pr_info,
+    test_results,
+    check_status,
+    check_duration,
+    check_start_time,
+    report_url,
+    check_name,
+):
+
     pull_request_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
     base_ref = "master"
     head_ref = "master"
@@ -185,7 +169,6 @@ def prepare_tests_results_for_clickhouse(
         head_ref=head_ref,
         head_repo=head_repo,
         task_url=pr_info.task_url,
-        instance_type=get_instance_type(),
     )
 
     # Always publish a total record for all checks. For checks with individual
@@ -193,18 +176,37 @@ def prepare_tests_results_for_clickhouse(
     result = [common_properties]
     for test_result in test_results:
         current_row = common_properties.copy()
-        test_name = test_result.name
-        test_status = test_result.status
+        test_name = test_result[0]
+        test_status = test_result[1]
 
-        test_time = test_result.time or 0
-        current_row["test_duration_ms"] = int(test_time * 1000)
+        test_time = 0
+        if len(test_result) > 2 and test_result[2]:
+            test_time = test_result[2]
+        current_row["test_duration_ms"] = int(float(test_time) * 1000)
         current_row["test_name"] = test_name
         current_row["test_status"] = test_status
-        if test_result.raw_logs:
-            # Protect from too big blobs that contain garbage
-            current_row["test_context_raw"] = test_result.raw_logs[: 32 * 1024]
-        else:
-            current_row["test_context_raw"] = ""
         result.append(current_row)
 
     return result
+
+
+def mark_flaky_tests(clickhouse_helper, check_name, test_results):
+    try:
+        query = f"""SELECT DISTINCT test_name
+FROM checks
+WHERE
+    check_start_time BETWEEN now() - INTERVAL 3 DAY AND now()
+    AND check_name = '{check_name}'
+    AND (test_status = 'FAIL' OR test_status = 'FLAKY')
+    AND pull_request_number = 0
+"""
+
+        tests_data = clickhouse_helper.select_json_each_row("default", query)
+        master_failed_tests = {row["test_name"] for row in tests_data}
+        logging.info("Found flaky tests: %s", ", ".join(master_failed_tests))
+
+        for test_result in test_results:
+            if test_result[1] == "FAIL" and test_result[0] in master_failed_tests:
+                test_result[1] = "FLAKY"
+    except Exception as ex:
+        logging.error("Exception happened during flaky tests fetch %s", ex)

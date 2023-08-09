@@ -1,3 +1,4 @@
+<?xml version="1.0"?>
 <clickhouse>
     <logger>
         <level>trace</level>
@@ -90,6 +91,73 @@
                 </replica>
             </shard>
         </test_shard_localhost>
+        <test_cluster_two_shards_localhost>
+             <shard>
+                 <replica>
+                     <host>localhost</host>
+                     <port>9000</port>
+                 </replica>
+             </shard>
+             <shard>
+                 <replica>
+                     <host>localhost</host>
+                     <port>9000</port>
+                 </replica>
+             </shard>
+        </test_cluster_two_shards_localhost>
+        <test_cluster_two_shards>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_two_shards>
+        <test_cluster_two_shards_internal_replication>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_two_shards_internal_replication>
+        <test_shard_localhost_secure>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9440</port>
+                    <secure>1</secure>
+                </replica>
+            </shard>
+        </test_shard_localhost_secure>
+        <test_unavailable_shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>1</port>
+                </replica>
+            </shard>
+        </test_unavailable_shard>
     </remote_servers>
 
     <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
@@ -204,6 +272,4 @@
         <anonymize>false</anonymize>
         <endpoint>https://6f33034cfe684dd7a3ab9875e57b1c8d@o388870.ingest.sentry.io/5226277</endpoint>
     </send_crash_reports>
-
-    <mark_cache_size>123451234</mark_cache_size>
 </clickhouse>

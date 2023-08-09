@@ -8,10 +8,8 @@
 
 #include <Poco/Timespan.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Coordination/KeeperFeatureFlags.h>
 
 
 namespace Coordination
@@ -35,11 +33,10 @@ using TestKeeperRequestPtr = std::shared_ptr<TestKeeperRequest>;
 class TestKeeper final : public IKeeper
 {
 public:
-    explicit TestKeeper(const zkutil::ZooKeeperArgs & args_);
+    TestKeeper(const String & root_path_, Poco::Timespan operation_timeout_);
     ~TestKeeper() override;
 
     bool isExpired() const override { return expired; }
-    bool hasReachedDeadline() const override { return false; }
     int64_t getSessionID() const override { return 0; }
 
 
@@ -87,22 +84,15 @@ public:
             const String & path,
             SyncCallback callback) override;
 
-    void reconfig(
-        std::string_view joining,
-        std::string_view leaving,
-        std::string_view new_members,
-        int32_t version,
-        ReconfigCallback callback) final;
-
     void multi(
             const Requests & requests,
             MultiCallback callback) override;
 
     void finalize(const String & reason) override;
 
-    bool isFeatureEnabled(DB::KeeperFeatureFlag) const override
+    DB::KeeperApiVersion getApiVersion() override
     {
-        return false;
+        return KeeperApiVersion::ZOOKEEPER_COMPATIBLE;
     }
 
     struct Node
@@ -133,7 +123,10 @@ private:
 
     Container container;
 
-    zkutil::ZooKeeperArgs args;
+    String root_path;
+    ACLs default_acls;
+
+    Poco::Timespan operation_timeout;
 
     std::mutex push_request_mutex;
     std::atomic<bool> expired{false};
@@ -155,3 +148,4 @@ private:
 };
 
 }
+

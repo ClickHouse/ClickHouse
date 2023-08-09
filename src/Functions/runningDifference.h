@@ -38,13 +38,13 @@ struct FunctionRunningDifferenceName<false>
 };
 
 /** Calculate difference of consecutive values in columns.
-  * So, result of function depends on partition of data to columns and on order of data in columns.
+  * So, result of function depends on partition of data to columnss and on order of data in columns.
   */
 template <bool is_first_line_zero>
 class FunctionRunningDifferenceImpl : public IFunction
 {
 private:
-    /// It is possible to track value from previous columns, to calculate continuously across all columns. Not implemented.
+    /// It is possible to track value from previous columns, to calculate continuously across all columnss. Not implemented.
 
     template <typename Src, typename Dst>
     static NO_SANITIZE_UNDEFINED void process(const PaddedPODArray<Src> & src, PaddedPODArray<Dst> & dst, const NullMap * null_map)
@@ -70,7 +70,7 @@ private:
 
             if (!has_prev_value)
             {
-                dst[i] = is_first_line_zero ? static_cast<Dst>(0) : static_cast<Dst>(src[i]);
+                dst[i] = is_first_line_zero ? 0 : src[i];
                 prev = src[i];
                 has_prev_value = true;
             }
@@ -102,10 +102,6 @@ private:
             f(UInt32());
         else if (which.isUInt64())
             f(UInt64());
-        else if (which.isUInt128())
-            f(UInt128());
-        else if (which.isUInt256())
-            f(UInt256());
         else if (which.isInt8())
             f(Int8());
         else if (which.isInt16())
@@ -114,10 +110,6 @@ private:
             f(Int32());
         else if (which.isInt64())
             f(Int64());
-        else if (which.isInt128())
-            f(Int128());
-        else if (which.isInt256())
-            f(Int256());
         else if (which.isFloat32())
             f(Float32());
         else if (which.isFloat64())
@@ -125,11 +117,11 @@ private:
         else if (which.isDate())
             f(DataTypeDate::FieldType());
         else if (which.isDate32())
-            f(DataTypeDate32::FieldType());
+            f(DataTypeDate::FieldType());
         else if (which.isDateTime())
             f(DataTypeDateTime::FieldType());
         else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must have numeric type.", getName());
+            throw Exception("Argument for function " + getName() + " must have numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
 public:
@@ -155,11 +147,7 @@ public:
         return 1;
     }
 
-    bool isDeterministic() const override
-    {
-        return false;
-    }
-
+    bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override
     {
         return false;

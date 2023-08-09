@@ -3,9 +3,6 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <base/types.h>
-#include <Storages/MergeTree/ZooKeeperRetries.h>
-#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
-#include <Storages/MergeTree/AsyncBlockIDsCache.h>
 
 
 namespace Poco { class Logger; }
@@ -20,20 +17,12 @@ namespace DB
 {
 
 class StorageReplicatedMergeTree;
-struct StorageSnapshot;
-using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 
-/// ReplicatedMergeTreeSink will sink data to replicated merge tree with deduplication.
-/// The template argument "async_insert" indicates whether this sink serves for async inserts.
-/// Async inserts will have different deduplication policy. We use a vector of "block ids" to
-/// identify different async inserts inside the same part. It will remove the duplicate inserts
-/// when it encounters lock and retries.
-template<bool async_insert>
-class ReplicatedMergeTreeSinkImpl : public SinkToStorage
+class ReplicatedMergeTreeSink : public SinkToStorage
 {
 public:
-    ReplicatedMergeTreeSinkImpl(
+    ReplicatedMergeTreeSink(
         StorageReplicatedMergeTree & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         size_t quorum_,
@@ -41,13 +30,12 @@ public:
         size_t max_parts_per_block_,
         bool quorum_parallel_,
         bool deduplicate_,
-        bool majority_quorum_,
         ContextPtr context_,
         // special flag to determine the ALTER TABLE ATTACH PART without the query context,
         // needed to set the special LogEntryType::ATTACH_PART
         bool is_attach_ = false);
 
-    ~ReplicatedMergeTreeSinkImpl() override;
+    ~ReplicatedMergeTreeSink() override;
 
     void onStart() override;
     void consume(Chunk chunk) override;
@@ -68,78 +56,53 @@ public:
         return last_block_is_duplicate;
     }
 
-    struct DelayedChunk;
 private:
-    using BlockIDsType = std::conditional_t<async_insert, std::vector<String>, String>;
-
-    ZooKeeperRetriesInfo zookeeper_retries_info;
     struct QuorumInfo
     {
         String status_path;
+        String is_active_node_value;
         int is_active_node_version = -1;
         int host_node_version = -1;
     };
 
     QuorumInfo quorum_info;
-
-    /// Checks active replicas.
-    /// Returns total number of replicas.
-    size_t checkQuorumPrecondition(const ZooKeeperWithFaultInjectionPtr & zookeeper);
+    void checkQuorumPrecondition(zkutil::ZooKeeperPtr & zookeeper);
 
     /// Rename temporary part and commit to ZooKeeper.
-    /// Returns a list of conflicting async blocks and true if the whole parts was deduplicated
-    std::pair<std::vector<String>, bool> commitPart(
-        const ZooKeeperWithFaultInjectionPtr & zookeeper,
+    void commitPart(
+        zkutil::ZooKeeperPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
-        const BlockIDsType & block_id,
-        size_t replicas_num,
-        bool writing_existing_part);
+        const String & block_id,
+        DataPartStorageBuilderPtr part_builder);
 
     /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
     /// Also checks that replica still alive.
     void waitForQuorum(
-        const ZooKeeperWithFaultInjectionPtr & zookeeper,
-        const std::string & part_name,
-        const std::string & quorum_path,
-        int is_active_node_version,
-        size_t replicas_num) const;
+        zkutil::ZooKeeperPtr & zookeeper, const std::string & part_name,
+        const std::string & quorum_path, const std::string & is_active_node_value) const;
 
     StorageReplicatedMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;
-
-    /// Empty means use majority quorum.
-    std::optional<size_t> required_quorum_size;
-
-    size_t getQuorumSize(size_t replicas_num) const;
-    bool isQuorumEnabled() const;
-    String quorumLogMessage(size_t replicas_num) const; /// Used in logs for debug purposes
-
+    size_t quorum;
     size_t quorum_timeout_ms;
     size_t max_parts_per_block;
-
-    UInt64 cache_version = 0;
 
     bool is_attach = false;
     bool quorum_parallel = false;
     const bool deduplicate = true;
     bool last_block_is_duplicate = false;
-    UInt64 num_blocks_processed = 0;
 
     using Logger = Poco::Logger;
     Poco::Logger * log;
 
     ContextPtr context;
-    StorageSnapshotPtr storage_snapshot;
-
     UInt64 chunk_dedup_seqnum = 0; /// input chunk ordinal number in case of dedup token
 
     /// We can delay processing for previous chunk and start writing a new one.
+    struct DelayedChunk;
     std::unique_ptr<DelayedChunk> delayed_chunk;
 
-    void finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper);
+    void finishDelayedChunk(zkutil::ZooKeeperPtr & zookeeper);
 };
-
-using ReplicatedMergeTreeSinkWithAsyncDeduplicate = ReplicatedMergeTreeSinkImpl<true>;
-using ReplicatedMergeTreeSink = ReplicatedMergeTreeSinkImpl<false>;
 
 }

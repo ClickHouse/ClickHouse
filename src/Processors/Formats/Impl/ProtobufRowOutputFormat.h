@@ -1,14 +1,14 @@
 #pragma once
 
-#include "config.h"
+#include "config_formats.h"
 
 #if USE_PROTOBUF
 #    include <Processors/Formats/IRowOutputFormat.h>
-#   include <Formats/FormatSchemaInfo.h>
 
 namespace DB
 {
 class DB;
+class FormatSchemaInfo;
 class ProtobufSerializer;
 class ProtobufWriter;
 class WriteBuffer;
@@ -30,7 +30,8 @@ public:
     ProtobufRowOutputFormat(
         WriteBuffer & out_,
         const Block & header_,
-        const ProtobufSchemaInfo & schema_info_,
+        const RowOutputFormatParams & params_,
+        const FormatSchemaInfo & schema_info_,
         const FormatSettings & settings_,
         bool with_length_delimiter_);
 

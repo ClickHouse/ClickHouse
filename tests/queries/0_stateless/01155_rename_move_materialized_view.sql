@@ -39,7 +39,7 @@ RENAME TABLE test_01155_ordinary.mv1 TO test_01155_atomic.mv1;
 RENAME TABLE test_01155_ordinary.mv2 TO test_01155_atomic.mv2;
 RENAME TABLE test_01155_ordinary.dst TO test_01155_atomic.dst;
 RENAME TABLE test_01155_ordinary.src TO test_01155_atomic.src;
-SET check_table_dependencies=0; -- Otherwise we'll get error "test_01155_ordinary.dict depends on test_01155_ordinary.dist" in the next line.
+SET check_table_dependencies=0;
 RENAME TABLE test_01155_ordinary.dist TO test_01155_atomic.dist;
 SET check_table_dependencies=1;
 RENAME DICTIONARY test_01155_ordinary.dict TO test_01155_atomic.dict;
@@ -65,9 +65,7 @@ SELECT dictGet('test_01155_ordinary.dict', 'x', 'after renaming database');
 SELECT database, substr(name, 1, 10) FROM system.tables WHERE database like 'test_01155_%';
 
 -- Move tables back
-SET check_table_dependencies=0; -- Otherwise we'll get error "test_01155_ordinary.dict depends on test_01155_ordinary.dist" in the next line.
 RENAME DATABASE test_01155_ordinary TO test_01155_atomic;
-SET check_table_dependencies=1;
 
 set allow_deprecated_database_ordinary=1;
 CREATE DATABASE test_01155_ordinary ENGINE=Ordinary;

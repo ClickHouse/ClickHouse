@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper
+# Tags: race, zookeeper, no-backward-compatibility-check
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -8,16 +8,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function create_db()
 {
-    local TIMELIMIT=$((SECONDS+$1))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         SHARD=$(($RANDOM % 2))
         REPLICA=$(($RANDOM % 2))
         SUFFIX=$(($RANDOM % 16))
         # Multiple database replicas on one server are actually not supported (until we have namespaces).
         # So CREATE TABLE queries will fail on all replicas except one. But it's still makes sense for a stress test.
         $CLICKHOUSE_CLIENT --allow_experimental_database_replicated=1 --query \
-        "create database if not exists ${CLICKHOUSE_DATABASE}_repl_01111_$SUFFIX engine=Replicated('/test/01111/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX', '$SHARD', '$REPLICA')" \
-         2>&1| grep -Fa "Exception: " | grep -Fv "REPLICA_ALREADY_EXISTS" | grep -Fiv "Will not try to start it up" | \
+        "create database if not exists ${CLICKHOUSE_DATABASE}_repl_$SUFFIX engine=Replicated('/test/01111/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX', '$SHARD', '$REPLICA')" \
+         2>&1| grep -Fa "Exception: " | grep -Fv "REPLICA_IS_ALREADY_EXIST" | grep -Fiv "Will not try to start it up" | \
          grep -Fv "Coordination::Exception" | grep -Fv "already contains some data and it does not look like Replicated database path"
         sleep 0.$RANDOM
     done
@@ -25,8 +24,7 @@ function create_db()
 
 function drop_db()
 {
-    local TIMELIMIT=$((SECONDS+$1))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         database=$($CLICKHOUSE_CLIENT -q "select name from system.databases where name like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [[ "$database" == "$CLICKHOUSE_DATABASE" ]]; then continue; fi
         if [ -z "$database" ]; then continue; fi
@@ -38,8 +36,7 @@ function drop_db()
 
 function sync_db()
 {
-    local TIMELIMIT=$((SECONDS+$1))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         database=$($CLICKHOUSE_CLIENT -q "select name from system.databases where name like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [ -z "$database" ]; then continue; fi
         $CLICKHOUSE_CLIENT --receive_timeout=1 -q \
@@ -50,53 +47,57 @@ function sync_db()
 
 function create_table()
 {
-    local TIMELIMIT=$((SECONDS+$1))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         database=$($CLICKHOUSE_CLIENT -q "select name from system.databases where name like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [ -z "$database" ]; then continue; fi
         $CLICKHOUSE_CLIENT --distributed_ddl_task_timeout=0 -q \
-        "create table $database.rmt_${RANDOM}_${RANDOM}_${RANDOM} (n int) engine=ReplicatedMergeTree order by tuple() -- suppress $CLICKHOUSE_TEST_ZOOKEEPER_PREFIX" \
-        2>&1| grep -Fa "Exception: " | grep -Fv "Macro 'uuid' and empty arguments" | grep -Fv "Cannot enqueue query" | grep -Fv "ZooKeeper session expired" | grep -Fv UNKNOWN_DATABASE | grep -Fv TABLE_IS_DROPPED
+        "create table $database.rmt_$RANDOM (n int) engine=ReplicatedMergeTree order by tuple() -- suppress $CLICKHOUSE_TEST_ZOOKEEPER_PREFIX" \
+        2>&1| grep -Fa "Exception: " | grep -Fv "Macro 'uuid' and empty arguments" | grep -Fv "Cannot enqueue query" | grep -Fv "ZooKeeper session expired" | grep -Fv UNKNOWN_DATABASE
         sleep 0.$RANDOM
     done
 }
 
 function alter_table()
 {
-    local TIMELIMIT=$((SECONDS+$1))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         table=$($CLICKHOUSE_CLIENT -q "select database || '.' || name from system.tables where database like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [ -z "$table" ]; then continue; fi
         $CLICKHOUSE_CLIENT --distributed_ddl_task_timeout=0 -q \
         "alter table $table update n = n + (select max(n) from merge(REGEXP('${CLICKHOUSE_DATABASE}.*'), '.*')) where 1 settings allow_nondeterministic_mutations=1" \
-        2>&1| grep -Fa "Exception: " | grep -Fv "Cannot enqueue query" | grep -Fv "ZooKeeper session expired" | grep -Fv UNKNOWN_DATABASE | grep -Fv UNKNOWN_TABLE | grep -Fv TABLE_IS_READ_ONLY | grep -Fv TABLE_IS_DROPPED | grep -Fv "Error while executing table function merge"
+        2>&1| grep -Fa "Exception: " | grep -Fv "Cannot enqueue query" | grep -Fv "ZooKeeper session expired" | grep -Fv UNKNOWN_DATABASE | grep -Fv UNKNOWN_TABLE | grep -Fv TABLE_IS_READ_ONLY
         sleep 0.$RANDOM
     done
 }
 
 function insert()
 {
-    local TIMELIMIT=$((SECONDS+$1))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         table=$($CLICKHOUSE_CLIENT -q "select database || '.' || name from system.tables where database like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [ -z "$table" ]; then continue; fi
         $CLICKHOUSE_CLIENT -q \
-        "insert into $table values ($RANDOM)" 2>&1| grep -Fa "Exception: " | grep -Fv UNKNOWN_DATABASE | grep -Fv UNKNOWN_TABLE | grep -Fv TABLE_IS_READ_ONLY | grep -Fv TABLE_IS_DROPPED
+        "insert into $table values ($RANDOM)" 2>&1| grep -Fa "Exception: " | grep -Fv UNKNOWN_DATABASE | grep -Fv UNKNOWN_TABLE | grep -Fv TABLE_IS_READ_ONLY
     done
 }
 
 
 
+export -f create_db
+export -f drop_db
+export -f sync_db
+export -f create_table
+export -f alter_table
+export -f insert
+
 TIMEOUT=30
 
-create_db $TIMEOUT &
-sync_db $TIMEOUT &
-create_table $TIMEOUT &
-alter_table $TIMEOUT &
-insert $TIMEOUT &
+timeout $TIMEOUT bash -c create_db &
+timeout $TIMEOUT bash -c sync_db &
+timeout $TIMEOUT bash -c create_table &
+timeout $TIMEOUT bash -c alter_table &
+timeout $TIMEOUT bash -c insert &
 
 sleep 1 # give other queries a head start
-drop_db $TIMEOUT &
+timeout $TIMEOUT bash -c drop_db &
 
 wait
 

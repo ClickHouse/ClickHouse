@@ -26,7 +26,7 @@ namespace mysqlxx
  *
  *        void thread()
  *        {
- *            mysqlxx::Pool::Entry connection = pool.Get();
+ *              mysqlxx::Pool::Entry connection = pool.Get();
  *            std::string s = connection->query("SELECT 'Hello, world!' AS world").use().fetch()["world"].getString();
  *        }
  * TODO: simplify with PoolBase.
@@ -41,7 +41,6 @@ protected:
         /// Ref count modified in constructor/descructor of Entry
         /// but also read in pool code.
         std::atomic<int> ref_count = 0;
-        std::atomic<bool> removed_from_pool = false;
     };
 
 public:

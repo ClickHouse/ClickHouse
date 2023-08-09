@@ -22,7 +22,7 @@ private:
 
     String table_name;
     DataTypes types;
-    Block::NameMap column_indexes_by_names;
+    std::unordered_map<String, size_t> column_indexes_by_names;
     const FormatSettings format_settings;
 };
 

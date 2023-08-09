@@ -3,6 +3,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+
 #include <numeric>
 
 #include <boost/algorithm/string.hpp>
@@ -20,13 +21,13 @@ namespace ErrorCodes
 void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)
 {
     if (!creators.emplace(index_type, std::move(creator)).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeIndexFactory: the Index creator name '{}' is not unique",
-                        index_type);
+        throw Exception("MergeTreeIndexFactory: the Index creator name '" + index_type + "' is not unique",
+                        ErrorCodes::LOGICAL_ERROR);
 }
 void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Validator validator)
 {
     if (!validators.emplace(index_type, std::move(validator)).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeIndexFactory: the Index validator name '{}' is not unique", index_type);
+        throw Exception("MergeTreeIndexFactory: the Index validator name '" + index_type + "' is not unique", ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -35,9 +36,8 @@ MergeTreeIndexPtr MergeTreeIndexFactory::get(
 {
     auto it = creators.find(index.type);
     if (it == creators.end())
-    {
-        throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Unknown Index type '{}'. Available index types: {}", index.type,
+        throw Exception(
+                "Unknown Index type '" + index.type + "'. Available index types: " +
                 std::accumulate(creators.cbegin(), creators.cend(), std::string{},
                         [] (auto && left, const auto & right) -> std::string
                         {
@@ -45,9 +45,8 @@ MergeTreeIndexPtr MergeTreeIndexFactory::get(
                                 return right.first;
                             else
                                 return left + ", " + right.first;
-                        })
-                );
-    }
+                        }),
+                ErrorCodes::INCORRECT_QUERY);
 
     return it->second(index);
 }
@@ -63,34 +62,11 @@ MergeTreeIndices MergeTreeIndexFactory::getMany(const std::vector<IndexDescripti
 
 void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach) const
 {
-    /// Do not allow constant and non-deterministic expressions.
-    /// Do not throw on attach for compatibility.
-    if (!attach)
-    {
-        if (index.expression->hasArrayJoin())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain array joins", index.name);
-
-        try
-        {
-            index.expression->assertDeterministic();
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(fmt::format("for secondary index '{}'", index.name));
-            throw;
-        }
-
-        for (const auto & elem : index.sample_block)
-            if (elem.column && (isColumnConst(*elem.column) || elem.column->isDummy()))
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Secondary index '{}' cannot contain constants", index.name);
-    }
-
     auto it = validators.find(index.type);
     if (it == validators.end())
-    {
-        throw Exception(ErrorCodes::INCORRECT_QUERY,
-            "Unknown Index type '{}'. Available index types: {}", index.type,
-                std::accumulate(
+        throw Exception(
+            "Unknown Index type '" + index.type + "'. Available index types: "
+                + std::accumulate(
                     validators.cbegin(),
                     validators.cend(),
                     std::string{},
@@ -100,9 +76,8 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
                             return right.first;
                         else
                             return left + ", " + right.first;
-                    })
-            );
-    }
+                    }),
+            ErrorCodes::INCORRECT_QUERY);
 
     it->second(index, attach);
 }
@@ -126,15 +101,6 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
 
     registerCreator("hypothesis", hypothesisIndexCreator);
     registerValidator("hypothesis", hypothesisIndexValidator);
-
-#ifdef ENABLE_ANNOY
-    registerCreator("annoy", annoyIndexCreator);
-    registerValidator("annoy", annoyIndexValidator);
-#endif
-
-    registerCreator("inverted", invertedIndexCreator);
-    registerValidator("inverted", invertedIndexValidator);
-
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

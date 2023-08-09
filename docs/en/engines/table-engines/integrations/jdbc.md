@@ -1,6 +1,5 @@
 ---
-slug: /en/engines/table-engines/integrations/jdbc
-sidebar_position: 100
+sidebar_position: 3
 sidebar_label: JDBC
 ---
 
@@ -25,14 +24,14 @@ ENGINE = JDBC(datasource_uri, external_database, external_table)
 **Engine Parameters**
 
 
-- `datasource_uri` — URI or name of an external DBMS.
+-   `datasource_uri` — URI or name of an external DBMS.
 
     URI Format: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
     Example for MySQL: `jdbc:mysql://localhost:3306/?user=root&password=root`.
 
-- `external_database` — Database in an external DBMS.
+-   `external_database` — Database in an external DBMS.
 
-- `external_table` — Name of the table in `external_database` or a select query like `select * from table1 where column1=1`.
+-   `external_table` — Name of the table in `external_database` or a select query like `select * from table1 where column1=1`.
 
 ## Usage Example {#usage-example}
 
@@ -91,4 +90,6 @@ FROM system.numbers
 
 ## See Also {#see-also}
 
-- [JDBC table function](../../../sql-reference/table-functions/jdbc.md).
+-   [JDBC table function](../../../sql-reference/table-functions/jdbc.md).
+
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/jdbc/) <!--hide-->

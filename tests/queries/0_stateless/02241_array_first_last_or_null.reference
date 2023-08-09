@@ -7,9 +7,6 @@ ArrayFirst non constant predicate
 \N
 2
 2
-ArrayFirst with Null
-2
-\N
 ArrayLast constant predicate
 \N
 \N
@@ -19,6 +16,3 @@ ArrayLast non constant predicate
 \N
 3
 3
-ArrayLast with Null
-2
-\N

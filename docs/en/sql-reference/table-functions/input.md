@@ -1,6 +1,5 @@
 ---
-slug: /en/sql-reference/table-functions/input
-sidebar_position: 95
+sidebar_position: 46
 sidebar_label: input
 ---
 
@@ -24,7 +23,7 @@ with all transferred data is not created.
 
 **Examples**
 
-- Let the `test` table has the following structure `(a String, b String)`
+-   Let the `test` table has the following structure `(a String, b String)`
     and data in `data.csv` has a different structure `(col1 String, col2 Date, col3 Int32)`. Query for insert
     data from the `data.csv` into the `test` table with simultaneous conversion looks like this:
 
@@ -34,7 +33,7 @@ with all transferred data is not created.
 $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT lower(col1), col3 * col3 FROM input('col1 String, col2 Date, col3 Int32') FORMAT CSV";
 ```
 
-- If `data.csv` contains data of the same structure `test_structure` as the table `test` then these two queries are equal:
+-   If `data.csv` contains data of the same structure `test_structure` as the table `test` then these two queries are equal:
 
 <!-- -->
 
@@ -42,3 +41,4 @@ $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT lower(col1),
 $ cat data.csv | clickhouse-client --query="INSERT INTO test FORMAT CSV"
 $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT * FROM input('test_structure') FORMAT CSV"
 ```
+

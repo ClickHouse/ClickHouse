@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexAggregatorBloomFilter.h>
 
+#include <base/bit_cast.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnFixedString.h>
@@ -41,8 +42,8 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorBloomFilter::getGranuleAndReset
 void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
-                        "Position: {}, Block rows: {}.", *pos, block.rows());
+        throw Exception("The provided position is not less than the number of block rows. Position: " + toString(*pos) + ", Block rows: " +
+                        toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
 
     Block granule_index_block;
     size_t max_read_rows = std::min(block.rows() - *pos, limit);

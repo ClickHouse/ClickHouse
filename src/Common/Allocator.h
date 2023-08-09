@@ -29,7 +29,6 @@
 #include <base/getPageSize.h>
 
 #include <Common/CurrentMemoryTracker.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 
@@ -63,12 +62,6 @@ extern const size_t MMAP_THRESHOLD;
 
 static constexpr size_t MALLOC_MIN_ALIGNMENT = 8;
 
-namespace CurrentMetrics
-{
-    extern const Metric MMappedAllocs;
-    extern const Metric MMappedAllocBytes;
-}
-
 namespace DB
 {
 namespace ErrorCodes
@@ -99,10 +92,8 @@ public:
     void * alloc(size_t size, size_t alignment = 0)
     {
         checkSize(size);
-        auto trace = CurrentMemoryTracker::alloc(size);
-        void * ptr = allocNoTrack(size, alignment);
-        trace.onAlloc(ptr, size);
-        return ptr;
+        CurrentMemoryTracker::alloc(size);
+        return allocNoTrack(size, alignment);
     }
 
     /// Free memory range.
@@ -112,8 +103,7 @@ public:
         {
             checkSize(size);
             freeNoTrack(buf, size);
-            auto trace = CurrentMemoryTracker::free(size);
-            trace.onFree(buf, size);
+            CurrentMemoryTracker::free(size);
         }
         catch (...)
         {
@@ -139,17 +129,13 @@ public:
                  && alignment <= MALLOC_MIN_ALIGNMENT)
         {
             /// Resize malloc'd memory region with no special alignment requirement.
-            auto trace_free = CurrentMemoryTracker::free(old_size);
-            auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
-            trace_free.onFree(buf, old_size);
+            CurrentMemoryTracker::realloc(old_size, new_size);
 
             void * new_buf = ::realloc(buf, new_size);
             if (nullptr == new_buf)
                 DB::throwFromErrno(fmt::format("Allocator: Cannot realloc from {} to {}.", ReadableSize(old_size), ReadableSize(new_size)), DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
             buf = new_buf;
-            trace_alloc.onAlloc(buf, new_size);
-
             if constexpr (clear_memory)
                 if (new_size > old_size)
                     memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
@@ -157,9 +143,7 @@ public:
         else if (old_size >= MMAP_THRESHOLD && new_size >= MMAP_THRESHOLD)
         {
             /// Resize mmap'd memory region.
-            auto trace_free = CurrentMemoryTracker::free(old_size);
-            auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
-            trace_free.onFree(buf, old_size);
+            CurrentMemoryTracker::realloc(old_size, new_size);
 
             // On apple and freebsd self-implemented mremap used (common/mremap.h)
             buf = clickhouse_mremap(buf, old_size, new_size, MREMAP_MAYMOVE,
@@ -169,17 +153,13 @@ public:
                     ReadableSize(old_size), ReadableSize(new_size)), DB::ErrorCodes::CANNOT_MREMAP);
 
             /// No need for zero-fill, because mmap guarantees it.
-            trace_alloc.onAlloc(buf, new_size);
         }
         else if (new_size < MMAP_THRESHOLD)
         {
             /// Small allocs that requires a copy. Assume there's enough memory in system. Call CurrentMemoryTracker once.
-            auto trace_free = CurrentMemoryTracker::free(old_size);
-            auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
-            trace_free.onFree(buf, old_size);
+            CurrentMemoryTracker::realloc(old_size, new_size);
 
             void * new_buf = allocNoTrack(new_size, alignment);
-            trace_alloc.onAlloc(buf, new_size);
             memcpy(new_buf, buf, std::min(old_size, new_size));
             freeNoTrack(buf, old_size);
             buf = new_buf;
@@ -227,18 +207,15 @@ private:
         if (size >= MMAP_THRESHOLD)
         {
             if (alignment > mmap_min_alignment)
-                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
-                                    "Too large alignment {}: more than page size when allocating {}.",
-                                    ReadableSize(alignment), ReadableSize(size));
+                throw DB::Exception(fmt::format("Too large alignment {}: more than page size when allocating {}.",
+                    ReadableSize(alignment), ReadableSize(size)), DB::ErrorCodes::BAD_ARGUMENTS);
 
             buf = mmap(getMmapHint(), size, PROT_READ | PROT_WRITE,
                        mmap_flags, -1, 0);
             if (MAP_FAILED == buf)
                 DB::throwFromErrno(fmt::format("Allocator: Cannot mmap {}.", ReadableSize(size)), DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-            /// No need for zero-fill, because mmap guarantees it.
 
-            CurrentMetrics::add(CurrentMetrics::MMappedAllocs);
-            CurrentMetrics::add(CurrentMetrics::MMappedAllocBytes, size);
+            /// No need for zero-fill, because mmap guarantees it.
         }
         else
         {
@@ -274,9 +251,6 @@ private:
         {
             if (0 != munmap(buf, size))
                 DB::throwFromErrno(fmt::format("Allocator: Cannot munmap {}.", ReadableSize(size)), DB::ErrorCodes::CANNOT_MUNMAP);
-
-            CurrentMetrics::sub(CurrentMetrics::MMappedAllocs);
-            CurrentMetrics::sub(CurrentMetrics::MMappedAllocBytes, size);
         }
         else
         {
@@ -307,6 +281,14 @@ private:
 #endif
 };
 
+/** When using AllocatorWithStackMemory, located on the stack,
+  *  GCC 4.9 mistakenly assumes that we can call `free` from a pointer to the stack.
+  * In fact, the combination of conditions inside AllocatorWithStackMemory does not allow this.
+  */
+#if !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfree-nonheap-object"
+#endif
 
 /** Allocator with optimization to place small memory ranges in automatic memory.
   */
@@ -384,3 +366,7 @@ extern template class Allocator<false, false>;
 extern template class Allocator<true, false>;
 extern template class Allocator<false, true>;
 extern template class Allocator<true, true>;
+
+#if !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif

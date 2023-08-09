@@ -24,31 +24,31 @@ echo -e "42.42\t3" > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "$SELECT_QUERY"
 
 echo -e "null\t4" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --max_read_buffer_size=1 --storage_file_read_method=pread
+$CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --max_read_buffer_size=1
 
 echo -e "null\t5" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --max_read_buffer_size=2 --storage_file_read_method=pread
+$CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --max_read_buffer_size=2
 
 echo -e "null\t6" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --max_read_buffer_size=3 --storage_file_read_method=pread
+$CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --max_read_buffer_size=3
 
 echo -e "null\t7" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --max_read_buffer_size=4 --storage_file_read_method=pread
+$CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --max_read_buffer_size=4
 
 echo -e "nan\t8" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --max_read_buffer_size=1 --storage_file_read_method=pread
+$CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --max_read_buffer_size=1
 
 echo -e "nan\t9" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --max_read_buffer_size=2 --storage_file_read_method=pread
+$CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --max_read_buffer_size=2
 
 echo -e "nan\t10" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --max_read_buffer_size=3 --storage_file_read_method=pread
+$CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --max_read_buffer_size=3
 
 echo -e "nan\t11" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --max_read_buffer_size=4 --storage_file_read_method=pread
+$CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --max_read_buffer_size=4
 
 echo -e "42\tnan" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --max_read_buffer_size=4 --storage_file_read_method=pread 2>&1 | grep -F -q "CANNOT_READ_ALL_DATA" && echo 'OK' || echo 'FAIL'
+$CLICKHOUSE_CLIENT -q "$SELECT_QUERY" --max_read_buffer_size=4 2>&1 | grep -F -q "CANNOT_READ_ALL_DATA" && echo 'OK' || echo 'FAIL'
 
 $CLICKHOUSE_CLIENT -q "select * from test_02130 order by y"
 $CLICKHOUSE_CLIENT -q "drop table test_02130"

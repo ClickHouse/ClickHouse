@@ -66,7 +66,7 @@ int main(int, char **)
 
         size_t sum_merged_size = 0;
         size_t start_index = 0;
-        unsigned max_level = 0;
+        size_t max_level = 0;
         bool in_range = false;
 
         for (size_t i = 0, size = parts.size(); i < size; ++i)

@@ -1,6 +1,0 @@
-default	data	2	Row 2:\nColumn 0,   name: c1, type: UInt8, parsed text: "2"\nColumn 1,   name: c2, type: UInt8, ERROR: text "a<LINE FEED>b,3<LINE FEED>4,4<LINE FEED>" is not like UInt8	2,a
-default	data	3	Row 3:\nColumn 0,   name: c1, type: UInt8, ERROR: text "b,3<LINE FEED>4,4<LINE FEED>5," is not like UInt8	b,3
-default	data	5	Row 5:\nColumn 0,   name: c1, type: UInt8, parsed text: "5"\nColumn 1,   name: c2, type: UInt8, ERROR: text "c<LINE FEED>6,6<LINE FEED>" is not like UInt8	5,c
-\N	data	2	Row 2:\nColumn 0,   name: A, type: UInt8, parsed text: "2"\nColumn 1,   name: B, type: UInt8, ERROR: text "a<LINE FEED>b,3<LINE FEED>4,4<LINE FEED>" is not like UInt8	2,a
-\N	data	3	Row 3:\nColumn 0,   name: A, type: UInt8, ERROR: text "b,3<LINE FEED>4,4<LINE FEED>5," is not like UInt8	b,3
-\N	data	5	Row 5:\nColumn 0,   name: A, type: UInt8, parsed text: "5"\nColumn 1,   name: B, type: UInt8, ERROR: text "c<LINE FEED>6,6<LINE FEED>" is not like UInt8	5,c

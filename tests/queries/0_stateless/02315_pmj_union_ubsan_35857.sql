@@ -1,3 +1,4 @@
+-- Tags: no-backward-compatibility-check
 
 SET join_algorithm = 'partial_merge';
 

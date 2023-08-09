@@ -48,11 +48,7 @@ inline auto scaleMultiplier(UInt32 scale)
 
 /** Components of DecimalX value:
  * whole - represents whole part of decimal, can be negative or positive.
- * fractional - for fractional part of decimal.
- *
- *  0.123 represents  0 /  0.123
- * -0.123 represents  0 / -0.123
- * -1.123 represents -1 /  0.123
+ * fractional - for fractional part of decimal, always positive.
  */
 template <typename DecimalType>
 struct DecimalComponents
@@ -80,7 +76,7 @@ struct DataTypeDecimalTrait
     T scaleFactorFor(const DataTypeDecimalTrait<U> & x, bool) const
     {
         if (scale < x.scale)
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Decimal result's scale is less than argument's one");
+            throw Exception("Decimal result's scale is less than argument's one", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         const UInt32 scale_delta = scale - x.scale; /// scale_delta >= 0
         return DecimalUtils::scaleMultiplier<typename T::NativeType>(scale_delta);
     }
@@ -109,7 +105,7 @@ inline bool decimalFromComponentsWithMultiplierImpl(
     if (common::mulOverflow(whole, scale_multiplier, whole_scaled))
     {
         if constexpr (throw_on_error)
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
         return false;
     }
 
@@ -117,7 +113,7 @@ inline bool decimalFromComponentsWithMultiplierImpl(
     if (common::addOverflow(whole_scaled, fractional_sign * (fractional % scale_multiplier), value))
     {
         if constexpr (throw_on_error)
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
         return false;
     }
 
@@ -245,7 +241,7 @@ inline DecimalComponents<DecimalType> split(const DecimalType & decimal, UInt32 
  * If scale is to big, result is undefined.
  */
 template <typename DecimalType>
-inline typename DecimalType::NativeType getWholePart(const DecimalType & decimal, UInt32 scale)
+inline typename DecimalType::NativeType getWholePart(const DecimalType & decimal, size_t scale)
 {
     if (scale == 0)
         return decimal.value;
@@ -277,7 +273,7 @@ inline typename DecimalType::NativeType getFractionalPartWithScaleMultiplier(
  * If scale is to big, result is undefined.
  */
 template <typename DecimalType>
-inline typename DecimalType::NativeType getFractionalPart(const DecimalType & decimal, UInt32 scale)
+inline typename DecimalType::NativeType getFractionalPart(const DecimalType & decimal, size_t scale)
 {
     if (scale == 0)
         return 0;
@@ -287,7 +283,7 @@ inline typename DecimalType::NativeType getFractionalPart(const DecimalType & de
 
 /// Decimal to integer/float conversion
 template <typename To, typename DecimalType, typename ReturnType>
-ReturnType convertToImpl(const DecimalType & decimal, UInt32 scale, To & result)
+ReturnType convertToImpl(const DecimalType & decimal, size_t scale, To & result)
 {
     using DecimalNativeType = typename DecimalType::NativeType;
     static constexpr bool throw_exception = std::is_void_v<ReturnType>;
@@ -305,7 +301,7 @@ ReturnType convertToImpl(const DecimalType & decimal, UInt32 scale, To & result)
             if (whole < 0)
             {
                 if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Convert overflow");
+                    throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
                 else
                     return ReturnType(true);
             }
@@ -325,7 +321,7 @@ ReturnType convertToImpl(const DecimalType & decimal, UInt32 scale, To & result)
         if (whole < min_to || whole > max_to)
         {
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Convert overflow");
+                throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
             else
                 return ReturnType(true);
         }
@@ -338,7 +334,7 @@ ReturnType convertToImpl(const DecimalType & decimal, UInt32 scale, To & result)
 
 
 template <typename To, typename DecimalType>
-To convertTo(const DecimalType & decimal, UInt32 scale)
+To convertTo(const DecimalType & decimal, size_t scale)
 {
     To result;
     convertToImpl<To, DecimalType, void>(decimal, scale, result);
@@ -346,7 +342,7 @@ To convertTo(const DecimalType & decimal, UInt32 scale)
 }
 
 template <typename To, typename DecimalType>
-bool tryConvertTo(const DecimalType & decimal, UInt32 scale, To & result)
+bool tryConvertTo(const DecimalType & decimal, size_t scale, To & result)
 {
     return convertToImpl<To, DecimalType, bool>(decimal, scale, result);
 }

@@ -1,3 +1,4 @@
+<?xml version="1.0"?>
 
 <clickhouse>
     <http_server_default_response>Default server response</http_server_default_response>

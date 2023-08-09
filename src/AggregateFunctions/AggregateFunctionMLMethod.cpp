@@ -34,20 +34,24 @@ namespace
         const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
     {
         if (parameters.size() > 4)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Aggregate function {} requires at most four parameters: "
-                "learning_rate, l2_regularization_coef, mini-batch size and weights_updater method", name);
+            throw Exception(
+                "Aggregate function " + name
+                    + " requires at most four parameters: learning_rate, l2_regularization_coef, mini-batch size and weights_updater "
+                      "method",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (argument_types.size() < 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Aggregate function {} requires at least two arguments: target and model's parameters", name);
+            throw Exception(
+                "Aggregate function " + name + " requires at least two arguments: target and model's parameters",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (size_t i = 0; i < argument_types.size(); ++i)
         {
             if (!isNativeNumber(argument_types[i]))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Argument {} of type {} must be numeric for aggregate function {}",
-                                i, argument_types[i]->getName(), name);
+                throw Exception(
+                    "Argument " + std::to_string(i) + " of type " + argument_types[i]->getName()
+                        + " must be numeric for aggregate function " + name,
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         /// Such default parameters were picked because they did good on some tests,
@@ -75,8 +79,8 @@ namespace
         {
             weights_updater_name = parameters[3].safeGet<String>();
             if (weights_updater_name != "SGD" && weights_updater_name != "Momentum" && weights_updater_name != "Nesterov" && weights_updater_name != "Adam")
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid parameter for weights updater. "
-                                "The only supported are 'SGD', 'Momentum' and 'Nesterov'");
+                throw Exception("Invalid parameter for weights updater. The only supported are 'SGD', 'Momentum' and 'Nesterov'",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         if constexpr (std::is_same_v<Method, FuncLinearRegression>)
@@ -247,8 +251,15 @@ void Adam::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
     if (adam_rhs.average_gradient.empty())
         return;
 
-    average_gradient.resize(adam_rhs.average_gradient.size(), Float64{0.0});
-    average_squared_gradient.resize(adam_rhs.average_squared_gradient.size(), Float64{0.0});
+    if (average_gradient.empty())
+    {
+        if (!average_squared_gradient.empty() ||
+                adam_rhs.average_gradient.size() != adam_rhs.average_squared_gradient.size())
+            throw Exception("Average_gradient and average_squared_gradient must have same size", ErrorCodes::LOGICAL_ERROR);
+
+        average_gradient.resize(adam_rhs.average_gradient.size(), Float64{0.0});
+        average_squared_gradient.resize(adam_rhs.average_squared_gradient.size(), Float64{0.0});
+    }
 
     for (size_t i = 0; i < average_gradient.size(); ++i)
     {
@@ -261,8 +272,14 @@ void Adam::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
 
 void Adam::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient)
 {
-    average_gradient.resize(batch_gradient.size(), Float64{0.0});
-    average_squared_gradient.resize(batch_gradient.size(), Float64{0.0});
+    if (average_gradient.empty())
+    {
+        if (!average_squared_gradient.empty())
+            throw Exception("Average_gradient and average_squared_gradient must have same size", ErrorCodes::LOGICAL_ERROR);
+
+        average_gradient.resize(batch_gradient.size(), Float64{0.0});
+        average_squared_gradient.resize(batch_gradient.size(), Float64{0.0});
+    }
 
     for (size_t i = 0; i != average_gradient.size(); ++i)
     {
@@ -315,7 +332,8 @@ void Nesterov::write(WriteBuffer & buf) const
 void Nesterov::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
 {
     const auto & nesterov_rhs = static_cast<const Nesterov &>(rhs);
-    accumulated_gradient.resize(nesterov_rhs.accumulated_gradient.size(), Float64{0.0});
+    if (accumulated_gradient.empty())
+        accumulated_gradient.resize(nesterov_rhs.accumulated_gradient.size(), Float64{0.0});
 
     for (size_t i = 0; i < accumulated_gradient.size(); ++i)
     {
@@ -325,7 +343,10 @@ void Nesterov::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac
 
 void Nesterov::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient)
 {
-    accumulated_gradient.resize(batch_gradient.size(), Float64{0.0});
+    if (accumulated_gradient.empty())
+    {
+        accumulated_gradient.resize(batch_gradient.size(), Float64{0.0});
+    }
 
     for (size_t i = 0; i < batch_gradient.size(); ++i)
     {
@@ -385,7 +406,10 @@ void Momentum::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac
 void Momentum::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient)
 {
     /// batch_size is already checked to be greater than 0
-    accumulated_gradient.resize(batch_gradient.size(), Float64{0.0});
+    if (accumulated_gradient.empty())
+    {
+        accumulated_gradient.resize(batch_gradient.size(), Float64{0.0});
+    }
 
     for (size_t i = 0; i < batch_gradient.size(); ++i)
     {
@@ -436,9 +460,9 @@ void LogisticRegression::predict(
     size_t rows_num = arguments.front().column->size();
 
     if (offset > rows_num || offset + limit > rows_num)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid offset and limit for LogisticRegression::predict. "
-                        "Block has {} rows, but offset is {} and limit is {}",
-                        rows_num, offset, toString(limit));
+        throw Exception("Invalid offset and limit for LogisticRegression::predict. "
+                        "Block has " + toString(rows_num) + " rows, but offset is " + toString(offset) +
+                        " and limit is " + toString(limit), ErrorCodes::LOGICAL_ERROR);
 
     std::vector<Float64> results(limit, bias);
 
@@ -447,7 +471,7 @@ void LogisticRegression::predict(
         const ColumnWithTypeAndName & cur_col = arguments[i];
 
         if (!isNativeNumber(cur_col.type))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prediction arguments must have numeric type");
+            throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
 
         const auto & features_column = cur_col.column;
 
@@ -503,15 +527,15 @@ void LinearRegression::predict(
 {
     if (weights.size() + 1 != arguments.size())
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "In predict function number of arguments differs from the size of weights vector");
+        throw Exception("In predict function number of arguments differs from the size of weights vector", ErrorCodes::LOGICAL_ERROR);
     }
 
     size_t rows_num = arguments.front().column->size();
 
     if (offset > rows_num || offset + limit > rows_num)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid offset and limit for LogisticRegression::predict. "
-                        "Block has {} rows, but offset is {} and limit is {}",
-                        rows_num, offset, toString(limit));
+        throw Exception("Invalid offset and limit for LogisticRegression::predict. "
+                        "Block has " + toString(rows_num) + " rows, but offset is " + toString(offset) +
+                        " and limit is " + toString(limit), ErrorCodes::LOGICAL_ERROR);
 
     std::vector<Float64> results(limit, bias);
 
@@ -520,12 +544,12 @@ void LinearRegression::predict(
         const ColumnWithTypeAndName & cur_col = arguments[i];
 
         if (!isNativeNumber(cur_col.type))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prediction arguments must have numeric type");
+            throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
 
         auto features_column = cur_col.column;
 
         if (!features_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpectedly cannot dynamically cast features column {}", i);
+            throw Exception("Unexpectedly cannot dynamically cast features column " + std::to_string(i), ErrorCodes::LOGICAL_ERROR);
 
         for (size_t row_num = 0; row_num < limit; ++row_num)
             results[row_num] += weights[i - 1] * features_column->getFloat64(row_num + offset);

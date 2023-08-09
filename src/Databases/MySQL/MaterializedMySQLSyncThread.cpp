@@ -1,11 +1,8 @@
-#include "Common/logger_useful.h"
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
-#include <Databases/MySQL/tryParseTableIDFromDDL.h>
-#include <Databases/MySQL/tryQuoteUnrecognizedTokens.h>
 #include <cstdlib>
 #include <random>
 #include <string_view>
@@ -27,6 +24,7 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <base/sleep.h>
+#include <base/bit_cast.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Parsers/CommonParsers.h>
@@ -62,7 +60,7 @@ static ContextMutablePtr createQueryContext(ContextPtr context)
     query_context->setSettings(new_query_settings);
     query_context->setInternalQuery(true);
 
-    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+    query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
     query_context->setCurrentQueryId(""); // generate random query_id
     return query_context;
 }
@@ -150,8 +148,63 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
                 first = false;
         }
 
-        throw Exception::createDeprecated(error_message.str(), ErrorCodes::ILLEGAL_MYSQL_VARIABLE);
+        throw Exception(error_message.str(), ErrorCodes::ILLEGAL_MYSQL_VARIABLE);
     }
+}
+
+static std::tuple<String, String> tryExtractTableNameFromDDL(const String & ddl)
+{
+    String table_name;
+    String database_name;
+    if (ddl.empty()) return std::make_tuple(database_name, table_name);
+
+    bool parse_failed = false;
+    Tokens tokens(ddl.data(), ddl.data() + ddl.size());
+    IParser::Pos pos(tokens, 0);
+    Expected expected;
+    ASTPtr res;
+    ASTPtr table;
+    if (ParserKeyword("CREATE TEMPORARY TABLE").ignore(pos, expected) || ParserKeyword("CREATE TABLE").ignore(pos, expected))
+    {
+        ParserKeyword("IF NOT EXISTS").ignore(pos, expected);
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
+    }
+    else if (ParserKeyword("ALTER TABLE").ignore(pos, expected))
+    {
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
+    }
+    else if (ParserKeyword("DROP TABLE").ignore(pos, expected) || ParserKeyword("DROP TEMPORARY TABLE").ignore(pos, expected))
+    {
+        ParserKeyword("IF EXISTS").ignore(pos, expected);
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
+    }
+    else if (ParserKeyword("TRUNCATE").ignore(pos, expected))
+    {
+        ParserKeyword("TABLE").ignore(pos, expected);
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
+    }
+    else if (ParserKeyword("RENAME TABLE").ignore(pos, expected))
+    {
+        if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+            parse_failed = true;
+    }
+    else
+    {
+        parse_failed = true;
+    }
+    if (!parse_failed)
+    {
+        if (auto table_id = table->as<ASTTableIdentifier>()->getTableId())
+        {
+            database_name = table_id.database_name;
+            table_name = table_id.table_name;
+        }
+    }
+    return std::make_tuple(database_name, table_name);
 }
 
 MaterializedMySQLSyncThread::MaterializedMySQLSyncThread(
@@ -210,13 +263,9 @@ void MaterializedMySQLSyncThread::synchronization()
 
             try
             {
-                UInt64 elapsed_ms = watch.elapsedMilliseconds();
-                if (elapsed_ms < max_flush_time)
-                {
-                    BinlogEventPtr binlog_event = client.readOneBinlogEvent(max_flush_time - elapsed_ms);
-                    if (binlog_event)
-                        onEvent(buffers, binlog_event, metadata);
-                }
+                BinlogEventPtr binlog_event = client.readOneBinlogEvent(std::max(UInt64(1), max_flush_time - watch.elapsedMilliseconds()));
+                if (binlog_event)
+                    onEvent(buffers, binlog_event, metadata);
             }
             catch (const Exception & e)
             {
@@ -274,11 +323,12 @@ void MaterializedMySQLSyncThread::assertMySQLAvailable()
     {
         if (e.errnum() == ER_ACCESS_DENIED_ERROR
             || e.errnum() == ER_DBACCESS_DENIED_ERROR)
-            throw Exception(ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR, "MySQL SYNC USER ACCESS ERR: "
-                            "mysql sync user needs at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
-                            "and SELECT PRIVILEGE on Database {}", mysql_database_name);
+            throw Exception("MySQL SYNC USER ACCESS ERR: mysql sync user needs "
+                            "at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
+                            "and SELECT PRIVILEGE on Database " + mysql_database_name
+                            , ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR);
         else if (e.errnum() == ER_BAD_DB_ERROR)
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Unknown database '{}' on MySQL", mysql_database_name);
+            throw Exception("Unknown database '" + mysql_database_name + "' on MySQL", ErrorCodes::UNKNOWN_DATABASE);
         else
             throw;
     }
@@ -344,8 +394,9 @@ static inline String rewriteMysqlQueryColumn(mysqlxx::Pool::Entry & connection, 
                     { std::make_shared<DataTypeString>(),   "column_type" }
             };
 
-    String query = "SELECT COLUMN_NAME AS column_name, COLUMN_TYPE AS column_type FROM INFORMATION_SCHEMA.COLUMNS"
-                   " WHERE TABLE_SCHEMA = '" + database_name + "' AND TABLE_NAME = '" + table_name + "' ORDER BY ORDINAL_POSITION";
+    const String & query =  "SELECT COLUMN_NAME AS column_name, COLUMN_TYPE AS column_type FROM INFORMATION_SCHEMA.COLUMNS"
+                            " WHERE TABLE_SCHEMA = '"  + backQuoteIfNeed(database_name) +
+                            "' AND TABLE_NAME = '" + backQuoteIfNeed(table_name) +  "' ORDER BY ORDINAL_POSITION";
 
     StreamSettings mysql_input_stream_settings(global_settings, false, true);
     auto mysql_source = std::make_unique<MySQLSource>(connection, query, tables_columns_sample_block, mysql_input_stream_settings);
@@ -427,9 +478,8 @@ static inline UInt32 randomNumber()
 {
     std::mt19937 rng;
     rng.seed(std::random_device()());
-    std::uniform_int_distribution<std::mt19937::result_type> dist6(
-        std::numeric_limits<UInt32>::min(), std::numeric_limits<UInt32>::max());
-    return static_cast<UInt32>(dist6(rng));
+    std::uniform_int_distribution<std::mt19937::result_type> dist6(std::numeric_limits<UInt32>::min(), std::numeric_limits<UInt32>::max());
+    return dist6(rng);
 }
 
 bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & metadata)
@@ -445,7 +495,7 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
             if (connection.isNull())
             {
                 if (settings->max_wait_time_when_mysql_unavailable < 0)
-                    throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unable to connect to MySQL");
+                    throw Exception("Unable to connect to MySQL", ErrorCodes::UNKNOWN_EXCEPTION);
                 sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
                 continue;
             }
@@ -500,10 +550,7 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
             {
                 throw;
             }
-            catch (const mysqlxx::ConnectionFailed & ex)
-            {
-                LOG_TRACE(log, "Connection to MySQL failed {}", ex.displayText());
-            }
+            catch (const mysqlxx::ConnectionFailed &) {}
             catch (const mysqlxx::BadQuery & e)
             {
                 // Lost connection to MySQL server during query
@@ -586,7 +633,7 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Tuple & row_data = rows_data[index].get<const Tuple &>();
+                const Tuple & row_data = DB::get<const Tuple &>(rows_data[index]);
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
@@ -626,21 +673,21 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Tuple & row_data = rows_data[index].get<const Tuple &>();
+                const Tuple & row_data = DB::get<const Tuple &>(rows_data[index]);
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
                 {
                     if (value.getType() == Field::Types::UInt64)
-                        casted_int32_column->insertValue(static_cast<Int32>(value.get<Int32>()));
+                        casted_int32_column->insertValue(value.get<Int32>());
                     else if (value.getType() == Field::Types::Int64)
                     {
                         /// For MYSQL_TYPE_INT24
-                        const Int32 & num = static_cast<Int32>(value.get<Int32>());
+                        const Int32 & num = value.get<Int32>();
                         casted_int32_column->insertValue(num & 0x800000 ? num | 0xFF000000 : num);
                     }
                     else
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: it is a bug.");
+                        throw Exception("LOGICAL ERROR: it is a bug.", ErrorCodes::LOGICAL_ERROR);
                 }
             }
         }
@@ -648,7 +695,7 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Tuple & row_data = rows_data[index].get<const Tuple &>();
+                const Tuple & row_data = DB::get<const Tuple &>(rows_data[index]);
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
@@ -662,7 +709,7 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Tuple & row_data = rows_data[index].get<const Tuple &>();
+                const Tuple & row_data = DB::get<const Tuple &>(rows_data[index]);
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
@@ -673,7 +720,7 @@ static void writeFieldsToColumn(
             }
         }
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported data type from MySQL.");
+            throw Exception("Unsupported data type from MySQL.", ErrorCodes::NOT_IMPLEMENTED);
     }
 }
 
@@ -705,7 +752,7 @@ static inline bool differenceSortingKeys(const Tuple & row_old_data, const Tuple
 static inline size_t onUpdateData(const Row & rows_data, Block & buffer, size_t version, const std::vector<size_t> & sorting_columns_index)
 {
     if (rows_data.size() % 2 != 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: It is a bug.");
+        throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
     size_t prev_bytes = buffer.bytes();
     std::vector<bool> writeable_rows_mask(rows_data.size());
@@ -714,7 +761,7 @@ static inline size_t onUpdateData(const Row & rows_data, Block & buffer, size_t 
     {
         writeable_rows_mask[index + 1] = true;
         writeable_rows_mask[index] = differenceSortingKeys(
-            rows_data[index].get<const Tuple &>(), rows_data[index + 1].get<const Tuple &>(), sorting_columns_index);
+            DB::get<const Tuple &>(rows_data[index]), DB::get<const Tuple &>(rows_data[index + 1]), sorting_columns_index);
     }
 
     for (size_t column = 0; column < buffer.columns() - 2; ++column)
@@ -816,15 +863,16 @@ void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_even
         CurrentThread::QueryScope query_scope(query_context);
 
         String query = query_event.query;
-        tryQuoteUnrecognizedTokens(query, query);
         if (!materialized_tables_list.empty())
         {
-            auto table_id = tryParseTableIDFromDDL(query, query_event.schema);
-            if (!table_id.table_name.empty())
+             auto [ddl_database_name, ddl_table_name] = tryExtractTableNameFromDDL(query_event.query);
+
+            if (!ddl_table_name.empty())
             {
-                if (table_id.database_name != mysql_database_name || !materialized_tables_list.contains(table_id.table_name))
+                ddl_database_name =  ddl_database_name.empty() ? query_event.schema: ddl_database_name;
+                if (ddl_database_name != mysql_database_name || !materialized_tables_list.contains(ddl_table_name))
                 {
-                    LOG_DEBUG(log, "Skip MySQL DDL for {}.{}:\n{}", table_id.database_name, table_id.table_name, query);
+                    LOG_DEBUG(log, "Skip MySQL DDL: \n {}", query_event.query);
                     return;
                 }
             }

@@ -5,21 +5,6 @@ SELECT
     y,
     z
 FROM prewhere_move_select_final
-PREWHERE x > 100
-
-SELECT
-    x,
-    y,
-    z
-FROM prewhere_move_select_final
-FINAL
-PREWHERE x > 100
-
-SELECT
-    x,
-    y,
-    z
-FROM prewhere_move_select_final
 PREWHERE y > 100
 
 SELECT
@@ -29,21 +14,6 @@ SELECT
 FROM prewhere_move_select_final
 FINAL
 PREWHERE y > 100
-
-SELECT
-    x,
-    y,
-    z
-FROM prewhere_move_select_final
-PREWHERE (x + y) > 100
-
-SELECT
-    x,
-    y,
-    z
-FROM prewhere_move_select_final
-FINAL
-PREWHERE (x + y) > 100
 
 SELECT
     x,
@@ -61,24 +31,6 @@ FROM prewhere_move_select_final
 FINAL
 PREWHERE y > 100
 WHERE (y > 100) AND (z > 400)
-
-SELECT
-    x,
-    y,
-    z
-FROM prewhere_move_select_final
-FINAL
-PREWHERE x > 50
-WHERE (x > 50) AND (z > 400)
-
-SELECT
-    x,
-    y,
-    z
-FROM prewhere_move_select_final
-FINAL
-PREWHERE (x + y) > 50
-WHERE ((x + y) > 50) AND (z > 400)
 
 optimize_move_to_prewhere_if_final = 0
 

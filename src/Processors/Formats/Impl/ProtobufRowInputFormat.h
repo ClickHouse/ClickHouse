@@ -1,12 +1,11 @@
 #pragma once
 
-#include "config.h"
+#include "config_formats.h"
 
 #if USE_PROTOBUF
 #   include <Processors/Formats/IRowInputFormat.h>
 #   include <Processors/Formats/ISchemaReader.h>
 #   include <Formats/FormatSchemaInfo.h>
-#   include <google/protobuf/descriptor.h>
 
 namespace DB
 {
@@ -33,29 +32,20 @@ public:
         ReadBuffer & in_,
         const Block & header_,
         const Params & params_,
-        const ProtobufSchemaInfo & schema_info_,
+        const FormatSchemaInfo & schema_info_,
         bool with_length_delimiter_,
         bool flatten_google_wrappers_);
 
     String getName() const override { return "ProtobufRowInputFormat"; }
-
-    void setReadBuffer(ReadBuffer & in_) override;
-    void resetParser() override;
 
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & row_read_extension) override;
     bool allowSyncAfterError() const override;
     void syncAfterError() override;
 
-    void createReaderAndSerializer();
-
     std::unique_ptr<ProtobufReader> reader;
     std::vector<size_t> missing_column_indices;
     std::unique_ptr<ProtobufSerializer> serializer;
-
-    const google::protobuf::Descriptor * message_descriptor;
-    bool with_length_delimiter;
-    bool flatten_google_wrappers;
 };
 
 class ProtobufSchemaReader : public IExternalSchemaReader

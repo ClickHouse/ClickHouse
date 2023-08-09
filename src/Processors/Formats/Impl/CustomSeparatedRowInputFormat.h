@@ -2,7 +2,6 @@
 
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 #include <Formats/ParsedTemplateFormatString.h>
-#include <Formats/SchemaInferenceUtils.h>
 #include <IO/PeekableReadBuffer.h>
 #include <IO/ReadHelpers.h>
 
@@ -31,7 +30,6 @@ private:
 
     bool allowSyncAfterError() const override;
     void syncAfterError() override;
-    void readPrefix() override;
 
     std::unique_ptr<PeekableReadBuffer> buf;
     bool ignore_spaces;
@@ -68,35 +66,23 @@ public:
 
     std::vector<String> readNames() override { return readHeaderRow(); }
     std::vector<String> readTypes() override { return readHeaderRow(); }
-    std::vector<String> readHeaderRow() {return readRowImpl<ReadFieldMode::AS_STRING>(); }
+    std::vector<String> readHeaderRow() {return readRowImpl<true>(); }
 
-    std::vector<String> readRow() { return readRowImpl<ReadFieldMode::AS_FIELD>(); }
-
-    std::vector<String> readRowForHeaderDetection() override { return readRowImpl<ReadFieldMode::AS_POSSIBLE_STRING>(); }
+    std::vector<String> readRow() { return readRowImpl<false>(); }
 
     bool checkEndOfRow();
     bool checkForSuffixImpl(bool check_eof);
-    inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf, true); }
+    inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf); }
 
-    EscapingRule getEscapingRule() const override { return format_settings.custom.escaping_rule; }
+    EscapingRule getEscapingRule() { return format_settings.custom.escaping_rule; }
 
     void setReadBuffer(ReadBuffer & in_) override;
-
 private:
-    enum class ReadFieldMode : uint8_t
-    {
-        AS_STRING,
-        AS_FIELD,
-        AS_POSSIBLE_STRING,
-    };
-
-    template <ReadFieldMode mode>
+    template <bool is_header>
     std::vector<String> readRowImpl();
 
-    template <ReadFieldMode mode>
-    String readFieldIntoString(bool is_first, bool is_last, bool is_unknown);
-
-    void updateFormatSettings(bool is_last_column);
+    template <bool read_string>
+    String readFieldIntoString(bool is_first);
 
     PeekableReadBuffer * buf;
     bool ignore_spaces;
@@ -109,17 +95,13 @@ public:
     CustomSeparatedSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_setting_);
 
 private:
-    DataTypes readRowAndGetDataTypesImpl() override;
+    DataTypes readRowAndGetDataTypes() override;
 
-    std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() override;
-
-    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t) override;
 
     PeekableReadBuffer buf;
     CustomSeparatedFormatReader reader;
     bool first_row = true;
-    JSONInferenceInfo json_inference_info;
-    bool no_more_data = false;
 };
 
 }

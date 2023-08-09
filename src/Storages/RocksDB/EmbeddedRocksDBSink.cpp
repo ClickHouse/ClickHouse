@@ -2,7 +2,7 @@
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <rocksdb/utilities/db_ttl.h>
+#include <rocksdb/db.h>
 
 
 namespace DB
@@ -46,17 +46,17 @@ void EmbeddedRocksDBSink::consume(Chunk chunk)
         size_t idx = 0;
         for (const auto & elem : block)
         {
-            elem.type->getDefaultSerialization()->serializeBinary(*elem.column, i, idx == primary_key_pos ? wb_key : wb_value, {});
+            elem.type->getDefaultSerialization()->serializeBinary(*elem.column, i, idx == primary_key_pos ? wb_key : wb_value);
             ++idx;
         }
         status = batch.Put(wb_key.str(), wb_value.str());
         if (!status.ok())
-            throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
+            throw Exception("RocksDB write error: " + status.ToString(), ErrorCodes::ROCKSDB_ERROR);
     }
 
     status = storage.rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
     if (!status.ok())
-        throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
+        throw Exception("RocksDB write error: " + status.ToString(), ErrorCodes::ROCKSDB_ERROR);
 }
 
 }

@@ -1,5 +1,4 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Storages/StorageView.h>
@@ -22,11 +21,6 @@ const ASTSelectWithUnionQuery & TableFunctionView::getSelectQuery() const
     return *create.select;
 }
 
-std::vector<size_t> TableFunctionView::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
-{
-    return {0};
-}
-
 void TableFunctionView::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
 {
     const auto * function = ast_function->as<ASTFunction>();
@@ -38,29 +32,22 @@ void TableFunctionView::parseArguments(const ASTPtr & ast_function, ContextPtr /
             return;
         }
     }
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' requires a query argument.", getName());
+    throw Exception("Table function '" + getName() + "' requires a query argument.", ErrorCodes::BAD_ARGUMENTS);
 }
 
-ColumnsDescription TableFunctionView::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionView::getActualTableStructure(ContextPtr context) const
 {
     assert(create.select);
     assert(create.children.size() == 1);
     assert(create.children[0]->as<ASTSelectWithUnionQuery>());
-
-    Block sample_block;
-
-    if (context->getSettingsRef().allow_experimental_analyzer)
-        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
-    else
-        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
-
-    return ColumnsDescription(sample_block.getNamesAndTypesList());
+    auto sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
+    return ColumnsDescription(sample.getNamesAndTypesList());
 }
 
 StoragePtr TableFunctionView::executeImpl(
-    const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
+    const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    auto columns = getActualTableStructure(context, is_insert_query);
+    auto columns = getActualTableStructure(context);
     auto res = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), create, columns, "");
     res->startup();
     return res;
@@ -68,7 +55,7 @@ StoragePtr TableFunctionView::executeImpl(
 
 void registerTableFunctionView(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionView>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionView>();
 }
 
 }
