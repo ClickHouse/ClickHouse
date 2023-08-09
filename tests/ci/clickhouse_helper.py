@@ -47,45 +47,9 @@ class ClickHouseHelper:
                 params[k] = v
 
         with open(file, "rb") as data_fd:
-            for i in range(5):
-                try:
-                    response = requests.post(
-                        url, params=params, data=data_fd, headers=auth
-                    )
-                except Exception as e:
-                    error = f"Received exception while sending data to {url} on {i} attempt: {e}"
-                    logging.warning(error)
-                    continue
-
-                logging.info("Response content '%s'", response.content)
-
-                if response.ok:
-                    break
-
-                error = (
-                    "Cannot insert data into clickhouse at try "
-                    + str(i)
-                    + ": HTTP code "
-                    + str(response.status_code)
-                    + ": '"
-                    + str(response.text)
-                    + "'"
-                )
-
-                if response.status_code >= 500:
-                    # A retriable error
-                    time.sleep(1)
-                    continue
-
-                logging.info(
-                    "Request headers '%s', body '%s'",
-                    response.request.headers,
-                    response.request.body,
-                )
-
-                raise InsertException(error)
-            else:
-                raise InsertException(error)
+            ClickHouseHelper._insert_post(
+                url, params=params, data=data_fd, headers=auth
+            )
 
     @staticmethod
     def insert_json_str(url, auth, db, table, json_str):
@@ -95,12 +59,18 @@ class ClickHouseHelper:
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
         }
+        ClickHouseHelper._insert_post(url, params=params, data=json_str, headers=auth)
+
+    @staticmethod
+    def _insert_post(*args, **kwargs):
+        url = ""
+        if args:
+            url = args[0]
+        url = kwargs.get("url", url)
 
         for i in range(5):
             try:
-                response = requests.post(
-                    url, params=params, data=json_str, headers=auth
-                )
+                response = requests.post(*args, **kwargs)
             except Exception as e:
                 error = f"Received exception while sending data to {url} on {i} attempt: {e}"
                 logging.warning(error)
@@ -112,13 +82,8 @@ class ClickHouseHelper:
                 break
 
             error = (
-                "Cannot insert data into clickhouse at try "
-                + str(i)
-                + ": HTTP code "
-                + str(response.status_code)
-                + ": '"
-                + str(response.text)
-                + "'"
+                f"Cannot insert data into clickhouse at try {i}: HTTP code "
+                f"{response.status_code}: '{response.text}'"
             )
 
             if response.status_code >= 500:
