@@ -66,7 +66,7 @@ protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
- 
+
     bool isCompression() const override { return false; }
     bool isGenericCompression() const override { return false; }
 
@@ -84,8 +84,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
- UInt32 CompressionCodecGCD::getMaxCompressedDataSize(UInt32 uncompressed_size) const override
- {
+ UInt32 CompressionCodecGCD::getMaxCompressedDataSize(UInt32 uncompressed_size) const
+{
     return uncompressed_size + 2;
 }
 
