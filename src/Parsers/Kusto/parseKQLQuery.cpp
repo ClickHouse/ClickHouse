@@ -20,6 +20,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+}
 namespace
 {
 
