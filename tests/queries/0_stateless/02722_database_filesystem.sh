@@ -40,32 +40,31 @@ ${CLICKHOUSE_LOCAL} -q "SELECT COUNT(*) FROM \"${tmp_dir}/tmp.csv\""
 #################
 echo "Test 2: check DatabaseFilesystem access rights and errors handling on server"
 # DATABASE_ACCESS_DENIED: Allows list files only inside user_files
-${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`../tmp.csv\`;" 2>&1| grep -F "Code: 481" > /dev/null && echo "OK" || echo 'FAIL' ||:
-${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`/tmp/tmp.csv\`;" 2>&1| grep -F "Code: 481" > /dev/null && echo "OK" || echo 'FAIL' ||:
+${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`../tmp.csv\`;" 2>&1 | tr '\n' ' ' | grep -oF "PATH_ACCESS_DENIED" > /dev/null && echo "OK" || echo 'FAIL' ||:
+${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`/tmp/tmp.csv\`;" 2>&1 | tr '\n' ' ' | grep -oF "PATH_ACCESS_DENIED" > /dev/null && echo "OK" || echo 'FAIL' ||:
 ${CLICKHOUSE_CLIENT} --multiline --multiquery --query """
 USE test1;
 SELECT COUNT(*) FROM \"../${tmp_dir}/tmp.csv\";
-""" 2>&1| grep -F "Code: 481" > /dev/null && echo "OK" || echo 'FAIL' ||:
-${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`../../../../../../tmp.csv\`;" 2>&1| grep -F "Code: 481" > /dev/null && echo "OK" || echo 'FAIL' ||:
+""" 2>&1 | tr '\n' ' ' | grep -oF "PATH_ACCESS_DENIED" > /dev/null && echo "OK" || echo 'FAIL' ||:
+${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`../../../../../../tmp.csv\`;" 2>&1 | tr '\n' ' ' | grep -oF "PATH_ACCESS_DENIED" > /dev/null && echo "OK" || echo 'FAIL' ||:
 
 # BAD_ARGUMENTS: path should be inside user_files
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 DROP DATABASE IF EXISTS test2;
 CREATE DATABASE test2 ENGINE = Filesystem('/tmp');
-""" 2>&1| grep -F "Code: 36" > /dev/null && echo "OK" || echo 'FAIL' ||:
+""" 2>&1 | tr '\n' ' ' | grep -oF -e "UNKNOWN_TABLE" -e "BAD_ARGUMENTS" > /dev/null && echo "OK" || echo 'FAIL' ||:
 
 # BAD_ARGUMENTS: .../user_files/relative_unknown_dir does not exists
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 DROP DATABASE IF EXISTS test2;
 CREATE DATABASE test2 ENGINE = Filesystem('relative_unknown_dir');
-""" 2>&1| grep -F "Code: 36" > /dev/null && echo "OK" || echo 'FAIL' ||:
+""" 2>&1 | tr '\n' ' ' | grep -oF -e "UNKNOWN_TABLE" -e "BAD_ARGUMENTS" > /dev/null && echo "OK" || echo 'FAIL' ||:
 
 # FILE_DOESNT_EXIST: unknown file
-${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`tmp2.csv\`;" 2>&1| grep -F "Code: 60" > /dev/null && echo "OK" || echo 'FAIL' ||:
+${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`tmp2.csv\`;" 2>&1 | tr '\n' ' ' | grep -oF -e "UNKNOWN_TABLE" -e "FILE_DOESNT_EXIST" > /dev/null && echo "OK" || echo 'FAIL' ||:
 
 # BAD_ARGUMENTS: Cannot determine the file format by it's extension
-${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`${unique_name}/tmp.myext\`;" 2>&1| grep -F "Code: 36" > /dev/null && echo "OK" || echo 'FAIL' ||:
-
+${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`${unique_name}/tmp.myext\`;" 2>&1 | tr '\n' ' ' | grep -oF -e "UNKNOWN_TABLE" -e "BAD_ARGUMENTS" > /dev/null && echo "OK" || echo 'FAIL' ||:
 # Clean
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE test1;"
 rm -rd $tmp_dir
