@@ -78,14 +78,11 @@ def run_docker_image_with_env(
     image_name: str,
     as_root: bool,
     output_dir: Path,
-    profile_dir: Path,
     env_variables: List[str],
     ch_root: Path,
     ccache_dir: Optional[Path],
 ):
     output_dir.mkdir(parents=True, exist_ok=True)
-    profile_dir.mkdir(parents=True, exist_ok=True)
-
     env_part = " -e ".join(env_variables)
     if env_part:
         env_part = " -e " + env_part
@@ -106,7 +103,7 @@ def run_docker_image_with_env(
 
     cmd = (
         f"docker run --network=host --user={user} --rm {ccache_mount}"
-        f"--volume={output_dir}:/output --volume={ch_root}:/build --volume={profile_dir}:/profile {env_part} "
+        f"--volume={output_dir}:/output --volume={ch_root}:/build {env_part} "
         f"{interactive} {image_name}"
     )
 
@@ -364,7 +361,6 @@ def parse_args() -> argparse.Namespace:
         help="ClickHouse git repository",
     )
     parser.add_argument("--output-dir", type=dir_name, required=True)
-    parser.add_argument("--profile-dir", type=dir_name, required=True)
     parser.add_argument("--debug-build", action="store_true")
 
     parser.add_argument(
@@ -492,7 +488,6 @@ def main():
         image_with_version,
         args.as_root,
         args.output_dir,
-        args.profile_dir,
         env_prepared,
         ch_root,
         args.ccache_dir,
