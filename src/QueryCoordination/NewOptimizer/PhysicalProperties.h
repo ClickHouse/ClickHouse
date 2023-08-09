@@ -17,6 +17,7 @@ public:
         Serial = 3, /// exchange merge
         Broadcast = 4,
         Hash = 5,
+        Gather = 6,
     };
 
 
