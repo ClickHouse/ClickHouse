@@ -27,10 +27,7 @@ proto_dir = os.path.join(SCRIPT_DIR, "./protos")
 gen_dir = os.path.join(SCRIPT_DIR, "./_gen")
 os.makedirs(gen_dir, exist_ok=True)
 run_and_check(
-    "python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} \
-    {proto_dir}/clickhouse_grpc.proto".format(
-        proto_dir=proto_dir, gen_dir=gen_dir
-    ),
+    f"python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} {proto_dir}/clickhouse_grpc.proto",
     shell=True,
 )
 
@@ -51,7 +48,12 @@ instance = cluster.add_instance(
         "configs/server.key",
     ],
     user_configs=["configs/users.xml"],
-    env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
+    env_variables={
+        "UBSAN_OPTIONS": "print_stacktrace=1",
+        # Bug in TSAN reproduces in this test https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
+        "TSAN_OPTIONS": "report_atomic_races=0 "
+        + os.getenv("TSAN_OPTIONS", default=""),
+    },
 )
 
 
