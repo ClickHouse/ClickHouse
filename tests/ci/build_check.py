@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from pathlib import Path
 from typing import List, Tuple
 import subprocess
 import logging
@@ -53,7 +54,7 @@ def _can_export_binaries(build_config: BuildConfig) -> bool:
 def get_packager_cmd(
     build_config: BuildConfig,
     packager_path: str,
-    output_path: str,
+    output_path: Path,
     profile_path: str,
     build_version: str,
     image_version: str,
@@ -95,13 +96,13 @@ def get_packager_cmd(
 
 
 def build_clickhouse(
-    packager_cmd: str, logs_path: str, build_output_path: str
-) -> Tuple[str, bool]:
-    build_log_path = os.path.join(logs_path, BUILD_LOG_NAME)
+    packager_cmd: str, logs_path: Path, build_output_path: Path
+) -> Tuple[Path, bool]:
+    build_log_path = logs_path / BUILD_LOG_NAME
     success = False
     with TeePopen(packager_cmd, build_log_path) as process:
         retcode = process.wait()
-        if os.path.exists(build_output_path):
+        if build_output_path.exists():
             build_results = os.listdir(build_output_path)
         else:
             build_results = []
@@ -222,7 +223,7 @@ def upload_master_static_binaries(
     pr_info: PRInfo,
     build_config: BuildConfig,
     s3_helper: S3Helper,
-    build_output_path: str,
+    build_output_path: Path,
 ) -> None:
     """Upload binary artifacts to a static S3 links"""
     static_binary_name = build_config.static_binary_name
@@ -234,7 +235,7 @@ def upload_master_static_binaries(
         return
 
     s3_path = "/".join((pr_info.base_ref, static_binary_name, "clickhouse"))
-    binary = os.path.join(build_output_path, "clickhouse")
+    binary = build_output_path / "clickhouse"
     url = s3_helper.upload_build_file_to_s3(binary, s3_path)
     print(f"::notice ::Binary static URL: {url}")
 
@@ -247,8 +248,8 @@ def main():
 
     build_config = CI_CONFIG.build_config[build_name]
 
-    if not os.path.exists(TEMP_PATH):
-        os.makedirs(TEMP_PATH)
+    temp_path = Path(TEMP_PATH)
+    os.makedirs(temp_path, exist_ok=True)
 
     pr_info = PRInfo()
 
@@ -287,9 +288,8 @@ def main():
 
     logging.info("Build short name %s", build_name)
 
-    build_output_path = os.path.join(TEMP_PATH, build_name)
-    if not os.path.exists(build_output_path):
-        os.makedirs(build_output_path)
+    build_output_path = temp_path / build_name
+    os.makedirs(build_output_path, exist_ok=True)
 
     build_profile_path = os.path.join(TEMP_PATH, f"{build_name}_profile")
     if not os.path.exists(build_profile_path):
@@ -330,8 +330,8 @@ def main():
 
     # FIXME performance
     performance_urls = []
-    performance_path = os.path.join(build_output_path, "performance.tar.zst")
-    if os.path.exists(performance_path):
+    performance_path = build_output_path / "performance.tar.zst"
+    if performance_path.exists():
         performance_urls.append(
             s3_helper.upload_build_file_to_s3(performance_path, s3_performance_path)
         )
@@ -354,9 +354,9 @@ def main():
 
     print("::notice ::Build URLs: {}".format("\n".join(build_urls)))
 
-    if os.path.exists(log_path):
+    if log_path.exists():
         log_url = s3_helper.upload_build_file_to_s3(
-            log_path, s3_path_prefix + "/" + os.path.basename(log_path)
+            log_path, s3_path_prefix + "/" + log_path.name
         )
         logging.info("Log url %s", log_url)
     else:
