@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 FILE_DIR=$CLICKHOUSE_TEST_UNIQUE_NAME
 mkdir -p $FILE_DIR
 
-$CLICKHOUSE_LOCAL -q "select * from numbers(100000) format Parquet" > $FILE_DIR/data.parquet
+$CLICKHOUSE_LOCAL -q "select * from numbers(100000) format Native" > $FILE_DIR/data.native
 $CLICKHOUSE_LOCAL -q "select * from numbers(100000) format CSV" > $FILE_DIR/data.csv
 $CLICKHOUSE_LOCAL -q "select * from numbers(100000) format JSONEachRow" > $FILE_DIR/data.jsonl
 
