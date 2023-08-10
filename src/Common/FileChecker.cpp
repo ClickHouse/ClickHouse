@@ -82,33 +82,35 @@ size_t FileChecker::getTotalSize() const
 }
 
 
-CheckResults FileChecker::check() const
+FileChecker::DataValidationTasksPtr FileChecker::getDataValidationTasks()
 {
-    if (map.empty())
-        return {};
+    return std::make_unique<DataValidationTasks>(map);
+}
 
-    CheckResults results;
-
-    for (const auto & name_size : map)
+CheckResult FileChecker::checkNextEntry(DataValidationTasksPtr & check_data_tasks, bool & has_nothing_to_do) const
+{
+    String name;
+    size_t expected_size;
+    bool is_finished = check_data_tasks->next(name, expected_size);
+    if (is_finished)
     {
-        const String & name = name_size.first;
-        String path = parentPath(files_info_path) + name;
-        bool exists = fileReallyExists(path);
-        auto real_size = exists ? getRealFileSize(path) : 0;  /// No race condition assuming no one else is working with these files.
-
-        if (real_size != name_size.second)
-        {
-            String failure_message = exists
-                ? ("Size of " + path + " is wrong. Size is " + toString(real_size) + " but should be " + toString(name_size.second))
-                : ("File " + path + " doesn't exist");
-            results.emplace_back(name, false, failure_message);
-            break;
-        }
-
-        results.emplace_back(name, true, "");
+        has_nothing_to_do = true;
+        return {};
     }
 
-    return results;
+    String path = parentPath(files_info_path) + name;
+    bool exists = fileReallyExists(path);
+    auto real_size = exists ? getRealFileSize(path) : 0;  /// No race condition assuming no one else is working with these files.
+
+    if (real_size != expected_size)
+    {
+        String failure_message = exists
+            ? ("Size of " + path + " is wrong. Size is " + toString(real_size) + " but should be " + toString(expected_size))
+            : ("File " + path + " doesn't exist");
+        return CheckResult(name, false, failure_message);
+    }
+
+    return CheckResult(name, true, "");
 }
 
 void FileChecker::repair()
