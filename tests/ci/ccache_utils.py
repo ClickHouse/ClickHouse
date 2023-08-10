@@ -66,7 +66,7 @@ def get_ccache_if_not_exists(
             logging.info("Ccache already exists, removing it")
 
         logging.info("Decompressing cache to path %s", path_to_decompress)
-        decompress_fast(compressed_cache.as_posix(), path_to_decompress.as_posix())
+        decompress_fast(compressed_cache, path_to_decompress)
         logging.info("Files on path %s", os.listdir(path_to_decompress))
         cache_found = True
         ccache_pr = pr_number
@@ -82,15 +82,18 @@ def get_ccache_if_not_exists(
     return ccache_pr
 
 
-def upload_ccache(path_to_ccache_dir, s3_helper, current_pr_number, temp_path):
+def upload_ccache(
+    path_to_ccache_dir: Path,
+    s3_helper: S3Helper,
+    current_pr_number: int,
+    temp_path: Path,
+) -> None:
     logging.info("Uploading cache %s for pr %s", path_to_ccache_dir, current_pr_number)
-    ccache_name = os.path.basename(path_to_ccache_dir)
-    compressed_cache_path = os.path.join(temp_path, ccache_name + ".tar.zst")
+    ccache_name = path_to_ccache_dir.name
+    compressed_cache_path = temp_path / f"{ccache_name}.tar.zst"
     compress_fast(path_to_ccache_dir, compressed_cache_path)
 
-    s3_path = (
-        str(current_pr_number) + "/ccaches/" + os.path.basename(compressed_cache_path)
-    )
+    s3_path = f"{current_pr_number}/ccaches/{compressed_cache_path.name}"
     logging.info("Will upload %s to path %s", compressed_cache_path, s3_path)
     s3_helper.upload_build_file_to_s3(compressed_cache_path, s3_path)
     logging.info("Upload finished")
@@ -128,7 +131,7 @@ class CargoCache:
 
         # decompress the cache and check if the necessary directory is there
         self.directory.parent.mkdir(parents=True, exist_ok=True)
-        decompress_fast(compressed_cache.as_posix(), self.directory.parent.as_posix())
+        decompress_fast(compressed_cache, self.directory.parent)
         if not self.directory.exists():
             logging.warning(
                 "The cargo cache archive was successfully downloaded and "
@@ -149,10 +152,7 @@ class CargoCache:
 
         logging.info("Compressing cargo cache")
         archive_path = self.directory.parent / self.archive_name
-        compress_fast(
-            self.directory.as_posix(),
-            archive_path.as_posix(),
-        )
+        compress_fast(self.directory, archive_path)
         s3_path = f"{self.PREFIX}/{self.archive_name}"
         logging.info("Uploading %s to S3 path %s", archive_path, s3_path)
         self.s3_helper.upload_build_file_to_s3(archive_path, s3_path)
