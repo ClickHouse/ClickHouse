@@ -329,13 +329,11 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     database = tryGetDatabase(database_name, query.if_exists);
     if (database)
     {
-        if (query.kind == ASTDropQuery::Kind::Truncate)
-        {
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Unable to truncate database");
-        }
-        else if (query.kind == ASTDropQuery::Kind::Detach || query.kind == ASTDropQuery::Kind::Drop)
+        if (query.kind == ASTDropQuery::Kind::Detach || query.kind == ASTDropQuery::Kind::Drop
+            || query.kind == ASTDropQuery::Kind::Truncate)
         {
             bool drop = query.kind == ASTDropQuery::Kind::Drop;
+            bool truncate = query.kind == ASTDropQuery::Kind::Truncate;
             getContext()->checkAccess(AccessType::DROP_DATABASE, database_name);
 
             if (query.kind == ASTDropQuery::Kind::Detach && query.permanently)
@@ -348,6 +346,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             {
                 ASTDropQuery query_for_table;
                 query_for_table.kind = query.kind;
+                if (truncate)
+                    query_for_table.kind = ASTDropQuery::Kind::Drop;
                 query_for_table.if_exists = true;
                 query_for_table.setDatabase(database_name);
                 query_for_table.sync = query.sync;
@@ -371,12 +371,13 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     query_for_table.is_dictionary = table.second;
                     DatabasePtr db;
                     UUID table_to_wait = UUIDHelpers::Nil;
+                    //FAILS here
                     executeToTableImpl(table_context, query_for_table, db, table_to_wait);
                     uuids_to_wait.push_back(table_to_wait);
                 }
             }
 
-            if (!drop && query.sync)
+            if ((!drop || !truncate) && query.sync)
             {
                 /// Avoid "some tables are still in use" when sync mode is enabled
                 for (const auto & table_uuid : uuids_to_wait)
@@ -386,11 +387,13 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             /// Protects from concurrent CREATE TABLE queries
             auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);
 
-            if (!drop)
+            if (!drop || !truncate)
                 database->assertCanBeDetached(true);
 
-            /// DETACH or DROP database itself
-            DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
+            /// DETACH or DROP database itself.
+            /// If TRUNCATE skip dropping the database.
+            if(!truncate)
+                DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
         }
     }
 
