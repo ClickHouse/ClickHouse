@@ -561,7 +561,8 @@ void HTTPHandler::processQuery(
         session->makeSessionContext();
     }
 
-    auto context = session->makeQueryContext();
+    auto client_info = session->getClientInfo();
+    auto context = session->makeQueryContext(std::move(client_info));
 
     /// This parameter is used to tune the behavior of output formats (such as Native) for compatibility.
     if (params.has("client_protocol_version"))
