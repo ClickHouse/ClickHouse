@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 -- NOTE: database = currentDatabase() is not mandatory
 

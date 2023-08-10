@@ -1,11 +1,6 @@
--- Tags: no-parallel
-
-CREATE DATABASE test_00571;
-
-USE test_00571;
 
 DROP DATABASE IF EXISTS none;
-DROP TABLE IF EXISTS test_00571;
+DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
 DROP TABLE IF EXISTS test_materialized_00571;
 
 set allow_deprecated_syntax_for_merge_tree=1;
@@ -15,18 +10,16 @@ CREATE MATERIALIZED VIEW test_materialized_00571 ENGINE = MergeTree(date, (platf
 
 USE none;
 
-INSERT INTO test_00571.test_00571 VALUES('2018-02-16', 'a', 'a');
+INSERT INTO {CLICKHOUSE_DATABASE:Identifier}.test_00571 VALUES('2018-02-16', 'a', 'a');
 
-SELECT * FROM test_00571.test_00571;
-SELECT * FROM test_00571.test_materialized_00571;
+SELECT * FROM {CLICKHOUSE_DATABASE:Identifier}.test_00571;
+SELECT * FROM {CLICKHOUSE_DATABASE:Identifier}.test_materialized_00571;
 
-DETACH TABLE test_00571.test_materialized_00571;
-ATTACH TABLE test_00571.test_materialized_00571;
+DETACH TABLE {CLICKHOUSE_DATABASE:Identifier}.test_materialized_00571;
+ATTACH TABLE {CLICKHOUSE_DATABASE:Identifier}.test_materialized_00571;
 
-SELECT * FROM test_00571.test_materialized_00571;
+SELECT * FROM {CLICKHOUSE_DATABASE:Identifier}.test_materialized_00571;
 
 DROP DATABASE IF EXISTS none;
-DROP TABLE IF EXISTS test_00571.test_00571;
-DROP TABLE IF EXISTS test_00571.test_materialized_00571;
-
-DROP DATABASE test_00571;
+DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE:Identifier}.test_00571;
+DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE:Identifier}.test_materialized_00571;

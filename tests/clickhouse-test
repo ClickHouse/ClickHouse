@@ -1197,7 +1197,7 @@ class TestCase:
         os.environ["CLICKHOUSE_LOG_COMMENT"] = args.testcase_basename
 
         params = {
-            "client": client + " --database=" + database,
+            "client": client + " --database=" + database + " --param_CLICKHOUSE_DATABASE=" + database,
             "logs_level": server_logs_level,
             "options": client_options,
             "test": self.case_file,
