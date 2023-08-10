@@ -25,11 +25,10 @@ namespace Poco
 namespace DB
 {
 class ContextAccess;
-class ContextAccessParams;
+struct ContextAccessParams;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
 class EnabledRoles;
-struct EnabledRolesInfo;
 class RoleCache;
 class EnabledRowPolicies;
 class RowPolicyCache;
@@ -182,13 +181,17 @@ public:
     void setSettingsConstraintsReplacePrevious(bool enable) { settings_constraints_replace_previous = enable; }
     bool doesSettingsConstraintsReplacePrevious() const { return settings_constraints_replace_previous; }
 
+    std::shared_ptr<const ContextAccess> getContextAccess(
+        const UUID & user_id,
+        const std::vector<UUID> & current_roles,
+        bool use_default_roles,
+        const Settings & settings,
+        const String & current_database,
+        const ClientInfo & client_info) const;
+
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
     std::shared_ptr<const EnabledRoles> getEnabledRoles(
-        const std::vector<UUID> & current_roles,
-        const std::vector<UUID> & current_roles_with_admin_option) const;
-
-    std::shared_ptr<const EnabledRolesInfo> getEnabledRolesInfo(
         const std::vector<UUID> & current_roles,
         const std::vector<UUID> & current_roles_with_admin_option) const;
 
@@ -209,12 +212,6 @@ public:
     std::vector<QuotaUsage> getAllQuotasUsage() const;
 
     std::shared_ptr<const EnabledSettings> getEnabledSettings(
-        const UUID & user_id,
-        const SettingsProfileElements & settings_from_user,
-        const boost::container::flat_set<UUID> & enabled_roles,
-        const SettingsProfileElements & settings_from_enabled_roles) const;
-
-    std::shared_ptr<const SettingsProfilesInfo> getEnabledSettingsInfo(
         const UUID & user_id,
         const SettingsProfileElements & settings_from_user,
         const boost::container::flat_set<UUID> & enabled_roles,

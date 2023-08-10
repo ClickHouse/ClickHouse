@@ -30,7 +30,6 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int INVALID_SHARD_ID;
     extern const int NO_SUCH_REPLICA;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -525,7 +524,7 @@ Cluster::Cluster(
 
         addresses_with_failover.emplace_back(current);
 
-        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, /* insert_paths= */ {}, /* weight= */ 1);
+        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num);
         ++current_shard_num;
     }
 
@@ -553,7 +552,7 @@ Cluster::Cluster(
 
         addresses_with_failover.emplace_back(current);
 
-        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, /* insert_paths= */ {}, /* weight= */ 1);
+        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num);
         ++current_shard_num;
     }
 
@@ -615,12 +614,6 @@ Poco::Timespan Cluster::saturate(Poco::Timespan v, Poco::Timespan limit)
 
 void Cluster::initMisc()
 {
-    /// NOTE: It is possible to have cluster w/o shards for
-    /// optimize_skip_unused_shards (i.e. WHERE 0 expression), so check the
-    /// slots only if shards is not empty.
-    if (!shards_info.empty() && slot_to_shard.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cluster with zero weight on all shards is prohibited");
-
     for (const auto & shard_info : shards_info)
     {
         if (!shard_info.isLocal() && !shard_info.hasRemoteConnections())
@@ -715,7 +708,6 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
                 ShardInfo info;
                 info.shard_num = ++shard_num;
-                info.weight = 1;
 
                 if (address.is_local)
                     info.local_addresses.push_back(address);
@@ -741,8 +733,6 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
                 info.per_replica_pools = {std::move(pool)};
 
                 addresses_with_failover.emplace_back(Addresses{address});
-
-                slot_to_shard.insert(std::end(slot_to_shard), info.weight, shards_info.size());
                 shards_info.emplace_back(std::move(info));
             }
         };
@@ -772,11 +762,7 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
 {
     for (size_t index : indices)
     {
-        const auto & from_shard = from.shards_info.at(index);
-
-        if (from_shard.weight)
-            slot_to_shard.insert(std::end(slot_to_shard), from_shard.weight, shards_info.size());
-        shards_info.emplace_back(from_shard);
+        shards_info.emplace_back(from.shards_info.at(index));
 
         if (!from.addresses_with_failover.empty())
             addresses_with_failover.emplace_back(from.addresses_with_failover.at(index));

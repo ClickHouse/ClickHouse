@@ -34,7 +34,7 @@ void registerDiskLocalObjectStorage(DiskFactory & factory, bool global_skip_acce
         metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, path);
 
         auto disk = std::make_shared<DiskObjectStorage>(
-            name, path, "Local", metadata_storage, local_storage, config, config_prefix);
+            name, path, "Local", metadata_storage, local_storage, false, /* threadpool_size */16);
         disk->startup(context, global_skip_access_check);
         return disk;
     };

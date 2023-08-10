@@ -17,12 +17,14 @@ ExpressionTransform × 2
   (ReadFromMergeTree)
   ExpressionTransform × 2
     ReplacingSorted
-      FilterSortedStreamByRange
-      Description: filter values in [(5), +inf)
-        ExpressionTransform
-          MergeTreeInOrder 0 → 1
-            ReplacingSorted 2 → 1
-              FilterSortedStreamByRange × 2
-              Description: filter values in [-inf, (5))
+      ExpressionTransform
+        FilterSortedStreamByRange
+        Description: filter values in [(5), +inf)
+          ExpressionTransform
+            MergeTreeInOrder 0 → 1
+              ReplacingSorted 2 → 1
                 ExpressionTransform × 2
-                  MergeTreeInOrder × 2 0 → 1
+                  FilterSortedStreamByRange × 2
+                  Description: filter values in [-inf, (5))
+                    ExpressionTransform × 2
+                      MergeTreeInOrder × 2 0 → 1

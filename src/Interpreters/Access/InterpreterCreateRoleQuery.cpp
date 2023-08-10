@@ -46,7 +46,7 @@ BlockIO InterpreterCreateRoleQuery::execute()
         settings_from_query = SettingsProfileElements{*query.settings, access_control};
 
         if (!query.attach)
-            getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::ROLE);
+            getContext()->checkSettingsConstraints(*settings_from_query);
     }
 
     if (!query.cluster.empty())

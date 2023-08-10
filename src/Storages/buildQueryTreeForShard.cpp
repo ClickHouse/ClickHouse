@@ -130,7 +130,7 @@ public:
         return true;
     }
 
-    void enterImpl(QueryTreeNodePtr & node)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         auto * join_node = node->as<JoinNode>();

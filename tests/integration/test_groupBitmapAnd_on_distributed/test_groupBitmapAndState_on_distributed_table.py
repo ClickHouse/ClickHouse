@@ -5,22 +5,13 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
-    "node1",
-    main_configs=["configs/clusters.xml"],
-    with_zookeeper=True,
-    allow_analyzer=False,
+    "node1", main_configs=["configs/clusters.xml"], with_zookeeper=True
 )
 node2 = cluster.add_instance(
-    "node2",
-    main_configs=["configs/clusters.xml"],
-    with_zookeeper=True,
-    allow_analyzer=False,
+    "node2", main_configs=["configs/clusters.xml"], with_zookeeper=True
 )
 node3 = cluster.add_instance(
-    "node3",
-    main_configs=["configs/clusters.xml"],
-    with_zookeeper=True,
-    allow_analyzer=False,
+    "node3", main_configs=["configs/clusters.xml"], with_zookeeper=True
 )
 node4 = cluster.add_instance(
     "node4",
@@ -29,7 +20,6 @@ node4 = cluster.add_instance(
     tag="21.6",
     with_installed_binary=True,
     with_zookeeper=True,
-    allow_analyzer=False,
 )
 
 

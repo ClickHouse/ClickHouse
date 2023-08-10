@@ -159,8 +159,6 @@ public:
             out->setAsyncCallback(async_callback);
     }
 
-    bool haveMoreAddressesToConnect() const { return have_more_addresses_to_connect; }
-
 private:
     String host;
     UInt16 port;
@@ -228,8 +226,6 @@ private:
     /// Where to write data for INSERT.
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
     std::unique_ptr<NativeWriter> block_out;
-
-    bool have_more_addresses_to_connect = false;
 
     /// Logger is created lazily, for avoid to run DNS request in constructor.
     class LoggerWrapper

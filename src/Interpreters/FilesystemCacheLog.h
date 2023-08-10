@@ -11,7 +11,16 @@
 
 namespace DB
 {
-
+///
+/// -------- Column --------- Type ------
+/// |  event_date         |  DateTime   |
+/// |  event_time         |  UInt64     |
+/// |  query_id           |  String     |
+/// |  remote_file_path   |  String     |
+/// |  segment_range      |  Tuple      |
+/// |  read_type          |  String     |
+/// -------------------------------------
+///
 struct FilesystemCacheLogElement
 {
     enum class CacheType
@@ -30,8 +39,6 @@ struct FilesystemCacheLogElement
     std::pair<size_t, size_t> file_segment_range{};
     std::pair<size_t, size_t> requested_range{};
     CacheType cache_type{};
-    std::string file_segment_key;
-    size_t file_segment_offset;
     size_t file_segment_size;
     bool read_from_cache_attempted;
     String read_buffer_id;

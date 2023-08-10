@@ -544,10 +544,9 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
     auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/");
-    fs::path temp_dir = temp_dir_owner->getRelativePath();
+    fs::path temp_dir = temp_dir_owner->getPath();
     disk->createDirectories(temp_dir);
 
-    const auto & read_settings = backup_entries_collector.getReadSettings();
     bool copy_encrypted = !backup_entries_collector.getBackupSettings().decrypt_files_from_encrypted_disks;
 
     /// data.bin
@@ -577,7 +576,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
     /// sizes.json
     String files_info_path = file_checker.getPath();
     backup_entries_collector.addBackupEntry(
-        data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path, read_settings, copy_encrypted));
+        data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path, copy_encrypted));
 
     /// columns.txt
     backup_entries_collector.addBackupEntry(

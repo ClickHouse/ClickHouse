@@ -33,6 +33,7 @@ RUN apt-get update -y \
             qemu-user-static \
             sqlite3 \
             sudo \
+            telnet \
             tree \
             unixodbc \
             wget \
@@ -41,8 +42,6 @@ RUN apt-get update -y \
             zstd \
             file \
             pv \
-            zip \
-            p7zip-full \
     && apt-get clean
 
 RUN pip3 install numpy scipy pandas Jinja2
@@ -54,7 +53,7 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \
    && rm -rf /tmp/clickhouse-odbc-tmp
 
-ENV TZ=Europe/Amsterdam
+ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV NUM_TRIES=1
