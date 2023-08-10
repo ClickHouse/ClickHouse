@@ -208,8 +208,8 @@ private:
     /// (in this case regular WithMergeableState should be used)
     std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const;
 
-    QueryProcessingStage::Enum
-    getQueryProcessingStageAnalyzer(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const;
+    // QueryProcessingStage::Enum
+    // getQueryProcessingStageAnalyzer(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const;
 
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
     std::string getClusterName() const { return cluster_name.empty() ? "<remote>" : cluster_name; }

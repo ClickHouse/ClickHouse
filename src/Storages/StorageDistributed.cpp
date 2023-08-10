@@ -409,60 +409,62 @@ StorageDistributed::StorageDistributed(
 {
 }
 
-QueryProcessingStage::Enum
-StorageDistributed::getQueryProcessingStageAnalyzer(
-    [[maybe_unused]] ContextPtr local_context,
-    [[maybe_unused]] QueryProcessingStage::Enum to_stage,
-    [[maybe_unused]] const StorageSnapshotPtr & storage_snapshot,
-    [[maybe_unused]] SelectQueryInfo & query_info) const
-{
-    if (query_info.query_tree)
-        LOG_INFO(log, "getQueryProcessingStageAnalyzer tree {}", query_info.query_tree->dumpTree());
+// QueryProcessingStage::Enum
+// StorageDistributed::getQueryProcessingStageAnalyzer(
+//     [[maybe_unused]] ContextPtr local_context,
+//     [[maybe_unused]] QueryProcessingStage::Enum to_stage,
+//     [[maybe_unused]] const StorageSnapshotPtr & storage_snapshot,
+//     [[maybe_unused]] SelectQueryInfo & query_info) const
+// {
+//     if (query_info.query_tree)
+//         LOG_INFO(log, "getQueryProcessingStageAnalyzer tree {}", query_info.query_tree->dumpTree());
 
-    if (query_info.table_expression)
-        LOG_INFO(log, "getQueryProcessingStageAnalyzer table_expression {}", query_info.table_expression->dumpTree());
+//     if (query_info.table_expression)
+//         LOG_INFO(log, "getQueryProcessingStageAnalyzer table_expression {}", query_info.table_expression->dumpTree());
 
-    if (query_info.filter_actions_dag)
-        LOG_INFO(log, "getQueryProcessingStageAnalyzer dag {}", query_info.filter_actions_dag->dumpDAG());
+//     if (query_info.filter_actions_dag)
+//         LOG_INFO(log, "getQueryProcessingStageAnalyzer dag {}", query_info.filter_actions_dag->dumpDAG());
 
-    ClusterPtr cluster = getCluster();
+//     const auto & settings = local_context->getSettingsRef();
+//     ClusterPtr cluster = getCluster();
+//     size_t nodes = getClusterQueriedNodes(settings, cluster);
 
-    if (query_info.use_custom_key)
-    {
-        LOG_INFO(log, "Single shard cluster used with custom_key, transforming replicas into virtual shards");
-        query_info.cluster = cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
-    }
-    else
-    {
-        query_info.cluster = cluster;
+//     if (query_info.use_custom_key)
+//     {
+//         LOG_INFO(log, "Single shard cluster used with custom_key, transforming replicas into virtual shards");
+//         query_info.cluster = cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
+//     }
+//     else
+//     {
+//         query_info.cluster = cluster;
 
-        if (nodes > 1 && settings.optimize_skip_unused_shards)
-        {
-            /// Always calculate optimized cluster here, to avoid conditions during read()
-            /// (Anyway it will be calculated in the read())
-            ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info);
-            if (optimized_cluster)
-            {
-                LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
-                        makeFormattedListOfShards(optimized_cluster));
+//         if (nodes > 1 && settings.optimize_skip_unused_shards)
+//         {
+//             /// Always calculate optimized cluster here, to avoid conditions during read()
+//             /// (Anyway it will be calculated in the read())
+//             ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info);
+//             if (optimized_cluster)
+//             {
+//                 LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
+//                         makeFormattedListOfShards(optimized_cluster));
 
-                cluster = optimized_cluster;
-                query_info.optimized_cluster = cluster;
+//                 cluster = optimized_cluster;
+//                 query_info.optimized_cluster = cluster;
 
-                nodes = getClusterQueriedNodes(settings, cluster);
-            }
-            else
-            {
-                LOG_DEBUG(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}",
-                        has_sharding_key ? "" : " (no sharding key)");
-            }
-        }
-    }
+//                 nodes = getClusterQueriedNodes(settings, cluster);
+//             }
+//             else
+//             {
+//                 LOG_DEBUG(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}",
+//                         has_sharding_key ? "" : " (no sharding key)");
+//             }
+//         }
+//     }
 
 
-    query_info.cluster = cluster;
-    return QueryProcessingStage::WithMergeableState;
-}
+//     query_info.cluster = cluster;
+//     return QueryProcessingStage::WithMergeableState;
+// }
 
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     ContextPtr local_context,
@@ -472,8 +474,8 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 {
     const auto & settings = local_context->getSettingsRef();
 
-    if (settings.allow_experimental_analyzer)
-        return getQueryProcessingStageAnalyzer(local_context, to_stage, storage_snapshot, query_info);
+    // if (settings.allow_experimental_analyzer)
+    //     return getQueryProcessingStageAnalyzer(local_context, to_stage, storage_snapshot, query_info);
 
     ClusterPtr cluster = getCluster();
 
@@ -811,6 +813,9 @@ void StorageDistributed::read(
     /// Return directly (with correct header) if no shard to query.
     if (query_info.getCluster()->getShardsInfo().empty())
     {
+        if (local_context->getSettingsRef().allow_experimental_analyzer)
+            return;
+
         Pipe pipe(std::make_shared<NullSource>(header));
         auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         read_from_pipe->setStepDescription("Read from NullSource (Distributed)");
@@ -1391,13 +1396,17 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
 {
     const auto & slot_to_shard = cluster->getSlotToShard();
 
+    const IColumn * column = result.column.get();
+    if (auto col_const = typeid_cast<const ColumnConst *>(column))
+        column = &col_const->getDataColumn();
+
 // If result.type is DataTypeLowCardinality, do shard according to its dictionaryType
 #define CREATE_FOR_TYPE(TYPE)                                                                                       \
     if (typeid_cast<const DataType##TYPE *>(result.type.get()))                                                     \
-        return createBlockSelector<TYPE>(*result.column, slot_to_shard);                                            \
+        return createBlockSelector<TYPE>(*column, slot_to_shard);                                            \
     else if (auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(result.type.get()))          \
         if (typeid_cast<const DataType ## TYPE *>(type_low_cardinality->getDictionaryType().get()))                 \
-            return createBlockSelector<TYPE>(*result.column->convertToFullColumnIfLowCardinality(), slot_to_shard);
+            return createBlockSelector<TYPE>(*column->convertToFullColumnIfLowCardinality(), slot_to_shard);
 
     CREATE_FOR_TYPE(UInt8)
     CREATE_FOR_TYPE(UInt16)
@@ -1416,7 +1425,7 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
 ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
     ClusterPtr cluster,
     const SelectQueryInfo & query_info,
-    const StorageSnapshotPtr & storage_snapshot,
+    [[maybe_unused]] const StorageSnapshotPtr & storage_snapshot,
     ContextPtr local_context) const
 {
     if (!query_info.filter_actions_dag)
@@ -1427,35 +1436,36 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
     {
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "optimize_skip_unused_shards_limit out of range (0, {}]", SSIZE_MAX);
     }
-    // To interpret limit==0 as limit is reached
-    ++limit;
-    const auto blocks = evaluateExpressionOverConstantCondition(condition_ast, sharding_key_expr, limit);
 
-    if (!limit)
-    {
-        LOG_DEBUG(log,
-            "Number of values for sharding key exceeds optimize_skip_unused_shards_limit={}, "
-            "try to increase it, but note that this may increase query processing time.",
-            local_context->getSettingsRef().optimize_skip_unused_shards_limit);
-        return nullptr;
-    }
+    const auto & sharding_key_dag = sharding_key_expr->getActionsDAG();
+    const auto * expr_node = sharding_key_dag.tryFindInOutputs(sharding_key_column_name);
+    if (!expr_node)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Cannot find sharding key column {} in expression {}",
+            sharding_key_column_name, sharding_key_dag.dumpDAG());
+
+    // std::cerr << "--- expr\n";
+    // std::cerr << sharding_key_dag.dumpDAG() << std::endl;
+    const auto * predicate = query_info.filter_actions_dag->getOutputs().at(0);
+    const auto variants = evaluateExpressionOverConstantCondition(predicate, {expr_node}, local_context, limit);
 
     // Can't get a definite answer if we can skip any shards
-    if (!blocks)
+    if (!variants)
         return nullptr;
+
+    // std::cerr << "==== num variants " << variants->size() << std::endl;
 
     std::set<int> shards;
 
-    for (const auto & block : *blocks)
+    for (const auto & variant : *variants)
     {
-        if (!block.has(sharding_key_column_name))
-            throw Exception(ErrorCodes::TOO_MANY_ROWS, "sharding_key_expr should evaluate as a single row");
-
-        const ColumnWithTypeAndName & result = block.getByName(sharding_key_column_name);
-        const auto selector = createSelector(cluster, result);
-
+        //std::cerr << variant.at(0).column->getUInt(0) << std::endl;
+        const auto selector = createSelector(cluster, variant.at(0));
         shards.insert(selector.begin(), selector.end());
     }
+
+    // for (int i : shards)
+    //     std::cerr << ".. shard " << i << std::endl;
 
     return cluster->getClusterWithMultipleShards({shards.begin(), shards.end()});
 }

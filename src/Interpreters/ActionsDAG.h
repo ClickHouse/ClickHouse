@@ -271,6 +271,12 @@ public:
     /// In case if function return constant, but arguments are not constant, materialize it.
     Block updateHeader(Block header) const;
 
+    using IntermediateExecutionResult = std::unordered_map<const Node *, ColumnWithTypeAndName>;
+    static ColumnsWithTypeAndName evaluatePartialResult(
+        IntermediateExecutionResult & node_to_column,
+        const NodeRawConstPtrs & outputs,
+        bool throw_on_error);
+
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.
     void addMaterializingOutputActions();

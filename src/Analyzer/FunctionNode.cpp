@@ -214,6 +214,12 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     if (function_name == "_CAST" && (*getArguments().begin())->getNodeType() == QueryTreeNodeType::CONSTANT)
         new_options.add_cast_for_constants = false;
 
+    /// Avoid cast for `IN tuple(...)` expression.
+    /// Tuples colud be quite big, and adding a type may significantly increase query size.
+    /// It should be safe because set type for `column IN tuple` is deduced from `column` type.
+    if (isNameOfInFunction(function_name) && (*(++getArguments().begin()))->getNodeType() == QueryTreeNodeType::CONSTANT)
+        new_options.add_cast_for_constants = false;
+
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())
     {

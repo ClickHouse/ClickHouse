@@ -20,9 +20,10 @@ select * from dist_01757 where dummy = 0 or dummy = 1 settings optimize_skip_unu
 select * from dist_01757 where dummy = 0 or dummy = 1 format Null settings optimize_skip_unused_shards_limit=2;
 
 -- and negative
-select * from dist_01757 where dummy = 0 and dummy = 1 settings optimize_skip_unused_shards_limit=1; -- { serverError 507 }
-select * from dist_01757 where dummy = 0 and dummy = 2 and dummy = 3 settings optimize_skip_unused_shards_limit=1; -- { serverError 507 }
-select * from dist_01757 where dummy = 0 and dummy = 2 and dummy = 3 settings optimize_skip_unused_shards_limit=2; -- { serverError 507 }
+-- disabled for analyzer cause new implementation consider `dummy = 0 and dummy = 1` as constant False.
+select * from dist_01757 where dummy = 0 and dummy = 1 settings optimize_skip_unused_shards_limit=1, allow_experimental_analyzer=0; -- { serverError 507 }
+select * from dist_01757 where dummy = 0 and dummy = 2 and dummy = 3 settings optimize_skip_unused_shards_limit=1, allow_experimental_analyzer=0; -- { serverError 507 }
+select * from dist_01757 where dummy = 0 and dummy = 2 and dummy = 3 settings optimize_skip_unused_shards_limit=2, allow_experimental_analyzer=0; -- { serverError 507 }
 
 -- and
 select * from dist_01757 where dummy = 0 and dummy = 1 settings optimize_skip_unused_shards_limit=2;
