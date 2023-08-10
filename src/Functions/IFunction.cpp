@@ -361,7 +361,7 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
             /// If default of sparse column is changed after execution of function, convert to full column.
             /// If there are any default in non-zero position after execution of function, convert to full column.
             /// Currently there is no easy way to rebuild sparse column with new offsets.
-            if (!result_type->supportsSparseSerialization() || !res->isDefaultAt(0) || res->getNumberOfDefaultRows() != 1)
+            if (!result_type->canBeInsideSparseColumns() || !res->isDefaultAt(0) || res->getNumberOfDefaultRows() != 1)
             {
                 const auto & offsets_data = assert_cast<const ColumnVector<UInt64> &>(*sparse_offsets).getData();
                 return res->createWithOffsets(offsets_data, (*res)[0], input_rows_count, /*shift=*/ 1);
