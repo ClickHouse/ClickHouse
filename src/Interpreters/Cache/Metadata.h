@@ -69,6 +69,8 @@ struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
     /// Return nullptr if key has non-ACTIVE state.
     LockedKeyPtr tryLock();
 
+    LockedKeyPtr lockNoStateCheck();
+
     bool createBaseDirectory();
 
     std::string getFileSegmentPath(const FileSegment & file_segment);
@@ -90,7 +92,7 @@ struct CacheMetadata : public std::unordered_map<FileCacheKey, KeyMetadataPtr>, 
 {
 public:
     using Key = FileCacheKey;
-    using IterateCacheMetadataFunc = std::function<void(LockedKey &)>;
+    using IterateFunc = std::function<void(LockedKey &)>;
 
     explicit CacheMetadata(const std::string & path_);
 
@@ -104,7 +106,7 @@ public:
     String getPathForKey(const Key & key) const;
     static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind);
 
-    void iterate(IterateCacheMetadataFunc && func);
+    void iterate(IterateFunc && func);
 
     enum class KeyNotFoundPolicy
     {
@@ -118,6 +120,9 @@ public:
         const Key & key,
         KeyNotFoundPolicy key_not_found_policy,
         bool is_initial_load = false);
+
+    void removeKey(const Key & key, bool if_exists, bool is_releasable);
+    void removeAllKeys(bool is_releasable);
 
     void doCleanup();
 
@@ -135,6 +140,7 @@ private:
     Poco::Logger * log;
 
     void downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory);
+    iterator removeKeyImpl(iterator it, LockedKey &, const CacheMetadataGuard::Lock &);
 };
 
 
@@ -174,7 +180,7 @@ struct LockedKey : private boost::noncopyable
     std::shared_ptr<const KeyMetadata> getKeyMetadata() const { return key_metadata; }
     std::shared_ptr<KeyMetadata> getKeyMetadata() { return key_metadata; }
 
-    void removeAll(bool if_releasable = true);
+    bool removeAllFileSegments(bool if_releasable = true);
 
     KeyMetadata::iterator removeFileSegment(size_t offset, const FileSegmentGuard::Lock &);
     KeyMetadata::iterator removeFileSegment(size_t offset);
