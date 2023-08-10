@@ -55,8 +55,6 @@ struct MergeTreeDataPartChecksums;
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
 
-class IStoragePolicy;
-
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 
