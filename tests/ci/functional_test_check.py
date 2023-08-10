@@ -130,7 +130,6 @@ def get_run_command(
     return (
         f"docker run --volume={builds_path}:/package_folder "
         f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
-        f"--volume={repo_path}:/repository "
         f"{volume_with_broken_test} "
         f"--volume={result_path}:/test_output --volume={server_log_path}:/var/log/clickhouse-server "
         f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image}"
