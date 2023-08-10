@@ -414,7 +414,6 @@ lowCardinalityIndices
 lowCardinalityKeys
 lower
 lowerUTF8
-lttb
 makeDate
 makeDate32
 makeDateTime
