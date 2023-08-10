@@ -1096,6 +1096,7 @@ avro
 avx
 aws
 azureBlobStorage
+azureBlobStorageCluster
 backend
 backoff
 backticks
@@ -1403,6 +1404,7 @@ encodings
 encryptions
 endian
 endsWith
+endsWithUTF
 enum
 enum's
 enums
@@ -2209,6 +2211,7 @@ src
 stacktrace
 stacktraces
 startsWith
+startsWithUTF
 statbox
 stateful
 stddev
