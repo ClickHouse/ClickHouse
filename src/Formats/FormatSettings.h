@@ -241,6 +241,8 @@ struct FormatSettings
         bool output_compliant_nested_types = true;
         size_t data_page_size = 1024 * 1024;
         size_t write_batch_size = 1024;
+        size_t min_read_batch_rows = 100000;
+        size_t min_read_batch_bytes = 256 * 100000;
     } parquet;
 
     struct Pretty
