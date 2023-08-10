@@ -45,6 +45,7 @@
 
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
+#include <boost/algorithm/string/replace.hpp>
 
 namespace DB
 {
@@ -123,6 +124,10 @@ Pipe StoragePostgreSQL::read(
         column_names_,
         storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::DoubleQuotes, remote_table_schema, remote_table_name, context_);
+
+    /// Single quotes in PostgreSQL are escaped through repetition
+    boost::replace_all(query, "\\'", "''");
+
     LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;

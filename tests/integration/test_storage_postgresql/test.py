@@ -726,6 +726,20 @@ def test_auto_close_connection(started_cluster):
     assert count == 2
 
 
+def test_single_quotes(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute(f"DROP TABLE IF EXISTS single_quote_fails")
+    cursor.execute(f"CREATE TABLE single_quote_fails(text varchar(255))")
+    node1.query(
+        "CREATE TABLE default.single_quote_fails (text String) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'single_quote_fails', 'postgres', 'mysecretpassword')"
+    )
+    node1.query("SELECT * FROM single_quote_fails WHERE text = ''''")
+    node1.query("SELECT * FROM single_quote_fails WHERE text = '\\''")
+    node1.query("SELECT * FROM single_quote_fails WHERE text like '%a''a%'")
+    node1.query("SELECT * FROM single_quote_fails WHERE text like '%a\\'a%'")
+    cursor.execute(f"DROP TABLE single_quote_fails")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
