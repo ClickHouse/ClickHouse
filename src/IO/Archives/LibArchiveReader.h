@@ -4,7 +4,6 @@
 
 #include <IO/Archives/IArchiveReader.h>
 
-#include <iostream>
 
 namespace DB
 {
