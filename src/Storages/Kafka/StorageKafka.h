@@ -79,7 +79,6 @@ public:
     NamesAndTypesList getVirtuals() const override;
     Names getVirtualColumnNames() const;
     HandleKafkaErrorMode getHandleKafkaErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
-    std::shared_ptr<const String> getRdkafkaStat() const { return rdkafka_stat; }
 
     struct SafeConsumers
     {
@@ -143,7 +142,12 @@ private:
     std::atomic<bool> shutdown_called = false;
 
     // Update Kafka configuration with values from CH user configuration.
-    void updateConfiguration(cppkafka::Configuration & kafka_config);
+    void updateConfiguration(cppkafka::Configuration & kafka_config, std::shared_ptr<KafkaConsumerWeakPtr>);
+    void updateConfiguration(cppkafka::Configuration & kafka_config)
+    {
+        updateConfiguration(kafka_config, std::make_shared<KafkaConsumerWeakPtr>());
+    }
+
     String getConfigPrefix() const;
     void threadFunc(size_t idx);
 
@@ -157,7 +161,6 @@ private:
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 
-    std::shared_ptr<const String> rdkafka_stat;
 };
 
 }
