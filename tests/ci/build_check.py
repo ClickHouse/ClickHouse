@@ -41,6 +41,7 @@ from clickhouse_helper import (
     prepare_tests_results_for_clickhouse,
     get_instance_type,
 )
+from stopwatch import Stopwatch
 
 IMAGE_NAME = "clickhouse/binary-builder"
 BUILD_LOG_NAME = "build_log.log"
@@ -275,6 +276,7 @@ def mark_failed_reports_pending(build_name: str, pr_info: PRInfo) -> None:
 def main():
     logging.basicConfig(level=logging.INFO)
 
+    stopwatch = Stopwatch()
     build_name = sys.argv[1]
 
     build_config = CI_CONFIG["build_config"][build_name]
