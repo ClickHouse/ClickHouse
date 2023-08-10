@@ -139,7 +139,8 @@ MutableDataPartStoragePtr MergeTreeDataPartInMemory::flushToDisk(const String & 
     return new_data_part_storage;
 }
 
-DataPartStoragePtr MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot,
+DataPartStoragePtr MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix,
+                                                                  const StorageMetadataPtr & metadata_snapshot,
                                                                   const DiskTransactionPtr & disk_transaction) const
 {
     if (disk_transaction)
