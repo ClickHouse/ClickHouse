@@ -81,9 +81,9 @@ public:
     }
 
     /// Message must be a compile-time constant
-    template<typename T, typename = std::enable_if_t<std::is_convertible_v<T, String>>>
-    Exception(int code, T && message)
-        : Exception(message, code)
+    template <typename T>
+    requires std::is_convertible_v<T, String>
+    Exception(int code, T && message) : Exception(message, code)
     {
         capture_thread_frame_pointers = thread_frame_pointers;
         message_format_string = tryGetStaticFormatString(message);
