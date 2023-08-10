@@ -44,7 +44,7 @@ namespace ErrorCodes
     extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
 }
 
-using OperationID = BackupsWorker::OperationID;
+using OperationID = BackupOperationInfo::ID;
 namespace Stage = BackupCoordinationStage;
 
 namespace
@@ -869,7 +869,7 @@ void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr 
 
 void BackupsWorker::addInfo(const OperationID & id, const String & name, bool internal, BackupStatus status)
 {
-    Info info;
+    BackupOperationInfo info;
     info.id = id;
     info.name = name;
     info.internal = internal;
@@ -964,7 +964,7 @@ void BackupsWorker::wait(const OperationID & id, bool rethrow_exception)
     });
 }
 
-BackupsWorker::Info BackupsWorker::getInfo(const OperationID & id) const
+BackupOperationInfo BackupsWorker::getInfo(const OperationID & id) const
 {
     std::lock_guard lock{infos_mutex};
     auto it = infos.find(id);
@@ -973,9 +973,9 @@ BackupsWorker::Info BackupsWorker::getInfo(const OperationID & id) const
     return it->second;
 }
 
-std::vector<BackupsWorker::Info> BackupsWorker::getAllInfos() const
+std::vector<BackupOperationInfo> BackupsWorker::getAllInfos() const
 {
-    std::vector<Info> res_infos;
+    std::vector<BackupOperationInfo> res_infos;
     std::lock_guard lock{infos_mutex};
     for (const auto & info : infos | boost::adaptors::map_values)
     {
