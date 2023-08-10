@@ -208,9 +208,6 @@ option(OMIT_HEAVY_DEBUG_SYMBOLS
     "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
 
-if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-    set(USE_DEBUG_HELPERS ON)
-endif()
 option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
 
 option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
