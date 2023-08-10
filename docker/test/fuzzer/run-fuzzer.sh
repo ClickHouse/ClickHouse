@@ -15,7 +15,7 @@ stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
 repo_dir=ch
-BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-16_debug_none_unsplitted_disable_False_binary"}
+BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-15_debug_none_unsplitted_disable_False_binary"}
 BINARY_URL_TO_DOWNLOAD=${BINARY_URL_TO_DOWNLOAD:="https://clickhouse-builds.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"}
 
 function git_clone_with_retry
@@ -291,7 +291,7 @@ quit
     if [ "$server_died" == 1 ]
     then
         # The server has died.
-        if ! rg --text -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|.*Child process was terminated by signal 9.*' server.log > description.txt
+        if ! rg --text -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*' server.log > description.txt
         then
             echo "Lost connection to server. See the logs." > description.txt
         fi

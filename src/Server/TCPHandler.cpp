@@ -184,17 +184,14 @@ void TCPHandler::runImpl()
     try
     {
         receiveHello();
-
-        /// In interserver mode queries are executed without a session context.
-        if (!is_interserver_mode)
-            session->makeSessionContext();
-
         sendHello();
         if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             receiveAddendum();
 
-        if (!is_interserver_mode)
+        if (!is_interserver_mode) /// In interserver mode queries are executed without a session context.
         {
+            session->makeSessionContext();
+
             /// If session created, then settings in session context has been updated.
             /// So it's better to update the connection settings for flexibility.
             extractConnectionSettingsFromContext(session->sessionContext());
@@ -353,7 +350,6 @@ void TCPHandler::runImpl()
                 /// Send block to the client - input storage structure.
                 state.input_header = metadata_snapshot->getSampleBlock();
                 sendData(state.input_header);
-                sendTimezone();
             });
 
             query_context->setInputBlocksReaderCallback([this] (ContextPtr context) -> Block
@@ -509,8 +505,8 @@ void TCPHandler::runImpl()
             /// the MemoryTracker will be wrong for possible deallocations.
             /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
-            last_sent_snapshots = ProfileEvents::ThreadIdToCountersSnapshot{};
             query_scope.reset();
+            last_sent_snapshots.clear();
             thread_trace_context.reset();
         }
         catch (const Exception & e)
@@ -592,7 +588,7 @@ void TCPHandler::runImpl()
                 }
 
                 const auto & e = *exception;
-                LOG_ERROR(log, getExceptionMessageAndPattern(e, send_exception_with_stack_trace));
+                LOG_ERROR(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ true));
                 sendException(*exception, send_exception_with_stack_trace);
             }
         }
@@ -767,6 +763,7 @@ void TCPHandler::processInsertQuery()
 
         /// Send block to the client - table structure.
         sendData(executor.getHeader());
+
         sendLogs();
 
         while (readDataNext())
@@ -1066,20 +1063,6 @@ void TCPHandler::sendInsertProfileEvents()
     sendProfileEvents();
 }
 
-void TCPHandler::sendTimezone()
-{
-    if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES)
-        return;
-
-    const String & tz = query_context->getSettingsRef().session_timezone.value;
-
-    LOG_DEBUG(log, "TCPHandler::sendTimezone(): {}", tz);
-    writeVarUInt(Protocol::Server::TimezoneUpdate, *out);
-    writeStringBinary(tz, *out);
-    out->next();
-}
-
-
 bool TCPHandler::receiveProxyHeader()
 {
     if (in->eof())
@@ -1180,11 +1163,21 @@ std::unique_ptr<Session> TCPHandler::makeSession()
 
     auto res = std::make_unique<Session>(server.context(), interface, socket().secure(), certificate);
 
-    res->setForwardedFor(forwarded_for);
-    res->setClientName(client_name);
-    res->setClientVersion(client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
-    res->setConnectionClientVersion(client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
-    res->setClientInterface(interface);
+    auto & client_info = res->getClientInfo();
+    client_info.forwarded_for = forwarded_for;
+    client_info.client_name = client_name;
+    client_info.client_version_major = client_version_major;
+    client_info.client_version_minor = client_version_minor;
+    client_info.client_version_patch = client_version_patch;
+    client_info.client_tcp_protocol_version = client_tcp_protocol_version;
+
+    client_info.connection_client_version_major = client_version_major;
+    client_info.connection_client_version_minor = client_version_minor;
+    client_info.connection_client_version_patch = client_version_patch;
+    client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
+
+    client_info.quota_key = quota_key;
+    client_info.interface = interface;
 
     return res;
 }
@@ -1209,8 +1202,7 @@ void TCPHandler::receiveHello()
             throw Exception(ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT, "Client has connected to wrong port");
         }
         else
-            throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
-                               "Unexpected packet from client (expected Hello, got {})", packet_type);
+            throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client");
     }
 
     readStringBinary(client_name, *in);
@@ -1246,7 +1238,7 @@ void TCPHandler::receiveHello()
     }
 
     session = makeSession();
-    const auto & client_info = session->getClientInfo();
+    auto & client_info = session->getClientInfo();
 
 #if USE_SSL
     /// Authentication with SSL user certificate
@@ -1276,10 +1268,11 @@ void TCPHandler::receiveHello()
 void TCPHandler::receiveAddendum()
 {
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY)
+    {
         readStringBinary(quota_key, *in);
-
-    if (!is_interserver_mode)
-        session->setQuotaClientKey(quota_key);
+        if (!is_interserver_mode)
+            session->getClientInfo().quota_key = quota_key;
+    }
 }
 
 
@@ -1592,12 +1585,12 @@ void TCPHandler::receiveQuery()
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         /// Throw an exception if the passed settings violate the constraints.
-        query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
+        query_context->checkSettingsConstraints(settings_changes);
     }
     else
     {
         /// Quietly clamp to the constraints if it's not an initial query.
-        query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
+        query_context->clampToSettingsConstraints(settings_changes);
     }
     query_context->applySettingsChanges(settings_changes);
 
@@ -1698,7 +1691,7 @@ bool TCPHandler::receiveData(bool scalar)
         }
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         /// The data will be written directly to the table.
-        QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, query_context, /*async_insert=*/false));
+        QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, query_context));
         PushingPipelineExecutor executor(temporary_table_out);
         executor.start();
         executor.push(block);
@@ -1781,7 +1774,7 @@ void TCPHandler::initBlockOutput(const Block & block)
 
             if (state.compression == Protocol::Compression::Enable)
             {
-                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs, query_settings.allow_experimental_codecs, query_settings.enable_deflate_qpl_codec);
+                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs, query_settings.allow_experimental_codecs);
 
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
                     *out, CompressionCodecFactory::instance().get(method, level));
@@ -1897,18 +1890,17 @@ void TCPHandler::sendData(const Block & block)
 {
     initBlockOutput(block);
 
-    size_t prev_bytes_written_out = out->count();
-    size_t prev_bytes_written_compressed_out = state.maybe_compressed_out->count();
+    auto prev_bytes_written_out = out->count();
+    auto prev_bytes_written_compressed_out = state.maybe_compressed_out->count();
 
     try
     {
         /// For testing hedged requests
         if (unknown_packet_in_send_data)
         {
-            constexpr UInt64 marker = (1ULL<<63) - 1;
             --unknown_packet_in_send_data;
             if (unknown_packet_in_send_data == 0)
-                writeVarUInt(marker, *out);
+                writeVarUInt(UInt64(-1), *out);
         }
 
         writeVarUInt(Protocol::Server::Data, *out);

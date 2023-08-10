@@ -362,12 +362,11 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 #else
 
-    int read_exe_path(char *exe, size_t buf_sz)
+    int read_exe_path(char *exe, size_t/* buf_sz*/)
     {
-        ssize_t n = readlink("/proc/self/exe", exe, buf_sz - 1);
-        if (n > 0)
-            exe[n] = '\0';
-        return n > 0 && n < static_cast<ssize_t>(buf_sz);
+        if (realpath("/proc/self/exe", exe) == nullptr)
+            return 1;
+        return 0;
     }
 
 #endif
@@ -436,7 +435,7 @@ int main(int/* argc*/, char* argv[])
     uint64_t inode = getInode(self);
     if (inode == 0)
     {
-        std::cerr << "Unable to obtain inode for exe '" << self << "'." << std::endl;
+        std::cerr << "Unable to obtain inode." << std::endl;
         return 1;
     }
 

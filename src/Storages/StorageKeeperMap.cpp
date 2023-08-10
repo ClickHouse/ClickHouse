@@ -59,8 +59,6 @@ namespace ErrorCodes
 namespace
 {
 
-constexpr std::string_view version_column_name = "_version";
-
 std::string formattedAST(const ASTPtr & ast)
 {
     if (!ast)
@@ -79,6 +77,7 @@ void verifyTableId(const StorageID & table_id)
             table_id.getDatabaseName(),
             database->getEngineName());
     }
+
 }
 
 }
@@ -87,13 +86,11 @@ class StorageKeeperMapSink : public SinkToStorage
 {
     StorageKeeperMap & storage;
     std::unordered_map<std::string, std::string> new_values;
-    std::unordered_map<std::string, int32_t> versions;
     size_t primary_key_pos;
-    ContextPtr context;
 
 public:
-    StorageKeeperMapSink(StorageKeeperMap & storage_, Block header, ContextPtr context_)
-        : SinkToStorage(header), storage(storage_), context(std::move(context_))
+    StorageKeeperMapSink(StorageKeeperMap & storage_, const StorageMetadataPtr & metadata_snapshot)
+        : SinkToStorage(metadata_snapshot->getSampleBlock()), storage(storage_)
     {
         auto primary_key = storage.getPrimaryKey();
         assert(primary_key.size() == 1);
@@ -116,36 +113,18 @@ public:
             wb_value.restart();
 
             size_t idx = 0;
-
-            int32_t version = -1;
             for (const auto & elem : block)
             {
-                if (elem.name == version_column_name)
-                {
-                    version = assert_cast<const ColumnVector<Int32> &>(*elem.column).getData()[i];
-                    continue;
-                }
-
                 elem.type->getDefaultSerialization()->serializeBinary(*elem.column, i, idx == primary_key_pos ? wb_key : wb_value, {});
                 ++idx;
             }
 
             auto key = base64Encode(wb_key.str(), /* url_encoding */ true);
-
-            if (version != -1)
-                versions[key] = version;
-
             new_values[std::move(key)] = std::move(wb_value.str());
         }
     }
 
     void onFinish() override
-    {
-        finalize<false>(/*strict*/ context->getSettingsRef().keeper_map_strict_mode);
-    }
-
-    template <bool for_update>
-    void finalize(bool strict)
     {
         auto zookeeper = storage.getClient();
 
@@ -168,39 +147,21 @@ public:
         for (const auto & [key, _] : new_values)
             key_paths.push_back(storage.fullPathForKey(key));
 
-        zkutil::ZooKeeper::MultiExistsResponse results;
-
-        if constexpr (!for_update)
-        {
-            if (!strict)
-                results = zookeeper->exists(key_paths);
-        }
+        auto results = zookeeper->exists(key_paths);
 
         Coordination::Requests requests;
         requests.reserve(key_paths.size());
         for (size_t i = 0; i < key_paths.size(); ++i)
         {
             auto key = fs::path(key_paths[i]).filename();
-
-            if constexpr (for_update)
+            if (results[i].error == Coordination::Error::ZOK)
             {
-                int32_t version = -1;
-                if (strict)
-                    version = versions.at(key);
-
-                requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[key], version));
+                requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[key], -1));
             }
             else
             {
-                if (!strict && results[i].error == Coordination::Error::ZOK)
-                {
-                    requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[key], -1));
-                }
-                else
-                {
-                    requests.push_back(zkutil::makeCreateRequest(key_paths[i], new_values[key], zkutil::CreateMode::Persistent));
-                    ++new_keys_num;
-                }
+                requests.push_back(zkutil::makeCreateRequest(key_paths[i], new_values[key], zkutil::CreateMode::Persistent));
+                ++new_keys_num;
             }
         }
 
@@ -232,18 +193,6 @@ class StorageKeeperMapSource : public ISource
     KeyContainerIter it;
     KeyContainerIter end;
 
-    bool with_version_column = false;
-
-    static Block getHeader(Block header, bool with_version_column)
-    {
-        if (with_version_column)
-            header.insert(
-                    {DataTypeInt32{}.createColumn(),
-                    std::make_shared<DataTypeInt32>(), std::string{version_column_name}});
-
-        return header;
-    }
-
 public:
     StorageKeeperMapSource(
         const StorageKeeperMap & storage_,
@@ -251,10 +200,8 @@ public:
         size_t max_block_size_,
         KeyContainerPtr container_,
         KeyContainerIter begin_,
-        KeyContainerIter end_,
-        bool with_version_column_)
-        : ISource(getHeader(header, with_version_column_)), storage(storage_), max_block_size(max_block_size_), container(std::move(container_)), it(begin_), end(end_)
-        , with_version_column(with_version_column_)
+        KeyContainerIter end_)
+        : ISource(header), storage(storage_), max_block_size(max_block_size_), container(std::move(container_)), it(begin_), end(end_)
     {
     }
 
@@ -278,12 +225,12 @@ public:
             for (auto & raw_key : raw_keys)
                 raw_key = base64Encode(raw_key, /* url_encoding */ true);
 
-            return storage.getBySerializedKeys(raw_keys, nullptr, with_version_column);
+            return storage.getBySerializedKeys(raw_keys, nullptr);
         }
         else
         {
             size_t elem_num = std::min(max_block_size, static_cast<size_t>(end - it));
-            auto chunk = storage.getBySerializedKeys(std::span{it, it + elem_num}, nullptr, with_version_column);
+            auto chunk = storage.getBySerializedKeys(std::span{it, it + elem_num}, nullptr);
             it += elem_num;
             return chunk;
         }
@@ -479,16 +426,6 @@ Pipe StorageKeeperMap::read(
     auto primary_key_type = sample_block.getByName(primary_key).type;
     std::tie(filtered_keys, all_scan) = getFilterKeys(primary_key, primary_key_type, query_info, context_);
 
-    bool with_version_column = false;
-    for (const auto & column : column_names)
-    {
-        if (column == version_column_name)
-        {
-            with_version_column = true;
-            break;
-        }
-    }
-
     const auto process_keys = [&]<typename KeyContainerPtr>(KeyContainerPtr keys) -> Pipe
     {
         if (keys->empty())
@@ -512,7 +449,7 @@ Pipe StorageKeeperMap::read(
 
             using KeyContainer = typename KeyContainerPtr::element_type;
             pipes.emplace_back(std::make_shared<StorageKeeperMapSource<KeyContainer>>(
-                *this, sample_block, max_block_size, keys, keys->begin() + begin, keys->begin() + end, with_version_column));
+                *this, sample_block, max_block_size, keys, keys->begin() + begin, keys->begin() + end));
         }
         return Pipe::unitePipes(std::move(pipes));
     };
@@ -524,10 +461,10 @@ Pipe StorageKeeperMap::read(
     return process_keys(std::move(filtered_keys));
 }
 
-SinkToStoragePtr StorageKeeperMap::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr StorageKeeperMap::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
     checkTable<true>();
-    return std::make_shared<StorageKeeperMapSink>(*this, metadata_snapshot->getSampleBlock(), local_context);
+    return std::make_shared<StorageKeeperMapSink>(*this, metadata_snapshot);
 }
 
 void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
@@ -615,12 +552,6 @@ void StorageKeeperMap::drop()
 
     auto metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(dropped_lock_path, *client);
     dropTable(client, metadata_drop_lock);
-}
-
-NamesAndTypesList StorageKeeperMap::getVirtuals() const
-{
-    return NamesAndTypesList{
-        {std::string{version_column_name}, std::make_shared<DataTypeInt32>()}};
 }
 
 zkutil::ZooKeeperPtr StorageKeeperMap::getClient() const
@@ -739,18 +670,13 @@ Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, PaddedPOD
     if (raw_keys.size() != keys[0].column->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", raw_keys.size(), keys[0].column->size());
 
-    return getBySerializedKeys(raw_keys, &null_map, /* version_column */ false);
+    return getBySerializedKeys(raw_keys, &null_map);
 }
 
-Chunk StorageKeeperMap::getBySerializedKeys(const std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version) const
+Chunk StorageKeeperMap::getBySerializedKeys(const std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map) const
 {
     Block sample_block = getInMemoryMetadataPtr()->getSampleBlock();
     MutableColumns columns = sample_block.cloneEmptyColumns();
-    MutableColumnPtr version_column = nullptr;
-
-    if (with_version)
-        version_column = ColumnVector<Int32>::create();
-
     size_t primary_key_pos = getPrimaryKeyPos(sample_block, getPrimaryKey());
 
     if (null_map)
@@ -780,9 +706,6 @@ Chunk StorageKeeperMap::getBySerializedKeys(const std::span<const std::string> k
         if (code == Coordination::Error::ZOK)
         {
             fillColumns(base64Decode(keys[i], true), response.data, primary_key_pos, sample_block, columns);
-
-            if (version_column)
-                version_column->insert(response.stat.version);
         }
         else if (code == Coordination::Error::ZNONODE)
         {
@@ -791,9 +714,6 @@ Chunk StorageKeeperMap::getBySerializedKeys(const std::span<const std::string> k
                 (*null_map)[i] = 0;
                 for (size_t col_idx = 0; col_idx < sample_block.columns(); ++col_idx)
                     columns[col_idx]->insert(sample_block.getByPosition(col_idx).type->getDefault());
-
-                if (version_column)
-                    version_column->insert(-1);
             }
         }
         else
@@ -803,10 +723,6 @@ Chunk StorageKeeperMap::getBySerializedKeys(const std::span<const std::string> k
     }
 
     size_t num_rows = columns.at(0)->size();
-
-    if (version_column)
-        columns.push_back(std::move(version_column));
-
     return Chunk(std::move(columns), num_rows);
 }
 
@@ -847,8 +763,6 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
     if (commands.empty())
         return;
 
-    bool strict = local_context->getSettingsRef().keeper_map_strict_mode;
-
     assert(commands.size() == 1);
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -857,26 +771,21 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
 
     if (commands.front().type == MutationCommand::Type::DELETE)
     {
-        MutationsInterpreter::Settings settings(true);
-        settings.return_all_columns = true;
-        settings.return_mutated_rows = true;
-
         auto interpreter = std::make_unique<MutationsInterpreter>(
             storage_ptr,
             metadata_snapshot,
             commands,
             local_context,
-            settings);
-
+            /*can_execute_*/ true,
+            /*return_all_columns_*/ true,
+            /*return_deleted_rows_*/ true);
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
 
         auto header = interpreter->getUpdatedHeader();
         auto primary_key_pos = header.getPositionByName(primary_key);
-        auto version_position = header.getPositionByName(std::string{version_column_name});
 
         auto client = getClient();
-
         Block block;
         while (executor.pull(block))
         {
@@ -884,23 +793,14 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
             auto column = column_type_name.column;
             auto size = column->size();
 
-
             WriteBufferFromOwnString wb_key;
             Coordination::Requests delete_requests;
-
             for (size_t i = 0; i < size; ++i)
             {
-                int32_t version = -1;
-                if (strict)
-                {
-                    const auto & version_column = block.getByPosition(version_position).column;
-                    version = assert_cast<const ColumnVector<Int32> &>(*version_column).getData()[i];
-                }
-
                 wb_key.restart();
 
                 column_type_name.type->getDefaultSerialization()->serializeBinary(*column, i, wb_key, {});
-                delete_requests.emplace_back(zkutil::makeRemoveRequest(fullPathForKey(base64Encode(wb_key.str(), true)), version));
+                delete_requests.emplace_back(zkutil::makeRemoveRequest(fullPathForKey(base64Encode(wb_key.str(), true)), -1));
             }
 
             Coordination::Responses responses;
@@ -927,29 +827,19 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
 
     assert(commands.front().type == MutationCommand::Type::UPDATE);
     if (commands.front().column_to_update_expression.contains(primary_key))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
-
-    MutationsInterpreter::Settings settings(true);
-    settings.return_all_columns = true;
-    settings.return_mutated_rows = true;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated");
 
     auto interpreter = std::make_unique<MutationsInterpreter>(
-        storage_ptr,
-        metadata_snapshot,
-        commands,
-        local_context,
-        settings);
-
+        storage_ptr, metadata_snapshot, commands, local_context, /*can_execute_*/ true, /*return_all_columns*/ true);
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
 
-    auto sink = std::make_shared<StorageKeeperMapSink>(*this, executor.getHeader(), local_context);
+    auto sink = std::make_shared<StorageKeeperMapSink>(*this, metadata_snapshot);
 
     Block block;
     while (executor.pull(block))
         sink->consume(Chunk{block.getColumns(), block.rows()});
-
-    sink->finalize<true>(strict);
+    sink->onFinish();
 }
 
 namespace

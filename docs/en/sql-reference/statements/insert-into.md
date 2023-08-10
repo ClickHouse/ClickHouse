@@ -64,8 +64,8 @@ INSERT INTO insert_select_testtable VALUES (1, DEFAULT, 1) ;
 
 If a list of columns does not include all existing columns, the rest of the columns are filled with:
 
-- The values calculated from the `DEFAULT` expressions specified in the table definition.
-- Zeros and empty strings, if `DEFAULT` expressions are not defined.
+-   The values calculated from the `DEFAULT` expressions specified in the table definition.
+-   Zeros and empty strings, if `DEFAULT` expressions are not defined.
 
 Data can be passed to the INSERT in any [format](../../interfaces/formats.md#formats) supported by ClickHouse. The format must be specified explicitly in the query:
 
@@ -208,22 +208,22 @@ Result:
 
 `INSERT` sorts the input data by primary key and splits them into partitions by a partition key. If you insert data into several partitions at once, it can significantly reduce the performance of the `INSERT` query. To avoid this:
 
-- Add data in fairly large batches, such as 100,000 rows at a time.
-- Group data by a partition key before uploading it to ClickHouse.
+-   Add data in fairly large batches, such as 100,000 rows at a time.
+-   Group data by a partition key before uploading it to ClickHouse.
 
 Performance will not decrease if:
 
-- Data is added in real time.
-- You upload data that is usually sorted by time.
+-   Data is added in real time.
+-   You upload data that is usually sorted by time.
 
 It's also possible to asynchronously insert data in small but frequent inserts. The data from such insertions is combined into batches and then safely inserted into a table. To enable the asynchronous mode, switch on the [async_insert](../../operations/settings/settings.md#async-insert) setting. Note that asynchronous insertions are supported only over HTTP protocol, and deduplication is not supported for them.
 
 **See Also**
 
-- [async_insert](../../operations/settings/settings.md#async-insert)
-- [async_insert_threads](../../operations/settings/settings.md#async-insert-threads)
-- [wait_for_async_insert](../../operations/settings/settings.md#wait-for-async-insert)
-- [wait_for_async_insert_timeout](../../operations/settings/settings.md#wait-for-async-insert-timeout)
-- [async_insert_max_data_size](../../operations/settings/settings.md#async-insert-max-data-size)
-- [async_insert_busy_timeout_ms](../../operations/settings/settings.md#async-insert-busy-timeout-ms)
-- [async_insert_stale_timeout_ms](../../operations/settings/settings.md#async-insert-stale-timeout-ms)
+-   [async_insert](../../operations/settings/settings.md#async-insert)
+-   [async_insert_threads](../../operations/settings/settings.md#async-insert-threads)
+-   [wait_for_async_insert](../../operations/settings/settings.md#wait-for-async-insert)
+-   [wait_for_async_insert_timeout](../../operations/settings/settings.md#wait-for-async-insert-timeout)
+-   [async_insert_max_data_size](../../operations/settings/settings.md#async-insert-max-data-size)
+-   [async_insert_busy_timeout_ms](../../operations/settings/settings.md#async-insert-busy-timeout-ms)
+-   [async_insert_stale_timeout_ms](../../operations/settings/settings.md#async-insert-stale-timeout-ms)

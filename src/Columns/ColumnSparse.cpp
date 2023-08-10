@@ -439,7 +439,7 @@ void ColumnSparse::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                     PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                     int direction, int nan_direction_hint) const
 {
-    if (row_indexes || !typeid_cast<const ColumnSparse *>(&rhs))
+    if (row_indexes)
     {
         /// TODO: implement without conversion to full column.
         auto this_full = convertToFullColumnIfSparse();
@@ -738,9 +738,9 @@ ColumnPtr ColumnSparse::compress() const
     size_t byte_size = values_compressed->byteSize() + offsets_compressed->byteSize();
 
     return ColumnCompressed::create(size(), byte_size,
-        [my_values_compressed = std::move(values_compressed), my_offsets_compressed = std::move(offsets_compressed), size = size()]
+        [values_compressed = std::move(values_compressed), offsets_compressed = std::move(offsets_compressed), size = size()]
         {
-            return ColumnSparse::create(my_values_compressed->decompress(), my_offsets_compressed->decompress(), size);
+            return ColumnSparse::create(values_compressed->decompress(), offsets_compressed->decompress(), size);
         });
 }
 
@@ -751,13 +751,13 @@ bool ColumnSparse::structureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnSparse::forEachSubcolumn(MutableColumnCallback callback)
+void ColumnSparse::forEachSubcolumn(ColumnCallback callback) const
 {
     callback(values);
     callback(offsets);
 }
 
-void ColumnSparse::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+void ColumnSparse::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
 {
     callback(*values);
     values->forEachSubcolumnRecursively(callback);

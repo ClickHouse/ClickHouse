@@ -91,7 +91,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
     query = std::move(explain_query);
 }
 
-ColumnsDescription TableFunctionExplain::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionExplain::getActualTableStructure(ContextPtr context) const
 {
     Block sample_block = getInterpreter(context).getSampleBlock(query->as<ASTExplainQuery>()->getKind());
     ColumnsDescription columns_description;
@@ -123,7 +123,7 @@ static Block executeMonoBlock(QueryPipeline & pipeline)
 }
 
 StoragePtr TableFunctionExplain::executeImpl(
-    const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
+    const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     /// To support settings inside explain subquery.
     auto mutable_context = Context::createCopy(context);
@@ -132,7 +132,7 @@ StoragePtr TableFunctionExplain::executeImpl(
     Block block = executeMonoBlock(blockio.pipeline);
 
     StorageID storage_id(getDatabaseName(), table_name);
-    auto storage = std::make_shared<StorageValues>(storage_id, getActualTableStructure(context, is_insert_query), std::move(block));
+    auto storage = std::make_shared<StorageValues>(storage_id, getActualTableStructure(context), std::move(block));
     storage->startup();
     return storage;
 }
@@ -147,16 +147,20 @@ InterpreterExplainQuery TableFunctionExplain::getInterpreter(ContextPtr context)
 
 void registerTableFunctionExplain(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionExplain>({.documentation = {
-            .description=R"(
-                Returns result of EXPLAIN query.
-                The function should not be called directly but can be invoked via `SELECT * FROM (EXPLAIN <query>)`.
-                You can use this query to process the result of EXPLAIN further using SQL (e.g., in tests).
-                Example:
-                [example:1]
-                )",
-            .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}}
-        }});
+    factory.registerFunction<TableFunctionExplain>({.documentation = {R"(
+Returns result of EXPLAIN query.
+
+The function should not be called directly but can be invoked via `SELECT * FROM (EXPLAIN <query>)`.
+
+You can use this query to process the result of EXPLAIN further using SQL (e.g., in tests).
+
+Example:
+[example:1]
+
+)",
+{{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'"}}
+}});
+
 }
 
 }

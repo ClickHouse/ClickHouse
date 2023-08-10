@@ -3,12 +3,10 @@
 #include <cassert>
 #include <stdexcept> // for std::logic_error
 #include <string>
-#include <type_traits>
 #include <vector>
 #include <functional>
 #include <iosfwd>
 
-#include <base/defines.h>
 #include <base/types.h>
 #include <base/unaligned.h>
 
@@ -275,8 +273,6 @@ struct CRC32Hash
         if (size == 0)
             return 0;
 
-        chassert(pos);
-
         if (size < 8)
         {
             return static_cast<unsigned>(hashLessThan8(x.data, x.size));
@@ -328,17 +324,6 @@ namespace ZeroTraits
 {
     inline bool check(const StringRef & x) { return 0 == x.size; }
     inline void set(StringRef & x) { x.size = 0; }
-}
-
-namespace PackedZeroTraits
-{
-    template <typename Second, template <typename, typename> class PackedPairNoInit>
-    inline bool check(const PackedPairNoInit<StringRef, Second> p)
-    { return 0 == p.key.size; }
-
-    template <typename Second, template <typename, typename> class PackedPairNoInit>
-    inline void set(PackedPairNoInit<StringRef, Second> & p)
-    { p.key.size = 0; }
 }
 
 

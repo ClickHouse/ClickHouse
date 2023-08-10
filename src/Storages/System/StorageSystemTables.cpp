@@ -3,14 +3,12 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/System/StorageSystemTables.h>
-#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Common/typeid_cast.h>
@@ -222,7 +220,7 @@ protected:
                         {
                             auto temp_db = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
                             ASTPtr ast = temp_db ? temp_db->tryGetCreateTableQuery(table.second->getStorageID().getTableName(), context) : nullptr;
-                            res_columns[res_index++]->insert(ast ? format({context, *ast}) : "");
+                            res_columns[res_index++]->insert(ast ? ast->formatWithSecretsHidden() : "");
                         }
 
                         // engine_full
@@ -368,7 +366,7 @@ protected:
                     }
 
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(ast ? format({context, *ast}) : "");
+                        res_columns[res_index++]->insert(ast ? ast->formatWithSecretsHidden() : "");
 
                     if (columns_mask[src_index++])
                     {
@@ -376,7 +374,7 @@ protected:
 
                         if (ast_create && ast_create->storage)
                         {
-                            engine_full = format({context, *ast_create->storage});
+                            engine_full = ast_create->storage->formatWithSecretsHidden();
 
                             static const char * const extra_head = " ENGINE = ";
                             if (startsWith(engine_full, extra_head))
@@ -390,7 +388,7 @@ protected:
                     {
                         String as_select;
                         if (ast_create && ast_create->select)
-                            as_select = format({context, *ast_create->select});
+                            as_select = ast_create->select->formatWithSecretsHidden();
                         res_columns[res_index++]->insert(as_select);
                     }
                 }
@@ -403,7 +401,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPartitionKeyAST()))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
+                        res_columns[res_index++]->insert(expression_ptr->formatWithSecretsHidden());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -411,7 +409,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
+                        res_columns[res_index++]->insert(expression_ptr->formatWithSecretsHidden());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -419,7 +417,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPrimaryKey().expression_list_ast))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
+                        res_columns[res_index++]->insert(expression_ptr->formatWithSecretsHidden());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -427,7 +425,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSamplingKeyAST()))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
+                        res_columns[res_index++]->insert(expression_ptr->formatWithSecretsHidden());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -588,9 +586,23 @@ Pipe StorageSystemTables::read(
     const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    Block sample_block = storage_snapshot->metadata->getSampleBlock();
 
-    auto [columns_mask, res_block] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
+    /// Create a mask of what columns are needed in the result.
+
+    NameSet names_set(column_names.begin(), column_names.end());
+
+    Block sample_block = storage_snapshot->metadata->getSampleBlock();
+    Block res_block;
+
+    std::vector<UInt8> columns_mask(sample_block.columns());
+    for (size_t i = 0, size = columns_mask.size(); i < size; ++i)
+    {
+        if (names_set.contains(sample_block.getByPosition(i).name))
+        {
+            columns_mask[i] = 1;
+            res_block.insert(sample_block.getByPosition(i));
+        }
+    }
 
     ColumnPtr filtered_databases_column = getFilteredDatabases(query_info, context);
     ColumnPtr filtered_tables_column = getFilteredTables(query_info.query, filtered_databases_column, context);

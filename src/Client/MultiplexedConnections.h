@@ -64,9 +64,6 @@ public:
     bool hasActiveConnections() const override { return active_connection_count > 0; }
 
     void setReplicaInfo(ReplicaInfo value) override { replica_info = value; }
-
-    void setAsyncCallback(AsyncCallback async_callback) override;
-
 private:
     Packet receivePacketUnlocked(AsyncCallback async_callback) override;
 

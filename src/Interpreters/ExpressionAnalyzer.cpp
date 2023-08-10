@@ -56,7 +56,6 @@
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/logger_useful.h>
-#include <QueryPipeline/SizeLimits.h>
 
 
 #include <DataTypes/DataTypesNumber.h>
@@ -69,7 +68,6 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/misc.h>
-#include <Interpreters/PreparedSets.h>
 
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -149,11 +147,6 @@ ExpressionAnalyzerData::~ExpressionAnalyzerData() = default;
 ExpressionAnalyzer::ExtractedSettings::ExtractedSettings(const Settings & settings_)
     : use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries)
     , size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode)
-    , size_limits_for_set_used_with_index(
-        (settings_.use_index_for_in_with_subqueries_max_values &&
-            settings_.use_index_for_in_with_subqueries_max_values < settings_.max_rows_in_set) ?
-        size_limits_for_set :
-        SizeLimits(settings_.use_index_for_in_with_subqueries_max_values, settings_.max_bytes_in_set, OverflowMode::BREAK))
     , distributed_group_by_no_merge(settings_.distributed_group_by_no_merge)
 {}
 
@@ -450,6 +443,45 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global, b
 }
 
 
+void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name, const SelectQueryOptions & query_options)
+{
+    if (!prepared_sets)
+        return;
+
+    auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
+
+    if (prepared_sets->get(set_key))
+        return; /// Already prepared.
+
+    if (auto set_ptr_from_storage_set = isPlainStorageSetInSubquery(subquery_or_table_name))
+    {
+        prepared_sets->set(set_key, set_ptr_from_storage_set);
+        return;
+    }
+
+    auto interpreter_subquery = interpretSubquery(subquery_or_table_name, getContext(), {}, query_options);
+    auto io = interpreter_subquery->execute();
+    PullingAsyncPipelineExecutor executor(io.pipeline);
+
+    SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, getContext()->getSettingsRef().transform_null_in);
+    set->setHeader(executor.getHeader().getColumnsWithTypeAndName());
+
+    Block block;
+    while (executor.pull(block))
+    {
+        if (block.rows() == 0)
+            continue;
+
+        /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
+        if (!set->insertFromBlock(block.getColumnsWithTypeAndName()))
+            return;
+    }
+
+    set->finishInsert();
+
+    prepared_sets->set(set_key, std::move(set));
+}
+
 SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name)
 {
     const auto * table = subquery_or_table_name->as<ASTTableIdentifier>();
@@ -462,6 +494,54 @@ SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_o
     const auto storage_set = std::dynamic_pointer_cast<StorageSet>(storage);
     return storage_set->getSet();
 }
+
+
+/// Performance optimization for IN() if storage supports it.
+void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
+{
+    if (!node || !storage() || !storage()->supportsIndexForIn())
+        return;
+
+    for (auto & child : node->children)
+    {
+        /// Don't descend into subqueries.
+        if (child->as<ASTSubquery>())
+            continue;
+
+        /// Don't descend into lambda functions
+        const auto * func = child->as<ASTFunction>();
+        if (func && func->name == "lambda")
+            continue;
+
+        makeSetsForIndex(child);
+    }
+
+    const auto * func = node->as<ASTFunction>();
+    if (func && functionIsInOrGlobalInOperator(func->name))
+    {
+        const IAST & args = *func->arguments;
+        const ASTPtr & left_in_operand = args.children.at(0);
+
+        if (storage()->mayBenefitFromIndexForIn(left_in_operand, getContext(), metadata_snapshot))
+        {
+            const ASTPtr & arg = args.children.at(1);
+            if (arg->as<ASTSubquery>() || arg->as<ASTTableIdentifier>())
+            {
+                if (settings.use_index_for_in_with_subqueries)
+                    tryMakeSetForIndexFromSubquery(arg, query_options);
+            }
+            else
+            {
+                auto temp_actions = std::make_shared<ActionsDAG>(columns_after_join);
+                getRootActions(left_in_operand, true, temp_actions);
+
+                if (prepared_sets && temp_actions->tryFindInOutputs(left_in_operand->getColumnName()))
+                    makeExplicitSet(func, *temp_actions, true, getContext(), settings.size_limits_for_set, *prepared_sets);
+            }
+        }
+    }
+}
+
 
 void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts)
 {
@@ -476,6 +556,7 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_
         no_makeset_for_subqueries,
         false /* no_makeset */,
         only_consts,
+        !isRemoteStorage() /* create_source_for_in */,
         getAggregationKeysInfo(),
         false /* build_expression_with_window_functions */,
         is_create_parameterized_view);
@@ -496,6 +577,7 @@ void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAGP
         true /* no_makeset_for_subqueries, no_makeset implies no_makeset_for_subqueries */,
         true /* no_makeset */,
         only_consts,
+        !isRemoteStorage() /* create_source_for_in */,
         getAggregationKeysInfo(),
         false /* build_expression_with_window_functions */,
         is_create_parameterized_view);
@@ -518,6 +600,7 @@ void ExpressionAnalyzer::getRootActionsForHaving(
         no_makeset_for_subqueries,
         false /* no_makeset */,
         only_consts,
+        true /* create_source_for_in */,
         getAggregationKeysInfo(),
         false /* build_expression_with_window_functions */,
         is_create_parameterized_view);
@@ -539,6 +622,7 @@ void ExpressionAnalyzer::getRootActionsForWindowFunctions(const ASTPtr & ast, bo
         no_makeset_for_subqueries,
         false /* no_makeset */,
         false /*only_consts */,
+        !isRemoteStorage() /* create_source_for_in */,
         getAggregationKeysInfo(),
         true);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
@@ -548,17 +632,15 @@ void ExpressionAnalyzer::getRootActionsForWindowFunctions(const ASTPtr & ast, bo
 
 void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions, AggregateDescriptions & descriptions)
 {
-    for (const ASTPtr & ast : aggregates())
+    for (const ASTFunction * node : aggregates())
     {
-        const ASTFunction & node = typeid_cast<const ASTFunction &>(*ast);
-
         AggregateDescription aggregate;
-        if (node.arguments)
-            getRootActionsNoMakeSet(node.arguments, actions);
+        if (node->arguments)
+            getRootActionsNoMakeSet(node->arguments, actions);
 
-        aggregate.column_name = node.getColumnName();
+        aggregate.column_name = node->getColumnName();
 
-        const ASTs & arguments = node.arguments ? node.arguments->children : ASTs();
+        const ASTs & arguments = node->arguments ? node->arguments->children : ASTs();
         aggregate.argument_names.resize(arguments.size());
         DataTypes types(arguments.size());
 
@@ -570,7 +652,7 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions, Aggr
             {
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                     "Unknown identifier '{}' in aggregate function '{}'",
-                    name, node.formatForErrorMessage());
+                    name, node->formatForErrorMessage());
             }
 
             types[i] = dag_node->result_type;
@@ -578,8 +660,8 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions, Aggr
         }
 
         AggregateFunctionProperties properties;
-        aggregate.parameters = (node.parameters) ? getAggregateFunctionParametersArray(node.parameters, "", getContext()) : Array();
-        aggregate.function = AggregateFunctionFactory::instance().get(node.name, types, aggregate.parameters, properties);
+        aggregate.parameters = (node->parameters) ? getAggregateFunctionParametersArray(node->parameters, "", getContext()) : Array();
+        aggregate.function = AggregateFunctionFactory::instance().get(node->name, types, aggregate.parameters, properties);
 
         descriptions.push_back(aggregate);
     }
@@ -746,13 +828,12 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
     }
 
     // Window functions
-    for (const ASTPtr & ast : syntax->window_function_asts)
+    for (const ASTFunction * function_node : syntax->window_function_asts)
     {
-        const ASTFunction & function_node = typeid_cast<const ASTFunction &>(*ast);
-        assert(function_node.is_window_function);
+        assert(function_node->is_window_function);
 
         WindowFunctionDescription window_function;
-        window_function.function_node = &function_node;
+        window_function.function_node = function_node;
         window_function.column_name
             = window_function.function_node->getColumnName();
         window_function.function_parameters
@@ -763,7 +844,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
 
         // Requiring a constant reference to a shared pointer to non-const AST
         // doesn't really look sane, but the visitor does indeed require it.
-        // Hence, we clone the node (not very sane either, I know).
+        // Hence we clone the node (not very sane either, I know).
         getRootActionsNoMakeSet(window_function.function_node->clone(), actions);
 
         const ASTs & arguments
@@ -796,22 +877,22 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
         // Find the window corresponding to this function. It may be either
         // referenced by name and previously defined in WINDOW clause, or it
         // may be defined inline.
-        if (!function_node.window_name.empty())
+        if (!function_node->window_name.empty())
         {
-            auto it = window_descriptions.find(function_node.window_name);
+            auto it = window_descriptions.find(function_node->window_name);
             if (it == std::end(window_descriptions))
             {
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                     "Window '{}' is not defined (referenced by '{}')",
-                    function_node.window_name,
-                    function_node.formatForErrorMessage());
+                    function_node->window_name,
+                    function_node->formatForErrorMessage());
             }
 
             it->second.window_functions.push_back(window_function);
         }
         else
         {
-            const auto & definition = function_node.window_definition->as<
+            const auto & definition = function_node->window_definition->as<
                 const ASTWindowDefinition &>();
             WindowDescription desc;
             desc.window_name = definition.getDefaultWindowName();
@@ -851,15 +932,6 @@ const ASTSelectQuery * ExpressionAnalyzer::getSelectQuery() const
     if (!select_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not a select query");
     return select_query;
-}
-
-bool ExpressionAnalyzer::isRemoteStorage() const
-{
-    const Settings & csettings = getContext()->getSettingsRef();
-    // Consider any storage used in parallel replicas as remote, so the query is executed in multiple servers
-    const bool enable_parallel_processing_of_joins
-        = csettings.max_parallel_replicas > 1 && csettings.allow_experimental_parallel_reading_from_replicas > 0;
-    return syntax->is_remote_storage || enable_parallel_processing_of_joins;
 }
 
 const ASTSelectQuery * SelectQueryExpressionAnalyzer::getAggregatingQuery() const
@@ -948,6 +1020,13 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
 {
     const auto & settings = context->getSettings();
 
+    Block left_sample_block(left_sample_columns);
+    for (auto & column : left_sample_block)
+    {
+        if (!column.column)
+            column.column = column.type->createColumn();
+    }
+
     Block right_sample_block = joined_plan->getCurrentDataStream().header;
 
     std::vector<String> tried_algorithms;
@@ -993,10 +1072,7 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
     {
         tried_algorithms.push_back(toString(JoinAlgorithm::GRACE_HASH));
-
-        // Grace hash join requires that columns exist in left_sample_block.
-        Block left_sample_block(left_sample_columns);
-        if (sanitizeBlock(left_sample_block, false) && GraceHashJoin::isSupported(analyzed_join))
+        if (GraceHashJoin::isSupported(analyzed_join))
             return std::make_shared<GraceHashJoin>(context, analyzed_join, left_sample_block, right_sample_block, context->getTempDataOnDisk());
     }
 
@@ -1130,17 +1206,9 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
 
     if (auto storage = analyzed_join->getStorageJoin())
     {
-        auto joined_block_actions = analyzed_join->createJoinedBlockActions(getContext());
-        NamesWithAliases required_columns_with_aliases = analyzed_join->getRequiredColumns(
-            Block(joined_block_actions->getResultColumns()), joined_block_actions->getRequiredColumns().getNames());
-
-        Names original_right_column_names;
-        for (auto & pr : required_columns_with_aliases)
-            original_right_column_names.push_back(pr.first);
-
         auto right_columns = storage->getRightSampleBlock().getColumnsWithTypeAndName();
         std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
-        return storage->getJoinLocked(analyzed_join, getContext(), original_right_column_names);
+        return storage->getJoinLocked(analyzed_join, getContext());
     }
 
     joined_plan = buildJoinedPlan(getContext(), join_element, *analyzed_join, query_options);
@@ -1334,13 +1402,10 @@ void SelectQueryExpressionAnalyzer::appendAggregateFunctionsArguments(Expression
         GetAggregatesVisitor(data).visit(select_query->orderBy());
 
     /// TODO: data.aggregates -> aggregates()
-    for (const ASTPtr & ast : data.aggregates)
-    {
-        const ASTFunction & node = typeid_cast<const ASTFunction &>(*ast);
-        if (node.arguments)
-            for (auto & argument : node.arguments->children)
+    for (const ASTFunction * node : data.aggregates)
+        if (node->arguments)
+            for (auto & argument : node->arguments->children)
                 getRootActions(argument, only_types, step.actions());
-    }
 }
 
 void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
@@ -1793,8 +1858,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         {
             ExpressionActionsChain::Step & step = *chain.steps.at(prewhere_step_num);
 
-            auto required_columns_ = prewhere_info->prewhere_actions->getRequiredColumnsNames();
-            NameSet required_source_columns(required_columns_.begin(), required_columns_.end());
+            auto required_columns = prewhere_info->prewhere_actions->getRequiredColumnsNames();
+            NameSet required_source_columns(required_columns.begin(), required_columns.end());
             /// Add required columns to required output in order not to remove them after prewhere execution.
             /// TODO: add sampling and final execution to common chain.
             for (const auto & column : additional_required_columns_after_prewhere)

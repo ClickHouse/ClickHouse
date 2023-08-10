@@ -142,10 +142,10 @@ StoredObjects MetadataStorageFromDisk::getStorageObjects(const std::string & pat
     object_storage_paths.reserve(object_storage_relative_paths.size());
 
     /// Relative paths -> absolute.
-    for (auto & [object_relative_path, object_meta] : object_storage_relative_paths)
+    for (auto & [object_relative_path, size] : object_storage_relative_paths)
     {
         auto object_path = fs::path(metadata->getBlobsCommonPrefix()) / object_relative_path;
-        StoredObject object{ object_path, object_meta.size_bytes, path };
+        StoredObject object{ object_path, size, path, [](const String & path_){ return path_; }};
         object_storage_paths.push_back(object);
     }
 

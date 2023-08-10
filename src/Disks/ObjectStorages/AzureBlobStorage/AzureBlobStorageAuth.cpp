@@ -57,22 +57,14 @@ void validateContainerName(const String & container_name)
 
 AzureBlobStorageEndpoint processAzureBlobStorageEndpoint(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    std::string storage_url;
-    if (config.has(config_prefix + ".storage_account_url"))
-    {
-        storage_url = config.getString(config_prefix + ".storage_account_url");
-        validateStorageAccountUrl(storage_url);
-    }
-    else
-    {
-        storage_url = config.getString(config_prefix + ".connection_string");
-    }
+    String storage_account_url = config.getString(config_prefix + ".storage_account_url");
+    validateStorageAccountUrl(storage_account_url);
     String container_name = config.getString(config_prefix + ".container_name", "default-container");
     validateContainerName(container_name);
     std::optional<bool> container_already_exists {};
     if (config.has(config_prefix + ".container_already_exists"))
         container_already_exists = {config.getBool(config_prefix + ".container_already_exists")};
-    return {storage_url, container_name, container_already_exists};
+    return {storage_account_url, container_name, container_already_exists};
 }
 
 
@@ -144,7 +136,10 @@ std::unique_ptr<BlobContainerClient> getAzureBlobContainerClient(
         /// If container_already_exists is not set (in config), ignore already exists error.
         /// (Conflict - The specified container already exists)
         if (!endpoint.container_already_exists.has_value() && e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict)
+        {
+            tryLogCurrentException("Container already exists, returning the existing container");
             return getAzureBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
+        }
         throw;
     }
 }

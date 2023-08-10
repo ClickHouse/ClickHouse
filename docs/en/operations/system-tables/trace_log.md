@@ -12,38 +12,38 @@ To analyze logs, use the `addressToLine`, `addressToLineWithInlines`, `addressTo
 
 Columns:
 
-- `event_date` ([Date](../../sql-reference/data-types/date.md)) — Date of sampling moment.
+-   `event_date` ([Date](../../sql-reference/data-types/date.md)) — Date of sampling moment.
 
-- `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Timestamp of the sampling moment.
+-   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Timestamp of the sampling moment.
 
-- `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Timestamp of the sampling moment with microseconds precision.
+-   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Timestamp of the sampling moment with microseconds precision.
 
-- `timestamp_ns` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Timestamp of the sampling moment in nanoseconds.
+-   `timestamp_ns` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Timestamp of the sampling moment in nanoseconds.
 
-- `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse server build revision.
+-   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse server build revision.
 
     When connecting to the server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1 revision 54429.`. This field contains the `revision`, but not the `version` of a server.
 
-- `trace_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Trace type:
+-   `trace_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Trace type:
 
-    - `Real` represents collecting stack traces by wall-clock time.
-    - `CPU` represents collecting stack traces by CPU time.
-    - `Memory` represents collecting allocations and deallocations when memory allocation exceeds the subsequent watermark.
-    - `MemorySample` represents collecting random allocations and deallocations.
-    - `MemoryPeak` represents collecting updates of peak memory usage.
-    - `ProfileEvent` represents collecting of increments of profile events.
+    -   `Real` represents collecting stack traces by wall-clock time.
+    -   `CPU` represents collecting stack traces by CPU time.
+    -   `Memory` represents collecting allocations and deallocations when memory allocation exceeds the subsequent watermark.
+    -   `MemorySample` represents collecting random allocations and deallocations.
+    -   `MemoryPeak` represents collecting updates of peak memory usage.
+    -   `ProfileEvent` represents collecting of increments of profile events.
 
-- `thread_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
+-   `thread_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
 
-- `query_id` ([String](../../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](#system_tables-query_log) system table.
+-   `query_id` ([String](../../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](#system_tables-query_log) system table.
 
-- `trace` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
+-   `trace` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 
-- `size` ([Int64](../../sql-reference/data-types/int-uint.md)) - For trace types `Memory`, `MemorySample` or `MemoryPeak` is the amount of memory allocated, for other trace types is 0.
+-   `size` ([Int64](../../sql-reference/data-types/int-uint.md)) - For trace types `Memory`, `MemorySample` or `MemoryPeak` is the amount of memory allocated, for other trace types is 0.
 
-- `event` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) - For trace type `ProfileEvent` is the name of updated profile event, for other trace types is an empty string.
+-   `event` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) - For trace type `ProfileEvent` is the name of updated profile event, for other trace types is an empty string.
 
-- `increment` ([UInt64](../../sql-reference/data-types/int-uint.md)) - For trace type `ProfileEvent` is the amount of increment of profile event, for other trace types is 0.
+-   `increment` ([UInt64](../../sql-reference/data-types/int-uint.md)) - For trace type `ProfileEvent` is the amount of incremnt of profile event, for other trace types is 0.
 
 **Example**
 

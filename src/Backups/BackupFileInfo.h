@@ -1,9 +1,8 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 
-namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -13,7 +12,6 @@ class IBackupEntry;
 using BackupPtr = std::shared_ptr<const IBackup>;
 using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
 using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
-struct ReadSettings;
 
 
 /// Information about a file stored in a backup.
@@ -35,9 +33,6 @@ struct BackupFileInfo
     /// Index of the data file. -1 means there is no data file.
     /// This field is set during backup coordination (see the class BackupCoordinationFileInfos).
     size_t data_file_index = static_cast<size_t>(-1);
-
-    /// Whether this file is encrypted by an encrypted disk.
-    bool encrypted_by_disk = false;
 
     struct LessByFileName
     {
@@ -67,9 +62,9 @@ struct BackupFileInfo
 using BackupFileInfos = std::vector<BackupFileInfo>;
 
 /// Builds a BackupFileInfo for a specified backup entry.
-BackupFileInfo buildFileInfoForBackupEntry(const String & file_name, const BackupEntryPtr & backup_entry, const BackupPtr & base_backup, const ReadSettings & read_settings, Poco::Logger * log);
+BackupFileInfo buildFileInfoForBackupEntry(const String & file_name, const BackupEntryPtr & backup_entry, const BackupPtr & base_backup, Poco::Logger * log);
 
 /// Builds a vector of BackupFileInfos for specified backup entries.
-BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool);
+BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, ThreadPool & thread_pool);
 
 }

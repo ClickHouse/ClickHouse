@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <re2/re2.h>
+#include <re2/stringpiece.h>
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
@@ -32,14 +33,14 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
     std::string escaped_with_globs = buf_for_escaping.str();
 
     static const re2::RE2 enum_or_range(R"({([\d]+\.\.[\d]+|[^{}*,]+,[^{}*]*[^{}*,])})");    /// regexp for {expr1,expr2,expr3} or {M..N}, where M and N - non-negative integers, expr's should be without "{", "}", "*" and ","
-    std::string_view input(escaped_with_globs);
-    std::string_view matched;
+    re2::StringPiece input(escaped_with_globs);
+    re2::StringPiece matched;
     std::ostringstream oss_for_replacing;       // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss_for_replacing.exceptions(std::ios::failbit);
     size_t current_index = 0;
     while (RE2::FindAndConsume(&input, enum_or_range, &matched))
     {
-        std::string buffer(matched);
+        std::string buffer = matched.ToString();
         oss_for_replacing << escaped_with_globs.substr(current_index, matched.data() - escaped_with_globs.data() - current_index - 1) << '(';
 
         if (buffer.find(',') == std::string::npos)

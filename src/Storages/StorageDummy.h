@@ -11,7 +11,7 @@ namespace DB
 class StorageDummy : public IStorage
 {
 public:
-    StorageDummy(const StorageID & table_id_, const ColumnsDescription & columns_, ColumnsDescription object_columns_ = {});
+    StorageDummy(const StorageID & table_id_, const ColumnsDescription & columns_);
 
     std::string getName() const override { return "StorageDummy"; }
 
@@ -21,11 +21,6 @@ public:
     bool supportsSubcolumns() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
     bool canMoveConditionsToPrewhere() const override { return false; }
-
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override
-    {
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns);
-    }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr local_context,
@@ -42,8 +37,6 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
-private:
-    const ColumnsDescription object_columns;
 };
 
 class ReadFromDummy : public SourceStepWithFilter

@@ -85,7 +85,7 @@ MergedColumnOnlyOutputStream::fillChecksums(
             all_checksums.files.erase(removed_file);
     }
 
-    new_part->setColumns(columns, serialization_infos, metadata_snapshot->getMetadataVersion());
+    new_part->setColumns(columns, serialization_infos);
     return checksums;
 }
 

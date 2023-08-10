@@ -146,8 +146,6 @@ public:
     virtual bool supportsReplication() const { return false; }
 
     /// Returns true if the storage supports parallel insert.
-    /// If false, each INSERT query will call write() only once.
-    /// Different INSERT queries may write in parallel regardless of this value.
     virtual bool supportsParallelInsert() const { return false; }
 
     /// Returns true if the storage supports deduplication of inserted data blocks.
@@ -180,8 +178,6 @@ public:
     /// Returns true if the storage is for system, which cannot be target of SHOW CREATE TABLE.
     virtual bool isSystemStorage() const { return false; }
 
-    /// Returns true if asynchronous inserts are enabled for table.
-    virtual bool areAsynchronousInsertsEnabled() const { return false; }
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
@@ -254,9 +250,6 @@ public:
     /// because those are internally translated into 'ALTER UDPATE' mutations.
     virtual bool supportsDelete() const { return false; }
 
-    /// Return true if the trivial count query could be optimized without reading the data at all.
-    virtual bool supportsTrivialCountOptimization() const { return false; }
-
 private:
 
     StorageID storage_id;
@@ -282,11 +275,10 @@ public:
     /// acquiring the lock instead of raising a TABLE_IS_DROPPED exception
     TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
 
-    /// Lock table for alter. This lock must be acquired in ALTER queries to be
+    /// Lock table for alter. This lock must be acuqired in ALTER queries to be
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
     using AlterLockHolder = std::unique_lock<std::timed_mutex>;
     AlterLockHolder lockForAlter(const std::chrono::milliseconds & acquire_timeout);
-    std::optional<AlterLockHolder> tryLockForAlter(const std::chrono::milliseconds & acquire_timeout);
 
     /// Lock table exclusively. This lock must be acquired if you want to be
     /// sure, that no other thread (SELECT, merge, ALTER, etc.) doing something
@@ -376,16 +368,6 @@ private:
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
 
-    /// Should we process blocks of data returned by the storage in parallel
-    /// even when the storage returned only one stream of data for reading?
-    /// It is beneficial, for example, when you read from a file quickly,
-    /// but then do heavy computations on returned blocks.
-    ///
-    /// This is enabled by default, but in some cases shouldn't be done (for
-    /// example it is disabled for all system tables, since it is pretty
-    /// useless).
-    virtual bool parallelizeOutputAfterReading(ContextPtr) const { return !isSystemStorage(); }
-
 public:
     /// Other version of read which adds reading step to query plan.
     /// Default implementation creates ReadFromStorageStep and uses usual read.
@@ -407,14 +389,11 @@ public:
       * passed in all parts of the returned streams. Storage metadata can be
       * changed during lifetime of the returned streams, but the snapshot is
       * guaranteed to be immutable.
-      *
-      * async_insert - set to true if the write is part of async insert flushing
       */
     virtual SinkToStoragePtr write(
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr /*context*/,
-        bool /*async_insert*/)
+        ContextPtr /*context*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", getName());
     }
@@ -524,7 +503,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
     }
 
-    virtual void waitForMutation(const String & /*mutation_id*/, bool /*wait_for_another_mutation*/)
+    virtual void waitForMutation(const String & /*mutation_id*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
     }
@@ -553,15 +532,15 @@ public:
     /**
       * If the storage requires some complicated work on destroying,
       * then you have two virtual methods:
-      * - flushAndPrepareForShutdown()
+      * - flush()
       * - shutdown()
       *
       * @see shutdown()
-      * @see flushAndPrepareForShutdown()
+      * @see flush()
       */
     void flushAndShutdown()
     {
-        flushAndPrepareForShutdown();
+        flush();
         shutdown();
     }
 
@@ -574,7 +553,7 @@ public:
 
     /// Called before shutdown() to flush data to underlying storage
     /// Data in memory need to be persistent
-    virtual void flushAndPrepareForShutdown() {}
+    virtual void flush() {}
 
     /// Asks table to stop executing some action identified by action_type
     /// If table does not support such type of lock, and empty lock is returned
@@ -665,12 +644,6 @@ public:
 
     /// Creates a storage snapshot from given metadata and columns, which are used in query.
     virtual StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context) const
-    {
-        return getStorageSnapshot(metadata_snapshot, query_context);
-    }
-
-    /// Creates a storage snapshot but without holding a data specific to storage.
-    virtual StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
     {
         return getStorageSnapshot(metadata_snapshot, query_context);
     }

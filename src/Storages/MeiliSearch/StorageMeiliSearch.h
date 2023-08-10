@@ -26,11 +26,9 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool async_insert) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context) override;
 
-    static MeiliSearchConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
-
-    static ColumnsDescription getTableStructureFromData(const MeiliSearchConfiguration & config_);
+    MeiliSearchConfiguration static getConfiguration(ASTs engine_args, ContextPtr context);
 
 private:
     MeiliSearchConfiguration config;
