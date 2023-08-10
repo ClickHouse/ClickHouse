@@ -51,7 +51,7 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
     auto & column_num_read_files = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
     auto & column_num_read_bytes = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
 
-    auto add_row = [&](const BackupsWorker::Info & info)
+    auto add_row = [&](const BackupOperationInfo & info)
     {
         column_id.insertData(info.id.data(), info.id.size());
         column_name.insertData(info.name.data(), info.name.size());
