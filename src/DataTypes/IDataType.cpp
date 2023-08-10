@@ -23,7 +23,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int DATA_TYPE_CANNOT_BE_PROMOTED;
-    extern const int OPPOSITE_SIGN_DATA_TYPE_NOT_FOUND;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -74,7 +73,8 @@ DataTypePtr IDataType::promoteNumericType() const
 
 DataTypePtr IDataType::oppositeSignDataType() const
 {
-    throw Exception(ErrorCodes::OPPOSITE_SIGN_DATA_TYPE_NOT_FOUND, "Opposite sign data type not found for {}.", getName());
+    // TODO: Should use ErrorCodes::OPPOSITE_SIGN_DATA_TYPE_NOT_FOUND.
+    throw Exception(702, "Opposite sign data type not found for {}.", getName());
 }
 
 size_t IDataType::getSizeOfValueInMemory() const
