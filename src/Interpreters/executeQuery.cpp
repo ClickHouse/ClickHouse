@@ -728,7 +728,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             is_create_parameterized_view = create_query->isParameterizedView();
 
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-        if (!is_create_parameterized_view && context->hasQueryParameters())
+        /// Even if we don't have parameters in query_context, check that AST doesn't have unknown parameters
+        bool probably_has_params = find_first_symbols<'{'>(begin, end) != end;
+        if (!is_create_parameterized_view && probably_has_params)
         {
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(ast);
