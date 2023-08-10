@@ -37,8 +37,10 @@ namespace
 template <typename T, typename SourceType>
 struct StatisticsNumeric
 {
-    T min = std::numeric_limits<T>::max();
-    T max = std::numeric_limits<T>::min();
+    T min = std::numeric_limits<T>::has_infinity
+        ? std::numeric_limits<T>::infinity() : std::numeric_limits<T>::max();
+    T max = std::numeric_limits<T>::has_infinity
+        ? -std::numeric_limits<T>::infinity() : std::numeric_limits<T>::lowest();
 
     void add(SourceType x)
     {

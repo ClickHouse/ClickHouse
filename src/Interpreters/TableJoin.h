@@ -189,7 +189,6 @@ private:
     template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
     void inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right, bool strict);
 
-    NamesAndTypesList correctedColumnsAddedByJoin() const;
 
     void deduplicateAndQualifyColumnNames(const NameSet & left_table_columns, const String & right_table_prefix);
 
@@ -371,6 +370,8 @@ public:
     bool isSpecialStorage() const { return !right_storage_name.empty() || right_storage_join || right_kv_storage; }
 
     std::shared_ptr<const IKeyValueEntity> getStorageKeyValue() { return right_kv_storage; }
+
+    NamesAndTypesList correctedColumnsAddedByJoin() const;
 };
 
 }
