@@ -273,6 +273,17 @@ bool IStorage::isStaticStorage() const
     return false;
 }
 
+IStorage::DataValidationTasksPtr IStorage::getCheckTaskList(const ASTPtr & /* query */, ContextPtr /* context */)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Check query is not supported for {} storage", getName());
+}
+
+CheckResult IStorage::checkDataNext(DataValidationTasksPtr & /* check_task_list */, bool & has_nothing_to_do)
+{
+    has_nothing_to_do = true;
+    return {};
+}
+
 void IStorage::adjustCreateQueryForBackup(ASTPtr &) const
 {
 }

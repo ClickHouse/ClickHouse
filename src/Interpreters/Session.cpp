@@ -520,8 +520,6 @@ ContextMutablePtr Session::makeSessionContext()
         {},
         session_context->getSettingsRef().max_sessions_for_user);
 
-    recordLoginSucess(session_context);
-
     return session_context;
 }
 
@@ -583,8 +581,6 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         *user_id,
         { session_name_ },
         max_sessions_for_user);
-
-    recordLoginSucess(session_context);
 
     return session_context;
 }
@@ -659,35 +655,21 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     if (user_id)
         user = query_context->getUser();
 
-    /// Interserver does not create session context
-    recordLoginSucess(query_context);
+    if (!notified_session_log_about_login)
+    {
+        if (auto session_log = getSessionLog())
+        {
+            session_log->addLoginSuccess(
+                    auth_id,
+                    named_session ? std::optional<std::string>(named_session->key.second) : std::nullopt,
+                    *query_context,
+                    user);
+
+            notified_session_log_about_login = true;
+        }
+    }
 
     return query_context;
-}
-
-
-void Session::recordLoginSucess(ContextPtr login_context) const
-{
-    if (notified_session_log_about_login)
-        return;
-
-    if (!login_context)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session or query context must be created");
-
-    if (auto session_log = getSessionLog())
-    {
-        const auto & settings   = login_context->getSettingsRef();
-        const auto access       = login_context->getAccess();
-
-        session_log->addLoginSuccess(auth_id,
-                                     named_session ? named_session->key.second : "",
-                                     settings,
-                                     access,
-                                     getClientInfo(),
-                                     user);
-
-        notified_session_log_about_login = true;
-    }
 }
 
 
