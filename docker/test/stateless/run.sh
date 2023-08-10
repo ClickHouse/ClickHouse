@@ -109,8 +109,8 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
 fi
 
 
-# Wait for the server to start
-while true
+# Wait for the server to start, but not for too long.
+for _ in {1..100}
 do
     clickhouse-client --query "SELECT 1" && break
     sleep 1
