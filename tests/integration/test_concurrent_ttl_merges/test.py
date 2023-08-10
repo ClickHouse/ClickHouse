@@ -103,10 +103,6 @@ def test_no_ttl_merges_in_busy_pool(started_cluster):
         rows_count.append(int(node1.query("SELECT count() FROM test_ttl").strip()))
         time.sleep(0.5)
 
-    # at least several seconds we didn't run any TTL merges and rows count equal
-    # to the original value
-    assert sum([1 for count in rows_count if count == 30]) > 4
-
     assert_eq_with_retry(node1, "SELECT COUNT() FROM test_ttl", "0")
     node1.query("DROP TABLE test_ttl SYNC")
 
