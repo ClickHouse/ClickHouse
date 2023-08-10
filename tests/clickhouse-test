@@ -505,7 +505,6 @@ class FailureReason(enum.Enum):
     REPLICATED_DB = "replicated-database"
     S3_STORAGE = "s3-storage"
     BUILD = "not running for current build"
-    NO_UPGRADE_CHECK = "not running for upgrade check"
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
 
     # UNKNOWN reasons
@@ -608,6 +607,9 @@ class SettingsRandomizer:
         "enable_memory_bound_merging_of_aggregation_results": lambda: random.randint(
             0, 1
         ),
+        "min_count_to_compile_expression": lambda: random.choice([0, 3]),
+        "min_count_to_compile_aggregate_expression": lambda: random.choice([0, 3]),
+        "min_count_to_compile_sort_description": lambda: random.choice([0, 3]),
         "session_timezone": lambda: random.choice(
             [
                 # special non-deterministic around 1970 timezone, see [1].
@@ -946,13 +948,17 @@ class TestCase:
         elif tags and ("no-replicated-database" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
-        # TODO: remove checking "no-upgrade-check" after 23.1
-        elif args.upgrade_check and (
-            "no-upgrade-check" in tags or "no-upgrade-check" in tags
-        ):
-            return FailureReason.NO_UPGRADE_CHECK
-
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
+            return FailureReason.S3_STORAGE
+        elif (
+            tags
+            and ("no-s3-storage-with-slow-build" in tags)
+            and args.s3_storage
+            and (
+                BuildFlags.THREAD in args.build_flags
+                or BuildFlags.DEBUG in args.build_flags
+            )
+        ):
             return FailureReason.S3_STORAGE
 
         elif tags:

@@ -4,17 +4,16 @@
 #include <IO/copyData.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 
 
 namespace DB
 {
 
-BackupReaderDefault::BackupReaderDefault(Poco::Logger * log_, const ContextPtr & context_)
+BackupReaderDefault::BackupReaderDefault(const ReadSettings & read_settings_, const WriteSettings & write_settings_, Poco::Logger * log_)
     : log(log_)
-    , read_settings(context_->getBackupReadSettings())
-    , write_settings(context_->getWriteSettings())
+    , read_settings(read_settings_)
+    , write_settings(write_settings_)
     , write_buffer_size(DBMS_DEFAULT_BUFFER_SIZE)
 {
 }
@@ -37,10 +36,10 @@ void BackupReaderDefault::copyFileToDisk(const String & path_in_backup, size_t f
     write_buffer->finalize();
 }
 
-BackupWriterDefault::BackupWriterDefault(Poco::Logger * log_, const ContextPtr & context_)
+BackupWriterDefault::BackupWriterDefault(const ReadSettings & read_settings_, const WriteSettings & write_settings_, Poco::Logger * log_)
     : log(log_)
-    , read_settings(context_->getBackupReadSettings())
-    , write_settings(context_->getWriteSettings())
+    , read_settings(read_settings_)
+    , write_settings(write_settings_)
     , write_buffer_size(DBMS_DEFAULT_BUFFER_SIZE)
 {
 }

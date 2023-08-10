@@ -5,6 +5,7 @@
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
+#include <shared_mutex>
 
 namespace DB
 {
@@ -50,6 +51,7 @@ struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
         CleanupQueue & cleanup_queue_,
         DownloadQueue & download_queue_,
         Poco::Logger * log_,
+        std::shared_mutex & key_prefix_directory_mutex_,
         bool created_base_directory_ = false);
 
     enum class KeyState
@@ -76,6 +78,7 @@ private:
     KeyGuard guard;
     CleanupQueue & cleanup_queue;
     DownloadQueue & download_queue;
+    std::shared_mutex & key_prefix_directory_mutex;
     std::atomic<bool> created_base_directory = false;
     Poco::Logger * log;
 };
@@ -87,7 +90,7 @@ struct CacheMetadata : public std::unordered_map<FileCacheKey, KeyMetadataPtr>, 
 {
 public:
     using Key = FileCacheKey;
-    using IterateCacheMetadataFunc = std::function<void(const LockedKey &)>;
+    using IterateCacheMetadataFunc = std::function<void(LockedKey &)>;
 
     explicit CacheMetadata(const std::string & path_);
 
@@ -106,6 +109,7 @@ public:
     enum class KeyNotFoundPolicy
     {
         THROW,
+        THROW_LOGICAL,
         CREATE_EMPTY,
         RETURN_NULL,
     };
@@ -127,6 +131,7 @@ private:
     mutable CacheMetadataGuard guard;
     const CleanupQueuePtr cleanup_queue;
     const DownloadQueuePtr download_queue;
+    std::shared_mutex key_prefix_directory_mutex;
     Poco::Logger * log;
 
     void downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory);
@@ -169,9 +174,10 @@ struct LockedKey : private boost::noncopyable
     std::shared_ptr<const KeyMetadata> getKeyMetadata() const { return key_metadata; }
     std::shared_ptr<KeyMetadata> getKeyMetadata() { return key_metadata; }
 
-    void removeAllReleasable();
+    void removeAll(bool if_releasable = true);
 
     KeyMetadata::iterator removeFileSegment(size_t offset, const FileSegmentGuard::Lock &);
+    KeyMetadata::iterator removeFileSegment(size_t offset);
 
     void shrinkFileSegmentToDownloadedSize(size_t offset, const FileSegmentGuard::Lock &);
 
@@ -188,6 +194,8 @@ struct LockedKey : private boost::noncopyable
     std::string toString() const;
 
 private:
+    KeyMetadata::iterator removeFileSegmentImpl(KeyMetadata::iterator it, const FileSegmentGuard::Lock &);
+
     const std::shared_ptr<KeyMetadata> key_metadata;
     KeyGuard::Lock lock; /// `lock` must be destructed before `key_metadata`.
 };
