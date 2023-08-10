@@ -747,9 +747,10 @@ public:
             return !name_filter;
         }
 
-        IArchiveReader::NameFilter getNameFilter() const
+        bool passesFilter(const std::string & name) const
         {
-            return name_filter;
+            std::lock_guard lock(filter_mutex);
+            return name_filter(name);
         }
 
         const String & getFileName()
@@ -763,6 +764,7 @@ public:
         std::vector<std::string> files;
 
         std::vector<std::string> archives;
+        mutable std::mutex filter_mutex;
         IArchiveReader::NameFilter name_filter;
 
         std::atomic<size_t> index = 0;
@@ -892,8 +894,6 @@ public:
                         }
                         else
                         {
-                            auto name_filter = files_iterator->getNameFilter();
-                            chassert(name_filter);
                             while (true)
                             {
                                 if (file_enumerator == nullptr)
@@ -912,7 +912,7 @@ public:
                                 }
 
                                 bool file_found = true;
-                                while (!name_filter(file_enumerator->getFileName()))
+                                while (!files_iterator->passesFilter(file_enumerator->getFileName()))
                                 {
                                     if (!file_enumerator->nextFile())
                                     {
