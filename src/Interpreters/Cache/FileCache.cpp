@@ -10,6 +10,7 @@
 #include <Interpreters/Context.h>
 #include <base/hex.h>
 #include <pcg-random/pcg_random.hpp>
+#include "Common/ThreadPool_fwd.h"
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -54,7 +55,6 @@ namespace ErrorCodes
 FileCache::FileCache(const FileCacheSettings & settings)
     : max_file_segment_size(settings.max_file_segment_size)
     , bypass_cache_threshold(settings.enable_bypass_cache_with_threashold ? settings.bypass_cache_threashold : 0)
-    , delayed_cleanup_interval_ms(settings.delayed_cleanup_interval_ms)
     , boundary_alignment(settings.boundary_alignment)
     , background_download_threads(settings.background_download_threads)
     , log(&Poco::Logger::get("FileCache"))
@@ -134,9 +134,7 @@ void FileCache::initialize()
     for (size_t i = 0; i < background_download_threads; ++i)
          download_threads.emplace_back([this] { metadata.downloadThreadFunc(); });
 
-    cleanup_task = Context::getGlobalContextInstance()->getSchedulePool().createTask("FileCacheCleanup", [this]{ cleanupThreadFunc(); });
-    cleanup_task->activate();
-    cleanup_task->scheduleAfter(delayed_cleanup_interval_ms);
+    cleanup_thread = std::make_unique<ThreadFromGlobalPool>(std::function{ [this]{ metadata.cleanupThreadFunc(); }});
 }
 
 CacheGuard::Lock FileCache::lockCache() const
@@ -1028,33 +1026,14 @@ FileCache::~FileCache()
 
 void FileCache::deactivateBackgroundOperations()
 {
-    if (cleanup_task)
-        cleanup_task->deactivate();
-
     metadata.cancelDownload();
     for (auto & thread : download_threads)
         if (thread.joinable())
             thread.join();
-}
 
-void FileCache::cleanup()
-{
-    metadata.doCleanup();
-}
-
-void FileCache::cleanupThreadFunc()
-{
-    try
-    {
-        cleanup();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        chassert(false);
-    }
-
-    cleanup_task->scheduleAfter(delayed_cleanup_interval_ms);
+    metadata.cancelCleanup();
+    if (cleanup_thread && cleanup_thread->joinable())
+        cleanup_thread->join();
 }
 
 FileSegmentsHolderPtr FileCache::getSnapshot()

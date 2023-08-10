@@ -124,7 +124,17 @@ public:
     void removeKey(const Key & key, bool if_exists, bool is_releasable);
     void removeAllKeys(bool is_releasable);
 
-    void doCleanup();
+    void cancelCleanup();
+
+    /// Firstly, this cleanup does not delete cache files,
+    /// but only empty keys from cache_metadata_map and key (prefix) directories from fs.
+    /// Secondly, it deletes those only if arised as a result of
+    /// (1) eviction in FileCache::tryReserve();
+    /// (2) removal of cancelled non-downloaded file segments after FileSegment::complete().
+    /// which does not include removal of cache files because of FileCache::removeKey/removeAllKeys,
+    /// triggered by removal of source files from objects storage.
+    /// E.g. number of elements submitted to background cleanup should remain low.
+    void cleanupThreadFunc();
 
     void downloadThreadFunc();
 

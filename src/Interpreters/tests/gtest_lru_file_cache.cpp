@@ -604,7 +604,6 @@ TEST_F(FileCacheTest, get)
 
         auto cache = FileCache(settings);
         cache.initialize();
-        cache.cleanup();
         const auto key = cache.createKeyForPath("key10");
         const auto key_path = cache.getPathInLocalCache(key);
 
@@ -622,7 +621,6 @@ TEST_F(FileCacheTest, get)
         ASSERT_TRUE(fs::exists(key_path));
         ASSERT_TRUE(!fs::exists(cache.getPathInLocalCache(key, 0, FileSegmentKind::Regular)));
 
-        cache.cleanup();
         ASSERT_TRUE(!fs::exists(key_path));
         ASSERT_TRUE(!fs::exists(fs::path(key_path).parent_path()));
     }
@@ -632,7 +630,6 @@ TEST_F(FileCacheTest, get)
         /// Test background thread delated cleanup
 
         auto settings2{settings};
-        settings2.delayed_cleanup_interval_ms = 0;
         auto cache = DB::FileCache(settings2);
         cache.initialize();
         const auto key = cache.createKeyForPath("key10");

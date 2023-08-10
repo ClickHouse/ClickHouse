@@ -10,6 +10,7 @@ namespace fs = std::filesystem;
 namespace CurrentMetrics
 {
     extern const Metric FilesystemCacheDownloadQueueElements;
+    extern const Metric FilesystemCacheDelayedCleanupElements;
 }
 
 namespace ProfileEvents
@@ -134,22 +135,6 @@ std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment)
 }
 
 
-class CleanupQueue
-{
-    friend struct CacheMetadata;
-public:
-    void add(const FileCacheKey & key);
-    void remove(const FileCacheKey & key);
-    size_t getSize() const;
-
-private:
-    bool tryPop(FileCacheKey & key);
-
-    std::unordered_set<FileCacheKey> keys;
-    mutable std::mutex mutex;
-};
-
-
 CacheMetadata::CacheMetadata(const std::string & path_)
     : path(path_)
     , cleanup_queue(std::make_unique<CleanupQueue>())
@@ -269,37 +254,6 @@ void CacheMetadata::iterate(IterateFunc && func)
     }
 }
 
-void CacheMetadata::doCleanup()
-{
-    /// Firstly, this cleanup does not delete cache files,
-    /// but only empty keys from cache_metadata_map and key (prefix) directories from fs.
-    /// Secondly, it deletes those only if arised as a result of
-    /// (1) eviction in FileCache::tryReserve();
-    /// (2) removal of cancelled non-downloaded file segments after FileSegment::complete().
-    /// which does not include removal of cache files because of FileCache::removeKey/removeAllKeys,
-    /// triggered by removal of source files from objects storage.
-    /// E.g. number of elements submitted to background cleanup should remain low.
-
-    auto lock = lockMetadata();
-    LOG_DEBUG(log, "Having {} keys to delete", cleanup_queue->getSize());
-
-    FileCacheKey cleanup_key;
-    size_t remaining_remove_num = FILECACHE_DELAYED_CLEANUP_BATCH_SIZE;
-    while (remaining_remove_num && cleanup_queue->tryPop(cleanup_key))
-    {
-        auto it = find(cleanup_key);
-        if (it == end())
-            continue;
-
-        auto locked_key = it->second->lockNoStateCheck();
-        if (locked_key->getKeyState() == KeyMetadata::KeyState::REMOVING)
-        {
-            removeKeyImpl(it, *locked_key, lock);
-            --remaining_remove_num;
-        }
-    }
-}
-
 void CacheMetadata::removeAllKeys(bool if_releasable)
 {
     auto lock = lockMetadata();
@@ -387,6 +341,86 @@ CacheMetadata::iterator CacheMetadata::removeKeyImpl(iterator it, LockedKey & lo
     return next_it;
 }
 
+class CleanupQueue
+{
+    friend struct CacheMetadata;
+public:
+    void add(const FileCacheKey & key)
+    {
+        {
+            std::lock_guard lock(mutex);
+            keys.insert(key);
+        }
+        CurrentMetrics::add(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
+        cv.notify_one();
+    }
+
+    void cancel()
+    {
+        {
+            std::lock_guard lock(mutex);
+            cancelled = true;
+        }
+        cv.notify_all();
+    }
+
+private:
+    std::unordered_set<FileCacheKey> keys;
+    mutable std::mutex mutex;
+    std::condition_variable cv;
+    bool cancelled = false;
+};
+
+void CacheMetadata::cleanupThreadFunc()
+{
+    while (true)
+    {
+        Key key;
+        {
+            std::unique_lock lock(cleanup_queue->mutex);
+
+            if (cleanup_queue->cancelled)
+                return;
+
+            auto & keys = cleanup_queue->keys;
+            if (keys.empty())
+            {
+                cleanup_queue->cv.wait(lock);
+                continue;
+            }
+
+            auto it = keys.begin();
+            key = *it;
+            keys.erase(it);
+        }
+
+        CurrentMetrics::sub(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
+
+        try
+        {
+            auto lock = lockMetadata();
+
+            auto it = find(key);
+            if (it == end())
+                continue;
+
+            auto locked_key = it->second->lockNoStateCheck();
+            if (locked_key->getKeyState() == KeyMetadata::KeyState::REMOVING)
+            {
+                removeKeyImpl(it, *locked_key, lock);
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+}
+
+void CacheMetadata::cancelCleanup()
+{
+    cleanup_queue->cancel();
+}
 
 class DownloadQueue
 {
@@ -812,37 +846,6 @@ std::string LockedKey::toString() const
         result += std::to_string(it->first);
     }
     return result;
-}
-
-void CleanupQueue::add(const FileCacheKey & key)
-{
-    std::lock_guard lock(mutex);
-    keys.insert(key);
-}
-
-void CleanupQueue::remove(const FileCacheKey & key)
-{
-    std::lock_guard lock(mutex);
-    bool erased = keys.erase(key);
-    if (!erased)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key {} in removal queue", key);
-}
-
-bool CleanupQueue::tryPop(FileCacheKey & key)
-{
-    std::lock_guard lock(mutex);
-    if (keys.empty())
-        return false;
-    auto it = keys.begin();
-    key = *it;
-    keys.erase(it);
-    return true;
-}
-
-size_t CleanupQueue::getSize() const
-{
-    std::lock_guard lock(mutex);
-    return keys.size();
 }
 
 }
