@@ -88,7 +88,7 @@ def test_smoke():
         )
     )
     assert system_settings_profile("xyz") == [
-        ["xyz", "local directory", 1, 0, "['robin']", "[]"]
+        ["xyz", "local_directory", 1, 0, "['robin']", "[]"]
     ]
     assert system_settings_profile_elements(profile_name="xyz") == [
         [
@@ -120,7 +120,7 @@ def test_smoke():
     instance.query("SET max_memory_usage = 80000000", user="robin")
     instance.query("SET max_memory_usage = 120000000", user="robin")
     assert system_settings_profile("xyz") == [
-        ["xyz", "local directory", 1, 0, "[]", "[]"]
+        ["xyz", "local_directory", 1, 0, "[]", "[]"]
     ]
     assert system_settings_profile_elements(user_name="robin") == []
 
@@ -201,7 +201,7 @@ def test_settings_from_granted_role():
         )
     )
     assert system_settings_profile("xyz") == [
-        ["xyz", "local directory", 2, 0, "[]", "[]"]
+        ["xyz", "local_directory", 2, 0, "[]", "[]"]
     ]
     assert system_settings_profile_elements(profile_name="xyz") == [
         [
@@ -276,7 +276,7 @@ def test_settings_from_granted_role():
         )
     )
     assert system_settings_profile("xyz") == [
-        ["xyz", "local directory", 2, 0, "['worker']", "[]"]
+        ["xyz", "local_directory", 2, 0, "['worker']", "[]"]
     ]
 
     instance.query("ALTER SETTINGS PROFILE xyz TO NONE")
@@ -293,7 +293,7 @@ def test_settings_from_granted_role():
     )
     instance.query("SET max_memory_usage = 120000000", user="robin")
     assert system_settings_profile("xyz") == [
-        ["xyz", "local directory", 2, 0, "[]", "[]"]
+        ["xyz", "local_directory", 2, 0, "[]", "[]"]
     ]
 
 
@@ -323,7 +323,7 @@ def test_inheritance():
     )
 
     assert system_settings_profile("xyz") == [
-        ["xyz", "local directory", 1, 0, "[]", "[]"]
+        ["xyz", "local_directory", 1, 0, "[]", "[]"]
     ]
     assert system_settings_profile_elements(profile_name="xyz") == [
         [
@@ -340,7 +340,7 @@ def test_inheritance():
         ]
     ]
     assert system_settings_profile("alpha") == [
-        ["alpha", "local directory", 1, 0, "['robin']", "[]"]
+        ["alpha", "local_directory", 1, 0, "['robin']", "[]"]
     ]
     assert system_settings_profile_elements(profile_name="alpha") == [
         ["alpha", "\\N", "\\N", 0, "\\N", "\\N", "\\N", "\\N", "\\N", "xyz"]
