@@ -9,9 +9,6 @@
 namespace DB
 {
 
-struct UnlinkMetadataFileOperationOutcome;
-using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
-
 /// Object storage is used as a filesystem, in a limited form:
 /// - no directory concept, files only
 /// - no stat/chmod/...
@@ -66,7 +63,7 @@ public:
 
     uint32_t getHardlinkCount(const std::string & /* path */) const override
     {
-        return 0;
+        return 1;
     }
 
     bool supportsChmod() const override { return false; }
@@ -107,7 +104,7 @@ public:
 
     void unlinkFile(const std::string & path) override;
 
-    UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
+    void unlinkMetadata(const std::string & path) override;
 
     void commit() override
     {

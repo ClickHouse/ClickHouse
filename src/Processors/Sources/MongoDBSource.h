@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Poco/MongoDB/Element.h>
-#include <Poco/MongoDB/Array.h>
 
 #include <Core/Block.h>
 #include <Processors/ISource.h>
@@ -15,9 +14,7 @@ namespace Poco
 namespace MongoDB
 {
     class Connection;
-    class Document;
     class Cursor;
-    class OpMsgCursor;
 }
 }
 
@@ -33,28 +30,7 @@ struct MongoDBArrayInfo
 
 void authenticate(Poco::MongoDB::Connection & connection, const std::string & database, const std::string & user, const std::string & password);
 
-bool isMongoDBWireProtocolOld(Poco::MongoDB::Connection & connection_);
-
-class MongoDBCursor
-{
-public:
-    MongoDBCursor(
-        const std::string & database,
-        const std::string & collection,
-        const Block & sample_block_to_select,
-        const Poco::MongoDB::Document & query,
-        Poco::MongoDB::Connection & connection);
-
-    Poco::MongoDB::Document::Vector nextDocuments(Poco::MongoDB::Connection & connection);
-
-    Int64 cursorID() const;
-
-private:
-    const bool is_wire_protocol_old;
-    std::unique_ptr<Poco::MongoDB::Cursor> old_cursor;
-    std::unique_ptr<Poco::MongoDB::OpMsgCursor> new_cursor;
-    Int64 cursor_id = 0;
-};
+std::unique_ptr<Poco::MongoDB::Cursor> createCursor(const std::string & database, const std::string & collection, const Block & sample_block_to_select);
 
 /// Converts MongoDB Cursor to a stream of Blocks
 class MongoDBSource final : public ISource
@@ -62,9 +38,7 @@ class MongoDBSource final : public ISource
 public:
     MongoDBSource(
         std::shared_ptr<Poco::MongoDB::Connection> & connection_,
-        const String & database_name_,
-        const String & collection_name_,
-        const Poco::MongoDB::Document & query_,
+        std::unique_ptr<Poco::MongoDB::Cursor> cursor_,
         const Block & sample_block,
         UInt64 max_block_size_);
 
@@ -76,7 +50,7 @@ private:
     Chunk generate() override;
 
     std::shared_ptr<Poco::MongoDB::Connection> connection;
-    MongoDBCursor cursor;
+    std::unique_ptr<Poco::MongoDB::Cursor> cursor;
     const UInt64 max_block_size;
     ExternalResultDescription description;
     bool all_read = false;

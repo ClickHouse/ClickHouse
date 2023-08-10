@@ -418,23 +418,21 @@ public:
     /// If the column contains subcolumns (such as Array, Nullable, etc), do callback on them.
     /// Shallow: doesn't do recursive calls; don't do call for itself.
 
-    using MutableColumnCallback = std::function<void(WrappedPtr &)>;
-    virtual void forEachSubcolumn(MutableColumnCallback) {}
-
-    /// Default implementation calls the mutable overload using const_cast.
     using ColumnCallback = std::function<void(const WrappedPtr &)>;
-    virtual void forEachSubcolumn(ColumnCallback) const;
+    virtual void forEachSubcolumn(ColumnCallback) const {}
+
+    using MutableColumnCallback = std::function<void(WrappedPtr &)>;
+    virtual void forEachSubcolumn(MutableColumnCallback callback);
 
     /// Similar to forEachSubcolumn but it also do recursive calls.
     /// In recursive calls it's prohibited to replace pointers
     /// to subcolumns, so we use another callback function.
 
-    using RecursiveMutableColumnCallback = std::function<void(IColumn &)>;
-    virtual void forEachSubcolumnRecursively(RecursiveMutableColumnCallback) {}
-
-    /// Default implementation calls the mutable overload using const_cast.
     using RecursiveColumnCallback = std::function<void(const IColumn &)>;
-    virtual void forEachSubcolumnRecursively(RecursiveColumnCallback) const;
+    virtual void forEachSubcolumnRecursively(RecursiveColumnCallback) const {}
+
+    using RecursiveMutableColumnCallback = std::function<void(IColumn &)>;
+    virtual void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback);
 
     /// Columns have equal structure.
     /// If true - you can use "compareAt", "insertFrom", etc. methods.

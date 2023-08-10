@@ -12,9 +12,6 @@
 \N	[NULL,NULL,42]	(NULL)
 1	[1,NULL,2]	(1)
 \N	[NULL,NULL,42]	(NULL)
-OK
-OK
-OK
 one
 two
 tHrEe
@@ -24,14 +21,6 @@ threE
 first
 second
 third
-first
-second
-third
-OK
-one
-two
-tHrEe
-OK
 OK
 OK
 OK

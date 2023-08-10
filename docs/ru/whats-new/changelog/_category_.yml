@@ -2,5 +2,5 @@ label: 'Changelog'
 collapsible: true
 collapsed: true
 link:
-  type: generated-index
-  title: Changelog
+  type: doc
+  id: ru/whats-new/changelog/index

@@ -363,7 +363,6 @@ node7 = cluster.add_instance(
     tag="19.17.8.54",
     stay_alive=True,
     with_installed_binary=True,
-    allow_analyzer=False,
 )
 node8 = cluster.add_instance(
     "node8",
@@ -499,7 +498,7 @@ def test_polymorphic_parts_index(start_cluster):
         """
         CREATE TABLE test_index.index_compact(a UInt32, s String)
         ENGINE = MergeTree ORDER BY a
-        SETTINGS min_rows_for_wide_part = 1000, index_granularity = 128, merge_max_block_size = 100, compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1"""
+        SETTINGS min_rows_for_wide_part = 1000, index_granularity = 128, merge_max_block_size = 100, compress_marks=false, compress_primary_key=false"""
     )
 
     node1.query(

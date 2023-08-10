@@ -306,9 +306,7 @@ void fillMissingColumns(
                     return;
 
                 size_t level = ISerialization::getArrayLevel(subpath);
-                /// It can happen if element of Array is Map.
-                if (level >= num_dimensions)
-                    return;
+                assert(level < num_dimensions);
 
                 auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath);
                 auto it = offsets_columns.find(stream_name);

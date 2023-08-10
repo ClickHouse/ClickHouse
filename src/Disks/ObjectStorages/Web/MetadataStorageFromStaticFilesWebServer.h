@@ -13,14 +13,13 @@ class MetadataStorageFromStaticFilesWebServer final : public IMetadataStorage
 {
 private:
     friend class MetadataStorageFromStaticFilesWebServerTransaction;
-    using FileType = WebObjectStorage::FileType;
 
     const WebObjectStorage & object_storage;
     std::string root_path;
 
     void assertExists(const std::string & path) const;
 
-    void initializeImpl(const String & uri_path, const std::unique_lock<std::shared_mutex> &) const;
+    void initializeIfNeeded(const std::string & path) const;
 
 public:
     explicit MetadataStorageFromStaticFilesWebServer(const WebObjectStorage & object_storage_);

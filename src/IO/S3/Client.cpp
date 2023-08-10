@@ -13,8 +13,6 @@
 #include <aws/core/utils/HashingUtils.h>
 #include <aws/core/utils/logging/ErrorMacros.h>
 
-#include <Poco/Net/NetException.h>
-
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/PocoHTTPClientFactory.h>
@@ -24,15 +22,6 @@
 #include <Common/assert_cast.h>
 
 #include <Common/logger_useful.h>
-
-namespace ProfileEvents
-{
-    extern const Event S3WriteRequestsErrors;
-    extern const Event S3ReadRequestsErrors;
-
-    extern const Event DiskS3WriteRequestsErrors;
-    extern const Event DiskS3ReadRequestsErrors;
-}
 
 namespace DB
 {
@@ -111,7 +100,7 @@ std::unique_ptr<Client> Client::create(
     size_t max_redirects_,
     ServerSideEncryptionKMSConfig sse_kms_config_,
     const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
-    const PocoHTTPClientConfiguration & client_configuration,
+    const Aws::Client::ClientConfiguration & client_configuration,
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
     bool use_virtual_addressing)
 {
@@ -120,16 +109,9 @@ std::unique_ptr<Client> Client::create(
         new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, use_virtual_addressing));
 }
 
-std::unique_ptr<Client> Client::clone(
-    std::optional<std::shared_ptr<RetryStrategy>> override_retry_strategy,
-    std::optional<Int64> override_request_timeout_ms) const
+std::unique_ptr<Client> Client::create(const Client & other)
 {
-    PocoHTTPClientConfiguration new_configuration = client_configuration;
-    if (override_retry_strategy.has_value())
-        new_configuration.retryStrategy = *override_retry_strategy;
-    if (override_request_timeout_ms.has_value())
-        new_configuration.requestTimeoutMs = *override_request_timeout_ms;
-    return std::unique_ptr<Client>(new Client(*this, new_configuration));
+    return std::unique_ptr<Client>(new Client(other));
 }
 
 namespace
@@ -152,14 +134,11 @@ Client::Client(
     size_t max_redirects_,
     ServerSideEncryptionKMSConfig sse_kms_config_,
     const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
-    const PocoHTTPClientConfiguration & client_configuration_,
-    Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads_,
-    bool use_virtual_addressing_)
-    : Aws::S3::S3Client(credentials_provider_, client_configuration_, sign_payloads_, use_virtual_addressing_)
+    const Aws::Client::ClientConfiguration & client_configuration,
+    Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
+    bool use_virtual_addressing)
+    : Aws::S3::S3Client(credentials_provider_, client_configuration, std::move(sign_payloads), use_virtual_addressing)
     , credentials_provider(credentials_provider_)
-    , client_configuration(client_configuration_)
-    , sign_payloads(sign_payloads_)
-    , use_virtual_addressing(use_virtual_addressing_)
     , max_redirects(max_redirects_)
     , sse_kms_config(std::move(sse_kms_config_))
     , log(&Poco::Logger::get("S3Client"))
@@ -196,15 +175,10 @@ Client::Client(
     ClientCacheRegistry::instance().registerClient(cache);
 }
 
-Client::Client(
-    const Client & other, const PocoHTTPClientConfiguration & client_configuration_)
-    : Aws::S3::S3Client(other.credentials_provider, client_configuration_, other.sign_payloads,
-                        other.use_virtual_addressing)
+Client::Client(const Client & other)
+    : Aws::S3::S3Client(other)
     , initial_endpoint(other.initial_endpoint)
     , credentials_provider(other.credentials_provider)
-    , client_configuration(client_configuration_)
-    , sign_payloads(other.sign_payloads)
-    , use_virtual_addressing(other.use_virtual_addressing)
     , explicit_region(other.explicit_region)
     , detect_region(other.detect_region)
     , provider_type(other.provider_type)
@@ -357,14 +331,12 @@ Model::HeadObjectOutcome Client::HeadObject(const HeadObjectRequest & request) c
 
 Model::ListObjectsV2Outcome Client::ListObjectsV2(const ListObjectsV2Request & request) const
 {
-    return doRequestWithRetryNetworkErrors</*IsReadMethod*/ true>(
-        request, [this](const Model::ListObjectsV2Request & req) { return ListObjectsV2(req); });
+    return doRequest(request, [this](const Model::ListObjectsV2Request & req) { return ListObjectsV2(req); });
 }
 
 Model::ListObjectsOutcome Client::ListObjects(const ListObjectsRequest & request) const
 {
-    return doRequestWithRetryNetworkErrors</*IsReadMethod*/ true>(
-        request, [this](const Model::ListObjectsRequest & req) { return ListObjects(req); });
+    return doRequest(request, [this](const Model::ListObjectsRequest & req) { return ListObjects(req); });
 }
 
 Model::GetObjectOutcome Client::GetObject(const GetObjectRequest & request) const
@@ -374,19 +346,19 @@ Model::GetObjectOutcome Client::GetObject(const GetObjectRequest & request) cons
 
 Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(const AbortMultipartUploadRequest & request) const
 {
-    return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
+    return doRequest(
         request, [this](const Model::AbortMultipartUploadRequest & req) { return AbortMultipartUpload(req); });
 }
 
 Model::CreateMultipartUploadOutcome Client::CreateMultipartUpload(const CreateMultipartUploadRequest & request) const
 {
-    return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
+    return doRequest(
         request, [this](const Model::CreateMultipartUploadRequest & req) { return CreateMultipartUpload(req); });
 }
 
 Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(const CompleteMultipartUploadRequest & request) const
 {
-    auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
+    auto outcome = doRequest(
         request, [this](const Model::CompleteMultipartUploadRequest & req) { return CompleteMultipartUpload(req); });
 
     if (!outcome.IsSuccess() || provider_type != ProviderType::GCS)
@@ -416,38 +388,32 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(const Comp
 
 Model::CopyObjectOutcome Client::CopyObject(const CopyObjectRequest & request) const
 {
-    return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::CopyObjectRequest & req) { return CopyObject(req); });
+    return doRequest(request, [this](const Model::CopyObjectRequest & req) { return CopyObject(req); });
 }
 
 Model::PutObjectOutcome Client::PutObject(const PutObjectRequest & request) const
 {
-    return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::PutObjectRequest & req) { return PutObject(req); });
+    return doRequest(request, [this](const Model::PutObjectRequest & req) { return PutObject(req); });
 }
 
 Model::UploadPartOutcome Client::UploadPart(const UploadPartRequest & request) const
 {
-    return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::UploadPartRequest & req) { return UploadPart(req); });
+    return doRequest(request, [this](const Model::UploadPartRequest & req) { return UploadPart(req); });
 }
 
 Model::UploadPartCopyOutcome Client::UploadPartCopy(const UploadPartCopyRequest & request) const
 {
-    return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::UploadPartCopyRequest & req) { return UploadPartCopy(req); });
+    return doRequest(request, [this](const Model::UploadPartCopyRequest & req) { return UploadPartCopy(req); });
 }
 
 Model::DeleteObjectOutcome Client::DeleteObject(const DeleteObjectRequest & request) const
 {
-    return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::DeleteObjectRequest & req) { return DeleteObject(req); });
+    return doRequest(request, [this](const Model::DeleteObjectRequest & req) { return DeleteObject(req); });
 }
 
 Model::DeleteObjectsOutcome Client::DeleteObjects(const DeleteObjectsRequest & request) const
 {
-    return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::DeleteObjectsRequest & req) { return DeleteObjects(req); });
+    return doRequest(request, [this](const Model::DeleteObjectsRequest & req) { return DeleteObjects(req); });
 }
 
 Client::ComposeObjectOutcome Client::ComposeObject(const ComposeObjectRequest & request) const
@@ -476,8 +442,7 @@ Client::ComposeObjectOutcome Client::ComposeObject(const ComposeObjectRequest & 
         return ComposeObjectOutcome(MakeRequest(req, endpointResolutionOutcome.GetResult(), Aws::Http::HttpMethod::HTTP_PUT));
     };
 
-    return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, request_fn);
+    return doRequest(request, request_fn);
 }
 
 template <typename RequestType, typename RequestFn>
@@ -556,65 +521,6 @@ Client::doRequest(const RequestType & request, RequestFn request_fn) const
     }
 
     throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects");
-}
-
-template <bool IsReadMethod, typename RequestType, typename RequestFn>
-std::invoke_result_t<RequestFn, RequestType>
-Client::doRequestWithRetryNetworkErrors(const RequestType & request, RequestFn request_fn) const
-{
-    auto with_retries = [this, request_fn_ = std::move(request_fn)] (const RequestType & request_)
-    {
-        chassert(client_configuration.retryStrategy);
-        const Int64 max_attempts = client_configuration.retryStrategy->GetMaxAttempts();
-        std::exception_ptr last_exception = nullptr;
-        for (Int64 attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
-        {
-            try
-            {
-                /// S3 does retries network errors actually.
-                /// But it is matter when errors occur.
-                /// This code retries a specific case when
-                /// network error happens when XML document is being read from the response body.
-                /// Hence, the response body is a stream, network errors are possible at reading.
-                /// S3 doesn't retry them.
-
-                /// Not all requests can be retried in that way.
-                /// Requests that read out response body to build the result are possible to retry.
-                /// Requests that expose the response stream as an answer are not retried with that code. E.g. GetObject.
-                return request_fn_(request_);
-            }
-            catch (Poco::Net::ConnectionResetException &)
-            {
-
-                if constexpr (IsReadMethod)
-                {
-                    if (client_configuration.for_disk_s3)
-                        ProfileEvents::increment(ProfileEvents::DiskS3ReadRequestsErrors);
-                    else
-                        ProfileEvents::increment(ProfileEvents::S3ReadRequestsErrors);
-                }
-                else
-                {
-                    if (client_configuration.for_disk_s3)
-                        ProfileEvents::increment(ProfileEvents::DiskS3WriteRequestsErrors);
-                    else
-                        ProfileEvents::increment(ProfileEvents::S3WriteRequestsErrors);
-                }
-
-                tryLogCurrentException(log, "Will retry");
-                last_exception = std::current_exception();
-
-                auto error = Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::NETWORK_CONNECTION, /*retry*/ true);
-                client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
-                continue;
-            }
-        }
-
-        chassert(last_exception);
-        std::rethrow_exception(last_exception);
-    };
-
-    return doRequest(request, with_retries);
 }
 
 bool Client::supportsMultiPartCopy() const

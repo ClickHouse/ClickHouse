@@ -25,7 +25,7 @@ public:
 
     MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageMetadataPtr & metadata_snapshot,
         const MarkRanges & mark_ranges,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
@@ -53,8 +53,6 @@ public:
     ~MergeTreeDataPartWide() override;
 
     bool hasColumnFiles(const NameAndTypePair & column) const override;
-
-    std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
 
 protected:
     static void loadIndexGranularityImpl(

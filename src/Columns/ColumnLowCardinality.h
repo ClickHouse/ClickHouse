@@ -166,7 +166,7 @@ public:
     size_t byteSizeAt(size_t n) const override { return getDictionary().byteSizeAt(getIndexes().getUInt(n)); }
     size_t allocatedBytes() const override { return idx.getPositions()->allocatedBytes() + getDictionary().allocatedBytes(); }
 
-    void forEachSubcolumn(MutableColumnCallback callback) override
+    void forEachSubcolumn(ColumnCallback callback) const override
     {
         callback(idx.getPositionsPtr());
 
@@ -175,7 +175,7 @@ public:
             callback(dictionary.getColumnUniquePtr());
     }
 
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
     {
         callback(*idx.getPositionsPtr());
         idx.getPositionsPtr()->forEachSubcolumnRecursively(callback);

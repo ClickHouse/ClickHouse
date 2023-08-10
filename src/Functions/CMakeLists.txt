@@ -21,6 +21,7 @@ list (APPEND PUBLIC_LIBS
         dbms
         ch_contrib::metrohash
         ch_contrib::murmurhash
+        ch_contrib::hashidsxx
         ch_contrib::morton_nd
 )
 

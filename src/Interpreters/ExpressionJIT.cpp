@@ -160,9 +160,9 @@ public:
 
     bool isCompilable() const override { return true; }
 
-    llvm::Value * compile(llvm::IRBuilderBase & builder, const ValuesWithType & arguments) const override
+    llvm::Value * compile(llvm::IRBuilderBase & builder, Values values) const override
     {
-        return dag.compile(builder, arguments).value;
+        return dag.compile(builder, values);
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override

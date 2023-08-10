@@ -588,7 +588,7 @@ public:
         b.CreateStore(llvm::Constant::getNullValue(return_type), aggregate_sum_ptr);
     }
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
@@ -597,7 +597,10 @@ public:
         auto * sum_value_ptr = aggregate_data_ptr;
         auto * sum_value = b.CreateLoad(return_type, sum_value_ptr);
 
-        auto * value_cast_to_result = nativeCast(b, arguments[0], this->getResultType());
+        const auto & argument_type = arguments_types[0];
+        const auto & argument_value = argument_values[0];
+
+        auto * value_cast_to_result = nativeCast(b, argument_type, argument_value, return_type);
         auto * sum_result_value = sum_value->getType()->isIntegerTy() ? b.CreateAdd(sum_value, value_cast_to_result) : b.CreateFAdd(sum_value, value_cast_to_result);
 
         b.CreateStore(sum_result_value, sum_value_ptr);

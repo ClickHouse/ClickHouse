@@ -56,7 +56,6 @@ class TestSetCapacity(unittest.TestCase):
                         "DesiredCapacity": desired_capacity,
                         "MinSize": min_size,
                         "MaxSize": max_size,
-                        "Instances": [],  # necessary for ins["HealthStatus"] check
                     }
                 ]
             }
@@ -72,7 +71,7 @@ class TestSetCapacity(unittest.TestCase):
             # Increase capacity
             TestCase("increase", 1, 13, 20, [Queue("queued", 23, "increase")], 15),
             TestCase(
-                "style-checker", 1, 13, 20, [Queue("queued", 33, "style-checker")], 16
+                "style-checker", 1, 13, 20, [Queue("queued", 33, "style-checker")], 15
             ),
             TestCase("increase", 1, 13, 20, [Queue("queued", 18, "increase")], 14),
             TestCase("increase", 1, 13, 20, [Queue("queued", 183, "increase")], 20),

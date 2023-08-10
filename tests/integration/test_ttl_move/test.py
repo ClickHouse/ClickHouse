@@ -1549,7 +1549,7 @@ def test_double_move_while_select(started_cluster, name, positive):
             ) ENGINE = MergeTree
             ORDER BY tuple()
             PARTITION BY n
-            SETTINGS storage_policy='small_jbod_with_external',temporary_directories_lifetime=1
+            SETTINGS storage_policy='small_jbod_with_external'
         """.format(
                 name=name
             )

@@ -21,7 +21,7 @@ public:
         , if_function_ptr(std::move(if_function_ptr_))
     {}
 
-    void enterImpl(QueryTreeNodePtr & node)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_multiif_to_if)
             return;
