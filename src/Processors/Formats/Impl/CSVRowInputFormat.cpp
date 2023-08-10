@@ -417,7 +417,7 @@ std::optional<std::pair<std::vector<String>, DataTypes>> CSVSchemaReader::readRo
 
     auto fields = reader.readRow();
     auto data_types = tryInferDataTypesByEscapingRule(fields, format_settings, FormatSettings::EscapingRule::CSV);
-    return std::make_pair(fields, data_types);
+    return std::make_pair(std::move(fields), std::move(data_types));
 }
 
 std::optional<DataTypes> CSVSchemaReader::readRowAndGetDataTypesImpl()

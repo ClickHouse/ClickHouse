@@ -425,7 +425,7 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
     if (!first_row)
         return;
 
-    auto [first_row_values, first_row_types] = *first_row;
+    const auto & [first_row_values, first_row_types] = *first_row;
 
     /// The first row contains non String elements, it cannot be a header.
     if (!checkIfAllTypesAreString(first_row_types))
@@ -443,7 +443,7 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
         return;
     }
 
-    auto [second_row_values, second_row_types] = *second_row;
+    const auto & [second_row_values, second_row_types] = *second_row;
 
     DataTypes data_types;
     bool second_row_can_be_type_names = checkIfAllTypesAreString(second_row_types) && checkIfAllValuesAreTypeNames(readNamesFromFields(second_row_values));
