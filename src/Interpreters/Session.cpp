@@ -685,9 +685,9 @@ void Session::recordLoginSucess(ContextPtr login_context) const
                                      access,
                                      getClientInfo(),
                                      user);
-
-        notified_session_log_about_login = true;
     }
+
+    notified_session_log_about_login = true;
 }
 
 
