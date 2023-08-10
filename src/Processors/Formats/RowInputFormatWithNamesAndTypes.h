@@ -119,6 +119,7 @@ public:
     /// Check suffix.
     virtual bool checkForSuffix() { return in->eof(); }
 
+    /// Check if we are at the end of row, not between fields.
     virtual bool checkForEndOfRow() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method checkForEndOfRow is not implemented"); }
 
     virtual bool allowVariableNumberOfColumns() const { return false; }

@@ -10,6 +10,8 @@ select * from format(TSVWithNames, 'x\ty\n1\t1\n2\n\n3\t3\t3\t3') settings input
 select * from format(TSVWithNames, 'x UInt32, z UInt32', 'x\ty\n1\t1\n2\n\n3\t3\t3\t3') settings input_format_tsv_allow_variable_number_of_columns=1;
 select 'JSONCompactEachRow';
 select * from format(JSONCompactEachRow, 'x UInt32, y UInt32', '[1,1]\n[2]\n[]\n[3,3,3,3]') settings input_format_json_compact_allow_variable_number_of_columns=1;
+select * from format(JSONCompactEachRow, 'x UInt32, y UInt32', '[1,1,[1,2,3]]\n[2]\n[]\n[3,3,3,3,[1,2,3]]') settings input_format_json_compact_allow_variable_number_of_columns=1;
+select * from format(JSONCompactEachRow, 'x UInt32, y Array(UInt32)', '[1,[1,2,3],1]\n[2]\n[]\n[3,[3],3,3,[1,2,3]]') settings input_format_json_compact_allow_variable_number_of_columns=1;
 select * from format(JSONCompactEachRow, '[1,1]\n[2]\n[]\n[3,3,3,3]') settings input_format_json_compact_allow_variable_number_of_columns=1;
 select * from format(JSONCompactEachRowWithNames, '["x","y"]\n[1,1]\n[2]\n[]\n[3,3,3,3]') settings input_format_json_compact_allow_variable_number_of_columns=1;
 select * from format(JSONCompactEachRowWithNames, 'x UInt32, z UInt32', '["x","y"]\n[1,1]\n[2]\n[]\n[3,3,3,3]') settings input_format_json_compact_allow_variable_number_of_columns=1;
