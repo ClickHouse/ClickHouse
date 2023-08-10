@@ -26,8 +26,9 @@ void JSONObjectEachRowRowOutputFormat::write(const Columns & columns, size_t row
     if (field_index_for_object_name)
         object_name = columns[*field_index_for_object_name]->getDataAt(row).toString();
     else
-        object_name = "row_" + std::to_string(row + 1);
+        object_name = "row_" + std::to_string(getRowsReadBefore() + rows + 1);
 
+    ++rows;
     RowOutputFormatWithExceptionHandlerAdaptor::write(columns, row);
 }
 
