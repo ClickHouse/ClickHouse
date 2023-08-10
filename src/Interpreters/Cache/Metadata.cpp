@@ -763,13 +763,15 @@ FileSegments LockedKey::sync()
     for (auto it = key_metadata->begin(); it != key_metadata->end();)
     {
         auto file_segment = it->second->file_segment;
+        chassert(!file_segment->isDetached());
+
         if (file_segment->getDownloadedSize(false) == 0)
         {
             ++it;
             continue;
         }
 
-        const auto & path = file_segment->getPathInLocalCache();
+        const auto & path = key_metadata->getFileSegmentPath(*file_segment);
         if (!fs::exists(path))
         {
             LOG_WARNING(
@@ -808,7 +810,6 @@ FileSegments LockedKey::sync()
         else
         {
             it = removeFileSegment(file_segment->offset(), file_segment_lock, false);
-            fs::remove(path);
         }
     }
     return broken;
