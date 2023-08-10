@@ -726,18 +726,20 @@ def test_auto_close_connection(started_cluster):
     assert count == 2
 
 
-def test_single_quotes(started_cluster):
+def test_literal_escaping(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute(f"DROP TABLE IF EXISTS single_quote_fails")
-    cursor.execute(f"CREATE TABLE single_quote_fails(text varchar(255))")
+    cursor.execute(f"DROP TABLE IF EXISTS escaping")
+    cursor.execute(f"CREATE TABLE escaping(text varchar(255))")
     node1.query(
-        "CREATE TABLE default.single_quote_fails (text String) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'single_quote_fails', 'postgres', 'mysecretpassword')"
+        "CREATE TABLE default.escaping (text String) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'escaping', 'postgres', 'mysecretpassword')"
     )
-    node1.query("SELECT * FROM single_quote_fails WHERE text = ''''")
-    node1.query("SELECT * FROM single_quote_fails WHERE text = '\\''")
-    node1.query("SELECT * FROM single_quote_fails WHERE text like '%a''a%'")
-    node1.query("SELECT * FROM single_quote_fails WHERE text like '%a\\'a%'")
-    cursor.execute(f"DROP TABLE single_quote_fails")
+    node1.query("SELECT * FROM escaping WHERE text = ''''")  # ' -> ''
+    node1.query("SELECT * FROM escaping WHERE text = '\\''")  # ' -> ''
+    node1.query("SELECT * FROM escaping WHERE text = '\\\\\\''")  # \' -> \''
+    node1.query("SELECT * FROM escaping WHERE text = '\\\\\\''")  # \' -> \''
+    node1.query("SELECT * FROM escaping WHERE text like '%a''a%'")  # %a'a% -> %a''a%
+    node1.query("SELECT * FROM escaping WHERE text like '%a\\'a%'")  # %a'a% -> %a''a%
+    cursor.execute(f"DROP TABLE escaping")
 
 
 if __name__ == "__main__":

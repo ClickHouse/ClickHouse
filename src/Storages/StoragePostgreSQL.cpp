@@ -123,11 +123,7 @@ Pipe StoragePostgreSQL::read(
         query_info_,
         column_names_,
         storage_snapshot->metadata->getColumns().getOrdinary(),
-        IdentifierQuotingStyle::DoubleQuotes, remote_table_schema, remote_table_name, context_);
-
-    /// Single quotes in PostgreSQL are escaped through repetition
-    boost::replace_all(query, "\\'", "''");
-
+        IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL, remote_table_schema, remote_table_name, context_);
     LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
