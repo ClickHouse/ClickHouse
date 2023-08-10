@@ -188,7 +188,7 @@ def test_grant_all_on_table():
         instance.query("SHOW GRANTS FOR B")
         == "GRANT SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER TABLE, ALTER VIEW, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, "
         "DROP TABLE, DROP VIEW, DROP DICTIONARY, UNDROP TABLE, TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES, "
-        "SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, "
+        "SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM PULLING REPLICATION LOG, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, "
         "SYSTEM RESTART REPLICA, SYSTEM RESTORE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM FLUSH DISTRIBUTED, dictGet ON test.table TO B\n"
     )
     instance.query("REVOKE ALL ON test.table FROM B", user="A")
@@ -471,7 +471,7 @@ def test_introspection():
         [
             [
                 "A",
-                "local directory",
+                "local_directory",
                 "no_password",
                 "{}",
                 "['::/0']",
@@ -484,7 +484,7 @@ def test_introspection():
             ],
             [
                 "B",
-                "local directory",
+                "local_directory",
                 "no_password",
                 "{}",
                 "['::/0']",
