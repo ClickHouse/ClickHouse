@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-from typing import List
+from pathlib import Path
+from typing import Dict, List, Optional
 import json
 import logging
 import time
@@ -16,30 +17,60 @@ class InsertException(Exception):
 
 
 class ClickHouseHelper:
-    def __init__(self, url=None):
+    def __init__(
+        self, url: Optional[str] = None, auth: Optional[Dict[str, str]] = None
+    ):
         if url is None:
             url = get_parameter_from_ssm("clickhouse-test-stat-url")
 
         self.url = url
-        self.auth = {
+        self.auth = auth or {
             "X-ClickHouse-User": get_parameter_from_ssm("clickhouse-test-stat-login"),
             "X-ClickHouse-Key": get_parameter_from_ssm("clickhouse-test-stat-password"),
         }
 
     @staticmethod
-    def _insert_json_str_info_impl(url, auth, db, table, json_str):
+    def insert_file(
+        url: str,
+        auth: Optional[Dict[str, str]],
+        query: str,
+        file: Path,
+        additional_options: Optional[Dict[str, str]] = None,
+    ) -> None:
+        params = {
+            "query": query,
+            "date_time_input_format": "best_effort",
+            "send_logs_level": "warning",
+        }
+        if additional_options:
+            for k, v in additional_options.items():
+                params[k] = v
+
+        with open(file, "rb") as data_fd:
+            ClickHouseHelper._insert_post(
+                url, params=params, data=data_fd, headers=auth
+            )
+
+    @staticmethod
+    def insert_json_str(url, auth, db, table, json_str):
         params = {
             "database": db,
             "query": f"INSERT INTO {table} FORMAT JSONEachRow",
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
         }
+        ClickHouseHelper._insert_post(url, params=params, data=json_str, headers=auth)
+
+    @staticmethod
+    def _insert_post(*args, **kwargs):
+        url = ""
+        if args:
+            url = args[0]
+        url = kwargs.get("url", url)
 
         for i in range(5):
             try:
-                response = requests.post(
-                    url, params=params, data=json_str, headers=auth
-                )
+                response = requests.post(*args, **kwargs)
             except Exception as e:
                 error = f"Received exception while sending data to {url} on {i} attempt: {e}"
                 logging.warning(error)
@@ -51,13 +82,8 @@ class ClickHouseHelper:
                 break
 
             error = (
-                "Cannot insert data into clickhouse at try "
-                + str(i)
-                + ": HTTP code "
-                + str(response.status_code)
-                + ": '"
-                + str(response.text)
-                + "'"
+                f"Cannot insert data into clickhouse at try {i}: HTTP code "
+                f"{response.status_code}: '{response.text}'"
             )
 
             if response.status_code >= 500:
@@ -76,7 +102,7 @@ class ClickHouseHelper:
             raise InsertException(error)
 
     def _insert_json_str_info(self, db, table, json_str):
-        self._insert_json_str_info_impl(self.url, self.auth, db, table, json_str)
+        self.insert_json_str(self.url, self.auth, db, table, json_str)
 
     def insert_event_into(self, db, table, event, safe=True):
         event_str = json.dumps(event)
@@ -132,6 +158,23 @@ class ClickHouseHelper:
         return result
 
 
+# Obtain the machine type from IMDS:
+def get_instance_type():
+    url = "http://169.254.169.254/latest/meta-data/instance-type"
+    for i in range(5):
+        try:
+            response = requests.get(url, timeout=1)
+            if response.status_code == 200:
+                return response.text
+        except Exception as e:
+            error = (
+                f"Received exception while sending data to {url} on {i} attempt: {e}"
+            )
+            logging.warning(error)
+            continue
+    return ""
+
+
 def prepare_tests_results_for_clickhouse(
     pr_info: PRInfo,
     test_results: TestResults,
@@ -168,6 +211,7 @@ def prepare_tests_results_for_clickhouse(
         head_ref=head_ref,
         head_repo=head_repo,
         task_url=pr_info.task_url,
+        instance_type=get_instance_type(),
     )
 
     # Always publish a total record for all checks. For checks with individual

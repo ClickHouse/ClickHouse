@@ -331,6 +331,10 @@
 [submodule "contrib/liburing"]
 	path = contrib/liburing
 	url = https://github.com/axboe/liburing
+[submodule "contrib/libarchive"]
+	path = contrib/libarchive
+	url = https://github.com/libarchive/libarchive.git
+	ignore = dirty
 [submodule "contrib/libfiu"]
 	path = contrib/libfiu
 	url = https://github.com/ClickHouse/libfiu.git
@@ -340,3 +344,6 @@
 [submodule "contrib/c-ares"]
 	path = contrib/c-ares
 	url = https://github.com/c-ares/c-ares.git
+[submodule "contrib/incbin"]
+	path = contrib/incbin
+	url = https://github.com/graphitemaster/incbin.git

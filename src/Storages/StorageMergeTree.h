@@ -108,7 +108,8 @@ public:
 
     void onActionLockRemove(StorageActionBlockType action_type) override;
 
-    CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
+    DataValidationTasksPtr getCheckTaskList(const ASTPtr & query, ContextPtr context) override;
+    CheckResult checkDataNext(DataValidationTasksPtr & check_task_list, bool & has_nothing_to_do) override;
 
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
@@ -237,6 +238,7 @@ private:
     void dropPartNoWaitNoThrow(const String & part_name) override;
     void dropPart(const String & part_name, bool detach, ContextPtr context) override;
     void dropPartition(const ASTPtr & partition, bool detach, ContextPtr context) override;
+    void dropPartsImpl(DataPartsVector && parts_to_remove, bool detach);
     PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr context) override;
 
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) override;
@@ -277,6 +279,32 @@ private:
     friend class MergePlainMergeTreeTask;
     friend class MutatePlainMergeTreeTask;
 
+    struct DataValidationTasks : public IStorage::DataValidationTasksBase
+    {
+        DataValidationTasks(DataPartsVector && parts_, ContextPtr context_)
+            : parts(std::move(parts_)), it(parts.begin()), context(std::move(context_))
+        {}
+
+        DataPartPtr next()
+        {
+            std::lock_guard lock(mutex);
+            if (it == parts.end())
+                return nullptr;
+            return *(it++);
+        }
+
+        size_t size() const override
+        {
+            std::lock_guard lock(mutex);
+            return std::distance(it, parts.end());
+        }
+
+        mutable std::mutex mutex;
+        DataPartsVector parts;
+        DataPartsVector::const_iterator it;
+
+        ContextPtr context;
+    };
 
 protected:
     std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const override;

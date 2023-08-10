@@ -139,7 +139,7 @@ public:
 
     void startup() override { getNested()->startup(); }
     void shutdown() override { getNested()->shutdown(); }
-    void flush() override { getNested()->flush(); }
+    void flushAndPrepareForShutdown() override { getNested()->flushAndPrepareForShutdown(); }
 
     ActionLock getActionLock(StorageActionBlockType action_type) override { return getNested()->getActionLock(action_type); }
 
@@ -149,7 +149,9 @@ public:
         return getNested()->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
     }
 
-    CheckResults checkData(const ASTPtr & query , ContextPtr context) override { return getNested()->checkData(query, context); }
+    DataValidationTasksPtr getCheckTaskList(const ASTPtr & query, ContextPtr context) override { return getNested()->getCheckTaskList(query, context); }
+    CheckResult checkDataNext(DataValidationTasksPtr & check_task_list, bool & has_nothing_to_do) override { return getNested()->checkDataNext(check_task_list, has_nothing_to_do); }
+
     void checkTableCanBeDropped() const override { getNested()->checkTableCanBeDropped(); }
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }

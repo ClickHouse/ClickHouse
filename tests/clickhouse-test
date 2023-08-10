@@ -505,7 +505,6 @@ class FailureReason(enum.Enum):
     REPLICATED_DB = "replicated-database"
     S3_STORAGE = "s3-storage"
     BUILD = "not running for current build"
-    NO_UPGRADE_CHECK = "not running for upgrade check"
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
 
     # UNKNOWN reasons
@@ -527,6 +526,12 @@ def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
             return random.uniform(min_val, max_val)
 
     return gen
+
+
+# To keep dependency list as short as possible, tzdata is not used here (to
+# avoid try/except block for import)
+def get_localzone():
+    return os.getenv("TZ", "/".join(os.readlink("/etc/localtime").split("/")[-2:]))
 
 
 class SettingsRandomizer:
@@ -602,20 +607,36 @@ class SettingsRandomizer:
         "enable_memory_bound_merging_of_aggregation_results": lambda: random.randint(
             0, 1
         ),
+        "min_count_to_compile_expression": lambda: random.choice([0, 3]),
+        "min_count_to_compile_aggregate_expression": lambda: random.choice([0, 3]),
+        "min_count_to_compile_sort_description": lambda: random.choice([0, 3]),
+        "session_timezone": lambda: random.choice(
+            [
+                # special non-deterministic around 1970 timezone, see [1].
+                #
+                #   [1]: https://github.com/ClickHouse/ClickHouse/issues/42653
+                "America/Mazatlan",
+                "America/Hermosillo",
+                "Mexico/BajaSur",
+                # server default that is randomized across all timezones
+                # NOTE: due to lots of trickery we cannot use empty timezone here, but this should be the same.
+                get_localzone(),
+            ]
+        ),
     }
 
     @staticmethod
     def get_random_settings(args):
-        random_settings = []
+        random_settings = {}
         is_debug = BuildFlags.DEBUG in args.build_flags
         for setting, generator in SettingsRandomizer.settings.items():
             if (
                 is_debug
                 and setting == "allow_prefetched_read_pool_for_remote_filesystem"
             ):
-                random_settings.append(f"{setting}=0")
+                random_settings[setting] = 0
             else:
-                random_settings.append(f"{setting}={generator()}")
+                random_settings[setting] = generator()
         return random_settings
 
 
@@ -651,10 +672,10 @@ class MergeTreeSettingsRandomizer:
 
     @staticmethod
     def get_random_settings(args):
-        random_settings = []
+        random_settings = {}
         for setting, generator in MergeTreeSettingsRandomizer.settings.items():
             if setting not in args.changed_merge_tree_settings:
-                random_settings.append(f"{setting}={generator()}")
+                random_settings[setting] = generator()
         return random_settings
 
 
@@ -766,7 +787,14 @@ class TestCase:
 
     @staticmethod
     def cli_format_settings(settings_list) -> str:
-        return " ".join([f"--{setting}" for setting in settings_list])
+        out = []
+        for k, v in settings_list.items():
+            out.extend([f"--{k}", str(v)])
+        return " ".join(out)
+
+    @staticmethod
+    def http_format_settings(settings_list) -> str:
+        return urllib.parse.urlencode(settings_list)
 
     def has_show_create_table_in_test(self):
         return not subprocess.call(["grep", "-iq", "show create", self.case_file])
@@ -774,11 +802,12 @@ class TestCase:
     def add_random_settings(self, client_options):
         new_options = ""
         if self.randomize_settings:
+            http_params = self.http_format_settings(self.random_settings)
             if len(self.base_url_params) == 0:
-                os.environ["CLICKHOUSE_URL_PARAMS"] = "&".join(self.random_settings)
+                os.environ["CLICKHOUSE_URL_PARAMS"] = http_params
             else:
                 os.environ["CLICKHOUSE_URL_PARAMS"] = (
-                    self.base_url_params + "&" + "&".join(self.random_settings)
+                    self.base_url_params + "&" + http_params
                 )
 
             new_options += f" {self.cli_format_settings(self.random_settings)}"
@@ -919,13 +948,17 @@ class TestCase:
         elif tags and ("no-replicated-database" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
-        # TODO: remove checking "no-upgrade-check" after 23.1
-        elif args.upgrade_check and (
-            "no-upgrade-check" in tags or "no-upgrade-check" in tags
-        ):
-            return FailureReason.NO_UPGRADE_CHECK
-
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
+            return FailureReason.S3_STORAGE
+        elif (
+            tags
+            and ("no-s3-storage-with-slow-build" in tags)
+            and args.s3_storage
+            and (
+                BuildFlags.THREAD in args.build_flags
+                or BuildFlags.DEBUG in args.build_flags
+            )
+        ):
             return FailureReason.S3_STORAGE
 
         elif tags:

@@ -314,6 +314,22 @@ Provides possibility to start background fetch tasks from replication queues whi
 SYSTEM START REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
 ```
 
+### STOP PULLING REPLICATION LOG
+
+Stops loading new entries from replication log to replication queue in a `ReplicatedMergeTree` table.
+
+``` sql
+SYSTEM STOP PULLING REPLICATION LOG [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+### START PULLING REPLICATION LOG
+
+Cancels `SYSTEM STOP PULLING REPLICATION LOG`.
+
+``` sql
+SYSTEM START PULLING REPLICATION LOG [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
 ### SYNC REPLICA
 
 Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a cluster, but no more than `receive_timeout` seconds.
@@ -413,4 +429,30 @@ Will do sync syscall.
 
 ```sql
 SYSTEM SYNC FILE CACHE [ON CLUSTER cluster_name]
+```
+
+
+### SYSTEM STOP LISTEN
+
+Closes the socket and gracefully terminates the existing connections to the server on the specified port with the specified protocol. 
+
+However, if the corresponding protocol settings were not specified in the clickhouse-server configuration, this command will have no effect.
+
+```sql
+SYSTEM STOP LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP_WITH_PROXY | TCP_SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
+```
+
+- If `CUSTOM 'protocol'` modifier is specified, the custom protocol with the specified name defined in the protocols section of the server configuration will be stopped.
+- If `QUERIES ALL` modifier is specified, all protocols are stopped.
+- If `QUERIES DEFAULT` modifier is specified, all default protocols are stopped.
+- If `QUERIES CUSTOM` modifier is specified, all custom protocols are stopped.
+
+### SYSTEM START LISTEN
+
+Allows new connections to be established on the specified protocols.
+
+However, if the server on the specified port and protocol was not stopped using the SYSTEM STOP LISTEN command, this command will have no effect.
+
+```sql
+SYSTEM START LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP_WITH_PROXY | TCP_SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
 ```

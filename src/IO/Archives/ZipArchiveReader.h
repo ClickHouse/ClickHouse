@@ -27,6 +27,8 @@ public:
 
     ~ZipArchiveReader() override;
 
+    const std::string & getPath() const override;
+
     /// Returns true if there is a specified file in the archive.
     bool fileExists(const String & filename) override;
 
@@ -40,10 +42,14 @@ public:
     /// you can read that buffer to extract uncompressed data from the archive.
     /// Several read buffers can be used at the same time in parallel.
     std::unique_ptr<ReadBufferFromFileBase> readFile(const String & filename) override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(NameFilter filter) override;
 
     /// It's possible to convert a file enumerator to a read buffer and vice versa.
     std::unique_ptr<ReadBufferFromFileBase> readFile(std::unique_ptr<FileEnumerator> enumerator) override;
     std::unique_ptr<FileEnumerator> nextFile(std::unique_ptr<ReadBuffer> read_buffer) override;
+
+    std::vector<std::string> getAllFiles() override;
+    std::vector<std::string> getAllFiles(NameFilter filter) override;
 
     /// Sets password used to decrypt the contents of the files in the archive.
     void setPassword(const String & password_) override;
