@@ -906,30 +906,43 @@ void FileCache::loadMetadataImpl()
 
     for (size_t i = 0; i < metadata_download_threads; ++i)
     {
-         loading_threads.emplace_back([&]
-         {
-             while (!stop_loading)
-             {
-                 try
-                 {
-                     auto path = get_keys_dir_to_process();
-                     if (!path.has_value())
-                         return;
+        try
+        {
+            loading_threads.emplace_back([&]
+            {
+                while (!stop_loading)
+                {
+                    try
+                    {
+                        auto path = get_keys_dir_to_process();
+                        if (!path.has_value())
+                            return;
 
-                     loadMetadataForKeys(path.value());
-                 }
-                 catch (...)
-                 {
-                     {
-                        std::lock_guard exception_lock(set_exception_mutex);
-                        if (!first_exception)
-                            first_exception = std::current_exception();
-                     }
-                     stop_loading = true;
-                     return;
-                 }
-             }
-         });
+                        loadMetadataForKeys(path.value());
+                    }
+                    catch (...)
+                    {
+                        {
+                            std::lock_guard exception_lock(set_exception_mutex);
+                            if (!first_exception)
+                                first_exception = std::current_exception();
+                        }
+                        stop_loading = true;
+                        return;
+                    }
+                }
+            });
+        }
+        catch (...)
+        {
+            {
+                std::lock_guard exception_lock(set_exception_mutex);
+                if (!first_exception)
+                    first_exception = std::current_exception();
+            }
+            stop_loading = true;
+            break;
+        }
     }
 
     for (auto & thread : loading_threads)
