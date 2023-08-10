@@ -318,8 +318,7 @@ void PipelineExecutor::spawnThreads()
 {
     while (auto slot = slots->tryAcquire())
     {
-        size_t thread_num = threads;
-        ++threads;
+        size_t thread_num = threads.fetch_add(1);
 
         /// Count of threads in use should be updated for proper finish() condition.
         /// NOTE: this will not decrease `use_threads` below initially granted count
