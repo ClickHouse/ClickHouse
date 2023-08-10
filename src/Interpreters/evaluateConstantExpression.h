@@ -3,6 +3,7 @@
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Parsers/IAST.h>
 
 #include <memory>
@@ -52,4 +53,12 @@ ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, const Cont
   */
 std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & node, const ExpressionActionsPtr & target_expr, size_t & limit);
 
+using ConstantVariants = std::vector<ColumnsWithTypeAndName>;
+
+/// max_elements is a hint
+std::optional<ConstantVariants> evaluateExpressionOverConstantCondition(
+    const ActionsDAG::Node * predicate,
+    const ActionsDAG::NodeRawConstPtrs & expr,
+    const ContextPtr & context,
+    size_t max_elements);
 }

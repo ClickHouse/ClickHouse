@@ -337,6 +337,8 @@ public:
         DataTypePtr current_type,
         bool single_point = false);
 
+    static ActionsDAGPtr cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context);
+
     bool matchesExactContinuousRange() const;
 
 private:
