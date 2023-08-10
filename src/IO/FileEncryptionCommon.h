@@ -2,6 +2,14 @@
 
 #include "config.h"
 
+#include <memory>
+
+namespace DB
+{
+struct EncryptedObjectStorageSettings;
+using EncryptedObjectStorageSettingsPtr = std::shared_ptr<EncryptedObjectStorageSettings>;
+}
+
 #if USE_SSL
 #    include <map>
 
@@ -15,8 +23,6 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
-struct EncryptedObjectStorageSettings;
-using EncryptedObjectStorageSettingsPtr = std::shared_ptr<EncryptedObjectStorageSettings>;
 
 namespace FileEncryption
 {
