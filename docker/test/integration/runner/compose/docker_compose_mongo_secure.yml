@@ -9,5 +9,5 @@ services:
         volumes:
             - ${MONGO_CONFIG_PATH:-}:/mongo/
         ports:
-            - ${MONGO_EXTERNAL_PORT:-27017}:${MONGO_INTERNAL_PORT:-27017}
+            - ${MONGO_INTERNAL_PORT:-27017}
         command: --config /mongo/mongo_secure.conf --profile=2 --verbose

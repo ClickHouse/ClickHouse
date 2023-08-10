@@ -8,4 +8,4 @@ services:
         image: clickhouse/nginx-dav:${DOCKER_NGINX_DAV_TAG:-latest}
         restart: always
         ports:
-            - 80:80
+            - 80

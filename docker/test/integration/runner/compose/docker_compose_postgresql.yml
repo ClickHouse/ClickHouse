@@ -9,6 +9,6 @@ services:
       timeout: 5s
       retries: 5
     ports:
-      - "5433:5433"
+      - "5433"
     environment:
       POSTGRES_HOST_AUTH_METHOD: "trust"

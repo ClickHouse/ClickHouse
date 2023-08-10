@@ -5,7 +5,7 @@ services:
     image: zookeeper:3.4.9
     hostname: kafka_zookeeper
     ports:
-      - 2181:2181
+      - 2181
     environment:
       ZOO_MY_ID: 1
       ZOO_PORT: 2181
@@ -17,7 +17,7 @@ services:
     image: confluentinc/cp-kafka:5.2.0
     hostname: kafka1
     ports:
-      - ${KAFKA_EXTERNAL_PORT}:${KAFKA_EXTERNAL_PORT}
+      - ${KAFKA_EXTERNAL_PORT}
     environment:
       KAFKA_ADVERTISED_LISTENERS: INSIDE://localhost:${KAFKA_EXTERNAL_PORT},OUTSIDE://kafka1:19092
       KAFKA_ADVERTISED_HOST_NAME: kafka1
@@ -38,7 +38,7 @@ services:
     image: confluentinc/cp-schema-registry:5.2.0
     hostname: schema-registry
     ports:
-      - ${SCHEMA_REGISTRY_EXTERNAL_PORT}:${SCHEMA_REGISTRY_EXTERNAL_PORT}
+      - ${SCHEMA_REGISTRY_EXTERNAL_PORT}
     environment:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka1:19092
@@ -55,7 +55,7 @@ services:
     image: confluentinc/cp-schema-registry:5.2.0
     hostname: schema-registry-auth
     ports:
-      - ${SCHEMA_REGISTRY_AUTH_EXTERNAL_PORT}:${SCHEMA_REGISTRY_AUTH_EXTERNAL_PORT}
+      - ${SCHEMA_REGISTRY_AUTH_EXTERNAL_PORT}
     environment:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry-auth
       SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:${SCHEMA_REGISTRY_AUTH_EXTERNAL_PORT}
