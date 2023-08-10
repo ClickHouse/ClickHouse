@@ -214,7 +214,21 @@ def test_profile_max_sessions_for_user_setting_in_query(started_cluster):
 
 def test_profile_max_sessions_for_user_client_suggestions_connection(started_cluster):
     command_text = f"{started_cluster.get_client_cmd()} --host {instance.ip_address} --port 9000 -u {TEST_USER} --password {TEST_PASSWORD}"
-    with client(name="client1>", log=None, command=command_text) as client1:
+    command_text_without_suggestions = command_text + " --disable_suggestion"
+
+    # Launch client1 without suggestions to avoid a race condition:
+    # Client1 opens a session.
+    # Client1 opens a session for suggestion connection.
+    # Client2 fails to open a session and gets the USER_SESSION_LIMIT_EXCEEDED error.
+    #
+    # Expected order:
+    # Client1 opens a session.
+    # Client2 opens a session.
+    # Client2 fails to open a session for suggestions and with USER_SESSION_LIMIT_EXCEEDED (No error printed).
+    # Client3 fails to open a session.
+    # Client1 executes the query.
+    # Client2 loads suggestions from the server using the main connection and executes a query.
+    with client(name="client1>", log=None, command=command_text_without_suggestions) as client1:
         client1.expect(prompt)
         with client(name="client2>", log=None, command=command_text) as client2:
             client2.expect(prompt)
