@@ -117,13 +117,13 @@ do
 done
 
 # Initialize export of system logs to ClickHouse Cloud
-if [ -n "${CLICKHOUSE_CI_LOGS_HOST}" -a -f /repository/utils/export-logs-in-ci/setup.sh ]
+if [ -n "${CLICKHOUSE_CI_LOGS_HOST}" ]
 then
     export EXTRA_COLUMNS_EXPRESSION="$PULL_REQUEST_NUMBER AS pull_request_number, '$COMMIT_SHA' AS commit_sha, '$CHECK_START_TIME' AS check_start_time, '$CHECK_NAME' AS check_name, '$INSTANCE_TYPE' AS instance_type"
     # TODO: Check if the password will appear in the logs.
     export CONNECTION_PARAMETERS="--secure --user ci --host ${CLICKHOUSE_CI_LOGS_HOST} --password ${CLICKHOUSE_CI_LOGS_PASSWORD}"
 
-    /repository/utils/export-logs-in-ci/setup.sh
+    ./setup_export_logs.sh
 
     # Unset variables after use
     export CONNECTION_PARAMETERS=''
