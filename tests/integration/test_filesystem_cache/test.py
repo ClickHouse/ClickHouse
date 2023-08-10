@@ -60,9 +60,19 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
     assert int(node.query("SELECT max(size) FROM system.filesystem_cache")) == 1024
     count = int(node.query("SELECT count() FROM test"))
 
-    cache_count = int(node.query("SELECT count() FROM system.filesystem_cache WHERE size > 0"))
+    cache_count = int(
+        node.query("SELECT count() FROM system.filesystem_cache WHERE size > 0")
+    )
+    cache_state = node.query(
+        "SELECT key, size FROM system.filesystem_cache WHERE size > 0"
+    )
+
     node.restart_clickhouse()
+
     assert cache_count == int(node.query("SELECT count() FROM system.filesystem_cache"))
+    assert cache_state == node.query(
+        "SELECT key, size FROM system.filesystem_cache WHERE size > 0"
+    )
 
     assert node.contains_in_log("Loading filesystem cache with 30 threads")
     assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
