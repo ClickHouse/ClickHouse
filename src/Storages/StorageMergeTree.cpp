@@ -2197,9 +2197,8 @@ void StorageMergeTree::onActionLockRemove(StorageActionBlockType action_type)
         background_moves_assignee.trigger();
 }
 
-CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_context)
+IStorage::DataValidationTasksPtr StorageMergeTree::getCheckTaskList(const ASTPtr & query, ContextPtr local_context)
 {
-    CheckResults results;
     DataPartsVector data_parts;
     if (const auto & check_query = query->as<ASTCheckQuery &>(); check_query.partition)
     {
@@ -2209,7 +2208,14 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    for (auto & part : data_parts)
+    return std::make_unique<DataValidationTasks>(std::move(data_parts), local_context);
+}
+
+CheckResult StorageMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list, bool & has_nothing_to_do)
+{
+    auto * data_validation_tasks = assert_cast<DataValidationTasks *>(check_task_list.get());
+    auto local_context = data_validation_tasks->context;
+    if (auto part = data_validation_tasks->next())
     {
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         static constexpr auto checksums_path = "checksums.txt";
@@ -2224,12 +2230,12 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
                 part_mutable.writeChecksums(part->checksums, local_context->getWriteSettings());
 
                 part->checkMetadata();
-                results.emplace_back(part->name, true, "Checksums recounted and written to disk.");
+                return CheckResult(part->name, true, "Checksums recounted and written to disk.");
             }
             catch (const Exception & ex)
             {
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
-                results.emplace_back(part->name, false, "Check of part finished with error: '" + ex.message() + "'");
+                return CheckResult(part->name, false, "Check of part finished with error: '" + ex.message() + "'");
             }
         }
         else
@@ -2238,15 +2244,19 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
             {
                 checkDataPart(part, true);
                 part->checkMetadata();
-                results.emplace_back(part->name, true, "");
+                return CheckResult(part->name, true, "");
             }
             catch (const Exception & ex)
             {
-                results.emplace_back(part->name, false, ex.message());
+                return CheckResult(part->name, false, ex.message());
             }
         }
     }
-    return results;
+    else
+    {
+        has_nothing_to_do = true;
+        return {};
+    }
 }
 
 
