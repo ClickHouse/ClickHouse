@@ -128,7 +128,7 @@ public:
 
     /// Firstly, this cleanup does not delete cache files,
     /// but only empty keys from cache_metadata_map and key (prefix) directories from fs.
-    /// Secondly, it deletes those only if arised as a result of
+    /// Secondly, it deletes those only if arose as a result of
     /// (1) eviction in FileCache::tryReserve();
     /// (2) removal of cancelled non-downloaded file segments after FileSegment::complete().
     /// which does not include removal of cache files because of FileCache::removeKey/removeAllKeys,
@@ -150,7 +150,7 @@ private:
     Poco::Logger * log;
 
     void downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory);
-    iterator removeKeyImpl(iterator it, LockedKey &, const CacheMetadataGuard::Lock &);
+    iterator removeEmptyKey(iterator it, LockedKey &, const CacheMetadataGuard::Lock &);
 };
 
 

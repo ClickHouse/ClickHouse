@@ -265,7 +265,7 @@ void CacheMetadata::removeAllKeys(bool if_releasable)
             bool removed_all = locked_key->removeAllFileSegments(if_releasable);
             if (removed_all)
             {
-                it = removeKeyImpl(it, *locked_key, lock);
+                it = removeEmptyKey(it, *locked_key, lock);
                 continue;
             }
         }
@@ -297,10 +297,10 @@ void CacheMetadata::removeKey(const Key & key, bool if_exists, bool if_releasabl
 
     bool removed_all = locked_key->removeAllFileSegments(if_releasable);
     if (removed_all)
-        removeKeyImpl(it, *locked_key, metadata_lock);
+        removeEmptyKey(it, *locked_key, metadata_lock);
 }
 
-CacheMetadata::iterator CacheMetadata::removeKeyImpl(iterator it, LockedKey & locked_key, const CacheMetadataGuard::Lock &)
+CacheMetadata::iterator CacheMetadata::removeEmptyKey(iterator it, LockedKey & locked_key, const CacheMetadataGuard::Lock &)
 {
     const auto & key = locked_key.getKey();
 
@@ -407,7 +407,7 @@ void CacheMetadata::cleanupThreadFunc()
             auto locked_key = it->second->lockNoStateCheck();
             if (locked_key->getKeyState() == KeyMetadata::KeyState::REMOVING)
             {
-                removeKeyImpl(it, *locked_key, lock);
+                removeEmptyKey(it, *locked_key, lock);
             }
         }
         catch (...)
