@@ -21,6 +21,7 @@
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/storage/common/storage_credential.hpp>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Transforms/ExtractColumnsTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 
@@ -299,6 +300,7 @@ void registerStorageAzureBlob(StorageFactory & factory)
             args.constraints,
             args.comment,
             format_settings,
+            /* distributed_processing */ false,
             partition_by);
     },
     {
@@ -447,12 +449,13 @@ StorageAzureBlob::StorageAzureBlob(
     const ConstraintsDescription & constraints_,
     const String & comment,
     std::optional<FormatSettings> format_settings_,
+    bool distributed_processing_,
     ASTPtr partition_by_)
     : IStorage(table_id_)
     , name("AzureBlobStorage")
     , configuration(configuration_)
     , object_storage(std::move(object_storage_))
-    , distributed_processing(false)
+    , distributed_processing(distributed_processing_)
     , format_settings(format_settings_)
     , partition_by(partition_by_)
 {
@@ -462,7 +465,7 @@ StorageAzureBlob::StorageAzureBlob(
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
     {
-        auto columns = getTableStructureFromData(object_storage.get(), configuration, format_settings, context);
+        auto columns = getTableStructureFromData(object_storage.get(), configuration, format_settings, context, distributed_processing);
         storage_metadata.setColumns(columns);
     }
     else
@@ -658,7 +661,7 @@ private:
 
 Pipe StorageAzureBlob::read(
     const Names & column_names,
-    const StorageSnapshotPtr &  storage_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -670,17 +673,13 @@ Pipe StorageAzureBlob::read(
 
     Pipes pipes;
 
-    std::unordered_set<String> column_names_set(column_names.begin(), column_names.end());
-    std::vector<NameAndTypePair> requested_virtual_columns;
-
-    for (const auto & virtual_column : getVirtuals())
-    {
-        if (column_names_set.contains(virtual_column.name))
-            requested_virtual_columns.push_back(virtual_column);
-    }
-
     std::shared_ptr<StorageAzureBlobSource::IIterator> iterator_wrapper;
-    if (configuration.withGlobs())
+    if (distributed_processing)
+    {
+        iterator_wrapper = std::make_shared<StorageAzureBlobSource::ReadIterator>(local_context,
+            local_context->getReadTaskCallback());
+    }
+    else if (configuration.withGlobs())
     {
         /// Iterate through disclosed globs and make a source for each file
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::GlobIterator>(
@@ -694,39 +693,15 @@ Pipe StorageAzureBlob::read(
             query_info.query, virtual_block, local_context, nullptr, local_context->getFileProgressCallback());
     }
 
-    ColumnsDescription columns_description;
-    Block block_for_format;
-    if (supportsSubsetOfColumns())
-    {
-        auto fetch_columns = column_names;
-        const auto & virtuals = getVirtuals();
-        std::erase_if(
-            fetch_columns,
-            [&](const String & col)
-            { return std::any_of(virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col){ return col == virtual_col.name; }); });
-
-        if (fetch_columns.empty())
-            fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
-
-        columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
-        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-    }
-    else
-    {
-        columns_description = storage_snapshot->metadata->getColumns();
-        block_for_format = storage_snapshot->metadata->getSampleBlock();
-    }
-
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageAzureBlobSource>(
-            requested_virtual_columns,
+            read_from_format_info,
             configuration.format,
             getName(),
-            block_for_format,
             local_context,
             format_settings,
-            columns_description,
             max_block_size,
             configuration.compression_method,
             object_storage.get(),
@@ -817,11 +792,6 @@ bool StorageAzureBlob::supportsPartitionBy() const
     return true;
 }
 
-bool StorageAzureBlob::supportsSubcolumns() const
-{
-    return FormatFactory::instance().checkIfFormatSupportsSubcolumns(configuration.format);
-}
-
 bool StorageAzureBlob::supportsSubsetOfColumns() const
 {
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
@@ -882,6 +852,7 @@ StorageAzureBlobSource::GlobIterator::GlobIterator(
         blobs_with_metadata.emplace_back(blob_path_with_globs, object_metadata);
         if (outer_blobs)
             outer_blobs->emplace_back(blobs_with_metadata.back());
+        is_finished = true;
         return;
     }
 
@@ -900,8 +871,10 @@ RelativePathWithMetadata StorageAzureBlobSource::GlobIterator::next()
 {
     std::lock_guard lock(next_mutex);
 
-    if (is_finished)
+    if (is_finished && index >= blobs_with_metadata.size())
+    {
         return {};
+    }
 
     bool need_new_batch = blobs_with_metadata.empty() || index >= blobs_with_metadata.size();
 
@@ -1111,35 +1084,26 @@ Chunk StorageAzureBlobSource::generate()
     return {};
 }
 
-Block StorageAzureBlobSource::getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns)
-{
-    for (const auto & virtual_column : requested_virtual_columns)
-        sample_block.insert({virtual_column.type->createColumn(), virtual_column.type, virtual_column.name});
-
-    return sample_block;
-}
-
 StorageAzureBlobSource::StorageAzureBlobSource(
-    const std::vector<NameAndTypePair> & requested_virtual_columns_,
+    const ReadFromFormatInfo & info,
     const String & format_,
     String name_,
-    const Block & sample_block_,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
-    const ColumnsDescription & columns_,
     UInt64 max_block_size_,
     String compression_hint_,
     AzureObjectStorage * object_storage_,
     const String & container_,
     std::shared_ptr<IIterator> file_iterator_)
-    :ISource(getHeader(sample_block_, requested_virtual_columns_), false)
+    :ISource(info.source_header, false)
     , WithContext(context_)
-    , requested_virtual_columns(requested_virtual_columns_)
+    , requested_columns(info.requested_columns)
+    , requested_virtual_columns(info.requested_virtual_columns)
     , format(format_)
     , name(std::move(name_))
-    , sample_block(sample_block_)
+    , sample_block(info.format_header)
     , format_settings(format_settings_)
-    , columns_desc(columns_)
+    , columns_desc(info.columns_description)
     , max_block_size(max_block_size_)
     , compression_hint(compression_hint_)
     , object_storage(std::move(object_storage_))
@@ -1189,6 +1153,13 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
             { return std::make_shared<AddingDefaultsTransform>(header, columns_desc, *input_format, getContext()); });
     }
 
+    /// Add ExtractColumnsTransform to extract requested columns/subcolumns
+    /// from chunk read by IInputFormat.
+    builder.addSimpleTransform([&](const Block & header)
+    {
+        return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
+    });
+
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
@@ -1223,11 +1194,17 @@ ColumnsDescription StorageAzureBlob::getTableStructureFromData(
     AzureObjectStorage * object_storage,
     const Configuration & configuration,
     const std::optional<FormatSettings> & format_settings,
-    ContextPtr ctx)
+    ContextPtr ctx,
+    bool distributed_processing)
 {
     RelativePathsWithMetadata read_keys;
     std::shared_ptr<StorageAzureBlobSource::IIterator> file_iterator;
-    if (configuration.withGlobs())
+    if (distributed_processing)
+    {
+        file_iterator = std::make_shared<StorageAzureBlobSource::ReadIterator>(ctx,
+            ctx->getReadTaskCallback());
+    }
+    else if (configuration.withGlobs())
     {
         file_iterator = std::make_shared<StorageAzureBlobSource::GlobIterator>(
             object_storage, configuration.container, configuration.blob_path, nullptr, Block{}, ctx, &read_keys);
