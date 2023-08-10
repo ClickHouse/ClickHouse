@@ -29,7 +29,8 @@
     M(TextLogElement) \
     M(FilesystemCacheLogElement) \
     M(FilesystemReadPrefetchesLogElement) \
-    M(AsynchronousInsertLogElement)
+    M(AsynchronousInsertLogElement) \
+    M(BackupLogElement)
 
 namespace Poco
 {

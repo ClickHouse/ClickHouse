@@ -14,6 +14,7 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/BackupLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -230,6 +231,7 @@ BackupsWorker::BackupsWorker(size_t num_backup_threads, size_t num_restore_threa
 
 OperationID BackupsWorker::start(const ASTPtr & backup_or_restore_query, ContextMutablePtr context)
 {
+    backup_log = context->getBackupLog();
     const ASTBackupQuery & backup_query = typeid_cast<const ASTBackupQuery &>(*backup_or_restore_query);
     if (backup_query.kind == ASTBackupQuery::Kind::BACKUP)
         return startMakingBackup(backup_or_restore_query, context);
@@ -449,9 +451,10 @@ void BackupsWorker::doBackup(
         backup.reset();
 
         LOG_INFO(log, "{} {} was created successfully", (backup_settings.internal ? "Internal backup" : "Backup"), backup_name_for_logging);
-        setStatus(backup_id, BackupStatus::BACKUP_CREATED);
         /// NOTE: we need to update metadata again after backup->finalizeWriting(), because backup metadata is written there.
         setNumFilesAndSize(backup_id, num_files, total_size, num_entries, uncompressed_size, compressed_size, 0, 0);
+        /// NOTE: setStatus is called after setNumFilesAndSize in order to have actual information in a backup log record
+        setStatus(backup_id, BackupStatus::BACKUP_CREATED);
     }
     catch (...)
     {
@@ -890,6 +893,9 @@ void BackupsWorker::addInfo(const OperationID & id, const String & name, bool in
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot start a backup or restore: ID {} is already in use", id);
     }
 
+    if (backup_log)
+        backup_log->add(BackupLogElement{info});
+
     infos[id] = std::move(info);
 
     num_active_backups += getNumActiveBackupsChange(status);
@@ -922,6 +928,9 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
         info.error_message = getCurrentExceptionMessage(false);
         info.exception = std::current_exception();
     }
+
+    if (backup_log)
+        backup_log->add(BackupLogElement{info});
 
     num_active_backups += getNumActiveBackupsChange(status) - getNumActiveBackupsChange(old_status);
     num_active_restores += getNumActiveRestoresChange(status) - getNumActiveRestoresChange(old_status);
