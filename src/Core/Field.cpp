@@ -9,7 +9,7 @@
 #include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorWriteBinary.h>
-#include <base/EnumReflection.h>
+#include <magic_enum.hpp>
 
 
 namespace DB
