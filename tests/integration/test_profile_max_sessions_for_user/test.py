@@ -228,7 +228,9 @@ def test_profile_max_sessions_for_user_client_suggestions_connection(started_clu
     # Client3 fails to open a session.
     # Client1 executes the query.
     # Client2 loads suggestions from the server using the main connection and executes a query.
-    with client(name="client1>", log=None, command=command_text_without_suggestions) as client1:
+    with client(
+        name="client1>", log=None, command=command_text_without_suggestions
+    ) as client1:
         client1.expect(prompt)
         with client(name="client2>", log=None, command=command_text) as client2:
             client2.expect(prompt)
