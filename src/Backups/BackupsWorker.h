@@ -25,6 +25,7 @@ class IBackupEntry;
 using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
 using DataRestoreTasks = std::vector<std::function<void()>>;
 struct ReadSettings;
+class BackupLog;
 
 /// Manager of backups and restores: executes backups and restores' threads in the background.
 /// Keeps information about backups and restores started in this session.
@@ -91,6 +92,7 @@ private:
     std::unique_ptr<ThreadPool> restores_thread_pool;
 
     std::unordered_map<BackupOperationInfo::ID, BackupOperationInfo> infos;
+    std::shared_ptr<BackupLog> backup_log;
     std::condition_variable status_changed;
     std::atomic<size_t> num_active_backups = 0;
     std::atomic<size_t> num_active_restores = 0;

@@ -1218,6 +1218,16 @@
         <ttl>event_date + INTERVAL 3 DAY</ttl>
     </asynchronous_insert_log>
 
+    <!-- Backup/restore log.
+         Uncomment to write backup/restore log records into a system table.
+    <backup_log>
+        <database>system</database>
+        <table>backup_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>0</flush_interval_milliseconds>
+    </backup_log>
+    -->
+
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.
          Format: <name>/path/to/file</name>
