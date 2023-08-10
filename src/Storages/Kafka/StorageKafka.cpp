@@ -76,6 +76,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int QUERY_NOT_ALLOWED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 struct StorageKafkaInterceptors
@@ -992,6 +993,7 @@ void registerStorageKafka(StorageFactory & factory)
             CHECK_KAFKA_STORAGE_ARGUMENT(15, kafka_handle_error_mode, 0)
             CHECK_KAFKA_STORAGE_ARGUMENT(16, kafka_commit_on_select, 0)
             CHECK_KAFKA_STORAGE_ARGUMENT(17, kafka_max_rows_per_message, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(18, keeper_path, 0)
         }
 
         #undef CHECK_KAFKA_STORAGE_ARGUMENT
@@ -1038,6 +1040,13 @@ void registerStorageKafka(StorageFactory & factory)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "KafkaEngine doesn't support DEFAULT/MATERIALIZED/EPHEMERAL expressions for columns. "
                                                        "See https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka/#configuration");
+        }
+
+        if (kafka_settings->keeper_path.changed && !args.getLocalContext()->getSettingsRef().allow_experimental_kafka_store_offsets_in_keeper){
+
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Storing the Kafka offsets in Keeper is experimental. "
+                            "Set `allow_experimental_kafka_store_offsets_in_keeper` setting to enable it");
         }
 
         return std::make_shared<StorageKafka>(args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);
