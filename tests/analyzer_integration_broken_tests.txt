@@ -114,7 +114,6 @@ test_quota/test.py::test_tracking_quota
 test_quota/test.py::test_users_xml_is_readonly
 test_mysql_database_engine/test.py::test_mysql_ddl_for_mysql_database
 test_profile_events_s3/test.py::test_profile_events
-test_system_flush_logs/test.py::test_system_logs[system.text_log-0]
 test_user_defined_object_persistence/test.py::test_persistence
 test_settings_profile/test.py::test_show_profiles
 test_sql_user_defined_functions_on_cluster/test.py::test_sql_user_defined_functions_on_cluster
