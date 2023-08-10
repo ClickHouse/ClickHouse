@@ -665,7 +665,6 @@ create view partial_query_times as select * from
 -- Report for backward-incompatible ('partial') queries that we could only run on the new server (e.g.
 -- queries with new functions added in the tested PR).
 create table partial_queries_report engine File(TSV, 'report/partial-queries-report.tsv')
-    settings output_format_decimal_trailing_zeros = 1
     as select round(time_median, 3) time,
         round(time_stddev / time_median, 3) relative_time_stddev,
         test, query_index, query_display_name
@@ -739,7 +738,6 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     ;
 
 create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv')
-    settings output_format_decimal_trailing_zeros = 1
     as with
         -- server_time is sometimes reported as zero (if it's less than 1 ms),
         -- so we have to work around this to not get an error about conversion
@@ -757,7 +755,6 @@ create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv')
     from queries where changed_show order by abs(diff) desc;
 
 create table unstable_queries_report engine File(TSV, 'report/unstable-queries.tsv')
-    settings output_format_decimal_trailing_zeros = 1
     as select
         round(left, 3), round(right, 3), round(diff, 3),
         round(stat_threshold, 3), unstable_fail, test, query_index, query_display_name
@@ -789,7 +786,6 @@ create view total_speedup as
     ;
 
 create table test_perf_changes_report engine File(TSV, 'report/test-perf-changes.tsv')
-    settings output_format_decimal_trailing_zeros = 1
     as with
         (times_speedup >= 1
             ? '-' || toString(round(times_speedup, 3)) || 'x'
@@ -817,7 +813,6 @@ create view total_client_time_per_query as select *
         'test text, query_index int, client float, server float');
 
 create table slow_on_client_report engine File(TSV, 'report/slow-on-client.tsv')
-    settings output_format_decimal_trailing_zeros = 1
     as select client, server, round(client/server, 3) p,
         test, query_display_name
     from total_client_time_per_query left join query_display_names using (test, query_index)
@@ -899,7 +894,6 @@ create view test_times_view_total as
     ;
 
 create table test_times_report engine File(TSV, 'report/test-times.tsv')
-    settings output_format_decimal_trailing_zeros = 1
     as select
         test,
         round(real, 3),
@@ -919,7 +913,6 @@ create table test_times_report engine File(TSV, 'report/test-times.tsv')
 
 -- report for all queries page, only main metric
 create table all_tests_report engine File(TSV, 'report/all-queries.tsv')
-    settings output_format_decimal_trailing_zeros = 1
     as with
         -- server_time is sometimes reported as zero (if it's less than 1 ms),
         -- so we have to work around this to not get an error about conversion
@@ -1152,7 +1145,6 @@ create table metrics engine File(TSV, 'metrics/metrics.tsv') as
 
 -- Show metrics that have changed
 create table changes engine File(TSV, 'metrics/changes.tsv')
-    settings output_format_decimal_trailing_zeros = 1
     as select metric, left, right,
         round(diff, 3), round(times_diff, 3)
     from (
