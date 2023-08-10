@@ -92,9 +92,13 @@ namespace
 
         HDFSFileInfo ls;
         ls.file_info = hdfsListDirectory(fs.get(), path_for_ls.data(), &ls.length);
-        if (ls.file_info == nullptr && errno != ENOENT) // NOLINT
+        if (ls.file_info == nullptr && errno != ENOENT && errno != EACCES) // NOLINT
         {
-            // ignore file not found exception, keep throw other exception, libhdfs3 doesn't have function to get exception type, so use errno.
+            // ignore:
+            // file not found (as in LSWithRegexpMatching)
+            // permission denied (there is no easy way to determine
+            // if we really need access or just scanning all dirs while doing recursive search),
+            // keep throw other exception, libhdfs3 doesn't have function to get exception type, so use errno.
             throw Exception(
                 ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}", path_for_ls, String(hdfsGetLastError()));
         }

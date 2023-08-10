@@ -141,7 +141,8 @@ Multiple path components can have globs. For being processed file must exist and
 
 - `*` — Substitutes any number of any characters except `/` including empty string.
 - `?` — Substitutes any single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`, including `/`.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`, including `/`. In case at least one of strings contains `/`, `'permission denied'` errors may be ignored.
+
 - `{N..M}` — Substitutes any number in range from N to M including both borders.
 - `**` - Fetches all files inside the folder recursively.
 
