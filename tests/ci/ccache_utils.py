@@ -94,12 +94,11 @@ def get_ccache_if_not_exists(
 
         logging.info("Found ccache on path %s", obj)
         url = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{obj}"
-        compressed_cache = os.path.join(temp_path, os.path.basename(obj))
+        compressed_cache = Path(temp_path) / os.path.basename(obj)
         dowload_file_with_progress(url, compressed_cache)
 
-        path_to_decompress = str(Path(path_to_ccache_dir).parent)
-        if not os.path.exists(path_to_decompress):
-            os.makedirs(path_to_decompress)
+        path_to_decompress = Path(path_to_ccache_dir).parent
+        path_to_decompress.mkdir(parents=True, exist_ok=True)
 
         if os.path.exists(path_to_ccache_dir):
             shutil.rmtree(path_to_ccache_dir)
@@ -122,15 +121,18 @@ def get_ccache_if_not_exists(
     return ccache_pr
 
 
-def upload_ccache(path_to_ccache_dir, s3_helper, current_pr_number, temp_path):
+def upload_ccache(
+    path_to_ccache_dir: Path,
+    s3_helper: S3Helper,
+    current_pr_number: int,
+    temp_path: Path,
+) -> None:
     logging.info("Uploading cache %s for pr %s", path_to_ccache_dir, current_pr_number)
-    ccache_name = os.path.basename(path_to_ccache_dir)
-    compressed_cache_path = os.path.join(temp_path, ccache_name + ".tar.zst")
+    ccache_name = path_to_ccache_dir.name
+    compressed_cache_path = temp_path / f"{ccache_name}.tar.zst"
     compress_fast(path_to_ccache_dir, compressed_cache_path)
 
-    s3_path = (
-        str(current_pr_number) + "/ccaches/" + os.path.basename(compressed_cache_path)
-    )
+    s3_path = f"{current_pr_number}/ccaches/{compressed_cache_path.name}"
     logging.info("Will upload %s to path %s", compressed_cache_path, s3_path)
     s3_helper.upload_build_file_to_s3(compressed_cache_path, s3_path)
     logging.info("Upload finished")

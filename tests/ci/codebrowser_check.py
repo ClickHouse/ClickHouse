@@ -4,6 +4,7 @@
 import os
 import subprocess
 import logging
+from pathlib import Path
 
 from github import Github
 
@@ -74,7 +75,7 @@ if __name__ == "__main__":
     logging.info("Report path %s", report_path)
     s3_path_prefix = "codebrowser"
     html_urls = s3_helper.fast_parallel_upload_dir(
-        report_path, s3_path_prefix, "clickhouse-test-reports"
+        Path(report_path), s3_path_prefix, "clickhouse-test-reports"
     )
 
     index_html = (
