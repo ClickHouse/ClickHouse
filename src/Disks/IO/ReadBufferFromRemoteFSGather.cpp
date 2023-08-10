@@ -2,7 +2,6 @@
 
 #include <IO/SeekableReadBuffer.h>
 
-#include <iostream>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <IO/ReadSettings.h>
