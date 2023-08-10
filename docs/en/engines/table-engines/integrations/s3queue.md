@@ -27,7 +27,7 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
 
 **Engine parameters**
 
-- `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings. For more information see [below](#wildcards-in-path).
+- `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings. For more information see [below](#wildcards-in-path).
 - `NOSIGN` - If this keyword is provided in place of credentials, all the requests will not be signed.
 - `format` — The [format](../../../interfaces/formats.md#formats) of the file.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file. For more information see [Using S3 for Data Storage](../mergetree-family/mergetree.md#table_engine-mergetree-s3).
@@ -213,6 +213,7 @@ For more information about virtual columns see [here](../../../engines/table-eng
 `path` argument can specify multiple files using bash-like wildcards. For being processed file should exist and match to the whole path pattern. Listing of files is determined during `SELECT` (not at `CREATE` moment).
 
 - `*` — Substitutes any number of any characters except `/` including empty string.
+- `**` — Substitutes any number of any characters include `/` including empty string.
 - `?` — Substitutes any single character.
 - `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders. N and M can have leading zeroes e.g. `000..078`.
