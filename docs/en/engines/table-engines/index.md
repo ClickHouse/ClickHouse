@@ -60,6 +60,7 @@ Engines in the family:
 - [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md)
 - [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md)
 - [PostgreSQL](../../engines/table-engines/integrations/postgresql.md)
+- [S3Queue](../../engines/table-engines/integrations/s3queue.md)
 
 ### Special Engines {#special-engines}
 
