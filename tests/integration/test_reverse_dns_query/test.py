@@ -65,7 +65,7 @@ def setup_ch_server(dns_server_ip):
 
 def test_reverse_dns_query(started_cluster):
     dns_server_ip = cluster.get_instance_ip(cluster.coredns_host)
-    random_ipv6 = "4ae8:fa0f:ee1d:68c5:0b76:1b79:7ae6:1549" # https://commentpicker.com/ip-address-generator.php
+    random_ipv6 = "4ae8:fa0f:ee1d:68c5:0b76:1b79:7ae6:1549"  # https://commentpicker.com/ip-address-generator.php
     setup_dns_server(random_ipv6)
     setup_ch_server(dns_server_ip)
 
