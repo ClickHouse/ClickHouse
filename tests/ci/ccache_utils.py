@@ -3,11 +3,15 @@
 import logging
 import os
 import shutil
+from hashlib import md5
 from pathlib import Path
 
-from build_download_helper import download_build_with_progress
+import requests  # type: ignore
+
+from build_download_helper import download_build_with_progress, DownloadException
 from compress_files import decompress_fast, compress_fast
 from env_helper import S3_DOWNLOAD, S3_BUILDS_BUCKET
+from git_helper import git_runner
 from s3_helper import S3Helper
 
 DOWNLOAD_RETRIES_COUNT = 5
@@ -90,3 +94,65 @@ def upload_ccache(path_to_ccache_dir, s3_helper, current_pr_number, temp_path):
     logging.info("Will upload %s to path %s", compressed_cache_path, s3_path)
     s3_helper.upload_build_file_to_s3(compressed_cache_path, s3_path)
     logging.info("Upload finished")
+
+
+class CargoCache:
+    PREFIX = "ccache/cargo_cache"
+
+    def __init__(
+        self,
+        directory: Path,
+        temp_path: Path,
+        s3_helper: S3Helper,
+    ):
+        self._cargo_lock_file = Path(git_runner.cwd) / "rust" / "Cargo.lock"
+        self.lock_hash = md5(self._cargo_lock_file.read_bytes()).hexdigest()
+        self.directory = directory
+        self.archive_name = f"Cargo_cache_{self.lock_hash}.tar.zst"
+        self.temp_path = temp_path
+        self.s3_helper = s3_helper
+        self._url = (
+            f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{self.PREFIX}/{self.archive_name}"
+        )
+        self._force_upload_cache = False
+
+    def download(self):
+        logging.info("Searching rust cache for Cargo.lock md5 %s", self.lock_hash)
+        compressed_cache = self.temp_path / self.archive_name
+        try:
+            download_build_with_progress(self._url, compressed_cache)
+        except DownloadException:
+            logging.warning("Unable downloading cargo cache, creating empty directory")
+            self.directory.mkdir(parents=True, exist_ok=True)
+            return
+
+        # decompress the cache and check if the necessary directory is there
+        self.directory.parent.mkdir(parents=True, exist_ok=True)
+        decompress_fast(compressed_cache.as_posix(), self.directory.parent.as_posix())
+        if not self.directory.exists():
+            logging.warning(
+                "The cargo cache archive was successfully downloaded and "
+                "decompressed, but %s does not exitst. Creating empty one",
+                self.directory,
+            )
+            logging.info("Cache for Cargo.lock md5 %s will be uploaded", self.lock_hash)
+            self.directory.mkdir(parents=True, exist_ok=True)
+
+    def upload(self):
+        if not self._force_upload_cache:
+            cache_response = requests.head(self._url)
+            if cache_response.status_code == 200:
+                logging.info(
+                    "Remote cargo cache %s already exist, won't reupload", self._url
+                )
+                return
+
+        logging.info("Compressing cargo cache")
+        archive_path = self.directory.parent / self.archive_name
+        compress_fast(
+            self.directory.as_posix(),
+            archive_path.as_posix(),
+        )
+        s3_path = f"{self.PREFIX}/{self.archive_name}"
+        logging.info("Uploading %s to S3 path %s", archive_path, s3_path)
+        self.s3_helper.upload_build_file_to_s3(archive_path, s3_path)
