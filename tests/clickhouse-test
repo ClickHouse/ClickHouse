@@ -660,9 +660,9 @@ class MergeTreeSettingsRandomizer:
         "min_merge_bytes_to_use_direct_io": threshold_generator(
             0.25, 0.25, 1, 10 * 1024 * 1024 * 1024
         ),
-        "index_granularity_bytes": lambda: random.randint(1024, 30 * 1024 * 1024),
+        "index_granularity_bytes": lambda: random.randint(1024, 1024),
         "merge_max_block_size": lambda: random.randint(1, 8192 * 3),
-        "index_granularity": lambda: random.randint(1, 65536),
+        "index_granularity": lambda: random.randint(1, 2),
         "min_bytes_for_wide_part": threshold_generator(0.3, 0.3, 0, 1024 * 1024 * 1024),
         "compress_marks": lambda: random.randint(0, 1),
         "compress_primary_key": lambda: random.randint(0, 1),
