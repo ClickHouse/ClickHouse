@@ -307,7 +307,7 @@
  */
 #define JEMALLOC_PURGE_MADVISE_FREE
 #define JEMALLOC_PURGE_MADVISE_DONTNEED
-#define JEMALLOC_PURGE_MADVISE_DONTNEED_ZEROS
+/* #undef JEMALLOC_PURGE_MADVISE_DONTNEED_ZEROS */
 
 /* Defined if madvise(2) is available but MADV_FREE is not (x86 Linux only). */
 /* #undef JEMALLOC_DEFINE_MADVISE_FREE */
