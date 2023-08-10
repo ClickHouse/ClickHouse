@@ -336,7 +336,6 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         return db_and_table;
     }
 
-
     if (table_id.database_name == TEMPORARY_DATABASE)
     {
         /// For temporary tables UUIDs are set in Context::resolveStorageID(...).
@@ -349,6 +348,15 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
     DatabasePtr database;
     {
+        // Callers assume that this method doesn't throw exceptions, but getDatabaseName() will throw if there is no database part.
+        // So, fail early and gracefully...
+        if (!table_id.hasDatabase())
+        {
+            if (exception)
+                exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Empty database name"));
+            return {};
+        }
+
         std::lock_guard lock{databases_mutex};
         auto it = databases.find(table_id.getDatabaseName());
         if (databases.end() == it)
@@ -360,8 +368,24 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         database = it->second;
     }
 
-    auto table = database->tryGetTable(table_id.table_name, context_);
-    if (!table && exception)
+    StoragePtr table;
+    if (exception)
+    {
+        try
+        {
+            table = database->getTable(table_id.table_name, context_);
+        }
+        catch (const Exception & e)
+        {
+            exception->emplace(e);
+        }
+    }
+    else
+    {
+        table = database->tryGetTable(table_id.table_name, context_);
+    }
+
+    if (!table && exception && !exception->has_value())
         exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
 
     if (!table)

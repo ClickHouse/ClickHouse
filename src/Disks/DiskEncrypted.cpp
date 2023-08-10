@@ -433,10 +433,10 @@ void DiskEncrypted::applyNewSettings(
 {
     auto new_settings = parseDiskEncryptedSettings(name, config, config_prefix, disk_map);
     if (new_settings->wrapped_disk != delegate)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Сhanging wrapped disk on the fly is not supported. Disk {}", name);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Changing wrapped disk on the fly is not supported. Disk {}", name);
 
     if (new_settings->disk_path != disk_path)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Сhanging disk path on the fly is not supported. Disk {}", name);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Changing disk path on the fly is not supported. Disk {}", name);
 
     current_settings.set(std::move(new_settings));
     IDisk::applyNewSettings(config, context, config_prefix, disk_map);
