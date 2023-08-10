@@ -1,0 +1,1 @@
+../../../utils/export-logs-in-ci/setup.sh
