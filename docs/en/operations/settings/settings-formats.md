@@ -1229,7 +1229,7 @@ Minimum number of rows to read in one thread in Parquet format.
 
 Default value: `100000`
 
-### input_format_parquet_min_read_batch_size_mytes {#input_format_parquet_min_read_batch_size_bytes}
+### input_format_parquet_min_read_batch_size_bytes {#input_format_parquet_min_read_batch_size_bytes}
 
 Minimum number of bytes (uncompressed) to read in one thread in Parquet format.
 
