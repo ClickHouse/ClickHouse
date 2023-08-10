@@ -1817,7 +1817,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
             {
                 auto metadata_snapshot = getInMemoryMetadataPtr();
                 LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
-                part->makeCloneInDetached("", metadata_snapshot);
+                part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
             }
 
             {
@@ -1902,7 +1902,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                 {
                     auto metadata_snapshot = getInMemoryMetadataPtr();
                     LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
-                    part->makeCloneInDetached("", metadata_snapshot);
+                    part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
                 }
             }
 
@@ -1944,7 +1944,7 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
         for (const auto & part : parts_to_remove)
         {
             LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
-            part->makeCloneInDetached("", metadata_snapshot);
+            part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
         }
     }
 

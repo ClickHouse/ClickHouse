@@ -2098,7 +2098,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
             if (auto part_to_detach = part.getPartIfItWasActive())
             {
                 LOG_INFO(log, "Detaching {}", part_to_detach->getDataPartStorage().getPartDirectory());
-                part_to_detach->makeCloneInDetached("", metadata_snapshot);
+                part_to_detach->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
             }
         }
     }
@@ -2828,7 +2828,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         for (const auto & part : parts_to_remove_from_working_set)
         {
             LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
-            part->makeCloneInDetached("clone", metadata_snapshot);
+            part->makeCloneInDetached("clone", metadata_snapshot, /*disk_transaction*/ {});
         }
     }
 
@@ -3794,12 +3794,12 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
             chassert(!broken_part);
             chassert(!storage_init);
             part->was_removed_as_broken = true;
-            part->makeCloneInDetached("broken", getInMemoryMetadataPtr());
+            part->makeCloneInDetached("broken", getInMemoryMetadataPtr(), /*disk_transaction*/ {});
             broken_part = part;
         }
         else
         {
-            part->makeCloneInDetached("covered-by-broken", getInMemoryMetadataPtr());
+            part->makeCloneInDetached("covered-by-broken", getInMemoryMetadataPtr(), /*disk_transaction*/ {});
         }
         detached_parts.push_back(part->name);
     }
