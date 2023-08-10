@@ -1,9 +1,8 @@
-#include <Interpreters/Access/InterpreterDropAccessEntityQuery.h>
-#include <Parsers/Access/ASTDropAccessEntityQuery.h>
+#include <Interpreters/Access/InterpreterMoveAccessEntityQuery.h>
+#include <Parsers/Access/ASTMoveAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 
 
@@ -12,12 +11,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int ACCESS_ENTITY_NOT_FOUND;
 }
 
 
-BlockIO InterpreterDropAccessEntityQuery::execute()
+BlockIO InterpreterMoveAccessEntityQuery::execute()
 {
-    auto & query = query_ptr->as<ASTDropAccessEntityQuery &>();
+    auto & query = query_ptr->as<ASTMoveAccessEntityQuery &>();
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(getRequiredAccess());
 
@@ -26,50 +26,44 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
 
     query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
-    auto do_drop = [&](const Strings & names, const String & storage_name)
-    {
-        IAccessStorage * storage = &access_control;
-        MultipleAccessStorage::StoragePtr storage_ptr;
-        if (!storage_name.empty())
-        {
-            storage_ptr = access_control.getStorageByName(storage_name);
-            storage = storage_ptr.get();
-        }
-
-        if (query.if_exists)
-            storage->tryRemove(storage->find(query.type, names));
-        else
-            storage->remove(storage->getIDs(query.type, names));
-    };
-
+    std::vector<UUID> ids;
     if (query.type == AccessEntityType::ROW_POLICY)
-        do_drop(query.row_policy_names->toStrings(), query.storage_name);
+        ids = access_control.getIDs(query.type, query.row_policy_names->toStrings());
     else
-        do_drop(query.names, query.storage_name);
+        ids = access_control.getIDs(query.type, query.names);
 
+    /// Validate that all entities are from the same storage.
+    const auto source_storage = access_control.findStorage(ids.front());
+    if (!source_storage->exists(ids))
+        throw Exception(ErrorCodes::ACCESS_ENTITY_NOT_FOUND, "All access entities must be from the same storage in order to be moved");
+
+    access_control.moveAccessEntities(ids, source_storage->getStorageName(), query.storage_name);
     return {};
 }
 
 
-AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
+AccessRightsElements InterpreterMoveAccessEntityQuery::getRequiredAccess() const
 {
-    const auto & query = query_ptr->as<const ASTDropAccessEntityQuery &>();
+    const auto & query = query_ptr->as<const ASTMoveAccessEntityQuery &>();
     AccessRightsElements res;
     switch (query.type)
     {
         case AccessEntityType::USER:
         {
             res.emplace_back(AccessType::DROP_USER);
+            res.emplace_back(AccessType::CREATE_USER);
             return res;
         }
         case AccessEntityType::ROLE:
         {
             res.emplace_back(AccessType::DROP_ROLE);
+            res.emplace_back(AccessType::CREATE_ROLE);
             return res;
         }
         case AccessEntityType::SETTINGS_PROFILE:
         {
             res.emplace_back(AccessType::DROP_SETTINGS_PROFILE);
+            res.emplace_back(AccessType::CREATE_SETTINGS_PROFILE);
             return res;
         }
         case AccessEntityType::ROW_POLICY:
@@ -77,13 +71,17 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
             if (query.row_policy_names)
             {
                 for (const auto & row_policy_name : query.row_policy_names->full_names)
+                {
                     res.emplace_back(AccessType::DROP_ROW_POLICY, row_policy_name.database, row_policy_name.table_name);
+                    res.emplace_back(AccessType::CREATE_ROW_POLICY, row_policy_name.database, row_policy_name.table_name);
+                }
             }
             return res;
         }
         case AccessEntityType::QUOTA:
         {
             res.emplace_back(AccessType::DROP_QUOTA);
+            res.emplace_back(AccessType::CREATE_QUOTA);
             return res;
         }
         case AccessEntityType::MAX:
