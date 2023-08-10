@@ -369,7 +369,7 @@ public:
 
     /// Makes clone of a part in detached/ directory via hard links
     virtual DataPartStoragePtr makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot,
-                                                   const DiskTransactionPtr & disk_transaction = {}) const;
+                                                   const DiskTransactionPtr & disk_transaction = {}) const; /// NOLINT
 
     /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
     MutableDataPartStoragePtr makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
