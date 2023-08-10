@@ -334,6 +334,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         {
             bool drop = query.kind == ASTDropQuery::Kind::Drop;
             bool truncate = query.kind == ASTDropQuery::Kind::Truncate;
+
             getContext()->checkAccess(AccessType::DROP_DATABASE, database_name);
 
             if (query.kind == ASTDropQuery::Kind::Detach && query.permanently)
@@ -346,6 +347,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             {
                 ASTDropQuery query_for_table;
                 query_for_table.kind = query.kind;
+                // For truncate operation on database, drop the tables
                 if (truncate)
                     query_for_table.kind = ASTDropQuery::Kind::Drop;
                 query_for_table.if_exists = true;
@@ -371,12 +373,11 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     query_for_table.is_dictionary = table.second;
                     DatabasePtr db;
                     UUID table_to_wait = UUIDHelpers::Nil;
-                    //FAILS here
                     executeToTableImpl(table_context, query_for_table, db, table_to_wait);
                     uuids_to_wait.push_back(table_to_wait);
                 }
             }
-
+           // only if operation is DETACH
             if ((!drop || !truncate) && query.sync)
             {
                 /// Avoid "some tables are still in use" when sync mode is enabled
@@ -386,12 +387,11 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
             /// Protects from concurrent CREATE TABLE queries
             auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);
-
+            // only if operation is DETACH
             if (!drop || !truncate)
                 database->assertCanBeDetached(true);
 
-            /// DETACH or DROP database itself.
-            /// If TRUNCATE skip dropping the database.
+            /// DETACH or DROP database itself. If TRUNCATE skip dropping/erasing the database.
             if(!truncate)
                 DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
         }
