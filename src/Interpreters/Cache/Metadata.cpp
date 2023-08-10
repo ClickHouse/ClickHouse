@@ -1,7 +1,6 @@
 #include <Interpreters/Cache/Metadata.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
-#include "Common/Exception.h"
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <filesystem>
@@ -89,13 +88,17 @@ LockedKeyPtr KeyMetadata::lock()
 
 LockedKeyPtr KeyMetadata::tryLock()
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
-
-    auto locked = std::make_unique<LockedKey>(shared_from_this());
+    auto locked = lockNoStateCheck();
     if (key_state == KeyMetadata::KeyState::ACTIVE)
         return locked;
 
     return nullptr;
+}
+
+LockedKeyPtr KeyMetadata::lockNoStateCheck()
+{
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
+    return std::make_unique<LockedKey>(shared_from_this());
 }
 
 bool KeyMetadata::createBaseDirectory()
@@ -214,13 +217,9 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
     }
 
     {
-        LockedKeyPtr locked_metadata;
-        {
-            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
-            locked_metadata = std::make_unique<LockedKey>(key_metadata);
-        }
-
+        auto locked_metadata = key_metadata->lockNoStateCheck();
         const auto key_state = locked_metadata->getKeyState();
+
         if (key_state == KeyMetadata::KeyState::ACTIVE)
             return locked_metadata;
 
@@ -249,17 +248,12 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
     return lockKeyMetadata(key, key_not_found_policy);
 }
 
-void CacheMetadata::iterate(IterateCacheMetadataFunc && func)
+void CacheMetadata::iterate(IterateFunc && func)
 {
     auto lock = lockMetadata();
-    for (const auto & [key, key_metadata] : *this)
+    for (auto & [key, key_metadata] : *this)
     {
-        LockedKeyPtr locked_key;
-        {
-            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
-            locked_key = std::make_unique<LockedKey>(key_metadata);
-        }
-
+        auto locked_key = key_metadata->lockNoStateCheck();
         const auto key_state = locked_key->getKeyState();
 
         if (key_state == KeyMetadata::KeyState::ACTIVE)
@@ -267,8 +261,7 @@ void CacheMetadata::iterate(IterateCacheMetadataFunc && func)
             func(*locked_key);
             continue;
         }
-
-        if (key_state == KeyMetadata::KeyState::REMOVING)
+        else if (key_state == KeyMetadata::KeyState::REMOVING)
             continue;
 
         throw Exception(
@@ -278,61 +271,122 @@ void CacheMetadata::iterate(IterateCacheMetadataFunc && func)
 
 void CacheMetadata::doCleanup()
 {
+    /// Firstly, this cleanup does not delete cache files,
+    /// but only empty keys from cache_metadata_map and key (prefix) directories from fs.
+    /// Secondly, it deletes those only if arised as a result of
+    /// (1) eviction in FileCache::tryReserve();
+    /// (2) removal of cancelled non-downloaded file segments after FileSegment::complete().
+    /// which does not include removal of cache files because of FileCache::removeKey/removeAllKeys,
+    /// triggered by removal of source files from objects storage.
+    /// E.g. number of elements submitted to background cleanup should remain low.
+
     auto lock = lockMetadata();
+    LOG_DEBUG(log, "Having {} keys to delete", cleanup_queue->getSize());
 
     FileCacheKey cleanup_key;
-    while (cleanup_queue->tryPop(cleanup_key))
+    size_t remaining_remove_num = FILECACHE_DELAYED_CLEANUP_BATCH_SIZE;
+    while (remaining_remove_num && cleanup_queue->tryPop(cleanup_key))
     {
         auto it = find(cleanup_key);
         if (it == end())
             continue;
 
-        LockedKeyPtr locked_metadata;
+        auto locked_key = it->second->lockNoStateCheck();
+        if (locked_key->getKeyState() == KeyMetadata::KeyState::REMOVING)
         {
-            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockKeyMicroseconds);
-            locked_metadata = std::make_unique<LockedKey>(it->second);
-        }
-
-        const auto key_state = locked_metadata->getKeyState();
-        if (key_state == KeyMetadata::KeyState::ACTIVE)
-        {
-            /// Key was added back to cache after we submitted it to removal queue.
-            continue;
-        }
-
-        chassert(it->second->empty());
-        locked_metadata->markAsRemoved();
-        erase(it);
-        LOG_DEBUG(log, "Key {} is removed from metadata", cleanup_key);
-
-        const fs::path key_directory = getPathForKey(cleanup_key);
-        const fs::path key_prefix_directory = key_directory.parent_path();
-
-        try
-        {
-            if (fs::exists(key_directory))
-                fs::remove_all(key_directory);
-        }
-        catch (...)
-        {
-            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(true));
-            chassert(false);
-            continue;
-        }
-
-        try
-        {
-            std::unique_lock mutex(key_prefix_directory_mutex);
-            if (fs::exists(key_prefix_directory) && fs::is_empty(key_prefix_directory))
-                fs::remove(key_prefix_directory);
-        }
-        catch (...)
-        {
-            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(true));
-            chassert(false);
+            removeKeyImpl(it, *locked_key, lock);
+            --remaining_remove_num;
         }
     }
 }
+
+void CacheMetadata::removeAllKeys(bool if_releasable)
+{
+    auto lock = lockMetadata();
+    for (auto it = begin(); it != end();)
+    {
+        auto locked_key = it->second->lockNoStateCheck();
+        if (locked_key->getKeyState() == KeyMetadata::KeyState::ACTIVE)
+        {
+            bool removed_all = locked_key->removeAllFileSegments(if_releasable);
+            if (removed_all)
+            {
+                it = removeKeyImpl(it, *locked_key, lock);
+                continue;
+            }
+        }
+        ++it;
+    }
+}
+
+void CacheMetadata::removeKey(const Key & key, bool if_exists, bool if_releasable)
+{
+    auto metadata_lock = lockMetadata();
+
+    auto it = find(key);
+    if (it == end())
+    {
+        if (if_exists)
+            return;
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key: {}", key);
+    }
+
+    auto locked_key = it->second->lockNoStateCheck();
+    if (locked_key->getKeyState() != KeyMetadata::KeyState::ACTIVE)
+    {
+        if (if_exists)
+            return;
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key: {}", key);
+    }
+
+    bool removed_all = locked_key->removeAllFileSegments(if_releasable);
+    if (removed_all)
+        removeKeyImpl(it, *locked_key, metadata_lock);
+}
+
+CacheMetadata::iterator CacheMetadata::removeKeyImpl(iterator it, LockedKey & locked_key, const CacheMetadataGuard::Lock &)
+{
+    const auto & key = locked_key.getKey();
+
+    if (!it->second->empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove non-empty key: {}", key);
+
+    locked_key.markAsRemoved();
+    auto next_it = erase(it);
+
+    LOG_DEBUG(log, "Key {} is removed from metadata", key);
+
+    const fs::path key_directory = getPathForKey(key);
+    const fs::path key_prefix_directory = key_directory.parent_path();
+
+    try
+    {
+        if (fs::exists(key_directory))
+            fs::remove_all(key_directory);
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, "Error while removing key {}: {}", key, getCurrentExceptionMessage(true));
+        chassert(false);
+        return next_it;
+    }
+
+    try
+    {
+        std::unique_lock mutex(key_prefix_directory_mutex);
+        if (fs::exists(key_prefix_directory) && fs::is_empty(key_prefix_directory))
+            fs::remove(key_prefix_directory);
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, "Error while removing key {}: {}", key, getCurrentExceptionMessage(true));
+        chassert(false);
+    }
+    return next_it;
+}
+
 
 class DownloadQueue
 {
@@ -566,13 +620,15 @@ bool LockedKey::isLastOwnerOfFileSegment(size_t offset) const
     return file_segment_metadata->file_segment.use_count() == 2;
 }
 
-void LockedKey::removeAll(bool if_releasable)
+bool LockedKey::removeAllFileSegments(bool if_releasable)
 {
+    bool removed_all = true;
     for (auto it = key_metadata->begin(); it != key_metadata->end();)
     {
         if (if_releasable && !it->second->releasable())
         {
             ++it;
+            removed_all = false;
             continue;
         }
         else if (it->second->evicting())
@@ -589,6 +645,7 @@ void LockedKey::removeAll(bool if_releasable)
         auto file_segment = it->second->file_segment;
         it = removeFileSegment(file_segment->offset(), file_segment->lock());
     }
+    return removed_all;
 }
 
 KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset)

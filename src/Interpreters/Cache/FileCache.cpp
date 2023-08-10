@@ -823,23 +823,13 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
 void FileCache::removeKey(const Key & key)
 {
     assertInitialized();
-    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW);
-    locked_key->removeAll();
+    metadata.removeKey(key, /* if_exists */false, /* if_releasable */true);
 }
 
 void FileCache::removeKeyIfExists(const Key & key)
 {
     assertInitialized();
-
-    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::RETURN_NULL);
-    if (!locked_key)
-        return;
-
-    /// In ordinary case we remove data from cache when it's not used by anyone.
-    /// But if we have multiple replicated zero-copy tables on the same server
-    /// it became possible to start removing something from cache when it is used
-    /// by other "zero-copy" tables. That is why it's not an error.
-    locked_key->removeAll(/* if_releasable */true);
+    metadata.removeKey(key, /* if_exists */true, /* if_releasable */true);
 }
 
 void FileCache::removeFileSegment(const Key & key, size_t offset)
@@ -857,8 +847,7 @@ void FileCache::removePathIfExists(const String & path)
 void FileCache::removeAllReleasable()
 {
     assertInitialized();
-
-    metadata.iterate([](LockedKey & locked_key) { locked_key.removeAll(/* if_releasable */true); });
+    metadata.removeAllKeys(/* if_releasable */true);
 
     if (stash)
     {
