@@ -3468,6 +3468,12 @@ Possible values:
 
 Default value: `0`.
 
+## enable_url_encoding {#enable_url_encoding}
+
+Allows to enable/disable decoding/encoding path in uri in [URL](../../engines/table-engines/special/url.md) engine tables.
+
+Enabled by default.
+
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
 Adds a modifier `SYNC` to all `DROP` and `DETACH` queries.
@@ -4572,3 +4578,39 @@ Type: Int64
 
 Default: 0
 
+## rewrite_count_distinct_if_with_count_distinct_implementation
+
+Allows you to rewrite `countDistcintIf` with [count_distinct_implementation](#settings-count_distinct_implementation) setting.
+
+Possible values:
+
+- true — Allow.
+- false — Disallow.
+
+Default value: `false`.
+
+## precise_float_parsing {#precise_float_parsing}
+
+Switches [Float32/Float64](../../sql-reference/data-types/float.md) parsing algorithms:
+* If the value is `1`, then precise method is used. It is slower than fast method, but it always returns a number that is the closest machine representable number to the input.
+* Otherwise, fast method is used (default). It usually returns the same value as precise, but in rare cases result may differ by one or two least significant digits.
+
+Possible values: `0`, `1`.
+
+Default value: `0`.
+
+Example:
+
+```sql
+SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_parsing = 0;
+
+┌─toFloat64('1.7091')─┬─toFloat64('1.5008753E7')─┐
+│  1.7090999999999998 │       15008753.000000002 │
+└─────────────────────┴──────────────────────────┘
+
+SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_parsing = 1;
+
+┌─toFloat64('1.7091')─┬─toFloat64('1.5008753E7')─┐
+│              1.7091 │                 15008753 │
+└─────────────────────┴──────────────────────────┘
+```
