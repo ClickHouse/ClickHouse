@@ -42,6 +42,15 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/Arena.h>
+#include <Core/ColumnWithTypeAndName.h>
+#include <base/types.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/IColumn.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/getMostSubtype.h>
+#include <base/TypeLists.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/Context.h>
 
@@ -62,6 +71,7 @@ namespace ErrorCodes
     extern const int DECIMAL_OVERFLOW;
     extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
 namespace traits_
@@ -101,6 +111,9 @@ template <typename DataType> constexpr bool IsIntegralOrExtendedOrDecimal =
 template <typename DataType> constexpr bool IsFloatingPoint = false;
 template <> inline constexpr bool IsFloatingPoint<DataTypeFloat32> = true;
 template <> inline constexpr bool IsFloatingPoint<DataTypeFloat64> = true;
+
+template <typename DataType> constexpr bool IsArray = false;
+template <> inline constexpr bool IsArray<DataTypeArray> = true;
 
 template <typename DataType> constexpr bool IsDateOrDateTime = false;
 template <> inline constexpr bool IsDateOrDateTime<DataTypeDate> = true;
@@ -1125,6 +1138,61 @@ class FunctionBinaryArithmetic : public IFunction
         return function->execute(arguments, result_type, input_rows_count);
     }
 
+    ColumnPtr executeArrayImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    {
+        const auto * return_type_array = checkAndGetDataType<DataTypeArray>(result_type.get());
+
+        if (!return_type_array)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Return type for function {} must be array.", getName());
+
+        auto num_args = arguments.size();
+        DataTypes data_types;
+
+        ColumnsWithTypeAndName new_arguments {num_args};
+        DataTypePtr result_array_type;
+
+        const auto * left_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
+        const auto * right_const = typeid_cast<const ColumnConst *>(arguments[1].column.get());
+
+        /// Unpacking arrays if both are constants.
+        if (left_const && right_const)
+        {
+            new_arguments[0] = {left_const->getDataColumnPtr(), arguments[0].type, arguments[0].name};
+            new_arguments[1] = {right_const->getDataColumnPtr(), arguments[1].type, arguments[1].name};
+            auto col = executeImpl(new_arguments, result_type, 1);
+            return ColumnConst::create(std::move(col), input_rows_count);
+        }
+
+        /// Unpacking arrays if at least one column is constant.
+        if (left_const || right_const)
+        {
+            new_arguments[0] = {arguments[0].column->convertToFullColumnIfConst(), arguments[0].type, arguments[0].name};
+            new_arguments[1] = {arguments[1].column->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name};
+            return executeImpl(new_arguments, result_type, input_rows_count);
+        }
+
+        const auto * left_array_col = typeid_cast<const ColumnArray *>(arguments[0].column.get());
+        const auto * right_array_col = typeid_cast<const ColumnArray *>(arguments[1].column.get());
+        if (!left_array_col->hasEqualOffsets(*right_array_col))
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Two arguments for function {} must have equal sizes", getName());
+
+        const auto & left_array_type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
+        new_arguments[0] = {left_array_col->getDataPtr(), left_array_type, arguments[0].name};
+
+        const auto & right_array_type = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
+        new_arguments[1] = {right_array_col->getDataPtr(), right_array_type, arguments[1].name};
+
+        result_array_type = typeid_cast<const DataTypeArray *>(result_type.get())->getNestedType();
+
+        size_t rows_count = 0;
+        const auto & left_offsets = left_array_col->getOffsets();
+        if (!left_offsets.empty())
+            rows_count = left_offsets.back();
+        auto res = executeImpl(new_arguments, result_array_type, rows_count);
+
+        return ColumnArray::create(res, typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
+    }
+
     ColumnPtr executeTupleNumberOperator(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
                                                size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
     {
@@ -1325,6 +1393,20 @@ public:
 
             return getReturnTypeImplStatic(new_arguments, context);
         }
+
+
+        if constexpr (is_plus || is_minus)
+        {
+            if (isArray(arguments[0]) && isArray(arguments[1]))
+            {
+                DataTypes new_arguments {
+                        static_cast<const DataTypeArray &>(*arguments[0]).getNestedType(),
+                        static_cast<const DataTypeArray &>(*arguments[1]).getNestedType(),
+                };
+                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
+            }
+        }
+
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1], context))
@@ -1919,25 +2001,6 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             return executeAggregateAddition(arguments, result_type, input_rows_count);
         }
 
-        /// Special case - one or both arguments are IPv4
-        if (isIPv4(arguments[0].type) || isIPv4(arguments[1].type))
-        {
-            ColumnsWithTypeAndName new_arguments {
-                {
-                    isIPv4(arguments[0].type) ? castColumn(arguments[0], std::make_shared<DataTypeUInt32>()) : arguments[0].column,
-                    isIPv4(arguments[0].type) ? std::make_shared<DataTypeUInt32>() : arguments[0].type,
-                    arguments[0].name,
-                },
-                {
-                    isIPv4(arguments[1].type) ? castColumn(arguments[1], std::make_shared<DataTypeUInt32>()) : arguments[1].column,
-                    isIPv4(arguments[1].type) ? std::make_shared<DataTypeUInt32>() : arguments[1].type,
-                    arguments[1].name
-                }
-            };
-
-            return executeImpl(new_arguments, result_type, input_rows_count);
-        }
-
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0].type, arguments[1].type, context))
         {
@@ -1991,6 +2054,25 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             return wrapInNullable(res, arguments, result_type, input_rows_count);
         }
 
+        /// Special case - one or both arguments are IPv4
+        if (isIPv4(arguments[0].type) || isIPv4(arguments[1].type))
+        {
+            ColumnsWithTypeAndName new_arguments {
+                {
+                    isIPv4(arguments[0].type) ? castColumn(arguments[0], std::make_shared<DataTypeUInt32>()) : arguments[0].column,
+                    isIPv4(arguments[0].type) ? std::make_shared<DataTypeUInt32>() : arguments[0].type,
+                    arguments[0].name,
+                },
+                {
+                    isIPv4(arguments[1].type) ? castColumn(arguments[1], std::make_shared<DataTypeUInt32>()) : arguments[1].column,
+                    isIPv4(arguments[1].type) ? std::make_shared<DataTypeUInt32>() : arguments[1].type,
+                    arguments[1].name
+                }
+            };
+
+            return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap);
+        }
+
         const auto * const left_generic = left_argument.type.get();
         const auto * const right_generic = right_argument.type.get();
         ColumnPtr res;
@@ -2030,6 +2112,9 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             else
                 return (res = executeNumeric(arguments, left, right, right_nullmap)) != nullptr;
         });
+
+        if (isArray(result_type))
+            return executeArrayImpl(arguments, result_type, input_rows_count);
 
         if (!valid)
         {

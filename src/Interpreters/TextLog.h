@@ -42,18 +42,15 @@ class TextLog : public SystemLog<TextLogElement>
 public:
     using Queue = SystemLogQueue<TextLogElement>;
 
-    TextLog(
-        ContextPtr context_,
-        const String & database_name_,
-        const String & table_name_,
-        const String & storage_def_,
-        size_t flush_interval_milliseconds_);
+    explicit TextLog(ContextPtr context_, const SystemLogSettings & settings);
 
-    static std::shared_ptr<Queue> getLogQueue(size_t flush_interval_milliseconds)
+    static std::shared_ptr<Queue> getLogQueue(const SystemLogQueueSettings & settings)
     {
-        static std::shared_ptr<Queue> queue = std::make_shared<Queue>("text_log", flush_interval_milliseconds, true);
+        static std::shared_ptr<Queue> queue = std::make_shared<Queue>(settings);
         return queue;
     }
+
+    static consteval bool shouldTurnOffLogger() { return true; }
 };
 
 }
