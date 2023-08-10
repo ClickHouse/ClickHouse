@@ -559,7 +559,7 @@ void KafkaConsumer::setExceptionInfo(const String & text)
  * is merged,
  * because consumer->get_member_id() contains a leak
  */
-std::string KafkaConsumer::getMemberId()
+std::string KafkaConsumer::getMemberId() const
 {
     char * memberid_ptr = rd_kafka_memberid(consumer->get_handle());
     std::string memberid_string = memberid_ptr;
@@ -568,7 +568,7 @@ std::string KafkaConsumer::getMemberId()
 }
 
 
-KafkaConsumer::Stat KafkaConsumer::getStat()
+KafkaConsumer::Stat KafkaConsumer::getStat() const
 {
     KafkaConsumer::Stat::Assignments assignments;
     auto cpp_assignments = consumer->get_assignment();
@@ -596,7 +596,9 @@ KafkaConsumer::Stat KafkaConsumer::getStat()
         .num_rebalance_revocations = num_rebalance_revocations.load(),
         .exceptions_buffer = [&](){std::lock_guard<std::mutex> lock(exception_mutex);
             return exceptions_buffer;}(),
-        .in_use = in_use.load()
+        .in_use = in_use.load(),
+        .rdkafka_stat = [&](){std::lock_guard<std::mutex> lock(rdkafka_stat_mutex);
+            return rdkafka_stat;}(),
     };
 }
 

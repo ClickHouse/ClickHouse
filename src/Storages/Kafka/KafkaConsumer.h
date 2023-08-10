@@ -57,6 +57,7 @@ public:
         UInt64 num_rebalance_revocations;
         KafkaConsumer::ExceptionsBuffer exceptions_buffer;
         bool in_use;
+        std::string rdkafka_stat;
     };
 
 public:
@@ -106,11 +107,16 @@ public:
     String currentPayload() const { return current[-1].get_payload(); }
     void setExceptionInfo(const cppkafka::Error & err);
     void setExceptionInfo(const String & text);
+    void setRDKafkaStat(const std::string & stat_json_string)
+    {
+        std::lock_guard<std::mutex> lock(rdkafka_stat_mutex);
+        rdkafka_stat = stat_json_string;
+    }
     void inUse() { in_use = true; }
     void notInUse() { in_use = false; }
 
     // For system.kafka_consumers
-    Stat getStat();
+    Stat getStat() const;
 
 private:
     using Messages = std::vector<cppkafka::Message>;
@@ -163,6 +169,9 @@ private:
     std::atomic<UInt64> num_rebalance_revocations = 0;
     std::atomic<bool> in_use = 0;
 
+    mutable std::mutex rdkafka_stat_mutex;
+    std::string rdkafka_stat;
+
     void drain();
     void cleanUnprocessed();
     void resetIfStopped();
@@ -170,7 +179,7 @@ private:
     size_t filterMessageErrors();
     ReadBufferPtr getNextMessage();
 
-    std::string getMemberId();
+    std::string getMemberId() const;
 };
 
 }

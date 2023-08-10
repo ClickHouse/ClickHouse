@@ -145,16 +145,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 
                 is_currently_used.insert(consumer_stat.in_use);
 
-                auto stat_string_ptr = storage_kafka_ptr->getRdkafkaStat();
-                if (stat_string_ptr)
-                {
-                    rdkafka_stat.insertData(stat_string_ptr->data(), stat_string_ptr->size());
-                }
-                else
-                {
-                    const std::string empty_stat = "{}";
-                    rdkafka_stat.insertData(empty_stat.data(), empty_stat.size());
-                }
+                rdkafka_stat.insertData(consumer_stat.rdkafka_stat.data(), consumer_stat.rdkafka_stat.size());
             }
         }
     };
