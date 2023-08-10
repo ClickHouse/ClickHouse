@@ -133,6 +133,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.parquet.parallel_encoding = settings.output_format_parquet_parallel_encoding;
     format_settings.parquet.data_page_size = settings.output_format_parquet_data_page_size;
     format_settings.parquet.write_batch_size = settings.output_format_parquet_batch_size;
+    format_settings.parquet.min_read_batch_rows = settings.input_format_parquet_min_read_batch_size_rows;
+    format_settings.parquet.min_read_batch_bytes = settings.input_format_parquet_min_read_batch_size_bytes;
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
