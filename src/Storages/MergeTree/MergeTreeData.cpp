@@ -2636,7 +2636,7 @@ size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirectory()
         if (!part_info.dir_name.starts_with("deleting_"))
             continue;
 
-        time_t startup_time = current_time + static_cast<time_t>(Context::getGlobalContextInstance()->getUptimeSeconds());
+        time_t startup_time = current_time - static_cast<time_t>(Context::getGlobalContextInstance()->getUptimeSeconds());
         time_t last_touch_time = get_last_touched_time(part_info);
 
         /// Maybe it's being deleted right now (for example, in ALTER DROP DETACHED)
