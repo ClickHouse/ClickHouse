@@ -3,8 +3,10 @@ import subprocess
 import logging
 import os
 
+from typing import Optional
 
-def compress_file_fast(path, archive_path):
+
+def compress_file_fast(path: str, archive_path: str) -> None:
     if archive_path.endswith(".zst"):
         subprocess.check_call(f"zstd < {path} > {archive_path}", shell=True)
     elif os.path.exists("/usr/bin/pigz"):
@@ -13,7 +15,7 @@ def compress_file_fast(path, archive_path):
         subprocess.check_call(f"gzip < {path} > {archive_path}", shell=True)
 
 
-def compress_fast(path, archive_path, exclude=None):
+def compress_fast(path: str, archive_path: str, exclude: Optional[str] = None) -> None:
     program_part = ""
     if archive_path.endswith(".zst"):
         logging.info("zstd will be used for compression")
@@ -43,7 +45,7 @@ def compress_fast(path, archive_path, exclude=None):
     subprocess.check_call(cmd, shell=True)
 
 
-def decompress_fast(archive_path, result_path=None):
+def decompress_fast(archive_path: str, result_path: Optional[str] = None) -> None:
     program_part = ""
     if archive_path.endswith(".zst"):
         logging.info(
