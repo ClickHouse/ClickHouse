@@ -388,7 +388,7 @@ std::optional<std::pair<std::vector<String>, DataTypes>> CustomSeparatedSchemaRe
 
     auto fields = reader.readRow();
     auto data_types = tryInferDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule(), &json_inference_info);
-    return std::make_pair(fields, data_types);
+    return std::make_pair(std::move(fields), std::move(data_types));
 }
 
 std::optional<DataTypes> CustomSeparatedSchemaReader::readRowAndGetDataTypesImpl()
