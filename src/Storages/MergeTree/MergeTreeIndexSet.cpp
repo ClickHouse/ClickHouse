@@ -256,10 +256,6 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         if (!key_columns.contains(name))
             key_columns.insert(name);
 
-    ASTPtr ast_filter_node = buildFilterNode(query_info.query);
-    if (!ast_filter_node)
-        return;
-
     if (context->getSettingsRef().allow_experimental_analyzer)
     {
         if (!query_info.filter_actions_dag)
@@ -280,6 +276,10 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     }
     else
     {
+        ASTPtr ast_filter_node = buildFilterNode(query_info.query);
+        if (!ast_filter_node)
+            return;
+
         if (checkASTUseless(ast_filter_node))
             return;
 
@@ -457,8 +457,10 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
         if (arguments_size != 1)
             return nullptr;
 
+        const ActionsDAG::Node * argument = &traverseDAG(*arguments[0], result_dag, context, node_to_result_node);
+
         auto bit_swap_last_two_function = FunctionFactory::instance().get("__bitSwapLastTwo", context);
-        return &result_dag->addFunction(bit_swap_last_two_function, {arguments[0]}, {});
+        return &result_dag->addFunction(bit_swap_last_two_function, {argument}, {});
     }
     else if (function_name == "and" || function_name == "indexHint" || function_name == "or")
     {

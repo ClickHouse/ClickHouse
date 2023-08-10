@@ -833,7 +833,7 @@ namespace
         {
             settings_changes.push_back({key, value});
         }
-        query_context->checkSettingsConstraints(settings_changes);
+        query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
         query_context->applySettingsChanges(settings_changes);
 
         query_context->setCurrentQueryId(query_info.query_id());
@@ -1118,7 +1118,7 @@ namespace
                         SettingsChanges settings_changes;
                         for (const auto & [key, value] : external_table.settings())
                             settings_changes.push_back({key, value});
-                        external_table_context->checkSettingsConstraints(settings_changes);
+                        external_table_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
                         external_table_context->applySettingsChanges(settings_changes);
                     }
                     auto in = external_table_context->getInputFormat(

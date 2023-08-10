@@ -197,6 +197,7 @@ namespace ActionLocks
     extern const StorageActionBlockType ReplicationQueue;
     extern const StorageActionBlockType PartsTTLMerge;
     extern const StorageActionBlockType PartsMove;
+    extern const StorageActionBlockType PullReplicationLog;
 }
 
 
@@ -3311,7 +3312,7 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
     auto job_type = selected_entry->log_entry->type;
 
     /// Depending on entry type execute in fetches (small) pool or big merge_mutate pool
-    if (job_type == LogEntry::GET_PART)
+    if (job_type == LogEntry::GET_PART || job_type == LogEntry::ATTACH_PART)
     {
         assignee.scheduleFetchTask(std::make_shared<ExecutableLambdaAdapter>(
             [this, selected_entry] () mutable
@@ -4340,7 +4341,7 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
 {
     auto zookeeper = getZooKeeper();
 
-    LOG_DEBUG(log, "Cleaning up last parent node for partition {}", partition_id);
+    LOG_DEBUG(log, "Cleaning up last part node for partition {}", partition_id);
 
     /// The name of the previous part for which the quorum was reached.
     const String quorum_last_part_path = fs::path(zookeeper_path) / "quorum" / "last_part";
@@ -4361,6 +4362,7 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
         if (!parts_with_quorum.added_parts.contains(partition_id))
         {
             /// There is no information about interested part.
+            LOG_TEST(log, "There is no information about the partition");
             break;
         }
 
@@ -4378,6 +4380,7 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
         else if (code == Coordination::Error::ZNONODE)
         {
             /// Node is deleted. It is impossible, but it is Ok.
+            LOG_WARNING(log, "The last part node {} was deleted", quorum_last_part_path);
             break;
         }
         else if (code == Coordination::Error::ZBADVERSION)
@@ -8169,6 +8172,9 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
     if (action_type == ActionLocks::PartsMove)
         return parts_mover.moves_blocker.cancel();
 
+    if (action_type == ActionLocks::PullReplicationLog)
+        return queue.pull_log_blocker.cancel();
+
     return {};
 }
 
@@ -8475,9 +8481,8 @@ void StorageReplicatedMergeTree::enqueuePartForCheck(const String & part_name, t
     part_check_thread.enqueuePart(part_name, delay_to_check_seconds);
 }
 
-CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, ContextPtr local_context)
+IStorage::DataValidationTasksPtr StorageReplicatedMergeTree::getCheckTaskList(const ASTPtr & query, ContextPtr local_context)
 {
-    CheckResults results;
     DataPartsVector data_parts;
     if (const auto & check_query = query->as<ASTCheckQuery &>(); check_query.partition)
     {
@@ -8487,24 +8492,30 @@ CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, Context
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    {
-        auto part_check_lock = part_check_thread.pausePartsCheck();
+    auto part_check_lock = part_check_thread.pausePartsCheck();
+    return std::make_unique<DataValidationTasks>(std::move(data_parts), std::move(part_check_lock));
+}
 
-        for (auto & part : data_parts)
+CheckResult StorageReplicatedMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list, bool & has_nothing_to_do)
+{
+
+    if (auto part = assert_cast<DataValidationTasks *>(check_task_list.get())->next())
+    {
+        try
         {
-            try
-            {
-                results.push_back(part_check_thread.checkPartAndFix(part->name));
-            }
-            catch (const Exception & ex)
-            {
-                tryLogCurrentException(log, __PRETTY_FUNCTION__);
-                results.emplace_back(part->name, false, "Check of part finished with error: '" + ex.message() + "'");
-            }
+            return CheckResult(part_check_thread.checkPartAndFix(part->name));
+        }
+        catch (const Exception & ex)
+        {
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
+            return CheckResult(part->name, false, "Check of part finished with error: '" + ex.message() + "'");
         }
     }
-
-    return results;
+    else
+    {
+        has_nothing_to_do = true;
+        return {};
+    }
 }
 
 
@@ -9820,6 +9831,7 @@ void StorageReplicatedMergeTree::backupData(
     /// because we need to coordinate them with other replicas (other replicas can have better parts).
 
     const auto & backup_settings = backup_entries_collector.getBackupSettings();
+    const auto & read_settings = backup_entries_collector.getReadSettings();
     auto local_context = backup_entries_collector.getContext();
 
     DataPartsVector data_parts;
@@ -9828,7 +9840,7 @@ void StorageReplicatedMergeTree::backupData(
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    auto parts_backup_entries = backupParts(data_parts, /* data_path_in_backup */ "", backup_settings, local_context);
+    auto parts_backup_entries = backupParts(data_parts, /* data_path_in_backup */ "", backup_settings, read_settings, local_context);
 
     auto coordination = backup_entries_collector.getBackupCoordination();
     String shared_id = getTableSharedID();

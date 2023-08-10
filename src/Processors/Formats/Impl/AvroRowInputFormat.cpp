@@ -1011,7 +1011,7 @@ private:
 using ConfluentSchemaRegistry = AvroConfluentRowInputFormat::SchemaRegistry;
 #define SCHEMA_REGISTRY_CACHE_MAX_SIZE 1000
 /// Cache of Schema Registry URL -> SchemaRegistry
-static CacheBase<std::string, ConfluentSchemaRegistry>  schema_registry_cache(SCHEMA_REGISTRY_CACHE_MAX_SIZE);
+static CacheBase<std::string, ConfluentSchemaRegistry> schema_registry_cache(SCHEMA_REGISTRY_CACHE_MAX_SIZE);
 
 static std::shared_ptr<ConfluentSchemaRegistry> getConfluentSchemaRegistry(const FormatSettings & format_settings)
 {
@@ -1258,6 +1258,8 @@ void registerInputFormatAvro(FormatFactory & factory)
     {
         return std::make_shared<AvroConfluentRowInputFormat>(sample, buf, params, settings);
     });
+
+    factory.markFormatSupportsSubsetOfColumns("AvroConfluent");
 }
 
 void registerAvroSchemaReader(FormatFactory & factory)
