@@ -2,6 +2,10 @@
 2
 3
 4
-CREATE USER user5_02713 IDENTIFIED WITH ldap SERVER \'qwerty5\'
-CREATE USER user6_02713 IDENTIFIED WITH kerberos REALM \'qwerty6\'
-CREATE USER user7_02713 IDENTIFIED WITH ssl_certificate CN \'qwerty7\', \'qwerty8\'
+5
+6
+7
+8
+CREATE USER user9_02713 IDENTIFIED WITH ldap SERVER \'qwerty9\'
+CREATE USER user10_02713 IDENTIFIED WITH kerberos REALM \'qwerty10\'
+CREATE USER user11_02713 IDENTIFIED WITH ssl_certificate CN \'qwerty11\', \'qwerty12\'

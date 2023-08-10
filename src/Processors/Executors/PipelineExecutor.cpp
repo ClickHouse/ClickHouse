@@ -272,7 +272,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 
                 /// Prepare processor after execution.
                 if (!graph->updateNode(context.getProcessorID(), queue, async_queue))
-                    finish();
+                    cancel();
 
                 /// Push other tasks to global queue.
                 tasks.pushTasks(queue, async_queue, context);
@@ -327,7 +327,7 @@ void PipelineExecutor::spawnThreads()
         tasks.upscale(thread_num + 1);
 
         /// Start new thread
-        pool->scheduleOrThrowOnError([this, thread_num, thread_group = CurrentThread::getGroup(), slot = std::move(slot)]
+        pool->scheduleOrThrowOnError([this, thread_num, thread_group = CurrentThread::getGroup(), my_slot = std::move(slot)]
         {
             SCOPE_EXIT_SAFE(
                 if (thread_group)

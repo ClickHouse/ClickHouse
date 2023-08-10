@@ -11,10 +11,11 @@
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Formats/FormatFactory.h>
-#include <boost/algorithm/string/case_conv.hpp>
-#include <parquet/arrow/reader.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
+#include <IO/ReadHelpers.h>
+#include <boost/algorithm/string/case_conv.hpp>
+#include <parquet/arrow/reader.h>
 #include <ranges>
 
 namespace fs = std::filesystem;
@@ -280,7 +281,6 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
 
         ArrowColumnToCHColumn column_reader(
             header, "Parquet",
-            format_settings.parquet.import_nested,
             format_settings.parquet.allow_missing_columns,
             /* null_as_default */true,
             /* case_insensitive_column_matching */false);

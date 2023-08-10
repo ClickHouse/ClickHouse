@@ -42,7 +42,7 @@ namespace ErrorCodes
         #define __NR_renameat2 316
     #elif defined(__aarch64__)
         #define __NR_renameat2 276
-    #elif defined(__ppc64__)
+    #elif defined(__powerpc64__)
         #define __NR_renameat2 357
     #elif defined(__riscv)
         #define __NR_renameat2 276

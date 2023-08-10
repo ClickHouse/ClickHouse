@@ -6,6 +6,7 @@
 #include <Access/DiskAccessStorage.h>
 #include <Access/LDAPAccessStorage.h>
 #include <Access/ContextAccess.h>
+#include <Access/EnabledSettings.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/RoleCache.h>
 #include <Access/RowPolicyCache.h>
@@ -76,11 +77,13 @@ public:
         auto x = cache.get(params);
         if (x)
         {
-            if ((*x)->tryGetUser())
+            if ((*x)->getUserID() && !(*x)->tryGetUser())
+                cache.remove(params); /// The user has been dropped while it was in the cache.
+            else
                 return *x;
-            /// No user, probably the user has been dropped while it was in the cache.
-            cache.remove(params);
         }
+
+        /// TODO: There is no need to keep the `ContextAccessCache::mutex` locked while we're calculating access rights.
         auto res = std::make_shared<ContextAccess>(access_control, params);
         res->initialize();
         cache.add(params, res);
@@ -273,6 +276,8 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setPlaintextPasswordAllowed(config_.getBool("allow_plaintext_password", true));
     setDefaultPasswordTypeFromConfig(config_.getString("default_password_type", "sha256_password"));
     setPasswordComplexityRulesFromConfig(config_);
+
+    setBcryptWorkfactor(config_.getInt("bcrypt_workfactor", 12));
 
     /// Optional improvements in access control system.
     /// The default values are false because we need to be compatible with earlier access configurations
@@ -695,33 +700,19 @@ std::vector<std::pair<String, String>> AccessControl::getPasswordComplexityRules
     return password_rules->getPasswordComplexityRules();
 }
 
-
-std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(
-    const UUID & user_id,
-    const std::vector<UUID> & current_roles,
-    bool use_default_roles,
-    const Settings & settings,
-    const String & current_database,
-    const ClientInfo & client_info) const
+void AccessControl::setBcryptWorkfactor(int workfactor_)
 {
-    ContextAccessParams params;
-    params.user_id = user_id;
-    params.current_roles.insert(current_roles.begin(), current_roles.end());
-    params.use_default_roles = use_default_roles;
-    params.current_database = current_database;
-    params.readonly = settings.readonly;
-    params.allow_ddl = settings.allow_ddl;
-    params.allow_introspection = settings.allow_introspection_functions;
-    params.interface = client_info.interface;
-    params.http_method = client_info.http_method;
-    params.address = client_info.current_address.host();
-    params.quota_key = client_info.quota_key;
+    if (workfactor_ < 4)
+        bcrypt_workfactor = 4;
+    else if (workfactor_ > 31)
+        bcrypt_workfactor = 31;
+    else
+        bcrypt_workfactor = workfactor_;
+}
 
-    /// Extract the last entry from comma separated list of X-Forwarded-For addresses.
-    /// Only the last proxy can be trusted (if any).
-    params.forwarded_address = client_info.getLastForwardedFor();
-
-    return getContextAccess(params);
+int AccessControl::getBcryptWorkfactor() const
+{
+    return bcrypt_workfactor;
 }
 
 
@@ -736,6 +727,14 @@ std::shared_ptr<const EnabledRoles> AccessControl::getEnabledRoles(
     const std::vector<UUID> & current_roles_with_admin_option) const
 {
     return role_cache->getEnabledRoles(current_roles, current_roles_with_admin_option);
+}
+
+
+std::shared_ptr<const EnabledRolesInfo> AccessControl::getEnabledRolesInfo(
+    const std::vector<UUID> & current_roles,
+    const std::vector<UUID> & current_roles_with_admin_option) const
+{
+    return getEnabledRoles(current_roles, current_roles_with_admin_option)->getRolesInfo();
 }
 
 
@@ -780,6 +779,15 @@ std::shared_ptr<const EnabledSettings> AccessControl::getEnabledSettings(
     const SettingsProfileElements & settings_from_enabled_roles) const
 {
     return settings_profiles_cache->getEnabledSettings(user_id, settings_from_user, enabled_roles, settings_from_enabled_roles);
+}
+
+std::shared_ptr<const SettingsProfilesInfo> AccessControl::getEnabledSettingsInfo(
+    const UUID & user_id,
+    const SettingsProfileElements & settings_from_user,
+    const boost::container::flat_set<UUID> & enabled_roles,
+    const SettingsProfileElements & settings_from_enabled_roles) const
+{
+    return getEnabledSettings(user_id, settings_from_user, enabled_roles, settings_from_enabled_roles)->getInfo();
 }
 
 std::shared_ptr<const SettingsProfilesInfo> AccessControl::getSettingsProfileInfo(const UUID & profile_id)

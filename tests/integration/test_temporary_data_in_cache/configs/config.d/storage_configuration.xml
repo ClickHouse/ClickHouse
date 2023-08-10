@@ -2,7 +2,7 @@
     <storage_configuration>
         <disks>
             <local_disk>
-                <type>local</type>
+                <type>local_blob_storage</type>
                 <path>/local_disk/</path>
             </local_disk>
 

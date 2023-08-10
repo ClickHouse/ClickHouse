@@ -87,9 +87,10 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::LDAP),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::KERBEROS),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SSL_CERTIFICATE),
+            AUTH_TYPE_NAME_AND_VALUE(AuthType::BCRYPT_PASSWORD),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
-    static_assert(static_cast<int>(AuthenticationType::MAX) == 7);
+    static_assert(static_cast<int>(AuthenticationType::MAX) == 8);
 
     auto interface_type_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -198,12 +199,13 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(auth_failure_reason.data(), auth_failure_reason.length());
 }
 
-void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> session_id, const Context & login_context, const UserPtr & login_user)
+void SessionLog::addLoginSuccess(const UUID & auth_id,
+                                 const String & session_id,
+                                 const Settings & settings,
+                                 const ContextAccessPtr & access,
+                                 const ClientInfo & client_info,
+                                 const UserPtr & login_user)
 {
-    const auto access = login_context.getAccess();
-    const auto & settings = login_context.getSettingsRef();
-    const auto & client_info = login_context.getClientInfo();
-
     DB::SessionLogElement log_entry(auth_id, SESSION_LOGIN_SUCCESS);
     log_entry.client_info = client_info;
 
@@ -214,8 +216,7 @@ void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> ses
     }
     log_entry.external_auth_server = login_user ? login_user->auth_data.getLDAPServerName() : "";
 
-    if (session_id)
-        log_entry.session_id = *session_id;
+    log_entry.session_id = session_id;
 
     if (const auto roles_info = access->getRolesInfo())
         log_entry.roles = roles_info->getCurrentRolesNames();
@@ -226,7 +227,7 @@ void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> ses
     for (const auto & s : settings.allChanged())
         log_entry.settings.emplace_back(s.getName(), s.getValueString());
 
-    add(log_entry);
+    add(std::move(log_entry));
 }
 
 void SessionLog::addLoginFailure(
@@ -242,7 +243,7 @@ void SessionLog::addLoginFailure(
     log_entry.client_info = info;
     log_entry.user_identified_with = AuthenticationType::NO_PASSWORD;
 
-    add(log_entry);
+    add(std::move(log_entry));
 }
 
 void SessionLog::addLogOut(const UUID & auth_id, const UserPtr & login_user, const ClientInfo & client_info)
@@ -256,7 +257,7 @@ void SessionLog::addLogOut(const UUID & auth_id, const UserPtr & login_user, con
     log_entry.external_auth_server = login_user ? login_user->auth_data.getLDAPServerName() : "";
     log_entry.client_info = client_info;
 
-    add(log_entry);
+    add(std::move(log_entry));
 }
 
 }

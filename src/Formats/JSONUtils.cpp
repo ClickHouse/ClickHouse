@@ -45,9 +45,9 @@ namespace JSONUtils
             const auto current_object_size = memory.size() + static_cast<size_t>(pos - in.position());
             if (min_bytes != 0 && current_object_size > 10 * min_bytes)
                 throw ParsingException(ErrorCodes::INCORRECT_DATA,
-                    "Size of JSON object is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. "
+                    "Size of JSON object at position {} is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. "
                     "Increase the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, "
-                    "most likely JSON is malformed", min_bytes, current_object_size);
+                    "most likely JSON is malformed", in.count(), min_bytes, current_object_size);
 
             if (quotes)
             {

@@ -85,3 +85,8 @@ target_link_libraries (interval_tree PRIVATE dbms)
 
 add_executable (tournament_tree tournament_tree.cpp)
 target_link_libraries (tournament_tree PRIVATE dbms)
+
+if (ENABLE_SSL)
+    clickhouse_add_executable (encrypt_decrypt encrypt_decrypt.cpp)
+    target_link_libraries (encrypt_decrypt PRIVATE dbms)
+endif()

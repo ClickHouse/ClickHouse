@@ -35,6 +35,9 @@ struct RowPolicy : public IAccessEntity
     void setPermissive(bool permissive_ = true) { setRestrictive(!permissive_); }
     bool isPermissive() const { return !isRestrictive(); }
 
+    /// Applied for entire database
+    bool isForDatabase() const { return full_name.table_name == RowPolicyName::ANY_TABLE_MARK; }
+
     /// Sets that the policy is restrictive.
     /// A row is only accessible if at least one of the permissive policies passes,
     /// in addition to all the restrictive policies.

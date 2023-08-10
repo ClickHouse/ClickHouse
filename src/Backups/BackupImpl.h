@@ -76,10 +76,8 @@ public:
     SizeAndChecksum getFileSizeAndChecksum(const String & file_name) const override;
     std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) const override;
     std::unique_ptr<SeekableReadBuffer> readFile(const SizeAndChecksum & size_and_checksum) const override;
-    size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path,
-                          WriteMode write_mode, const WriteSettings & write_settings) const override;
-    size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path,
-                          WriteMode write_mode, const WriteSettings & write_settings) const override;
+    size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
+    size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
     void writeFile(const BackupFileInfo & info, BackupEntryPtr entry) override;
     void finalizeWriting() override;
     bool supportsWritingInMultipleThreads() const override { return !use_archive; }
@@ -108,6 +106,8 @@ private:
 
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();
+
+    std::unique_ptr<SeekableReadBuffer> readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const;
 
     const String backup_name_for_logging;
     const bool use_archive;
@@ -141,6 +141,7 @@ private:
     std::shared_ptr<IArchiveReader> archive_reader;
     std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;
+    std::atomic<bool> lock_file_before_first_file_checked = false;
 
     bool writing_finalized = false;
     bool deduplicate_files = true;

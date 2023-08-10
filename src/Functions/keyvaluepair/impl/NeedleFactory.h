@@ -38,7 +38,7 @@ public:
         return SearchSymbols {std::string{needles.data(), needles.size()}};
     }
 
-    SearchSymbols getReadNeedles(const Configuration & extractor_configuration)
+    SearchSymbols getReadKeyNeedles(const Configuration & extractor_configuration)
     {
         const auto & [key_value_delimiter, quoting_character, pair_delimiters]
             = extractor_configuration;
@@ -57,6 +57,26 @@ public:
 
         return SearchSymbols {std::string{needles.data(), needles.size()}};
     }
+
+    SearchSymbols getReadValueNeedles(const Configuration & extractor_configuration)
+    {
+        const auto & [key_value_delimiter, quoting_character, pair_delimiters]
+            = extractor_configuration;
+
+        std::vector<char> needles;
+
+        needles.push_back(quoting_character);
+
+        std::copy(pair_delimiters.begin(), pair_delimiters.end(), std::back_inserter(needles));
+
+        if constexpr (WITH_ESCAPING)
+        {
+            needles.push_back('\\');
+        }
+
+        return SearchSymbols {std::string{needles.data(), needles.size()}};
+    }
+
     SearchSymbols getReadQuotedNeedles(const Configuration & extractor_configuration)
     {
         const auto quoting_character = extractor_configuration.quoting_character;

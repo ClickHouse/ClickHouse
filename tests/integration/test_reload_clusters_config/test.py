@@ -169,7 +169,9 @@ test_config3 = """
 def send_repeated_query(table, count=5):
     for i in range(count):
         node.query_and_get_error(
-            "SELECT count() FROM {} SETTINGS receive_timeout=1".format(table)
+            "SELECT count() FROM {} SETTINGS receive_timeout=1, handshake_timeout_ms=1".format(
+                table
+            )
         )
 
 

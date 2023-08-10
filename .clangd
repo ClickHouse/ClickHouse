@@ -1,0 +1,16 @@
+Diagnostics:
+    # clangd does parse .clang-tidy, but some checks are too slow to run in
+    # clang-tidy build, so let's enable them explicitly for clangd at least.
+    ClangTidy:
+        # The following checks had been disabled due to slowliness with C++23,
+        # for more details see [1].
+        #
+        #   [1]: https://github.com/llvm/llvm-project/issues/61418
+        #
+        # But the code base had been written in a style that had been checked
+        # by this check, so at least, let's enable it for clangd.
+        Add: [
+            # configured in .clang-tidy
+            readability-identifier-naming,
+            bugprone-reserved-identifier,
+        ]

@@ -11,7 +11,6 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/AsyncReadCounters.h>
-#include <Interpreters/Context.h>
 #include <base/getThreadId.h>
 
 #include <future>
@@ -75,18 +74,12 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
     return scheduleFromThreadPool<Result>([request]() -> Result
     {
         CurrentMetrics::Increment metric_increment{CurrentMetrics::RemoteRead};
-
-        std::optional<AsyncReadIncrement> increment;
-        if (CurrentThread::isInitialized())
-        {
-            auto query_context = CurrentThread::get().getQueryContext();
-            if (query_context)
-                increment.emplace(query_context->getAsyncReadCounters());
-        }
-
         auto * remote_fs_fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
 
-        auto watch = std::make_unique<Stopwatch>(CLOCK_MONOTONIC);
+        auto async_read_counters = remote_fs_fd->getReadCounters();
+        std::optional<AsyncReadIncrement> increment = async_read_counters ? std::optional<AsyncReadIncrement>(async_read_counters) : std::nullopt;
+
+        auto watch = std::make_unique<Stopwatch>(CLOCK_REALTIME);
         Result result = remote_fs_fd->readInto(request.buf, request.size, request.offset, request.ignore);
         watch->stop();
 

@@ -57,7 +57,7 @@ bool PacketReceiver::checkTimeout()
     return true;
 }
 
-void PacketReceiver::Task::run(AsyncCallback async_callback, ResumeCallback suspend_callback)
+void PacketReceiver::Task::run(AsyncCallback async_callback, SuspendCallback suspend_callback)
 {
     while (true)
     {

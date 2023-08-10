@@ -11,7 +11,22 @@ Supported platforms:
 
 - x86_64
 - AArch64
-- Power9 (experimental)
+- PowerPC 64 LE (experimental)
+- RISC-V 64 (experimental)
+
+## Building in docker
+We use the docker image `clickhouse/binary-builder` for our CI builds. It contains everything necessary to build the binary and packages. There is a script `docker/packager/packager` to ease the image usage:
+
+```bash
+# define a directory for the output artifacts
+output_dir="build_results"
+# a simplest build
+./docker/packager/packager --package-type=binary --output-dir "$output_dir"
+# build debian packages
+./docker/packager/packager --package-type=deb --output-dir "$output_dir"
+# by default, debian packages use thin LTO, so we can override it to speed up the build
+CMAKE_FLAGS='-DENABLE_THINLTO=' ./docker/packager/packager --package-type=deb --output-dir "./$(git rev-parse --show-cdup)/build_results"
+```
 
 ## Building on Ubuntu
 
@@ -22,33 +37,38 @@ The minimum recommended Ubuntu version for development is 22.04 LTS.
 ### Install Prerequisites {#install-prerequisites}
 
 ``` bash
-sudo apt-get install git cmake ccache python3 ninja-build yasm gawk
+sudo apt-get install git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
 ```
 
 ### Install and Use the Clang compiler
 
-On Ubuntu/Debian you can use LLVM's automatic installation script, see [here](https://apt.llvm.org/).
+On Ubuntu/Debian, you can use LLVM's automatic installation script; see [here](https://apt.llvm.org/).
 
 ``` bash
 sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 ```
 
-Note: in case of troubles, you can also use this:
+Note: in case of trouble, you can also use this:
 
 ```bash
 sudo apt-get install software-properties-common
 sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
 ```
 
-For other Linux distribution - check the availability of LLVM's [prebuild packages](https://releases.llvm.org/download.html).
+For other Linux distributions - check the availability of LLVM's [prebuild packages](https://releases.llvm.org/download.html).
 
-As of April 2023, any version of Clang >= 15 will work.
-GCC as a compiler is not supported
+As of April 2023, clang-16 or higher will work.
+GCC as a compiler is not supported.
 To build with a specific Clang version:
 
+:::tip
+This is optional, if you are following along and just now installed Clang then check
+to see what version you have installed before setting this environment variable.
+:::
+
 ``` bash
-export CC=clang-15
-export CXX=clang++-15
+export CC=clang-16
+export CXX=clang++-16
 ```
 
 ### Checkout ClickHouse Sources {#checkout-clickhouse-sources}
@@ -72,8 +92,12 @@ cmake -S . -B build
 cmake --build build  # or: `cd build; ninja`
 ```
 
-To create an executable, run `cmake --build --target clickhouse` (or: `cd build; ninja clickhouse`).
-This will create executable `build/programs/clickhouse` which can be used with `client` or `server` arguments.
+:::tip
+In case `cmake` isn't able to detect the number of available logical cores, the build will be done by one thread. To overcome this, you can tweak `cmake` to use a specific number of threads with `-j` flag, for example, `cmake --build build -j 16`. Alternatively, you can generate build files with a specific number of jobs in advance to avoid always setting the flag: `cmake -DPARALLEL_COMPILE_JOBS=16 -S . -B build`, where `16` is the desired number of threads.
+:::
+
+To create an executable, run `cmake --build build --target clickhouse` (or: `cd build; ninja clickhouse`).
+This will create an executable `build/programs/clickhouse`, which can be used with `client` or `server` arguments.
 
 ## Building on Any Linux {#how-to-build-clickhouse-on-any-linux}
 
@@ -81,18 +105,18 @@ The build requires the following components:
 
 - Git (used to checkout the sources, not needed for the build)
 - CMake 3.20 or newer
-- Compiler: Clang 15 or newer
-- Linker: lld 15 or newer
+- Compiler: clang-16 or newer
+- Linker: lld-16 or newer
 - Ninja
 - Yasm
 - Gawk
 
-If all the components are installed, you may build in the same way as the steps above.
+If all the components are installed, you may build it in the same way as the steps above.
 
 Example for OpenSUSE Tumbleweed:
 
 ``` bash
-sudo zypper install git cmake ninja clang-c++ python lld yasm gawk
+sudo zypper install git cmake ninja clang-c++ python lld nasm yasm gawk
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build
 cmake -S . -B build
@@ -103,24 +127,9 @@ Example for Fedora Rawhide:
 
 ``` bash
 sudo yum update
-sudo yum --nogpg install git cmake make clang python3 ccache yasm gawk
+sudo yum --nogpg install git cmake make clang python3 ccache lld nasm yasm gawk
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build
 cmake -S . -B build
 cmake --build build
 ```
-
-## You Don’t Have to Build ClickHouse {#you-dont-have-to-build-clickhouse}
-
-ClickHouse is available in pre-built binaries and packages. Binaries are portable and can be run on any Linux flavour.
-
-The CI checks build the binaries on each commit to [ClickHouse](https://github.com/clickhouse/clickhouse/). To download them:
-
-1. Open the [commits list](https://github.com/ClickHouse/ClickHouse/commits/master)
-1. Choose a **Merge pull request** commit that includes the new feature, or was added after the new feature
-1. Click the status symbol (yellow dot, red x, green check) to open the CI check list
-1. Scroll through the list until you find **ClickHouse build check x/x artifact groups are OK**
-1. Click **Details**
-1. Find the type of package for your operating system that you need and download the files.
-
-![build artifact check](images/find-build-artifact.png)

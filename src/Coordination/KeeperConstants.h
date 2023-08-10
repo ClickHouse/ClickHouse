@@ -1,26 +1,20 @@
 #pragma once
-
 #include <IO/WriteHelpers.h>
 
 namespace DB
 {
 
+/// left for backwards compatibility
 enum class KeeperApiVersion : uint8_t
 {
     ZOOKEEPER_COMPATIBLE = 0,
     WITH_FILTERED_LIST,
-    WITH_MULTI_READ
+    WITH_MULTI_READ,
+    WITH_CHECK_NOT_EXISTS,
 };
 
-inline constexpr auto current_keeper_api_version = KeeperApiVersion::WITH_MULTI_READ;
-
-const std::string keeper_system_path = "/keeper";
-const std::string keeper_api_version_path = keeper_system_path + "/api_version";
-
-using PathWithData = std::pair<std::string_view, std::string>;
-const std::vector<PathWithData> child_system_paths_with_data
-{
-    {keeper_api_version_path, toString(static_cast<uint8_t>(current_keeper_api_version))}
-};
-
+const String keeper_system_path = "/keeper";
+const String keeper_api_version_path = keeper_system_path + "/api_version";
+const String keeper_api_feature_flags_path = keeper_system_path + "/feature_flags";
+const String keeper_config_path = keeper_system_path + "/config";
 }

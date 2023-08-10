@@ -175,12 +175,12 @@ Pipe StorageSystemReplicas::read(
 
     for (size_t i = 0; i < tables_size; ++i)
     {
-        thread_pool.scheduleOrThrowOnError([&, i=i]
+        thread_pool.scheduleOrThrowOnError([&, my_i = i]
         {
             dynamic_cast<StorageReplicatedMergeTree &>(
             *replicated_tables
-                [(*col_database)[i].safeGet<const String &>()]
-                [(*col_table)[i].safeGet<const String &>()]).getStatus(statuses[i], with_zk_fields);
+                [(*col_database)[my_i].safeGet<const String &>()]
+                [(*col_table)[my_i].safeGet<const String &>()]).getStatus(statuses[my_i], with_zk_fields);
         });
     }
 

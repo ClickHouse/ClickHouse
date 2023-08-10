@@ -13,15 +13,21 @@
 #include <boost/noncopyable.hpp>
 #include <Poco/Event.h>
 
-#include <Common/CurrentMetrics.h>
-#include <Common/ThreadPool_fwd.h>
-#include <Common/Stopwatch.h>
-#include <base/defines.h>
 #include <Storages/MergeTree/IExecutableTask.h>
+#include <base/defines.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
+#include <Common/Stopwatch.h>
+#include <Common/ThreadPool_fwd.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 struct TaskRuntimeData;
 using TaskRuntimeDataPtr = std::shared_ptr<TaskRuntimeData>;
@@ -57,7 +63,7 @@ struct TaskRuntimeData
     /// This scenario in not possible in reality.
     Poco::Event is_done{/*autoreset=*/false};
     /// This is equal to task->getPriority() not to do useless virtual calls in comparator
-    UInt64 priority{0};
+    Priority priority;
 
     /// By default priority queue will have max element at top
     static bool comparePtrByPriority(const TaskRuntimeDataPtr & lhs, const TaskRuntimeDataPtr & rhs)
@@ -92,6 +98,11 @@ public:
     void setCapacity(size_t count) { queue.set_capacity(count); }
     bool empty() { return queue.empty(); }
 
+    [[noreturn]] void updatePolicy(std::string_view)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePolicy() is not implemented");
+    }
+
     static constexpr std::string_view name = "round_robin";
 
 private:
@@ -125,6 +136,11 @@ public:
 
     void setCapacity(size_t count) { buffer.reserve(count); }
     bool empty() { return buffer.empty(); }
+
+    [[noreturn]] void updatePolicy(std::string_view)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePolicy() is not implemented");
+    }
 
     static constexpr std::string_view name = "shortest_task_first";
 
@@ -244,15 +260,9 @@ public:
         size_t threads_count_,
         size_t max_tasks_count_,
         CurrentMetrics::Metric metric_,
-        CurrentMetrics::Metric max_tasks_metric_);
-    MergeTreeBackgroundExecutor(
-        String name_,
-        size_t threads_count_,
-        size_t max_tasks_count_,
-        CurrentMetrics::Metric metric_,
         CurrentMetrics::Metric max_tasks_metric_,
-        std::string_view policy)
-        requires requires(Queue queue) { queue.updatePolicy(policy); }; // Because we use explicit template instantiation
+        std::string_view policy = {});
+
     ~MergeTreeBackgroundExecutor();
 
     /// Handler for hot-reloading
@@ -271,7 +281,6 @@ public:
 
     /// Update scheduling policy for pending tasks. It does nothing if `new_policy` is the same or unknown.
     void updateSchedulingPolicy(std::string_view new_policy)
-        requires requires(Queue queue) { queue.updatePolicy(new_policy); } // Because we use explicit template instantiation
     {
         std::lock_guard lock(mutex);
         pending.updatePolicy(new_policy);

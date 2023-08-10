@@ -191,7 +191,10 @@ namespace
         explicit StreamFromWriteBuffer(std::unique_ptr<WriteBuffer> write_buffer_)
             : write_buffer(std::move(write_buffer_)), start_offset(write_buffer->count()) {}
 
-        ~StreamFromWriteBuffer() { write_buffer->finalize(); }
+        ~StreamFromWriteBuffer()
+        {
+            write_buffer->finalize();
+        }
 
         static int closeFileFunc(void *, void * stream)
         {

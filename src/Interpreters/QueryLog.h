@@ -1,10 +1,12 @@
 #pragma once
 
+#include <Common/ProfileEvents.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Core/Settings.h>
-#include <Interpreters/SystemLog.h>
+#include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/SystemLog.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <IO/AsyncReadCounters.h>
 #include <Parsers/IAST.h>
@@ -64,6 +66,7 @@ struct QueryLogElement
     std::set<String> query_databases;
     std::set<String> query_tables;
     std::set<String> query_columns;
+    std::set<String> query_partitions;
     std::set<String> query_projections;
     std::set<String> query_views;
 
@@ -93,6 +96,8 @@ struct QueryLogElement
     std::shared_ptr<Settings> query_settings;
 
     TransactionID tid;
+
+    QueryCache::Usage query_cache_usage = QueryCache::Usage::Unknown;
 
     static std::string name() { return "QueryLog"; }
 

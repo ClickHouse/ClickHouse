@@ -90,8 +90,6 @@ private:
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
     TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create) const;
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
-    static String getTableEngineName(DefaultTableEngine default_table_engine);
-    static void setDefaultTableEngine(ASTStorage & storage, ContextPtr local_context);
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 

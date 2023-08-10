@@ -12,7 +12,8 @@
             --chart-background: white;
             --shadow-color: rgba(0, 0, 0, 0.25);
             --input-shadow-color: rgba(0, 255, 0, 1);
-            --error-color: white;
+            --error-color: red;
+            --auth-error-color: white;
             --legend-background: rgba(255, 255, 255, 0.75);
             --title-color: #666;
             --text-color: black;
@@ -258,7 +259,7 @@
             width: 60%;
             padding: .5rem;
 
-            color: var(--error-color);
+            color: var(--auth-error-color);
 
             display: flex;
             flex-flow: row nowrap;
@@ -449,7 +450,7 @@ let queries = [
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "CPU Usage (cores)",
@@ -457,7 +458,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Queries Running",
@@ -465,7 +466,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Merges Running",
@@ -473,7 +474,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Selected Bytes/second",
@@ -481,7 +482,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "IO Wait",
@@ -489,7 +490,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "CPU Wait",
@@ -497,7 +498,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "OS CPU Usage (Userspace)",
@@ -506,7 +507,7 @@ FROM system.asynchronous_metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 AND metric = 'OSUserTimeNormalized'
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "OS CPU Usage (Kernel)",
@@ -515,7 +516,7 @@ FROM system.asynchronous_metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 AND metric = 'OSSystemTimeNormalized'
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Read From Disk",
@@ -523,7 +524,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Read From Filesystem",
@@ -531,7 +532,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Memory (tracked)",
@@ -539,7 +540,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Load Average (15 minutes)",
@@ -548,7 +549,7 @@ FROM system.asynchronous_metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 AND metric = 'LoadAverage15'
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Selected Rows/second",
@@ -556,7 +557,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Inserted Rows/second",
@@ -564,7 +565,7 @@ ORDER BY t`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Total MergeTree Parts",
@@ -573,7 +574,7 @@ FROM system.asynchronous_metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 AND metric = 'TotalPartsOfMergeTreeTables'
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     },
     {
       "title": "Max Parts For Partition",
@@ -582,7 +583,7 @@ FROM system.asynchronous_metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 AND metric = 'MaxPartCountForPartition'
 GROUP BY t
-ORDER BY t`
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
     }
 ];
 
@@ -906,9 +907,9 @@ async function draw(idx, chart, url_params, query) {
 
     if (error) {
         const errorMatch = errorMessages.find(({ regex }) => error.match(regex))
-        if (errorMatch) {
-            const match = error.match(errorMatch.regex)
-            const message = errorMatch.messageFunc(match)
+        const match = error.match(errorMatch.regex)
+        const message = errorMatch.messageFunc(match)
+        if (message) {
             const authError = new Error(message)
             throw authError
         }
@@ -930,7 +931,7 @@ async function draw(idx, chart, url_params, query) {
     let title_div = chart.querySelector('.title');
     if (error) {
         error_div.firstChild.data = error;
-        title_div.style.display = 'none';
+        title_div.style.display = 'none'; 
         error_div.style.display = 'block';
         return false;
     } else {
@@ -1019,13 +1020,15 @@ async function drawAll() {
             firstLoad = false;
         } else {
             enableReloadButton();
+            enableRunButton();
         }
-        if (!results.includes(false)) {
+        if (results.includes(true)) {
             const element = document.querySelector('.inputs');
             element.classList.remove('unconnected');
             const add = document.querySelector('#add');
             add.style.display = 'block';
-        } else {
+        } 
+        else {
             const charts = document.querySelector('#charts')
             charts.style.height = '0px';
         }
@@ -1050,6 +1053,13 @@ function disableReloadButton() {
     reloadButton.classList.add('disabled')
 }
 
+function disableRunButton() {
+    const runButton = document.getElementById('run')
+    runButton.value = 'Reloading...'
+    runButton.disabled = true
+    runButton.classList.add('disabled')
+}
+
 function enableReloadButton() {
     const reloadButton = document.getElementById('reload')
     reloadButton.value = 'Reload'
@@ -1057,11 +1067,19 @@ function enableReloadButton() {
     reloadButton.classList.remove('disabled')
 }
 
+function enableRunButton() {
+    const runButton = document.getElementById('run')
+    runButton.value = 'Ok'
+    runButton.disabled = false
+    runButton.classList.remove('disabled')
+}
+
 function reloadAll() {
     updateParams();
     drawAll();
     saveState();
-    disableReloadButton()
+    disableReloadButton();
+    disableRunButton();
 }
 
 document.getElementById('params').onsubmit = function(event) {

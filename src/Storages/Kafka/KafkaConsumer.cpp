@@ -489,7 +489,7 @@ size_t KafkaConsumer::filterMessageErrors()
 {
     assert(current == messages.begin());
 
-    auto new_end = std::remove_if(messages.begin(), messages.end(), [this](auto & message)
+    size_t skipped = std::erase_if(messages, [this](auto & message)
     {
         if (auto error = message.get_error())
         {
@@ -500,12 +500,8 @@ size_t KafkaConsumer::filterMessageErrors()
         return false;
     });
 
-    size_t skipped = std::distance(new_end, messages.end());
     if (skipped)
-    {
         LOG_ERROR(log, "There were {} messages with an error", skipped);
-        messages.erase(new_end, messages.end());
-    }
 
     return skipped;
 }

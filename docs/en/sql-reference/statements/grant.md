@@ -9,7 +9,7 @@ sidebar_label: GRANT
 - Grants [privileges](#grant-privileges) to ClickHouse user accounts or roles.
 - Assigns roles to user accounts or to the other roles.
 
-To revoke privileges, use the [REVOKE](../../sql-reference/statements/revoke.md) statement. Also you can list granted privileges with the [SHOW GRANTS](../../sql-reference/statements/show.md#show-grants-statement) statement.
+To revoke privileges, use the [REVOKE](../../sql-reference/statements/revoke.md) statement. Also you can list granted privileges with the [SHOW GRANTS](../../sql-reference/statements/show.md#show-grants) statement.
 
 ## Granting Privilege Syntax
 
@@ -200,6 +200,7 @@ Hierarchy of privileges:
     - `HDFS`
     - `S3`
 - [dictGet](#grant-dictget)
+- [displaySecretsInShowAndSelect](#grant-display-secrets)
 
 Examples of how this hierarchy is treated:
 
@@ -484,6 +485,15 @@ Privilege level: `DICTIONARY`.
 
 - `GRANT dictGet ON mydb.mydictionary TO john`
 - `GRANT dictGet ON mydictionary TO john`
+
+
+### displaySecretsInShowAndSelect {#grant-display-secrets}
+
+Allows a user to view secrets in `SHOW` and `SELECT` queries if both
+[`display_secrets_in_show_and_select` server setting](../../operations/server-configuration-parameters/settings#display_secrets_in_show_and_select)
+and
+[`format_display_secrets_in_show_and_select` format setting](../../operations/settings/formats#format_display_secrets_in_show_and_select)
+are turned on.
 
 ### ALL
 

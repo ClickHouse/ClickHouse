@@ -43,6 +43,9 @@ public:
     void setSalt(String salt);
     String getSalt() const;
 
+    /// Sets the password using bcrypt hash with specified workfactor
+    void setPasswordBcrypt(const String & password_, int workfactor_);
+
     /// Sets the server name for authentication type LDAP.
     const String & getLDAPServerName() const { return ldap_server_name; }
     void setLDAPServerName(const String & name) { ldap_server_name = name; }
@@ -62,12 +65,15 @@ public:
 
     struct Util
     {
+        static String digestToString(const Digest & text) { return String(text.data(), text.data() + text.size()); }
         static Digest stringToDigest(std::string_view text) { return Digest(text.data(), text.data() + text.size()); }
         static Digest encodeSHA256(std::string_view text);
         static Digest encodeSHA1(std::string_view text);
         static Digest encodeSHA1(const Digest & text) { return encodeSHA1(std::string_view{reinterpret_cast<const char *>(text.data()), text.size()}); }
         static Digest encodeDoubleSHA1(std::string_view text) { return encodeSHA1(encodeSHA1(text)); }
         static Digest encodeDoubleSHA1(const Digest & text) { return encodeSHA1(encodeSHA1(text)); }
+        static Digest encodeBcrypt(std::string_view text, int workfactor);
+        static bool checkPasswordBcrypt(std::string_view password, const Digest & password_bcrypt);
     };
 
 private:

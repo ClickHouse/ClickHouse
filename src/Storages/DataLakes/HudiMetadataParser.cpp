@@ -1,6 +1,7 @@
 #include <Storages/DataLakes/HudiMetadataParser.h>
 #include <Common/logger_useful.h>
 #include <ranges>
+#include <base/find_symbols.h>
 #include <Poco/String.h>
 #include "config.h"
 #include <filesystem>
@@ -66,7 +67,8 @@ struct HudiMetadataParser<Configuration, MetadataReadHelper>::Impl
         {
             auto key_file = std::filesystem::path(key);
             Strings file_parts;
-            splitInto<'_'>(file_parts, key_file.stem());
+            const String stem = key_file.stem();
+            splitInto<'_'>(file_parts, stem);
             if (file_parts.size() != 3)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected format for file: {}", key);
 

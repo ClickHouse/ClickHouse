@@ -4,7 +4,7 @@ import argparse
 import logging
 import os
 
-from commit_status_helper import get_commit
+from commit_status_helper import NotSet, get_commit, post_commit_status
 from env_helper import GITHUB_JOB_URL
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
@@ -34,6 +34,7 @@ def main():
     args = parser.parse_args()
     url = ""
     description = "the release can be created from the commit, manually set"
+    pr_info = None
     if not args.commit:
         pr_info = PRInfo()
         if pr_info.event == pr_info.default_event:
@@ -45,14 +46,10 @@ def main():
 
     gh = GitHub(args.token, create_cache_dir=False)
     # Get the rate limits for a quick fail
-    gh.get_rate_limit()
     commit = get_commit(gh, args.commit)
-
-    commit.create_status(
-        context=RELEASE_READY_STATUS,
-        description=description,
-        state="success",
-        target_url=url,
+    gh.get_rate_limit()
+    post_commit_status(
+        commit, "success", url or NotSet, description, RELEASE_READY_STATUS, pr_info
     )
 
 

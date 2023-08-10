@@ -219,7 +219,7 @@ bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue
     std::stack<uint64_t> updated_processors;
     updated_processors.push(pid);
 
-    UpgradableMutex::ReadGuard read_lock(nodes_mutex);
+    std::shared_lock read_lock(nodes_mutex);
 
     while (!updated_processors.empty() || !updated_edges.empty())
     {
@@ -382,11 +382,14 @@ bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue
 
             if (need_expand_pipeline)
             {
+                // We do not need to upgrade lock atomically, so we can safely release shared_lock and acquire unique_lock
+                read_lock.unlock();
                 {
-                    UpgradableMutex::WriteGuard lock(read_lock);
+                    std::unique_lock lock(nodes_mutex);
                     if (!expandPipeline(updated_processors, pid))
                         return false;
                 }
+                read_lock.lock();
 
                 /// Add itself back to be prepared again.
                 updated_processors.push(pid);

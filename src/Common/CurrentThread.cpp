@@ -3,7 +3,6 @@
 #include "CurrentThread.h"
 #include <Common/logger_useful.h>
 #include <Common/ThreadStatus.h>
-#include <Common/TaskStatsInfoGetter.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
 #include <base/getThreadId.h>
@@ -104,6 +103,25 @@ std::string_view CurrentThread::getQueryId()
         return {};
 
     return current_thread->getQueryId();
+}
+
+MemoryTracker * CurrentThread::getUserMemoryTracker()
+{
+    if (unlikely(!current_thread))
+        return nullptr;
+
+    auto * tracker = current_thread->memory_tracker.getParent();
+    while (tracker && tracker->level != VariableContext::User)
+        tracker = tracker->getParent();
+
+    return tracker;
+}
+
+void CurrentThread::flushUntrackedMemory()
+{
+    if (unlikely(!current_thread))
+        return;
+    current_thread->flushUntrackedMemory();
 }
 
 }

@@ -25,10 +25,11 @@ namespace Poco
 namespace DB
 {
 class ContextAccess;
-struct ContextAccessParams;
+class ContextAccessParams;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
 class EnabledRoles;
+struct EnabledRolesInfo;
 class RoleCache;
 class EnabledRowPolicies;
 class RowPolicyCache;
@@ -158,6 +159,10 @@ public:
     void checkPasswordComplexityRules(const String & password_) const;
     std::vector<std::pair<String, String>> getPasswordComplexityRules() const;
 
+    /// Workfactor for bcrypt encoded passwords
+    void setBcryptWorkfactor(int workfactor_);
+    int getBcryptWorkfactor() const;
+
     /// Enables logic that users without permissive row policies can still read rows using a SELECT query.
     /// For example, if there two users A, B and a row policy is defined only for A, then
     /// if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
@@ -177,17 +182,13 @@ public:
     void setSettingsConstraintsReplacePrevious(bool enable) { settings_constraints_replace_previous = enable; }
     bool doesSettingsConstraintsReplacePrevious() const { return settings_constraints_replace_previous; }
 
-    std::shared_ptr<const ContextAccess> getContextAccess(
-        const UUID & user_id,
-        const std::vector<UUID> & current_roles,
-        bool use_default_roles,
-        const Settings & settings,
-        const String & current_database,
-        const ClientInfo & client_info) const;
-
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
     std::shared_ptr<const EnabledRoles> getEnabledRoles(
+        const std::vector<UUID> & current_roles,
+        const std::vector<UUID> & current_roles_with_admin_option) const;
+
+    std::shared_ptr<const EnabledRolesInfo> getEnabledRolesInfo(
         const std::vector<UUID> & current_roles,
         const std::vector<UUID> & current_roles_with_admin_option) const;
 
@@ -208,6 +209,12 @@ public:
     std::vector<QuotaUsage> getAllQuotasUsage() const;
 
     std::shared_ptr<const EnabledSettings> getEnabledSettings(
+        const UUID & user_id,
+        const SettingsProfileElements & settings_from_user,
+        const boost::container::flat_set<UUID> & enabled_roles,
+        const SettingsProfileElements & settings_from_enabled_roles) const;
+
+    std::shared_ptr<const SettingsProfilesInfo> getEnabledSettingsInfo(
         const UUID & user_id,
         const SettingsProfileElements & settings_from_user,
         const boost::container::flat_set<UUID> & enabled_roles,
@@ -246,6 +253,7 @@ private:
     std::atomic_bool select_from_system_db_requires_grant = false;
     std::atomic_bool select_from_information_schema_requires_grant = false;
     std::atomic_bool settings_constraints_replace_previous = false;
+    std::atomic_int bcrypt_workfactor = 12;
     std::atomic<AuthenticationType> default_password_type = AuthenticationType::SHA256_PASSWORD;
 };
 

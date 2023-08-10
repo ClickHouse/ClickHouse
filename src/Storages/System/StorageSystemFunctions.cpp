@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -55,14 +56,37 @@ namespace
         if constexpr (std::is_same_v<Factory, FunctionFactory>)
         {
             if (factory.isAlias(name))
+            {
                 res_columns[6]->insertDefault();
+                res_columns[7]->insertDefault();
+                res_columns[8]->insertDefault();
+                res_columns[9]->insertDefault();
+                res_columns[10]->insertDefault();
+                res_columns[11]->insertDefault();
+            }
             else
-                res_columns[6]->insert(factory.getDocumentation(name).description);
+            {
+                auto documentation = factory.getDocumentation(name);
+                res_columns[6]->insert(documentation.description);
+                res_columns[7]->insert(documentation.syntax);
+                res_columns[8]->insert(documentation.argumentsAsString());
+                res_columns[9]->insert(documentation.returned_value);
+                res_columns[10]->insert(documentation.examplesAsString());
+                res_columns[11]->insert(documentation.categoriesAsString());
+            }
         }
         else
+        {
             res_columns[6]->insertDefault();
+            res_columns[7]->insertDefault();
+            res_columns[8]->insertDefault();
+            res_columns[9]->insertDefault();
+            res_columns[10]->insertDefault();
+            res_columns[11]->insertDefault();
+        }
     }
 }
+
 
 std::vector<std::pair<String, Int8>> getOriginEnumsAndValues()
 {
@@ -83,6 +107,11 @@ NamesAndTypesList StorageSystemFunctions::getNamesAndTypes()
         {"create_query", std::make_shared<DataTypeString>()},
         {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsAndValues())},
         {"description", std::make_shared<DataTypeString>()},
+        {"syntax", std::make_shared<DataTypeString>()},
+        {"arguments", std::make_shared<DataTypeString>()},
+        {"returned_value", std::make_shared<DataTypeString>()},
+        {"examples", std::make_shared<DataTypeString>()},
+        {"categories", std::make_shared<DataTypeString>()}
     };
 }
 

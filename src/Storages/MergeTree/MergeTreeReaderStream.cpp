@@ -2,6 +2,7 @@
 #include <Compression/CachedCompressedReadBuffer.h>
 
 #include <base/getThreadId.h>
+#include <base/range.h>
 #include <utility>
 
 
@@ -15,7 +16,7 @@ namespace ErrorCodes
 }
 
 MergeTreeReaderStream::MergeTreeReaderStream(
-        DataPartStoragePtr data_part_storage_,
+        MergeTreeDataPartInfoForReaderPtr data_part_reader_,
         const String & path_prefix_,
         const String & data_file_extension_,
         size_t marks_count_,
@@ -35,7 +36,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     , all_mark_ranges(all_mark_ranges_)
     , file_size(file_size_)
     , uncompressed_cache(uncompressed_cache_)
-    , data_part_storage(std::move(data_part_storage_))
+    , data_part_storage(data_part_reader_->getDataPartStorage())
     , path_prefix(path_prefix_)
     , data_file_extension(data_file_extension_)
     , is_low_cardinality_dictionary(is_low_cardinality_dictionary_)
@@ -44,7 +45,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     , save_marks_in_cache(settings.save_marks_in_cache)
     , index_granularity_info(index_granularity_info_)
     , marks_loader(
-        data_part_storage,
+        data_part_reader_,
         mark_cache,
         index_granularity_info->getMarksFilePath(path_prefix),
         marks_count,

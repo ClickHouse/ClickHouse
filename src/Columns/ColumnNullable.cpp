@@ -214,7 +214,7 @@ void ColumnNullable::insertFromNotNullable(const IColumn & src, size_t n)
 void ColumnNullable::insertRangeFromNotNullable(const IColumn & src, size_t start, size_t length)
 {
     getNestedColumn().insertRangeFrom(src, start, length);
-    getNullMapData().resize_fill(getNullMapData().size() + length, 0);
+    getNullMapData().resize_fill(getNullMapData().size() + length);
 }
 
 void ColumnNullable::insertManyFromNotNullable(const IColumn & src, size_t position, size_t length)
@@ -564,15 +564,22 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
     else
         getNestedColumn().updatePermutation(direction, stability, limit, null_direction_hint, res, new_ranges);
 
-    equal_ranges = std::move(new_ranges);
-
     if (unlikely(stability == PermutationSortStability::Stable))
     {
         for (auto & null_range : null_ranges)
             ::sort(res.begin() + null_range.first, res.begin() + null_range.second);
     }
 
-    std::move(null_ranges.begin(), null_ranges.end(), std::back_inserter(equal_ranges));
+    if (is_nulls_last || null_ranges.empty())
+    {
+        equal_ranges = std::move(new_ranges);
+        std::move(null_ranges.begin(), null_ranges.end(), std::back_inserter(equal_ranges));
+    }
+    else
+    {
+        equal_ranges = std::move(null_ranges);
+        std::move(new_ranges.begin(), new_ranges.end(), std::back_inserter(equal_ranges));
+    }
 }
 
 void ColumnNullable::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -644,9 +651,9 @@ ColumnPtr ColumnNullable::compress() const
     size_t byte_size = nested_column->byteSize() + null_map->byteSize();
 
     return ColumnCompressed::create(size(), byte_size,
-        [nested_column = std::move(nested_compressed), null_map = std::move(null_map_compressed)]
+        [my_nested_column = std::move(nested_compressed), my_null_map = std::move(null_map_compressed)]
         {
-            return ColumnNullable::create(nested_column->decompress(), null_map->decompress());
+            return ColumnNullable::create(my_nested_column->decompress(), my_null_map->decompress());
         });
 }
 
