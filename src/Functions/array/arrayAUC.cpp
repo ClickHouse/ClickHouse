@@ -127,8 +127,8 @@ private:
     }
 
     static void vector(
-        const IColumn & data1,
-        const IColumn & data2,
+        const IColumn & scores,
+        const IColumn & labels,
         const ColumnArray::Offsets & offsets,
         PaddedPODArray<Float64> & result)
     {
