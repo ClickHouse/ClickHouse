@@ -30,7 +30,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
-#include <Parsers/makeASTForLogicalFunction.h>
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/ActionsVisitor.h>
@@ -64,31 +63,14 @@ bool isValidFunction(const ASTPtr & expression, const std::function<bool(const A
 bool extractFunctions(const ASTPtr & expression, const std::function<bool(const ASTPtr &)> & is_constant, ASTs & result)
 {
     const auto * function = expression->as<ASTFunction>();
-
-    if (function)
+    if (function && (function->name == "and" || function->name == "indexHint"))
     {
-        if (function->name == "and" || function->name == "indexHint")
-        {
-            bool ret = true;
-            for (const auto & child : function->arguments->children)
-                ret &= extractFunctions(child, is_constant, result);
-            return ret;
-        }
-        else if (function->name == "or")
-        {
-            bool ret = true;
-            ASTs or_args;
-            for (const auto & child : function->arguments->children)
-                ret &= extractFunctions(child, is_constant, or_args);
-            /// We can keep condition only if it still OR condition (i.e. we
-            /// have dependent conditions for columns at both sides)
-            if (or_args.size() == 2)
-                result.push_back(makeASTForLogicalOr(std::move(or_args)));
-            return ret;
-        }
+        bool ret = true;
+        for (const auto & child : function->arguments->children)
+            ret &= extractFunctions(child, is_constant, result);
+        return ret;
     }
-
-    if (isValidFunction(expression, is_constant))
+    else if (isValidFunction(expression, is_constant))
     {
         result.push_back(expression->clone());
         return true;
@@ -98,13 +80,13 @@ bool extractFunctions(const ASTPtr & expression, const std::function<bool(const 
 }
 
 /// Construct a conjunction from given functions
-ASTPtr buildWhereExpression(ASTs && functions)
+ASTPtr buildWhereExpression(const ASTs & functions)
 {
     if (functions.empty())
         return nullptr;
     if (functions.size() == 1)
         return functions[0];
-    return makeASTForLogicalAnd(std::move(functions));
+    return makeASTFunction("and", functions);
 }
 
 }
@@ -189,7 +171,7 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
     if (select.prewhere())
         unmodified &= extractFunctions(select.prewhere(), is_constant, functions);
 
-    expression_ast = buildWhereExpression(std::move(functions));
+    expression_ast = buildWhereExpression(functions);
     return unmodified;
 }
 

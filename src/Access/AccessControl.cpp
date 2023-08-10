@@ -6,7 +6,6 @@
 #include <Access/DiskAccessStorage.h>
 #include <Access/LDAPAccessStorage.h>
 #include <Access/ContextAccess.h>
-#include <Access/EnabledSettings.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/RoleCache.h>
 #include <Access/RowPolicyCache.h>
@@ -730,14 +729,6 @@ std::shared_ptr<const EnabledRoles> AccessControl::getEnabledRoles(
 }
 
 
-std::shared_ptr<const EnabledRolesInfo> AccessControl::getEnabledRolesInfo(
-    const std::vector<UUID> & current_roles,
-    const std::vector<UUID> & current_roles_with_admin_option) const
-{
-    return getEnabledRoles(current_roles, current_roles_with_admin_option)->getRolesInfo();
-}
-
-
 std::shared_ptr<const EnabledRowPolicies> AccessControl::getEnabledRowPolicies(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles) const
 {
     return row_policy_cache->getEnabledRowPolicies(user_id, enabled_roles);
@@ -779,15 +770,6 @@ std::shared_ptr<const EnabledSettings> AccessControl::getEnabledSettings(
     const SettingsProfileElements & settings_from_enabled_roles) const
 {
     return settings_profiles_cache->getEnabledSettings(user_id, settings_from_user, enabled_roles, settings_from_enabled_roles);
-}
-
-std::shared_ptr<const SettingsProfilesInfo> AccessControl::getEnabledSettingsInfo(
-    const UUID & user_id,
-    const SettingsProfileElements & settings_from_user,
-    const boost::container::flat_set<UUID> & enabled_roles,
-    const SettingsProfileElements & settings_from_enabled_roles) const
-{
-    return getEnabledSettings(user_id, settings_from_user, enabled_roles, settings_from_enabled_roles)->getInfo();
 }
 
 std::shared_ptr<const SettingsProfilesInfo> AccessControl::getSettingsProfileInfo(const UUID & profile_id)

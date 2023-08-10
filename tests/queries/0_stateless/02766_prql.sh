@@ -21,18 +21,18 @@ INSERT INTO aboba (user_id, message, creation_date, metric) VALUES (101, 'Hello,
 SET dialect = 'prql';
 
 from aboba
-derive {
+derive [
     a = 2,
     b = s\"LEFT(message, 2)\"
-}
-select { user_id, message, a, b };
+]
+select [ user_id, message, a, b ];
 
 from aboba
 filter user_id > 101
 group user_id (
-    aggregate {
+    aggregate [
         metrics = sum metric
-    }
+    ]
 );
 
 SET dialect = 'clickhouse';
@@ -49,9 +49,9 @@ SELECT '---';
 SET dialect = 'prql';
 
 from aboba
-select { user_id, message, metric }
+select [ user_id, message, metric ]
 derive creation_date = s\"toTimeZone(creation_date, 'Europe/Amsterdam')\"
-select { user_id, message, creation_date, metric};
+select [ user_id, message, creation_date, metric];
 
 from s\"SELECT * FROM system.users\" | select non_existent_column; # {serverError UNKNOWN_IDENTIFIER}
 from non_existent_table; # {serverError UNKNOWN_TABLE}

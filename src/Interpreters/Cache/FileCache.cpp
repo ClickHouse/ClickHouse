@@ -587,7 +587,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
     }
 }
 
-bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCacheReserveStat & reserve_stat)
+bool FileCache::tryReserve(FileSegment & file_segment, const size_t size)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheReserveMicroseconds);
 
@@ -653,7 +653,6 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
     {
         chassert(segment_metadata->file_segment->assertCorrectness());
 
-        auto & stat_by_kind = reserve_stat.stat_by_kind[segment_metadata->file_segment->getKind()];
         if (segment_metadata->releasable())
         {
             const auto & key = segment_metadata->file_segment->key();
@@ -662,18 +661,9 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
                 it = to_delete.emplace(key, locked_key.getKeyMetadata()).first;
             it->second.add(segment_metadata);
 
-            stat_by_kind.releasable_size += segment_metadata->size();
-            ++stat_by_kind.releasable_count;
-
             freeable_space += segment_metadata->size();
             ++freeable_count;
         }
-        else
-        {
-            stat_by_kind.non_releasable_size += segment_metadata->size();
-            ++stat_by_kind.non_releasable_count;
-        }
-
         return PriorityIterationResult::CONTINUE;
     };
 
@@ -727,10 +717,6 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
 
         return is_overflow;
     };
-
-    /// If we have enough space in query_priority, we are not interested about stat there anymore.
-    /// Clean the stat before iterating main_priority to avoid calculating any segment stat twice.
-    reserve_stat.stat_by_kind.clear();
 
     if (is_main_priority_overflow())
     {
@@ -820,13 +806,6 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
     return true;
 }
 
-void FileCache::removeKey(const Key & key)
-{
-    assertInitialized();
-    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW);
-    locked_key->removeAll();
-}
-
 void FileCache::removeKeyIfExists(const Key & key)
 {
     assertInitialized();
@@ -839,14 +818,7 @@ void FileCache::removeKeyIfExists(const Key & key)
     /// But if we have multiple replicated zero-copy tables on the same server
     /// it became possible to start removing something from cache when it is used
     /// by other "zero-copy" tables. That is why it's not an error.
-    locked_key->removeAll(/* if_releasable */true);
-}
-
-void FileCache::removeFileSegment(const Key & key, size_t offset)
-{
-    assertInitialized();
-    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW);
-    locked_key->removeFileSegment(offset);
+    locked_key->removeAllReleasable();
 }
 
 void FileCache::removePathIfExists(const String & path)
@@ -858,12 +830,22 @@ void FileCache::removeAllReleasable()
 {
     assertInitialized();
 
-    metadata.iterate([](LockedKey & locked_key) { locked_key.removeAll(/* if_releasable */true); });
+    auto lock = lockCache();
+
+    main_priority->iterate([&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
+    {
+        if (segment_metadata->releasable())
+        {
+            auto file_segment = segment_metadata->file_segment;
+            locked_key.removeFileSegment(file_segment->offset(), file_segment->lock());
+            return PriorityIterationResult::REMOVE_AND_CONTINUE;
+        }
+        return PriorityIterationResult::CONTINUE;
+    }, lock);
 
     if (stash)
     {
         /// Remove all access information.
-        auto lock = lockCache();
         stash->records.clear();
         stash->queue->removeAll(lock);
     }
@@ -932,7 +914,7 @@ void FileCache::loadMetadata()
                 continue;
             }
 
-            const auto key = Key::fromKeyString(key_directory.filename().string());
+            const auto key = Key(unhexUInt<UInt128>(key_directory.filename().string().data()));
             auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY, /* is_initial_load */true);
 
             for (fs::directory_iterator offset_it{key_directory}; offset_it != fs::directory_iterator(); ++offset_it)
@@ -1087,7 +1069,7 @@ FileSegmentsHolderPtr FileCache::getSnapshot()
 FileSegmentsHolderPtr FileCache::getSnapshot(const Key & key)
 {
     FileSegments file_segments;
-    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW_LOGICAL);
+    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW);
     for (const auto & [_, file_segment_metadata] : *locked_key->getKeyMetadata())
         file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata->file_segment));
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));

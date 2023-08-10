@@ -29,7 +29,6 @@ class ContextAccessParams;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
 class EnabledRoles;
-struct EnabledRolesInfo;
 class RoleCache;
 class EnabledRowPolicies;
 class RowPolicyCache;
@@ -188,10 +187,6 @@ public:
         const std::vector<UUID> & current_roles,
         const std::vector<UUID> & current_roles_with_admin_option) const;
 
-    std::shared_ptr<const EnabledRolesInfo> getEnabledRolesInfo(
-        const std::vector<UUID> & current_roles,
-        const std::vector<UUID> & current_roles_with_admin_option) const;
-
     std::shared_ptr<const EnabledRowPolicies> getEnabledRowPolicies(
         const UUID & user_id,
         const boost::container::flat_set<UUID> & enabled_roles) const;
@@ -209,12 +204,6 @@ public:
     std::vector<QuotaUsage> getAllQuotasUsage() const;
 
     std::shared_ptr<const EnabledSettings> getEnabledSettings(
-        const UUID & user_id,
-        const SettingsProfileElements & settings_from_user,
-        const boost::container::flat_set<UUID> & enabled_roles,
-        const SettingsProfileElements & settings_from_enabled_roles) const;
-
-    std::shared_ptr<const SettingsProfilesInfo> getEnabledSettingsInfo(
         const UUID & user_id,
         const SettingsProfileElements & settings_from_user,
         const boost::container::flat_set<UUID> & enabled_roles,

@@ -783,7 +783,7 @@ namespace
             if (!outcome.IsSuccess())
             {
                 abortMultipartUpload();
-                throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
+                throw Exception::createDeprecated(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
             }
 
             return outcome.GetResult().GetCopyPartResult().GetETag();

@@ -11,7 +11,6 @@
 #include <Storages/StorageConfiguration.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/prepareReadingFromFormat.h>
 
 namespace DB
 {
@@ -63,11 +62,10 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         std::optional<FormatSettings> format_settings_,
-        bool distributed_processing_,
         ASTPtr partition_by_);
 
     static StorageAzureBlob::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
-    static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration, bool is_read_only);
+    static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration);
 
     static AzureObjectStorage::SettingsPtr createSettings(ContextPtr local_context);
 
@@ -95,7 +93,7 @@ public:
 
     bool supportsPartitionBy() const override;
 
-    bool supportsSubcolumns() const override { return true; }
+    bool supportsSubcolumns() const override;
 
     bool supportsSubsetOfColumns() const override;
 
@@ -109,8 +107,7 @@ public:
         AzureObjectStorage * object_storage,
         const Configuration & configuration,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx,
-        bool distributed_processing = false);
+        ContextPtr ctx);
 
 private:
     std::string name;
@@ -138,6 +135,7 @@ private:
         const std::optional<FormatSettings> & format_settings,
         const String & format_name,
         const ContextPtr & ctx);
+
 
 };
 
@@ -170,7 +168,7 @@ public:
         RelativePathWithMetadata next() override;
         ~GlobIterator() override = default;
 
-    private:
+     private:
         AzureObjectStorage * object_storage;
         std::string container;
         String blob_path_with_globs;
@@ -193,21 +191,6 @@ public:
         std::mutex next_mutex;
 
         std::function<void(FileProgress)> file_progress_callback;
-    };
-
-    class ReadIterator : public IIterator
-    {
-    public:
-        explicit ReadIterator(ContextPtr context_,
-                              const ReadTaskCallback & callback_)
-            : IIterator(context_), callback(callback_) { }
-        RelativePathWithMetadata next() override
-        {
-            return {callback(), {}};
-        }
-
-    private:
-        ReadTaskCallback callback;
     };
 
     class KeysIterator : public IIterator
@@ -239,11 +222,13 @@ public:
     };
 
     StorageAzureBlobSource(
-        const ReadFromFormatInfo & info,
+        const std::vector<NameAndTypePair> & requested_virtual_columns_,
         const String & format_,
         String name_,
+        const Block & sample_block_,
         ContextPtr context_,
         std::optional<FormatSettings> format_settings_,
+        const ColumnsDescription & columns_,
         UInt64 max_block_size_,
         String compression_hint_,
         AzureObjectStorage * object_storage_,
@@ -256,9 +241,10 @@ public:
 
     String getName() const override;
 
+    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
+
 private:
-    NamesAndTypesList requested_columns;
-    NamesAndTypesList requested_virtual_columns;
+    std::vector<NameAndTypePair> requested_virtual_columns;
     String format;
     String name;
     Block sample_block;

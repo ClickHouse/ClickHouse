@@ -31,25 +31,30 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
+namespace
+{
+    constexpr size_t DBMS_SYSTEM_LOG_QUEUE_SIZE = 1048576;
+}
+
 ISystemLog::~ISystemLog() = default;
 
 
 template <typename LogElement>
-SystemLogQueue<LogElement>::SystemLogQueue(const SystemLogQueueSettings & settings_)
-    : log(&Poco::Logger::get("SystemLogQueue (" + settings_.database + "." +settings_.table + ")"))
-    , settings(settings_)
-
+SystemLogQueue<LogElement>::SystemLogQueue(
+    const String & table_name_,
+    size_t flush_interval_milliseconds_,
+    bool turn_off_logger_)
+    : log(&Poco::Logger::get("SystemLogQueue (" + table_name_ + ")"))
+    , flush_interval_milliseconds(flush_interval_milliseconds_)
 {
-    queue.reserve(settings.reserved_size_rows);
-
-    if (settings.turn_off_logger)
+    if (turn_off_logger_)
         log->setLevel(0);
 }
 
 static thread_local bool recursive_push_call = false;
 
 template <typename LogElement>
-void SystemLogQueue<LogElement>::push(LogElement&& element)
+void SystemLogQueue<LogElement>::push(const LogElement & element)
 {
     /// It is possible that the method will be called recursively.
     /// Better to drop these events to avoid complications.
@@ -65,7 +70,7 @@ void SystemLogQueue<LogElement>::push(LogElement&& element)
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
     /// Should not log messages under mutex.
-    bool buffer_size_rows_flush_threshold_exceeded = false;
+    bool queue_is_half_full = false;
 
     {
         std::unique_lock lock(mutex);
@@ -73,9 +78,9 @@ void SystemLogQueue<LogElement>::push(LogElement&& element)
         if (is_shutdown)
             return;
 
-        if (queue.size() == settings.buffer_size_rows_flush_threshold)
+        if (queue.size() == DBMS_SYSTEM_LOG_QUEUE_SIZE / 2)
         {
-            buffer_size_rows_flush_threshold_exceeded = true;
+            queue_is_half_full = true;
 
             // The queue more than half full, time to flush.
             // We only check for strict equality, because messages are added one
@@ -89,7 +94,7 @@ void SystemLogQueue<LogElement>::push(LogElement&& element)
             flush_event.notify_all();
         }
 
-        if (queue.size() >= settings.max_size_rows)
+        if (queue.size() >= DBMS_SYSTEM_LOG_QUEUE_SIZE)
         {
             // Ignore all further entries until the queue is flushed.
             // Log a message about that. Don't spam it -- this might be especially
@@ -103,28 +108,27 @@ void SystemLogQueue<LogElement>::push(LogElement&& element)
                 // TextLog sets its logger level to 0, so this log is a noop and
                 // there is no recursive logging.
                 lock.unlock();
-                LOG_ERROR(log, "Queue is full for system log '{}' at {}. max_size_rows {}",
-                          demangle(typeid(*this).name()),
-                          queue_front_index,
-                          settings.max_size_rows);
+                LOG_ERROR(log, "Queue is full for system log '{}' at {}", demangle(typeid(*this).name()), queue_front_index);
             }
 
             return;
         }
 
-        queue.push_back(std::move(element));
+        queue.push_back(element);
     }
 
-    if (buffer_size_rows_flush_threshold_exceeded)
-        LOG_INFO(log, "Queue is half full for system log '{}'. buffer_size_rows_flush_threshold {}",
-                 demangle(typeid(*this).name()), settings.buffer_size_rows_flush_threshold);
+    if (queue_is_half_full)
+        LOG_INFO(log, "Queue is half full for system log '{}'.", demangle(typeid(*this).name()));
 }
 
 template <typename LogElement>
-void SystemLogQueue<LogElement>::handleCrash()
+void SystemLogBase<LogElement>::flush(bool force)
 {
-    if (settings.notify_flush_on_crash)
-        notifyFlush(/* force */ true);
+    uint64_t this_thread_requested_offset = queue->notifyFlush(force);
+    if (this_thread_requested_offset == uint64_t(-1))
+        return;
+
+    queue->waitFlush(this_thread_requested_offset);
 }
 
 template <typename LogElement>
@@ -181,13 +185,11 @@ void SystemLogQueue<LogElement>::confirm(uint64_t to_flush_end)
 }
 
 template <typename LogElement>
-typename SystemLogQueue<LogElement>::Index SystemLogQueue<LogElement>::pop(std::vector<LogElement> & output,
-                                                                           bool & should_prepare_tables_anyway,
-                                                                           bool & exit_this_thread)
+typename SystemLogQueue<LogElement>::Index SystemLogQueue<LogElement>::pop(std::vector<LogElement>& output, bool& should_prepare_tables_anyway, bool& exit_this_thread)
 {
     std::unique_lock lock(mutex);
     flush_event.wait_for(lock,
-        std::chrono::milliseconds(settings.flush_interval_milliseconds),
+        std::chrono::milliseconds(flush_interval_milliseconds),
         [&] ()
         {
             return requested_flush_up_to > flushed_up_to || is_shutdown || is_force_prepare_tables;
@@ -217,26 +219,11 @@ void SystemLogQueue<LogElement>::shutdown()
 
 template <typename LogElement>
 SystemLogBase<LogElement>::SystemLogBase(
-    const SystemLogQueueSettings & settings_,
+    const String& table_name_,
+    size_t flush_interval_milliseconds_,
     std::shared_ptr<SystemLogQueue<LogElement>> queue_)
-    : queue(queue_ ? queue_ : std::make_shared<SystemLogQueue<LogElement>>(settings_))
+    : queue(queue_ ? queue_ : std::make_shared<SystemLogQueue<LogElement>>(table_name_, flush_interval_milliseconds_))
 {
-}
-
-template <typename LogElement>
-void SystemLogBase<LogElement>::flush(bool force)
-{
-    uint64_t this_thread_requested_offset = queue->notifyFlush(force);
-    if (this_thread_requested_offset == uint64_t(-1))
-        return;
-
-    queue->waitFlush(this_thread_requested_offset);
-}
-
-template <typename LogElement>
-void SystemLogBase<LogElement>::handleCrash()
-{
-    queue->handleCrash();
 }
 
 template <typename LogElement>
@@ -247,9 +234,9 @@ void SystemLogBase<LogElement>::startup()
 }
 
 template <typename LogElement>
-void SystemLogBase<LogElement>::add(LogElement element)
+void SystemLogBase<LogElement>::add(const LogElement & element)
 {
-    queue->push(std::move(element));
+    queue->push(element);
 }
 
 template <typename LogElement>

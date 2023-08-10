@@ -438,7 +438,7 @@ try
         elem.flush_query_id = flush_query_id;
         elem.exception = flush_exception;
         elem.status = flush_exception.empty() ? Status::Ok : Status::FlushError;
-        log.add(std::move(elem));
+        log.add(elem);
     }
 }
 catch (...)
@@ -608,7 +608,7 @@ try
             if (!elem.exception.empty())
             {
                 elem.status = AsynchronousInsertLogElement::ParsingError;
-                insert_log->add(std::move(elem));
+                insert_log->add(elem);
             }
             else
             {
@@ -657,7 +657,7 @@ try
             total_rows, total_bytes, key.query_str);
 
         bool pulling_pipeline = false;
-        logQueryFinish(query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, QueryCache::Usage::None, internal);
+        logQueryFinish(query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, internal);
     }
     catch (...)
     {

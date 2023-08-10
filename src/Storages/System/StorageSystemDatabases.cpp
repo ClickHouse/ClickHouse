@@ -117,23 +117,13 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
 
         const auto & database = databases.at(database_name);
 
-        size_t src_index = 0;
-        size_t res_index = 0;
-        const auto & columns_mask = query_info.columns_mask;
-        if (columns_mask[src_index++])
-            res_columns[res_index++]->insert(database_name);
-        if (columns_mask[src_index++])
-            res_columns[res_index++]->insert(database->getEngineName());
-        if (columns_mask[src_index++])
-            res_columns[res_index++]->insert(context->getPath() + database->getDataPath());
-        if (columns_mask[src_index++])
-            res_columns[res_index++]->insert(database->getMetadataPath());
-        if (columns_mask[src_index++])
-            res_columns[res_index++]->insert(database->getUUID());
-        if (columns_mask[src_index++])
-            res_columns[res_index++]->insert(getEngineFull(context, database));
-        if (columns_mask[src_index++])
-            res_columns[res_index++]->insert(database->getDatabaseComment());
+        res_columns[0]->insert(database_name);
+        res_columns[1]->insert(database->getEngineName());
+        res_columns[2]->insert(context->getPath() + database->getDataPath());
+        res_columns[3]->insert(database->getMetadataPath());
+        res_columns[4]->insert(database->getUUID());
+        res_columns[5]->insert(getEngineFull(context, database));
+        res_columns[6]->insert(database->getDatabaseComment());
    }
 }
 

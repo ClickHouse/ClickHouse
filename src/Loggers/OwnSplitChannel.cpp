@@ -138,7 +138,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         std::shared_ptr<SystemLogQueue<TextLogElement>> text_log_locked{};
         text_log_locked = text_log.lock();
         if (text_log_locked)
-            text_log_locked->push(std::move(elem));
+            text_log_locked->push(elem);
     }
 #endif
 }

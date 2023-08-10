@@ -45,7 +45,6 @@
 #include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
 #include <Core/Settings.h>
@@ -116,10 +115,7 @@
 #include <re2/re2.h>
 #include <Storages/StorageView.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/FunctionParameterValuesVisitor.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <base/find_symbols.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 
 #if USE_ROCKSDB
 #include <rocksdb/table.h>
@@ -159,13 +155,13 @@ namespace CurrentMetrics
     extern const Metric IOWriterThreadsActive;
 }
 
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int BAD_GET;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
@@ -180,7 +176,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_FUNCTION;
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
-    extern const int CLUSTER_DOESNT_EXIST;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -278,7 +273,6 @@ struct ContextSharedPart : boost::noncopyable
     mutable QueryCachePtr query_cache;         /// Cache of query results.
     mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     ProcessList process_list;                               /// Executing queries at the moment.
-    SessionTracker session_tracker;
     GlobalOvercommitTracker global_overcommit_tracker;
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
     MovesList moves_list;                                   /// The list of executing moves (for (Replicated)?MergeTree)
@@ -742,9 +736,6 @@ std::unique_lock<std::recursive_mutex> Context::getLock() const
 ProcessList & Context::getProcessList() { return shared->process_list; }
 const ProcessList & Context::getProcessList() const { return shared->process_list; }
 OvercommitTracker * Context::getGlobalOvercommitTracker() const { return &shared->global_overcommit_tracker; }
-
-SessionTracker & Context::getSessionTracker() { return shared->session_tracker; }
-
 MergeList & Context::getMergeList() { return shared->merge_list; }
 const MergeList & Context::getMergeList() const { return shared->merge_list; }
 MovesList & Context::getMovesList() { return shared->moves_list; }
@@ -1089,32 +1080,52 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-void Context::setUser(const UUID & user_id_, const std::optional<const std::vector<UUID>> & current_roles_)
+void Context::setUser(const UUID & user_id_, bool set_current_profiles_, bool set_current_roles_, bool set_current_database_)
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
-    /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
-    /// so Context::getLock() must be unlocked while we're doing this.
 
-    auto user = getAccessControl().read<User>(user_id_);
+    std::shared_ptr<const User> user;
+    std::shared_ptr<const ContextAccess> temp_access;
+    if (set_current_profiles_ || set_current_roles_ || set_current_database_)
+    {
+        std::optional<ContextAccessParams> params;
+        {
+            auto lock = getLock();
+            params.emplace(ContextAccessParams{user_id_, /* full_access= */ false, /* use_default_roles = */ true, {}, settings, current_database, client_info});
+        }
+        /// `temp_access` is used here only to extract information about the user, not to actually check access.
+        /// NOTE: AccessControl::getContextAccess() may require some IO work, so Context::getLock() must be unlocked while we're doing this.
+        temp_access = getAccessControl().getContextAccess(*params);
+        user = temp_access->getUser();
+    }
 
-    auto new_current_roles = current_roles_ ? user->granted_roles.findGranted(*current_roles_) : user->granted_roles.findGranted(user->default_roles);
-    auto enabled_roles = getAccessControl().getEnabledRolesInfo(new_current_roles, {});
-    auto enabled_profiles = getAccessControl().getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
-    const auto & database = user->default_database;
+    std::shared_ptr<const SettingsProfilesInfo> profiles;
+    if (set_current_profiles_)
+        profiles = temp_access->getDefaultProfileInfo();
+
+    std::optional<std::vector<UUID>> roles;
+    if (set_current_roles_)
+        roles = user->granted_roles.findGranted(user->default_roles);
+
+    String database;
+    if (set_current_database_)
+        database = user->default_database;
 
     /// Apply user's profiles, constraints, settings, roles.
-
     auto lock = getLock();
 
     setUserID(user_id_);
 
-    /// A profile can specify a value and a readonly constraint for same setting at the same time,
-    /// so we shouldn't check constraints here.
-    setCurrentProfiles(*enabled_profiles, /* check_constraints= */ false);
+    if (profiles)
+    {
+        /// A profile can specify a value and a readonly constraint for same setting at the same time,
+        /// so we shouldn't check constraints here.
+        setCurrentProfiles(*profiles, /* check_constraints= */ false);
+    }
 
-    setCurrentRoles(new_current_roles);
+    if (roles)
+        setCurrentRoles(*roles);
 
-    /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
         setCurrentDatabase(database);
 }
@@ -1140,6 +1151,13 @@ std::optional<UUID> Context::getUserID() const
 {
     auto lock = getLock();
     return user_id;
+}
+
+
+void Context::setQuotaKey(String quota_key_)
+{
+    auto lock = getLock();
+    client_info.quota_key = std::move(quota_key_);
 }
 
 
@@ -1282,7 +1300,7 @@ void Context::setCurrentProfiles(const SettingsProfilesInfo & profiles_info, boo
 {
     auto lock = getLock();
     if (check_constraints)
-        checkSettingsConstraints(profiles_info.settings, SettingSource::PROFILE);
+        checkSettingsConstraints(profiles_info.settings);
     applySettingsChanges(profiles_info.settings);
     settings_constraints_and_current_profiles = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
 }
@@ -1562,21 +1580,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     {
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
         {
-            auto query = table->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
-            NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression);
-            StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
-
-            ASTCreateQuery create;
-            create.select = query->as<ASTSelectWithUnionQuery>();
-            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, getQueryContext());
-            auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
-                                                     create,
-                                                     ColumnsDescription(sample_block.getNamesAndTypesList()),
-                                                     /* comment */ "",
-                                                     /* is_parameterized_view */ true);
-            res->startup();
             function->prefer_subquery_to_function_formatting = true;
-            return res;
+            return table;
         }
     }
     auto hash = table_expression->getTreeHash();
@@ -1836,29 +1841,29 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 }
 
 
-void Context::checkSettingsConstraints(const SettingsProfileElements & profile_elements, SettingSource source) const
+void Context::checkSettingsConstraints(const SettingsProfileElements & profile_elements) const
 {
-    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, profile_elements, source);
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, profile_elements);
 }
 
-void Context::checkSettingsConstraints(const SettingChange & change, SettingSource source) const
+void Context::checkSettingsConstraints(const SettingChange & change) const
 {
-    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, change, source);
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, change);
 }
 
-void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingSource source) const
+void Context::checkSettingsConstraints(const SettingsChanges & changes) const
 {
-    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, changes, source);
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, changes);
 }
 
-void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source) const
+void Context::checkSettingsConstraints(SettingsChanges & changes) const
 {
-    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, changes, source);
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, changes);
 }
 
-void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSource source) const
+void Context::clampToSettingsConstraints(SettingsChanges & changes) const
 {
-    getSettingsConstraintsAndCurrentProfiles()->constraints.clamp(settings, changes, source);
+    getSettingsConstraintsAndCurrentProfiles()->constraints.clamp(settings, changes);
 }
 
 void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
@@ -2690,10 +2695,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     if (!shared->zookeeper)
         shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
-    else if (shared->zookeeper->hasReachedDeadline())
-        shared->zookeeper->finalize("ZooKeeper session has reached its deadline");
-
-    if (shared->zookeeper->expired())
+    else if (shared->zookeeper->expired())
     {
         Stopwatch watch;
         LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
@@ -2901,6 +2903,16 @@ std::map<String, zkutil::ZooKeeperPtr> Context::getAuxiliaryZooKeepers() const
 }
 
 #if USE_ROCKSDB
+MergeTreeMetadataCachePtr Context::getMergeTreeMetadataCache() const
+{
+    auto cache = tryGetMergeTreeMetadataCache();
+    if (!cache)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Merge tree metadata cache is not initialized, please add config merge_tree_metadata_cache in config.xml and restart");
+    return cache;
+}
+
 MergeTreeMetadataCachePtr Context::tryGetMergeTreeMetadataCache() const
 {
     return shared->merge_tree_metadata_cache;
@@ -3053,7 +3065,7 @@ UInt16 Context::getServerPort(const String & port_name) const
 {
     auto it = shared->server_ports.find(port_name);
     if (it == shared->server_ports.end())
-        throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "There is no port named {}", port_name);
+        throw Exception(ErrorCodes::BAD_GET, "There is no port named {}", port_name);
     else
         return it->second;
 }
@@ -3062,7 +3074,7 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) c
 {
     if (auto res = tryGetCluster(cluster_name))
         return res;
-    throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "Requested cluster '{}' not found", cluster_name);
+    throw Exception(ErrorCodes::BAD_GET, "Requested cluster '{}' not found", cluster_name);
 }
 
 
@@ -3197,12 +3209,6 @@ void Context::initializeMergeTreeMetadataCache(const String & dir, size_t size)
     shared->merge_tree_metadata_cache = MergeTreeMetadataCache::create(dir, size);
 }
 #endif
-
-/// Call after unexpected crash happen.
-void Context::handleCrash() const
-{
-    shared->system_logs->handleCrash();
-}
 
 bool Context::hasTraceCollector() const
 {
@@ -4528,6 +4534,14 @@ ReadSettings Context::getReadSettings() const
     res.mmap_cache = getMMappedFileCache().get();
 
     return res;
+}
+
+ReadSettings Context::getBackupReadSettings() const
+{
+    ReadSettings read_settings = getReadSettings();
+    read_settings.remote_throttler = getBackupsThrottler();
+    read_settings.local_throttler = getBackupsThrottler();
+    return read_settings;
 }
 
 WriteSettings Context::getWriteSettings() const

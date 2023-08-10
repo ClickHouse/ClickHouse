@@ -91,7 +91,7 @@ def get_gh_api(
 
 
 def get_build_name_for_check(check_name: str) -> str:
-    return CI_CONFIG.test_configs[check_name].required_build
+    return CI_CONFIG["tests_config"][check_name]["required_build"]  # type: ignore
 
 
 def read_build_urls(build_name: str, reports_path: str) -> List[str]:
