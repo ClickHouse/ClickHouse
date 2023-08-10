@@ -53,7 +53,8 @@ public:
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    CheckResults checkData(const ASTPtr & query, ContextPtr ocal_context) override;
+    DataValidationTasksPtr getCheckTaskList(const ASTPtr & query, ContextPtr context) override;
+    CheckResult checkDataNext(DataValidationTasksPtr & check_task_list, bool & has_nothing_to_do) override;
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
@@ -92,6 +93,20 @@ private:
 
     const DiskPtr disk;
     String table_path;
+
+    struct DataValidationTasks : public IStorage::DataValidationTasksBase
+    {
+        DataValidationTasks(FileChecker::DataValidationTasksPtr file_checker_tasks_, ReadLock && lock_)
+            : file_checker_tasks(std::move(file_checker_tasks_)), lock(std::move(lock_))
+        {}
+
+        size_t size() const override { return file_checker_tasks->size(); }
+
+        FileChecker::DataValidationTasksPtr file_checker_tasks;
+
+        /// Lock to prevent table modification while checking
+        ReadLock lock;
+    };
 
     String data_file_path;
     String index_file_path;
