@@ -1,15 +1,17 @@
 #ifdef ENABLE_QPL_COMPRESSION
+
 #include <cstdio>
 #include <thread>
 #include <Compression/CompressionCodecDeflateQpl.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 #include "libaccel_config.h"
 #include <Common/MemorySanitizer.h>
 #include <base/scope_guard.h>
+#include <immintrin.h>
+
 
 namespace DB
 {
