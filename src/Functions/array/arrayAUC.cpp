@@ -139,7 +139,7 @@ private:
         for (size_t i = 0; i < size; ++i)
         {
             auto next_offset = offsets[i];
-            result[i] = apply(data1, data2, current_offset, next_offset);
+            result[i] = apply(scores, labels, current_offset, next_offset);
             current_offset = next_offset;
         }
     }
