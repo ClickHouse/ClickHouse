@@ -28,6 +28,11 @@ public:
         return group_nodes;
     }
 
+    std::vector<GroupNode> & getGroupNodes()
+    {
+        return group_nodes;
+    }
+
 private:
     std::vector<GroupNode> group_nodes;
 

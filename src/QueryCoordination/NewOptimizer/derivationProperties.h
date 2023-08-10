@@ -26,6 +26,7 @@
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <QueryCoordination/NewOptimizer/PhysicalProperties.h>
+#include <QueryCoordination/NewOptimizer/GroupNode.h>
 
 
 namespace DB
@@ -35,46 +36,88 @@ namespace DB
 //
 //    SortDescription sort_description;
 
-PhysicalProperties derivationProperties(ReadFromMergeTree & /*step*/)
+OutPutPropAndRequiredChildProp derivationProperties(ReadFromMergeTree & /*step*/)
 {
     //    TODO sort_description by pk, DistributionType by distributed table
-    return {.distribution = {.type = PhysicalProperties::DistributionType::Random}};
+    OutPutPropAndRequiredChildProp res;
+    PhysicalProperties properties{.distribution = {.type = PhysicalProperties::DistributionType::Any}};
+    res[properties];
+    return res;
 };
 
-PhysicalProperties derivationProperties(AggregatingStep & step)
+OutPutPropAndRequiredChildProp derivationProperties(AggregatingStep & step)
 {
+    OutPutPropAndRequiredChildProp res;
+
     if (step.isFinal())
     {
-        return {.distribution = {.type = PhysicalProperties::DistributionType::Gather}};
+        PhysicalProperties properties{.distribution = {.type = PhysicalProperties::DistributionType::Singleton}};
+
+        AlternativeProperties alternative_properties;
+
+        std::vector<PhysicalProperties> required_child_prop;
+
+        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
+
+        alternative_properties.emplace_back(required_child_prop);
+
+        res[properties] = alternative_properties;
+        return res;
     }
     else
     {
-        return {.distribution = {.type = PhysicalProperties::DistributionType::Random}};
+        /// TODO Hashed by bucket
+        PhysicalProperties properties{.distribution = {.type = PhysicalProperties::DistributionType::Any}};
+
+        AlternativeProperties alternative_properties;
+        std::vector<PhysicalProperties> required_child_prop;
+        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
+
+        res[properties] = alternative_properties;
+
+
+        PhysicalProperties properties{.distribution = {.type = PhysicalProperties::DistributionType::Any}};
+
+        std::vector<PhysicalProperties> required_child_prop1;
+
+        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
+
+
+
+        return res;
     }
 };
 
-PhysicalProperties derivationProperties(MergingAggregatedStep & step)
+OutPutPropAndRequiredChildProp derivationProperties(MergingAggregatedStep & step)
 {
-    return {.distribution = {.type = PhysicalProperties::DistributionType::Hash, .keys = step.getParams().keys}};
+    OutPutPropAndRequiredChildProp res;
+    PhysicalProperties properties{.distribution = {.type = PhysicalProperties::DistributionType::Any}};
+    std::vector<PhysicalProperties> required_child_prop;
+
+    required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Hashed}});
+
+    res[properties] = required_child_prop;
+
+    return res;
 };
 
-PhysicalProperties derivationProperties(SortingStep & step)
-{
-
-};
-
-PhysicalProperties derivationProperties(JoinStep & step)
-{
-
-};
-
-PhysicalProperties derivationProperties(UnionStep & step)
+OutPutPropAndRequiredChildProp derivationProperties(SortingStep & step)
 {
 
 };
 
+OutPutPropAndRequiredChildProp derivationProperties(JoinStep & step)
+{
 
-PhysicalProperties derivationProperties(QueryPlanStepPtr step)
+};
+
+OutPutPropAndRequiredChildProp derivationProperties(UnionStep & step)
+{
+
+};
+
+
+OutPutPropAndRequiredChildProp derivationProperties(QueryPlanStepPtr step)
 {
     if (auto * scan_step = dynamic_cast<ReadFromMergeTree *>(step.get()))
     {

@@ -7,6 +7,10 @@
 namespace DB
 {
 
+using AlternativeProperties = std::vector<std::vector<PhysicalProperties>>;
+
+using OutPutPropAndRequiredChildProp = std::unordered_map<PhysicalProperties, AlternativeProperties, PhysicalProperties::HashFunction>;
+
 class GroupNode
 {
 public:
@@ -39,12 +43,22 @@ public:
         return step;
     }
 
+    void addOutPutProperties(const PhysicalProperties & physical_properties)
+    {
+        lowest_cost_expressions[physical_properties];
+    }
+
+    OutPutPropAndRequiredChildProp & getOutPutPropAndRequiredChildProp()
+    {
+        return lowest_cost_expressions;
+    }
+
 private:
     QueryPlanStepPtr step;
 
     std::vector<Group *> children;
 
-    std::unordered_map<PhysicalProperties, std::vector<PhysicalProperties>, PhysicalProperties::HashFunction> lowest_cost_expressions; /// output properties and input properties
+    OutPutPropAndRequiredChildProp lowest_cost_expressions; /// output properties and input properties
 };
 
 }

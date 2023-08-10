@@ -13,11 +13,9 @@ public:
     enum DistributionType : int8_t
     {
         Any = 1,
-        Random = 2,
-        Serial = 3, /// exchange merge
-        Broadcast = 4,
-        Hash = 5,
-        Gather = 6,
+        Singleton = 2,
+        Replicated = 3,
+        Hashed = 4,
     };
 
 

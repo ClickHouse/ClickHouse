@@ -119,20 +119,55 @@ void Memo::transform(Group * group, std::unordered_map<Group *, std::vector<SubQ
 
 void Memo::enforce()
 {
-    enforce(root_group);
+    enforce(root_group, PhysicalProperties{.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
 }
 
-void Memo::enforce(Group * group)
+void Memo::enforce(Group * group, const PhysicalProperties & required_properties)
 {
-    const auto & group_nodes = group->getGroupNodes();
+    auto & group_nodes = group->getGroupNodes();
 
-    for (const auto & group_node : group_nodes)
+    for (auto & group_node : group_nodes)
     {
-        const auto & step = group_node.getStep();
+        auto output_prop_required_child_prop = DB::derivationProperties(group_node.getStep());
 
-        for (auto * child_group : group_node.getChildren())
+        for (auto & [output_properties, required_child_prop] : output_prop_required_child_prop)
         {
-            enforce(child_group);
+            if (required_properties.distribution.type != PhysicalProperties::DistributionType::Any && required_properties != output_properties)
+            {
+                switch (required_properties.distribution.type)
+                {
+                    case PhysicalProperties::DistributionType::Singleton:
+                    {
+                        //  GroupNode group_enforce_node(ExchangeDataStep(Singleton));
+                        GroupNode group_enforce_singleton_node;
+                        group_enforce_singleton_node.addOutPutProperties(required_properties);
+                        group->addGroupNode(group_enforce_singleton_node);
+                    }
+                    case PhysicalProperties::DistributionType::Replicated:
+                    {
+                        //  GroupNode group_enforce_node(ExchangeDataStep(Singleton));
+                        GroupNode group_enforce_replicated_node;
+                        group_enforce_replicated_node.addOutPutProperties(required_properties);
+                        group->addGroupNode(group_enforce_replicated_node);
+                    }
+                    case PhysicalProperties::DistributionType::Hashed:
+                    {
+                        //  GroupNode group_enforce_node(ExchangeDataStep(Singleton));
+                        GroupNode group_enforce_hashed_node;
+                        group_enforce_hashed_node.addOutPutProperties(required_properties);
+                        group->addGroupNode(group_enforce_hashed_node);
+                    }
+                    default:
+                        break;
+                }
+            }
+
+            const auto & step = group_node.getStep();
+
+            for (auto * child_group : group_node.getChildren())
+            {
+                enforce(child_group, required_child_prop);
+            }
         }
     }
 }
@@ -145,12 +180,14 @@ void Memo::derivationProperties()
 
 void Memo::derivationProperties(Group * group)
 {
-    const auto & group_nodes = group->getGroupNodes();
+    auto & group_nodes = group->getGroupNodes();
 
-    for (const auto & group_node : group_nodes)
+    for (auto & group_node : group_nodes)
     {
         const auto & step = group_node.getStep();
-        auto properties = derivationProperties(step);
+        auto properties = DB::derivationProperties(step);
+
+        group_node.addOutPutProperties(properties);
 
         for (auto * child_group : group_node.getChildren())
         {
