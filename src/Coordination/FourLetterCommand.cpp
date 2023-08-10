@@ -577,7 +577,6 @@ String FeatureFlagsCommand::run()
     }
 
     return ret.str();
-
 }
 
 }
