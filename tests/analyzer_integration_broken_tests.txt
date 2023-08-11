@@ -139,6 +139,7 @@ test_quota/test.py::test_tracking_quota
 test_quota/test.py::test_users_xml_is_readonly
 test_replicating_constants/test.py::test_different_versions
 test_merge_tree_s3/test.py::test_heavy_insert_select_check_memory[node]
+test_wrong_db_or_table_name/test.py::test_wrong_table_name
 test_drop_is_lock_free/test.py::test_query_is_lock_free[detach table]
 test_odbc_interaction/test.py::test_postgres_insert
 test_zookeeper_config/test.py::test_chroot_with_different_root
