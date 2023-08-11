@@ -10,6 +10,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/misc.h>
+#include "Common/logger_useful.h"
 #include <Common/typeid_cast.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/ActionsDAG.h>
@@ -20,7 +21,7 @@ namespace DB
 
 /// Conditions like "x = N" are considered good if abs(N) > threshold.
 /// This is used to assume that condition is likely to have good selectivity.
-/// static constexpr auto threshold = 2;
+static constexpr auto threshold = 2;
 
 static NameToIndexMap fillNamesPositions(const Names & names)
 {
@@ -74,6 +75,8 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
         if (it != column_sizes.end())
             total_size_of_queried_columns += it->second;
     }
+
+    LOG_DEBUG(log, "pk columns size : {}", metadata_snapshot->getPrimaryKey().column_names.size());
 }
 
 void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, const ContextPtr & context) const
@@ -92,6 +95,7 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
     where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef().move_all_conditions_to_prewhere;
     where_optimizer_context.move_primary_key_columns_to_end_of_prewhere = context->getSettingsRef().move_primary_key_columns_to_end_of_prewhere;
     where_optimizer_context.is_final = select.final();
+    where_optimizer_context.use_statistic = context->getSettingsRef().allow_statistic_optimize;
 
     RPNBuilderTreeContext tree_context(context, std::move(block_with_constants), {} /*prepared_sets*/);
     RPNBuilderTreeNode node(select.where().get(), tree_context);
@@ -122,6 +126,7 @@ std::optional<MergeTreeWhereOptimizer::FilterActionsOptimizeResult> MergeTreeWhe
     where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef().move_all_conditions_to_prewhere;
     where_optimizer_context.move_primary_key_columns_to_end_of_prewhere = context->getSettingsRef().move_primary_key_columns_to_end_of_prewhere;
     where_optimizer_context.is_final = is_final;
+    where_optimizer_context.use_statistic = context->getSettingsRef().allow_statistic_optimize;
 
     RPNBuilderTreeContext tree_context(context);
     RPNBuilderTreeNode node(&filter_dag->findInOutputs(filter_column_name), tree_context);
@@ -167,66 +172,66 @@ static void collectColumns(const RPNBuilderTreeNode & node, const NameSet & colu
     }
 }
 
-/// static bool isConditionGood(const RPNBuilderTreeNode & condition, const NameSet & columns_names)
-/// {
-///     if (!condition.isFunction())
-///         return false;
-///
-///     auto function_node = condition.toFunctionNode();
-///
-///     /** We are only considering conditions of form `equals(one, another)` or `one = another`,
-///       * especially if either `one` or `another` is ASTIdentifier
-///       */
-///     if (function_node.getFunctionName() != "equals" || function_node.getArgumentsSize() != 2)
-///         return false;
-///
-///     auto lhs_argument = function_node.getArgumentAt(0);
-///     auto rhs_argument = function_node.getArgumentAt(1);
-///
-///     auto lhs_argument_column_name = lhs_argument.getColumnName();
-///     auto rhs_argument_column_name = rhs_argument.getColumnName();
-///
-///     bool lhs_argument_is_column = columns_names.contains(lhs_argument_column_name);
-///     bool rhs_argument_is_column = columns_names.contains(rhs_argument_column_name);
-///
-///     bool lhs_argument_is_constant = lhs_argument.isConstant();
-///     bool rhs_argument_is_constant = rhs_argument.isConstant();
-///
-///     RPNBuilderTreeNode * constant_node = nullptr;
-///
-///     if (lhs_argument_is_column && rhs_argument_is_constant)
-///         constant_node = &rhs_argument;
-///     else if (lhs_argument_is_constant && rhs_argument_is_column)
-///         constant_node = &lhs_argument;
-///     else
-///         return false;
-///
-///     Field output_value;
-///     DataTypePtr output_type;
-///     if (!constant_node->tryGetConstant(output_value, output_type))
-///         return false;
-///
-///     const auto type = output_value.getType();
-///
-///     /// check the value with respect to threshold
-///     if (type == Field::Types::UInt64)
-///     {
-///         const auto value = output_value.get<UInt64>();
-///         return value > threshold;
-///     }
-///     else if (type == Field::Types::Int64)
-///     {
-///         const auto value = output_value.get<Int64>();
-///         return value < -threshold || threshold < value;
-///     }
-///     else if (type == Field::Types::Float64)
-///     {
-///         const auto value = output_value.get<Float64>();
-///         return value < threshold || threshold < value;
-///     }
-///
-///     return false;
-/// }
+static bool isConditionGood(const RPNBuilderTreeNode & condition, const NameSet & columns_names)
+{
+    if (!condition.isFunction())
+        return false;
+
+    auto function_node = condition.toFunctionNode();
+
+    /** We are only considering conditions of form `equals(one, another)` or `one = another`,
+      * especially if either `one` or `another` is ASTIdentifier
+      */
+    if (function_node.getFunctionName() != "equals" || function_node.getArgumentsSize() != 2)
+        return false;
+
+    auto lhs_argument = function_node.getArgumentAt(0);
+    auto rhs_argument = function_node.getArgumentAt(1);
+
+    auto lhs_argument_column_name = lhs_argument.getColumnName();
+    auto rhs_argument_column_name = rhs_argument.getColumnName();
+
+    bool lhs_argument_is_column = columns_names.contains(lhs_argument_column_name);
+    bool rhs_argument_is_column = columns_names.contains(rhs_argument_column_name);
+
+    bool lhs_argument_is_constant = lhs_argument.isConstant();
+    bool rhs_argument_is_constant = rhs_argument.isConstant();
+
+    RPNBuilderTreeNode * constant_node = nullptr;
+
+    if (lhs_argument_is_column && rhs_argument_is_constant)
+        constant_node = &rhs_argument;
+    else if (lhs_argument_is_constant && rhs_argument_is_column)
+        constant_node = &lhs_argument;
+    else
+        return false;
+
+    Field output_value;
+    DataTypePtr output_type;
+    if (!constant_node->tryGetConstant(output_value, output_type))
+        return false;
+
+    const auto type = output_value.getType();
+
+    /// check the value with respect to threshold
+    if (type == Field::Types::UInt64)
+    {
+        const auto value = output_value.get<UInt64>();
+        return value > threshold;
+    }
+    else if (type == Field::Types::Int64)
+    {
+        const auto value = output_value.get<Int64>();
+        return value < -threshold || threshold < value;
+    }
+    else if (type == Field::Types::Float64)
+    {
+        const auto value = output_value.get<Float64>();
+        return value < threshold || threshold < value;
+    }
+
+    return false;
+}
 
 void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const
 {
@@ -264,13 +269,23 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             && cond.table_columns.size() < queried_columns.size();
 
         if (cond.viable)
+            cond.good = isConditionGood(node, table_columns);
+
+        if (where_optimizer_context.use_statistic)
+        {
+            cond.good = cond.viable;
+
             cond.selectivity = estimator.estimateSelectivity(node);
+        }
 
         if (where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
         {
+            /// Consider all conditions good with this setting enabled.
+            cond.good = cond.viable;
             /// Find min position in PK of any column that is used in this condition.
             cond.min_position_in_primary_key = findMinPosition(cond.table_columns, primary_key_names_positions);
         }
+        LOG_DEBUG(log, "node {}, min pos : {}", node.getASTNode()->dumpTree(), cond.min_position_in_primary_key);
 
         res.emplace_back(std::move(cond));
     }
