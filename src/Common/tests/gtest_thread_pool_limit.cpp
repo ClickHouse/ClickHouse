@@ -1,5 +1,4 @@
 #include <atomic>
-#include <iostream>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 
