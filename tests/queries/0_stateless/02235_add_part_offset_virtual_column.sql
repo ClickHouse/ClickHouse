@@ -10,7 +10,7 @@ CREATE TABLE t_1
     `granule` MATERIALIZED cast(`order_0` / 0x2000 AS UInt64) % 3,
     INDEX `index_granule` `granule` TYPE minmax GRANULARITY 1
 )
-ENGINE = MergeTree
+ENGINE = MergeTree SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi'
 PARTITION BY toYYYYMM(p_time)
 ORDER BY order_0;
 
