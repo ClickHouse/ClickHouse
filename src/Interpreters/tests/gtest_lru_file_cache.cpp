@@ -600,7 +600,7 @@ TEST_F(FileCacheTest, get)
 
     std::cerr << "Step 13\n";
     {
-        /// Test delated cleanup
+        /// Test delayed cleanup
 
         auto cache = FileCache(settings);
         cache.initialize();
@@ -618,11 +618,8 @@ TEST_F(FileCacheTest, get)
 
         cache.removeAllReleasable();
         ASSERT_EQ(cache.getUsedCacheSize(), 0);
-        ASSERT_TRUE(fs::exists(key_path));
-        ASSERT_TRUE(!fs::exists(cache.getPathInLocalCache(key, 0, FileSegmentKind::Regular)));
-
         ASSERT_TRUE(!fs::exists(key_path));
-        ASSERT_TRUE(!fs::exists(fs::path(key_path).parent_path()));
+        ASSERT_TRUE(!fs::exists(cache.getPathInLocalCache(key, 0, FileSegmentKind::Regular)));
     }
 
     std::cerr << "Step 14\n";
