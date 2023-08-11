@@ -48,8 +48,8 @@ struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
     KeyMetadata(
         const Key & key_,
         const std::string & key_path_,
-        CleanupQueue & cleanup_queue_,
-        DownloadQueue & download_queue_,
+        CleanupQueuePtr cleanup_queue_,
+        DownloadQueuePtr download_queue_,
         Poco::Logger * log_,
         std::shared_mutex & key_prefix_directory_mutex_,
         bool created_base_directory_ = false);
@@ -78,8 +78,8 @@ struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
 private:
     KeyState key_state = KeyState::ACTIVE;
     KeyGuard guard;
-    CleanupQueue & cleanup_queue;
-    DownloadQueue & download_queue;
+    CleanupQueuePtr cleanup_queue;
+    DownloadQueuePtr download_queue;
     std::shared_mutex & key_prefix_directory_mutex;
     std::atomic<bool> created_base_directory = false;
     Poco::Logger * log;
@@ -144,8 +144,8 @@ private:
     CacheMetadataGuard::Lock lockMetadata() const;
     const std::string path; /// Cache base path
     mutable CacheMetadataGuard guard;
-    const CleanupQueuePtr cleanup_queue;
-    const DownloadQueuePtr download_queue;
+    CleanupQueuePtr cleanup_queue;
+    DownloadQueuePtr download_queue;
     std::shared_mutex key_prefix_directory_mutex;
     Poco::Logger * log;
 
