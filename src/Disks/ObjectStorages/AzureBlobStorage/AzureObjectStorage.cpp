@@ -357,6 +357,8 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path) c
 void AzureObjectStorage::copyObject( /// NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
+    const ReadSettings &,
+    const WriteSettings &,
     std::optional<ObjectAttributes> object_to_attributes)
 {
     auto client_ptr = client.get();
