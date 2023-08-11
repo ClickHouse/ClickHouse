@@ -357,7 +357,7 @@ void registerCodecGCD(CompressionCodecFactory & factory)
     auto codec_builder = [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
 
-        if (arguments && !arguments->children.empty() && !arguments->children.empty())
+        if (arguments && !arguments->children.empty())
             throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Delta codec must have 0 parameters, given {}", arguments->children.size());
 
         /// Default bytes size is 1.
