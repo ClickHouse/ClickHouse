@@ -75,8 +75,6 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
         if (it != column_sizes.end())
             total_size_of_queried_columns += it->second;
     }
-
-    LOG_DEBUG(log, "pk columns size : {}", metadata_snapshot->getPrimaryKey().column_names.size());
 }
 
 void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, const ContextPtr & context) const
@@ -285,7 +283,6 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             /// Find min position in PK of any column that is used in this condition.
             cond.min_position_in_primary_key = findMinPosition(cond.table_columns, primary_key_names_positions);
         }
-        LOG_DEBUG(log, "node {}, min pos : {}", node.getASTNode()->dumpTree(), cond.min_position_in_primary_key);
 
         res.emplace_back(std::move(cond));
     }
