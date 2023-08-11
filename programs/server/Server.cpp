@@ -389,7 +389,7 @@ int Server::run()
     }
     if (config().hasOption("version"))
     {
-        std::cout << DBMS_NAME << " server version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
+        std::cout << VERSION_NAME << " server version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
         return 0;
     }
     return Application::run(); // NOLINT
