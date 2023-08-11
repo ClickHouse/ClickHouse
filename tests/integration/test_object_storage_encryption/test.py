@@ -4,6 +4,7 @@ import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
+
 @pytest.fixture(scope="module")
 def cluster():
     try:
@@ -22,43 +23,75 @@ def cluster():
 
 
 disks = {
-    "encrypted": [('encrypted', False, 'enc')],
-    "cached": [('encrypted_cached', False, 'enc'),
-               ('cached', True, 'cache'),],
-    "cached_write": [('encrypted_cached_write', False, 'enc'),
-                     ('cached_write', False, 'cache'),],
-    "header_cache": [('encrypted_header_cache', False, 'enc'),
-                     ('header_cache', True, 'header'),],
-    "header_cache_write": [('encrypted_header_cache_write', False, 'enc'),
-                           ('header_cache_write', False, 'header'),],
-    "cache_with_header_cache": [('encrypted_cache_with_header_cache', False, 'enc'),
-                                ('cache_with_header_cache', True, 'header'),
-                                ('cached_with_header_cache', True, 'cache'),],
-    "cache_with_header_cache_write": [('encrypted_cache_with_header_cache_write', False, 'enc'),
-                                      ('cache_with_header_cache_write', False, 'header'),
-                                      ('cached_with_header_cache_write', True, 'cache'),],
-    "cache_write_with_header_cache": [('encrypted_cache_write_with_header_cache', False, 'enc'),
-                                      ('cache_write_with_header_cache', True, 'header'),
-                                      ('cached_write_with_header_cache', False, 'cache'),],
-    "cache_write_with_header_cache_write": [('encrypted_cache_write_with_header_cache_write', False, 'enc'),
-                                            ('cache_write_with_header_cache_write', False, 'header'),
-                                            ('cached_write_with_header_cache_write', False, 'cache'),],
+    "encrypted": [("encrypted", False, "enc")],
+    "cached": [
+        ("encrypted_cached", False, "enc"),
+        ("cached", True, "cache"),
+    ],
+    "cached_write": [
+        ("encrypted_cached_write", False, "enc"),
+        ("cached_write", False, "cache"),
+    ],
+    "header_cache": [
+        ("encrypted_header_cache", False, "enc"),
+        ("header_cache", True, "header"),
+    ],
+    "header_cache_write": [
+        ("encrypted_header_cache_write", False, "enc"),
+        ("header_cache_write", False, "header"),
+    ],
+    "cache_with_header_cache": [
+        ("encrypted_cache_with_header_cache", False, "enc"),
+        ("cache_with_header_cache", True, "header"),
+        ("cached_with_header_cache", True, "cache"),
+    ],
+    "cache_with_header_cache_write": [
+        ("encrypted_cache_with_header_cache_write", False, "enc"),
+        ("cache_with_header_cache_write", False, "header"),
+        ("cached_with_header_cache_write", True, "cache"),
+    ],
+    "cache_write_with_header_cache": [
+        ("encrypted_cache_write_with_header_cache", False, "enc"),
+        ("cache_write_with_header_cache", True, "header"),
+        ("cached_write_with_header_cache", False, "cache"),
+    ],
+    "cache_write_with_header_cache_write": [
+        ("encrypted_cache_write_with_header_cache_write", False, "enc"),
+        ("cache_write_with_header_cache_write", False, "header"),
+        ("cached_write_with_header_cache_write", False, "cache"),
+    ],
     "s3encrypted": [],
-    "s3cached": [('s3_cached', True, 'cache'),],
-    "s3cached_write": [('s3_cached_write', False, 'cache'),],
-    "s3header_cache": [('s3_header_cache', True, 'header'),],
-    "s3header_cache_write": [('s3_header_cache_write', False, 'header'),],
-    "s3cache_with_header_cache": [('s3_cache_with_header_cache', True, 'header'),
-                                  ('s3_cached_with_header_cache', True, 'cache'),],
-    "s3cache_with_header_cache_write": [('s3_cache_with_header_cache_write', False, 'header'),
-                                        ('s3_cached_with_header_cache_write', True, 'cache'),],
-    "s3cache_write_with_header_cache": [('s3_cache_write_with_header_cache', True, 'header'),
-                                        ('s3_cached_write_with_header_cache', False, 'cache'),],
-    "s3cache_write_with_header_cache_write": [('s3_cache_write_with_header_cache_write', False, 'header'),
-                                              ('s3_cached_write_with_header_cache_write', False, 'cache'),],
-    }
+    "s3cached": [
+        ("s3_cached", True, "cache"),
+    ],
+    "s3cached_write": [
+        ("s3_cached_write", False, "cache"),
+    ],
+    "s3header_cache": [
+        ("s3_header_cache", True, "header"),
+    ],
+    "s3header_cache_write": [
+        ("s3_header_cache_write", False, "header"),
+    ],
+    "s3cache_with_header_cache": [
+        ("s3_cache_with_header_cache", True, "header"),
+        ("s3_cached_with_header_cache", True, "cache"),
+    ],
+    "s3cache_with_header_cache_write": [
+        ("s3_cache_with_header_cache_write", False, "header"),
+        ("s3_cached_with_header_cache_write", True, "cache"),
+    ],
+    "s3cache_write_with_header_cache": [
+        ("s3_cache_write_with_header_cache", True, "header"),
+        ("s3_cached_write_with_header_cache", False, "cache"),
+    ],
+    "s3cache_write_with_header_cache_write": [
+        ("s3_cache_write_with_header_cache_write", False, "header"),
+        ("s3_cached_write_with_header_cache_write", False, "cache"),
+    ],
+}
 # headers won't be cached on read if the full file is already cached
-ingore_empty = ['cache_write_with_header_cache', 's3_cache_write_with_header_cache']
+ingore_empty = ["cache_write_with_header_cache", "s3_cache_write_with_header_cache"]
 HEADER_SIZE = 64
 
 
@@ -73,22 +106,22 @@ def cleanup_after_test(cluster):
 
 def helper_check_all_files_encrypted(path, header_only=False):
     for root, _, files in os.walk(path):
-            for fname in files:
-                f = os.path.join(root, fname)
-                with open(f, 'rb') as fd:
-                    assert fd.read(3) == b'ENC'
-                if header_only:
-                    assert os.path.getsize(f) == HEADER_SIZE
-                else:
-                    assert os.path.getsize(f) >= HEADER_SIZE
+        for fname in files:
+            f = os.path.join(root, fname)
+            with open(f, "rb") as fd:
+                assert fd.read(3) == b"ENC"
+            if header_only:
+                assert os.path.getsize(f) == HEADER_SIZE
+            else:
+                assert os.path.getsize(f) >= HEADER_SIZE
 
 
 def helper_check_no_files_encrypted(path):
     for root, _, files in os.walk(path):
-            for fname in files:
-                f = os.path.join(root, fname)
-                with open(f, 'rb') as fd:
-                    assert fd.read(3) != b'ENC'
+        for fname in files:
+            f = os.path.join(root, fname)
+            with open(f, "rb") as fd:
+                assert fd.read(3) != b"ENC"
 
 
 def is_empty(path):
@@ -108,7 +141,7 @@ def assert_not_empty(path):
 
 
 def helper_checks(node, policy, pre_select):
-    root_path = os.path.join(node.cluster.instances_dir, 'vardisks')
+    root_path = os.path.join(node.cluster.instances_dir, "vardisks")
     for name, after_select, disk_type in disks[policy]:
         disk = os.path.join(root_path, name)
         if pre_select and after_select:
@@ -116,18 +149,18 @@ def helper_checks(node, policy, pre_select):
         else:
             if name not in ingore_empty:
                 assert_not_empty(disk)
-            if disk_type == 'enc':
+            if disk_type == "enc":
                 helper_check_all_files_encrypted(disk)
-            elif disk_type == 'cache':
+            elif disk_type == "cache":
                 helper_check_no_files_encrypted(disk)
-            elif disk_type == 'header':
+            elif disk_type == "header":
                 helper_check_all_files_encrypted(disk, header_only=True)
             else:
                 assert False
     for current_policy, disks_list in disks.items():
         if current_policy != policy:
             for name, _, disk_type in disks_list:
-                if disk_type != 'cache' and disk_type != 'header':
+                if disk_type != "cache" and disk_type != "header":
                     disk = os.path.join(root_path, name)
                     assert_empty(disk)
 
@@ -156,7 +189,9 @@ def test_encrypted_os_disk(cluster, policy):
         )
     )
 
-    node.query("INSERT INTO encrypted_test SETTINGS enable_filesystem_cache_on_write_operations=1 VALUES (0,'data'),(1,'data')")
+    node.query(
+        "INSERT INTO encrypted_test SETTINGS enable_filesystem_cache_on_write_operations=1 VALUES (0,'data'),(1,'data')"
+    )
 
     helper_first_insert_check(node, policy)
 
@@ -173,9 +208,15 @@ def test_encrypted_os_disk(cluster, policy):
 
     assert node.query(select_query) == "(0,'data'),(1,'data'),(2,'data'),(3,'data')"
     node.query("INSERT INTO encrypted_test VALUES (4,'data'),(5,'data')")
-    assert node.query(select_query) == "(0,'data'),(1,'data'),(2,'data'),(3,'data'),(4,'data'),(5,'data')"
+    assert (
+        node.query(select_query)
+        == "(0,'data'),(1,'data'),(2,'data'),(3,'data'),(4,'data'),(5,'data')"
+    )
     node.query("OPTIMIZE TABLE encrypted_test FINAL")
-    assert node.query(select_query) == "(0,'data'),(1,'data'),(2,'data'),(3,'data'),(4,'data'),(5,'data')"
+    assert (
+        node.query(select_query)
+        == "(0,'data'),(1,'data'),(2,'data'),(3,'data'),(4,'data'),(5,'data')"
+    )
 
     helper_after_select_check(node, policy)
 
@@ -214,7 +255,7 @@ def test_part_move(cluster, policy, destination_disks):
     select_query = "SELECT * FROM encrypted_test ORDER BY id FORMAT Values"
     assert node.query(select_query) == "(0,'data'),(1,'data')"
 
-    part_name_tmpl = 'all_1_1_{}'
+    part_name_tmpl = "all_1_1_{}"
     part_count = 0
     for destination_disk in destination_disks:
         part_name = part_name_tmpl.format(part_count)
@@ -238,7 +279,7 @@ def test_part_move(cluster, policy, destination_disks):
         assert node.query(select_query) == "(0,'data'),(1,'data')"
 
 
-@pytest.mark.parametrize("policy", ['encrypted', 's3encrypted'])
+@pytest.mark.parametrize("policy", ["encrypted", "s3encrypted"])
 def test_log_family(cluster, policy):
     node = cluster.instances["node"]
     node.query(
@@ -268,13 +309,18 @@ def new_backup_name():
     return f"backup{backup_id_counter}"
 
 
-@pytest.mark.parametrize("policies", [('cached', 'encrypted', 'File'),
-                                      ('s3cached', 's3encrypted', 'File'),
-                                      ('cached', 'encrypted', 'S3'),
-                                      ('s3cached', 's3encrypted', 'S3')])
+@pytest.mark.parametrize(
+    "policies",
+    [
+        ("cached", "encrypted", "File"),
+        ("s3cached", "s3encrypted", "File"),
+        ("cached", "encrypted", "S3"),
+        ("s3cached", "s3encrypted", "S3"),
+    ],
+)
 def test_backup_restore(cluster, policies):
     backup_dest_tmpl = "File('/{backup_destination}')"
-    if policies[2] == 'S3':
+    if policies[2] == "S3":
         backup_dest_tmpl = "S3('http://minio1:9001/root/backups/{backup_destination}', 'minio', 'minio123')"
     node = cluster.instances["node"]
     node.query(
@@ -293,9 +339,11 @@ def test_backup_restore(cluster, policies):
     assert node.query(select_query) == "(0,'data'),(1,'data')"
     backup_destination = "vardisks/backups/" + new_backup_name()
     backup_dest_sql = backup_dest_tmpl.format(backup_destination=backup_destination)
-    node.query(f"BACKUP TABLE encrypted_test TO {backup_dest_sql} SETTINGS decrypt_files_from_encrypted_disks=1")
+    node.query(
+        f"BACKUP TABLE encrypted_test TO {backup_dest_sql} SETTINGS decrypt_files_from_encrypted_disks=1"
+    )
 
-    if policies[2] != 'S3':
+    if policies[2] != "S3":
         root_path = os.path.join(node.cluster.instances_dir, backup_destination)
         with open(f"{root_path}/metadata/default/encrypted_test.sql") as file:
             assert file.read().startswith("CREATE TABLE default.encrypted_test")
@@ -314,7 +362,9 @@ def test_backup_restore(cluster, policies):
         SETTINGS storage_policy='{policies[0]}'
         """
     )
-    node.query(f"RESTORE TABLE encrypted_test FROM {backup_dest_sql} SETTINGS allow_different_table_def=0")
+    node.query(
+        f"RESTORE TABLE encrypted_test FROM {backup_dest_sql} SETTINGS allow_different_table_def=0"
+    )
     assert node.query(select_query) == "(0,'data'),(1,'data')"
 
     node.query(f"DROP TABLE encrypted_test SYNC")
@@ -328,5 +378,7 @@ def test_backup_restore(cluster, policies):
         SETTINGS storage_policy='{policies[1]}'
         """
     )
-    node.query(f"RESTORE TABLE encrypted_test FROM {backup_dest_sql} SETTINGS allow_different_table_def=1")
+    node.query(
+        f"RESTORE TABLE encrypted_test FROM {backup_dest_sql} SETTINGS allow_different_table_def=1"
+    )
     assert node.query(select_query) == "(0,'data'),(1,'data')"
