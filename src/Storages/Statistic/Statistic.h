@@ -9,7 +9,6 @@
 #include <Storages/StatisticsDescription.h>
 #include "Common/Exception.h"
 #include <Common/logger_useful.h>
-#include "Storages/MergeTree/RPNBuilder.h"
 
 #include <boost/core/noncopyable.hpp>
 
@@ -134,6 +133,8 @@ private:
     Creators creators;
 };
 
+class RPNBuilderTreeNode;
+
 class ConditionEstimator
 {
 private:
@@ -219,38 +220,8 @@ public:
 
     /// TODO: Support the condition consists of CNF/DNF like (cond1 and cond2) or (cond3) ...
     /// Right now we only support simple condition like col = val / col < val
-    Float64 estimateSelectivity(const RPNBuilderTreeNode & node) const
-    {
-        auto col = extractSingleColumn(node);
-        if (col == std::nullopt || col == "")
-        {
-            return default_unknown_cond_factor;
-        }
-        auto it = column_estimators.find(col.value());
-        ColumnEstimator estimator;
-        if (it != column_estimators.end())
-        {
-            estimator = it->second;
-        }
-        auto [op, val] = extractBinaryOp(node, col.value());
-        if (op == "equals")
-        {
-            if (val < - threshold || val > threshold)
-                return default_normal_cond_factor;
-            else
-                return default_good_cond_factor;
-        }
-        else if (op == "less" || op == "lessThan")
-        {
-            return estimator.estimateLess(val) / total_count;
-        }
-        else if (op == "greater" || op == "greaterThan")
-        {
-            return estimator.estimateLess(val) / total_count;
-        }
-        else
-            return default_unknown_cond_factor;
-    }
+    Float64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
+
     void merge(std::string part_name, StatisticPtr statistic)
     {
         column_estimators[statistic->columnName()].merge(part_name, statistic);

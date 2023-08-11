@@ -2,7 +2,7 @@
 #include <Storages/Statistic/Statistic.h>
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
-#include "Storages/MergeTree/RPNBuilder.h"
+#include <Storages/MergeTree/RPNBuilder.h>
 
 namespace DB
 {
@@ -92,6 +92,39 @@ std::pair<std::string, Float64> ConditionEstimator::extractBinaryOp(const RPNBui
     else if (type == Field::Types::Float64)
         value = output_value.get<Float64>();
     return std::make_pair(function_name, value);
+}
+
+Float64 ConditionEstimator::estimateSelectivity(const RPNBuilderTreeNode & node) const
+{
+    auto col = extractSingleColumn(node);
+    if (col == std::nullopt || col == "")
+    {
+        return default_unknown_cond_factor;
+    }
+    auto it = column_estimators.find(col.value());
+    ColumnEstimator estimator;
+    if (it != column_estimators.end())
+    {
+        estimator = it->second;
+    }
+    auto [op, val] = extractBinaryOp(node, col.value());
+    if (op == "equals")
+    {
+        if (val < - threshold || val > threshold)
+            return default_normal_cond_factor;
+        else
+            return default_good_cond_factor;
+    }
+    else if (op == "less" || op == "lessThan")
+    {
+        return estimator.estimateLess(val) / total_count;
+    }
+    else if (op == "greater" || op == "greaterThan")
+    {
+        return estimator.estimateLess(val) / total_count;
+    }
+    else
+        return default_unknown_cond_factor;
 }
 
 StatisticPtr TDigestCreator(const StatisticDescription & stat)
