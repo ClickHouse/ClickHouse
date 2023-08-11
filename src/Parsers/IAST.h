@@ -302,6 +302,7 @@ public:
         Alter,
         Grant,
         Revoke,
+        Move,
         System,
         Set,
         Use,
