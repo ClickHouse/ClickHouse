@@ -185,10 +185,8 @@ IMPLEMENT_SETTING_ENUM(S3QueueAction, ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},
      {"log", ExternalCommandStderrReaction::LOG},
+     {"log_first", ExternalCommandStderrReaction::LOG_FIRST},
+     {"log_last", ExternalCommandStderrReaction::LOG_LAST},
      {"throw", ExternalCommandStderrReaction::THROW}})
 
-IMPLEMENT_SETTING_ENUM(ExternalCommandErrorExitReaction, ErrorCodes::BAD_ARGUMENTS,
-    {{"none", ExternalCommandErrorExitReaction::NONE},
-     {"log_first", ExternalCommandErrorExitReaction::LOG_FIRST},
-     {"log_last", ExternalCommandErrorExitReaction::LOG_LAST}})
 }

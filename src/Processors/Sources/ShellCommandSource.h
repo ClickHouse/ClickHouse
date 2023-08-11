@@ -58,11 +58,10 @@ public:
         /// Reaction when external command outputs data to its stderr.
         ExternalCommandStderrReaction stderr_reaction = ExternalCommandStderrReaction::NONE;
 
-        /// Reaction when external command exits with non-zero code.
-        ExternalCommandErrorExitReaction error_exit_reaction = ExternalCommandErrorExitReaction::NONE;
-
         /// Will throw if the command exited with
-        /// non-zero status code
+        /// non-zero status code.
+        /// NOTE: If executable pool is used, we cannot check exit code,
+        /// which makes this configuration no effect.
         size_t check_exit_code = false;
 
         /// Pool size valid only if executable_pool = true

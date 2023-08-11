@@ -302,33 +302,38 @@ def test_executable_function_always_error_python(started_cluster):
         == "Key 1\n"
     )
     assert node.contains_in_log(
-        "{"
-        + query_id
-        + "} <Warning> TimeoutReadBufferFromFileDescriptor: Executable generates stderr: Fake error"
+        f"{{{query_id}}} <Warning> TimeoutReadBufferFromFileDescriptor: Executable generates stderr: Fake error"
     )
 
     query_id = uuid.uuid4().hex
-    try:
+    assert (
         node.query(
-            "SELECT test_function_always_error_exit_log_first_python(1)",
-            query_id=query_id,
+            "SELECT test_function_always_error_log_first_python(1)", query_id=query_id
         )
-        assert False, "Exception have to be thrown"
-    except Exception as ex:
-        assert "DB::Exception: Child process was exited with return code 1" in str(ex)
-        assert node.contains_in_log(
-            f"{{{query_id}}} <Error> ShellCommandSource: Executable fails with stderr: {'a' * (3 * 1024)}{'b' * 1024}\n"
-        )
+        == "Key 1\n"
+    )
+    assert node.contains_in_log(
+        f"{{{query_id}}} <Warning> TimeoutReadBufferFromFileDescriptor: Executable generates stderr at the beginning:  {'a' * (3 * 1024)}{'b' * 1024}\n"
+    )
 
     query_id = uuid.uuid4().hex
-    try:
+    assert (
         node.query(
-            "SELECT test_function_always_error_exit_log_last_python(1)",
-            query_id=query_id,
+            "SELECT test_function_always_error_log_last_python(1)", query_id=query_id
         )
+        == "Key 1\n"
+    )
+    assert node.contains_in_log(
+        f"{{{query_id}}} <Warning> TimeoutReadBufferFromFileDescriptor: Executable generates stderr at the end:  {'b' * 1024}{'c' * (3 * 1024)}\n"
+    )
+
+    assert (
+        node.query("SELECT test_function_exit_error_ignore_python(1)")
+        == "Key 1\n"
+    )
+
+    try:
+        node.query("SELECT test_function_exit_error_fail_python(1)")
         assert False, "Exception have to be thrown"
     except Exception as ex:
         assert "DB::Exception: Child process was exited with return code 1" in str(ex)
-        assert node.contains_in_log(
-            f"{{{query_id}}} <Error> ShellCommandSource: Executable fails with stderr: {'b' * 1024}{'c' * (3 * 1024)}\n"
-        )
