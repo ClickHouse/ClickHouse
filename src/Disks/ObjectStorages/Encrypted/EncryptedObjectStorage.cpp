@@ -1,14 +1,16 @@
 #include "EncryptedObjectStorage.h"
 
-#include <filesystem>
-#include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
-#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
-#include <IO/BoundedReadBuffer.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <IO/WriteBufferFromEncryptedFile.h>
-#include <Interpreters/Context.h>
-#include <Common/CurrentThread.h>
-#include <Common/logger_useful.h>
+#if USE_SSL
+
+#    include <filesystem>
+#    include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
+#    include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
+#    include <IO/BoundedReadBuffer.h>
+#    include <IO/ReadBufferFromFileBase.h>
+#    include <IO/WriteBufferFromEncryptedFile.h>
+#    include <Interpreters/Context.h>
+#    include <Common/CurrentThread.h>
+#    include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -193,3 +195,5 @@ void EncryptedObjectStorage::removeCacheIfExists(const std::string & path)
 }
 
 }
+
+#endif

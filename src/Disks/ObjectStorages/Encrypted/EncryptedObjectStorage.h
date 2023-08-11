@@ -1,9 +1,13 @@
 #pragma once
 
-#include <Disks/IDisk.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <IO/FileEncryptionCommon.h>
-#include <Interpreters/Cache/FileCache.h>
+#include "config.h"
+
+#if USE_SSL
+
+#    include <Disks/IDisk.h>
+#    include <Disks/ObjectStorages/IObjectStorage.h>
+#    include <IO/FileEncryptionCommon.h>
+#    include <Interpreters/Cache/FileCache.h>
 
 namespace Poco
 {
@@ -124,3 +128,5 @@ private:
 };
 
 }
+
+#endif

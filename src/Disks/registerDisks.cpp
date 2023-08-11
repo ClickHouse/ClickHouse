@@ -31,8 +31,9 @@ void registerDiskCache(DiskFactory & factory, bool global_skip_access_check);
 
 void registerDiskLocalObjectStorage(DiskFactory & factory, bool global_skip_access_check);
 
+#if USE_SSL
 void registerDiskEncryptedOS(DiskFactory & factory, bool global_skip_access_check);
-
+#endif
 
 #ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
 

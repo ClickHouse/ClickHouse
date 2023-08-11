@@ -1,15 +1,19 @@
-#include <Disks/DiskFactory.h>
-#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileCacheSettings.h>
-#include <Interpreters/Context.h>
-#include <Common/assert_cast.h>
-#include <Common/logger_useful.h>
+#include "config.h"
 
-#include "EncryptedObjectStorage.h"
-#include <IO/FileEncryptionCommon.h>
+#if USE_SSL
+
+#    include <Disks/DiskFactory.h>
+#    include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
+#    include <Disks/ObjectStorages/DiskObjectStorage.h>
+#    include <Interpreters/Cache/FileCache.h>
+#    include <Interpreters/Cache/FileCacheFactory.h>
+#    include <Interpreters/Cache/FileCacheSettings.h>
+#    include <Interpreters/Context.h>
+#    include <Common/assert_cast.h>
+#    include <Common/logger_useful.h>
+
+#    include "EncryptedObjectStorage.h"
+#    include <IO/FileEncryptionCommon.h>
 
 namespace DB
 {
@@ -127,3 +131,5 @@ void registerDiskEncryptedOS(DiskFactory & factory, bool /* global_skip_access_c
 }
 
 }
+
+#endif
