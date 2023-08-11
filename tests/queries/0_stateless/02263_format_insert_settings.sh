@@ -23,10 +23,12 @@ function run_format_both()
 
 # NOTE: that those queries may work slow, due to stack trace obtaining
 run_format 'insert into foo settings max_threads=1' 2> >(grep -m1 -o "Syntax error (query): failed at position .* (end of query):")
+
 # compatibility
 run_format 'insert into foo format tsv settings max_threads=1' 2> >(grep -m1 -F -o "Can't format ASTInsertQuery with data, since data will be lost.")
 run_format_both 'insert into foo format tsv settings max_threads=1' --allow_settings_after_format_in_insert
 run_format 'insert into foo settings max_threads=1 format tsv settings max_threads=1' --allow_settings_after_format_in_insert 2> >(grep -m1 -F -o "You have SETTINGS before and after FORMAT")
+
 # and via server (since this is a separate code path)
 $CLICKHOUSE_CLIENT -q 'drop table if exists data_02263'
 $CLICKHOUSE_CLIENT -q 'create table data_02263 (key Int) engine=Memory()'
