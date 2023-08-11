@@ -93,9 +93,6 @@ struct SystemLogSettings
     SystemLogQueueSettings queue_settings;
 
     String engine;
-
-    /// Create the table eagerly at startup or lazily on first record.
-    bool create_at_startup = false;
 };
 
 template <typename LogElement>
@@ -145,7 +142,7 @@ private:
       * Renames old table if its structure is not suitable.
       * This cannot be done in constructor to avoid deadlock while renaming a table under locked Context when SystemLog object is created.
       */
-    void prepareTable(bool if_not_exists) override;
+    void prepareTable() override;
 
     void savingThreadFunction() override;
 
