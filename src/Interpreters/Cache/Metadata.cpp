@@ -59,8 +59,8 @@ size_t FileSegmentMetadata::size() const
 KeyMetadata::KeyMetadata(
     const Key & key_,
     const std::string & key_path_,
-    CleanupQueue & cleanup_queue_,
-    DownloadQueue & download_queue_,
+    CleanupQueuePtr cleanup_queue_,
+    DownloadQueuePtr download_queue_,
     Poco::Logger * log_,
     std::shared_mutex & key_prefix_directory_mutex_,
     bool created_base_directory_)
@@ -137,8 +137,8 @@ std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment)
 
 CacheMetadata::CacheMetadata(const std::string & path_)
     : path(path_)
-    , cleanup_queue(std::make_unique<CleanupQueue>())
-    , download_queue(std::make_unique<DownloadQueue>())
+    , cleanup_queue(std::make_shared<CleanupQueue>())
+    , download_queue(std::make_shared<DownloadQueue>())
     , log(&Poco::Logger::get("CacheMetadata"))
 {
 }
@@ -195,7 +195,7 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
 
             it = emplace(
                 key, std::make_shared<KeyMetadata>(
-                    key, getPathForKey(key), *cleanup_queue, *download_queue, log, key_prefix_directory_mutex, is_initial_load)).first;
+                    key, getPathForKey(key), cleanup_queue, download_queue, log, key_prefix_directory_mutex, is_initial_load)).first;
         }
 
         key_metadata = it->second;
@@ -640,7 +640,7 @@ LockedKey::~LockedKey()
 
     key_metadata->key_state = KeyMetadata::KeyState::REMOVING;
     LOG_DEBUG(key_metadata->log, "Submitting key {} for removal", getKey());
-    key_metadata->cleanup_queue.add(getKey());
+    key_metadata->cleanup_queue->add(getKey());
 }
 
 void LockedKey::removeFromCleanupQueue()
@@ -787,7 +787,7 @@ void LockedKey::addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is not offset {}", offset);
-    key_metadata->download_queue.add(it->second->file_segment);
+    key_metadata->download_queue->add(it->second->file_segment);
 }
 
 std::optional<FileSegment::Range> LockedKey::hasIntersectingRange(const FileSegment::Range & range) const
