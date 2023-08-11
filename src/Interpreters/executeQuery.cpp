@@ -45,6 +45,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
@@ -1032,6 +1033,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
 
                 }
+
+                // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
+                // We need to force to build it here to check if we need to ingore quota.
+                if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
+                    interpreter_with_analyzer->getQueryPlan();
 
                 if (!interpreter->ignoreQuota() && !quota_checked)
                 {
