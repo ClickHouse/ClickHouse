@@ -69,18 +69,18 @@ SELECT * FROM t_uuid
 
 ## Implementation Details
 
-The underlying implementation for a UUID has it represented as a 128-bit unsigned integer. Underlying this, a wide integer with a 64-bit unsigned integer as its base is utilized. This wide integer can be interfaced with as an array to access different components of the base. For example, on a Little Endian platform, accessing at index 0 will give you the 8 higher bytes, and index 1 will give you the 8 lower bytes. On a Big Endian platform, this is reversed where index 0 will give you the 8 lower bytes, and index 1 will give you the 8 higher bytes
+The underlying implementation for a UUID has it represented as a 128-bit unsigned integer. Underlying this, a wide integer with a 64-bit unsigned integer as its base is utilized. This wide integer can be interfaced with as an array to access different components of the base. For example, on a Little Endian platform, accessing at index 0 will give you the 8 lower bytes, and index 1 will give you the 8 higher bytes. On a Big Endian platform, this is reversed where index 0 will give you the 8 higher bytes, and index 1 will give you the 8 lower bytes
 
 ``` cpp
 uuid.toUnderType().items[0] 
 
-//  uint64_t  uint64_t
-// [xxxxxxxx][        ]
+//  uint64_t   uint64_t
+// [xxxxxxxx] [        ]
 
 uuid.toUnderType().items[1]
 
-//  uint64_t  uint64_t
-// [        ][xxxxxxxx]
+//  uint64_t   uint64_t
+// [        ] [xxxxxxxx]
 ```
 
 ### Previous Implementation
@@ -93,13 +93,13 @@ Originally, the way that data was stored in the underlying wide integer did not 
 uuid.toUnderType().items[0]
 
 //  uint64_t as HEX
-// [90 7B A6 00 6A D3 DB A0] [61 F0 C4 04 5C B3 11 E7]
+// [E7 11 B3 5C 04 C4 F0 61] [A0 DB D3 6A 00 A6 7B 90]
 //  ^^^^^^^^^^^^^^^^^^^^^^^
 
 uuid.toUnderType().items[1]
 
 //  uint64_t as HEX
-// [90 7B A6 00 6A D3 DB A0] [61 F0 C4 04 5C B3 11 E7]
+// [E7 11 B3 5C 04 C4 F0 61] [A0 DB D3 6A 00 A6 7B 90]
 //                            ^^^^^^^^^^^^^^^^^^^^^^^
 ```
 
@@ -129,7 +129,25 @@ This introduced some difficult to remedy inconsistencies between how a Little En
 
 ### Current Implementation
 
-Changing the organization of the data to be one contiguous 128-bit number allows for an easier to maintain implementation compatible with both Little and Big Endian systems. This organization can be visualized as 
+Changing the organization of the data to be one contiguous 128-bit number allows for an easier to maintain implementation compatible with both Little and Big Endian systems. On a Little Endian platform, this organization can be visualized as 
+
+``` cpp
+// Suppose uuid contains 61f0c404-5cb3-11e7-907b-a6006ad3dba0
+
+uuid.toUnderType().items[0]
+
+//  uint64_t as HEX
+// [A0 DB D3 6A 00 A6 7B 90] [E7 11 B3 5C 04 C4 F0 61]
+//  ^^^^^^^^^^^^^^^^^^^^^^^
+
+uuid.toUnderType().items[1]
+
+//  uint64_t as HEX
+// [A0 DB D3 6A 00 A6 7B 90] [E7 11 B3 5C 04 C4 F0 61]
+//                            ^^^^^^^^^^^^^^^^^^^^^^^
+```
+
+while on a Big Endian platform this would be
 
 ``` cpp
 // Suppose uuid contains 61f0c404-5cb3-11e7-907b-a6006ad3dba0
@@ -144,11 +162,11 @@ uuid.toUnderType().items[1]
 
 //  uint64_t as HEX
 // [61 F0 C4 04 5C B3 11 E7] [90 7B A6 00 6A D3 DB A0]
-//                            ^^^^^^^^^^^^^^^^^^^^^^^
+//       
 ```
 
 :::warning
-To maintain backwards compatibility, during various forms of processing a UUID, such as serialization, deserialization, reinterpretation, hashing, etc., the method `toLegacyFormat` should be called to swap the high set and low set of bytes to keep the data in the expected ordering.
+To maintain backwards compatibility, during various forms of processing a UUID, such as serialization, deserialization, reinterpretation, hashing, etc., the method `toLegacyFormat` should be called to swap the high and low sets of bytes to keep the data in the expected ordering.
 :::
 
 ## Restrictions
