@@ -102,7 +102,11 @@ class S3Helper:
                     file_path,
                     file_path + ".zst",
                 )
-                compress_file_fast(file_path, file_path + ".zst")
+                # FIXME: rewrite S3 to Path
+                _file_path = Path(file_path)
+                compress_file_fast(
+                    _file_path, _file_path.with_suffix(_file_path.suffix + ".zst")
+                )
                 file_path += ".zst"
                 s3_path += ".zst"
             else:
