@@ -18,3 +18,6 @@ target_link_libraries (double_delta_decompress_fuzzer PRIVATE dbms ${LIB_FUZZING
 
 clickhouse_add_executable (encrypted_decompress_fuzzer encrypted_decompress_fuzzer.cpp)
 target_link_libraries (encrypted_decompress_fuzzer PRIVATE dbms ${LIB_FUZZING_ENGINE})
+
+clickhouse_add_executable (gcd_decompress_fuzzer gcd_decompress_fuzzer.cpp)
+target_link_libraries (gcd_decompress_fuzzer PRIVATE dbms ${LIB_FUZZING_ENGINE})
