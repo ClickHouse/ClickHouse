@@ -10,7 +10,7 @@ drop table if exists bug_delta_gorilla;
 
 create table bug_delta_gorilla
 (value_bug UInt64 codec (Delta, Gorilla))
-engine = MergeTree
+engine = MergeTree SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi'
 order by tuple()
 as (select 0 from numbers(30000000));
 
@@ -31,7 +31,7 @@ drop table if exists bug_delta_gorilla;
 select 'The same issue in a much smaller repro happens also in Debug builds';
 
 create table bug_delta_gorilla (val UInt64 codec (Delta, Gorilla))
-engine = MergeTree
+engine = MergeTree SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi'
 order by val;
 insert into bug_delta_gorilla values (0)(1)(3);
 select * from bug_delta_gorilla;
