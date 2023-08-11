@@ -64,7 +64,7 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
         node.query("SELECT count() FROM system.filesystem_cache WHERE size > 0")
     )
     cache_state = node.query(
-        "SELECT key, offset, size FROM system.filesystem_cache ORDER BY key, offset, size WHERE size > 0"
+        "SELECT key, offset, size FROM system.filesystem_cache WHERE size > 0 ORDER BY key, offset, size"
     )
 
     node.restart_clickhouse()
