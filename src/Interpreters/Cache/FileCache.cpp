@@ -10,7 +10,6 @@
 #include <Interpreters/Context.h>
 #include <base/hex.h>
 #include <pcg-random/pcg_random.hpp>
-#include "Common/ThreadPool_fwd.h"
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -1027,11 +1026,12 @@ FileCache::~FileCache()
 void FileCache::deactivateBackgroundOperations()
 {
     metadata.cancelDownload();
+    metadata.cancelCleanup();
+
     for (auto & thread : download_threads)
         if (thread.joinable())
             thread.join();
 
-    metadata.cancelCleanup();
     if (cleanup_thread && cleanup_thread->joinable())
         cleanup_thread->join();
 }
