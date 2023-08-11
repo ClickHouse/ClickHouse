@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP DATABASE IF EXISTS test_truncate_database;
 
 -- test TRUNCATE DATABASE operation.
