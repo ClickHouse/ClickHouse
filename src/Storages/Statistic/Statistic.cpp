@@ -1,4 +1,6 @@
 #include <optional>
+#include <numeric>
+
 #include <Storages/Statistic/Statistic.h>
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
