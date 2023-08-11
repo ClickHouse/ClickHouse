@@ -14,6 +14,9 @@ EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:="check_name, "}
 
 CONNECTION_PARAMETERS=${CONNECTION_PARAMETERS:=""}
 
+# Create all configured system logs:
+clickhouse-client --query "SYSTEM FLUSH LOGS"
+
 # For each system log table:
 clickhouse-client --query "SHOW TABLES FROM system LIKE '%\\_log'" | while read table
 do
