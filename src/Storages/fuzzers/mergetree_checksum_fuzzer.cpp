@@ -1,4 +1,3 @@
-#include <iostream>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
