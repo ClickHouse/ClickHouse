@@ -327,10 +327,7 @@ def test_executable_function_always_error_python(started_cluster):
         f"{{{query_id}}} <Warning> TimeoutReadBufferFromFileDescriptor: Executable generates stderr at the end:  {'b' * 1024}{'c' * (3 * 1024)}\n"
     )
 
-    assert (
-        node.query("SELECT test_function_exit_error_ignore_python(1)")
-        == "Key 1\n"
-    )
+    assert node.query("SELECT test_function_exit_error_ignore_python(1)") == "Key 1\n"
 
     try:
         node.query("SELECT test_function_exit_error_fail_python(1)")
