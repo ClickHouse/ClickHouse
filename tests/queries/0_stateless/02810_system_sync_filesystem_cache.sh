@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-s3-storage, no-random-settings, no-tsan, no-asan, no-ubsan, no-msan, no-debug
+# Tags: no-fasttest, no-parallel, no-s3-storage, no-random-settings
 
 # set -x
 
@@ -38,7 +38,8 @@ SELECT cache_path FROM system.filesystem_cache WHERE key = '$key' AND file_segme
 
 rm $path
 
-$CLICKHOUSE_CLIENT  --query "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1" 2>&1 | grep -f -q "File path does not exist" && echo 'ok' || echo 'fail'
+
+$CLICKHOUSE_CLIENT  --query "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1" 2>&1 | grep -F -e "No such file or directory" -e "File path does not exist" > /dev/null && echo "ok" || echo "fail"
 
 CLICKHOUSE_CLIENT=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=fatal/g')
 
@@ -60,7 +61,7 @@ SELECT cache_path FROM system.filesystem_cache WHERE key = '$key' AND file_segme
 
 echo -n 'fff' > $path
 
-cat $path
+#cat $path
 
 $CLICKHOUSE_CLIENT --query "SYSTEM SYNC FILESYSTEM CACHE" 2>&1 | grep -q "$key" && echo 'ok' || echo 'fail'
 
