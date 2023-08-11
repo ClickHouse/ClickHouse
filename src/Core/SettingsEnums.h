@@ -241,6 +241,4 @@ DECLARE_SETTING_ENUM(S3QueueAction)
 
 DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 
-DECLARE_SETTING_ENUM(ExternalCommandErrorExitReaction)
-
 }
