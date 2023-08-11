@@ -65,7 +65,7 @@ namespace ErrorCodes
 class FunctionDictHelper : WithContext
 {
 public:
-    explicit FunctionDictHelper(ContextPtr context_) : WithContext(context_->getGlobalContext()) {}
+    explicit FunctionDictHelper(ContextPtr context_) : WithContext(context_->getSessionContext()) {}
 
     std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
