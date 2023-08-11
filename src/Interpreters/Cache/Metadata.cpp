@@ -287,12 +287,13 @@ void CacheMetadata::removeKey(const Key & key, bool if_exists, bool if_releasabl
     }
 
     auto locked_key = it->second->lockNoStateCheck();
-    if (locked_key->getKeyState() != KeyMetadata::KeyState::ACTIVE)
+    auto state = locked_key->getKeyState();
+    if (state != KeyMetadata::KeyState::ACTIVE)
     {
         if (if_exists)
             return;
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key: {}", key);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key: {} (state: {})", key, magic_enum::enum_name(state));
     }
 
     bool removed_all = locked_key->removeAllFileSegments(if_releasable);
