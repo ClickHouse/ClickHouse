@@ -133,8 +133,6 @@ std::shared_ptr<TSystemLog> createSystemLog(
     log_settings.queue_settings.database = config.getString(config_prefix + ".database", default_database_name);
     log_settings.queue_settings.table = config.getString(config_prefix + ".table", default_table_name);
 
-    log_settings.create_at_startup = config.getBool(config_prefix + ".create_at_startup", false);
-
     if (log_settings.queue_settings.database != default_database_name)
     {
         /// System tables must be loaded before other tables, but loading order is undefined for all databases except `system`
@@ -384,9 +382,6 @@ SystemLog<LogElement>::SystemLog(
     , create_query(serializeAST(*getCreateTableQuery()))
 {
     assert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
-
-    if (settings_.create_at_startup)
-        prepareTable(true);
 }
 
 template <typename LogElement>
@@ -442,7 +437,7 @@ void SystemLog<LogElement>::savingThreadFunction()
             {
                 if (should_prepare_tables_anyway)
                 {
-                    prepareTable(false);
+                    prepareTable();
                     LOG_TRACE(log, "Table created (force)");
 
                     queue->confirm(to_flush_end);
@@ -474,7 +469,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         /// flush. This is done to allow user to drop the table at any moment
         /// (new empty table will be created automatically). BTW, flush method
         /// is called from single thread.
-        prepareTable(false);
+        prepareTable();
 
         ColumnsWithTypeAndName log_element_columns;
         auto log_element_names_and_types = LogElement::getNamesAndTypes();
@@ -524,16 +519,13 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 
 
 template <typename LogElement>
-void SystemLog<LogElement>::prepareTable(bool if_not_exists)
+void SystemLog<LogElement>::prepareTable()
 {
     String description = table_id.getNameForLogs();
 
     auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     if (table)
     {
-        if (if_not_exists)
-            return;
-
         if (old_create_query.empty())
         {
             old_create_query = serializeAST(*getCreateTableQueryClean(table_id, getContext()));

@@ -56,7 +56,7 @@ public:
 
     //// force -- force table creation (used for SYSTEM FLUSH LOGS)
     virtual void flush(bool force = false) = 0; /// NOLINT
-    virtual void prepareTable(bool if_not_exists) = 0;
+    virtual void prepareTable() = 0;
 
     /// Start the background thread.
     virtual void startup() = 0;
