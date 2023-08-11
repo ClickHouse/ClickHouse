@@ -347,12 +347,19 @@ class CleanupQueue
 public:
     void add(const FileCacheKey & key)
     {
+        bool inserted;
         {
             std::lock_guard lock(mutex);
-            keys.insert(key);
+            if (cancelled)
+                return;
+            inserted = keys.insert(key).second;
         }
-        CurrentMetrics::add(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
-        cv.notify_one();
+        chassert(inserted);
+        if (inserted)
+        {
+            CurrentMetrics::add(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
+            cv.notify_one();
+        }
     }
 
     void cancel()
@@ -378,15 +385,15 @@ void CacheMetadata::cleanupThreadFunc()
         Key key;
         {
             std::unique_lock lock(cleanup_queue->mutex);
-
             if (cleanup_queue->cancelled)
                 return;
 
             auto & keys = cleanup_queue->keys;
             if (keys.empty())
             {
-                cleanup_queue->cv.wait(lock);
-                continue;
+                cleanup_queue->cv.wait(lock, [&](){ return cleanup_queue->cancelled || !keys.empty(); });
+                if (cleanup_queue->cancelled)
+                    return;
             }
 
             auto it = keys.begin();
@@ -430,6 +437,8 @@ public:
     {
         {
             std::lock_guard lock(mutex);
+            if (cancelled)
+                return;
             queue.push(DownloadInfo{file_segment->key(), file_segment->offset(), file_segment});
         }
 
@@ -478,14 +487,14 @@ void CacheMetadata::downloadThreadFunc()
 
         {
             std::unique_lock lock(download_queue->mutex);
-
             if (download_queue->cancelled)
                 return;
 
             if (download_queue->queue.empty())
             {
-                download_queue->cv.wait(lock);
-                continue;
+                download_queue->cv.wait(lock, [&](){ return download_queue->cancelled || !download_queue->queue.empty(); });
+                if (download_queue->cancelled)
+                    return;
             }
 
             auto entry = download_queue->queue.front();
