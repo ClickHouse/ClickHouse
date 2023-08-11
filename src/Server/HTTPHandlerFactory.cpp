@@ -132,21 +132,25 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     auto ping_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(server, ping_response_expression);
     ping_handler->attachStrictPath("/ping");
     ping_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/ping");
     factory.addHandler(ping_handler);
 
     auto replicas_status_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(server);
     replicas_status_handler->attachNonStrictPath("/replicas_status");
     replicas_status_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/replicas_status");
     factory.addHandler(replicas_status_handler);
 
     auto play_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
     play_handler->attachNonStrictPath("/play");
     play_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/play");
     factory.addHandler(play_handler);
 
     auto dashboard_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
     dashboard_handler->attachNonStrictPath("/dashboard");
     dashboard_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/dashboard");
     factory.addHandler(dashboard_handler);
 
     auto js_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
