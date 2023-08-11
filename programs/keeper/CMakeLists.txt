@@ -1,16 +1,3 @@
-include(${ClickHouse_SOURCE_DIR}/cmake/embed_binary.cmake)
-
-if (OS_LINUX)
-    set (LINK_RESOURCE_LIB INTERFACE "-Wl,${WHOLE_ARCHIVE} $<TARGET_FILE:clickhouse_keeper_configs> -Wl,${NO_WHOLE_ARCHIVE}")
-    # for some reason INTERFACE linkage doesn't work for standalone binary
-    set (LINK_RESOURCE_LIB_STANDALONE_KEEPER "-Wl,${WHOLE_ARCHIVE} $<TARGET_FILE:clickhouse_keeper_configs> -Wl,${NO_WHOLE_ARCHIVE}")
-endif ()
-
-clickhouse_embed_binaries(
-    TARGET clickhouse_keeper_configs
-    RESOURCES keeper_config.xml keeper_embedded.xml
-)
-
 set(CLICKHOUSE_KEEPER_SOURCES
     Keeper.cpp
 )
@@ -29,11 +16,12 @@ set (CLICKHOUSE_KEEPER_LINK
 clickhouse_program_add(keeper)
 
 install(FILES keeper_config.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-keeper" COMPONENT clickhouse-keeper)
-add_dependencies(clickhouse-keeper-lib clickhouse_keeper_configs)
 
 if (BUILD_STANDALONE_KEEPER)
     # Straight list of all required sources
     set(CLICKHOUSE_KEEPER_STANDALONE_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperReconfiguration.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/RaftServerConfig.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/ACLMap.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/Changelog.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/CoordinationSettings.cpp
@@ -69,6 +57,7 @@ if (BUILD_STANDALONE_KEEPER)
 
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/IO/ReadBuffer.cpp
 
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/HTTPPathHints.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/KeeperTCPHandler.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/TCPServer.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/NotFoundHandler.cpp
@@ -77,6 +66,7 @@ if (BUILD_STANDALONE_KEEPER)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/PrometheusRequestHandler.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/PrometheusMetricsWriter.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/waitServersToFinish.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/ServerType.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/HTTPRequestHandlerFactoryMain.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/HTTP/HTTPServer.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/HTTP/ReadHeaders.cpp
@@ -92,6 +82,7 @@ if (BUILD_STANDALONE_KEEPER)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressedReadBuffer.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressedReadBufferFromFile.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressedWriteBuffer.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressionCodecEncrypted.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressionCodecLZ4.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressionCodecMultiple.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Compression/CompressionCodecNone.cpp
@@ -213,7 +204,6 @@ if (BUILD_STANDALONE_KEEPER)
         ${LINK_RESOURCE_LIB_STANDALONE_KEEPER}
     )
 
-    add_dependencies(clickhouse-keeper clickhouse_keeper_configs)
     set_target_properties(clickhouse-keeper PROPERTIES RUNTIME_OUTPUT_DIRECTORY ../)
 
     if (SPLIT_DEBUG_SYMBOLS)

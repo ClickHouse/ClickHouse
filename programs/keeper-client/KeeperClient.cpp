@@ -131,7 +131,7 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
             .binding("host"));
 
     options.addOption(
-        Poco::Util::Option("port", "p", "server port. default `2181`")
+        Poco::Util::Option("port", "p", "server port. default `9181`")
             .argument("<port>")
             .binding("port"));
 
@@ -176,7 +176,12 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
         std::make_shared<CDCommand>(),
         std::make_shared<SetCommand>(),
         std::make_shared<CreateCommand>(),
+        std::make_shared<TouchCommand>(),
         std::make_shared<GetCommand>(),
+        std::make_shared<GetStatCommand>(),
+        std::make_shared<FindSuperNodes>(),
+        std::make_shared<DeleteStaleBackups>(),
+        std::make_shared<FindBigFamily>(),
         std::make_shared<RMCommand>(),
         std::make_shared<RMRCommand>(),
         std::make_shared<HelpCommand>(),
@@ -266,8 +271,16 @@ void KeeperClient::runInteractive()
 
     LineReader::Patterns query_extenders = {"\\"};
     LineReader::Patterns query_delimiters = {};
+    char word_break_characters[] = " \t\v\f\a\b\r\n/";
 
-    ReplxxLineReader lr(suggest, history_file, false, query_extenders, query_delimiters, {});
+    ReplxxLineReader lr(
+        suggest,
+        history_file,
+        /* multiline= */ false,
+        query_extenders,
+        query_delimiters,
+        word_break_characters,
+        /* highlighter_= */ {});
     lr.enableBracketedPaste();
 
     while (true)
@@ -299,7 +312,7 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     }
 
     auto host = config().getString("host", "localhost");
-    auto port = config().getString("port", "2181");
+    auto port = config().getString("port", "9181");
     zk_args.hosts = {host + ":" + port};
     zk_args.connection_timeout_ms = config().getInt("connection-timeout", 10) * 1000;
     zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;

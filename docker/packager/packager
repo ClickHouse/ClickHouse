@@ -22,7 +22,7 @@ def check_image_exists_locally(image_name: str) -> bool:
         output = subprocess.check_output(
             f"docker images -q {image_name} 2> /dev/null", shell=True
         )
-        return output != ""
+        return output != b""
     except subprocess.CalledProcessError:
         return False
 
@@ -46,7 +46,7 @@ def build_image(image_name: str, filepath: Path) -> None:
     )
 
 
-def pre_build(repo_path: Path, env_variables: List[str]):
+def pre_build(repo_path: Path, env_variables: List[str]) -> None:
     if "WITH_PERFORMANCE=1" in env_variables:
         current_branch = subprocess.check_output(
             "git branch --show-current", shell=True, encoding="utf-8"
@@ -80,9 +80,12 @@ def run_docker_image_with_env(
     output_dir: Path,
     env_variables: List[str],
     ch_root: Path,
+    cargo_cache_dir: Path,
     ccache_dir: Optional[Path],
-):
+) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
+    cargo_cache_dir.mkdir(parents=True, exist_ok=True)
+
     env_part = " -e ".join(env_variables)
     if env_part:
         env_part = " -e " + env_part
@@ -104,7 +107,7 @@ def run_docker_image_with_env(
     cmd = (
         f"docker run --network=host --user={user} --rm {ccache_mount}"
         f"--volume={output_dir}:/output --volume={ch_root}:/build {env_part} "
-        f"{interactive} {image_name}"
+        f"--volume={cargo_cache_dir}:/rust/cargo/registry {interactive} {image_name}"
     )
 
     logging.info("Will build ClickHouse pkg with cmd: '%s'", cmd)
@@ -112,12 +115,12 @@ def run_docker_image_with_env(
     subprocess.check_call(cmd, shell=True)
 
 
-def is_release_build(build_type: str, package_type: str, sanitizer: str) -> bool:
-    return build_type == "" and package_type == "deb" and sanitizer == ""
+def is_release_build(debug_build: bool, package_type: str, sanitizer: str) -> bool:
+    return not debug_build and package_type == "deb" and sanitizer == ""
 
 
 def parse_env_variables(
-    build_type: str,
+    debug_build: bool,
     compiler: str,
     sanitizer: str,
     package_type: str,
@@ -129,9 +132,10 @@ def parse_env_variables(
     version: str,
     official: bool,
     additional_pkgs: bool,
+    with_profiler: bool,
     with_coverage: bool,
     with_binaries: str,
-):
+) -> List[str]:
     DARWIN_SUFFIX = "-darwin"
     DARWIN_ARM_SUFFIX = "-darwin-aarch64"
     ARM_SUFFIX = "-aarch64"
@@ -240,7 +244,7 @@ def parse_env_variables(
         build_target = (
             f"{build_target} clickhouse-odbc-bridge clickhouse-library-bridge"
         )
-        if is_release_build(build_type, package_type, sanitizer):
+        if is_release_build(debug_build, package_type, sanitizer):
             cmake_flags.append("-DSPLIT_DEBUG_SYMBOLS=ON")
             result.append("WITH_PERFORMANCE=1")
             if is_cross_arm:
@@ -253,15 +257,10 @@ def parse_env_variables(
     cmake_flags.append(f"-DCMAKE_C_COMPILER={cc}")
     cmake_flags.append(f"-DCMAKE_CXX_COMPILER={cxx}")
 
-    # Create combined output archive for performance tests.
-    if package_type == "coverity":
-        result.append("COMBINED_OUTPUT=coverity")
-        result.append('COVERITY_TOKEN="$COVERITY_TOKEN"')
-
     if sanitizer:
         result.append(f"SANITIZER={sanitizer}")
-    if build_type:
-        result.append(f"BUILD_TYPE={build_type.capitalize()}")
+    if debug_build:
+        result.append("BUILD_TYPE=Debug")
     else:
         result.append("BUILD_TYPE=None")
 
@@ -327,6 +326,9 @@ def parse_env_variables(
         # utils are not included into clickhouse-bundle, so build everything
         build_target = "all"
 
+    if with_profiler:
+        cmake_flags.append("-DENABLE_BUILD_PROFILING=1")
+
     if with_coverage:
         cmake_flags.append("-DWITH_COVERAGE=1")
 
@@ -356,7 +358,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--package-type",
-        choices=["deb", "binary", "coverity"],
+        choices=["deb", "binary"],
         required=True,
     )
     parser.add_argument(
@@ -366,7 +368,7 @@ def parse_args() -> argparse.Namespace:
         help="ClickHouse git repository",
     )
     parser.add_argument("--output-dir", type=dir_name, required=True)
-    parser.add_argument("--build-type", choices=("debug", ""), default="")
+    parser.add_argument("--debug-build", action="store_true")
 
     parser.add_argument(
         "--compiler",
@@ -417,10 +419,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="if set, the build fails on errors writing cache to S3",
     )
+    parser.add_argument(
+        "--cargo-cache-dir",
+        default=Path(os.getenv("CARGO_HOME", "") or Path.home() / ".cargo")
+        / "registry",
+        type=dir_name,
+        help="a directory to preserve the rust cargo crates",
+    )
     parser.add_argument("--force-build-image", action="store_true")
     parser.add_argument("--version")
     parser.add_argument("--official", action="store_true")
     parser.add_argument("--additional-pkgs", action="store_true")
+    parser.add_argument("--with-profiler", action="store_true")
     parser.add_argument("--with-coverage", action="store_true")
     parser.add_argument(
         "--with-binaries", choices=("programs", "tests", ""), default=""
@@ -456,7 +466,7 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def main():
+def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     args = parse_args()
 
@@ -472,7 +482,7 @@ def main():
         build_image(image_with_version, dockerfile)
 
     env_prepared = parse_env_variables(
-        args.build_type,
+        args.debug_build,
         args.compiler,
         args.sanitizer,
         args.package_type,
@@ -484,6 +494,7 @@ def main():
         args.version,
         args.official,
         args.additional_pkgs,
+        args.with_profiler,
         args.with_coverage,
         args.with_binaries,
     )
@@ -495,6 +506,7 @@ def main():
         args.output_dir,
         env_prepared,
         ch_root,
+        args.cargo_cache_dir,
         args.ccache_dir,
     )
     logging.info("Output placed into %s", args.output_dir)

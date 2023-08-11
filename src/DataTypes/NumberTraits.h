@@ -174,7 +174,7 @@ template <typename A> struct ResultOfBitNot
   * Float<x>, [U]Int<y> -> Float<max(x, y*2)>
   * Decimal<x>, Decimal<y> -> Decimal<max(x,y)>
   * UUID, UUID          -> UUID
-  * UInt64 ,  Int<x>    -> Error
+  * UInt64,   Int<x>    -> Error
   * Float<x>, [U]Int64  -> Error
   */
 template <typename A, typename B>

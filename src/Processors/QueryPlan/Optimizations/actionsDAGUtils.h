@@ -39,5 +39,5 @@ struct MatchedTrees
     using Matches = std::unordered_map<const ActionsDAG::Node *, Match>;
 };
 
-MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG & outer_dag);
+MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG & outer_dag, bool check_monotonicity = true);
 }

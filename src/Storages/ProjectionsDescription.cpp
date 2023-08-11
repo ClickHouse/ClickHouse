@@ -298,6 +298,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
                        SelectQueryOptions{
                            type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
                                                                        : QueryProcessingStage::WithMergeableState}
+                           .ignoreASTOptimizations()
                            .ignoreSettingConstraints())
                        .buildQueryPipeline();
     builder.resize(1);

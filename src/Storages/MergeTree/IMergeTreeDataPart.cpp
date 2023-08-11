@@ -1674,8 +1674,8 @@ std::pair<bool, NameSet> IMergeTreeDataPart::canRemovePart() const
 void IMergeTreeDataPart::initializePartMetadataManager()
 {
 #if USE_ROCKSDB
-    if (use_metadata_cache)
-        metadata_manager = std::make_shared<PartMetadataManagerWithCache>(this, storage.getContext()->getMergeTreeMetadataCache());
+    if (auto metadata_cache = storage.getContext()->tryGetMergeTreeMetadataCache(); metadata_cache && use_metadata_cache)
+        metadata_manager = std::make_shared<PartMetadataManagerWithCache>(this, metadata_cache);
     else
         metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(this);
 #else
@@ -1981,6 +1981,12 @@ IndexSize IMergeTreeDataPart::getSecondaryIndexSize(const String & secondary_ind
         return it->second;
 
     return ColumnSize{};
+}
+
+bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name) const
+{
+    auto file_name = INDEX_FILE_PREFIX + index_name;
+    return checksums.has(file_name + ".idx") || checksums.has(file_name + ".idx2");
 }
 
 void IMergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const

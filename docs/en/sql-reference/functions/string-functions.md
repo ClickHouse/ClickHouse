@@ -575,6 +575,42 @@ Alias:
 
 Like `substring` but for Unicode code points. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
+
+## substringIndex(s, delim, count)
+
+Returns the substring of `s` before `count` occurrences of the delimiter `delim`, as in Spark or MySQL.
+
+**Syntax**
+
+```sql
+substringIndex(s, delim, count)
+```
+Alias: `SUBSTRING_INDEX`
+
+
+**Arguments**
+
+- s: The string to extract substring from. [String](../../sql-reference/data-types/string.md).
+- delim: The character to split. [String](../../sql-reference/data-types/string.md).
+- count: The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned. [UInt or Int](../data-types/int-uint.md)
+
+**Example**
+
+``` sql
+SELECT substringIndex('www.clickhouse.com', '.', 2)
+```
+
+Result:
+```
+┌─substringIndex('www.clickhouse.com', '.', 2)─┐
+│ www.clickhouse                               │
+└──────────────────────────────────────────────┘
+```
+
+## substringIndexUTF8(s, delim, count)
+
+Like `substringIndex` but for Unicode code points. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
 ## appendTrailingCharIfAbsent
 
 Appends character `c` to string `s` if `s` is non-empty and does not end with character `c`.
@@ -693,6 +729,30 @@ Returns whether string `str` ends with `suffix`.
 endsWith(str, suffix)
 ```
 
+## endsWithUTF8
+
+Returns whether string `str` ends with `suffix`, the difference between `endsWithUTF8` and `endsWith` is that `endsWithUTF8` match `str` and `suffix` by UTF-8 characters.
+
+**Syntax**
+
+```sql
+endsWithUTF8(str, suffix)
+```
+
+**Example**
+
+``` sql
+SELECT endsWithUTF8('中国', '\xbd'), endsWith('中国', '\xbd')
+```
+
+Result:
+
+```result
+┌─endsWithUTF8('中国', '½')─┬─endsWith('中国', '½')─┐
+│                        0 │                    1 │
+└──────────────────────────┴──────────────────────┘
+```
+
 ## startsWith
 
 Returns whether string `str` starts with `prefix`.
@@ -707,6 +767,25 @@ startsWith(str, prefix)
 
 ``` sql
 SELECT startsWith('Spider-Man', 'Spi');
+```
+
+## startsWithUTF8
+
+Returns whether string `str` starts with `prefix`, the difference between `startsWithUTF8` and `startsWith` is that `startsWithUTF8` match `str` and `suffix` by UTF-8 characters.
+
+
+**Example**
+
+``` sql
+SELECT startsWithUTF8('中国', '\xe4'), startsWith('中国', '\xe4')
+```
+
+Result:
+
+```result
+┌─startsWithUTF8('中国', '⥩─┬─startsWith('中国', '⥩─┐
+│                          0 │                      1 │
+└────────────────────────────┴────────────────────────┘
 ```
 
 ## trim
