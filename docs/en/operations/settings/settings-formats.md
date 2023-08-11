@@ -1223,18 +1223,6 @@ Allow skipping columns with unsupported types while schema inference for format 
 
 Disabled by default.
 
-### input_format_parquet_min_read_batch_size_rows {#input_format_parquet_min_read_batch_size_rows}
-
-Minimum number of rows to read in one thread in Parquet format.
-
-Default value: `100000`
-
-### input_format_parquet_min_read_batch_size_bytes {#input_format_parquet_min_read_batch_size_bytes}
-
-Minimum number of bytes (uncompressed) to read in one thread in Parquet format.
-
-Default value: `25'600'000`
-
 ### output_format_parquet_string_as_string {#output_format_parquet_string_as_string}
 
 Use Parquet String type instead of Binary for String columns.

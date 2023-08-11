@@ -51,8 +51,7 @@ public:
         const Block & header,
         const FormatSettings & format_settings,
         size_t max_decoding_threads,
-        size_t min_bytes_for_seek,
-        bool batch_row_groups);
+        size_t min_bytes_for_seek);
 
     ~ParquetBlockInputFormat() override;
 
@@ -206,7 +205,6 @@ private:
 
         size_t total_rows = 0;
         size_t total_bytes_compressed = 0;
-        size_t total_bytes_uncompressed = 0;
 
         std::vector<int> row_groups_idxs;
 
@@ -246,7 +244,6 @@ private:
     const std::unordered_set<int> & skip_row_groups;
     size_t max_decoding_threads;
     size_t min_bytes_for_seek;
-    bool batch_row_groups;
     const size_t max_pending_chunks_per_row_group_batch = 2;
 
     // RandomAccessFile is thread safe, so we share it among threads.
