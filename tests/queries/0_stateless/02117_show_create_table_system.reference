@@ -960,6 +960,7 @@ CREATE TABLE system.role_grants
     `user_name` Nullable(String),
     `role_name` Nullable(String),
     `granted_role_name` String,
+    `granted_role_id` UUID,
     `granted_role_is_default` UInt8,
     `with_admin_option` UInt8
 )
