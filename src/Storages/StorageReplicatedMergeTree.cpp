@@ -8481,8 +8481,9 @@ void StorageReplicatedMergeTree::enqueuePartForCheck(const String & part_name, t
     part_check_thread.enqueuePart(part_name, delay_to_check_seconds);
 }
 
-IStorage::DataValidationTasksPtr StorageReplicatedMergeTree::getCheckTaskList(const ASTPtr & query, ContextPtr local_context)
+CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, ContextPtr local_context)
 {
+    CheckResults results;
     DataPartsVector data_parts;
     if (const auto & check_query = query->as<ASTCheckQuery &>(); check_query.partition)
     {
@@ -8492,30 +8493,24 @@ IStorage::DataValidationTasksPtr StorageReplicatedMergeTree::getCheckTaskList(co
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    auto part_check_lock = part_check_thread.pausePartsCheck();
-    return std::make_unique<DataValidationTasks>(std::move(data_parts), std::move(part_check_lock));
-}
-
-CheckResult StorageReplicatedMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list, bool & has_nothing_to_do)
-{
-
-    if (auto part = assert_cast<DataValidationTasks *>(check_task_list.get())->next())
     {
-        try
+        auto part_check_lock = part_check_thread.pausePartsCheck();
+
+        for (auto & part : data_parts)
         {
-            return CheckResult(part_check_thread.checkPartAndFix(part->name));
-        }
-        catch (const Exception & ex)
-        {
-            tryLogCurrentException(log, __PRETTY_FUNCTION__);
-            return CheckResult(part->name, false, "Check of part finished with error: '" + ex.message() + "'");
+            try
+            {
+                results.push_back(part_check_thread.checkPartAndFix(part->name));
+            }
+            catch (const Exception & ex)
+            {
+                tryLogCurrentException(log, __PRETTY_FUNCTION__);
+                results.emplace_back(part->name, false, "Check of part finished with error: '" + ex.message() + "'");
+            }
         }
     }
-    else
-    {
-        has_nothing_to_do = true;
-        return {};
-    }
+
+    return results;
 }
 
 
