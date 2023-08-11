@@ -8,7 +8,6 @@ import shutil
 import subprocess
 import time
 import sys
-from glob import glob
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
@@ -30,17 +29,6 @@ NAME = "Push to Dockerhub"
 TEMP_PATH = os.path.join(RUNNER_TEMP, "docker_images_check")
 
 ImagesDict = Dict[str, dict]
-
-
-# workaround for mypy issue [1]:
-#
-#    "Argument 1 to "map" has incompatible type overloaded function" [1]
-#
-#  [1]: https://github.com/python/mypy/issues/9864
-#
-# NOTE: simply lambda will do the trick as well, but pylint will not like it
-def realpath(*args, **kwargs):
-    return os.path.realpath(*args, **kwargs)
 
 
 class DockerImage:
@@ -123,23 +111,8 @@ def get_changed_docker_images(
     changed_images = []
 
     for dockerfile_dir, image_description in images_dict.items():
-        source_dir = GITHUB_WORKSPACE.rstrip("/") + "/"
-        dockerfile_files = glob(f"{source_dir}/{dockerfile_dir}/**", recursive=True)
-        # resolve symlinks
-        dockerfile_files = list(map(realpath, dockerfile_files))
-        # trim prefix to get relative path again, to match with files_changed
-        dockerfile_files = list(map(lambda x: x[len(source_dir) :], dockerfile_files))
-        logging.info(
-            "Docker %s (source_dir=%s) build context for PR %s @ %s: %s",
-            dockerfile_dir,
-            source_dir,
-            pr_info.number,
-            pr_info.sha,
-            str(dockerfile_files),
-        )
-
         for f in files_changed:
-            if f in dockerfile_files:
+            if f.startswith(dockerfile_dir):
                 name = image_description["name"]
                 only_amd64 = image_description.get("only_amd64", False)
                 logging.info(
@@ -272,8 +245,6 @@ def build_and_push_one_image(
         cache_from = f"{cache_from} --cache-from type=registry,ref={image.repo}:{tag}"
 
     cmd = (
-        # tar is requried to follow symlinks, since docker-build cannot do this
-        f"tar -v --exclude-vcs-ignores --show-transformed-names --transform 's#{image.full_path.lstrip('/')}#./#' --dereference --create {image.full_path} | "
         "docker buildx build --builder default "
         f"--label build-url={GITHUB_RUN_URL} "
         f"{from_tag_arg}"
@@ -283,7 +254,7 @@ def build_and_push_one_image(
         f"{cache_from} "
         f"--cache-to type=inline,mode=max "
         f"{push_arg}"
-        f"--progress plain -"
+        f"--progress plain {image.full_path}"
     )
     logging.info("Docker command to run: %s", cmd)
     with TeePopen(cmd, build_log) as proc:
