@@ -47,14 +47,12 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
     const Block & header_,
     const FormatSettings & format_settings_,
     size_t max_decoding_threads_,
-    size_t min_bytes_for_seek_,
-    bool batch_row_groups_)
+    size_t min_bytes_for_seek_)
     : IInputFormat(header_, &buf)
     , format_settings(format_settings_)
     , skip_row_groups(format_settings.parquet.skip_row_groups)
     , max_decoding_threads(max_decoding_threads_)
     , min_bytes_for_seek(min_bytes_for_seek_)
-    , batch_row_groups(batch_row_groups_)
     , pending_chunks(PendingChunk::Compare { .row_group_first = format_settings_.parquet.preserve_order })
 {
     if (max_decoding_threads > 1)
@@ -87,27 +85,22 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     THROW_ARROW_NOT_OK(parquet::arrow::FromParquetSchema(metadata->schema(), &schema));
 
     int num_row_groups = metadata->num_row_groups();
-    if (num_row_groups == 0 || skip_row_groups.size() == static_cast<size_t>(num_row_groups))
+    if (num_row_groups == 0)
         return;
 
-    size_t min_read_batch_rows = batch_row_groups ? format_settings.parquet.min_read_batch_rows : 1;
-    size_t min_read_batch_bytes = batch_row_groups ? format_settings.parquet.min_read_batch_bytes : 1;
-
     row_group_batches.reserve(num_row_groups);
-    row_group_batches.emplace_back();
 
     for (int row_group = 0; row_group < num_row_groups; ++row_group)
     {
         if (skip_row_groups.contains(row_group))
             continue;
 
-        if (row_group_batches.back().total_rows >= min_read_batch_rows || row_group_batches.back().total_bytes_uncompressed >= min_read_batch_bytes)
+        if (row_group_batches.empty() || row_group_batches.back().total_bytes_compressed >= min_bytes_for_seek)
             row_group_batches.emplace_back();
 
         row_group_batches.back().row_groups_idxs.push_back(row_group);
         row_group_batches.back().total_rows += metadata->RowGroup(row_group)->num_rows();
         row_group_batches.back().total_bytes_compressed += metadata->RowGroup(row_group)->total_compressed_size();
-        row_group_batches.back().total_bytes_uncompressed += metadata->RowGroup(row_group)->total_byte_size();
     }
 
     ArrowFieldIndexUtil field_util(
@@ -426,8 +419,7 @@ void registerInputFormatParquet(FormatFactory & factory)
                     sample,
                     settings,
                     max_parsing_threads,
-                    min_bytes_for_seek,
-                    is_remote_fs);
+                    min_bytes_for_seek);
             });
     factory.markFormatSupportsSubsetOfColumns("Parquet");
 }
