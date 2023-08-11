@@ -638,6 +638,12 @@ LockedKey::~LockedKey()
     if (!key_metadata->empty() || getKeyState() != KeyMetadata::KeyState::ACTIVE)
         return;
 
+    /// If state if ACTIVE and key turns out empty - we submit it for delayed removal.
+    /// Because we do not want to always lock all cache metadata lock, when we remove files segments.
+    /// but sometimes we do - we remove the empty key without delay - then key state
+    /// will be REMOVED here and we will return in the check above.
+    /// See comment near cleanupThreadFunc() for more details.
+
     key_metadata->key_state = KeyMetadata::KeyState::REMOVING;
     LOG_DEBUG(key_metadata->log, "Submitting key {} for removal", getKey());
     key_metadata->cleanup_queue->add(getKey());
