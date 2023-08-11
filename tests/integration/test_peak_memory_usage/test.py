@@ -92,6 +92,7 @@ def test_clickhouse_client_max_peak_memory_usage_distributed(started_cluster):
         f"Peak memory usage (for query): {peak_memory_usage}"
     )
 
+
 def test_clickhouse_client_max_peak_memory_usage_cluster(started_cluster):
     client_output = tempfile.TemporaryFile(mode="w+t")
     command_text = (
