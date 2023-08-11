@@ -552,10 +552,11 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
 
-            std::vector<std::function<void()>> commands;
             auto logs = getContext()->getSystemLogs();
+            std::vector<std::function<void()>> commands;
+            commands.reserve(logs.size());
             for (auto * system_log : logs)
-                commands.push_back([system_log] { system_log->flush(true); });
+                commands.emplace_back([system_log] { system_log->flush(true); });
 
             executeCommandsAndThrowIfError(commands);
             break;
