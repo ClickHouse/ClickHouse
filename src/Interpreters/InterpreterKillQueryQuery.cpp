@@ -24,7 +24,6 @@
 #include <Storages/IStorage.h>
 #include <Common/quoteString.h>
 #include <thread>
-#include <iostream>
 #include <cstddef>
 
 
