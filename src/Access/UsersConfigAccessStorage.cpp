@@ -54,7 +54,6 @@ namespace
 #else
         std::ranges::for_each(result.toUnderType().items, std::byteswap<UInt64>);
 #endif
-        //UUIDHelpers::toLegacyFormat(result);
         return result;
     }
 

@@ -27,6 +27,10 @@ namespace UUIDHelpers
 
     inline void toLegacyFormat(UUID & uuid)
     {
+        // WARNING: This function should only be used for maintaining backwards compatibility to convert a UUID from its
+        // correct byte ordering implementation to the previous implementation during various forms of processing where
+        // the individual byte ordering is important. This can include serialization, deserialization, reinterpretation,
+        // hashing, etc.
         auto & impl = uuid.toUnderType();
         std::swap(impl.items[HighBytes], impl.items[LowBytes]);
     }
