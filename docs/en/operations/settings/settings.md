@@ -4614,3 +4614,43 @@ SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_pars
 │              1.7091 │                 15008753 │
 └─────────────────────┴──────────────────────────┘
 ```
+
+## ignore_eacces_multidirectory_globs {#ignore_eacces_multidirectory_globs}
+
+Allows to ignore 'permission denied' errors when using multi-directory `{}` globs for [File](../../sql-reference/table-functions/file.md#globs_in_path) and [HDFS](../../sql-reference/table-functions/hdfs.md) storages.
+
+Possible values: `0`, `1`.
+
+Default value: `0`.
+
+### Example
+
+Having the following structure in `user_files`:
+```
+my_directory/
+├── data1
+│   ├── f1.csv
+├── data2
+│   ├── f2.csv
+└── test_root
+```
+where `data1`, `data2` directories are accessible, but one has no rights to read `test_root` directories.
+
+For a query like `SELECT *, _path, _file FROM file('my_directory/{data1/f1,data2/f2}.csv', CSV)` an exception will be thrown:
+`Code: 1001. DB::Exception: std::__1::__fs::filesystem::filesystem_error: filesystem error: in directory_iterator::directory_iterator(...): Permission denied`.  
+It happens because a multi-directory glob requires a recursive search in _all_ available directories under `my_directory`.
+
+If this setting is on, all inaccessible directories will be silently skipped, even if they are explicitly specified inside `{}`.
+
+```sql
+SELECT _path, _file FROM file('my_directory/{data1/f1,data2/f2}.csv', CSV) SETTINGS ignore_eacces_multidirectory_globs = 0;
+
+Code: 1001. DB::Exception: std::__1::__fs::filesystem::filesystem_error: filesystem error: in directory_iterator::directory_iterator(...): Permission denied
+```
+```sql
+SELECT _path, _file FROM file('my_directory/{data1/f1,data2/f2}.csv', CSV) SETTINGS ignore_eacces_multidirectory_globs = 1;
+
+┌─_path───────────────────┬─_file───────┐
+│ <full path to file>     │ <file name> │
+└─────────────────────────┴─────────────┘
+```
