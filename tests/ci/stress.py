@@ -202,13 +202,14 @@ def prepare_for_hung_check(drop_databases):
     call(
         make_query_command(
             """
-    select sleepEachRow((
-        select maxOrDefault(300 - elapsed) + 1
-        from system.processes
-        where query not like '%from system.processes%' and elapsed < 300
+    SELECT sleepEachRow((
+        SELECT maxOrDefault(300 - elapsed) + 1
+        FROM system.processes
+        WHERE query NOT LIKE '%FROM system.processes%' AND elapsed < 300
     ) / 300)
-    from numbers(300)
-    format Null
+    FROM numbers(300)
+    FORMAT Null
+    SETTINGS function_sleep_max_microseconds_per_block = 0
     """
         ),
         shell=True,
