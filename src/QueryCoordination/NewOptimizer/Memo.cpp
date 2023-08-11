@@ -124,7 +124,7 @@ void Memo::enforce()
 
 void Memo::enforce(Group * group, const PhysicalProperties & required_properties)
 {
-    auto & group_nodes = group->getGroupNodes();
+    auto group_nodes = group->getGroupNodes();
 
     for (auto & group_node : group_nodes)
     {
@@ -132,6 +132,19 @@ void Memo::enforce(Group * group, const PhysicalProperties & required_properties
 
         for (auto & [output_properties, required_child_prop] : output_prop_required_child_prop)
         {
+            /// every alternative prop
+            for (auto & required_child_p : required_child_prop)
+            {
+                auto & child_groups = group_node.getChildren();
+                for (size_t i = 0; i < group_node.getChildren().size(); ++i)
+                {
+                    enforce(child_groups[i], required_child_p[i]);
+                }
+            }
+
+            group_node.addOutPutProperties(output_properties, required_child_prop[0]); /// need keep lowest cost
+            group->addProperties(output_properties, &group_node); /// need keep lowest cost
+
             if (required_properties.distribution.type != PhysicalProperties::DistributionType::Any && required_properties != output_properties)
             {
                 switch (required_properties.distribution.type)
@@ -162,12 +175,8 @@ void Memo::enforce(Group * group, const PhysicalProperties & required_properties
                 }
             }
 
-            const auto & step = group_node.getStep();
-
-            for (auto * child_group : group_node.getChildren())
-            {
-                enforce(child_group, required_child_prop);
-            }
+            required_group_node.addOutPutProperties(required_properties, output_properties);
+            group->addProperties(required_properties, &required_group_node);
         }
     }
 }

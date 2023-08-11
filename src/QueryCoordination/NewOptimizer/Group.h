@@ -33,6 +33,11 @@ public:
         return group_nodes;
     }
 
+    void addProperties(const PhysicalProperties & properties, GroupNode * group_node)
+    {
+        lowest_cost_expressions.emplace(properties, group_node);
+    }
+
 private:
     std::vector<GroupNode> group_nodes;
 

@@ -9,7 +9,9 @@ namespace DB
 
 using AlternativeProperties = std::vector<std::vector<PhysicalProperties>>;
 
-using OutPutPropAndRequiredChildProp = std::unordered_map<PhysicalProperties, AlternativeProperties, PhysicalProperties::HashFunction>;
+using OutPutPropAndAlternativeRequiredChildProp = std::unordered_map<PhysicalProperties, AlternativeProperties, PhysicalProperties::HashFunction>;
+
+using OutPutPropAndRequiredChildProp = std::unordered_map<PhysicalProperties, std::vector<PhysicalProperties>, PhysicalProperties::HashFunction>;
 
 class GroupNode
 {
@@ -43,9 +45,9 @@ public:
         return step;
     }
 
-    void addOutPutProperties(const PhysicalProperties & physical_properties)
+    void addOutPutProperties(const PhysicalProperties & physical_properties, const std::vector<PhysicalProperties> & best_child_properties)
     {
-        lowest_cost_expressions[physical_properties];
+        lowest_cost_expressions[physical_properties] = best_child_properties;
     }
 
     OutPutPropAndRequiredChildProp & getOutPutPropAndRequiredChildProp()

@@ -36,18 +36,18 @@ namespace DB
 //
 //    SortDescription sort_description;
 
-OutPutPropAndRequiredChildProp derivationProperties(ReadFromMergeTree & /*step*/)
+OutPutPropAndAlternativeRequiredChildProp derivationProperties(ReadFromMergeTree & /*step*/)
 {
     //    TODO sort_description by pk, DistributionType by distributed table
-    OutPutPropAndRequiredChildProp res;
+    OutPutPropAndAlternativeRequiredChildProp res;
     PhysicalProperties properties{.distribution = {.type = PhysicalProperties::DistributionType::Any}};
     res[properties];
     return res;
 };
 
-OutPutPropAndRequiredChildProp derivationProperties(AggregatingStep & step)
+OutPutPropAndAlternativeRequiredChildProp derivationProperties(AggregatingStep & step)
 {
-    OutPutPropAndRequiredChildProp res;
+    OutPutPropAndAlternativeRequiredChildProp res;
 
     if (step.isFinal())
     {
@@ -56,17 +56,27 @@ OutPutPropAndRequiredChildProp derivationProperties(AggregatingStep & step)
         AlternativeProperties alternative_properties;
 
         std::vector<PhysicalProperties> required_child_prop;
-
         required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
 
         alternative_properties.emplace_back(required_child_prop);
 
         res[properties] = alternative_properties;
+
+
+        PhysicalProperties properties1{.distribution = {.type = PhysicalProperties::DistributionType::Hashed}};
+
+        AlternativeProperties alternative_properties1;
+        std::vector<PhysicalProperties> required_child_prop1;
+        required_child_prop1.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Hashed}});
+
+        alternative_properties1.emplace_back(required_child_prop1);
+
+        res[properties1] = alternative_properties1;
+
         return res;
     }
     else
     {
-        /// TODO Hashed by bucket
         PhysicalProperties properties{.distribution = {.type = PhysicalProperties::DistributionType::Any}};
 
         AlternativeProperties alternative_properties;
@@ -75,25 +85,17 @@ OutPutPropAndRequiredChildProp derivationProperties(AggregatingStep & step)
 
         res[properties] = alternative_properties;
 
-
-        PhysicalProperties properties{.distribution = {.type = PhysicalProperties::DistributionType::Any}};
-
-        std::vector<PhysicalProperties> required_child_prop1;
-
-        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
-
-
-
         return res;
     }
 };
 
-OutPutPropAndRequiredChildProp derivationProperties(MergingAggregatedStep & step)
+OutPutPropAndAlternativeRequiredChildProp derivationProperties(MergingAggregatedStep & step)
 {
-    OutPutPropAndRequiredChildProp res;
-    PhysicalProperties properties{.distribution = {.type = PhysicalProperties::DistributionType::Any}};
+    OutPutPropAndAlternativeRequiredChildProp res;
+    PhysicalProperties properties{.distribution = {.type = PhysicalProperties::DistributionType::Hashed}};
     std::vector<PhysicalProperties> required_child_prop;
 
+    /// TODO Hashed by bucket
     required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Hashed}});
 
     res[properties] = required_child_prop;
@@ -101,23 +103,23 @@ OutPutPropAndRequiredChildProp derivationProperties(MergingAggregatedStep & step
     return res;
 };
 
-OutPutPropAndRequiredChildProp derivationProperties(SortingStep & step)
+OutPutPropAndAlternativeRequiredChildProp derivationProperties(SortingStep & step)
 {
 
 };
 
-OutPutPropAndRequiredChildProp derivationProperties(JoinStep & step)
+OutPutPropAndAlternativeRequiredChildProp derivationProperties(JoinStep & step)
 {
 
 };
 
-OutPutPropAndRequiredChildProp derivationProperties(UnionStep & step)
+OutPutPropAndAlternativeRequiredChildProp derivationProperties(UnionStep & step)
 {
 
 };
 
 
-OutPutPropAndRequiredChildProp derivationProperties(QueryPlanStepPtr step)
+OutPutPropAndAlternativeRequiredChildProp derivationProperties(QueryPlanStepPtr step)
 {
     if (auto * scan_step = dynamic_cast<ReadFromMergeTree *>(step.get()))
     {
