@@ -32,8 +32,8 @@ create temporary table known_short_messages (s String) as select * from (select
 'brotli decode error{}', 'Invalid H3 index: {}', 'Too large node state size', 'No additional keys found.',
 'Attempt to read after EOF.', 'Replication was stopped', '{}	building file infos', 'Cannot parse uuid {}',
 'Query was cancelled', 'Cancelled merging parts', 'Cancelled mutating parts', 'Log pulling is cancelled',
-'Transaction was cancelled', 'Could not find table: {}', 'Table {} doesn''t exist',
-'Database {} doesn''t exist', 'Dictionary ({}) not found', 'Unknown table function {}',
+'Transaction was cancelled', 'Could not find table: {}', 'Table {} does not exist',
+'Database {} does not exist', 'Dictionary ({}) not found', 'Unknown table function {}',
 'Unknown format {}', 'Unknown explain kind ''{}''', 'Unknown setting {}', 'Unknown input format {}',
 'Unknown identifier: ''{}''', 'User name is empty', 'Expected function, got: {}',
 'Attempt to read after eof', 'String size is too big ({}), maximum: {}', 'API mode: {}'
@@ -48,7 +48,7 @@ select 'messages shorter than 16', max2(countDistinctOrDefault(message_format_st
 -- Unlike above, here we look at length of the formatted message, not format string. Most short format strings are fine because they end up decorated with context from outer or inner exceptions, e.g.:
 -- "Expected end of line" -> "Code: 117. DB::Exception: Expected end of line: (in file/uri /var/lib/clickhouse/user_files/data_02118): (at row 1)"
 -- But we have to cut out the boilerplate, e.g.:
--- "Code: 60. DB::Exception: Table default.a doesn't exist. (UNKNOWN_TABLE), Stack trace" -> "Table default.a doesn't exist."
+-- "Code: 60. DB::Exception: Table default.a does not exist. (UNKNOWN_TABLE), Stack trace" -> "Table default.a does not exist."
 -- This table currently doesn't have enough information to do this reliably, so we just regex search for " (ERROR_NAME_IN_CAPS)" and hope that's good enough.
 -- For the "Code: 123. DB::Exception: " part, we just subtract 26 instead of searching for it. Because sometimes it's not at the start, e.g.:
 -- "Unexpected error, will try to restart main thread: Code: 341. DB::Exception: Unexpected error: Code: 57. DB::Exception:[...]"
