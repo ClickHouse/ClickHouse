@@ -99,6 +99,7 @@ BlockWriteOps
 BlockWriteTime
 Bool
 BrokenDistributedFilesToInsert
+Bugfix
 BuildID
 BuilderBinAarch
 BuilderBinAmd
@@ -1095,6 +1096,7 @@ avro
 avx
 aws
 azureBlobStorage
+azureBlobStorageCluster
 backend
 backoff
 backticks
@@ -1160,6 +1162,7 @@ brotli
 bson
 bsoneachrow
 buffersize
+bugfix
 buildId
 buildable
 builtins
@@ -1401,6 +1404,7 @@ encodings
 encryptions
 endian
 endsWith
+endsWithUTF
 enum
 enum's
 enums
@@ -2207,6 +2211,7 @@ src
 stacktrace
 stacktraces
 startsWith
+startsWithUTF
 statbox
 stateful
 stddev

@@ -262,6 +262,9 @@ struct SelectQueryInfo
     // If limit is not 0, that means it's a trivial limit query.
     UInt64 limit = 0;
 
+    /// For IStorageSystemOneBlock
+    std::vector<UInt8> columns_mask;
+
     InputOrderInfoPtr getInputOrderInfo() const
     {
         return input_order_info ? input_order_info : (projection ? projection->input_order_info : nullptr);
