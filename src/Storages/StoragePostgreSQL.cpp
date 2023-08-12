@@ -45,7 +45,6 @@
 
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
-#include <boost/algorithm/string/replace.hpp>
 
 namespace DB
 {
