@@ -11,7 +11,7 @@ namespace DB
 
 struct AuxiliaryRandomData
 {
-    Int8 gcd_size_bytes;
+    UInt8 gcd_size_bytes;
     size_t decompressed_size;
 };
 
