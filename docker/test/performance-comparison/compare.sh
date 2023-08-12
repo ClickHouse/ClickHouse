@@ -71,6 +71,8 @@ function configure
     while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
     echo all killed
 
+
+
     set -m # Spawn temporary in its own process groups
 
     local setup_left_server_opts=(
