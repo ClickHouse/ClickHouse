@@ -55,7 +55,7 @@ def get_run_command(
         f"--volume={result_path}:/output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
         f"--cap-add syslog --cap-add sys_admin --cap-add sys_rawio "
-        f"{envs} {additional_env} "
+        f"{env_str} {additional_env} "
         f"{image}"
     )
 
