@@ -32,6 +32,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <base/range.h>
 
+#include <Access/ContextAccess.h>
+
 #include <type_traits>
 
 namespace DB
@@ -62,19 +64,19 @@ namespace ErrorCodes
   */
 
 
-class FunctionDictHelper : WithContext
+class FunctionDictHelper
 {
 public:
-    explicit FunctionDictHelper(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionDictHelper(ContextPtr context_) : local_context(context_), global_context(context_->getGlobalContext()), context_access(context_->getAccess()) {}
 
     std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
-        auto current_context = getContext();
-        auto dict = current_context->getExternalDictionariesLoader().getDictionary(dictionary_name, current_context);
+        auto context_for_dict = getContextForDictionaryLoader();
+        auto dict = context_for_dict->getExternalDictionariesLoader().getDictionary(dictionary_name, context_for_dict);
 
         if (!access_checked)
         {
-            current_context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
+            context_access->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
             access_checked = true;
         }
 
@@ -132,12 +134,28 @@ public:
 
     DictionaryStructure getDictionaryStructure(const String & dictionary_name) const
     {
-        return getContext()->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, getContext());
+        auto context_for_dict = getContextForDictionaryLoader();
+        return context_for_dict->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, context_for_dict);
     }
 
 private:
     /// Access cannot be not granted, since in this case checkAccess() will throw and access_checked will not be updated.
     std::atomic<bool> access_checked = false;
+
+    /// TODO: This is a hack to quickly work around a crash that we don't understand yet.
+    ///       We're supposed to just use WithContext instead of all of these fields, but sometimes
+    ///       the context expires unexpectedly. Understand it and fix properly.
+    ContextWeakPtr local_context;
+    ContextWeakPtr global_context;
+    std::shared_ptr<const ContextAccess> context_access;
+
+    ContextPtr getContextForDictionaryLoader() const
+    {
+        auto context = local_context.lock();
+        if (!context)
+            context = global_context.lock();
+        return context;
+    }
 
     /// We must not cache dictionary or dictionary's structure here, because there are places
     /// where ExpressionActionsPtr is cached (StorageDistributed caching it for sharding_key_expr and
