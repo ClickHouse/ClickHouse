@@ -449,7 +449,7 @@ def test_introspection():
         ]
     )
 
-    expected_error = "necessary to have grant SHOW USERS"
+    expected_error = "necessary to have the grant SHOW USERS"
     assert expected_error in instance.query_and_get_error("SHOW GRANTS FOR B", user="A")
 
     expected_access1 = (
@@ -556,7 +556,7 @@ def test_grant_with_replace_option():
     )
 
     expected_error = (
-        "it's necessary to have grant INSERT ON test.table WITH GRANT OPTION"
+        "it's necessary to have the grant INSERT ON test.table WITH GRANT OPTION"
     )
     assert expected_error in instance.query_and_get_error(
         "GRANT INSERT ON test.table TO B WITH REPLACE OPTION", user="A"
@@ -568,7 +568,7 @@ def test_grant_with_replace_option():
 
     instance.query("GRANT INSERT ON test.table TO A WITH GRANT OPTION")
     expected_error = (
-        "it's necessary to have grant SELECT ON test.table WITH GRANT OPTION"
+        "it's necessary to have the grant SELECT ON test.table WITH GRANT OPTION"
     )
     assert expected_error in instance.query_and_get_error(
         "GRANT INSERT ON test.table TO B WITH REPLACE OPTION", user="A"
