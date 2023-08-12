@@ -1,0 +1,64 @@
+TSV
+c0	Int64					
+c1	String					
+c2	Array(Int64)					
+c3	Tuple(Int64, Int64, Int64)					
+42	Some string	[1,2,3,4]	(1,2,3)
+42	abcd	[]	(4,5,6)
+CSV
+c0	String					
+c1	String					
+c2	String					
+c3	String					
+a	b	c	\nd
+a	b	c	\nd
+CSV with dates
+c0	Int64					
+c1	DateTime64(9)					
+c2	DateTime64(9)					
+c3	Int64					
+c4	Float64					
+c5	Int64					
+c6	String					
+c7	Int64					
+c8	Int64					
+c9	Int64					
+c10	Float64					
+c11	Int64					
+c12	Float64					
+c13	Float64					
+c14	Int64					
+c15	Float64					
+c16	Float64					
+c17	Float64					
+1	2021-04-01 00:00:18.000000000	2021-04-01 00:21:54.000000000	1	8.4	1	N	79	116	1	25.5	3	0.5	5.85	0	0.3	35.15	2.5
+1	2021-04-01 00:42:37.000000000	2021-04-01 00:46:23.000000000	1	0.9	1	N	75	236	2	5	3	0.5	0	0	0.3	8.8	2.5
+ClickHouse logs
+c0	Date					
+c1	Int64					
+c2	Int64					
+c3	Float64					
+c4	Array(Int64)					
+c5	String					
+c6	String					
+c7	String					
+c8	String					
+2022-11-17	11	7	30.825405	[395843]	{345bf223-db80-4772-9a07-73542321e715::202211_15349_15604_53}	<Debug>	MergeTask::PrepareStage:	Merging 6 parts: from 202211_15349_15599_52 to 202211_15604_15604_0 into Compact
+2022-11-17	11	7	30.826372	[395843]	{345bf223-db80-4772-9a07-73542321e715::202211_15349_15604_53}	<Debug>	MergeTask::PrepareStage:	Selected MergeAlgorithm: Horizontal
+Syslog
+c0	String					
+c1	Int64					
+c2	Int64					
+c3	Int64					
+c4	Int64					
+c5	String					
+c6	String					
+c7	String					
+Nov	13	10	29	56	PC	chronyd[227]:	Selected source PHC0
+Nov	13	13	24	2	PC	kernel:	[91566.562562] hv_utils: TimeSync IC version 4.0
+JSONL
+msg	Int64					
+type	String					
+nested	Map(String, String)					
+1	log	{'object':'a','field':'something_a'}
+2	log	{'object':'b','field':''}

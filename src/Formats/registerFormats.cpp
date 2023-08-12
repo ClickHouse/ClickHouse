@@ -101,6 +101,7 @@ void registerInputFormatJSONAsObject(FormatFactory & factory);
 void registerInputFormatLineAsString(FormatFactory & factory);
 void registerInputFormatMySQLDump(FormatFactory & factory);
 void registerInputFormatParquetMetadata(FormatFactory & factory);
+void registerInputFormatFreeform(FormatFactory & factory);
 
 #if USE_HIVE
 void registerInputFormatHiveText(FormatFactory & factory);
@@ -142,6 +143,7 @@ void registerTemplateSchemaReader(FormatFactory & factory);
 void registerMySQLSchemaReader(FormatFactory & factory);
 void registerBSONEachRowSchemaReader(FormatFactory & factory);
 void registerParquetMetadataSchemaReader(FormatFactory & factory);
+void registerFreeformSchemaReader(FormatFactory & factory);
 
 void registerFileExtensions(FormatFactory & factory);
 
@@ -241,6 +243,7 @@ void registerFormats()
 
     registerInputFormatCapnProto(factory);
     registerInputFormatMySQLDump(factory);
+    registerInputFormatFreeform(factory);
 
     registerInputFormatParquetMetadata(factory);
 
@@ -279,7 +282,7 @@ void registerFormats()
     registerMySQLSchemaReader(factory);
     registerBSONEachRowSchemaReader(factory);
     registerParquetMetadataSchemaReader(factory);
+    registerFreeformSchemaReader(factory);
 }
 
 }
-
