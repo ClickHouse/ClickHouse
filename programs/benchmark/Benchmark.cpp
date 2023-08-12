@@ -34,8 +34,6 @@
 #include <filesystem>
 
 
-namespace fs = std::filesystem;
-
 /** A tool for evaluating ClickHouse performance.
   * The tool emulates a case with fixed amount of simultaneously executing queries.
   */
