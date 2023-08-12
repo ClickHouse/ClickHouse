@@ -996,8 +996,11 @@ void StorageBuffer::reschedule()
         std::unique_lock lock(buffer.tryLock());
         if (lock.owns_lock())
         {
-            min_first_write_time = buffer.first_write_time;
-            rows += buffer.data.rows();
+            if (buffer.data)
+            {
+                min_first_write_time = std::min(min_first_write_time, buffer.first_write_time);
+                rows += buffer.data.rows();
+            }
         }
     }
 

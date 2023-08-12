@@ -2436,6 +2436,7 @@ tsv
 tui
 tumbleEnd
 tumbleStart
+tupleConcat
 tupleDivide
 tupleDivideByNumber
 tupleElement
