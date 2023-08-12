@@ -121,8 +121,8 @@ public:
         KeyNotFoundPolicy key_not_found_policy,
         bool is_initial_load = false);
 
-    void removeKey(const Key & key, bool if_exists, bool is_releasable);
-    void removeAllKeys(bool is_releasable);
+    void removeKey(const Key & key, bool if_exists, bool if_releasable);
+    void removeAllKeys(bool if_releasable);
 
     void cancelCleanup();
 
