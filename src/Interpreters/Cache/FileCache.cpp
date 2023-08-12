@@ -178,31 +178,6 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
                         "Cannot have zero size downloaded file segments. {}",
                         file_segment->getInfoForLog());
                 }
-
-#ifndef NDEBUG
-                /**
-                * Check that in-memory state of the cache is consistent with the state on disk.
-                * Check only in debug build, because such checks can be done often and can be quite
-                * expensive compared to overall query execution time.
-                */
-
-                fs::path path = file_segment->getPathInLocalCache();
-                if (!fs::exists(path))
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "File path does not exist, but file has DOWNLOADED state. {}",
-                        file_segment->getInfoForLog());
-                }
-
-                if (fs::file_size(path) == 0)
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Cannot have zero size downloaded file segments. {}",
-                        file_segment->getInfoForLog());
-                }
-#endif
             }
         }
         else
