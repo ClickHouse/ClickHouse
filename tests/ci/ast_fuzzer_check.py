@@ -8,7 +8,11 @@ import sys
 from github import Github
 
 from build_download_helper import get_build_name_for_check, read_build_urls
-from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from clickhouse_helper import (
+    ClickHouseHelper,
+    prepare_tests_results_for_clickhouse,
+    get_instance_type,
+)
 from commit_status_helper import (
     RerunHelper,
     format_description,
@@ -30,15 +34,38 @@ from stopwatch import Stopwatch
 IMAGE_NAME = "clickhouse/fuzzer"
 
 
-def get_run_command(pr_number, sha, download_url, workspace_path, image):
+def get_run_command(
+    check_start_time,
+    check_name,
+    pr_number,
+    sha,
+    download_url,
+    workspace_path,
+    image):
+
+    instance_type = get_instance_type()
+
+    envs = [
+        "-e CLICKHOUSE_CI_LOGS_HOST",
+        "-e CLICKHOUSE_CI_LOGS_PASSWORD",
+        f"-e CHECK_START_TIME='{check_start_time}'",
+        f"-e CHECK_NAME='{check_name}'",
+        f"-e INSTANCE_TYPE='{instance_type}'",
+        f"-e PR_TO_TEST={pr_number}",
+        f"-e SHA_TO_TEST={sha}",
+        f"-e BINARY_URL_TO_DOWNLOAD='{download_url}'"
+    ]
+
+    env_str = " ".join(envs)
+
     return (
         f"docker run "
         # For sysctl
         "--privileged "
         "--network=host "
         f"--volume={workspace_path}:/workspace "
+        f"{env_str} "
         "--cap-add syslog --cap-add sys_admin --cap-add=SYS_PTRACE "
-        f'-e PR_TO_TEST={pr_number} -e SHA_TO_TEST={sha} -e BINARY_URL_TO_DOWNLOAD="{download_url}" '
         f"{image}"
     )
 
@@ -88,7 +115,13 @@ def main():
         os.makedirs(workspace_path)
 
     run_command = get_run_command(
-        pr_info.number, pr_info.sha, build_url, workspace_path, docker_image
+        stopwatch.start_time_str,
+        check_name,
+        pr_info.number,
+        pr_info.sha,
+        build_url,
+        workspace_path,
+        docker_image
     )
     logging.info("Going to run %s", run_command)
 
@@ -153,6 +186,22 @@ def main():
         test_result.status = "FAIL"
 
     ch_helper = ClickHouseHelper()
+
+    # Cleanup run log from the credentials of CI logs database.
+    # Note: a malicious user can still print them by splitting the value into parts.
+    # But we will be warned when a malicious user modifies CI script.
+    # Although they can also print them from inside tests.
+    # Nevertheless, the credentials of the CI logs have limited scope
+    # and does not provide access to sensitive info.
+
+    ci_logs_host = os.getenv("CLICKHOUSE_CI_LOGS_HOST", "CLICKHOUSE_CI_LOGS_HOST")
+    ci_logs_password = os.getenv(
+        "CLICKHOUSE_CI_LOGS_PASSWORD", "CLICKHOUSE_CI_LOGS_PASSWORD"
+    )
+    subprocess.check_call(
+        f"sed -i -r -e 's!{ci_logs_host}!CLICKHOUSE_CI_LOGS_HOST!g; s!{ci_logs_password}!CLICKHOUSE_CI_LOGS_PASSWORD!g;' '{run_log_path}'",
+        shell=True,
+    )
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
