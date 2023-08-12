@@ -132,6 +132,22 @@ def main():
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
+    # Cleanup run log from the credentials of CI logs database.
+    # Note: a malicious user can still print them by splitting the value into parts.
+    # But we will be warned when a malicious user modifies CI script.
+    # Although they can also print them from inside tests.
+    # Nevertheless, the credentials of the CI logs have limited scope
+    # and does not provide access to sensitive info.
+
+    ci_logs_host = os.getenv("CLICKHOUSE_CI_LOGS_HOST", "CLICKHOUSE_CI_LOGS_HOST")
+    ci_logs_password = os.getenv(
+        "CLICKHOUSE_CI_LOGS_PASSWORD", "CLICKHOUSE_CI_LOGS_PASSWORD"
+    )
+    subprocess.check_call(
+        f"sed -i -r -e 's!{ci_logs_host}!CLICKHOUSE_CI_LOGS_HOST!g; s!{ci_logs_password}!CLICKHOUSE_CI_LOGS_PASSWORD!g;' '{run_log_path}'",
+        shell=True,
+    )
+
     check_name_lower = (
         check_name.lower().replace("(", "").replace(")", "").replace(" ", "")
     )
@@ -180,22 +196,6 @@ def main():
         test_result.status = "FAIL"
 
     ch_helper = ClickHouseHelper()
-
-    # Cleanup run log from the credentials of CI logs database.
-    # Note: a malicious user can still print them by splitting the value into parts.
-    # But we will be warned when a malicious user modifies CI script.
-    # Although they can also print them from inside tests.
-    # Nevertheless, the credentials of the CI logs have limited scope
-    # and does not provide access to sensitive info.
-
-    ci_logs_host = os.getenv("CLICKHOUSE_CI_LOGS_HOST", "CLICKHOUSE_CI_LOGS_HOST")
-    ci_logs_password = os.getenv(
-        "CLICKHOUSE_CI_LOGS_PASSWORD", "CLICKHOUSE_CI_LOGS_PASSWORD"
-    )
-    subprocess.check_call(
-        f"sed -i -r -e 's!{ci_logs_host}!CLICKHOUSE_CI_LOGS_HOST!g; s!{ci_logs_password}!CLICKHOUSE_CI_LOGS_PASSWORD!g;' '{run_log_path}'",
-        shell=True,
-    )
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
