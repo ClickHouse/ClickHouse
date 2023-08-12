@@ -1,4 +1,5 @@
 #pragma once
+
 #include <base/defines.h>
 #include <base/types.h>
 #include <fmt/format.h>
@@ -6,6 +7,8 @@
 #include <unordered_map>
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
+#include <base/EnumReflection.h>
+
 
 struct PreformattedMessage;
 consteval void formatStringCheckArgsNumImpl(std::string_view str, size_t nargs);
