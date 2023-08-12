@@ -77,6 +77,7 @@ namespace ErrorCodes
     extern const int CANNOT_DECOMPRESS;
     extern const int ILLEGAL_CODEC_PARAMETER;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
 }
 
 UInt32 CompressionCodecGCD::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -356,18 +357,15 @@ void registerCodecGCD(CompressionCodecFactory & factory)
     UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::GCD);
     auto codec_builder = [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
-
-        if (arguments && !arguments->children.empty())
-            throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "GCD codec must have 0 parameters, given {}", arguments->children.size());
-
         /// Default bytes size is 1.
         Int8 gcd_bytes_size = 1;
-
         if (column_type)
         {
             gcd_bytes_size = getGCDBytesSize(column_type);
         }
 
+        if (arguments && arguments->children.size() > 1)
+            throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "GCD codec must have 1 parameter, given {}", arguments->children.size());
         return std::make_shared<CompressionCodecGCD>(gcd_bytes_size);
     };
     factory.registerCompressionCodecWithType("GCD", method_code, codec_builder);
