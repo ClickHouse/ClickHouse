@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+
 import os
 import logging
 import sys
@@ -19,15 +20,11 @@ from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
 from s3_helper import S3Helper
 from tee_popen import TeePopen
-from clickhouse_helper import get_instance_type
-from stopwatch import Stopwatch
 
 IMAGE_NAME = "clickhouse/performance-comparison"
 
 
 def get_run_command(
-    check_start_time,
-    check_name,
     workspace,
     result_path,
     repo_tests_path,
@@ -36,26 +33,12 @@ def get_run_command(
     additional_env,
     image,
 ):
-    instance_type = get_instance_type()
-
-    envs = [
-        "-e CLICKHOUSE_CI_LOGS_HOST",
-        "-e CLICKHOUSE_CI_LOGS_PASSWORD",
-        f"-e CHECK_START_TIME='{check_start_time}'",
-        f"-e CHECK_NAME='{check_name}'",
-        f"-e INSTANCE_TYPE='{instance_type}'",
-        f"-e PR_TO_TEST={pr_to_test}",
-        f"-e SHA_TO_TEST={sha_to_test}",
-    ]
-
-    env_str = " ".join(envs)
-
     return (
         f"docker run --privileged --volume={workspace}:/workspace "
         f"--volume={result_path}:/output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
         f"--cap-add syslog --cap-add sys_admin --cap-add sys_rawio "
-        f"{envs} {additional_env} "
+        f"-e PR_TO_TEST={pr_to_test} -e SHA_TO_TEST={sha_to_test} {additional_env} "
         f"{image}"
     )
 
@@ -79,9 +62,6 @@ class RamDrive:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-
-    stopwatch = Stopwatch()
-
     temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
     repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
     repo_tests_path = os.path.join(repo_path, "tests")
@@ -177,8 +157,6 @@ if __name__ == "__main__":
     docker_env += "".join([f" -e {name}" for name in env_extra])
 
     run_command = get_run_command(
-        stopwatch.start_time_str,
-        check_name,
         result_path,
         result_path,
         repo_tests_path,
@@ -201,22 +179,6 @@ if __name__ == "__main__":
             logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
-
-    # Cleanup run log from the credentials of CI logs database.
-    # Note: a malicious user can still print them by splitting the value into parts.
-    # But we will be warned when a malicious user modifies CI script.
-    # Although they can also print them from inside tests.
-    # Nevertheless, the credentials of the CI logs have limited scope
-    # and does not provide access to sensitive info.
-
-    ci_logs_host = os.getenv("CLICKHOUSE_CI_LOGS_HOST", "CLICKHOUSE_CI_LOGS_HOST")
-    ci_logs_password = os.getenv(
-        "CLICKHOUSE_CI_LOGS_PASSWORD", "CLICKHOUSE_CI_LOGS_PASSWORD"
-    )
-    subprocess.check_call(
-        f"sed -i -r -e 's!{ci_logs_host}!CLICKHOUSE_CI_LOGS_HOST!g; s!{ci_logs_password}!CLICKHOUSE_CI_LOGS_PASSWORD!g;' '{run_log_path}'",
-        shell=True,
-    )
 
     paths = {
         "compare.log": os.path.join(result_path, "compare.log"),
