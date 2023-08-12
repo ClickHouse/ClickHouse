@@ -10,7 +10,7 @@ create table morton_numbers_02457(
     n7 UInt8,
     n8 UInt8
 )
-    Engine=MergeTree()
+    Engine=MergeTree() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi'
     ORDER BY n1;
 
 SELECT '----- CONST -----';
@@ -44,7 +44,7 @@ create table morton_numbers_1_02457(
     n7 UInt64,
     n8 UInt64
 )
-    Engine=MergeTree()
+    Engine=MergeTree() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi'
     ORDER BY n1;
 
 insert into morton_numbers_1_02457
@@ -79,7 +79,7 @@ create table morton_numbers_2_02457(
     n3 UInt64,
     n4 UInt64
 )
-    Engine=MergeTree()
+    Engine=MergeTree() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi'
     ORDER BY n1;
 
 insert into morton_numbers_2_02457
@@ -113,7 +113,7 @@ create table morton_numbers_3_02457(
     n1 UInt64,
     n2 UInt64
 )
-    Engine=MergeTree()
+    Engine=MergeTree() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi'
     ORDER BY n1;
 
 insert into morton_numbers_3_02457
