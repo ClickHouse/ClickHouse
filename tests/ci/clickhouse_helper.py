@@ -87,7 +87,7 @@ class ClickHouseHelper:
             )
 
             if response.status_code >= 500:
-                # A retriable error
+                # A retryable error
                 time.sleep(1)
                 continue
 
