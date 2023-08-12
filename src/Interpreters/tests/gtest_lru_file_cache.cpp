@@ -626,8 +626,7 @@ TEST_F(FileCacheTest, get)
     {
         /// Test background thread delated cleanup
 
-        auto settings2{settings};
-        auto cache = DB::FileCache(settings2);
+        auto cache = DB::FileCache(settings);
         cache.initialize();
         const auto key = cache.createKeyForPath("key10");
         const auto key_path = cache.getPathInLocalCache(key);
