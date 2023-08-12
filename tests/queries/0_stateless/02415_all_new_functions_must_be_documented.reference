@@ -885,7 +885,13 @@ tupleDivide
 tupleDivideByNumber
 tupleElement
 tupleHammingDistance
+tupleIntDiv
+tupleIntDivByNumber
+tupleIntDivOrZero
+tupleIntDivOrZeroByNumber
 tupleMinus
+tupleModulo
+tupleModuloByNumber
 tupleMultiply
 tupleMultiplyByNumber
 tupleNegate
