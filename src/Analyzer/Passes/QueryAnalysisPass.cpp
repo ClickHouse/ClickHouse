@@ -1918,6 +1918,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         subquery_settings.max_result_rows = 1;
         subquery_settings.extremes = false;
         subquery_context->setSettings(subquery_settings);
+        /// When execute `INSERT INTO t WITH ... SELECT ...`, it may lead to `Unknown columns`
+        /// exception with this settings enabled(https://github.com/ClickHouse/ClickHouse/issues/52494).
+        subquery_context->setSetting("use_structure_from_insertion_table_in_table_functions", false);
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node->toAST(), subquery_context, options);
