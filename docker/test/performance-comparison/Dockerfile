@@ -56,10 +56,9 @@ COPY * /
 # node #0 should be less stable because of system interruptions. We bind
 # randomly to node 1 or 0 to gather some statistics on that. We have to bind
 # both servers and the tmpfs on which the database is stored. How to do it
-# through Yandex Sandbox API is unclear, but by default tmpfs uses
+# is unclear, but by default tmpfs uses
 # 'process allocation policy', not sure which process but hopefully the one that
-# writes to it, so just bind the downloader script as well. We could also try to
-# remount it with proper options in Sandbox task.
+# writes to it, so just bind the downloader script as well.
 # https://www.kernel.org/doc/Documentation/filesystems/tmpfs.txt
 # Double-escaped backslashes are a tribute to the engineering wonder of docker --
 # it gives '/bin/sh: 1: [bash,: not found' otherwise.
