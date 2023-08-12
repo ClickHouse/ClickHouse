@@ -36,7 +36,7 @@ def get_run_command(
     result_folder,
     repo_tests_path,
     server_log_folder,
-    image
+    image,
 ):
     instance_type = get_instance_type()
 
@@ -179,7 +179,7 @@ def run_stress_test(docker_image_name):
         result_path,
         repo_tests_path,
         server_log_path,
-        docker_image
+        docker_image,
     )
     logging.info("Going to run stress test: %s", run_command)
 
