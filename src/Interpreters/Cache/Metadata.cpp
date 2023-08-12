@@ -694,6 +694,7 @@ bool LockedKey::removeAllFileSegments(bool if_releasable)
             /// so if we remove file segment now, we break the freeable_count
             /// calculation in tryReserve.
             ++it;
+            removed_all = false;
             continue;
         }
 
