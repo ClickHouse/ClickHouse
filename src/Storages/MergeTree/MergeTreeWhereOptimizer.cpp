@@ -284,7 +284,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
     Conditions res;
     std::set<Int64> pk_positions;
     analyzeImpl(res, node, where_optimizer_context, pk_positions);
-    
+
     /// E.g., if the primary key is (a, b, c) but the condition is a = 1 and c = 1,
     /// we should only put (a = 1) to the tail of PREWHERE,
     /// and treat (c = 1) as a normal column.
