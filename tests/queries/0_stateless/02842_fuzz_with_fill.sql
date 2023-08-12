@@ -1,0 +1,21 @@
+SELECT x
+FROM
+(
+    SELECT 3 AS x
+)
+ORDER BY
+    -x ASC,
+    x ASC WITH FILL FROM 3 TO 7,
+    -x ASC WITH FILL FROM -10 TO -1
+FORMAT Null;
+
+SELECT x
+FROM
+(
+    SELECT 3 AS x
+)
+ORDER BY
+    x ASC,
+    -x ASC WITH FILL FROM -10 TO -1,
+    x ASC WITH FILL FROM 3 TO 7
+FORMAT Null;
