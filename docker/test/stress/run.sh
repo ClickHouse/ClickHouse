@@ -56,15 +56,15 @@ azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 if [ -n "${CLICKHOUSE_CI_LOGS_HOST}" ]
 then
     echo "
-    remote_servers:
-        system_logs_export:
-            shard:
-                replica:
-                    secure: 1
-                    user: ci
-                    host: '${CLICKHOUSE_CI_LOGS_HOST}'
-                    password: '${CLICKHOUSE_CI_LOGS_PASSWORD}'
-    " > /etc/clickhouse-server/config.d/system_logs_export.yaml
+remote_servers:
+    system_logs_export:
+        shard:
+            replica:
+                secure: 1
+                user: ci
+                host: '${CLICKHOUSE_CI_LOGS_HOST}'
+                password: '${CLICKHOUSE_CI_LOGS_PASSWORD}'
+" > /etc/clickhouse-server/config.d/system_logs_export.yaml
 fi
 
 start
