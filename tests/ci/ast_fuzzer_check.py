@@ -35,14 +35,8 @@ IMAGE_NAME = "clickhouse/fuzzer"
 
 
 def get_run_command(
-    check_start_time,
-    check_name,
-    pr_number,
-    sha,
-    download_url,
-    workspace_path,
-    image):
-
+    check_start_time, check_name, pr_number, sha, download_url, workspace_path, image
+):
     instance_type = get_instance_type()
 
     envs = [
@@ -53,7 +47,7 @@ def get_run_command(
         f"-e INSTANCE_TYPE='{instance_type}'",
         f"-e PR_TO_TEST={pr_number}",
         f"-e SHA_TO_TEST={sha}",
-        f"-e BINARY_URL_TO_DOWNLOAD='{download_url}'"
+        f"-e BINARY_URL_TO_DOWNLOAD='{download_url}'",
     ]
 
     env_str = " ".join(envs)
@@ -121,7 +115,7 @@ def main():
         pr_info.sha,
         build_url,
         workspace_path,
-        docker_image
+        docker_image,
     )
     logging.info("Going to run %s", run_command)
 
