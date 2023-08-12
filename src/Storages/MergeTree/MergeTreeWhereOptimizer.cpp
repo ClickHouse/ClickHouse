@@ -284,8 +284,10 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
     Conditions res;
     std::set<Int64> pk_positions;
     analyzeImpl(res, node, where_optimizer_context, pk_positions);
-    /// e.g. if primary kes are (a,b,c) but the condition is a = 1 and c = 1, we should only put (a = 1) to the last,
-    /// and treat (c = 1) as normal column.
+    
+    /// E.g., if the primary key is (a, b, c) but the condition is a = 1 and c = 1,
+    /// we should only put (a = 1) to the tail of PREWHERE,
+    /// and treat (c = 1) as a normal column.
     if (where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
     {
         Int64 min_valid_pk_pos = -1;
@@ -300,7 +302,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
             if (cond.min_position_in_primary_key > min_valid_pk_pos)
                 cond.min_position_in_primary_key = std::numeric_limits<Int64>::max() - 1;
         }
-        LOG_TRACE(log, "the min valid primary key position is {}", min_valid_pk_pos);
+        LOG_TRACE(log, "The min valid primary key position for moving to the tail of PREWHERE is {}", min_valid_pk_pos);
     }
 
     return res;
