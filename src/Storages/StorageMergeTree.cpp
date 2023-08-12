@@ -997,8 +997,14 @@ bool StorageMergeTree::mutationVersionsEquivalent(const DataPartPtr & left, cons
         for (; mutations_it != mutations_end_it; ++mutations_it)
         {
             if (mutations_it->second.affectsPartition(follower_part->info.partition_id))
+            {
+                LOG_TRACE(log, "mutationVersionsEquivalent - no");
                 return false;
+            }
         }
+        LOG_TRACE(log, "mutationVersionsEquivalent - yes");
+        return true;
+
     }
 
     return true;
@@ -1017,6 +1023,8 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
     bool optimize_skip_merged_partitions,
     SelectPartsDecision * select_decision_out)
 {
+    // LOG_TRACE(log, "top of selectPartsToMerge");
+
     auto data_settings = getSettings();
 
     auto future_part = std::make_shared<FutureMergedMutatedPart>();
@@ -1030,6 +1038,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
 
     auto can_merge = [this, &lock](const DataPartPtr & left, const DataPartPtr & right, const MergeTreeTransaction * tx, PreformattedMessage & disable_reason) -> bool
     {
+        // LOG_TRACE(log, "top of can_merge");
         if (tx)
         {
             /// Cannot merge parts if some of them are not visible in current snapshot
@@ -1072,6 +1081,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
         if (!mutationVersionsEquivalent(left, right, lock))
         {
             disable_reason = PreformattedMessage::create("Some parts have different mutation versions");
+            LOG_TRACE(log, "can_merge - Some parts have different mutation versions - false");
             return false;
         }
 
@@ -1085,6 +1095,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
             return false;
         }
 
+        // LOG_TRACE(log, "bottom of can_merge - true");
         return true;
     };
 
@@ -1102,6 +1113,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
 
     if (partition_id.empty())
     {
+        // LOG_TRACE(log, "partition_id.empty()");
         if (is_background_memory_usage_ok(out_disable_reason))
         {
             UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge();
@@ -1127,6 +1139,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
     }
     else
     {
+        LOG_TRACE(log, "!partition_id.empty()");
         while (true)
         {
             auto timeout_ms = getSettings()->lock_acquire_timeout_for_background_operations.totalMilliseconds();
@@ -1558,7 +1571,7 @@ UInt64 StorageMergeTree::getCurrentMutationVersion(
     if (it == current_mutations_by_version.begin())
     {
 
-        LOG_TRACE(log, "getCurrentMutationVersion: {}", 0);
+        // LOG_TRACE(log, "getCurrentMutationVersion: {}", 0);
         return 0;
     }
 
