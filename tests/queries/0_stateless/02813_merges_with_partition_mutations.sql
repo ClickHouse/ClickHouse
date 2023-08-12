@@ -14,41 +14,51 @@ optimize table multipart final;
 
 alter table multipart update s='first' where p=7 SETTINGS mutations_sync = 2;
 select 'global mutation';
-select name from system.parts where table='multipart' and active=1 and part_id in ('7', '8');
+select name from system.parts where table='multipart' and active=1 and (name LIKE '7\\_%' OR name LIKE '8\\_%');
 
 
 alter table multipart update s='second' IN PARTITION 7 where p=7 SETTINGS mutations_sync = 2;
 alter table multipart update s='third' where p=7 SETTINGS mutations_sync = 2;
 
 select 'local, then global mutation';
-select name from system.parts where table='multipart' and active=1 and part_id in ('7', '8');
+select name from system.parts where table='multipart' and active=1 and (name LIKE '7\\_%' OR name LIKE '8\\_%');
 optimize table multipart final;
 select 'local, then global mutation, then optimize';
-select name from system.parts where table='multipart' and active=1 and part_id in ('7', '8');
+select name from system.parts where table='multipart' and active=1 and (name LIKE '7\\_%' OR name LIKE '8\\_%');
 
 alter table multipart update s='fourth' where p=7 SETTINGS mutations_sync = 2;
 alter table multipart update s='fifth' IN PARTITION 7 where p=7 SETTINGS mutations_sync = 2;
 
-select 'global, then locl mutation';
-select name from system.parts where table='multipart' and active=1 and part_id in ('7', '8');
+select 'global, then local mutation';
+select name from system.parts where table='multipart' and active=1 and (name LIKE '7\\_%' OR name LIKE '8\\_%');
 optimize table multipart final;
-select 'global, then locl mutation, then optimize';
-select name from system.parts where table='multipart' and active=1 and part_id in ('7', '8');
+select 'global, then local mutation, then optimize';
+select name from system.parts where table='multipart' and active=1 and (name LIKE '7\\_%' OR name LIKE '8\\_%');
 
-insert into multipart values(42, 7, 'inserted - 1');
-select 'insert';
-select name from system.parts where table='multipart' and active=1 and part_id in ('7', '8');
+
 alter table multipart update s='testing merge' where p=7 SETTINGS mutations_sync = 2;
-optimize table multipart final;
-select 'global mutation, optimize';
-select name from system.parts where table='multipart' and active=1 and part_id in ('7', '8');
+select 'global mutation';
+select name from system.parts where table='multipart' and active=1 and (name LIKE '7\\_%' OR name LIKE '8\\_%');
 
-insert into multipart values(42, 7, 'inserted - 2');
-select 'insert';
-select name from system.parts where table='multipart' and active=1 and part_id in ('7', '8');
+insert into multipart values(42, 8, 'inserted - 1');
+select 'global mutation, insert';
+select name from system.parts where table='multipart' and active=1 and (name LIKE '7\\_%' OR name LIKE '8\\_%');
+
+optimize table multipart final;
+select 'global mutation, insert, optimize';
+select name from system.parts where table='multipart' and active=1 and (name LIKE '7\\_%' OR name LIKE '8\\_%');
+
+
 alter table multipart update s='testing merge' IN PARTITION 7 where p=7 SETTINGS mutations_sync = 2;
-optimize table multipart final;
-select 'local mutation, optimize';
-select name from system.parts where table='multipart' and active=1 and part_id in ('7', '8');
+select 'local mutation';
+select name from system.parts where table='multipart' and active=1 and (name LIKE '7\\_%' OR name LIKE '8\\_%');
 
-drop table multipart
+insert into multipart values(42, 8, 'inserted - 2');
+select 'local mutation, insert';
+select name from system.parts where table='multipart' and active=1 and (name LIKE '7\\_%' OR name LIKE '8\\_%');
+
+optimize table multipart final;
+select 'local mutation, insert, optimize';
+select name from system.parts where table='multipart' and active=1 and (name LIKE '7\\_%' OR name LIKE '8\\_%');
+
+drop table multipart;
