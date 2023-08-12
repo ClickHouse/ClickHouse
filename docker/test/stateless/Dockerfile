@@ -87,6 +87,5 @@ RUN npm install -g azurite \
 COPY run.sh /
 COPY setup_minio.sh /
 COPY setup_hdfs_minicluster.sh /
-COPY setup_export_logs.sh /
 
 CMD ["/bin/bash", "/run.sh"]
