@@ -229,14 +229,14 @@ namespace
 UInt8 getGCDBytesSize(const IDataType * column_type)
 {
     if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is not applicable for {} because the data type is not of fixed size",
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec GCD is not applicable for {} because the data type is not of fixed size",
             column_type->getName());
 
     size_t max_size = column_type->getSizeOfValueInMemory();
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8 || max_size == 16 || max_size == 32)
         return static_cast<UInt8>(max_size);
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is only applicable for data types of size 1, 2, 4, 8, 16, 32 bytes. Given type {}",
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec GCD is only applicable for data types of size 1, 2, 4, 8, 16, 32 bytes. Given type {}",
             column_type->getName());
 }
 
