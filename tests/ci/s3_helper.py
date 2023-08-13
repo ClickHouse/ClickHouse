@@ -92,7 +92,7 @@ class S3Helper:
                     file_path,
                 )
             else:
-                logging.info("No content type provied for %s", file_path)
+                logging.info("No content type provided for %s", file_path)
         else:
             if re.search(r"\.(txt|log|err|out)$", s3_path) or re.search(
                 r"\.log\..*(?<!\.zst)$", s3_path
