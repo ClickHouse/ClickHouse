@@ -19,10 +19,11 @@
     <opentelemetry_span_log remove="remove"/>
     <session_log remove="remove"/>
 
-    <!-- performance tests does not uses real block devices,
-         instead they stores everything in memory.
+    <!-- performance tests do not use real block devices,
+         instead they store everything in memory.
 
-         And so, to avoid extra memory reference switch *_log to Memory engine. -->
+         And so, to avoid extra memory reference switch *_log to Memory engine.
+    -->
     <query_log>
          <engine>ENGINE = Memory</engine>
          <partition_by remove="remove"/>
