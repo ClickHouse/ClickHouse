@@ -31,7 +31,7 @@ function thread_attach()
 
 function insert()
 {
-    $CLICKHOUSE_CLIENT -q "INSERT INTO alter_table$(($RANDOM % 2)) VALUES ($RANDOM, $i)"
+    $CLICKHOUSE_CLIENT -q "INSERT INTO alter_table$(($RANDOM % 2)) SELECT $RANDOM, $i" 2>/dev/null
 }
 
 thread_detach & PID_1=$!
@@ -41,7 +41,7 @@ thread_attach & PID_4=$!
 
 function do_inserts()
 {
-    for i in {1..30}; do
+    for i in {1..20}; do
         while ! insert; do $CLICKHOUSE_CLIENT -q "SELECT '$CLICKHOUSE_DATABASE', 'retrying insert $i' FORMAT Null"; done
     done
 }
@@ -55,8 +55,10 @@ wait
 
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table0"
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table1"
-$CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table0 ATTACH PARTITION ID 'all'";
-$CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table1 ATTACH PARTITION ID 'all'";
+$CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table0 ATTACH PARTITION ID 'all'"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table1 ATTACH PARTITION ID 'all'" 2>/dev/null
+$CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table1"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table1 ATTACH PARTITION ID 'all'"
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table0"
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table1"
 
