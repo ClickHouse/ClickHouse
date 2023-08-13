@@ -36,6 +36,7 @@ bool ParserDropFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expec
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
+        pos.get();
     }
 
     auto drop_function_query = std::make_shared<ASTDropFunctionQuery>();
