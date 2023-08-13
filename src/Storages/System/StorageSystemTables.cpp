@@ -108,6 +108,22 @@ static ColumnPtr getFilteredTables(const ASTPtr & query, const ColumnPtr & filte
     return block.getByPosition(0).column;
 }
 
+/// Avoid heavy operation on tables if we only queried columns that we can get without table object.
+/// Otherwise it will require table initialization for Lazy database.
+static bool needTable(const DatabasePtr & database, const Block & header)
+{
+    if (database->getEngineName() != "Lazy")
+        return true;
+
+    static const std::set<std::string> columns_without_table = { "database", "name", "uuid", "metadata_modification_time" };
+    for (const auto & column : header.getColumnsWithTypeAndName())
+    {
+        if (columns_without_table.find(column.name) == columns_without_table.end())
+            return true;
+    }
+    return false;
+}
+
 
 class TablesBlockSource : public ISource
 {
@@ -266,6 +282,8 @@ protected:
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getTablesIterator(context);
 
+            const bool need_table = needTable(database, getPort().getHeader());
+
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
                 auto table_name = tables_it->name();
@@ -275,23 +293,26 @@ protected:
                 if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
-                StoragePtr table = tables_it->table();
-                if (!table)
-                    // Table might have just been removed or detached for Lazy engine (see DatabaseLazy::tryGetTable())
-                    continue;
-
+                StoragePtr table = nullptr;
                 TableLockHolder lock;
-                /// The only column that requires us to hold a shared lock is data_paths as rename might alter them (on ordinary tables)
-                /// and it's not protected internally by other mutexes
-                static const size_t DATA_PATHS_INDEX = 5;
-                if (columns_mask[DATA_PATHS_INDEX])
+                if (need_table)
                 {
-                    lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
-                    if (!lock)
-                        // Table was dropped while acquiring the lock, skipping table
+                    table = tables_it->table();
+                    if (!table)
+                        // Table might have just been removed or detached for Lazy engine (see DatabaseLazy::tryGetTable())
                         continue;
-                }
 
+                    /// The only column that requires us to hold a shared lock is data_paths as rename might alter them (on ordinary tables)
+                    /// and it's not protected internally by other mutexes
+                    static const size_t DATA_PATHS_INDEX = 5;
+                    if (columns_mask[DATA_PATHS_INDEX]) {
+                        lock = table->tryLockForShare(context->getCurrentQueryId(),
+                                                      context->getSettingsRef().lock_acquire_timeout);
+                        if (!lock)
+                            // Table was dropped while acquiring the lock, skipping table
+                            continue;
+                    }
+                }
                 ++rows_count;
 
                 size_t src_index = 0;
@@ -308,6 +329,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
+                    chassert(table != nullptr);
                     res_columns[res_index++]->insert(table->getName());
                 }
 
@@ -397,7 +419,9 @@ protected:
                 else
                     src_index += 3;
 
-                StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr();
+                StorageMetadataPtr metadata_snapshot;
+                if (table)
+                    metadata_snapshot = table->getInMemoryMetadataPtr();
 
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
@@ -434,7 +458,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto policy = table->getStoragePolicy();
+                    auto policy = table ? table->getStoragePolicy() : nullptr;
                     if (policy)
                         res_columns[res_index++]->insert(policy->getName());
                     else
@@ -445,7 +469,7 @@ protected:
                 settings.select_sequential_consistency = 0;
                 if (columns_mask[src_index++])
                 {
-                    auto total_rows = table->totalRows(settings);
+                    auto total_rows = table ? table->totalRows(settings) : std::nullopt;
                     if (total_rows)
                         res_columns[res_index++]->insert(*total_rows);
                     else
@@ -490,7 +514,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto lifetime_rows = table->lifetimeRows();
+                    auto lifetime_rows = table ? table->lifetimeRows() : std::nullopt;
                     if (lifetime_rows)
                         res_columns[res_index++]->insert(*lifetime_rows);
                     else
@@ -499,7 +523,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto lifetime_bytes = table->lifetimeBytes();
+                    auto lifetime_bytes = table ? table->lifetimeBytes() : std::nullopt;
                     if (lifetime_bytes)
                         res_columns[res_index++]->insert(*lifetime_bytes);
                     else
