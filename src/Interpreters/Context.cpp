@@ -3180,7 +3180,12 @@ void Context::setCluster(const String & cluster_name, const std::shared_ptr<Clus
 
 void Context::initializeSystemLogs()
 {
+    /// It is required, because the initialization of system logs can be also
+    /// triggered from another thread, that is launched while initializing the system logs,
+    /// for example, system.filesystem_cache_log will be triggered by parts loading
+    /// of any other table if it is stored on a disk with cache.
     auto lock = getLock();
+
     shared->system_logs = std::make_unique<SystemLogs>(getGlobalContext(), getConfigRef());
 }
 
@@ -3379,6 +3384,16 @@ std::shared_ptr<AsynchronousInsertLog> Context::getAsynchronousInsertLog() const
         return {};
 
     return shared->system_logs->asynchronous_insert_log;
+}
+
+std::vector<ISystemLog *> Context::getSystemLogs() const
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->logs;
 }
 
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
