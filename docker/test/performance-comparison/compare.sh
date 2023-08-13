@@ -67,6 +67,7 @@ function configure
     # Note: these variables are provided to the Docker run command by the Python script in tests/ci
     if [ -n "${CLICKHOUSE_CI_LOGS_HOST}" ]
     then
+        set +x
         echo "
 remote_servers:
     system_logs_export:
@@ -78,6 +79,7 @@ remote_servers:
                 port: 9440
                 password: '${CLICKHOUSE_CI_LOGS_PASSWORD}'
 " > right/config/config.d/system_logs_export.yaml
+        set -x
     fi
 
     # Use the new config for both servers, so that we can change it in a PR.
@@ -113,15 +115,19 @@ remote_servers:
     # Note: it is set up for the "left" server, and its database is then cloned to the "right" server.
     if [ -n "${CLICKHOUSE_CI_LOGS_HOST}" ]
     then
-        export EXTRA_COLUMNS_EXPRESSION="$PR_TO_TEST AS pull_request_number, '$SHA_TO_TEST' AS commit_sha, '$CHECK_START_TIME' AS check_start_time, '$CHECK_NAME' AS check_name, '$INSTANCE_TYPE' AS instance_type"
-        export CONNECTION_PARAMETERS="--secure --user ci --host ${CLICKHOUSE_CI_LOGS_HOST} --password ${CLICKHOUSE_CI_LOGS_PASSWORD}"
+        (
+            set +x
+            export EXTRA_COLUMNS_EXPRESSION="$PR_TO_TEST AS pull_request_number, '$SHA_TO_TEST' AS commit_sha, '$CHECK_START_TIME' AS check_start_time, '$CHECK_NAME' AS check_name, '$INSTANCE_TYPE' AS instance_type"
+            export CONNECTION_PARAMETERS="--secure --user ci --host ${CLICKHOUSE_CI_LOGS_HOST} --password ${CLICKHOUSE_CI_LOGS_PASSWORD}"
 
-        ./setup_export_logs.sh "--port $LEFT_SERVER_PORT"
+            ./setup_export_logs.sh "--port $LEFT_SERVER_PORT"
 
-        # Unset variables after use
-        export CONNECTION_PARAMETERS=''
-        export CLICKHOUSE_CI_LOGS_HOST=''
-        export CLICKHOUSE_CI_LOGS_PASSWORD=''
+            # Unset variables after use
+            export CONNECTION_PARAMETERS=''
+            export CLICKHOUSE_CI_LOGS_HOST=''
+            export CLICKHOUSE_CI_LOGS_PASSWORD=''
+            set -x
+        )
     fi
 
     clickhouse-client --port $LEFT_SERVER_PORT --query "create database test" ||:
