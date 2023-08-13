@@ -1404,6 +1404,7 @@ encodings
 encryptions
 endian
 endsWith
+endsWithUTF
 enum
 enum's
 enums
@@ -2210,6 +2211,7 @@ src
 stacktrace
 stacktraces
 startsWith
+startsWithUTF
 statbox
 stateful
 stddev
@@ -2432,6 +2434,7 @@ tsv
 tui
 tumbleEnd
 tumbleStart
+tupleConcat
 tupleDivide
 tupleDivideByNumber
 tupleElement

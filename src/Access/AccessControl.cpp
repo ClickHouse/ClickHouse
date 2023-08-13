@@ -418,7 +418,7 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
         String type = key_in_user_directories;
         if (size_t bracket_pos = type.find('['); bracket_pos != String::npos)
             type.resize(bracket_pos);
-        if ((type == "users_xml") || (type == "users_config"))
+        if ((type == "users.xml") || (type == "users_config"))
             type = UsersConfigAccessStorage::STORAGE_TYPE;
         else if ((type == "local") || (type == "local_directory"))
             type = DiskAccessStorage::STORAGE_TYPE;
@@ -528,12 +528,14 @@ scope_guard AccessControl::subscribeForChanges(const std::vector<UUID> & ids, co
     return changes_notifier->subscribeForChanges(ids, handler);
 }
 
-std::optional<UUID> AccessControl::insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
+bool AccessControl::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
 {
-    auto id = MultipleAccessStorage::insertImpl(entity, replace_if_exists, throw_if_exists);
-    if (id)
+    if (MultipleAccessStorage::insertImpl(id, entity, replace_if_exists, throw_if_exists))
+    {
         changes_notifier->sendNotifications();
-    return id;
+        return true;
+    }
+    return false;
 }
 
 bool AccessControl::removeImpl(const UUID & id, bool throw_if_not_exists)

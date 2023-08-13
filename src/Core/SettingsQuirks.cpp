@@ -72,12 +72,6 @@ void applySettingsQuirks(Settings & settings, Poco::Logger * log)
         }
     }
 
-#if defined(THREAD_SANITIZER)
-    settings.use_hedged_requests.value = false;
-    if (log)
-        LOG_WARNING(log, "use_hedged_requests has been disabled for the build with Thread Sanitizer, because they are using fibers, leading to a failed assertion inside TSan");
-#endif
-
     if (!queryProfilerWorks())
     {
         if (settings.query_profiler_real_time_period_ns)

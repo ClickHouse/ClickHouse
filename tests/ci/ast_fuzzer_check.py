@@ -79,7 +79,7 @@ def main():
             build_url = url
             break
     else:
-        raise Exception("Cannot binary clickhouse among build results")
+        raise Exception("Cannot find the clickhouse binary among build results")
 
     logging.info("Got build url %s", build_url)
 
