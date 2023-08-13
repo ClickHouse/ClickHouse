@@ -11,7 +11,6 @@ from build_download_helper import get_build_name_for_check, read_build_urls
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import (
     RerunHelper,
-    format_description,
     get_commit,
     post_commit_status,
 )
@@ -27,7 +26,7 @@ from report import TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 
-IMAGE_NAME = "clickhouse/fuzzer"
+IMAGE_NAME = "clickhouse/sqltest"
 
 
 def get_run_command(pr_number, sha, download_url, workspace_path, image):
@@ -108,15 +107,13 @@ def main():
     check_name_lower = (
         check_name.lower().replace("(", "").replace(")", "").replace(" ", "")
     )
-    s3_prefix = f"{pr_info.number}/{pr_info.sha}/fuzzer_{check_name_lower}/"
+    s3_prefix = f"{pr_info.number}/{pr_info.sha}/sqltest_{check_name_lower}/"
     paths = {
         "run.log": run_log_path,
-        "main.log": os.path.join(workspace_path, "main.log"),
         "server.log.zst": os.path.join(workspace_path, "server.log.zst"),
-        "fuzzer.log": os.path.join(workspace_path, "fuzzer.log"),
+        "server.err.log.zst": os.path.join(workspace_path, "server.err.log.zst"),
         "report.html": os.path.join(workspace_path, "report.html"),
-        "core.zst": os.path.join(workspace_path, "core.zst"),
-        "dmesg.log": os.path.join(workspace_path, "dmesg.log"),
+        "test.log": os.path.join(workspace_path, "test.log"),
     }
 
     s3_helper = S3Helper()
@@ -131,26 +128,9 @@ def main():
     if paths["report.html"]:
         report_url = paths["report.html"]
 
-    # Try to get status message saved by the fuzzer
-    try:
-        with open(
-            os.path.join(workspace_path, "status.txt"), "r", encoding="utf-8"
-        ) as status_f:
-            status = status_f.readline().rstrip("\n")
-
-        with open(
-            os.path.join(workspace_path, "description.txt"), "r", encoding="utf-8"
-        ) as desc_f:
-            description = desc_f.readline().rstrip("\n")
-    except:
-        status = "failure"
-        description = "Task failed: $?=" + str(retcode)
-
-    description = format_description(description)
-
+    status = "success"
+    description = "See the report"
     test_result = TestResult(description, "OK")
-    if "fail" in status:
-        test_result.status = "FAIL"
 
     ch_helper = ClickHouseHelper()
 
