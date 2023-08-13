@@ -11,7 +11,7 @@ create view logs as select * from system.text_log where now() - toIntervalMinute
 -- 0.001 threshold should be always enough, the value was about 0.00025
 select 'runtime messages', greatest(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0), 0.001) from logs;
 
--- Check the same for exceptions. The value was 0.05
+-- Check the same for exceptions. The value was 0.03
 select 'runtime exceptions', greatest(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0), 0.05) from logs where message like '%DB::Exception%';
 
 -- FIXME some of the following messages are not informative and it has to be fixed
