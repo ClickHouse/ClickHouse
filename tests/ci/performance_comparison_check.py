@@ -190,6 +190,7 @@ if __name__ == "__main__":
     logging.info("Going to run command %s", run_command)
 
     run_log_path = os.path.join(temp_path, "run.log")
+    compare_log_path = os.path.join(result_path, "compare.log")
 
     popen_env = os.environ.copy()
     popen_env.update(env_extra)
@@ -214,12 +215,12 @@ if __name__ == "__main__":
         "CLICKHOUSE_CI_LOGS_PASSWORD", "CLICKHOUSE_CI_LOGS_PASSWORD"
     )
     subprocess.check_call(
-        f"sed -i -r -e 's!{ci_logs_host}!CLICKHOUSE_CI_LOGS_HOST!g; s!{ci_logs_password}!CLICKHOUSE_CI_LOGS_PASSWORD!g;' '{run_log_path}'",
+        f"sed -i -r -e 's!{ci_logs_host}!CLICKHOUSE_CI_LOGS_HOST!g; s!{ci_logs_password}!CLICKHOUSE_CI_LOGS_PASSWORD!g;' '{run_log_path}' '{compare_log_path}'",
         shell=True,
     )
 
     paths = {
-        "compare.log": os.path.join(result_path, "compare.log"),
+        "compare.log": compare_log_path,
         "output.7z": os.path.join(result_path, "output.7z"),
         "report.html": os.path.join(result_path, "report.html"),
         "all-queries.html": os.path.join(result_path, "all-queries.html"),
