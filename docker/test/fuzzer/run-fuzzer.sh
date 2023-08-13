@@ -249,7 +249,7 @@ quit
         # TODO: Check if the password will appear in the logs.
         export CONNECTION_PARAMETERS="--secure --user ci --host ${CLICKHOUSE_CI_LOGS_HOST} --password ${CLICKHOUSE_CI_LOGS_PASSWORD}"
 
-        ./setup_export_logs.sh
+        /setup_export_logs.sh
 
         # Unset variables after use
         export CONNECTION_PARAMETERS=''

@@ -121,7 +121,7 @@ def main():
 
     run_log_path = os.path.join(temp_path, "run.log")
     main_log_path = os.path.join(workspace_path, "main.log")
-    
+
     with open(run_log_path, "w", encoding="utf-8") as log:
         with subprocess.Popen(
             run_command, shell=True, stderr=log, stdout=log
