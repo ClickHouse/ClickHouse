@@ -396,9 +396,9 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
                 throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
                     "Cannot compile regex from glob ({}): {}", current_path, matcher->error());
 
-            return reader->readFile([matcher = std::move(matcher)](const std::string & path)
+            return reader->readFile([my_matcher = std::move(matcher)](const std::string & path)
             {
-                return re2::RE2::FullMatch(path, *matcher);
+                return re2::RE2::FullMatch(path, *my_matcher);
             });
         }
         else

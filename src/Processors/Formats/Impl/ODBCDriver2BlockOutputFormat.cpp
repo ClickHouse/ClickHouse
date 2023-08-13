@@ -3,9 +3,6 @@
 #include <Processors/Formats/Impl/ODBCDriver2BlockOutputFormat.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-
-
-#include <Core/iostream_debug_helpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 
