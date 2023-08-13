@@ -83,8 +83,8 @@ ClickHouse, Inc. does **not** maintain the tools and libraries listed below and 
 - Python
     - [SQLAlchemy](https://www.sqlalchemy.org)
         - [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (uses [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
-    - [PyArrow/Pandas](https://pandas.pydata.org)
-        - [Ibis](https://github.com/ibis-project/ibis)
+    - [pandas](https://pandas.pydata.org)
+        - [pandahouse](https://github.com/kszucs/pandahouse)
 - PHP
     - [Doctrine](https://www.doctrine-project.org/)
         - [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
