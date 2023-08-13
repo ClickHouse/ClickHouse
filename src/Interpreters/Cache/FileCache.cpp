@@ -981,7 +981,7 @@ void FileCache::loadMetadata()
                         log,
                         "Cache capacity changed (max size: {}, used: {}), "
                         "cached file `{}` does not fit in cache anymore (size: {})",
-                        main_priority->getSizeLimit(), main_priority->getSize(lock), key_directory.string(), size);
+                        main_priority->getSizeLimit(), main_priority->getSize(lock), offset_it->path().string(), size);
 
                     fs::remove(offset_it->path());
                 }
