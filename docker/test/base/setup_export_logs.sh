@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2086
 
 # This script sets up export of system log tables to a remote server.
 # Remote tables are created if not exist, and augmented with extra columns,
