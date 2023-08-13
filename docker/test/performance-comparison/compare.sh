@@ -120,7 +120,7 @@ remote_servers:
             export EXTRA_COLUMNS_EXPRESSION="$PR_TO_TEST AS pull_request_number, '$SHA_TO_TEST' AS commit_sha, '$CHECK_START_TIME' AS check_start_time, '$CHECK_NAME' AS check_name, '$INSTANCE_TYPE' AS instance_type"
             export CONNECTION_PARAMETERS="--secure --user ci --host ${CLICKHOUSE_CI_LOGS_HOST} --password ${CLICKHOUSE_CI_LOGS_PASSWORD}"
 
-            ./setup_export_logs.sh "--port $LEFT_SERVER_PORT"
+            /setup_export_logs.sh "--port $LEFT_SERVER_PORT"
 
             # Unset variables after use
             export CONNECTION_PARAMETERS=''
