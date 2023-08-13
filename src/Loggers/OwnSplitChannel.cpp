@@ -1,7 +1,6 @@
 #include "OwnSplitChannel.h"
 #include "OwnFormattingChannel.h"
 
-#include <iostream>
 #include <Core/Block.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/TextLog.h>

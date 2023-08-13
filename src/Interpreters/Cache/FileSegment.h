@@ -26,6 +26,7 @@ namespace DB
 {
 
 class ReadBufferFromFileBase;
+struct FileCacheReserveStat;
 
 /*
  * FileSegmentKind is used to specify the eviction policy for file segments.
@@ -243,12 +244,7 @@ public:
 
     /// Try to reserve exactly `size` bytes (in addition to the getDownloadedSize() bytes already downloaded).
     /// Returns true if reservation was successful, false otherwise.
-    bool reserve(size_t size_to_reserve);
-
-    /// Try to reserve at max `size_to_reserve` bytes.
-    /// Returns actual size reserved. It can be less than size_to_reserve in non strict mode.
-    /// In strict mode throws an error on attempt to reserve space too much space.
-    size_t tryReserve(size_t size_to_reserve, bool strict = false);
+    bool reserve(size_t size_to_reserve, FileCacheReserveStat * reserve_stat = nullptr);
 
     /// Write data into reserved space.
     void write(const char * from, size_t size, size_t offset);
