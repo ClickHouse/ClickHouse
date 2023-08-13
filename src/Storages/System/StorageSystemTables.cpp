@@ -305,7 +305,8 @@ protected:
                     /// The only column that requires us to hold a shared lock is data_paths as rename might alter them (on ordinary tables)
                     /// and it's not protected internally by other mutexes
                     static const size_t DATA_PATHS_INDEX = 5;
-                    if (columns_mask[DATA_PATHS_INDEX]) {
+                    if (columns_mask[DATA_PATHS_INDEX])
+                    {
                         lock = table->tryLockForShare(context->getCurrentQueryId(),
                                                       context->getSettingsRef().lock_acquire_timeout);
                         if (!lock)
