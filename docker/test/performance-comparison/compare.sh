@@ -75,6 +75,7 @@ remote_servers:
                 secure: 1
                 user: ci
                 host: '${CLICKHOUSE_CI_LOGS_HOST}'
+                port: 9440
                 password: '${CLICKHOUSE_CI_LOGS_PASSWORD}'
 " > right/config/config.d/system_logs_export.yaml
     fi
