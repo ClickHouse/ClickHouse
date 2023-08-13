@@ -155,12 +155,21 @@ def main():
     paths = {
         "run.log": run_log_path,
         "main.log": os.path.join(workspace_path, "main.log"),
-        "server.log.zst": os.path.join(workspace_path, "server.log.zst"),
         "fuzzer.log": os.path.join(workspace_path, "fuzzer.log"),
         "report.html": os.path.join(workspace_path, "report.html"),
         "core.zst": os.path.join(workspace_path, "core.zst"),
         "dmesg.log": os.path.join(workspace_path, "dmesg.log"),
     }
+
+    compressed_server_log_path = os.path.join(workspace_path, "server.log.zst")
+    if os.path.exists(compressed_server_log_path):
+        paths["server.log.zst"] = compressed_server_log_path
+
+    # The script can fail before the invocation of `zstd`, but we are still interested in its log:
+
+    not_compressed_server_log_path = os.path.join(workspace_path, "server.log")
+    if os.path.exists(not_compressed_server_log_path):
+        paths["server.log"] = not_compressed_server_log_path
 
     s3_helper = S3Helper()
     for f in paths:

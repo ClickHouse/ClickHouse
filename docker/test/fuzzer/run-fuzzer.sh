@@ -239,7 +239,7 @@ quit
     done
     clickhouse-client --query "select 1" # This checks that the server is responding
     kill -0 $server_pid # This checks that it is our server that is started and not some other one
-    echo Server started and responded
+    echo 'Server started and responded'
 
     # Initialize export of system logs to ClickHouse Cloud
     if [ -n "${CLICKHOUSE_CI_LOGS_HOST}" ]
