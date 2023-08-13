@@ -1,14 +1,7 @@
 # docker build -t clickhouse/performance-comparison .
 
-FROM ubuntu:22.04
-
-# ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="http://archive.ubuntu.com"
-RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
-
-ENV LANG=C.UTF-8
-ENV TZ=Europe/Amsterdam
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+ARG FROM_TAG=latest
+FROM clickhouse/test-base:$FROM_TAG
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
