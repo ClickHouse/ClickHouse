@@ -120,6 +120,8 @@ def main():
     logging.info("Going to run %s", run_command)
 
     run_log_path = os.path.join(temp_path, "run.log")
+    main_log_path = os.path.join(workspace_path, "main.log")
+    
     with open(run_log_path, "w", encoding="utf-8") as log:
         with subprocess.Popen(
             run_command, shell=True, stderr=log, stdout=log
@@ -144,7 +146,7 @@ def main():
         "CLICKHOUSE_CI_LOGS_PASSWORD", "CLICKHOUSE_CI_LOGS_PASSWORD"
     )
     subprocess.check_call(
-        f"sed -i -r -e 's!{ci_logs_host}!CLICKHOUSE_CI_LOGS_HOST!g; s!{ci_logs_password}!CLICKHOUSE_CI_LOGS_PASSWORD!g;' '{run_log_path}'",
+        f"sed -i -r -e 's!{ci_logs_host}!CLICKHOUSE_CI_LOGS_HOST!g; s!{ci_logs_password}!CLICKHOUSE_CI_LOGS_PASSWORD!g;' '{run_log_path}' '{main_log_path}'",
         shell=True,
     )
 
@@ -154,7 +156,7 @@ def main():
     s3_prefix = f"{pr_info.number}/{pr_info.sha}/fuzzer_{check_name_lower}/"
     paths = {
         "run.log": run_log_path,
-        "main.log": os.path.join(workspace_path, "main.log"),
+        "main.log": main_log_path,
         "fuzzer.log": os.path.join(workspace_path, "fuzzer.log"),
         "report.html": os.path.join(workspace_path, "report.html"),
         "core.zst": os.path.join(workspace_path, "core.zst"),
