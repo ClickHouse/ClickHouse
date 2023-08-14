@@ -1,7 +1,7 @@
-if (APPLE OR NOT ARCH_AMD64 OR SANITIZE STREQUAL "undefined")
-   set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
+if ((AARCH_AMD64 OR ARCH_S390X) AND NOT APPLE AND NOT SANITIZE STREQUAL "undefined")
+    set (ENABLE_EMBEDDED_COMPILER_DEFAULT ON)
 else()
-   set (ENABLE_EMBEDDED_COMPILER_DEFAULT ON)
+    set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
 endif()
 
 option (ENABLE_EMBEDDED_COMPILER "Enable support for 'compile_expressions' option for query execution" ${ENABLE_EMBEDDED_COMPILER_DEFAULT})
@@ -58,8 +58,11 @@ set (REQUIRED_LLVM_LIBRARIES
     LLVMDemangle
 )
 
-# if (ARCH_AMD64)
+if (ARCH_AMD64)
     list(APPEND REQUIRED_LLVM_LIBRARIES LLVMX86Info LLVMX86Desc LLVMX86CodeGen)
+elseif (ARCH_S390X)
+    list(APPEND REQUIRED_LLVM_LIBRARIES LLVMSystemZInfo LLVMSystemZDesc LLVMSystemZCodeGen)
+endif ()
 # elseif (ARCH_AARCH64)
 #     list(APPEND REQUIRED_LLVM_LIBRARIES LLVMAArch64Info LLVMAArch64Desc LLVMAArch64CodeGen)
 # endif ()
@@ -69,7 +72,7 @@ set (LLVM_COMPILER_CHECKED 1 CACHE INTERNAL "") # Skip internal compiler selecti
 set (LLVM_ENABLE_EH 1 CACHE INTERNAL "") # With exception handling
 set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
 set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
-set (LLVM_TARGETS_TO_BUILD "X86" CACHE STRING "") # for x86 + ARM: "X86;AArch64"
+set (LLVM_TARGETS_TO_BUILD "X86;SystemZ" CACHE STRING "") # for x86 + ARM: "X86;AArch64"
 
 # Omit unnecessary stuff (just the options which are ON by default)
 set(LLVM_ENABLE_BACKTRACES 0 CACHE INTERNAL "")
