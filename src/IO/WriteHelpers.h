@@ -304,9 +304,10 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
 /** Will escape quote_character and a list of special characters('\b', '\f', '\n', '\r', '\t', '\0', '\\').
  *   - when escape_quote_with_quote is true, use backslash to escape list of special characters,
  *      and use quote_character to escape quote_character. such as: 'hello''world'
- *   - otherwise use backslash to escape list of special characters and quote_character
+ *     otherwise use backslash to escape list of special characters and quote_character
+ *   - when escape_backslash_with_backslash is true, backslash is escaped with another backslash
  */
-template <char quote_character, bool escape_quote_with_quote = false>
+template <char quote_character, bool escape_quote_with_quote = false, bool escape_backslash_with_backslash = true>
 void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & buf)
 {
     const char * pos = begin;
@@ -360,7 +361,8 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
                     writeChar('0', buf);
                     break;
                 case '\\':
-                    writeChar('\\', buf);
+                    if constexpr (escape_backslash_with_backslash)
+                        writeChar('\\', buf);
                     writeChar('\\', buf);
                     break;
                 default:
@@ -464,6 +466,13 @@ inline void writeQuotedString(StringRef ref, WriteBuffer & buf)
 inline void writeQuotedString(std::string_view ref, WriteBuffer & buf)
 {
     writeAnyQuotedString<'\''>(ref.data(), ref.data() + ref.size(), buf);
+}
+
+inline void writeQuotedStringPostgreSQL(std::string_view ref, WriteBuffer & buf)
+{
+    writeChar('\'', buf);
+    writeAnyEscapedString<'\'', true, false>(ref.data(), ref.data() + ref.size(), buf);
+    writeChar('\'', buf);
 }
 
 inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
@@ -905,26 +914,26 @@ inline void writeText(const IPv4 & x, WriteBuffer & buf) { writeIPv4Text(x, buf)
 inline void writeText(const IPv6 & x, WriteBuffer & buf) { writeIPv6Text(x, buf); }
 
 template <typename T>
-void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros)
+void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros,
+                            bool fixed_fractional_length, UInt32 fractional_length)
 {
     /// If it's big integer, but the number of digits is small,
     /// use the implementation for smaller integers for more efficient arithmetic.
-
     if constexpr (std::is_same_v<T, Int256>)
     {
         if (x <= std::numeric_limits<UInt32>::max())
         {
-            writeDecimalFractional(static_cast<UInt32>(x), scale, ostr, trailing_zeros);
+            writeDecimalFractional(static_cast<UInt32>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
         else if (x <= std::numeric_limits<UInt64>::max())
         {
-            writeDecimalFractional(static_cast<UInt64>(x), scale, ostr, trailing_zeros);
+            writeDecimalFractional(static_cast<UInt64>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
         else if (x <= std::numeric_limits<UInt128>::max())
         {
-            writeDecimalFractional(static_cast<UInt128>(x), scale, ostr, trailing_zeros);
+            writeDecimalFractional(static_cast<UInt128>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
     }
@@ -932,24 +941,36 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     {
         if (x <= std::numeric_limits<UInt32>::max())
         {
-            writeDecimalFractional(static_cast<UInt32>(x), scale, ostr, trailing_zeros);
+            writeDecimalFractional(static_cast<UInt32>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
         else if (x <= std::numeric_limits<UInt64>::max())
         {
-            writeDecimalFractional(static_cast<UInt64>(x), scale, ostr, trailing_zeros);
+            writeDecimalFractional(static_cast<UInt64>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
     }
 
     constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
     assert(scale <= max_digits);
+    assert(fractional_length <= max_digits);
+
     char buf[max_digits];
-    memset(buf, '0', scale);
+    memset(buf, '0', std::max(scale, fractional_length));
 
     T value = x;
     Int32 last_nonzero_pos = 0;
-    for (Int32 pos = scale - 1; pos >= 0; --pos)
+
+    if (fixed_fractional_length && fractional_length < scale)
+    {
+        T new_value = value / DecimalUtils::scaleMultiplier<Int256>(scale - fractional_length - 1);
+        auto round_carry = new_value % 10;
+        value = new_value / 10;
+        if (round_carry >= 5)
+            value += 1;
+    }
+
+    for (Int32 pos = fixed_fractional_length ? std::min(scale - 1, fractional_length - 1) : scale - 1; pos >= 0; --pos)
     {
         auto remainder = value % 10;
         value /= 10;
@@ -961,11 +982,12 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     }
 
     writeChar('.', ostr);
-    ostr.write(buf, trailing_zeros ? scale : last_nonzero_pos + 1);
+    ostr.write(buf, fixed_fractional_length ? fractional_length : (trailing_zeros ? scale : last_nonzero_pos + 1));
 }
 
 template <typename T>
-void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros)
+void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros,
+               bool fixed_fractional_length = false, UInt32 fractional_length = 0)
 {
     T part = DecimalUtils::getWholePart(x, scale);
 
@@ -976,7 +998,7 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
 
     writeIntText(part, ostr);
 
-    if (scale)
+    if (scale || (fixed_fractional_length && fractional_length > 0))
     {
         part = DecimalUtils::getFractionalPart(x, scale);
         if (part || trailing_zeros)
@@ -984,7 +1006,7 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
             if (part < 0)
                 part *= T(-1);
 
-            writeDecimalFractional(part, scale, ostr, trailing_zeros);
+            writeDecimalFractional(part, scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
         }
     }
 }

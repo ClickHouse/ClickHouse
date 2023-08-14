@@ -1,7 +1,6 @@
 #include "OwnSplitChannel.h"
 #include "OwnFormattingChannel.h"
 
-#include <iostream>
 #include <Core/Block.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/TextLog.h>
@@ -138,7 +137,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         std::shared_ptr<SystemLogQueue<TextLogElement>> text_log_locked{};
         text_log_locked = text_log.lock();
         if (text_log_locked)
-            text_log_locked->push(elem);
+            text_log_locked->push(std::move(elem));
     }
 #endif
 }

@@ -35,14 +35,19 @@ def cluster():
         cluster.shutdown()
 
 
-def azure_query(node, query, try_num=10, settings={}):
+def azure_query(node, query, expect_error="false", try_num=10, settings={}):
     for i in range(try_num):
         try:
-            return node.query(query, settings=settings)
+            if expect_error == "true":
+                return node.query_and_get_error(query, settings=settings)
+            else:
+                return node.query(query, settings=settings)
         except Exception as ex:
             retriable_errors = [
                 "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response",
                 "DB::Exception: Azure::Core::Http::TransportException: Connection closed before getting full response or response is less than expected",
+                "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response",
+                "DB::Exception: Azure::Core::Http::TransportException: Error while polling for socket ready read",
             ]
             retry = False
             for error in retriable_errors:
@@ -611,3 +616,99 @@ def test_filter_using_file(cluster):
 
     query = f"select count(*) from azureBlobStorage('http://azurite1:10000/devstoreaccount1',  'cont', 'test_partition_tf_*.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', '{table_format}') WHERE _file='test_partition_tf_3.csv'"
     assert azure_query(node, query) == "1\n"
+
+
+def test_read_subcolumns(cluster):
+    node = cluster.instances["node"]
+    azure_query(
+        node,
+        "INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:10000/devstoreaccount1', 'cont', 'test_subcolumns.tsv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select ((1, 2), 3)",
+    )
+
+    azure_query(
+        node,
+        "INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:10000/devstoreaccount1', 'cont', 'test_subcolumns.jsonl', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select ((1, 2), 3)",
+    )
+
+    res = node.query(
+        f"select a.b.d, _path, a.b, _file, a.e from azureBlobStorage('http://azurite1:10000/devstoreaccount1', 'cont', 'test_subcolumns.tsv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
+    )
+
+    assert res == "2\tcont/test_subcolumns.tsv\t(1,2)\ttest_subcolumns.tsv\t3\n"
+
+    res = node.query(
+        f"select a.b.d, _path, a.b, _file, a.e from azureBlobStorage('http://azurite1:10000/devstoreaccount1', 'cont', 'test_subcolumns.jsonl', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
+    )
+
+    assert res == "2\tcont/test_subcolumns.jsonl\t(1,2)\ttest_subcolumns.jsonl\t3\n"
+
+    res = node.query(
+        f"select x.b.d, _path, x.b, _file, x.e from azureBlobStorage('http://azurite1:10000/devstoreaccount1', 'cont', 'test_subcolumns.jsonl', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
+    )
+
+    assert res == "0\tcont/test_subcolumns.jsonl\t(0,0)\ttest_subcolumns.jsonl\t0\n"
+
+    res = node.query(
+        f"select x.b.d, _path, x.b, _file, x.e from azureBlobStorage('http://azurite1:10000/devstoreaccount1', 'cont', 'test_subcolumns.jsonl', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x Tuple(b Tuple(c UInt32, d UInt32), e UInt32) default ((42, 42), 42)')"
+    )
+
+    assert res == "42\tcont/test_subcolumns.jsonl\t(42,42)\ttest_subcolumns.jsonl\t42\n"
+
+
+def test_read_from_not_existing_container(cluster):
+    node = cluster.instances["node"]
+    query = f"select * from azureBlobStorage('http://azurite1:10000/devstoreaccount1',  'cont_not_exists', 'test_table.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto')"
+    expected_err_msg = "container does not exist"
+    assert expected_err_msg in azure_query(node, query, expect_error="true")
+
+
+def test_function_signatures(cluster):
+    node = cluster.instances["node"]
+    connection_string = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1;"
+    storage_account_url = "http://azurite1:10000/devstoreaccount1"
+    account_name = "devstoreaccount1"
+    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'column1 UInt32') VALUES (1),(2),(3)",
+    )
+
+    # " - connection_string, container_name, blobpath\n"
+    query_1 = f"select * from azureBlobStorage('{connection_string}',  'cont', 'test_signature.csv')"
+    assert azure_query(node, query_1) == "1\n2\n3\n"
+
+    # " - connection_string, container_name, blobpath, structure \n"
+    query_2 = f"select * from azureBlobStorage('{connection_string}',  'cont', 'test_signature.csv', 'column1 UInt32')"
+    assert azure_query(node, query_2) == "1\n2\n3\n"
+
+    # " - connection_string, container_name, blobpath, format \n"
+    query_3 = f"select * from azureBlobStorage('{connection_string}',  'cont', 'test_signature.csv', 'CSV')"
+    assert azure_query(node, query_3) == "1\n2\n3\n"
+
+    # " - connection_string, container_name, blobpath, format, compression \n"
+    query_4 = f"select * from azureBlobStorage('{connection_string}',  'cont', 'test_signature.csv', 'CSV', 'auto')"
+    assert azure_query(node, query_4) == "1\n2\n3\n"
+
+    # " - connection_string, container_name, blobpath, format, compression, structure \n"
+    query_5 = f"select * from azureBlobStorage('{connection_string}',  'cont', 'test_signature.csv', 'CSV', 'auto', 'column1 UInt32')"
+    assert azure_query(node, query_5) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key\n"
+    query_6 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}')"
+    assert azure_query(node, query_6) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, structure\n"
+    query_7 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'column1 UInt32')"
+    assert azure_query(node, query_7) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, format\n"
+    query_8 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV')"
+    assert azure_query(node, query_8) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression\n"
+    query_9 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto')"
+    assert azure_query(node, query_9) == "1\n2\n3\n"
+
+    # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure\n"
+    query_10 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'column1 UInt32')"
+    assert azure_query(node, query_10) == "1\n2\n3\n"

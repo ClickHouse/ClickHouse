@@ -2,6 +2,7 @@ import time
 import pytest
 import logging
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(
     __file__, zookeeper_config_path="configs/zookeeper_config_root_a.xml"
@@ -56,10 +57,10 @@ def test_chroot_with_same_root(started_cluster):
         for j in range(2):  # Second insert to test deduplication
             node.query("INSERT INTO simple VALUES ({0}, {0})".format(i))
 
-    time.sleep(1)
-
-    assert node1.query("select count() from simple").strip() == "2"
-    assert node2.query("select count() from simple").strip() == "2"
+    node1.query("SYSTEM SYNC REPLICA simple")
+    assert_eq_with_retry(node1, "select count() from simple", "2")
+    node2.query("SYSTEM SYNC REPLICA simple")
+    assert_eq_with_retry(node2, "select count() from simple", "2")
 
 
 def test_chroot_with_different_root(started_cluster):
@@ -76,5 +77,7 @@ def test_chroot_with_different_root(started_cluster):
         for j in range(2):  # Second insert to test deduplication
             node.query("INSERT INTO simple_different VALUES ({0}, {0})".format(i))
 
-    assert node1.query("select count() from simple_different").strip() == "1"
-    assert node3.query("select count() from simple_different").strip() == "1"
+    node1.query("SYSTEM SYNC REPLICA simple_different")
+    assert_eq_with_retry(node1, "select count() from simple_different", "1")
+    node3.query("SYSTEM SYNC REPLICA simple_different")
+    assert_eq_with_retry(node3, "select count() from simple_different", "1")
