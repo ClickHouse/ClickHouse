@@ -281,7 +281,6 @@ void executeQueryWithParallelReplicas(
     auto all_replicas_count = std::min(static_cast<size_t>(settings.max_parallel_replicas), new_cluster->getShardCount());
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(all_replicas_count);
     auto remote_plan = std::make_unique<QueryPlan>();
-    auto plans = std::vector<QueryPlanPtr>();
 
     /// This is a little bit weird, but we construct an "empty" coordinator without
     /// any specified reading/coordination method (like Default, InOrder, InReverseOrder)
@@ -309,20 +308,7 @@ void executeQueryWithParallelReplicas(
         &Poco::Logger::get("ReadFromParallelRemoteReplicasStep"),
         query_info.storage_limits);
 
-    remote_plan->addStep(std::move(read_from_remote));
-    remote_plan->addInterpreterContext(context);
-    plans.emplace_back(std::move(remote_plan));
-
-    if (std::all_of(plans.begin(), plans.end(), [](const QueryPlanPtr & plan) { return !plan; }))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No plans were generated for reading from shard. This is a bug");
-
-    DataStreams input_streams;
-    input_streams.reserve(plans.size());
-    for (const auto & plan : plans)
-        input_streams.emplace_back(plan->getCurrentDataStream());
-
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
-    query_plan.unitePlans(std::move(union_step), std::move(plans));
+    query_plan.addStep(std::move(read_from_remote));
 }
 
 }
