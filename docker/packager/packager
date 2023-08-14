@@ -80,9 +80,12 @@ def run_docker_image_with_env(
     output_dir: Path,
     env_variables: List[str],
     ch_root: Path,
+    cargo_cache_dir: Path,
     ccache_dir: Optional[Path],
 ):
     output_dir.mkdir(parents=True, exist_ok=True)
+    cargo_cache_dir.mkdir(parents=True, exist_ok=True)
+
     env_part = " -e ".join(env_variables)
     if env_part:
         env_part = " -e " + env_part
@@ -104,7 +107,7 @@ def run_docker_image_with_env(
     cmd = (
         f"docker run --network=host --user={user} --rm {ccache_mount}"
         f"--volume={output_dir}:/output --volume={ch_root}:/build {env_part} "
-        f"{interactive} {image_name}"
+        f"--volume={cargo_cache_dir}:/rust/cargo/registry {interactive} {image_name}"
     )
 
     logging.info("Will build ClickHouse pkg with cmd: '%s'", cmd)
@@ -417,6 +420,13 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="if set, the build fails on errors writing cache to S3",
     )
+    parser.add_argument(
+        "--cargo-cache-dir",
+        default=Path(os.getenv("CARGO_HOME", "") or Path.home() / ".cargo")
+        / "registry",
+        type=dir_name,
+        help="a directory to preserve the rust cargo crates",
+    )
     parser.add_argument("--force-build-image", action="store_true")
     parser.add_argument("--version")
     parser.add_argument("--official", action="store_true")
@@ -495,6 +505,7 @@ def main():
         args.output_dir,
         env_prepared,
         ch_root,
+        args.cargo_cache_dir,
         args.ccache_dir,
     )
     logging.info("Output placed into %s", args.output_dir)
