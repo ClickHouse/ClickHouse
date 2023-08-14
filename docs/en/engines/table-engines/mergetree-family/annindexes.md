@@ -1,4 +1,4 @@
-# Approximate Nearest Neighbor Search Indexes [experimental] {#table_engines-ANNIndex}
+# Approximate Nearest Neighbor Search Indexes [experimental]
 
 Nearest neighborhood search is the problem of finding the M closest points for a given point in an N-dimensional vector space. The most
 straightforward approach to solve this problem is a brute force search where the distance between all points in the vector space and the
@@ -45,7 +45,7 @@ With brute force search, both queries are expensive (linear in the number of poi
 `Point` must be computed. To speed this process up, Approximate Nearest Neighbor Search Indexes (ANN indexes) store a compact representation
 of the search space (using clustering, search trees, etc.) which allows to compute an approximate answer much quicker (in sub-linear time).
 
-# Creating and Using ANN Indexes
+# Creating and Using ANN Indexes {#creating_using_ann_indexes}
 
 Syntax to create an ANN index over an [Array](../../../sql-reference/data-types/array.md) column:
 
@@ -138,7 +138,7 @@ back to a smaller `GRANULARITY` values only in case of problems like excessive m
 was specified for ANN indexes, the default value is 100 million.
 
 
-# Available ANN Indexes
+# Available ANN Indexes {#available_ann_indexes}
 
 - [Annoy](/docs/en/engines/table-engines/mergetree-family/annindexes.md#annoy-annoy)
 
