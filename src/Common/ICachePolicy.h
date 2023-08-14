@@ -55,7 +55,7 @@ public:
 
     virtual void remove(const Key & key, std::lock_guard<std::mutex> & /*cache_lock*/) = 0;
 
-    virtual void reset(std::lock_guard<std::mutex> & /*cache_lock*/) = 0;
+    virtual void clear(std::lock_guard<std::mutex> & /*cache_lock*/) = 0;
     virtual std::vector<KeyMapped> dump() const = 0;
 
 protected:

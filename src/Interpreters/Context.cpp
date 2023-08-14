@@ -547,7 +547,7 @@ struct ContextSharedPart : boost::noncopyable
               */
 #if USE_EMBEDDED_COMPILER
             if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
-                cache->reset();
+                cache->clear();
 #endif
 
             /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
@@ -2283,7 +2283,7 @@ void Context::clearUncompressedCache() const
     auto lock = getLock();
 
     if (shared->uncompressed_cache)
-        shared->uncompressed_cache->reset();
+        shared->uncompressed_cache->clear();
 }
 
 void Context::setMarkCache(const String & mark_cache_policy, size_t cache_size_in_bytes)
@@ -2318,7 +2318,7 @@ void Context::clearMarkCache() const
     auto lock = getLock();
 
     if (shared->mark_cache)
-        shared->mark_cache->reset();
+        shared->mark_cache->clear();
 }
 
 ThreadPool & Context::getLoadMarksThreadpool() const
@@ -2368,7 +2368,7 @@ void Context::clearIndexUncompressedCache() const
     auto lock = getLock();
 
     if (shared->index_uncompressed_cache)
-        shared->index_uncompressed_cache->reset();
+        shared->index_uncompressed_cache->clear();
 }
 
 void Context::setIndexMarkCache(size_t cache_size_in_bytes)
@@ -2403,7 +2403,7 @@ void Context::clearIndexMarkCache() const
     auto lock = getLock();
 
     if (shared->index_mark_cache)
-        shared->index_mark_cache->reset();
+        shared->index_mark_cache->clear();
 }
 
 void Context::setMMappedFileCache(size_t cache_size_in_num_entries)
@@ -2438,7 +2438,7 @@ void Context::clearMMappedFileCache() const
     auto lock = getLock();
 
     if (shared->mmap_cache)
-        shared->mmap_cache->reset();
+        shared->mmap_cache->clear();
 }
 
 void Context::setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
@@ -2476,7 +2476,7 @@ void Context::clearQueryCache() const
     auto lock = getLock();
 
     if (shared->query_cache)
-        shared->query_cache->reset();
+        shared->query_cache->clear();
 }
 
 void Context::clearCaches() const
@@ -2485,23 +2485,23 @@ void Context::clearCaches() const
 
     if (!shared->uncompressed_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Uncompressed cache was not created yet.");
-    shared->uncompressed_cache->reset();
+    shared->uncompressed_cache->clear();
 
     if (!shared->mark_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache was not created yet.");
-    shared->mark_cache->reset();
+    shared->mark_cache->clear();
 
     if (!shared->index_uncompressed_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache was not created yet.");
-    shared->index_uncompressed_cache->reset();
+    shared->index_uncompressed_cache->clear();
 
     if (!shared->index_mark_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache was not created yet.");
-    shared->index_mark_cache->reset();
+    shared->index_mark_cache->clear();
 
     if (!shared->mmap_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mmapped file cache was not created yet.");
-    shared->mmap_cache->reset();
+    shared->mmap_cache->clear();
 
     /// Intentionally not clearing the query cache which is transactionally inconsistent by design.
 }
