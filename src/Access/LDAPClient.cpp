@@ -18,8 +18,7 @@
 namespace
 {
 
-template <typename T>
-requires std::is_fundamental_v<std::decay_t<T>>
+template <typename T, typename = std::enable_if_t<std::is_fundamental_v<std::decay_t<T>>>>
 void updateHash(SipHash & hash, const T & value)
 {
     hash.update(value);

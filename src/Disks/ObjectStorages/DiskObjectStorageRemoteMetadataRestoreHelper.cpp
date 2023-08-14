@@ -8,14 +8,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
-#include <Common/CurrentMetrics.h>
-
-
-namespace CurrentMetrics
-{
-    extern const Metric LocalThread;
-    extern const Metric LocalThreadActive;
-}
 
 namespace DB
 {
@@ -109,7 +101,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::migrateFileToRestorableSchema
         updateObjectMetadata(object.remote_path, metadata);
     }
 }
-void DiskObjectStorageRemoteMetadataRestoreHelper::migrateToRestorableSchemaRecursive(const String & path, ThreadPool & pool)
+void DiskObjectStorageRemoteMetadataRestoreHelper::migrateToRestorableSchemaRecursive(const String & path, Futures & results)
 {
     checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
 
@@ -128,26 +120,29 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::migrateToRestorableSchemaRecu
     /// The whole directory can be migrated asynchronously.
     if (dir_contains_only_files)
     {
-        pool.scheduleOrThrowOnError([this, path]
+        auto result = disk->getExecutor().execute([this, path]
         {
             for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
                 migrateFileToRestorableSchema(it->path());
         });
+
+        results.push_back(std::move(result));
     }
     else
     {
         for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
-        {
-            if (disk->isDirectory(it->path()))
-            {
-                migrateToRestorableSchemaRecursive(it->path(), pool);
-            }
-            else
+            if (!disk->isDirectory(it->path()))
             {
                 auto source_path = it->path();
-                pool.scheduleOrThrowOnError([this, source_path] { migrateFileToRestorableSchema(source_path); });
+                auto result = disk->getExecutor().execute([this, source_path]
+                    {
+                        migrateFileToRestorableSchema(source_path);
+                    });
+
+                results.push_back(std::move(result));
             }
-        }
+            else
+                migrateToRestorableSchemaRecursive(it->path(), results);
     }
 
 }
@@ -158,13 +153,16 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::migrateToRestorableSchema()
     {
         LOG_INFO(disk->log, "Start migration to restorable schema for disk {}", disk->name);
 
-        ThreadPool pool{CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive};
+        Futures results;
 
         for (const auto & root : data_roots)
             if (disk->exists(root))
-                migrateToRestorableSchemaRecursive(root + '/', pool);
+                migrateToRestorableSchemaRecursive(root + '/', results);
 
-        pool.wait();
+        for (auto & result : results)
+            result.wait();
+        for (auto & result : results)
+            result.get();
 
         saveSchemaVersion(RESTORABLE_SCHEMA_VERSION);
     }
@@ -357,8 +355,8 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFiles(IObjectStorage *
 {
     LOG_INFO(disk->log, "Starting restore files for disk {}", disk->name);
 
-    ThreadPool pool{CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive};
-    auto restore_files = [this, &source_object_storage, &restore_information, &pool](const RelativePathsWithMetadata & objects)
+    std::vector<std::future<void>> results;
+    auto restore_files = [this, &source_object_storage, &restore_information, &results](const RelativePathsWithMetadata & objects)
     {
         std::vector<String> keys_names;
         for (const auto & object : objects)
@@ -380,10 +378,12 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFiles(IObjectStorage *
 
         if (!keys_names.empty())
         {
-            pool.scheduleOrThrowOnError([this, &source_object_storage, &restore_information, keys_names]()
+            auto result = disk->getExecutor().execute([this, &source_object_storage, &restore_information, keys_names]()
             {
                 processRestoreFiles(source_object_storage, restore_information.source_path, keys_names);
             });
+
+            results.push_back(std::move(result));
         }
 
         return true;
@@ -394,7 +394,10 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFiles(IObjectStorage *
 
     restore_files(children);
 
-    pool.wait();
+    for (auto & result : results)
+        result.wait();
+    for (auto & result : results)
+        result.get();
 
     LOG_INFO(disk->log, "Files are restored for disk {}", disk->name);
 

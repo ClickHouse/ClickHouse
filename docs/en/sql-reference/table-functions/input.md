@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/input
-sidebar_position: 95
+sidebar_position: 46
 sidebar_label: input
 ---
 

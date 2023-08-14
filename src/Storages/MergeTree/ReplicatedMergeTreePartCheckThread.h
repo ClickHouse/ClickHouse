@@ -18,27 +18,6 @@ namespace DB
 
 class StorageReplicatedMergeTree;
 
-struct ReplicatedCheckResult
-{
-    enum Action
-    {
-        None,
-
-        Cancelled,
-        DoNothing,
-        RecheckLater,
-
-        DetachUnexpected,
-        TryFetchMissing,
-    };
-
-    CheckResult status;
-    Action action = None;
-
-    bool exists_in_zookeeper;
-    MergeTreeDataPartPtr part;
-    time_t recheck_after = 0;
-};
 
 /** Checks the integrity of the parts requested for validation.
   *
@@ -65,9 +44,7 @@ public:
     size_t size() const;
 
     /// Check part by name
-    CheckResult checkPartAndFix(const String & part_name, std::optional<time_t> * recheck_after = nullptr);
-
-    ReplicatedCheckResult checkPartImpl(const String & part_name);
+    CheckResult checkPart(const String & part_name);
 
     std::unique_lock<std::mutex> pausePartsCheck();
 
@@ -77,13 +54,26 @@ public:
 private:
     void run();
 
-    bool onPartIsLostForever(const String & part_name);
+    /// Search for missing part and queue fetch if possible. Otherwise
+    /// remove part from zookeeper and queue.
+    void searchForMissingPartAndFetchIfPossible(const String & part_name, bool exists_in_zookeeper);
 
     std::pair<bool, MergeTreeDataPartPtr> findLocalPart(const String & part_name);
 
+    enum MissingPartSearchResult
+    {
+        /// We found this part on other replica, let's fetch it.
+        FoundAndNeedFetch,
+        /// We found covering part or source part with same min and max block number
+        /// don't need to fetch because we should do it during normal queue processing.
+        FoundAndDontNeedFetch,
+        /// Covering part not found anywhere and exact part_name doesn't found on other
+        /// replicas.
+        LostForever,
+    };
+
     /// Search for missing part on other replicas or covering part on all replicas (including our replica).
-    /// Returns false if the part is lost forever.
-    bool searchForMissingPartOnOtherReplicas(const String & part_name) const;
+    MissingPartSearchResult searchForMissingPartOnOtherReplicas(const String & part_name);
 
     StorageReplicatedMergeTree & storage;
     String log_name;

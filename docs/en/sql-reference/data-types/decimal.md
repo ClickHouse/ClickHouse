@@ -32,7 +32,7 @@ For example, Decimal32(4) can contain numbers from -99999.9999 to 99999.9999 wit
 
 Internally data is represented as normal signed integers with respective bit width. Real value ranges that can be stored in memory are a bit larger than specified above, which are checked only on conversion from a string.
 
-Because modern CPUs do not support 128-bit and 256-bit integers natively, operations on Decimal128 and Decimal256 are emulated. Thus, Decimal128 and Decimal256 work significantly slower than Decimal32/Decimal64.
+Because modern CPUs do not support 128-bit integers natively, operations on Decimal128 are emulated. Because of this Decimal128 works significantly slower than Decimal32/Decimal64.
 
 ## Operations and Result Type
 
@@ -58,10 +58,6 @@ Some functions on Decimal return result as Float64 (for example, var or stddev).
 ## Overflow Checks
 
 During calculations on Decimal, integer overflows might happen. Excessive digits in a fraction are discarded (not rounded). Excessive digits in integer part will lead to an exception.
-
-:::warning
-Overflow check is not implemented for Decimal128 and Decimal256. In case of overflow incorrect result is returned, no exception is thrown.
-:::
 
 ``` sql
 SELECT toDecimal32(2, 4) AS x, x / 3

@@ -343,7 +343,6 @@ public:
         uint64_t read_rows = 0;
         uint64_t read_bytes = 0;
         uint64_t total_rows_approx = 0;
-        uint64_t total_bytes = 0;
     };
 
     struct ReadProgress

@@ -72,7 +72,17 @@ void ZlibDeflatingWriteBuffer::nextImpl()
     }
 }
 
-ZlibDeflatingWriteBuffer::~ZlibDeflatingWriteBuffer() = default;
+ZlibDeflatingWriteBuffer::~ZlibDeflatingWriteBuffer()
+{
+    try
+    {
+        finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
 
 void ZlibDeflatingWriteBuffer::finalizeBefore()
 {

@@ -16,7 +16,6 @@
 #include <algorithm>
 #include <numeric>
 
-
 namespace DB
 {
 

@@ -477,45 +477,31 @@ public:
     }
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & result_type) const override
+    bool isCompilableImpl(const DataTypes & arguments) const override
     {
         if (1 != arguments.size())
-            return false;
-
-        if (!canBeNativeType(*arguments[0]) || !canBeNativeType(*result_type))
             return false;
 
         return castType(arguments[0].get(), [&](const auto & type)
         {
             using DataType = std::decay_t<decltype(type)>;
             if constexpr (std::is_same_v<DataTypeFixedString, DataType> || std::is_same_v<DataTypeString, DataType>)
-            {
                 return false;
-            }
             else
-            {
-                using T0 = typename DataType::FieldType;
-                using T1 = typename Op<T0>::ResultType;
-                if constexpr (!std::is_same_v<T1, InvalidType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
-                    return true;
-            }
-
-            return false;
+                return !IsDataTypeDecimal<DataType> && Op<typename DataType::FieldType>::compilable;
         });
     }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
     {
-        assert(1 == arguments.size());
+        assert(1 == types.size() && 1 == values.size());
 
         llvm::Value * result = nullptr;
-        castType(arguments[0].type.get(), [&](const auto & type)
+        castType(types[0].get(), [&](const auto & type)
         {
             using DataType = std::decay_t<decltype(type)>;
             if constexpr (std::is_same_v<DataTypeFixedString, DataType> || std::is_same_v<DataTypeString, DataType>)
-            {
                 return false;
-            }
             else
             {
                 using T0 = typename DataType::FieldType;
@@ -523,16 +509,13 @@ public:
                 if constexpr (!std::is_same_v<T1, InvalidType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                    auto * v = nativeCast(b, arguments[0], result_type);
+                    auto * v = nativeCast(b, types[0], values[0], std::make_shared<DataTypeNumber<T1>>());
                     result = Op<T0>::compile(b, v, is_signed_v<T1>);
-
                     return true;
                 }
             }
-
             return false;
         });
-
         return result;
     }
 #endif

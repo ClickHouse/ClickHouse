@@ -33,7 +33,6 @@ backward = make_instance(
     # version without DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
     tag="23.2.3",
     with_installed_binary=True,
-    allow_analyzer=False,
 )
 
 users = pytest.mark.parametrize(

@@ -4,7 +4,6 @@
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Common/Macros.h>
 #include <Common/MultiVersion.h>
-#include <Common/Priority.h>
 
 #include <Poco/Net/SocketAddress.h>
 
@@ -45,7 +44,7 @@ struct ClusterConnectionParameters
     bool treat_local_as_remote;
     bool treat_local_port_as_remote;
     bool secure = false;
-    Priority priority{1};
+    Int64 priority = 1;
     String cluster_name;
     String cluster_secret;
 };
@@ -132,7 +131,7 @@ public:
         Protocol::Compression compression = Protocol::Compression::Enable;
         Protocol::Secure secure = Protocol::Secure::Disable;
 
-        Priority priority{1};
+        Int64 priority = 1;
 
         Address() = default;
 
@@ -143,6 +142,12 @@ public:
             const String & cluster_secret_,
             UInt32 shard_index_ = 0,
             UInt32 replica_index_ = 0);
+
+        Address(
+            const String & host_port_,
+            const ClusterConnectionParameters & params,
+            UInt32 shard_index_,
+            UInt32 replica_index_);
 
         Address(
             const DatabaseReplicaInfo & info,

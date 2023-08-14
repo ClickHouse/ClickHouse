@@ -378,12 +378,12 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        const auto & nullable_type = arguments[0].type;
-        const auto & nullable_value = arguments[0].value;
+        const auto & nullable_type = arguments_types[0];
+        const auto & nullable_value = argument_values[0];
 
         auto * wrapped_value = b.CreateExtractValue(nullable_value, {0});
         auto * is_null_value = b.CreateExtractValue(nullable_value, {1});
@@ -405,7 +405,7 @@ public:
             b.CreateStore(llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_ptr);
 
         auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_ptr, this->prefix_size);
-        this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, { ValueWithType(wrapped_value, removeNullable(nullable_type)) });
+        this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, { removeNullable(nullable_type) }, { wrapped_value });
         b.CreateBr(join_block);
 
         b.SetInsertPoint(join_block);
@@ -568,32 +568,36 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        size_t arguments_size = arguments.size();
+        size_t arguments_size = arguments_types.size();
 
-        ValuesWithType wrapped_arguments;
-        wrapped_arguments.reserve(arguments_size);
+        DataTypes non_nullable_types;
+        std::vector<llvm::Value * > wrapped_values;
+        std::vector<llvm::Value * > is_null_values;
 
-        std::vector<llvm::Value *> is_null_values;
-        is_null_values.reserve(arguments_size);
+        non_nullable_types.resize(arguments_size);
+        wrapped_values.resize(arguments_size);
+        is_null_values.resize(arguments_size);
 
         for (size_t i = 0; i < arguments_size; ++i)
         {
-            const auto & argument_value = arguments[i].value;
-            const auto & argument_type = arguments[i].type;
+            const auto & argument_value = argument_values[i];
 
             if (is_nullable[i])
             {
                 auto * wrapped_value = b.CreateExtractValue(argument_value, {0});
-                is_null_values.emplace_back(b.CreateExtractValue(argument_value, {1}));
-                wrapped_arguments.emplace_back(wrapped_value, removeNullable(argument_type));
+                is_null_values[i] = b.CreateExtractValue(argument_value, {1});
+
+                wrapped_values[i] = wrapped_value;
+                non_nullable_types[i] = removeNullable(arguments_types[i]);
             }
             else
             {
-                wrapped_arguments.emplace_back(argument_value, argument_type);
+                wrapped_values[i] = argument_value;
+                non_nullable_types[i] = arguments_types[i];
             }
         }
 
@@ -608,6 +612,9 @@ public:
 
         for (auto * is_null_value : is_null_values)
         {
+            if (!is_null_value)
+                continue;
+
             auto * values_have_null = b.CreateLoad(b.getInt1Ty(), values_have_null_ptr);
             b.CreateStore(b.CreateOr(values_have_null, is_null_value), values_have_null_ptr);
         }
@@ -623,7 +630,7 @@ public:
             b.CreateStore(llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_ptr);
 
         auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_ptr, this->prefix_size);
-        this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, wrapped_arguments);
+        this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, arguments_types, wrapped_values);
         b.CreateBr(join_block);
 
         b.SetInsertPoint(join_block);

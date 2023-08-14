@@ -75,8 +75,6 @@ public:
 
     void setReadBuffer(ReadBuffer & in_) override;
 
-    bool checkForSuffix() override;
-
 private:
     template <bool is_header>
     std::vector<String> readRowImpl();

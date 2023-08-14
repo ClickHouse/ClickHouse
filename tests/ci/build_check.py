@@ -11,6 +11,12 @@ import time
 
 from ci_config import CI_CONFIG, BuildConfig
 from ccache_utils import CargoCache
+from commit_status_helper import (
+    NotSet,
+    get_commit_filtered_statuses,
+    get_commit,
+    post_commit_status,
+)
 from docker_pull_helper import get_image_with_version
 from env_helper import (
     GITHUB_JOB,
@@ -20,7 +26,9 @@ from env_helper import (
     S3_DOWNLOAD,
     TEMP_PATH,
 )
+from get_robot_token import get_best_robot_token
 from git_helper import Git, git_runner
+from github_helper import GitHub
 from pr_info import PRInfo
 from s3_helper import S3Helper
 from tee_popen import TeePopen
@@ -41,11 +49,11 @@ BUILD_LOG_NAME = "build_log.log"
 
 
 def _can_export_binaries(build_config: BuildConfig) -> bool:
-    if build_config.package_type != "deb":
+    if build_config["package_type"] != "deb":
         return False
-    if build_config.sanitizer != "":
+    if build_config["sanitizer"] != "":
         return True
-    if build_config.debug_build:
+    if build_config["build_type"] != "":
         return True
     return False
 
@@ -59,19 +67,19 @@ def get_packager_cmd(
     image_version: str,
     official: bool,
 ) -> str:
-    package_type = build_config.package_type
-    comp = build_config.compiler
+    package_type = build_config["package_type"]
+    comp = build_config["compiler"]
     cmake_flags = "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=1"
     cmd = (
         f"cd {packager_path} && CMAKE_FLAGS='{cmake_flags}' ./packager "
         f"--output-dir={output_path} --package-type={package_type} --compiler={comp}"
     )
 
-    if build_config.debug_build:
-        cmd += " --debug-build"
-    if build_config.sanitizer:
-        cmd += f" --sanitizer={build_config.sanitizer}"
-    if build_config.tidy:
+    if build_config["build_type"]:
+        cmd += f" --build-type={build_config['build_type']}"
+    if build_config["sanitizer"]:
+        cmd += f" --sanitizer={build_config['sanitizer']}"
+    if build_config["tidy"] == "enable":
         cmd += " --clang-tidy"
 
     cmd += " --cache=sccache"
@@ -79,7 +87,7 @@ def get_packager_cmd(
     cmd += f" --s3-bucket={S3_BUILDS_BUCKET}"
     cmd += f" --cargo-cache-dir={cargo_cache_dir}"
 
-    if build_config.additional_pkgs:
+    if "additional_pkgs" in build_config and build_config["additional_pkgs"]:
         cmd += " --additional-pkgs"
 
     cmd += f" --docker-image-version={image_version}"
@@ -186,7 +194,7 @@ def create_json_artifact(
     result = {
         "log_url": log_url,
         "build_urls": build_urls,
-        "build_config": build_config.__dict__,
+        "build_config": build_config,
         "elapsed_seconds": elapsed,
         "status": success,
         "job_name": GITHUB_JOB,
@@ -226,7 +234,7 @@ def upload_master_static_binaries(
     build_output_path: Path,
 ) -> None:
     """Upload binary artifacts to a static S3 links"""
-    static_binary_name = build_config.static_binary_name
+    static_binary_name = build_config.get("static_binary_name", False)
     if pr_info.number != 0:
         return
     elif not static_binary_name:
@@ -240,13 +248,41 @@ def upload_master_static_binaries(
     print(f"::notice ::Binary static URL: {url}")
 
 
+def mark_failed_reports_pending(build_name: str, pr_info: PRInfo) -> None:
+    try:
+        gh = GitHub(get_best_robot_token())
+        commit = get_commit(gh, pr_info.sha)
+        statuses = get_commit_filtered_statuses(commit)
+        report_status = [
+            name
+            for name, builds in CI_CONFIG["builds_report_config"].items()
+            if build_name in builds
+        ][0]
+        for status in statuses:
+            if status.context == report_status and status.state in ["failure", "error"]:
+                logging.info(
+                    "Commit already have failed status for '%s', setting it to 'pending'",
+                    report_status,
+                )
+                post_commit_status(
+                    commit,
+                    "pending",
+                    status.target_url or NotSet,
+                    "Set to pending on rerun",
+                    report_status,
+                    pr_info,
+                )
+    except:  # we do not care about any exception here
+        logging.info("Failed to get or mark the reports status as pending, continue")
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
     build_name = sys.argv[1]
 
-    build_config = CI_CONFIG.build_config[build_name]
+    build_config = CI_CONFIG["build_config"][build_name]
 
     temp_path = Path(TEMP_PATH)
     os.makedirs(temp_path, exist_ok=True)
@@ -270,12 +306,17 @@ def main():
     # put them as github actions artifact (result)
     check_for_success_run(s3_helper, s3_path_prefix, build_name, build_config)
 
+    # If it's a latter running, we need to mark possible failed status
+    mark_failed_reports_pending(build_name, pr_info)
+
     docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
     image_version = docker_image.version
 
     logging.info("Got version from repo %s", version.string)
 
     official_flag = pr_info.number == 0
+    if "official" in build_config:
+        official_flag = build_config["official"]
 
     version_type = "testing"
     if "release" in pr_info.labels or "release-lts" in pr_info.labels:

@@ -15,7 +15,7 @@ struct fmt::formatter<DB::RangesInDataPartDescription>
     template <typename FormatContext>
     auto format(const DB::RangesInDataPartDescription & range, FormatContext & ctx)
     {
-        return fmt::format_to(ctx.out(), "{}", range.describe());
+        return format_to(ctx.out(), "{}", range.describe());
     }
 };
 

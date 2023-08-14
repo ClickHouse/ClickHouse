@@ -24,6 +24,5 @@
     </policies>
 
 </storage_configuration>
-<allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
 
 </clickhouse>
