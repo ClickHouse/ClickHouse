@@ -17,7 +17,7 @@ In terms of SQL, the nearest neighborhood problem can be expressed as follows:
 
 ``` sql
 SELECT *
-FROM table
+FROM table_with_ann_index
 ORDER BY Distance(vectors, Point)
 LIMIT N
 ```
@@ -32,7 +32,7 @@ An alternative formulation of the nearest neighborhood search problem looks as f
 
 ``` sql
 SELECT *
-FROM table
+FROM table_with_ann_index
 WHERE Distance(vectors, Point) < MaxDistance
 LIMIT N
 ```
@@ -50,7 +50,7 @@ of the search space (using clustering, search trees, etc.) which allows to compu
 Syntax to create an ANN index over an [Array](../../../sql-reference/data-types/array.md) column:
 
 ```sql
-CREATE TABLE table
+CREATE TABLE table_with_ann_index
 (
   `id` Int64,
   `vectors` Array(Float32),
@@ -63,7 +63,7 @@ ORDER BY id;
 Syntax to create an ANN index over a [Tuple](../../../sql-reference/data-types/tuple.md) column:
 
 ```sql
-CREATE TABLE table
+CREATE TABLE table_with_ann_index
 (
   `id` Int64,
   `vectors` Tuple(Float32[, Float32[, ...]]),
@@ -83,7 +83,7 @@ ANN indexes support two types of queries:
 
   ``` sql
   SELECT *
-  FROM table
+  FROM table_with_ann_index
   [WHERE ...]
   ORDER BY Distance(vectors, Point)
   LIMIT N
@@ -93,7 +93,7 @@ ANN indexes support two types of queries:
 
    ``` sql
    SELECT *
-   FROM table
+   FROM table_with_ann_index
    WHERE Distance(vectors, Point) < MaxDistance
    LIMIT N
    ```
@@ -103,7 +103,7 @@ To avoid writing out large vectors, you can use [query
 parameters](/docs/en/interfaces/cli.md#queries-with-parameters-cli-queries-with-parameters), e.g.
 
 ```bash
-clickhouse-client --param_vec='hello' --query="SELECT * FROM table WHERE L2Distance(vectors, {vec: Array(Float32)}) < 1.0"
+clickhouse-client --param_vec='hello' --query="SELECT * FROM table_with_ann_index WHERE L2Distance(vectors, {vec: Array(Float32)}) < 1.0"
 ```
 :::
 
@@ -165,7 +165,7 @@ space in random linear surfaces (lines in 2D, planes in 3D etc.).
 Syntax to create an Annoy index over an [Array](../../../sql-reference/data-types/array.md) column:
 
 ```sql
-CREATE TABLE table
+CREATE TABLE table_with_annoy_index
 (
   id Int64,
   vectors Array(Float32),
@@ -178,7 +178,7 @@ ORDER BY id;
 Syntax to create an ANN index over a [Tuple](../../../sql-reference/data-types/tuple.md) column:
 
 ```sql
-CREATE TABLE table
+CREATE TABLE table_with_annoy_index
 (
   id Int64,
   vectors Tuple(Float32[, Float32[, ...]]),
