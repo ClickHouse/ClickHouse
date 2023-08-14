@@ -105,10 +105,10 @@ def test_parallel_replicas_over_distributed(start_cluster, cluster):
     expected_result = f"6001\t-1999\t1999\t0\n"
 
     # w/o parallel replicas
-    # assert (
-    #     node.query(f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d")
-    #     == expected_result
-    # )
+    assert (
+        node.query(f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d")
+        == expected_result
+    )
 
     # parallel replicas
     assert (
