@@ -119,6 +119,16 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeDataPartClone
 
     auto dst_part_storage = hardlinkAllFiles(src_part_storage, tmp_dst_part_name);
 
+    if (params.metadata_version_to_write.has_value())
+    {
+        chassert(!params.keep_metadata_version);
+        auto out_metadata = dst_part_storage->writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, merge_tree_data->getContext()->getWriteSettings());
+        writeText(metadata_snapshot->getMetadataVersion(), *out_metadata);
+        out_metadata->finalize();
+        if (merge_tree_data->getSettings()->fsync_after_insert)
+            out_metadata->sync();
+    }
+
     LOG_DEBUG(log, "Clone {} part {} to {}{}",
               src_flushed_tmp_part ? "flushed" : "",
               src_part_storage->getFullPath(),
