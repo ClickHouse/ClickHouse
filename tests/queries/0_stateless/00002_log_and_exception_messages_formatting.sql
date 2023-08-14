@@ -36,7 +36,9 @@ create temporary table known_short_messages (s String) as select * from (select
 'Database {} does not exist', 'Dictionary ({}) not found', 'Unknown table function {}',
 'Unknown format {}', 'Unknown explain kind ''{}''', 'Unknown setting {}', 'Unknown input format {}',
 'Unknown identifier: ''{}''', 'User name is empty', 'Expected function, got: {}',
-'Attempt to read after eof', 'String size is too big ({}), maximum: {}', 'API mode: {}'
+'Attempt to read after eof', 'String size is too big ({}), maximum: {}', 'API mode: {}',
+'Processed: {}%', 'Creating {}: {}', 'Table {}.{} doesn''t exist', 'Invalid cache key hex: {}',
+'User has been dropped', 'Illegal type {} of argument of function {}. Should be DateTime or DateTime64'
 ] as arr) array join arr;
 
 -- Check that we don't have too many short meaningless message patterns.

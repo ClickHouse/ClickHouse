@@ -764,9 +764,8 @@ namespace
             }
 
             /// Note: Doesn't check the duplicates in the `from` array.
-
-            WhichDataType which(from_type);
-            if (isNativeNumber(which) || which.isDecimal32() || which.isDecimal64())
+            /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
+            if (WhichDataType which(from_type); isNativeNumber(which) || which.isDecimal32() || which.isDecimal64())
             {
                 cache.table_num_to_idx = std::make_unique<Cache::NumToIdx>();
                 auto & table = *cache.table_num_to_idx;
@@ -774,10 +773,13 @@ namespace
                 {
                     if (applyVisitor(FieldVisitorAccurateEquals(), (*cache.from_column)[i], (*from_column_uncasted)[i]))
                     {
-                        /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
-                        StringRef ref = cache.from_column->getDataAt(i);
                         UInt64 key = 0;
-                        memcpy(&key, ref.data, ref.size);
+                        auto * dst = reinterpret_cast<char *>(&key);
+                        const auto ref = cache.from_column->getDataAt(i);
+                        if constexpr (std::endian::native == std::endian::big)
+                            dst += sizeof(key) - ref.size;
+
+                        memcpy(dst, ref.data, ref.size);
                         table[key] = i;
                     }
                 }
