@@ -251,7 +251,7 @@ public:
 };
 
 template <typename T>
-inline void readBinary(std::pair<T, unsigned int> & x,  ReadBuffer & buf)
+inline void readBinary(std::pair<T, unsigned int> & x, ReadBuffer & buf)
 {
     readPODBinary(x, buf);
 }
