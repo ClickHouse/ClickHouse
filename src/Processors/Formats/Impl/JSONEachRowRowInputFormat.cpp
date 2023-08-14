@@ -236,10 +236,10 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
 
 bool JSONEachRowRowInputFormat::checkEndOfData(bool is_first_row)
 {
-    /// We consume , or \n before scanning a new row, instead scanning to next row at the end.
+    /// We consume ',' or '\n' before scanning a new row, instead scanning to next row at the end.
     /// The reason is that if we want an exact number of rows read with LIMIT x
     /// from a streaming table engine with text data format, like File or Kafka
-    /// then seeking to next ;, or \n would trigger reading of an extra row at the end.
+    /// then seeking to next ';,' or '\n' would trigger reading of an extra row at the end.
 
     /// Semicolon is added for convenience as it could be used at end of INSERT query.
     if (!in->eof())

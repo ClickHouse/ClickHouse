@@ -258,7 +258,7 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
 void PocoHTTPClient::makeRequestInternal(
     Aws::Http::HttpRequest & request,
     std::shared_ptr<PocoHTTPResponse> & response,
-    Aws::Utils::RateLimits::RateLimiterInterface * readLimiter ,
+    Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
     /// Most sessions in pool are already connected and it is not possible to set proxy host/port to a connected session.
@@ -536,7 +536,10 @@ void PocoHTTPClient::makeRequestInternalImpl(
     }
     catch (...)
     {
-        tryLogCurrentException(log, fmt::format("Failed to make request to: {}", uri));
+        auto error_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true);
+        error_message.text = fmt::format("Failed to make request to: {}: {}", uri, error_message.text);
+        LOG_INFO(log, error_message);
+
         response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
         response->SetClientErrorMessage(getCurrentExceptionMessage(false));
 

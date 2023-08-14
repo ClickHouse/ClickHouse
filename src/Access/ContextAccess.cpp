@@ -328,9 +328,6 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
 
     enabled_row_policies = access_control->getEnabledRowPolicies(*params.user_id, roles_info->enabled_roles);
 
-    enabled_quota = access_control->getEnabledQuota(
-        *params.user_id, user_name, roles_info->enabled_roles, params.address, params.forwarded_address, params.quota_key);
-
     enabled_settings = access_control->getEnabledSettings(
         *params.user_id, user->settings, roles_info->enabled_roles, roles_info->settings_from_enabled_roles);
 
@@ -416,19 +413,32 @@ RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, co
 std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
 {
     std::lock_guard lock{mutex};
-    if (enabled_quota)
-        return enabled_quota;
-    static const auto unlimited_quota = EnabledQuota::getUnlimitedQuota();
-    return unlimited_quota;
+
+    if (!enabled_quota)
+    {
+        if (roles_info)
+        {
+            enabled_quota = access_control->getEnabledQuota(*params.user_id,
+                                                            user_name,
+                                                            roles_info->enabled_roles,
+                                                            params.address,
+                                                            params.forwarded_address,
+                                                            params.quota_key);
+        }
+        else
+        {
+            static const auto unlimited_quota = EnabledQuota::getUnlimitedQuota();
+            return unlimited_quota;
+        }
+    }
+
+    return enabled_quota;
 }
 
 
 std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
 {
-    std::lock_guard lock{mutex};
-    if (enabled_quota)
-        return enabled_quota->getUsage();
-    return {};
+    return getQuota()->getUsage();
 }
 
 
@@ -540,12 +550,12 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
             return access_denied(ErrorCodes::ACCESS_DENIED,
                 "{}: Not enough privileges. "
                 "The required privileges have been granted, but without grant option. "
-                "To execute this query it's necessary to have grant {} WITH GRANT OPTION",
+                "To execute this query, it's necessary to have the grant {} WITH GRANT OPTION",
                 AccessRightsElement{flags, args...}.toStringWithoutOptions());
         }
 
         return access_denied(ErrorCodes::ACCESS_DENIED,
-            "{}: Not enough privileges. To execute this query it's necessary to have grant {}",
+            "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
             AccessRightsElement{flags, args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
     }
 
@@ -746,11 +756,11 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
                 show_error(ErrorCodes::ACCESS_DENIED,
                            "Not enough privileges. "
                            "Role {} is granted, but without ADMIN option. "
-                           "To execute this query it's necessary to have the role {} granted with ADMIN option.",
+                           "To execute this query, it's necessary to have the role {} granted with ADMIN option.",
                            backQuote(*role_name), backQuoteIfNeed(*role_name));
             else
                 show_error(ErrorCodes::ACCESS_DENIED, "Not enough privileges. "
-                           "To execute this query it's necessary to have the role {} granted with ADMIN option.",
+                           "To execute this query, it's necessary to have the role {} granted with ADMIN option.",
                            backQuoteIfNeed(*role_name));
         }
 

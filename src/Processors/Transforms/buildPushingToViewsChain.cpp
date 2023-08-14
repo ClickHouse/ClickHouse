@@ -72,7 +72,7 @@ struct ViewsData
     std::atomic_bool has_exception = false;
     std::exception_ptr first_exception;
 
-    ViewsData(ThreadStatusesHolderPtr thread_status_holder_, ContextPtr context_, StorageID source_storage_id_, StorageMetadataPtr source_metadata_snapshot_ , StoragePtr source_storage_)
+    ViewsData(ThreadStatusesHolderPtr thread_status_holder_, ContextPtr context_, StorageID source_storage_id_, StorageMetadataPtr source_metadata_snapshot_, StoragePtr source_storage_)
         : thread_status_holder(std::move(thread_status_holder_))
         , context(std::move(context_))
         , source_storage_id(std::move(source_storage_id_))
@@ -281,7 +281,7 @@ Chain buildPushingToViewsChain(
         /// and switch back to the original thread_status.
         auto * original_thread = current_thread;
         SCOPE_EXIT({ current_thread = original_thread; });
-
+        current_thread = nullptr;
         std::unique_ptr<ThreadStatus> view_thread_status_ptr = std::make_unique<ThreadStatus>(/*check_current_thread_on_destruction=*/ false);
         /// Copy of a ThreadStatus should be internal.
         view_thread_status_ptr->setInternalThread();
