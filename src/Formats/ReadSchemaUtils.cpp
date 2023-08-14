@@ -1,13 +1,11 @@
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Storages/IStorage.h>
 #include <Common/assert_cast.h>
+#include <IO/WithFileName.h>
+
 
 namespace DB
 {
@@ -53,6 +51,7 @@ ColumnsDescription readSchemaFromFormat(
     bool retry,
     ContextPtr & context,
     std::unique_ptr<ReadBuffer> & buf)
+try
 {
     NamesAndTypesList names_and_types;
     if (FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format_name))
@@ -209,12 +208,23 @@ ColumnsDescription readSchemaFromFormat(
             ErrorCodes::BAD_ARGUMENTS,
             "{} file format doesn't support schema inference. You must specify the structure manually",
             format_name);
+
     /// Some formats like CSVWithNames can contain empty column names. We don't support empty column names and further processing can fail with an exception. Let's just remove columns with empty names from the structure.
     names_and_types.erase(
         std::remove_if(names_and_types.begin(), names_and_types.end(), [](const NameAndTypePair & pair) { return pair.name.empty(); }),
         names_and_types.end());
     return ColumnsDescription(names_and_types);
 }
+catch (Exception & e)
+{
+    if (!buf)
+        throw;
+    auto file_name = getFileNameFromReadBuffer(*buf);
+    if (!file_name.empty())
+        e.addMessage(fmt::format("(in file/uri {})", file_name));
+    throw;
+}
+
 
 ColumnsDescription readSchemaFromFormat(
     const String & format_name,

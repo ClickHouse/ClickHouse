@@ -48,6 +48,8 @@ class IJoin
 public:
     virtual ~IJoin() = default;
 
+    virtual std::string getName() const = 0;
+
     virtual const TableJoin & getTableJoin() const = 0;
 
     /// Add block of data from right hand of JOIN.

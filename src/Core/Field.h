@@ -15,8 +15,7 @@
 #include <Core/UUID.h>
 #include <base/IPv4andIPv6.h>
 #include <base/DayNum.h>
-#include <base/strong_typedef.h>
-#include <base/EnumReflection.h>
+
 
 namespace DB
 {
@@ -449,7 +448,7 @@ public:
 
     Types::Which getType() const { return which; }
 
-    constexpr std::string_view getTypeName() const { return magic_enum::enum_name(which); }
+    std::string_view getTypeName() const;
 
     bool isNull() const { return which == Types::Null; }
     template <typename T>
@@ -1005,7 +1004,7 @@ void writeFieldText(const Field & x, WriteBuffer & buf);
 
 String toString(const Field & x);
 
-String fieldTypeToString(Field::Types::Which type);
+std::string_view fieldTypeToString(Field::Types::Which type);
 
 }
 
