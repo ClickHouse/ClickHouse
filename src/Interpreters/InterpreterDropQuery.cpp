@@ -124,9 +124,10 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
     if (database && table)
     {
         const auto & settings = getContext()->getSettingsRef();
-        if (query.if_empty && table->totalRows(settings) > 0)
-        {
-            throw Exception(ErrorCodes::TABLE_NOT_EMPTY, "Table {} is not empty", backQuoteIfNeed(table_id.table_name));
+        if (query.if_empty) {
+            auto rows = table->totalRows(settings);
+            if (rows > 0)
+                throw Exception(ErrorCodes::TABLE_NOT_EMPTY, "Table {} is not empty", backQuoteIfNeed(table_id.table_name));
         }
         checkStorageSupportsTransactionsIfNeeded(table, context_);
 
@@ -168,7 +169,17 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 
             ddl_guard->releaseTableLock();
             table.reset();
-            return database->tryEnqueueReplicatedDDL(query.clone(), context_);
+
+            std::cout << "ANIMEO" << std::endl;
+            LOG_DEBUG(&Poco::Logger::get("ANIME"), "ANIME");
+
+            auto new_query = query.clone();
+            auto & query_to_send = new_query->as<ASTDropQuery &>();
+            // auto query_to = query.as<ASTDropQuery &>();
+            // auto query_to_send = std::dynamic_pointer_cast<ASTDropQuery>(query.clone());
+            query_to_send.if_empty = false;
+
+            return database->tryEnqueueReplicatedDDL(new_query, context_);
         }
 
         if (query.kind == ASTDropQuery::Kind::Detach)
@@ -347,6 +358,9 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             if (query.kind == ASTDropQuery::Kind::Detach && query.permanently)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH PERMANENTLY is not implemented for databases");
 
+            if (query.if_empty)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP IF EMPTY is not implemented for databases");
+
             if (database->hasReplicationThread())
                 database->stopReplication();
 
@@ -356,7 +370,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 ASTDropQuery query_for_table;
                 query_for_table.kind = query.kind;
                 query_for_table.if_exists = true;
-                query_for_table.if_empty = query.if_empty;
+                query_for_table.if_empty = false;
                 query_for_table.setDatabase(database_name);
                 query_for_table.sync = query.sync;
 
