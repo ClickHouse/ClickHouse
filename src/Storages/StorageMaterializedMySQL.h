@@ -43,7 +43,8 @@ public:
 
     bool supportsTrivialCountOptimization() const override { return false; }
 
-    IndexSizeByName getSecondaryIndexSizes() const override {
+    IndexSizeByName getSecondaryIndexSizes() const override
+    {
         return nested_storage->getSecondaryIndexSizes();
     }
 
