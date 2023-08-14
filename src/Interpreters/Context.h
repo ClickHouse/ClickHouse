@@ -86,6 +86,7 @@ struct Progress;
 struct FileProgress;
 class Clusters;
 class QueryCache;
+class ISystemLog;
 class QueryLog;
 class QueryThreadLog;
 class QueryViewsLog;
@@ -1019,6 +1020,8 @@ public:
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
+
+    std::vector<ISystemLog *> getSystemLogs() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.

@@ -1985,6 +1985,12 @@ IndexSize IMergeTreeDataPart::getSecondaryIndexSize(const String & secondary_ind
     return ColumnSize{};
 }
 
+bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name) const
+{
+    auto file_name = INDEX_FILE_PREFIX + index_name;
+    return checksums.has(file_name + ".idx") || checksums.has(file_name + ".idx2");
+}
+
 void IMergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const
 {
     for (const auto & [column_name, size] : columns_sizes)
