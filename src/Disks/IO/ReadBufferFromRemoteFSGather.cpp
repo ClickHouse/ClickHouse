@@ -2,7 +2,6 @@
 
 #include <IO/SeekableReadBuffer.h>
 
-#include <iostream>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <IO/ReadSettings.h>
@@ -109,6 +108,8 @@ void ReadBufferFromRemoteFSGather::appendUncachedReadInfo()
         .source_file_path = current_object.remote_path,
         .file_segment_range = { 0, current_object.bytes_size },
         .cache_type = FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE,
+        .file_segment_key = {},
+        .file_segment_offset = {},
         .file_segment_size = current_object.bytes_size,
         .read_from_cache_attempted = false,
     };

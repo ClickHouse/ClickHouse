@@ -148,7 +148,7 @@ static int compareValuesWithOffsetFloat(const IColumn * _compared_column,
     const auto * reference_column = assert_cast<const ColumnType *>(
         _reference_column);
     const auto offset = _offset.get<typename ColumnType::ValueType>();
-    assert(offset >= 0);
+    chassert(offset >= 0);
 
     const auto compared_value_data = compared_column->getDataAt(compared_row);
     assert(compared_value_data.size == sizeof(typename ColumnType::ValueType));

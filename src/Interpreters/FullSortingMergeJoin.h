@@ -28,6 +28,7 @@ public:
         LOG_TRACE(&Poco::Logger::get("FullSortingMergeJoin"), "Will use full sorting merge join");
     }
 
+    std::string getName() const override { return "FullSortingMergeJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override
