@@ -239,12 +239,9 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
 
     if (context->getParallelReplicasMode() == Context::ParallelReplicasMode::READ_TASKS)
     {
-        String cluster_for_parallel_replicas = cluster_name;
-        LOG_DEBUG(&Poco::Logger::get(__FUNCTION__), "_cluster_for_parallel_replicas: {}", cluster_for_parallel_replicas);
+        LOG_DEBUG(&Poco::Logger::get(__FUNCTION__), "_cluster_for_parallel_replicas: {}", cluster_name);
         scalars["_cluster_for_parallel_replicas"] = Block{
-            {DataTypeString().createColumnConst(1, cluster_for_parallel_replicas),
-             std::make_shared<DataTypeString>(),
-             "_cluster_for_parallel_replicas"}};
+            {DataTypeString().createColumnConst(1, cluster_name), std::make_shared<DataTypeString>(), "_cluster_for_parallel_replicas"}};
     }
 
     std::shared_ptr<RemoteQueryExecutor> remote_query_executor;
