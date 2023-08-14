@@ -101,7 +101,7 @@ void checkAccessRights(const TableNode & table_node, const Names & column_names,
         }
 
         throw Exception(ErrorCodes::ACCESS_DENIED,
-            "{}: Not enough privileges. To execute this query it's necessary to have grant SELECT for at least one column on {}",
+            "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
             query_context->getUserName(),
             storage_id.getFullTableName());
     }
