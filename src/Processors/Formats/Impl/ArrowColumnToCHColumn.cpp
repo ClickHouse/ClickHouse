@@ -202,13 +202,10 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(std::shared_p
 
         for (size_t i = 0; i != chunk_length; ++i)
         {
+            /// If at least one value size is not equal to the size if big integer, fallback to reading String column and further cast to result type.
             if (!chunk.IsNull(i) && chunk.value_length(i) != sizeof(ValueType))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot insert data into {} column from binary value, expected data with size {}, got {}",
-                    column_type->getName(),
-                    sizeof(ValueType),
-                    chunk.value_length(i));
+                return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
+
             total_size += chunk_length;
         }
     }
@@ -1035,13 +1032,11 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
 ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     const Block & header_,
     const std::string & format_name_,
-    bool import_nested_,
     bool allow_missing_columns_,
     bool null_as_default_,
     bool case_insensitive_matching_)
     : header(header_)
     , format_name(format_name_)
-    , import_nested(import_nested_)
     , allow_missing_columns(allow_missing_columns_)
     , null_as_default(null_as_default_)
     , case_insensitive_matching(case_insensitive_matching_)
@@ -1083,42 +1078,40 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr &
         if (!name_to_column_ptr.contains(search_column_name))
         {
             bool read_from_nested = false;
-            /// Check if it's a column from nested table.
-            if (import_nested)
+            /// Check if it's a subcolumn from some struct.
+            String nested_table_name = Nested::extractTableName(header_column.name);
+            String search_nested_table_name = nested_table_name;
+            if (case_insensitive_matching)
+                boost::to_lower(search_nested_table_name);
+            if (name_to_column_ptr.contains(search_nested_table_name))
             {
-                String nested_table_name = Nested::extractTableName(header_column.name);
-                String search_nested_table_name = nested_table_name;
-                if (case_insensitive_matching)
-                    boost::to_lower(search_nested_table_name);
-                if (name_to_column_ptr.contains(search_nested_table_name))
+                if (!nested_tables.contains(search_nested_table_name))
                 {
-                    if (!nested_tables.contains(search_nested_table_name))
+                    NamesAndTypesList nested_columns;
+                    for (const auto & name_and_type : header.getNamesAndTypesList())
                     {
-                        NamesAndTypesList nested_columns;
-                        for (const auto & name_and_type : header.getNamesAndTypesList())
-                        {
-                            if (name_and_type.name.starts_with(nested_table_name + "."))
-                                nested_columns.push_back(name_and_type);
-                        }
-                        auto nested_table_type = Nested::collect(nested_columns).front().type;
+                        if (name_and_type.name.starts_with(nested_table_name + "."))
+                            nested_columns.push_back(name_and_type);
+                    }
+                    auto nested_table_type = Nested::collect(nested_columns).front().type;
 
-                        std::shared_ptr<arrow::ChunkedArray> arrow_column = name_to_column_ptr[search_nested_table_name];
-                        ColumnsWithTypeAndName cols = {readColumnFromArrowColumn(
-                            arrow_column, nested_table_name, format_name, false, dictionary_infos, true, false, skipped, nested_table_type)};
-                        BlockPtr block_ptr = std::make_shared<Block>(cols);
-                        auto column_extractor = std::make_shared<NestedColumnExtractHelper>(*block_ptr, case_insensitive_matching);
-                        nested_tables[search_nested_table_name] = {block_ptr, column_extractor};
-                    }
-                    auto nested_column = nested_tables[search_nested_table_name].second->extractColumn(search_column_name);
-                    if (nested_column)
-                    {
-                        column = *nested_column;
-                        if (case_insensitive_matching)
-                            column.name = header_column.name;
-                        read_from_nested = true;
-                    }
+                    std::shared_ptr<arrow::ChunkedArray> arrow_column = name_to_column_ptr[search_nested_table_name];
+                    ColumnsWithTypeAndName cols = {readColumnFromArrowColumn(
+                        arrow_column, nested_table_name, format_name, false, dictionary_infos, true, false, skipped, nested_table_type)};
+                    BlockPtr block_ptr = std::make_shared<Block>(cols);
+                    auto column_extractor = std::make_shared<NestedColumnExtractHelper>(*block_ptr, case_insensitive_matching);
+                    nested_tables[search_nested_table_name] = {block_ptr, column_extractor};
+                }
+                auto nested_column = nested_tables[search_nested_table_name].second->extractColumn(search_column_name);
+                if (nested_column)
+                {
+                    column = *nested_column;
+                    if (case_insensitive_matching)
+                        column.name = header_column.name;
+                    read_from_nested = true;
                 }
             }
+
             if (!read_from_nested)
             {
                 if (!allow_missing_columns)

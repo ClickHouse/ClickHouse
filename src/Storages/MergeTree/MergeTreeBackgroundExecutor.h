@@ -63,7 +63,7 @@ struct TaskRuntimeData
     /// This scenario in not possible in reality.
     Poco::Event is_done{/*autoreset=*/false};
     /// This is equal to task->getPriority() not to do useless virtual calls in comparator
-    UInt64 priority{0};
+    Priority priority;
 
     /// By default priority queue will have max element at top
     static bool comparePtrByPriority(const TaskRuntimeDataPtr & lhs, const TaskRuntimeDataPtr & rhs)

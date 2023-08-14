@@ -49,13 +49,14 @@ namespace DB
         actual_columns = parseColumnsListFromString(table_structure, context_);
     }
 
-    ColumnsDescription TableFunctionHive::getActualTableStructure(ContextPtr /*context_*/) const { return actual_columns; }
+    ColumnsDescription TableFunctionHive::getActualTableStructure(ContextPtr /*context_*/, bool /*is_insert_query*/) const { return actual_columns; }
 
     StoragePtr TableFunctionHive::executeImpl(
         const ASTPtr & /*ast_function_*/,
         ContextPtr context_,
         const std::string & table_name_,
-        ColumnsDescription /*cached_columns_*/) const
+        ColumnsDescription /*cached_columns_*/,
+        bool /*is_insert_query*/) const
     {
         const Settings & settings = context_->getSettings();
         ParserExpression partition_by_parser;

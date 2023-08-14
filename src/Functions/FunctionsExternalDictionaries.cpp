@@ -47,9 +47,24 @@ Returned value: value of the dictionary attribute parsed in the attribute’s da
 Throws an exception if cannot parse the value of the attribute or the value does not match the attribute data type.
 )" };
 
+    constexpr auto dict_get_all_description { R"(
+Retrieves all values from a dictionary corresponding to the given key values.
+
+Accepts 3 or 4 parameters:
+-- name of the dictionary;
+-- name of the column of the dictionary or tuple of column names;
+-- key value - expression returning dictionary key-type value or tuple-type value - depending on the dictionary configuration;
+-- [optional] maximum number of values to return for each attribute;
+
+Returned value: array of dictionary attribute values parsed in the attribute's data type if key is found, otherwise empty array.
+
+Throws an exception if cannot parse the value of the attribute, the value does not match the attribute data type, or the dictionary doesn't support this function.
+)" };
+
     factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::get>>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "attribute’s data type") });
     factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::getOrDefault>>(FunctionDocumentation{ .description=fmt::format(dict_get_or_default_description, "attribute’s data type") });
     factory.registerFunction<FunctionDictGetOrNull>(FunctionDocumentation{ .description=dict_get_or_null_description });
+    factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::getAll>>(FunctionDocumentation{ .description=dict_get_all_description });
 
     factory.registerFunction<FunctionDictGetUInt8>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "UInt8") });
     factory.registerFunction<FunctionDictGetUInt16>(FunctionDocumentation{ .description=fmt::format(dict_get_description, "UInt16") });

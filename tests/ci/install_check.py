@@ -15,7 +15,6 @@ from github import Github
 from build_download_helper import download_builds_filter
 from clickhouse_helper import (
     ClickHouseHelper,
-    mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
@@ -197,10 +196,7 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> TestResults:
                 status = FAIL
             copy2(log_file, LOGS_PATH)
             archive_path = TEMP_PATH / f"{container_name}-{retry}.tar.gz"
-            compress_fast(
-                LOGS_PATH.as_posix(),
-                archive_path.as_posix(),
-            )
+            compress_fast(LOGS_PATH, archive_path)
             logs.append(archive_path)
 
         subprocess.check_call(f"docker kill -s 9 {container_id}", shell=True)
@@ -345,7 +341,6 @@ def main():
         return
 
     ch_helper = ClickHouseHelper()
-    mark_flaky_tests(ch_helper, args.check_name, test_results)
 
     description = format_description(description)
 

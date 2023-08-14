@@ -57,27 +57,42 @@ UInt64 BackupEntryFromImmutableFile::getSize() const
     return *file_size;
 }
 
-UInt128 BackupEntryFromImmutableFile::getChecksum() const
+UInt128 BackupEntryFromImmutableFile::getChecksum(const ReadSettings & read_settings) const
 {
-    std::lock_guard lock{size_and_checksum_mutex};
-    if (!checksum_adjusted)
     {
-        if (!checksum)
-            checksum = BackupEntryWithChecksumCalculation<IBackupEntry>::getChecksum();
-        else if (copy_encrypted)
-            checksum = combineChecksums(*checksum, disk->getEncryptedFileIV(file_path));
-        checksum_adjusted = true;
+        std::lock_guard lock{size_and_checksum_mutex};
+        if (checksum_adjusted)
+            return *checksum;
+
+        if (checksum)
+        {
+            if (copy_encrypted)
+                checksum = combineChecksums(*checksum, disk->getEncryptedFileIV(file_path));
+            checksum_adjusted = true;
+            return *checksum;
+        }
     }
-    return *checksum;
+
+    auto calculated_checksum = BackupEntryWithChecksumCalculation<IBackupEntry>::getChecksum(read_settings);
+
+    {
+        std::lock_guard lock{size_and_checksum_mutex};
+        if (!checksum_adjusted)
+        {
+            checksum = calculated_checksum;
+            checksum_adjusted = true;
+        }
+        return *checksum;
+    }
 }
 
-std::optional<UInt128> BackupEntryFromImmutableFile::getPartialChecksum(size_t prefix_length) const
+std::optional<UInt128> BackupEntryFromImmutableFile::getPartialChecksum(size_t prefix_length, const ReadSettings & read_settings) const
 {
     if (prefix_length == 0)
         return 0;
 
     if (prefix_length >= getSize())
-        return getChecksum();
+        return getChecksum(read_settings);
 
     /// For immutable files we don't use partial checksums.
     return std::nullopt;

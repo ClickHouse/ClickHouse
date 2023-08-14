@@ -5,7 +5,7 @@ sidebar_label: ORDER BY
 
 # ORDER BY Clause
 
-The `ORDER BY` clause contains a list of expressions, which can each be attributed with `DESC` (descending) or `ASC` (ascending) modifier which determine the sorting direction. If the direction is not specified, `ASC` is assumed, so it’s usually omitted. The sorting direction applies to a single expression, not to the entire list. Example: `ORDER BY Visits DESC, SearchPhrase`.
+The `ORDER BY` clause contains a list of expressions, which can each be attributed with `DESC` (descending) or `ASC` (ascending) modifier which determine the sorting direction. If the direction is not specified, `ASC` is assumed, so it’s usually omitted. The sorting direction applies to a single expression, not to the entire list. Example: `ORDER BY Visits DESC, SearchPhrase`.  Sorting is case-sensitive.
 
 If you want to sort by column numbers instead of column names, enable the setting [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments).
 
@@ -289,7 +289,7 @@ When `FROM const_expr` not defined sequence of filling use minimal `expr` field 
 When `TO const_expr` not defined sequence of filling use maximum `expr` field value from `ORDER BY`.
 When `STEP const_numeric_expr` defined then `const_numeric_expr` interprets `as is` for numeric types, as `days` for Date type, as `seconds` for DateTime type. It also supports [INTERVAL](https://clickhouse.com/docs/en/sql-reference/data-types/special-data-types/interval/) data type representing time and date intervals.
 When `STEP const_numeric_expr` omitted then sequence of filling use `1.0` for numeric type, `1 day` for Date type and `1 second` for DateTime type.
-`INTERPOLATE` can be applied to columns not participating in `ORDER BY WITH FILL`. Such columns are filled based on previous fields values by applying `expr`. If `expr` is not present will repeate previous value. Omitted list will result in including all allowed columns.
+`INTERPOLATE` can be applied to columns not participating in `ORDER BY WITH FILL`. Such columns are filled based on previous fields values by applying `expr`. If `expr` is not present will repeat previous value. Omitted list will result in including all allowed columns.
 
 Example of a query without `WITH FILL`:
 
@@ -544,10 +544,10 @@ Result:
 └─────┴──────────┴───────┘
 ```
 
-##Filling grouped by sorting prefix
+## Filling grouped by sorting prefix
 
 It can be useful to fill rows which have the same values in particular columns independently, - a good example is filling missing values in time series.
-Assume there is the following time series table
+Assume there is the following time series table:
 ``` sql
 CREATE TABLE timeseries
 (
@@ -567,7 +567,7 @@ SELECT * FROM timeseries;
 └───────────┴─────────────────────────┴───────┘
 ```
 And we'd like to fill missing values for each sensor independently with 1 second interval.
-The way to achieve it is to use `sensor_id` column as sorting prefix for filling column `timestamp`
+The way to achieve it is to use `sensor_id` column as sorting prefix for filling column `timestamp`:
 ```
 SELECT *
 FROM timeseries
@@ -589,7 +589,7 @@ INTERPOLATE ( value AS 9999 )
 │       432 │ 2021-12-01 00:00:05.000 │     5 │
 └───────────┴─────────────────────────┴───────┘
 ```
-Here, the `value` column was interpolated with `9999` just to make filled rows more noticeable
+Here, the `value` column was interpolated with `9999` just to make filled rows more noticeable.
 This behavior is controlled by setting `use_with_fill_by_sorting_prefix` (enabled by default)
 
 ## Related content

@@ -62,14 +62,13 @@ namespace ErrorCodes
   */
 
 
-class FunctionDictHelper : WithContext
+class FunctionDictHelper
 {
 public:
-    explicit FunctionDictHelper(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionDictHelper(ContextPtr context_) : current_context(context_) {}
 
     std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
-        auto current_context = getContext();
         auto dict = current_context->getExternalDictionariesLoader().getDictionary(dictionary_name, current_context);
 
         if (!access_checked)
@@ -132,10 +131,12 @@ public:
 
     DictionaryStructure getDictionaryStructure(const String & dictionary_name) const
     {
-        return getContext()->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, getContext());
+        return current_context->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, current_context);
     }
 
 private:
+    ContextPtr current_context;
+
     /// Access cannot be not granted, since in this case checkAccess() will throw and access_checked will not be updated.
     std::atomic<bool> access_checked = false;
 
@@ -296,7 +297,8 @@ private:
 enum class DictionaryGetFunctionType
 {
     get,
-    getOrDefault
+    getOrDefault,
+    getAll
 };
 
 /// This variant of function derives the result type automatically.
@@ -304,7 +306,10 @@ template <DictionaryGetFunctionType dictionary_get_function_type>
 class FunctionDictGetNoType final : public IFunction
 {
 public:
-    static constexpr auto name = dictionary_get_function_type == DictionaryGetFunctionType::get ? "dictGet" : "dictGetOrDefault";
+    // Kind of gross but we need a static field called "name" for FunctionFactory::registerFunction, and this is the easiest way
+    static constexpr auto name = (dictionary_get_function_type == DictionaryGetFunctionType::get)
+        ? "dictGet"
+        : ((dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault) ? "dictGetOrDefault" : "dictGetAll");
 
     static FunctionPtr create(ContextPtr context)
     {
@@ -321,7 +326,13 @@ public:
 
     bool useDefaultImplementationForConstants() const final { return true; }
     bool useDefaultImplementationForNulls() const final { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final
+    {
+        if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
+            return {0, 1, 3};
+        else
+            return {0, 1};
+    }
 
     bool isDeterministic() const override { return false; }
 
@@ -360,6 +371,15 @@ public:
         }
 
         bool key_is_nullable = arguments[2].type->isNullable();
+        if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
+        {
+            if (key_is_nullable)
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Function {} does not support nullable keys", getName());
+
+            // Wrap all the attribute types in Array()
+            for (auto it = attribute_types.begin(); it != attribute_types.end(); ++it)
+                *it = std::make_shared<DataTypeArray>(*it);
+        }
         if (attribute_types.size() > 1)
         {
             if (key_is_nullable)
@@ -424,6 +444,7 @@ public:
         }
 
         Columns default_cols;
+        size_t collect_values_limit = std::numeric_limits<size_t>::max();
 
         if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault)
         {
@@ -464,6 +485,20 @@ public:
         }
         else
         {
+            if (dictionary_get_function_type == DictionaryGetFunctionType::getAll && current_arguments_index < arguments.size())
+            {
+                auto limit_col = arguments[current_arguments_index].column;
+                // The getUInt later attempts to cast and throws on a type mismatch, so skip actual type checking here
+                if (!limit_col || !isColumnConst(*limit_col))
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of fourth argument of function {}. Expected const unsigned integer.",
+                        arguments[current_arguments_index].type->getName(),
+                        getName());
+
+                collect_values_limit = limit_col->getUInt(0);
+                ++current_arguments_index;
+            }
+
             for (size_t i = 0; i < attribute_names.size(); ++i)
                 default_cols.emplace_back(nullptr);
         }
@@ -549,7 +584,8 @@ public:
             attribute_type = attribute_types.front();
         }
 
-        auto result_column = executeDictionaryRequest(dictionary, attribute_names, key_columns, key_types, attribute_type, default_cols);
+        auto result_column = executeDictionaryRequest(
+            dictionary, attribute_names, key_columns, key_types, attribute_type, default_cols, collect_values_limit);
 
         if (key_is_nullable)
             result_column = wrapInNullable(result_column, {arguments[2]}, result_type, input_rows_count);
@@ -565,7 +601,8 @@ private:
         const Columns & key_columns,
         const DataTypes & key_types,
         const DataTypePtr & result_type,
-        const Columns & default_cols) const
+        const Columns & default_cols,
+        size_t collect_values_limit) const
     {
         ColumnPtr result;
 
@@ -573,23 +610,31 @@ private:
         {
             const auto & result_tuple_type = assert_cast<const DataTypeTuple &>(*result_type);
 
-            Columns result_columns = dictionary->getColumns(
-                attribute_names,
-                result_tuple_type.getElements(),
-                key_columns,
-                key_types,
-                default_cols);
+            Columns result_columns;
+            if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
+            {
+                result_columns = dictionary->getColumnsAllValues(
+                    attribute_names, result_tuple_type.getElements(), key_columns, key_types, default_cols, collect_values_limit);
+            }
+            else
+            {
+                result_columns
+                    = dictionary->getColumns(attribute_names, result_tuple_type.getElements(), key_columns, key_types, default_cols);
+            }
 
             result = ColumnTuple::create(std::move(result_columns));
         }
         else
         {
-            result = dictionary->getColumn(
-                attribute_names[0],
-                result_type,
-                key_columns,
-                key_types,
-                default_cols.front());
+            if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
+            {
+                result = dictionary->getColumnAllValues(
+                    attribute_names[0], result_type, key_columns, key_types, default_cols.front(), collect_values_limit);
+            }
+            else
+            {
+                result = dictionary->getColumn(attribute_names[0], result_type, key_columns, key_types, default_cols.front());
+            }
         }
 
         return result;

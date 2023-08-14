@@ -9,6 +9,7 @@ node = cluster.add_instance(
     stay_alive=True,
     with_zookeeper=True,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
 
 

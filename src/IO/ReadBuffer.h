@@ -6,6 +6,7 @@
 #include <memory>
 
 #include <Common/Exception.h>
+#include <Common/Priority.h>
 #include <IO/BufferBase.h>
 #include <IO/AsynchronousReader.h>
 
@@ -20,7 +21,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-static constexpr auto DEFAULT_PREFETCH_PRIORITY = 0;
+static constexpr auto DEFAULT_PREFETCH_PRIORITY = Priority{0};
 
 /** A simple abstract class for buffered data reading (char sequences) from somewhere.
   * Unlike std::istream, it provides access to the internal buffer,
@@ -208,10 +209,10 @@ public:
 
     /** Do something to allow faster subsequent call to 'nextImpl' if possible.
       * It's used for asynchronous readers with double-buffering.
-      * `priority` is the Threadpool priority, with which the prefetch task will be schedules.
-      * Smaller is more priority.
+      * `priority` is the `ThreadPool` priority, with which the prefetch task will be scheduled.
+      * Lower value means higher priority.
       */
-    virtual void prefetch(int64_t /* priority */) {}
+    virtual void prefetch(Priority) {}
 
     /**
      * Set upper bound for read range [..., position).

@@ -18,8 +18,8 @@ function run_selects()
 {
     thread_num=$1
     readarray -t tables_arr < <(${CLICKHOUSE_CLIENT} -q "SELECT database || '.' || name FROM system.tables
-    WHERE database in ('system', 'information_schema', 'INFORMATION_SCHEMA') and name!='zookeeper' and name!='merge_tree_metadata_cache' and name!='models'
-    AND sipHash64(name || toString($RAND)) % $THREADS = $thread_num")
+    WHERE database in ('system', 'information_schema', 'INFORMATION_SCHEMA') and name != 'zookeeper' and name != 'models'
+    AND sipHash64(name || toString($RAND)) % $THREADS = $thread_num AND name NOT LIKE '%\\_sender' AND name NOT LIKE '%\\_watcher'")
 
     for t in "${tables_arr[@]}"
     do

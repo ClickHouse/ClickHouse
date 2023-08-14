@@ -5,7 +5,7 @@ sidebar_position: 126
 
 # groupBitOr
 
-Applies bitwise `OR` for series of numbers.
+Applies bit-wise `OR` for series of numbers.
 
 ``` sql
 groupBitOr(expr)

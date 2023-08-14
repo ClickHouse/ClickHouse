@@ -11,6 +11,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/StorageConfiguration.h>
+#include <Storages/prepareReadingFromFormat.h>
 
 
 namespace DB
@@ -19,6 +20,7 @@ namespace DB
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
+class IInputFormat;
 struct ConnectionTimeouts;
 class NamedCollection;
 class PullingPipelineExecutor;
@@ -41,7 +43,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     bool supportsPartitionBy() const override { return true; }
 
@@ -157,16 +159,14 @@ public:
     using IteratorWrapper = std::function<FailoverOptions()>;
 
     StorageURLSource(
-        const std::vector<NameAndTypePair> & requested_virtual_columns_,
+        const ReadFromFormatInfo & info,
         std::shared_ptr<IteratorWrapper> uri_iterator_,
         const std::string & http_method,
         std::function<void(std::ostream &)> callback,
         const String & format,
         const std::optional<FormatSettings> & format_settings,
         String name_,
-        const Block & sample_block,
         ContextPtr context,
-        const ColumnsDescription & columns,
         UInt64 max_block_size,
         const ConnectionTimeouts & timeouts,
         CompressionMethod compression_method,
@@ -181,9 +181,7 @@ public:
 
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
 
-    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
-
-    static std::tuple<Poco::URI, SeekableReadBufferFactoryPtr> getFirstAvailableURIAndReadBuffer(
+    static std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> getFirstAvailableURIAndReadBuffer(
         std::vector<String>::const_iterator & option,
         const std::vector<String>::const_iterator & end,
         ContextPtr context,
@@ -197,23 +195,23 @@ public:
         bool delay_initialization);
 
 private:
-    using InitializeFunc = std::function<void(const FailoverOptions &)>;
+    using InitializeFunc = std::function<bool()>;
     InitializeFunc initialize;
 
     String name;
-    std::vector<NameAndTypePair> requested_virtual_columns;
+    ColumnsDescription columns_description;
+    NamesAndTypesList requested_columns;
+    NamesAndTypesList requested_virtual_columns;
+    Block block_for_format;
     std::shared_ptr<IteratorWrapper> uri_iterator;
     Poco::URI curr_uri;
 
+    std::unique_ptr<ReadBuffer> read_buf;
+    std::shared_ptr<IInputFormat> input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
 
     Poco::Net::HTTPBasicCredentials credentials;
-
-    size_t total_size = 0;
-    UInt64 total_rows_approx_max = 0;
-    size_t total_rows_count_times = 0;
-    UInt64 total_rows_approx_accumulated = 0;
 };
 
 class StorageURLSink : public SinkToStorage
@@ -233,11 +231,12 @@ public:
     std::string getName() const override { return "StorageURLSink"; }
     void consume(Chunk chunk) override;
     void onCancel() override;
-    void onException() override;
+    void onException(std::exception_ptr exception) override;
     void onFinish() override;
 
 private:
     void finalize();
+    void release();
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
     std::mutex cancel_mutex;
@@ -271,6 +270,8 @@ public:
     {
         return storage_snapshot->metadata->getSampleBlock();
     }
+
+    bool supportsSubcolumns() const override { return true; }
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 

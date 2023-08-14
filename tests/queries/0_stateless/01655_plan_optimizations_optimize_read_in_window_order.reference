@@ -7,19 +7,19 @@ Partial sorting plan
     Prefix sort description: n ASC
     Result sort description: n ASC, x ASC
   optimize_read_in_window_order=1, allow_experimental_analyzer=1
-    Prefix sort description: default.test_01655_plan_optimizations_optimize_read_in_window_order_n.n_0 ASC
-    Result sort description: default.test_01655_plan_optimizations_optimize_read_in_window_order_n.n_0 ASC, default.test_01655_plan_optimizations_optimize_read_in_window_order_n.x_1 ASC
+    Prefix sort description: n_0 ASC
+    Result sort description: n_0 ASC, x_1 ASC
 No sorting plan
   optimize_read_in_window_order=0
     Sort description: n ASC, x ASC
   optimize_read_in_window_order=0, allow_experimental_analyzer=1
-    Sort description: default.test_01655_plan_optimizations_optimize_read_in_window_order_n_x.n_0 ASC, default.test_01655_plan_optimizations_optimize_read_in_window_order_n_x.x_1 ASC
+    Sort description: n_0 ASC, x_1 ASC
   optimize_read_in_window_order=1
     Prefix sort description: n ASC, x ASC
     Result sort description: n ASC, x ASC
   optimize_read_in_window_order=1, allow_experimental_analyzer=1
-    Prefix sort description: default.test_01655_plan_optimizations_optimize_read_in_window_order_n_x.n_0 ASC, default.test_01655_plan_optimizations_optimize_read_in_window_order_n_x.x_1 ASC
-    Result sort description: default.test_01655_plan_optimizations_optimize_read_in_window_order_n_x.n_0 ASC, default.test_01655_plan_optimizations_optimize_read_in_window_order_n_x.x_1 ASC
+    Prefix sort description: n_0 ASC, x_1 ASC
+    Result sort description: n_0 ASC, x_1 ASC
 Complex ORDER BY
   optimize_read_in_window_order=0
 3	3	1

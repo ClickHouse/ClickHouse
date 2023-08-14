@@ -16,6 +16,10 @@ from ci_config import CI_CONFIG
 DOWNLOAD_RETRIES_COUNT = 5
 
 
+class DownloadException(Exception):
+    pass
+
+
 def get_with_retries(
     url: str,
     retries: int = DOWNLOAD_RETRIES_COUNT,
@@ -91,7 +95,7 @@ def get_gh_api(
 
 
 def get_build_name_for_check(check_name: str) -> str:
-    return CI_CONFIG["tests_config"][check_name]["required_build"]  # type: ignore
+    return CI_CONFIG.test_configs[check_name].required_build
 
 
 def read_build_urls(build_name: str, reports_path: str) -> List[str]:
@@ -149,7 +153,9 @@ def download_build_with_progress(url: str, path: Path) -> None:
             if os.path.exists(path):
                 os.remove(path)
     else:
-        raise Exception(f"Cannot download dataset from {url}, all retries exceeded")
+        raise DownloadException(
+            f"Cannot download dataset from {url}, all retries exceeded"
+        )
 
     if sys.stdout.isatty():
         sys.stdout.write("\n")
@@ -174,7 +180,7 @@ def download_builds_filter(
     print(urls)
 
     if not urls:
-        raise Exception("No build URLs found")
+        raise DownloadException("No build URLs found")
 
     download_builds(result_path, urls, filter_fn)
 

@@ -39,6 +39,16 @@ struct S3ObjectStorageSettings
 
 class S3ObjectStorage : public IObjectStorage
 {
+public:
+    struct Clients
+    {
+        std::shared_ptr<S3::Client> client;
+        std::shared_ptr<S3::Client> client_with_long_timeout;
+
+        Clients() = default;
+        Clients(std::shared_ptr<S3::Client> client, const S3ObjectStorageSettings & settings);
+    };
+
 private:
     friend class S3PlainObjectStorage;
 
@@ -51,7 +61,7 @@ private:
         String bucket_,
         String connection_string)
         : bucket(bucket_)
-        , client(std::move(client_))
+        , clients(std::make_unique<Clients>(std::move(client_), *s3_settings_))
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
         , version_id(std::move(version_id_))
@@ -100,10 +110,9 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
-    void findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const override;
-    void getDirectoryContents(const std::string & path,
-        RelativePathsWithSize & files,
-        std::vector<std::string> & directories) const override;
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
+
+    ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const override;
 
     /// Uses `DeleteObjectRequest`.
     void removeObject(const StoredObject & object) override;
@@ -120,6 +129,8 @@ public:
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
+
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -158,14 +169,12 @@ public:
 private:
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
 
-    void setNewClient(std::unique_ptr<S3::Client> && client_);
-
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
     std::string bucket;
 
-    MultiVersion<S3::Client> client;
+    MultiVersion<Clients> clients;
     MultiVersion<S3ObjectStorageSettings> s3_settings;
     S3Capabilities s3_capabilities;
 

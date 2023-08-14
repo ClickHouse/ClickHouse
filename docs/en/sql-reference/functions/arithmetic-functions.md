@@ -6,9 +6,20 @@ sidebar_label: Arithmetic
 
 # Arithmetic Functions
 
-The result type of all arithmetic functions is the smallest type which can represent all possible results. Size promotion happens for integers up to 32 bit, e.g. `UInt8 + UInt16 = UInt32`. If one of the inters has 64 or more bits, the result is of the same type as the bigger of the input integers, e.g. `UInt16 + UInt128 = UInt128`. While this introduces a risk of overflows around the value range boundary, it ensures that calculations are performed quickly using the maximum native integer width of 64 bit.
+Arithmetic functions work for any two operands of type `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, or `Float64`.
 
-The result of addition or multiplication of two integers is unsigned unless one of the integers is signed.
+Before performing the operation, both operands are casted to the result type. The result type is determined as follows (unless specified
+differently in the function documentation below):
+- If both operands are up to 32 bits wide, the size of the result type will be the size of the next bigger type following the bigger of the
+  two operands (integer size promotion). For example, `UInt8 + UInt16 = UInt32` or `Float32 * Float32 = Float64`.
+- If one of the operands has 64 or more bits, the size of the result type will be the same size as the bigger of the two operands. For
+  example, `UInt32 + UInt128 = UInt128` or `Float32 * Float64 = Float64`.
+- If one of the operands is signed, the result type will also be signed, otherwise it will be signed. For example, `UInt32 * Int32 = Int64`.
+
+These rules make sure that the result type will be the smallest type which can represent all possible results. While this introduces a risk
+of overflows around the value range boundary, it ensures that calculations are performed quickly using the maximum native integer width of
+64 bit. This behavior also guarantees compatibility with many other databases which provide 64 bit integers (BIGINT) as the biggest integer
+type.
 
 Example:
 
@@ -21,8 +32,6 @@ SELECT toTypeName(0), toTypeName(0 + 0), toTypeName(0 + 0 + 0), toTypeName(0 + 0
 │ UInt8         │ UInt16                 │ UInt32                          │ UInt64                                   │
 └───────────────┴────────────────────────┴─────────────────────────────────┴──────────────────────────────────────────┘
 ```
-
-Arithmetic functions work for any pair of `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, or `Float64` values.
 
 Overflows are produced the same way as in C++.
 
@@ -68,7 +77,7 @@ Alias: `a \* b` (operator)
 
 ## divide
 
-Calculates the quotient of two values `a` and `b`. The result is always a floating-point value. If you need integer division, you can use the `intDiv` function.
+Calculates the quotient of two values `a` and `b`. The result type is always [Float64](../../sql-reference/data-types/float.md). Integer division is provided by the `intDiv` function.
 
 Division by 0 returns `inf`, `-inf`, or `nan`.
 
@@ -84,7 +93,7 @@ Alias: `a / b` (operator)
 
 Performs an integer division of two values `a` by `b`, i.e. computes the quotient rounded down to the next smallest integer.
 
-The result has the same type as the dividend (the first parameter).
+The result has the same width as the dividend (the first parameter).
 
 An exception is thrown when dividing by zero, when the quotient does not fit in the range of the dividend, or when dividing a minimal negative number by minus one.
 
@@ -135,7 +144,7 @@ intDivOrZero(a, b)
 
 Calculates the remainder of the division of two values `a` by `b`.
 
-The result type is an integer if both inputs are integers. If one of the inputs is a floating-point number, the result is a floating-point number.
+The result type is an integer if both inputs are integers. If one of the inputs is a floating-point number, the result type is [Float64](../../sql-reference/data-types/float.md).
 
 The remainder is computed like in C++. Truncated division is used for negative numbers.
 

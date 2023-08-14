@@ -14,7 +14,7 @@ namespace ErrorCodes
 }
 
 WriteBufferFromTemporaryFile::WriteBufferFromTemporaryFile(TemporaryFileOnDiskHolder && tmp_file_)
-    : WriteBufferFromFile(tmp_file_->getPath(), DBMS_DEFAULT_BUFFER_SIZE, O_RDWR | O_TRUNC | O_CREAT, /* throttler= */ {}, 0600)
+    : WriteBufferFromFile(tmp_file_->getAbsolutePath(), DBMS_DEFAULT_BUFFER_SIZE, O_RDWR | O_TRUNC | O_CREAT, /* throttler= */ {}, 0600)
     , tmp_file(std::move(tmp_file_))
 {
 }
@@ -46,7 +46,7 @@ public:
 ReadBufferPtr WriteBufferFromTemporaryFile::getReadBufferImpl()
 {
     /// ignore buffer, write all data to file and reread it
-    next();
+    finalize();
 
     auto res = ReadBufferFromTemporaryWriteBuffer::createFrom(this);
 

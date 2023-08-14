@@ -62,9 +62,10 @@ ColumnsDescription StorageMeiliSearch::getTableStructureFromData(const MeiliSear
 String convertASTtoStr(ASTPtr ptr)
 {
     WriteBufferFromOwnString out;
-    IAST::FormatSettings settings(out, true);
-    settings.identifier_quoting_style = IdentifierQuotingStyle::BackticksMySQL;
-    settings.always_quote_identifiers = IdentifierQuotingStyle::BackticksMySQL != IdentifierQuotingStyle::None;
+    IAST::FormatSettings settings(
+        out, /*one_line*/ true, /*hilite*/ false,
+        /*always_quote_identifiers*/ IdentifierQuotingStyle::BackticksMySQL != IdentifierQuotingStyle::None,
+        /*identifier_quoting_style*/ IdentifierQuotingStyle::BackticksMySQL);
     ptr->format(settings);
     return out.str();
 }
@@ -137,7 +138,7 @@ Pipe StorageMeiliSearch::read(
     return Pipe(std::make_shared<MeiliSearchSource>(config, sample_block, max_block_size, route, kv_pairs_params));
 }
 
-SinkToStoragePtr StorageMeiliSearch::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageMeiliSearch::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     LOG_TRACE(log, "Trying update index: {}", config.index);
     return std::make_shared<SinkMeiliSearch>(config, metadata_snapshot->getSampleBlock(), local_context);

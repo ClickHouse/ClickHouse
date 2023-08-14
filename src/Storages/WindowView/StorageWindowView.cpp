@@ -992,7 +992,7 @@ void StorageWindowView::cleanup()
     auto cleanup_context = Context::createCopy(getContext());
     cleanup_context->makeQueryContext();
     cleanup_context->setCurrentQueryId("");
-    cleanup_context->getClientInfo().is_replicated_database_internal = true;
+    cleanup_context->setQueryKindReplicatedDatabaseInternal();
     InterpreterAlterQuery interpreter_alter(alter_query, cleanup_context);
     interpreter_alter.execute();
 
@@ -1340,7 +1340,7 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
         time_zone = &DateLUT::instance(window_view_timezone);
     }
     else
-        time_zone = &DateLUT::instance();
+        time_zone = &DateLUT::serverTimezoneInstance();
 
     return result;
 }
@@ -1549,7 +1549,7 @@ void StorageWindowView::writeIntoWindowView(
     auto lock = inner_table->lockForShare(
         local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = inner_table->getInMemoryMetadataPtr();
-    auto output = inner_table->write(window_view.getMergeableQuery(), metadata_snapshot, local_context);
+    auto output = inner_table->write(window_view.getMergeableQuery(), metadata_snapshot, local_context, /*async_insert=*/false);
     output->addTableLock(lock);
 
     if (!blocksHaveEqualStructure(builder.getHeader(), output->getHeader()))

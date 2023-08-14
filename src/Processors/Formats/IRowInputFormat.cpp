@@ -86,7 +86,21 @@ void IRowInputFormat::logError()
 Chunk IRowInputFormat::generate()
 {
     if (total_rows == 0)
-        readPrefix();
+    {
+        try
+        {
+            readPrefix();
+        }
+        catch (Exception & e)
+        {
+            auto file_name = getFileNameFromReadBuffer(getReadBuffer());
+            if (!file_name.empty())
+                e.addMessage(fmt::format("(in file/uri {})", file_name));
+
+            e.addMessage("(while reading header)");
+            throw;
+        }
+    }
 
     const Block & header = getPort().getHeader();
 
@@ -96,7 +110,7 @@ Chunk IRowInputFormat::generate()
     block_missing_values.clear();
 
     size_t num_rows = 0;
-
+    size_t chunk_start_offset = getDataOffsetMaybeCompressed(getReadBuffer());
     try
     {
         RowReadExtension info;
@@ -242,6 +256,7 @@ Chunk IRowInputFormat::generate()
         column->finalize();
 
     Chunk chunk(std::move(columns), num_rows);
+    approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(getReadBuffer()) - chunk_start_offset;
     return chunk;
 }
 

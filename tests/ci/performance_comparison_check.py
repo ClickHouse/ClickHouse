@@ -71,7 +71,7 @@ if __name__ == "__main__":
     reports_path = os.getenv("REPORTS_PATH", "./reports")
 
     check_name = sys.argv[1]
-    required_build = CI_CONFIG["tests_config"][check_name]["required_build"]
+    required_build = CI_CONFIG.test_configs[check_name].required_build
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
@@ -120,15 +120,6 @@ if __name__ == "__main__":
             commit, status, report_url, message, check_name_with_group, pr_info
         )
         sys.exit(0)
-
-    test_grep_exclude_filter = CI_CONFIG["tests_config"][check_name][
-        "test_grep_exclude_filter"
-    ]
-    if test_grep_exclude_filter:
-        docker_env += f" -e CHPC_TEST_GREP_EXCLUDE={test_grep_exclude_filter}"
-        logging.info(
-            "Fill fliter our performance tests by grep -v %s", test_grep_exclude_filter
-        )
 
     rerun_helper = RerunHelper(commit, check_name_with_group)
     if rerun_helper.is_already_finished_by_status():
@@ -219,6 +210,12 @@ if __name__ == "__main__":
     except Exception:
         traceback.print_exc()
 
+    def too_many_slow(msg):
+        match = re.search(r"(|.* )(\d+) slower.*", msg)
+        # This threshold should be synchronized with the value in https://github.com/ClickHouse/ClickHouse/blob/master/docker/test/performance-comparison/report.py#L629
+        threshold = 5
+        return int(match.group(2).strip()) > threshold if match else False
+
     # Try to fetch status from the report.
     status = ""
     message = ""
@@ -236,7 +233,7 @@ if __name__ == "__main__":
 
         # TODO: Remove me, always green mode for the first time, unless errors
         status = "success"
-        if "errors" in message.lower():
+        if "errors" in message.lower() or too_many_slow(message.lower()):
             status = "failure"
         # TODO: Remove until here
     except Exception:

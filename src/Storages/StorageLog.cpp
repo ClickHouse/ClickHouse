@@ -341,7 +341,10 @@ private:
         void finalize()
         {
             compressed.next();
+            compressed.finalize();
+
             plain->next();
+            plain->finalize();
         }
     };
 
@@ -772,6 +775,8 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr
 
     marks_loaded = true;
     num_marks_saved = 0;
+    total_rows = 0;
+    total_bytes = 0;
     getContext()->dropMMappedFileCache();
 }
 
@@ -852,7 +857,7 @@ Pipe StorageLog::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     WriteLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
@@ -941,9 +946,10 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
     auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/");
-    fs::path temp_dir = temp_dir_owner->getPath();
+    fs::path temp_dir = temp_dir_owner->getRelativePath();
     disk->createDirectories(temp_dir);
 
+    const auto & read_settings = backup_entries_collector.getReadSettings();
     bool copy_encrypted = !backup_entries_collector.getBackupSettings().decrypt_files_from_encrypted_disks;
 
     /// *.bin
@@ -975,7 +981,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     /// sizes.json
     String files_info_path = file_checker.getPath();
     backup_entries_collector.addBackupEntry(
-        data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path, copy_encrypted));
+        data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path, read_settings, copy_encrypted));
 
     /// columns.txt
     backup_entries_collector.addBackupEntry(

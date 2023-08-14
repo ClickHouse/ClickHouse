@@ -38,6 +38,7 @@
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
@@ -88,53 +89,48 @@ namespace ErrorCodes
 
 namespace ActionLocks
 {
-    extern StorageActionBlockType PartsMerge;
-    extern StorageActionBlockType PartsFetch;
-    extern StorageActionBlockType PartsSend;
-    extern StorageActionBlockType ReplicationQueue;
-    extern StorageActionBlockType DistributedSend;
-    extern StorageActionBlockType PartsTTLMerge;
-    extern StorageActionBlockType PartsMove;
+    extern const StorageActionBlockType PartsMerge;
+    extern const StorageActionBlockType PartsFetch;
+    extern const StorageActionBlockType PartsSend;
+    extern const StorageActionBlockType ReplicationQueue;
+    extern const StorageActionBlockType DistributedSend;
+    extern const StorageActionBlockType PartsTTLMerge;
+    extern const StorageActionBlockType PartsMove;
+    extern const StorageActionBlockType PullReplicationLog;
 }
 
 
 namespace
 {
 
-ExecutionStatus getOverallExecutionStatusOfCommands()
+/// Sequentially tries to execute all commands and throws exception with info about failed commands
+void executeCommandsAndThrowIfError(std::vector<std::function<void()>> commands)
 {
-    return ExecutionStatus(0);
-}
-
-/// Consequently tries to execute all commands and generates final exception message for failed commands
-template <typename Callable, typename ... Callables>
-ExecutionStatus getOverallExecutionStatusOfCommands(Callable && command, Callables && ... commands)
-{
-    ExecutionStatus status_head(0);
-    try
+    ExecutionStatus result(0);
+    for (auto & command : commands)
     {
-        command();
+        try
+        {
+            command();
+        }
+        catch (...)
+        {
+            ExecutionStatus current_result = ExecutionStatus::fromCurrentException();
+
+            if (result.code == 0)
+                result.code = current_result.code;
+
+            if (!current_result.message.empty())
+            {
+                if (!result.message.empty())
+                    result.message += '\n';
+                result.message += current_result.message;
+            }
+        }
     }
-    catch (...)
-    {
-        status_head = ExecutionStatus::fromCurrentException();
-    }
 
-    ExecutionStatus status_tail = getOverallExecutionStatusOfCommands(std::forward<Callables>(commands)...);
-
-    auto res_status = status_head.code != 0 ? status_head.code : status_tail.code;
-    auto res_message = status_head.message + (status_tail.message.empty() ? "" : ("\n" + status_tail.message));
-
-    return ExecutionStatus(res_status, res_message);
-}
-
-/// Consequently tries to execute all commands and throws exception with info about failed commands
-template <typename ... Callables>
-void executeCommandsAndThrowIfError(Callables && ... commands)
-{
-    auto status = getOverallExecutionStatusOfCommands(std::forward<Callables>(commands)...);
-    if (status.code != 0)
-        throw Exception::createDeprecated(status.message, status.code);
+    if (result.code != 0)
+        throw Exception::createDeprecated(result.message, result.code);
 }
 
 
@@ -154,6 +150,8 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
         return AccessType::SYSTEM_TTL_MERGES;
     else if (action_type == ActionLocks::PartsMove)
         return AccessType::SYSTEM_MOVES;
+    else if (action_type == ActionLocks::PullReplicationLog)
+        return AccessType::SYSTEM_PULLING_REPLICATION_LOG;
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
 }
@@ -370,7 +368,18 @@ BlockIO InterpreterSystemQuery::execute()
             else
             {
                 auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name).cache;
-                cache->removeAllReleasable();
+                if (query.key_to_drop.empty())
+                {
+                    cache->removeAllReleasable();
+                }
+                else
+                {
+                    auto key = FileCacheKey::fromKeyString(query.key_to_drop);
+                    if (query.offset_to_drop.has_value())
+                        cache->removeFileSegment(key, query.offset_to_drop.value());
+                    else
+                        cache->removeKey(key);
+                }
             }
             break;
         }
@@ -410,10 +419,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RELOAD_DICTIONARIES:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
-            executeCommandsAndThrowIfError(
+            executeCommandsAndThrowIfError({
                 [&] { system_context->getExternalDictionariesLoader().reloadAllTriedToLoad(); },
                 [&] { system_context->getEmbeddedDictionaries().reload(); }
-            );
+            });
             ExternalDictionariesLoader::resetAll();
             break;
         }
@@ -459,16 +468,6 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_USERS);
             system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL);
             break;
-        case Type::RELOAD_SYMBOLS:
-        {
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_SYMBOLS);
-            SymbolIndex::reload();
-            break;
-#else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM RELOAD SYMBOLS is not supported on current platform");
-#endif
-        }
         case Type::STOP_MERGES:
             startStopAction(ActionLocks::PartsMerge, false);
             break;
@@ -511,6 +510,12 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_DISTRIBUTED_SENDS:
             startStopAction(ActionLocks::DistributedSend, true);
             break;
+        case Type::STOP_PULLING_REPLICATION_LOG:
+            startStopAction(ActionLocks::PullReplicationLog, false);
+            break;
+        case Type::START_PULLING_REPLICATION_LOG:
+            startStopAction(ActionLocks::PullReplicationLog, true);
+            break;
         case Type::DROP_REPLICA:
             dropReplica(query);
             break;
@@ -546,28 +551,35 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::FLUSH_LOGS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
-            executeCommandsAndThrowIfError(
-                [&] { if (auto query_log = getContext()->getQueryLog()) query_log->flush(true); },
-                [&] { if (auto part_log = getContext()->getPartLog("")) part_log->flush(true); },
-                [&] { if (auto query_thread_log = getContext()->getQueryThreadLog()) query_thread_log->flush(true); },
-                [&] { if (auto trace_log = getContext()->getTraceLog()) trace_log->flush(true); },
-                [&] { if (auto text_log = getContext()->getTextLog()) text_log->flush(true); },
-                [&] { if (auto metric_log = getContext()->getMetricLog()) metric_log->flush(true); },
-                [&] { if (auto asynchronous_metric_log = getContext()->getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); },
-                [&] { if (auto opentelemetry_span_log = getContext()->getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); },
-                [&] { if (auto query_views_log = getContext()->getQueryViewsLog()) query_views_log->flush(true); },
-                [&] { if (auto zookeeper_log = getContext()->getZooKeeperLog()) zookeeper_log->flush(true); },
-                [&] { if (auto session_log = getContext()->getSessionLog()) session_log->flush(true); },
-                [&] { if (auto transactions_info_log = getContext()->getTransactionsInfoLog()) transactions_info_log->flush(true); },
-                [&] { if (auto processors_profile_log = getContext()->getProcessorsProfileLog()) processors_profile_log->flush(true); },
-                [&] { if (auto cache_log = getContext()->getFilesystemCacheLog()) cache_log->flush(true); },
-                [&] { if (auto asynchronous_insert_log = getContext()->getAsynchronousInsertLog()) asynchronous_insert_log->flush(true); }
-            );
+
+            auto logs = getContext()->getSystemLogs();
+            std::vector<std::function<void()>> commands;
+            commands.reserve(logs.size());
+            for (auto * system_log : logs)
+                commands.emplace_back([system_log] { system_log->flush(true); });
+
+            executeCommandsAndThrowIfError(commands);
             break;
         }
-        case Type::STOP_LISTEN_QUERIES:
-        case Type::START_LISTEN_QUERIES:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported yet", query.type);
+        case Type::STOP_LISTEN:
+            getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
+            getContext()->stopServers(query.server_type);
+            break;
+        case Type::START_LISTEN:
+            getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
+            getContext()->startServers(query.server_type);
+            break;
+        case Type::FLUSH_ASYNC_INSERT_QUEUE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
+            auto * queue = getContext()->getAsynchronousInsertQueue();
+            if (!queue)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot flush asynchronous insert queue because it is not initialized");
+
+            queue->flushAll();
+            break;
+        }
         case Type::STOP_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::stop();
@@ -1045,11 +1057,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_USERS);
             break;
         }
-        case Type::RELOAD_SYMBOLS:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_RELOAD_SYMBOLS);
-            break;
-        }
         case Type::STOP_MERGES:
         case Type::START_MERGES:
         {
@@ -1075,6 +1082,15 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_MOVES);
             else
                 required_access.emplace_back(AccessType::SYSTEM_MOVES, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::STOP_PULLING_REPLICATION_LOG:
+        case Type::START_PULLING_REPLICATION_LOG:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG, query.getDatabase(), query.getTable());
             break;
         }
         case Type::STOP_FETCHES:
@@ -1164,6 +1180,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_LOGS);
             break;
         }
+        case Type::FLUSH_ASYNC_INSERT_QUEUE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
+            break;
+        }
         case Type::RESTART_DISK:
         {
             required_access.emplace_back(AccessType::SYSTEM_RESTART_DISK);
@@ -1179,8 +1200,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_SYNC_FILE_CACHE);
             break;
         }
-        case Type::STOP_LISTEN_QUERIES:
-        case Type::START_LISTEN_QUERIES:
+        case Type::STOP_LISTEN:
+        case Type::START_LISTEN:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_LISTEN);
+            break;
+        }
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
         case Type::ENABLE_FAILPOINT:

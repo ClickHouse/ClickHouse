@@ -2,8 +2,8 @@
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
-CREATE TABLE t1 (key UInt32, s String) ENGINE = MergeTree ORDER BY key;
-CREATE TABLE t2 (key UInt32, s String) ENGINE = MergeTree ORDER BY key;
+CREATE TABLE t1 (key UInt32, s String) ENGINE = MergeTree ORDER BY key SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+CREATE TABLE t2 (key UInt32, s String) ENGINE = MergeTree ORDER BY key SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 {% set ltable_size = 10000000 -%}
 {% set rtable_size = 1000000 -%}
@@ -25,7 +25,7 @@ INSERT INTO t2
 
 {% for join_algorithm in ['full_sorting_merge', 'grace_hash'] -%}
 
-SET max_bytes_in_join = '{% if join_algorithm == 'grace_hash' %}1M{% else %}0{% endif %}';
+SET max_bytes_in_join = '{% if join_algorithm == 'grace_hash' %}16M{% else %}0{% endif %}';
 
 SELECT '-- {{ join_algorithm }} --';
 SET join_algorithm = '{{ join_algorithm }}';

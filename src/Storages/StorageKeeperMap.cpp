@@ -524,7 +524,7 @@ Pipe StorageKeeperMap::read(
     return process_keys(std::move(filtered_keys));
 }
 
-SinkToStoragePtr StorageKeeperMap::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageKeeperMap::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     checkTable<true>();
     return std::make_shared<StorageKeeperMapSink>(*this, metadata_snapshot->getSampleBlock(), local_context);
@@ -857,14 +857,17 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
 
     if (commands.front().type == MutationCommand::Type::DELETE)
     {
+        MutationsInterpreter::Settings settings(true);
+        settings.return_all_columns = true;
+        settings.return_mutated_rows = true;
+
         auto interpreter = std::make_unique<MutationsInterpreter>(
             storage_ptr,
             metadata_snapshot,
             commands,
             local_context,
-            /*can_execute_*/ true,
-            /*return_all_columns_*/ true,
-            /*return_mutated_rows*/ true);
+            settings);
+
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
 
@@ -926,14 +929,17 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
     if (commands.front().column_to_update_expression.contains(primary_key))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
 
+    MutationsInterpreter::Settings settings(true);
+    settings.return_all_columns = true;
+    settings.return_mutated_rows = true;
+
     auto interpreter = std::make_unique<MutationsInterpreter>(
         storage_ptr,
         metadata_snapshot,
         commands,
         local_context,
-        /*can_execute_*/ true,
-        /*return_all_columns*/ true,
-        /*return_mutated_rows*/ true);
+        settings);
+
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
 

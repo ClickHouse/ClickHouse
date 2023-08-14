@@ -110,11 +110,12 @@ insert_data 1
 $CLICKHOUSE_CLIENT --implicit_transaction=1 -q 'select throwIf(count() % 1000000 != 0 or count() = 0) from dedup_test' \
   || $CLICKHOUSE_CLIENT -q "select name, rows, active, visible, creation_tid, creation_csn from system.parts where database=currentDatabase();"
 
-# Ensure that thread_cancel actually did something
-$CLICKHOUSE_CLIENT -q "select count() > 0 from system.text_log where event_date >= yesterday() and query_id like '$TEST_MARK%' and (
-  message_format_string in ('Unexpected end of file while reading chunk header of HTTP chunked data', 'Unexpected EOF, got {} of {} bytes',
-  'Query was cancelled or a client has unexpectedly dropped the connection') or
-  message like '%Connection reset by peer%' or message like '%Broken pipe, while writing to socket%')"
+# Ensure that thread_cancel actually did something (useful when editing this test)
+# We cannot check it in the CI, because sometimes it fails due to randomization
+# $CLICKHOUSE_CLIENT -q "select count() > 0 from system.text_log where event_date >= yesterday() and query_id like '$TEST_MARK%' and (
+#   message_format_string in ('Unexpected end of file while reading chunk header of HTTP chunked data', 'Unexpected EOF, got {} of {} bytes',
+#   'Query was cancelled or a client has unexpectedly dropped the connection') or
+#   message like '%Connection reset by peer%' or message like '%Broken pipe, while writing to socket%')"
 
 wait_for_queries_to_finish 30
 $CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=0 -q "drop table dedup_test"

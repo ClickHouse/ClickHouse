@@ -7,6 +7,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.utility import generate_values, replace_config, SafeThread
 from azure.storage.blob import BlobServiceClient
+from test_storage_azure_blob_storage.test import azure_query
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -38,27 +39,10 @@ def cluster():
         cluster.shutdown()
 
 
-# Note: use this for selects and inserts and create table queries.
+# Note: use azure_query for selects and inserts and create table queries.
 # For inserts there is no guarantee that retries will not result in duplicates.
-# But it is better to retry anyway because 'Connection was closed by the server' error
+# But it is better to retry anyway because connection related errors
 # happens in fact only for inserts because reads already have build-in retries in code.
-def azure_query(node, query, try_num=3, settings={}):
-    for i in range(try_num):
-        try:
-            return node.query(query, settings=settings)
-        except Exception as ex:
-            retriable_errors = [
-                "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response"
-            ]
-            retry = False
-            for error in retriable_errors:
-                if error in str(ex):
-                    retry = True
-                    logging.info(f"Try num: {i}. Having retriable error: {ex}")
-                    break
-            if not retry or i == try_num - 1:
-                raise Exception(ex)
-            continue
 
 
 def create_table(node, table_name, **additional_settings):
@@ -66,6 +50,7 @@ def create_table(node, table_name, **additional_settings):
         "storage_policy": "blob_storage_policy",
         "old_parts_lifetime": 1,
         "index_granularity": 512,
+        "temporary_directories_lifetime": 1,
     }
     settings.update(additional_settings)
 
@@ -214,7 +199,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical):
         if attempt == 59:
             assert parts_count == "(1)"
 
-        time.sleep(1)
+        time.sleep(10)
 
     assert azure_query(node, f"SELECT sum(id) FROM {TABLE_NAME} FORMAT Values") == "(0)"
     assert (

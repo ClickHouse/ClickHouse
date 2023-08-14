@@ -52,7 +52,7 @@ Alias: `ln(x)`
 
 ## exp2
 
-Returns 2 to the power of the given argumetn
+Returns 2 to the power of the given argument
 
 **Syntax**
 
@@ -82,7 +82,7 @@ log2(x)
 
 ## exp10
 
-Returns 10 to the power of the given argumetn
+Returns 10 to the power of the given argument.
 
 **Syntax**
 

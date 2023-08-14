@@ -189,7 +189,6 @@ private:
     template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
     void inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right, bool strict);
 
-    NamesAndTypesList correctedColumnsAddedByJoin() const;
 
     void deduplicateAndQualifyColumnNames(const NameSet & left_table_columns, const String & right_table_prefix);
 
@@ -217,14 +216,16 @@ public:
     const SizeLimits & sizeLimits() const { return size_limits; }
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
+    ActionsDAGPtr createJoinedBlockActions(ContextPtr context) const;
+
     bool isEnabledAlgorithm(JoinAlgorithm val) const
     {
         /// When join_algorithm = 'default' (not specified by user) we use hash or direct algorithm.
         /// It's behaviour that was initially supported by clickhouse.
-        bool is_enbaled_by_default = val == JoinAlgorithm::DEFAULT
+        bool is_enabled_by_default = val == JoinAlgorithm::DEFAULT
                                   || val == JoinAlgorithm::HASH
                                   || val == JoinAlgorithm::DIRECT;
-        if (join_algorithm.isSet(JoinAlgorithm::DEFAULT) && is_enbaled_by_default)
+        if (join_algorithm.isSet(JoinAlgorithm::DEFAULT) && is_enabled_by_default)
             return true;
         return join_algorithm.isSet(val);
     }
@@ -232,8 +233,17 @@ public:
     bool allowParallelHashJoin() const;
 
     bool joinUseNulls() const { return join_use_nulls; }
-    bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(kind()); }
-    bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(kind()); }
+
+    bool forceNullableRight() const
+    {
+        return join_use_nulls && isLeftOrFull(kind());
+    }
+
+    bool forceNullableLeft() const
+    {
+        return join_use_nulls && isRightOrFull(kind());
+    }
+
     size_t defaultMaxBytes() const { return default_max_bytes; }
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
@@ -320,7 +330,7 @@ public:
         const ColumnsWithTypeAndName & right_sample_columns);
 
     void setAsofInequality(ASOFJoinInequality inequality) { asof_inequality = inequality; }
-    ASOFJoinInequality getAsofInequality() { return asof_inequality; }
+    ASOFJoinInequality getAsofInequality() const { return asof_inequality; }
 
     ASTPtr leftKeysList() const;
     ASTPtr rightKeysList() const; /// For ON syntax only
@@ -360,6 +370,8 @@ public:
     bool isSpecialStorage() const { return !right_storage_name.empty() || right_storage_join || right_kv_storage; }
 
     std::shared_ptr<const IKeyValueEntity> getStorageKeyValue() { return right_kv_storage; }
+
+    NamesAndTypesList correctedColumnsAddedByJoin() const;
 };
 
 }

@@ -408,9 +408,10 @@ DataTypes getDefaultDataTypeForEscapingRules(const std::vector<FormatSettings::E
 String getAdditionalFormatInfoForAllRowBasedFormats(const FormatSettings & settings)
 {
     return fmt::format(
-        "schema_inference_hints={}, max_rows_to_read_for_schema_inference={}, schema_inference_make_columns_nullable={}",
+        "schema_inference_hints={}, max_rows_to_read_for_schema_inference={}, max_bytes_to_read_for_schema_inference={}, schema_inference_make_columns_nullable={}",
         settings.schema_inference_hints,
         settings.max_rows_to_read_for_schema_inference,
+        settings.max_bytes_to_read_for_schema_inference,
         settings.schema_inference_make_columns_nullable);
 }
 
