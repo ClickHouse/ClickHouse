@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesNumberWithOpposite.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
 
@@ -201,7 +202,7 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
 }
 
 template <LeastSupertypeOnError on_error>
-DataTypePtr getLeastSupertype(const DataTypes & types, bool optimize_type_ids)
+DataTypePtr getLeastSupertype(const DataTypes & types)
 {
     /// Trivial cases
 
@@ -592,8 +593,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types, bool optimize_type_ids)
 
     /// For numeric types, the most complicated part.
     {
-        if (optimize_type_ids)
-            optimizeTypeIds(types, type_ids);
+        optimizeTypeIds(types, type_ids);
         auto numeric_type = getNumericType<on_error>(type_ids);
         if (numeric_type)
             return numeric_type;
@@ -603,49 +603,32 @@ DataTypePtr getLeastSupertype(const DataTypes & types, bool optimize_type_ids)
     return throwOrReturn<on_error>(types, "", ErrorCodes::NO_COMMON_TYPE);
 }
 
+// Convert the UInt64 type to Int64 in order to cover other signed_integer types and obtain the least super type of all ints.
+// Example, UInt64(both Int64), Int8 = Int64, Int8.
 void optimizeTypeIds(const DataTypes & types, TypeIndexSet & type_ids)
 {
-    auto is_signed_int = [](const TypeIndex & type_id)
-    {
-        switch (type_id)
-        {
-            case TypeIndex::Int8:
-            case TypeIndex::Int16:
-            case TypeIndex::Int32:
-            case TypeIndex::Int64:
-                return true;
-            default:
-                return false;
-        }
-    };
+    if ((!type_ids.contains(TypeIndex::Int8) && !type_ids.contains(TypeIndex::Int16) && !type_ids.contains(TypeIndex::Int32) && !type_ids.contains(TypeIndex::Int64)) || !type_ids.contains(TypeIndex::UInt64))
+        return;
 
-    bool has_signed_int = false;
-    bool has_uint64_and_has_opposite = false;
+    bool has_opposite = false;
     TypeIndexSet opposite_type_ids;
 
-    // Determine whether UInt64 in type_ids needs to change its sign.
     for (const auto & type : types)
     {
         auto type_id = type->getTypeId();
 
-        if (!has_signed_int)
-            has_signed_int = is_signed_int(type_id);
-
         if (type_id == TypeIndex::UInt64)
         {
-            if (!type->hasOppositeSignDataType())
+            if (const auto * uint64_with_opposite = typeid_cast<const DataTypeUInt64WithOpposite *>(type.get()))
             {
-                has_uint64_and_has_opposite = false;
-                break ;
+                has_opposite = true;
+                opposite_type_ids.insert(uint64_with_opposite->getOppositeSignDataType()->getTypeId());
             }else
-            {
-                has_uint64_and_has_opposite = true;
-                opposite_type_ids.insert(type->oppositeSignDataType()->getTypeId());
-            }
+                return;
         }
     }
 
-    if (has_uint64_and_has_opposite && has_signed_int)
+    if (has_opposite)
     {
         type_ids.erase(TypeIndex::UInt64);
         type_ids.insert(opposite_type_ids.begin(), opposite_type_ids.end());
@@ -713,7 +696,7 @@ DataTypePtr tryGetLeastSupertype(const TypeIndexSet & types)
     return getLeastSupertype<LeastSupertypeOnError::Null>(types);
 }
 
-template DataTypePtr getLeastSupertype<LeastSupertypeOnError::Throw>(const DataTypes & types, bool optimize_type_ids);
+template DataTypePtr getLeastSupertype<LeastSupertypeOnError::Throw>(const DataTypes & types);
 template DataTypePtr getLeastSupertype<LeastSupertypeOnError::Throw>(const TypeIndexSet & types);
 
 }
