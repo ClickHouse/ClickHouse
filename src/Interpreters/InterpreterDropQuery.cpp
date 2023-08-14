@@ -125,8 +125,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
     {
         const auto & settings = getContext()->getSettingsRef();
         if (query.if_empty) {
-            auto rows = table->totalRows(settings);
-            if (rows > 0)
+            if (auto rows = table->totalRows(settings); rows > 0)
                 throw Exception(ErrorCodes::TABLE_NOT_EMPTY, "Table {} is not empty", backQuoteIfNeed(table_id.table_name));
         }
         checkStorageSupportsTransactionsIfNeeded(table, context_);
@@ -170,13 +169,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             ddl_guard->releaseTableLock();
             table.reset();
 
-            std::cout << "ANIMEO" << std::endl;
-            LOG_DEBUG(&Poco::Logger::get("ANIME"), "ANIME");
-
             auto new_query = query.clone();
             auto & query_to_send = new_query->as<ASTDropQuery &>();
-            // auto query_to = query.as<ASTDropQuery &>();
-            // auto query_to_send = std::dynamic_pointer_cast<ASTDropQuery>(query.clone());
             query_to_send.if_empty = false;
 
             return database->tryEnqueueReplicatedDDL(new_query, context_);
