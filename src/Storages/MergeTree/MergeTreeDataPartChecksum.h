@@ -5,7 +5,9 @@
 #include <base/types.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
 
 class SipHash;
 
@@ -35,6 +37,16 @@ struct MergeTreeDataPartChecksum
     void checkEqual(const MergeTreeDataPartChecksum & rhs, bool have_uncompressed, const String & name) const;
     void checkSize(const IDataPartStorage & storage, const String & name) const;
 };
+
+inline void writeBinary(const MergeTreeDataPartChecksum::uint128 & x, WriteBuffer & buf)
+{
+    writePODBinary(x, buf);
+}
+
+inline void readBinary(MergeTreeDataPartChecksum::uint128 & x, ReadBuffer & buf)
+{
+    readPODBinary(x, buf);
+}
 
 
 /** Checksums of all non-temporary files.
