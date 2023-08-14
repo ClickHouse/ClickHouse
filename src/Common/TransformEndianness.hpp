@@ -77,11 +77,4 @@ inline void transformEndianness(CityHash_v1_0_2::uint128 & x)
     transformEndianness<ToEndian, FromEndian>(x.low64);
     transformEndianness<ToEndian, FromEndian>(x.high64);
 }
-
-template <std::endian endian>
-inline void transformEndianness(CityHash_v1_0_2::uint128 & x)
-{
-    transformEndianness<endian>(x.low64);
-    transformEndianness<endian>(x.high64);
-}
 }
