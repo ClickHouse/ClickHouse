@@ -2315,32 +2315,6 @@ ThreadPool & Context::getLoadMarksThreadpool() const
     return *shared->load_marks_threadpool;
 }
 
-static size_t getPrefetchThreadpoolSizeFromConfig(const Poco::Util::AbstractConfiguration & config)
-{
-    return config.getUInt(".prefetch_threadpool_pool_size", 100);
-}
-
-size_t Context::getPrefetchThreadpoolSize() const
-{
-    const auto & config = getConfigRef();
-    return getPrefetchThreadpoolSizeFromConfig(config);
-}
-
-ThreadPool & Context::getPrefetchThreadpool() const
-{
-    const auto & config = getConfigRef();
-
-    auto lock = getLock();
-    if (!shared->prefetch_threadpool)
-    {
-        auto pool_size = getPrefetchThreadpoolSize();
-        auto queue_size = config.getUInt(".prefetch_threadpool_queue_size", 1000000);
-        shared->prefetch_threadpool = std::make_unique<ThreadPool>(
-            CurrentMetrics::IOPrefetchThreads, CurrentMetrics::IOPrefetchThreadsActive, pool_size, pool_size, queue_size);
-    }
-    return *shared->prefetch_threadpool;
-}
-
 void Context::setIndexUncompressedCache(size_t max_size_in_bytes)
 {
     auto lock = getLock();
@@ -2350,7 +2324,6 @@ void Context::setIndexUncompressedCache(size_t max_size_in_bytes)
 
     shared->index_uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes);
 }
-
 
 UncompressedCachePtr Context::getIndexUncompressedCache() const
 {
@@ -2466,6 +2439,27 @@ void Context::dropCaches() const
 
     if (shared->mmap_cache)
         shared->mmap_cache->reset();
+}
+
+ThreadPool & Context::getPrefetchThreadpool() const
+{
+    const auto & config = getConfigRef();
+
+    auto lock = getLock();
+    if (!shared->prefetch_threadpool)
+    {
+        auto pool_size = getPrefetchThreadpoolSize();
+        auto queue_size = config.getUInt(".prefetch_threadpool_queue_size", 1000000);
+        shared->prefetch_threadpool = std::make_unique<ThreadPool>(
+            CurrentMetrics::IOPrefetchThreads, CurrentMetrics::IOPrefetchThreadsActive, pool_size, pool_size, queue_size);
+    }
+    return *shared->prefetch_threadpool;
+}
+
+size_t Context::getPrefetchThreadpoolSize() const
+{
+    const auto & config = getConfigRef();
+    return config.getUInt(".prefetch_threadpool_pool_size", 100);
 }
 
 BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
