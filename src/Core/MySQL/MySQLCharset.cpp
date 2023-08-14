@@ -1,5 +1,6 @@
 #include "MySQLCharset.h"
 #include "config.h"
+#include <iostream>
 #include <Common/Exception.h>
 
 #if USE_ICU

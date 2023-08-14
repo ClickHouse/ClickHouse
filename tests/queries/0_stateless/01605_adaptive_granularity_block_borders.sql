@@ -1,5 +1,4 @@
--- Tags: no-random-merge-tree-settings, no-tsan, no-debug
--- no-tsan: too slow
+-- Tags: no-random-merge-tree-settings
 
 SET use_uncompressed_cache = 0;
 SET allow_prefetched_read_pool_for_remote_filesystem=0;

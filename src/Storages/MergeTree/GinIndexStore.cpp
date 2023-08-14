@@ -11,6 +11,7 @@
 #include <IO/WriteHelpers.h>
 #include <vector>
 #include <unordered_map>
+#include <iostream>
 #include <numeric>
 #include <algorithm>
 

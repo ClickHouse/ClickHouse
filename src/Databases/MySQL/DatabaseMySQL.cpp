@@ -77,8 +77,6 @@ DatabaseMySQL::DatabaseMySQL(
             throw;
     }
 
-    fs::create_directories(metadata_path);
-
     thread = ThreadFromGlobalPool{&DatabaseMySQL::cleanOutdatedTables, this};
 }
 

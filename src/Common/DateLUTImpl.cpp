@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstring>
 #include <memory>
+#include <iostream>
 
 
 /// Embedded timezones.

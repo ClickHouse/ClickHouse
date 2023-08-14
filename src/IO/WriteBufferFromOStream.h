@@ -1,6 +1,6 @@
 #pragma once
 
-#include <iosfwd>
+#include <iostream>
 
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>

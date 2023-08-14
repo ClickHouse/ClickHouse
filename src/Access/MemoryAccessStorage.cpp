@@ -63,7 +63,17 @@ AccessEntityPtr MemoryAccessStorage::readImpl(const UUID & id, bool throw_if_not
 }
 
 
-bool MemoryAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+std::optional<UUID> MemoryAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+{
+    UUID id = generateRandomID();
+    if (insertWithID(id, new_entity, replace_if_exists, throw_if_exists))
+        return id;
+
+    return std::nullopt;
+}
+
+
+bool MemoryAccessStorage::insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
 {
     std::lock_guard lock{mutex};
     return insertNoLock(id, new_entity, replace_if_exists, throw_if_exists);
@@ -290,7 +300,7 @@ void MemoryAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
     restorer.addDataRestoreTask([this, my_entities = std::move(entities), replace_if_exists, throw_if_exists]
     {
         for (const auto & [id, entity] : my_entities)
-            insert(id, entity, replace_if_exists, throw_if_exists);
+            insertWithID(id, entity, replace_if_exists, throw_if_exists);
     });
 }
 

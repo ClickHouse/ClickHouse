@@ -26,7 +26,7 @@ public:
         return !child->as<FunctionNode>();
     }
 
-    void enterImpl(QueryTreeNodePtr & node)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_group_by_function_keys)
             return;

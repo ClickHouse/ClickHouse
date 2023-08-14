@@ -9,7 +9,6 @@
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Throttler_fwd.h>
-#include <Common/SettingSource.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -202,8 +201,6 @@ using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
-
-class SessionTracker;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -534,11 +531,15 @@ public:
 
     /// Sets the current user assuming that he/she is already authenticated.
     /// WARNING: This function doesn't check password!
-    void setUser(const UUID & user_id_, const std::optional<const std::vector<UUID>> & current_roles_ = {});
+    void setUser(const UUID & user_id_, bool set_current_profiles_ = true, bool set_current_roles_ = true, bool set_current_database_ = true);
     UserPtr getUser() const;
 
+    void setUserID(const UUID & user_id_);
     std::optional<UUID> getUserID() const;
+
     String getUserName() const;
+
+    void setQuotaKey(String quota_key_);
 
     void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();
@@ -734,11 +735,11 @@ public:
     void applySettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
-    void checkSettingsConstraints(const SettingsProfileElements & profile_elements, SettingSource source) const;
-    void checkSettingsConstraints(const SettingChange & change, SettingSource source) const;
-    void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source) const;
-    void checkSettingsConstraints(SettingsChanges & changes, SettingSource source) const;
-    void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source) const;
+    void checkSettingsConstraints(const SettingsProfileElements & profile_elements) const;
+    void checkSettingsConstraints(const SettingChange & change) const;
+    void checkSettingsConstraints(const SettingsChanges & changes) const;
+    void checkSettingsConstraints(SettingsChanges & changes) const;
+    void clampToSettingsConstraints(SettingsChanges & changes) const;
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to default value
@@ -860,8 +861,6 @@ public:
 
     OvercommitTracker * getGlobalOvercommitTracker() const;
 
-    SessionTracker & getSessionTracker();
-
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
 
@@ -890,6 +889,7 @@ public:
     void setClientProtocolVersion(UInt64 version);
 
 #if USE_ROCKSDB
+    MergeTreeMetadataCachePtr getMergeTreeMetadataCache() const;
     MergeTreeMetadataCachePtr tryGetMergeTreeMetadataCache() const;
 #endif
 
@@ -997,9 +997,6 @@ public:
 #if USE_ROCKSDB
     void initializeMergeTreeMetadataCache(const String & dir, size_t size);
 #endif
-
-    /// Call after unexpected crash happen.
-    void handleCrash() const;
 
     bool hasTraceCollector() const;
 
@@ -1166,6 +1163,9 @@ public:
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;
 
+    /** Get settings for reading from filesystem for BACKUPs. */
+    ReadSettings getBackupReadSettings() const;
+
     /** Get settings for writing to filesystem. */
     WriteSettings getWriteSettings() const;
 
@@ -1189,8 +1189,6 @@ private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 
     void initGlobal();
-
-    void setUserID(const UUID & user_id_);
 
     template <typename... Args>
     void checkAccessImpl(const Args &... args) const;

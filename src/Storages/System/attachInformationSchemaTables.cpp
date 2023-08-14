@@ -27,6 +27,7 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
                database.getDatabaseName() == DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
         if (database.getEngineName() != "Memory")
             return;
+        bool is_uppercase = database.getDatabaseName() == DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE;
 
         String metadata_resource_name = view_name + ".sql";
         if (query.empty())
@@ -41,18 +42,13 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
         assert(view_name == ast_create.getTable());
         ast_create.attach = false;
         ast_create.setDatabase(database.getDatabaseName());
+        if (is_uppercase)
+            ast_create.setTable(Poco::toUpper(view_name));
 
         StoragePtr view = createTableFromAST(ast_create, database.getDatabaseName(),
                                              database.getTableDataPath(ast_create), context, true).second;
+
         database.createTable(context, ast_create.getTable(), view, ast);
-        ASTPtr ast_upper = ast_create.clone();
-        auto & ast_create_upper = ast_upper->as<ASTCreateQuery &>();
-        ast_create_upper.setTable(Poco::toUpper(view_name));
-        StoragePtr view_upper = createTableFromAST(ast_create_upper, database.getDatabaseName(),
-                                             database.getTableDataPath(ast_create_upper), context, true).second;
-
-        database.createTable(context, ast_create_upper.getTable(), view_upper, ast_upper);
-
     }
     catch (...)
     {

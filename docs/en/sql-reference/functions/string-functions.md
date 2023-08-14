@@ -729,30 +729,6 @@ Returns whether string `str` ends with `suffix`.
 endsWith(str, suffix)
 ```
 
-## endsWithUTF8
-
-Returns whether string `str` ends with `suffix`, the difference between `endsWithUTF8` and `endsWith` is that `endsWithUTF8` match `str` and `suffix` by UTF-8 characters.
-
-**Syntax**
-
-```sql
-endsWithUTF8(str, suffix)
-```
-
-**Example**
-
-``` sql
-SELECT endsWithUTF8('中国', '\xbd'), endsWith('中国', '\xbd')
-```
-
-Result:
-
-```result
-┌─endsWithUTF8('中国', '½')─┬─endsWith('中国', '½')─┐
-│                        0 │                    1 │
-└──────────────────────────┴──────────────────────┘
-```
-
 ## startsWith
 
 Returns whether string `str` starts with `prefix`.
@@ -767,25 +743,6 @@ startsWith(str, prefix)
 
 ``` sql
 SELECT startsWith('Spider-Man', 'Spi');
-```
-
-## startsWithUTF8
-
-Returns whether string `str` starts with `prefix`, the difference between `startsWithUTF8` and `startsWith` is that `startsWithUTF8` match `str` and `suffix` by UTF-8 characters.
-
-
-**Example**
-
-``` sql
-SELECT startsWithUTF8('中国', '\xe4'), startsWith('中国', '\xe4')
-```
-
-Result:
-
-```result
-┌─startsWithUTF8('中国', '⥩─┬─startsWith('中国', '⥩─┐
-│                          0 │                      1 │
-└────────────────────────────┴────────────────────────┘
 ```
 
 ## trim

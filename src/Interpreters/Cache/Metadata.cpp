@@ -25,7 +25,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 FileSegmentMetadata::FileSegmentMetadata(FileSegmentPtr && file_segment_)
@@ -62,13 +61,11 @@ KeyMetadata::KeyMetadata(
     CleanupQueue & cleanup_queue_,
     DownloadQueue & download_queue_,
     Poco::Logger * log_,
-    std::shared_mutex & key_prefix_directory_mutex_,
     bool created_base_directory_)
     : key(key_)
     , key_path(key_path_)
     , cleanup_queue(cleanup_queue_)
     , download_queue(download_queue_)
-    , key_prefix_directory_mutex(key_prefix_directory_mutex_)
     , created_base_directory(created_base_directory_)
     , log(log_)
 {
@@ -104,21 +101,16 @@ bool KeyMetadata::createBaseDirectory()
     {
         try
         {
-            std::shared_lock lock(key_prefix_directory_mutex);
             fs::create_directories(key_path);
         }
-        catch (const fs::filesystem_error & e)
+        catch (...)
         {
+            /// Avoid errors like
+            /// std::__1::__fs::filesystem::filesystem_error: filesystem error: in create_directories: No space left on device
+            /// and mark file segment with SKIP_CACHE state
+            tryLogCurrentException(__PRETTY_FUNCTION__);
             created_base_directory = false;
-
-            if (e.code() == std::errc::no_space_on_device)
-            {
-                LOG_TRACE(log, "Failed to create base directory for key {}, "
-                          "because no space left on device", key);
-
-                return false;
-            }
-            throw;
+            return false;
         }
     }
     return true;
@@ -199,15 +191,13 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
         if (it == end())
         {
             if (key_not_found_policy == KeyNotFoundPolicy::THROW)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key `{}` in cache", key);
-            else if (key_not_found_policy == KeyNotFoundPolicy::THROW_LOGICAL)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key);
             else if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
                 return nullptr;
 
             it = emplace(
                 key, std::make_shared<KeyMetadata>(
-                    key, getPathForKey(key), *cleanup_queue, *download_queue, log, key_prefix_directory_mutex, is_initial_load)).first;
+                    key, getPathForKey(key), *cleanup_queue, *download_queue, log, is_initial_load)).first;
         }
 
         key_metadata = it->second;
@@ -225,8 +215,6 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
             return locked_metadata;
 
         if (key_not_found_policy == KeyNotFoundPolicy::THROW)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key `{}` in cache", key);
-        else if (key_not_found_policy == KeyNotFoundPolicy::THROW_LOGICAL)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key);
 
         if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
@@ -322,9 +310,16 @@ void CacheMetadata::doCleanup()
 
         try
         {
-            std::unique_lock mutex(key_prefix_directory_mutex);
             if (fs::exists(key_prefix_directory) && fs::is_empty(key_prefix_directory))
                 fs::remove(key_prefix_directory);
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            /// Key prefix directory can become non-empty just now, it is expected.
+            if (e.code() == std::errc::directory_not_empty)
+                continue;
+            LOG_ERROR(log, "Error while removing key {}: {}", cleanup_key, getCurrentExceptionMessage(true));
+            chassert(false);
         }
         catch (...)
         {
@@ -566,11 +561,11 @@ bool LockedKey::isLastOwnerOfFileSegment(size_t offset) const
     return file_segment_metadata->file_segment.use_count() == 2;
 }
 
-void LockedKey::removeAll(bool if_releasable)
+void LockedKey::removeAllReleasable()
 {
     for (auto it = key_metadata->begin(); it != key_metadata->end();)
     {
-        if (if_releasable && !it->second->releasable())
+        if (!it->second->releasable())
         {
             ++it;
             continue;
@@ -591,32 +586,17 @@ void LockedKey::removeAll(bool if_releasable)
     }
 }
 
-KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset)
-{
-    auto it = key_metadata->find(offset);
-    if (it == key_metadata->end())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no offset {}", offset);
-
-    auto file_segment = it->second->file_segment;
-    return removeFileSegmentImpl(it, file_segment->lock());
-}
-
 KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegmentGuard::Lock & segment_lock)
 {
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no offset {}", offset);
 
-    return removeFileSegmentImpl(it, segment_lock);
-}
-
-KeyMetadata::iterator LockedKey::removeFileSegmentImpl(KeyMetadata::iterator it, const FileSegmentGuard::Lock & segment_lock)
-{
     auto file_segment = it->second->file_segment;
 
     LOG_DEBUG(
         key_metadata->log, "Remove from cache. Key: {}, offset: {}, size: {}",
-        getKey(), file_segment->offset(), file_segment->reserved_size);
+        getKey(), offset, file_segment->reserved_size);
 
     chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
 

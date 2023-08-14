@@ -62,9 +62,6 @@ public:
 
     virtual void stopFlushThread() = 0;
 
-    /// Handles crash, flushes log without blocking if notify_flush_on_crash is set
-    virtual void handleCrash() = 0;
-
     virtual ~ISystemLog();
 
     virtual void savingThreadFunction() = 0;
@@ -76,38 +73,26 @@ protected:
     bool is_shutdown = false;
 };
 
-struct SystemLogQueueSettings
-{
-    String database;
-    String table;
-    size_t reserved_size_rows;
-    size_t max_size_rows;
-    size_t buffer_size_rows_flush_threshold;
-    size_t flush_interval_milliseconds;
-    bool notify_flush_on_crash;
-    bool turn_off_logger;
-};
-
 template <typename LogElement>
 class SystemLogQueue
 {
     using Index = uint64_t;
 
 public:
-    SystemLogQueue(const SystemLogQueueSettings & settings_);
+    SystemLogQueue(
+        const String & table_name_,
+        size_t flush_interval_milliseconds_,
+        bool turn_off_logger_ = false);
 
     void shutdown();
 
     // producer methods
-    void push(LogElement && element);
+    void push(const LogElement & element);
     Index notifyFlush(bool should_prepare_tables_anyway);
     void waitFlush(Index expected_flushed_up_to);
 
-    /// Handles crash, flushes log without blocking if notify_flush_on_crash is set
-    void handleCrash();
-
      // consumer methods
-    Index pop(std::vector<LogElement>& output, bool & should_prepare_tables_anyway, bool & exit_this_thread);
+    Index pop(std::vector<LogElement>& output, bool& should_prepare_tables_anyway, bool& exit_this_thread);
     void confirm(Index to_flush_end);
 
 private:
@@ -135,8 +120,7 @@ private:
     bool is_shutdown = false;
 
     std::condition_variable flush_event;
-
-    const SystemLogQueueSettings settings;
+    const size_t flush_interval_milliseconds;
 };
 
 
@@ -147,7 +131,8 @@ public:
     using Self = SystemLogBase;
 
     SystemLogBase(
-        const SystemLogQueueSettings & settings_,
+        const String& table_name_,
+        size_t flush_interval_milliseconds_,
         std::shared_ptr<SystemLogQueue<LogElement>> queue_ = nullptr);
 
     void startup() override;
@@ -155,13 +140,10 @@ public:
     /** Append a record into log.
       * Writing to table will be done asynchronously and in case of failure, record could be lost.
       */
-    void add(LogElement element);
+    void add(const LogElement & element);
 
     /// Flush data in the buffer to disk. Block the thread until the data is stored on disk.
     void flush(bool force) override;
-
-    /// Handles crash, flushes log without blocking if notify_flush_on_crash is set
-    void handleCrash() override;
 
     /// Non-blocking flush data in the buffer to disk.
     void notifyFlush(bool force);
@@ -169,11 +151,6 @@ public:
     String getName() const override { return LogElement::name(); }
 
     static const char * getDefaultOrderBy() { return "event_date, event_time"; }
-    static consteval size_t getDefaultMaxSize() { return 1048576; }
-    static consteval size_t getDefaultReservedSize() { return 8192; }
-    static consteval size_t getDefaultFlushIntervalMilliseconds() { return 7500; }
-    static consteval bool shouldNotifyFlushOnCrash() { return false; }
-    static consteval bool shouldTurnOffLogger() { return false; }
 
 protected:
     std::shared_ptr<SystemLogQueue<LogElement>> queue;

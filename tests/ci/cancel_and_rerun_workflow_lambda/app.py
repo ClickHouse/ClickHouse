@@ -323,9 +323,7 @@ def main(event):
 
     if action == "edited":
         print("PR is edited, check if the body is correct")
-        error, _ = check_pr_description(
-            pull_request["body"], pull_request["base"]["repo"]["full_name"]
-        )
+        error, category = check_pr_description(pull_request["body"])
         if error:
             print(
                 f"The PR's body is wrong, is going to comment it. The error is: {error}"

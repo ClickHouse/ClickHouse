@@ -14,7 +14,6 @@
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/JoinUtils.h>
 
 #include <Compression/CompressedWriteBuffer.h>
@@ -178,7 +177,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     }
 }
 
-HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context, const Names & required_columns_names) const
+HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
@@ -238,10 +237,8 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     /// Qualifies will be added by join implementation (TableJoin contains a rename mapping).
     analyzed_join->setRightKeys(key_names);
     analyzed_join->setLeftKeys(left_key_names_resorted);
-    Block right_sample_block;
-    for (const auto & name : required_columns_names)
-        right_sample_block.insert(getRightSampleBlock().getByName(name));
-    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, right_sample_block);
+
+    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, getRightSampleBlock());
 
     RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
     join_clone->setLock(holder);
