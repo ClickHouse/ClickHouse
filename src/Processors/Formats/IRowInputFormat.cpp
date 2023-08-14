@@ -54,7 +54,7 @@ bool isParseError(int code)
 }
 
 IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
-    : IInputFormat(std::move(header), &in_), serializations(getPort().getHeader().getSerializations()), params(params_)
+    : IInputFormat(std::move(header), in_), serializations(getPort().getHeader().getSerializations()), params(params_)
 {
 }
 
@@ -86,21 +86,7 @@ void IRowInputFormat::logError()
 Chunk IRowInputFormat::generate()
 {
     if (total_rows == 0)
-    {
-        try
-        {
-            readPrefix();
-        }
-        catch (Exception & e)
-        {
-            auto file_name = getFileNameFromReadBuffer(getReadBuffer());
-            if (!file_name.empty())
-                e.addMessage(fmt::format("(in file/uri {})", file_name));
-
-            e.addMessage("(while reading header)");
-            throw;
-        }
-    }
+        readPrefix();
 
     const Block & header = getPort().getHeader();
 
@@ -111,6 +97,7 @@ Chunk IRowInputFormat::generate()
 
     size_t num_rows = 0;
     size_t chunk_start_offset = getDataOffsetMaybeCompressed(getReadBuffer());
+
     try
     {
         RowReadExtension info;

@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include <Common/logger_useful.h>
 #include <base/BorrowedObjectPool.h>
 
 #include <Common/ShellCommand.h>
@@ -33,9 +34,6 @@ struct ShellCommandSourceConfiguration
     size_t number_of_rows_to_read = 0;
     /// Max block size
     size_t max_block_size = DEFAULT_BLOCK_SIZE;
-    /// Will throw if the command exited with
-    /// non-zero status code
-    size_t check_exit_code = false;
 };
 
 class ShellCommandSourceCoordinator

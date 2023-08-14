@@ -7,8 +7,6 @@
 namespace DB
 {
 
-struct SelectQueryOptions;
-
 /** Collect prepared sets and sets for subqueries that are necessary to execute IN function and its variations.
   * Collected sets are registered in planner context.
   */

@@ -57,10 +57,9 @@ def restart_clickhouse():
 
 
 def test_state_after_restart(started_cluster):
-    keeper_utils.wait_until_connected(started_cluster, node)
-    node_zk = None
-    node_zk2 = None
     try:
+        node_zk = None
+        node_zk2 = None
         node_zk = get_connection_zk("node")
 
         node_zk.create("/test_state_after_restart", b"somevalue")
@@ -109,10 +108,9 @@ def test_state_after_restart(started_cluster):
 
 
 def test_ephemeral_after_restart(started_cluster):
-    keeper_utils.wait_until_connected(started_cluster, node)
-    node_zk = None
-    node_zk2 = None
     try:
+        node_zk = None
+        node_zk2 = None
         node_zk = get_connection_zk("node")
 
         session_id = node_zk._session_id

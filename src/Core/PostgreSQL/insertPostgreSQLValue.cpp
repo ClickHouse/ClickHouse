@@ -202,8 +202,6 @@ void preparePostgreSQLArrayInfo(
         parser = [](std::string & field) -> Field { return pqxx::from_string<float>(field); };
     else if (which.isFloat64())
         parser = [](std::string & field) -> Field { return pqxx::from_string<double>(field); };
-    else if (which.isUUID())
-        parser = [](std::string & field) -> Field { return parse<UUID>(field); };
     else if (which.isString() || which.isFixedString())
         parser = [](std::string & field) -> Field { return field; };
     else if (which.isDate())

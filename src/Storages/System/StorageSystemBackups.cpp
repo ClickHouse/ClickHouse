@@ -1,6 +1,5 @@
 #include <Storages/System/StorageSystemBackups.h>
 #include <Backups/BackupsWorker.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>

@@ -20,7 +20,6 @@ def get_options(i, upgrade_check):
             '''--db-engine="Replicated('/test/db/test_{}', 's1', 'r1')"'''.format(i)
         )
         client_options.append("allow_experimental_database_replicated=1")
-        client_options.append("enable_deflate_qpl_codec=1")
 
     # If database name is not specified, new database is created for each functional test.
     # Run some threads with one database for all tests.
@@ -46,6 +45,7 @@ def get_options(i, upgrade_check):
             client_options.append("max_rows_in_join=1000")
 
     if i > 0 and random.random() < 1 / 3:
+        client_options.append("allow_experimental_query_cache=1")
         client_options.append("use_query_cache=1")
 
     if i % 5 == 1:
@@ -125,8 +125,6 @@ def prepare_for_hung_check(drop_databases):
     # However, it obstruct checking for hung queries.
     logging.info("Will terminate gdb (if any)")
     call_with_retry("kill -TERM $(pidof gdb)")
-    # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
-    call_with_retry("kill -CONT $(lsof -ti:9000)")
 
     # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
     call_with_retry("clickhouse client -q 'SYSTEM STOP THREAD FUZZER'")
@@ -202,14 +200,13 @@ def prepare_for_hung_check(drop_databases):
     call(
         make_query_command(
             """
-    SELECT sleepEachRow((
-        SELECT maxOrDefault(300 - elapsed) + 1
-        FROM system.processes
-        WHERE query NOT LIKE '%FROM system.processes%' AND elapsed < 300
+    select sleepEachRow((
+        select maxOrDefault(300 - elapsed) + 1
+        from system.processes
+        where query not like '%from system.processes%' and elapsed < 300
     ) / 300)
-    FROM numbers(300)
-    FORMAT Null
-    SETTINGS function_sleep_max_microseconds_per_block = 0
+    from numbers(300)
+    format Null
     """
         ),
         shell=True,

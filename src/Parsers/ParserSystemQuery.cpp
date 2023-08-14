@@ -159,14 +159,6 @@ enum class SystemQueryTargetType
     if (!ParserStringLiteral{}.parse(pos, ast, expected))
         return false;
     res->replica = ast->as<ASTLiteral &>().value.safeGet<String>();
-
-    if (ParserKeyword{"FROM SHARD"}.ignore(pos, expected))
-    {
-        if (!ParserStringLiteral{}.parse(pos, ast, expected))
-            return false;
-        res->shard = ast->as<ASTLiteral &>().value.safeGet<String>();
-    }
-
     if (ParserKeyword{"FROM"}.ignore(pos, expected))
     {
         // way 1. parse replica database
@@ -258,16 +250,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
-        case Type::ENABLE_FAILPOINT:
-        case Type::DISABLE_FAILPOINT:
-        {
-            ASTPtr ast;
-            if (ParserIdentifier{}.parse(pos, ast, expected))
-                res->fail_point_name = ast->as<ASTIdentifier &>().name();
-            else
-                return false;
-            break;
-        }
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
@@ -277,15 +259,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;
-            if (res->type == Type::SYNC_REPLICA)
-            {
-                if (ParserKeyword{"STRICT"}.ignore(pos, expected))
-                    res->sync_replica_mode = SyncReplicaMode::STRICT;
-                else if (ParserKeyword{"LIGHTWEIGHT"}.ignore(pos, expected))
-                    res->sync_replica_mode = SyncReplicaMode::LIGHTWEIGHT;
-                else if (ParserKeyword{"PULL"}.ignore(pos, expected))
-                    res->sync_replica_mode = SyncReplicaMode::PULL;
-            }
+            if (res->type == Type::SYNC_REPLICA && ParserKeyword{"STRICT"}.ignore(pos, expected))
+                res->strict_sync = true;
             break;
         }
 
@@ -379,8 +354,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATED_SENDS:
         case Type::STOP_REPLICATION_QUEUES:
         case Type::START_REPLICATION_QUEUES:
-        case Type::STOP_PULLING_REPLICATION_LOG:
-        case Type::START_PULLING_REPLICATION_LOG:
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
@@ -407,15 +380,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ParserLiteral path_parser;
             ASTPtr ast;
             if (path_parser.parse(pos, ast, expected))
-            {
-                res->filesystem_cache_name = ast->as<ASTLiteral>()->value.safeGet<String>();
-                if (ParserKeyword{"KEY"}.ignore(pos, expected) && ParserIdentifier().parse(pos, ast, expected))
-                {
-                    res->key_to_drop = ast->as<ASTIdentifier>()->name();
-                    if (ParserKeyword{"OFFSET"}.ignore(pos, expected) && ParserLiteral().parse(pos, ast, expected))
-                        res->offset_to_drop = ast->as<ASTLiteral>()->value.safeGet<UInt64>();
-                }
-            }
+                res->filesystem_cache_path = ast->as<ASTLiteral>()->value.safeGet<String>();
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             break;
@@ -449,42 +414,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {
                 return false;
             }
-            break;
-        }
-
-        case Type::START_LISTEN:
-        case Type::STOP_LISTEN:
-        {
-            if (!parseQueryWithOnCluster(res, pos, expected))
-                return false;
-
-            ServerType::Type current_type = ServerType::Type::END;
-            std::string current_custom_name;
-
-            for (const auto & type : magic_enum::enum_values<ServerType::Type>())
-            {
-                if (ParserKeyword{ServerType::serverTypeToString(type)}.ignore(pos, expected))
-                {
-                    current_type = type;
-                    break;
-                }
-            }
-
-            if (current_type == ServerType::Type::END)
-                return false;
-
-            if (current_type == ServerType::CUSTOM)
-            {
-                ASTPtr ast;
-
-                if (!ParserStringLiteral{}.parse(pos, ast, expected))
-                    return false;
-
-                current_custom_name = ast->as<ASTLiteral &>().value.get<const String &>();
-            }
-
-            res->server_type = ServerType(current_type, current_custom_name);
-
             break;
         }
 

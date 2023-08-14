@@ -17,8 +17,7 @@ public:
     JSONEachRowRowOutputFormat(
         WriteBuffer & out_,
         const Block & header_,
-        const FormatSettings & settings_,
-        bool pretty_json_ = false);
+        const FormatSettings & settings_);
 
     String getName() const override { return "JSONEachRowRowOutputFormat"; }
 
@@ -38,7 +37,6 @@ protected:
     void writeSuffix() override;
 
     size_t field_number = 0;
-    bool pretty_json;
 
 private:
     Names fields;

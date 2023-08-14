@@ -1,6 +1,4 @@
 #pragma once
-
-#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <QueryPipeline/Pipe.h>
 
@@ -11,8 +9,7 @@ namespace DB
 class ReadFromPreparedSource : public ISourceStep
 {
 public:
-    explicit ReadFromPreparedSource(
-        Pipe pipe_, ContextPtr context_ = nullptr, Context::QualifiedProjectionName qualified_projection_name_ = {});
+    explicit ReadFromPreparedSource(Pipe pipe_);
 
     String getName() const override { return "ReadFromPreparedSource"; }
 
@@ -21,7 +18,6 @@ public:
 protected:
     Pipe pipe;
     ContextPtr context;
-    Context::QualifiedProjectionName qualified_projection_name;
 };
 
 class ReadFromStorageStep : public ReadFromPreparedSource

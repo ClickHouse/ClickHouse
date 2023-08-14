@@ -3,9 +3,6 @@ name: BackportPR
 env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
-  # Export system tables to ClickHouse Cloud
-  CLICKHOUSE_CI_LOGS_HOST: ${{ secrets.CLICKHOUSE_CI_LOGS_HOST }}
-  CLICKHOUSE_CI_LOGS_PASSWORD: ${{ secrets.CLICKHOUSE_CI_LOGS_PASSWORD }}
 
 on: # yamllint disable-line rule:truthy
   push:
@@ -352,13 +349,6 @@ jobs:
         with:
           clear-repository: true
           submodules: true
-      - name: Apply sparse checkout for contrib # in order to check that it doesn't break build
-        run: |
-          rm -rf "$GITHUB_WORKSPACE/contrib" && echo 'removed'
-          git -C "$GITHUB_WORKSPACE" checkout .  && echo 'restored'
-          "$GITHUB_WORKSPACE/contrib/update-submodules.sh" && echo 'OK'
-          du -hs "$GITHUB_WORKSPACE/contrib" ||:
-          find "$GITHUB_WORKSPACE/contrib" -type f | wc -l ||:
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"

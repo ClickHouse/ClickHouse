@@ -1,5 +1,4 @@
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/Progress.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -42,7 +41,7 @@ void ReadBufferFromFileBase::setProgressCallback(ContextPtr context)
 
     setProfileCallback([file_progress_callback](const ProfileInfo & progress)
     {
-       file_progress_callback(FileProgress(progress.bytes_read));
+       file_progress_callback(FileProgress(progress.bytes_read, 0));
     });
 }
 

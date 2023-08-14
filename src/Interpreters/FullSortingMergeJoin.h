@@ -4,7 +4,6 @@
 #include <Interpreters/TableJoin.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <Common/logger_useful.h>
 #include <Poco/Logger.h>
 
 namespace DB
@@ -30,9 +29,9 @@ public:
 
     const TableJoin & getTableJoin() const override { return *table_join; }
 
-    bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override
+    bool addJoinedBlock(const Block & /* block */, bool /* check_limits */) override
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::addBlockToJoin should not be called");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::addJoinedBlock should not be called");
     }
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join)

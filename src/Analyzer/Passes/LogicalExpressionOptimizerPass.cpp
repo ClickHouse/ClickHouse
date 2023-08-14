@@ -19,7 +19,7 @@ public:
         : Base(std::move(context))
     {}
 
-    void enterImpl(QueryTreeNodePtr & node)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
 

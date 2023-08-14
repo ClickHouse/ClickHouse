@@ -17,19 +17,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int ACCESS_ENTITY_ALREADY_EXISTS;
 }
 namespace
 {
     void updateUserFromQueryImpl(
         User & user,
         const ASTCreateUserQuery & query,
-        const std::optional<AuthenticationData> auth_data,
         const std::shared_ptr<ASTUserNameWithHost> & override_name,
         const std::optional<RolesOrUsersSet> & override_default_roles,
         const std::optional<SettingsProfileElements> & override_settings,
         const std::optional<RolesOrUsersSet> & override_grantees,
-        bool allow_implicit_no_password,
         bool allow_no_password,
         bool allow_plaintext_password)
     {
@@ -40,16 +37,10 @@ namespace
         else if (query.names->size() == 1)
             user.setName(query.names->front()->toString());
 
-        if (!query.attach && !query.alter && !auth_data && !allow_implicit_no_password)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Authentication type NO_PASSWORD must "
-                            "be explicitly specified, check the setting allow_implicit_no_password "
-                            "in the server configuration");
+        if (query.auth_data)
+            user.auth_data = *query.auth_data;
 
-        if (auth_data)
-            user.auth_data = *auth_data;
-
-        if (auth_data || !query.alter)
+        if (query.auth_data || !query.alter)
         {
             auto auth_type = user.auth_data.getType();
             if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
@@ -113,9 +104,17 @@ BlockIO InterpreterCreateUserQuery::execute()
     bool no_password_allowed = access_control.isNoPasswordAllowed();
     bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
 
-    std::optional<AuthenticationData> auth_data;
-    if (query.auth_data)
-        auth_data = AuthenticationData::fromAST(*query.auth_data, getContext(), !query.attach);
+     if (!query.attach && !query.alter && !query.auth_data && !implicit_no_password_allowed)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Authentication type NO_PASSWORD must "
+                        "be explicitly specified, check the setting allow_implicit_no_password "
+                        "in the server configuration");
+
+    if (!query.attach && query.temporary_password_for_checks)
+    {
+        access_control.checkPasswordComplexityRules(query.temporary_password_for_checks.value());
+        query.temporary_password_for_checks.reset();
+    }
 
     std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)
@@ -134,22 +133,12 @@ BlockIO InterpreterCreateUserQuery::execute()
         settings_from_query = SettingsProfileElements{*query.settings, access_control};
 
         if (!query.attach)
-            getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::USER);
+            getContext()->checkSettingsConstraints(*settings_from_query);
     }
 
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, getContext());
 
-    IAccessStorage * storage = &access_control;
-    MultipleAccessStorage::StoragePtr storage_ptr;
-
-    if (!query.storage_name.empty())
-    {
-        storage_ptr = access_control.getStorageByName(query.storage_name);
-        storage = storage_ptr.get();
-    }
-
-    Strings names = query.names->toStrings();
     if (query.alter)
     {
         std::optional<RolesOrUsersSet> grantees_from_query;
@@ -159,17 +148,18 @@ BlockIO InterpreterCreateUserQuery::execute()
         auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
         {
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
-            updateUserFromQueryImpl(*updated_user, query, auth_data, {}, default_roles_from_query, settings_from_query, grantees_from_query, implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
+            updateUserFromQueryImpl(*updated_user, query, {}, default_roles_from_query, settings_from_query, grantees_from_query, no_password_allowed, plaintext_password_allowed);
             return updated_user;
         };
 
+        Strings names = query.names->toStrings();
         if (query.if_exists)
         {
-            auto ids = storage->find<User>(names);
-            storage->tryUpdate(ids, update_func);
+            auto ids = access_control.find<User>(names);
+            access_control.tryUpdate(ids, update_func);
         }
         else
-            storage->update(storage->getIDs<User>(names), update_func);
+            access_control.update(access_control.getIDs<User>(names), update_func);
     }
     else
     {
@@ -177,26 +167,17 @@ BlockIO InterpreterCreateUserQuery::execute()
         for (const auto & name : *query.names)
         {
             auto new_user = std::make_shared<User>();
-            updateUserFromQueryImpl(*new_user, query, auth_data, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{}, implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
+            updateUserFromQueryImpl(*new_user, query, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{}, no_password_allowed, plaintext_password_allowed);
             new_users.emplace_back(std::move(new_user));
-        }
-
-        if (!query.storage_name.empty())
-        {
-            for (const auto & name : names)
-            {
-                if (auto another_storage_ptr = access_control.findExcludingStorage(AccessEntityType::USER, name, storage_ptr))
-                    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "User {} already exists in storage {}", name, another_storage_ptr->getStorageName());
-            }
         }
 
         std::vector<UUID> ids;
         if (query.if_not_exists)
-            ids = storage->tryInsert(new_users);
+            ids = access_control.tryInsert(new_users);
         else if (query.or_replace)
-            ids = storage->insertOrReplace(new_users);
+            ids = access_control.insertOrReplace(new_users);
         else
-            ids = storage->insert(new_users);
+            ids = access_control.insert(new_users);
 
         if (query.grantees)
         {
@@ -216,11 +197,7 @@ BlockIO InterpreterCreateUserQuery::execute()
 
 void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreateUserQuery & query, bool allow_no_password, bool allow_plaintext_password)
 {
-    std::optional<AuthenticationData> auth_data;
-    if (query.auth_data)
-        auth_data = AuthenticationData::fromAST(*query.auth_data, {}, !query.attach);
-
-    updateUserFromQueryImpl(user, query, auth_data, {}, {}, {}, {}, allow_no_password, allow_plaintext_password, true);
+    updateUserFromQueryImpl(user, query, {}, {}, {}, {}, allow_no_password, allow_plaintext_password);
 }
 
 }
