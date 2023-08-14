@@ -13,17 +13,18 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
+#include <AggregateFunctions/AggregateFunctionGroupArray.h>
+#include <Functions/array/arraySort.h>
 
 #include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
-#include "Columns/ColumnDecimal.h"
-#include "DataTypes/DataTypesDecimal.h"
+#include "Columns/IColumn.h"
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <type_traits>
 
-#define AGGREGATE_FUNCTION_GROUP_ARRAY_SORTED_MAX_ARRAY_SIZE 0xFFFFFF
+#define AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE 0xFFFFFF
 
 
 namespace DB
@@ -35,107 +36,105 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
-template <bool positive>
-struct Less
+template <typename T, bool is_positive>
+struct GroupArraySortedData
 {
-    const IColumn & column;
-
-    explicit Less(const IColumn & column_) : column(column_) { }
-
-    bool operator()(size_t lhs, size_t rhs) const
-    {
-        if constexpr (positive)
-            return column.compareAt(lhs, rhs, column, 1) < 0;
-        else
-            return column.compareAt(lhs, rhs, column, -1) > 0;
-    }
-};
-
-template <typename T>
-struct SortedData
-{
-    static constexpr auto name = "groupArraySorted";
-
-    /// For easy serialization.
-    static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
-
-    using Accumulator = T;
-
-    /// Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
-    using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
-    using Array = PODArray<T, 32, Allocator>;
-
     Array value;
-    T sum{};
 
-    void NO_SANITIZE_UNDEFINED add(T val, Arena * arena)
-    {
-        sum += val;
-        value.push_back(sum, arena);
-    }
+    Field get(size_t index) { return value[index]; }
 
-    T NO_SANITIZE_UNDEFINED get(size_t idx) const
+    void sort()
     {
-        return this->value[idx];
+        
     }
 };
 
-template <typename T, typename LimitNumElements, typename Data>
-class SortedImpl final
-    : public IAggregateFunctionDataHelper<Data, SortedImpl<T, LimitNumElements, Data>>
+template <typename T, typename Trait>
+class GroupArraySortedNumericImpl final
+    : public IAggregateFunctionDataHelper<GroupArrayNumericData<T, false>, GroupArraySortedNumericImpl<T, Trait>>
 {
-    static constexpr bool limit_num_elems = LimitNumElements::value;
-    UInt64 window_size;
+    using Data = GroupArrayNumericData<T, Trait::sampler != Sampler::NONE>;
+    static constexpr bool limit_num_elems = Trait::has_limit;
+    UInt64 max_elems;
+    UInt64 seed;
 
 public:
-    using ResultT = typename Data::Accumulator;
-
-    using ColumnSource = ColumnVectorOrDecimal<T>;
-
-    /// Probably for overflow function in the future.
-    using ColumnResult = ColumnVectorOrDecimal<ResultT>;
-
-    explicit SortedImpl(const DataTypePtr & data_type_, UInt64 window_size_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<Data, SortedImpl<T, LimitNumElements, Data>>({data_type_}, {}, createResultType(data_type_))
-        , window_size(window_size_) {}
-
-    String getName() const override { return Data::name; }
-
-    static DataTypePtr createResultType(const DataTypePtr & argument)
+    explicit GroupArraySortedNumericImpl(
+        const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max(), UInt64 seed_ = 123456)
+        : IAggregateFunctionDataHelper<GroupArrayNumericData<T, false>, GroupArraySortedNumericImpl<T, Trait>>(
+            {data_type_}, parameters_, std::make_shared<DataTypeArray>(data_type_))
+        , max_elems(max_elems_)
+        , seed(seed_)
     {
-        return std::make_shared<DataTypeArray>(getReturnTypeElement(argument));
     }
 
-    void NO_SANITIZE_UNDEFINED add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    String getName() const override { return "groupArraySorted"; }
+
+    void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
-        auto value = static_cast<const ColumnSource &>(*columns[0]).getData()[row_num];
-        this->data(place).add(static_cast<ResultT>(value), arena);
+        [[maybe_unused]] auto a = new (place) Data;
     }
 
-    void NO_SANITIZE_UNDEFINED merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    IColumn sort(IColumn arr)
+    {
+        // bubble sort for icolumn
+        size_t n = arr.size();
+        for (size_t i = 0; i < n - 1; i++) {
+            for (size_t j = 0; j < n - i - 1; j++) {
+                if (arr[j] > arr[j + 1]) {
+                    Field tmp = arr[j];
+                    arr[j] = arr[j + 1];
+                    arr[j + 1] = tmp;
+                }
+            }
+        }
+    }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    {
+        const auto & row_value = assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
+        auto & cur_elems = this->data(place);
+
+        ++cur_elems.total_values;
+
+        if (limit_num_elems && cur_elems.value.size() >= max_elems)
+            return;
+
+        cur_elems.value.push_back(row_value, arena);
+    }
+
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur_elems = this->data(place);
         auto & rhs_elems = this->data(rhs);
 
-        size_t cur_size = cur_elems.value.size();
+        if (rhs_elems.value.empty())
+            return;
+        mergeNoSampler(cur_elems, rhs_elems, arena);
+    }
 
-        if (rhs_elems.value.size())
-            cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.end(), arena);
-
-        for (size_t i = cur_size; i < cur_elems.value.size(); ++i)
+    void mergeNoSampler(Data & cur_elems, const Data & rhs_elems, Arena * arena) const
+    {
+        if (!limit_num_elems)
         {
-            cur_elems.value[i] += cur_elems.sum;
+            if (rhs_elems.value.size())
+                cur_elems.value.insertByOffsets(rhs_elems.value, 0, rhs_elems.value.size(), arena);
         }
-
-        cur_elems.sum += rhs_elems.sum;
+        else
+        {
+            UInt64 elems_to_insert = std::min(static_cast<size_t>(max_elems) - cur_elems.value.size(), rhs_elems.value.size());
+            if (elems_to_insert)
+                cur_elems.value.insertByOffsets(rhs_elems.value, 0, elems_to_insert, arena);
+        }
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         const auto & value = this->data(place).value;
-        size_t size = value.size();
+        const size_t size = value.size();
         writeVarUInt(size, buf);
-        buf.write(reinterpret_cast<const char *>(value.data()), size * sizeof(value[0]));
+        for (const auto & element : value)
+            writeBinaryLittleEndian(element, buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
@@ -143,80 +142,178 @@ public:
         size_t size = 0;
         readVarUInt(size, buf);
 
-        if (unlikely(size > AGGREGATE_FUNCTION_GROUP_ARRAY_SORTED_MAX_ARRAY_SIZE))
+        if (unlikely(size > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                            "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_SORTED_MAX_ARRAY_SIZE);
+                            "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE);
 
-        if (size > 0)
-        {
-            auto & value = this->data(place).value;
-            value.resize(size, arena);
-            buf.readStrict(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
-            this->data(place).sum = value.back();
-        }
+        if (limit_num_elems && unlikely(size > max_elems))
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size, it should not exceed {}", max_elems);
+
+        auto & value = this->data(place).value;
+
+        value.resize_exact(size, arena);
+        for (auto & element : value)
+            readBinaryLittleEndian(element, buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        const auto & data = this->data(place);
-        size_t size = data.value.size();
+        const auto & value = this->data(place).value;
+        size_t size = value.size();
 
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
         offsets_to.push_back(offsets_to.back() + size);
 
-
-        // ColumnArray::Offset current_offset = 0;
-
         if (size)
         {
-            IColumn::Permutation permutation(size);
-
-            for (size_t i = 0; i < size; ++i)
-                permutation[i] = i;
-            
-            typename ColumnResult::Container & data_to = assert_cast<ColumnResult &>(arr_to.getData()).getData();
-
-            // for (size_t i = 0; i < size; ++i)
-            // {
-            //     auto next_offset = offsets_to[i];
-            //     if (limit_num_elems)
-            //     {
-            //         std::cerr << "Sort " << std::endl;
-            //         ::sort(&permutation[current_offset], &permutation[next_offset]);
-            //     }
-            //     else
-            //     {
-            //         ::sort(&permutation[current_offset], &permutation[next_offset]);
-            //     }
-            //     current_offset = next_offset;
-            // }
-
-            for (size_t i = 0; i < size; ++i)
-            {
-                data_to.push_back(data.get(i));
-            }
+            typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+            data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
         }
     }
 
-    bool allocatesMemoryInArena() const override
-    {
-        return true;
-    }
-
-private:
-    static auto getReturnTypeElement(const DataTypePtr & argument)
-    {
-        if constexpr (!is_decimal<ResultT>)
-            return std::make_shared<DataTypeNumber<ResultT>>();
-        else
-        {
-            using Res = DataTypeDecimal<ResultT>;
-            return std::make_shared<Res>(Res::maxPrecision(), getDecimalScale(*argument));
-        }
-    }
+    bool allocatesMemoryInArena() const override { return true; }
 };
 
+
+
+
+/// Implementation of groupArray for String or any ComplexObject via Array
+template <typename Node, typename Trait>
+class GroupArraySortedGeneralImpl final
+    : public IAggregateFunctionDataHelper<GroupArrayGeneralData<Node, false>, GroupArrayGeneralImpl<Node, Trait>>
+{
+    static constexpr bool limit_num_elems = Trait::has_limit;
+    using Data = GroupArrayGeneralData<Node, false>;
+    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
+    static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
+
+    DataTypePtr & data_type;
+    UInt64 max_elems;
+    UInt64 seed;
+
+public:
+    GroupArraySortedGeneralImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max(), UInt64 seed_ = 123456)
+        : IAggregateFunctionDataHelper<GroupArrayGeneralData<Node, false>, GroupArrayGeneralImpl<Node, Trait>>(
+            {data_type_}, parameters_, std::make_shared<DataTypeArray>(data_type_))
+        , data_type(this->argument_types[0])
+        , max_elems(max_elems_)
+        , seed(seed_)
+    {
+    }
+
+    String getName() const override { return "groupArraySorted"; }
+
+    void create(AggregateDataPtr __restrict place) const override /// NOLINT
+    {
+        [[maybe_unused]] auto a = new (place) Data;
+    }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    {
+        auto & cur_elems = data(place);
+
+        ++cur_elems.total_values;
+
+        if (limit_num_elems && cur_elems.value.size() >= max_elems)
+            return;
+
+        Node * node = Node::allocate(*columns[0], row_num, arena);
+        cur_elems.value.push_back(node, arena);
+    }
+
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    {
+        auto & cur_elems = data(place);
+        auto & rhs_elems = data(rhs);
+
+        if (rhs_elems.value.empty())
+            return;
+        mergeNoSampler(cur_elems, rhs_elems, arena);
+    }
+
+    void ALWAYS_INLINE mergeNoSampler(Data & cur_elems, const Data & rhs_elems, Arena * arena) const
+    {
+        UInt64 new_elems;
+        if (limit_num_elems)
+        {
+            if (cur_elems.value.size() >= max_elems)
+                return;
+            new_elems = std::min(rhs_elems.value.size(), static_cast<size_t>(max_elems) - cur_elems.value.size());
+        }
+        else
+            new_elems = rhs_elems.value.size();
+
+        for (UInt64 i = 0; i < new_elems; ++i)
+            cur_elems.value.push_back(rhs_elems.value[i]->clone(arena), arena);
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    {
+        writeVarUInt(data(place).value.size(), buf);
+
+        auto & value = data(place).value;
+        for (auto & node : value)
+            node->write(buf);
+
+        if constexpr (Trait::last)
+            writeBinaryLittleEndian(data(place).total_values, buf);
+
+        if constexpr (Trait::sampler == Sampler::RNG)
+        {
+            writeBinaryLittleEndian(data(place).total_values, buf);
+            WriteBufferFromOwnString rng_buf;
+            rng_buf << data(place).rng;
+            writeStringBinary(rng_buf.str(), buf);
+        }
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    {
+        UInt64 elems;
+        readVarUInt(elems, buf);
+
+        if (unlikely(elems == 0))
+            return;
+
+        if (unlikely(elems > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE);
+
+        if (limit_num_elems && unlikely(elems > max_elems))
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size, it should not exceed {}", max_elems);
+
+        auto & value = data(place).value;
+
+        value.resize_exact(elems, arena);
+        for (UInt64 i = 0; i < elems; ++i)
+            value[i] = Node::read(buf, arena);
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        auto & column_array = assert_cast<ColumnArray &>(to);
+
+        auto & offsets = column_array.getOffsets();
+        offsets.push_back(offsets.back() + data(place).value.size());
+
+        auto & column_data = column_array.getData();
+
+        if (std::is_same_v<Node, GroupArrayNodeString>)
+        {
+            auto & string_offsets = assert_cast<ColumnString &>(column_data).getOffsets();
+            string_offsets.reserve(string_offsets.size() + data(place).value.size());
+        }
+
+        auto & value = data(place).value;
+        for (auto & node : value)
+            node->insertInto(column_data);
+    }
+
+    bool allocatesMemoryInArena() const override { return true; }
+};
+
+#undef AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE
 
 }
