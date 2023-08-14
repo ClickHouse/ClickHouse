@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesNumberWithOpposite.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -36,7 +37,7 @@ DataTypePtr FieldToDataType<on_error>::operator() (const UInt64 & x) const
     if (x <= std::numeric_limits<UInt8>::max()) return std::make_shared<DataTypeUInt8>();
     if (x <= std::numeric_limits<UInt16>::max()) return std::make_shared<DataTypeUInt16>();
     if (x <= std::numeric_limits<UInt32>::max()) return std::make_shared<DataTypeUInt32>();
-    if (x <= std::numeric_limits<Int64>::max()) return std::make_shared<DataTypeUInt64>(std::make_shared<DataTypeInt64>());
+    if (x <= std::numeric_limits<Int64>::max()) return std::make_shared<DataTypeUInt64WithOpposite>(std::make_shared<DataTypeInt64>());
     return std::make_shared<DataTypeUInt64>();
 }
 
@@ -140,7 +141,7 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Array & x) const
     for (const Field & elem : x)
         element_types.emplace_back(applyVisitor(*this, elem));
 
-    return std::make_shared<DataTypeArray>(getLeastSupertype<on_error>(element_types, true));
+    return std::make_shared<DataTypeArray>(getLeastSupertype<on_error>(element_types));
 }
 
 template <LeastSupertypeOnError on_error>

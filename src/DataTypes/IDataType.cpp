@@ -71,12 +71,6 @@ DataTypePtr IDataType::promoteNumericType() const
     throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_PROMOTED, "Data type {} can't be promoted.", getName());
 }
 
-DataTypePtr IDataType::oppositeSignDataType() const
-{
-    // TODO: Should use ErrorCodes::OPPOSITE_SIGN_DATA_TYPE_NOT_FOUND.
-    throw Exception(702, "Opposite sign data type not found for {}.", getName());
-}
-
 size_t IDataType::getSizeOfValueInMemory() const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Value of type {} in memory is not of fixed size.", getName());

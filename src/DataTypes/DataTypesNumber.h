@@ -1,7 +1,6 @@
 #pragma once
 
 #include <type_traits>
-#include <utility>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -10,21 +9,10 @@
 namespace DB
 {
 
-using DataTypes = std::vector<DataTypePtr>;
-
 template <typename T>
-class DataTypeNumber final : public DataTypeNumberBase<T>
+class DataTypeNumber : public DataTypeNumberBase<T>
 {
 public:
-    DataTypeNumber() = default;
-
-    explicit DataTypeNumber(DataTypePtr opposite_sign_data_type_)
-        : DataTypeNumberBase<T>()
-        , opposite_sign_data_type(std::move(opposite_sign_data_type_))
-        , has_opposite_sign_data_type(true)
-    {
-    }
-
     bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
 
     bool canBeUsedAsVersion() const override { return true; }
@@ -40,23 +28,10 @@ public:
         return std::make_shared<PromotedType>();
     }
 
-    bool hasOppositeSignDataType() const override { return has_opposite_sign_data_type; }
-    DataTypePtr oppositeSignDataType() const override
-    {
-        if (!has_opposite_sign_data_type)
-            IDataType::oppositeSignDataType();
-
-        return opposite_sign_data_type;
-    }
-
     SerializationPtr doGetDefaultSerialization() const override
     {
         return std::make_shared<SerializationNumber<T>>();
     }
-
-private:
-    DataTypePtr opposite_sign_data_type;
-    bool has_opposite_sign_data_type = false;
 };
 
 using DataTypeUInt8 = DataTypeNumber<UInt8>;
