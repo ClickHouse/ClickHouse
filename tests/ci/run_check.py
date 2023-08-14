@@ -147,7 +147,8 @@ def main():
             "failure",
             NotSet,
             f"expect adding docs for {FEATURE_LABEL}",
-            CI_STATUS_NAME,
+            DOCS_NAME,
+            pr_info,
         )
         sys.exit(1)
 
