@@ -915,6 +915,8 @@ public:
 
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 
+    /// --- Caches ------------------------------------------------------------------------------------------
+
     /// Create a cache of uncompressed blocks of specified size. This can be done only once.
     void setUncompressedCache(const String & uncompressed_cache_policy, size_t max_size_in_bytes);
     std::shared_ptr<UncompressedCache> getUncompressedCache() const;
@@ -961,6 +963,8 @@ public:
       * const - because the change in the cache is not considered significant.
       */
     void dropCaches() const;
+
+    /// -----------------------------------------------------------------------------------------------------
 
     /// Settings for MergeTree background tasks stored in config.xml
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
