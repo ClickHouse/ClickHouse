@@ -130,6 +130,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
               "Creating {}.{} from {}", default_database_name, default_table_name, config_prefix);
 
     SystemLogSettings log_settings;
+
     log_settings.queue_settings.database = config.getString(config_prefix + ".database", default_database_name);
     log_settings.queue_settings.table = config.getString(config_prefix + ".table", default_table_name);
 

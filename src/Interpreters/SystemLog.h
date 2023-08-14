@@ -114,7 +114,7 @@ public:
       *   and new table get created - as if previous table was not exist.
       */
     SystemLog(ContextPtr context_,
-              const SystemLogSettings& settings_,
+              const SystemLogSettings & settings_,
               std::shared_ptr<SystemLogQueue<LogElement>> queue_ = nullptr);
 
     /** Append a record into log.
@@ -134,8 +134,6 @@ protected:
     using Base::queue;
 
 private:
-
-
     /* Saving thread data */
     const StorageID table_id;
     const String storage_def;

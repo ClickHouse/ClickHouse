@@ -317,7 +317,7 @@
     <concurrent_threads_soft_limit_ratio_to_cores>0</concurrent_threads_soft_limit_ratio_to_cores>
 
     <!-- Maximum number of concurrent queries. -->
-    <max_concurrent_queries>100</max_concurrent_queries>
+    <max_concurrent_queries>1000</max_concurrent_queries>
 
     <!-- Maximum memory usage (resident set size) for server process.
          Zero value or unset means default. Default is "max_server_memory_usage_to_ram_ratio" of available physical RAM.
