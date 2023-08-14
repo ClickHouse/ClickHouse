@@ -35,6 +35,9 @@ contents:
 - src: clickhouse
   dst: /usr/bin/clickhouse-keeper-client
   type: symlink
+- src: clickhouse
+  dst: /usr/bin/clickhouse-keeper-converter
+  type: symlink
 # docs
 - src: ../AUTHORS
   dst: /usr/share/doc/clickhouse-keeper/AUTHORS
