@@ -8,7 +8,7 @@
   * See also: https://gcc.gnu.org/legacy-ml/gcc-help/2017-12/msg00021.html
   */
 #ifdef NDEBUG
-    __attribute__((__weak__)) extern const size_t MMAP_THRESHOLD = 64 * (1ULL << 20);
+    __attribute__((__weak__)) extern const size_t MMAP_THRESHOLD = 128 * (1ULL << 20);
 #else
     /**
       * In debug build, use small mmap threshold to reproduce more memory

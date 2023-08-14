@@ -32,6 +32,9 @@ class PartitionManager:
             {"destination": instance.ip_address, "source_port": 2181, "action": action}
         )
 
+    def dump_rules(self):
+        return _NetworkManager.get().dump_rules()
+
     def restore_instance_zk_connections(self, instance, action="DROP"):
         self._check_instance(instance)
 
@@ -157,6 +160,10 @@ class _NetworkManager:
         cmd.extend(self._iptables_cmd_suffix(**kwargs))
         self._exec_run(cmd, privileged=True)
 
+    def dump_rules(self):
+        cmd = ["iptables", "-L", "DOCKER-USER"]
+        return self._exec_run(cmd, privileged=True)
+
     @staticmethod
     def clean_all_user_iptables_rules():
         for i in range(1000):
@@ -212,10 +219,15 @@ class _NetworkManager:
 
     def __init__(
         self,
-        container_expire_timeout=50,
-        container_exit_timeout=60,
+        container_expire_timeout=600,
+        container_exit_timeout=660,
         docker_api_version=os.environ.get("DOCKER_API_VERSION"),
     ):
+        # container should be alive for at least 15 seconds then the expiration
+        # timeout, this is the protection from the case when the container will
+        # be destroyed just when some test will try to use it.
+        assert container_exit_timeout >= container_expire_timeout + 15
+
         self.container_expire_timeout = container_expire_timeout
         self.container_exit_timeout = container_exit_timeout
 

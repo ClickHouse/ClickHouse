@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -62,6 +63,8 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>()},
         {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>()},
         {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>()},
+        {"column_modification_time",                   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
+
         {"serialization_kind",                         std::make_shared<DataTypeString>()},
         {"subcolumns.names",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"subcolumns.types",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
@@ -235,6 +238,13 @@ void StorageSystemPartsColumns::processNextStorage(
                 columns[res_index++]->insert(column_size.data_uncompressed);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column_size.marks);
+            if (columns_mask[src_index++])
+            {
+                if (auto column_modification_time = part->getColumnModificationTime(column.name))
+                    columns[res_index++]->insert(UInt64(column_modification_time.value()));
+                else
+                    columns[res_index++]->insertDefault();
+            }
 
             auto serialization = part->getSerialization(column.name);
             if (columns_mask[src_index++])

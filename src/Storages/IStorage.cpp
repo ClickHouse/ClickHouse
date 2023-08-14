@@ -71,20 +71,29 @@ TableLockHolder IStorage::tryLockForShare(const String & query_id, const std::ch
     return result;
 }
 
-IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds & acquire_timeout)
+std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const std::chrono::milliseconds & acquire_timeout)
 {
     AlterLockHolder lock{alter_lock, std::defer_lock};
 
     if (!lock.try_lock_for(acquire_timeout))
-        throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
-                        "Locking attempt for ALTER on \"{}\" has timed out! ({} ms) "
-                        "Possible deadlock avoided. Client should retry.",
-                        getStorageID().getFullTableName(), acquire_timeout.count());
+        return {};
 
     if (is_dropped || is_detached)
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
 
     return lock;
+}
+
+IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds & acquire_timeout)
+{
+
+    if (auto lock = tryLockForAlter(acquire_timeout); lock == std::nullopt)
+        throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
+                        "Locking attempt for ALTER on \"{}\" has timed out! ({} ms) "
+                        "Possible deadlock avoided. Client should retry.",
+                        getStorageID().getFullTableName(), acquire_timeout.count());
+    else
+        return std::move(*lock);
 }
 
 

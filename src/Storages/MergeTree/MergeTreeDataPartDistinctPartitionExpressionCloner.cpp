@@ -11,13 +11,13 @@ MergeTreeDataPartDistinctPartitionExpressionCloner::MergeTreeDataPartDistinctPar
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreePartInfo & dst_part_info_,
     const String & tmp_part_prefix_,
-    const MergeTreeTransactionPtr & txn_,
     const MergeTreePartition & new_partition_,
     const IMergeTreeDataPart::MinMaxIndex & new_min_max_index_,
-    bool sync_new_files_
+    bool sync_new_files_,
+    const IDataPartStorage::ClonePartParams & params_
 )
 : MergeTreeDataPartCloner(merge_tree_data_, src_part_, metadata_snapshot_,
-                          dst_part_info_, tmp_part_prefix_, txn_, false, {}, false, {}),
+                          dst_part_info_, tmp_part_prefix_, false, params_),
     new_partition(new_partition_), new_min_max_index(new_min_max_index_), sync_new_files(sync_new_files_)
 {}
 

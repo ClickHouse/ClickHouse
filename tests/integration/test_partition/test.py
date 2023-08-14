@@ -38,7 +38,7 @@ def partition_table_simple(started_cluster):
     q(
         "CREATE TABLE test.partition_simple (date MATERIALIZED toDate(0), x UInt64, sample_key MATERIALIZED intHash64(x)) "
         "ENGINE=MergeTree PARTITION BY date SAMPLE BY sample_key ORDER BY (date,x,sample_key) "
-        "SETTINGS index_granularity=8192, index_granularity_bytes=0, compress_marks=false, compress_primary_key=false"
+        "SETTINGS index_granularity=8192, index_granularity_bytes=0, compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1"
     )
     q("INSERT INTO test.partition_simple ( x ) VALUES ( now() )")
     q("INSERT INTO test.partition_simple ( x ) VALUES ( now()+1 )")
@@ -150,7 +150,7 @@ def partition_table_complex(started_cluster):
     q("DROP TABLE IF EXISTS test.partition_complex")
     q(
         "CREATE TABLE test.partition_complex (p Date, k Int8, v1 Int8 MATERIALIZED k + 1) "
-        "ENGINE = MergeTree PARTITION BY p ORDER BY k SETTINGS index_granularity=1, index_granularity_bytes=0, compress_marks=false, compress_primary_key=false"
+        "ENGINE = MergeTree PARTITION BY p ORDER BY k SETTINGS index_granularity=1, index_granularity_bytes=0, compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1"
     )
     q("INSERT INTO test.partition_complex (p, k) VALUES(toDate(31), 1)")
     q("INSERT INTO test.partition_complex (p, k) VALUES(toDate(1), 2)")
@@ -188,7 +188,7 @@ def test_partition_complex(partition_table_complex):
 def cannot_attach_active_part_table(started_cluster):
     q("DROP TABLE IF EXISTS test.attach_active")
     q(
-        "CREATE TABLE test.attach_active (n UInt64) ENGINE = MergeTree() PARTITION BY intDiv(n, 4) ORDER BY n SETTINGS compress_marks=false, compress_primary_key=false"
+        "CREATE TABLE test.attach_active (n UInt64) ENGINE = MergeTree() PARTITION BY intDiv(n, 4) ORDER BY n SETTINGS compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1"
     )
     q("INSERT INTO test.attach_active SELECT number FROM system.numbers LIMIT 16")
 
@@ -217,7 +217,7 @@ def attach_check_all_parts_table(started_cluster):
     q("DROP TABLE IF EXISTS test.attach_partition")
     q(
         "CREATE TABLE test.attach_partition (n UInt64) ENGINE = MergeTree() PARTITION BY intDiv(n, 8) ORDER BY n "
-        "SETTINGS compress_marks=false, compress_primary_key=false, old_parts_lifetime=0"
+        "SETTINGS compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1, old_parts_lifetime=0"
     )
     q(
         "INSERT INTO test.attach_partition SELECT number FROM system.numbers WHERE number % 2 = 0 LIMIT 8"
@@ -299,7 +299,7 @@ def drop_detached_parts_table(started_cluster):
     q("SYSTEM STOP MERGES")
     q("DROP TABLE IF EXISTS test.drop_detached")
     q(
-        "CREATE TABLE test.drop_detached (n UInt64) ENGINE = MergeTree() PARTITION BY intDiv(n, 8) ORDER BY n SETTINGS compress_marks=false, compress_primary_key=false"
+        "CREATE TABLE test.drop_detached (n UInt64) ENGINE = MergeTree() PARTITION BY intDiv(n, 8) ORDER BY n SETTINGS compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1"
     )
     q(
         "INSERT INTO test.drop_detached SELECT number FROM system.numbers WHERE number % 2 = 0 LIMIT 8"
@@ -370,13 +370,13 @@ def test_drop_detached_parts(drop_detached_parts_table):
 
 def test_system_detached_parts(drop_detached_parts_table):
     q(
-        "create table sdp_0 (n int, x int) engine=MergeTree order by n SETTINGS compress_marks=false, compress_primary_key=false"
+        "create table sdp_0 (n int, x int) engine=MergeTree order by n SETTINGS compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1"
     )
     q(
-        "create table sdp_1 (n int, x int) engine=MergeTree order by n partition by x SETTINGS compress_marks=false, compress_primary_key=false"
+        "create table sdp_1 (n int, x int) engine=MergeTree order by n partition by x SETTINGS compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1"
     )
     q(
-        "create table sdp_2 (n int, x String) engine=MergeTree order by n partition by x SETTINGS compress_marks=false, compress_primary_key=false"
+        "create table sdp_2 (n int, x String) engine=MergeTree order by n partition by x SETTINGS compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1"
     )
     q(
         "create table sdp_3 (n int, x Enum('broken' = 0, 'all' = 1)) engine=MergeTree order by n partition by x"
@@ -497,7 +497,7 @@ def test_system_detached_parts(drop_detached_parts_table):
 def test_detached_part_dir_exists(started_cluster):
     q(
         "create table detached_part_dir_exists (n int) engine=MergeTree order by n "
-        "SETTINGS compress_marks=false, compress_primary_key=false, old_parts_lifetime=0"
+        "SETTINGS compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1, old_parts_lifetime=0"
     )
     q("insert into detached_part_dir_exists select 1")  # will create all_1_1_0
     q(
@@ -549,7 +549,7 @@ def test_detached_part_dir_exists(started_cluster):
 
 def test_make_clone_in_detached(started_cluster):
     q(
-        "create table clone_in_detached (n int, m String) engine=ReplicatedMergeTree('/clone_in_detached', '1') order by n SETTINGS compress_marks=false, compress_primary_key=false"
+        "create table clone_in_detached (n int, m String) engine=ReplicatedMergeTree('/clone_in_detached', '1') order by n SETTINGS compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1"
     )
 
     path = path_to_data + "data/default/clone_in_detached/"

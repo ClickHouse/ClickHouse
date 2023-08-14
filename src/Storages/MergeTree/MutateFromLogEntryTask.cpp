@@ -154,8 +154,12 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
             if (!zero_copy_lock || !zero_copy_lock->isLocked())
             {
+                LOG_DEBUG(
+                    log,
+                    "Mutation of part {} started by some other replica, will wait for it and mutated merged part. Number of tries {}",
+                    entry.new_part_name,
+                    entry.num_tries);
                 storage.watchZeroCopyLock(entry.new_part_name, disk);
-                LOG_DEBUG(log, "Mutation of part {} started by some other replica, will wait it and mutated merged part", entry.new_part_name);
 
                 return PrepareResult{
                     .prepared_successfully = false,
@@ -191,7 +195,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     task_context = Context::createCopy(storage.getContext());
     task_context->makeQueryContext();
-    task_context->setCurrentQueryId("");
+    task_context->setCurrentQueryId(getQueryId());
 
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
@@ -267,7 +271,7 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
     /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
          * This is not a problem, because in this case the entry will remain in the queue, and we will try again.
          */
-    storage.merge_selecting_task->schedule();
+    finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMutations);
     write_part_log({});
 

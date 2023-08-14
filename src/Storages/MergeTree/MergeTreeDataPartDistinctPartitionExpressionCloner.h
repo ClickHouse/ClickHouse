@@ -23,10 +23,10 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreePartInfo & dst_part_info,
         const String & tmp_part_prefix,
-        const MergeTreeTransactionPtr & txn,
         const MergeTreePartition & new_partition,
         const IMergeTreeDataPart::MinMaxIndex & new_min_max_index,
-        bool sync_new_files
+        bool sync_new_files,
+        const IDataPartStorage::ClonePartParams & params
     );
 
 private:

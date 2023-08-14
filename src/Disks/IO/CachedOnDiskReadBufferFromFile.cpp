@@ -74,19 +74,22 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
 }
 
 void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
-    const FileSegment::Range & file_segment_range, CachedOnDiskReadBufferFromFile::ReadType type)
+    const FileSegment & file_segment, CachedOnDiskReadBufferFromFile::ReadType type)
 {
     if (!cache_log)
         return;
 
+    const auto range = file_segment.range();
     FilesystemCacheLogElement elem
     {
         .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
         .query_id = query_id,
         .source_file_path = source_file_path,
-        .file_segment_range = { file_segment_range.left, file_segment_range.right },
+        .file_segment_range = { range.left, range.right },
         .requested_range = { first_offset, read_until_position },
-        .file_segment_size = file_segment_range.size(),
+        .file_segment_key = file_segment.key().toString(),
+        .file_segment_offset = file_segment.offset(),
+        .file_segment_size = range.size(),
         .read_from_cache_attempted = true,
         .read_buffer_id = current_buffer_id,
         .profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(
@@ -108,7 +111,7 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
             break;
     }
 
-    cache_log->add(elem);
+    cache_log->add(std::move(elem));
 }
 
 void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
@@ -157,7 +160,7 @@ CachedOnDiskReadBufferFromFile::getCacheReadBuffer(const FileSegment & file_segm
     if (use_external_buffer)
         local_read_settings.local_fs_buffer_size = 0;
 
-    auto buf = createReadBufferFromFileBase(path, local_read_settings);
+    auto buf = createReadBufferFromFileBase(path, local_read_settings, std::nullopt, std::nullopt, file_segment.getFlagsForLocalRead());
 
     if (getFileSizeFromReadBuffer(*buf) == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {}", path);
@@ -495,7 +498,7 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
     auto completed_range = current_file_segment->range();
 
     if (cache_log)
-        appendFilesystemCacheLog(completed_range, read_type);
+        appendFilesystemCacheLog(*current_file_segment, read_type);
 
     chassert(file_offset_of_buffer_end > completed_range.right);
 
@@ -518,7 +521,7 @@ CachedOnDiskReadBufferFromFile::~CachedOnDiskReadBufferFromFile()
 {
     if (cache_log && file_segments && !file_segments->empty())
     {
-        appendFilesystemCacheLog(file_segments->front().range(), read_type);
+        appendFilesystemCacheLog(file_segments->front(), read_type);
     }
 }
 
@@ -1086,6 +1089,10 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         read_until_position,
         first_offset,
         file_segments->toString());
+
+    /// Release buffer a little bit earlier.
+    if (read_until_position == file_offset_of_buffer_end)
+        implementation_buffer.reset();
 
     return result;
 }

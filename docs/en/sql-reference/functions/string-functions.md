@@ -90,6 +90,8 @@ Returns the length of a string in bytes (not: in characters or Unicode code poin
 
 The function also works for arrays.
 
+Alias: `OCTET_LENGTH`
+
 ## lengthUTF8
 
 Returns the length of a string in Unicode code points (not: in bytes or characters). It assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
@@ -573,6 +575,42 @@ Alias:
 
 Like `substring` but for Unicode code points. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
+
+## substringIndex(s, delim, count)
+
+Returns the substring of `s` before `count` occurrences of the delimiter `delim`, as in Spark or MySQL.
+
+**Syntax**
+
+```sql
+substringIndex(s, delim, count)
+```
+Alias: `SUBSTRING_INDEX`
+
+
+**Arguments**
+
+- s: The string to extract substring from. [String](../../sql-reference/data-types/string.md).
+- delim: The character to split. [String](../../sql-reference/data-types/string.md).
+- count: The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned. [UInt or Int](../data-types/int-uint.md)
+
+**Example**
+
+``` sql
+SELECT substringIndex('www.clickhouse.com', '.', 2)
+```
+
+Result:
+```
+┌─substringIndex('www.clickhouse.com', '.', 2)─┐
+│ www.clickhouse                               │
+└──────────────────────────────────────────────┘
+```
+
+## substringIndexUTF8(s, delim, count)
+
+Like `substringIndex` but for Unicode code points. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
 ## appendTrailingCharIfAbsent
 
 Appends character `c` to string `s` if `s` is non-empty and does not end with character `c`.
@@ -691,6 +729,30 @@ Returns whether string `str` ends with `suffix`.
 endsWith(str, suffix)
 ```
 
+## endsWithUTF8
+
+Returns whether string `str` ends with `suffix`, the difference between `endsWithUTF8` and `endsWith` is that `endsWithUTF8` match `str` and `suffix` by UTF-8 characters.
+
+**Syntax**
+
+```sql
+endsWithUTF8(str, suffix)
+```
+
+**Example**
+
+``` sql
+SELECT endsWithUTF8('中国', '\xbd'), endsWith('中国', '\xbd')
+```
+
+Result:
+
+```result
+┌─endsWithUTF8('中国', '½')─┬─endsWith('中国', '½')─┐
+│                        0 │                    1 │
+└──────────────────────────┴──────────────────────┘
+```
+
 ## startsWith
 
 Returns whether string `str` starts with `prefix`.
@@ -705,6 +767,25 @@ startsWith(str, prefix)
 
 ``` sql
 SELECT startsWith('Spider-Man', 'Spi');
+```
+
+## startsWithUTF8
+
+Returns whether string `str` starts with `prefix`, the difference between `startsWithUTF8` and `startsWith` is that `startsWithUTF8` match `str` and `suffix` by UTF-8 characters.
+
+
+**Example**
+
+``` sql
+SELECT startsWithUTF8('中国', '\xe4'), startsWith('中国', '\xe4')
+```
+
+Result:
+
+```result
+┌─startsWithUTF8('中国', '⥩─┬─startsWith('中国', '⥩─┐
+│                          0 │                      1 │
+└────────────────────────────┴────────────────────────┘
 ```
 
 ## trim
@@ -1252,4 +1333,49 @@ Result:
 ┌─soundex('aksel')─┐
 │ A240             │
 └──────────────────┘
+```
+
+## initcap
+
+Convert the first letter of each word to upper case and the rest to lower case. Words are sequences of alphanumeric characters separated by non-alphanumeric characters.
+
+## initcapUTF8
+
+Like [initcap](#initcap), assuming that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+Does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
+
+If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
+
+## firstLine
+
+Returns the first line from a multi-line string.
+
+**Syntax**
+
+```sql
+firstLine(val)
+```
+
+**Arguments**
+
+- `val` - Input value. [String](../data-types/string.md)
+
+**Returned value**
+
+- The first line of the input value or the whole value if there is no line
+  separators. [String](../data-types/string.md)
+
+**Example**
+
+```sql
+select firstLine('foo\nbar\nbaz');
+```
+
+Result:
+
+```result
+┌─firstLine('foo\nbar\nbaz')─┐
+│ foo                        │
+└────────────────────────────┘
 ```

@@ -16,18 +16,12 @@ MergeTreeDataPartCloner::MergeTreeDataPartCloner(
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreePartInfo & dst_part_info_,
     const String & tmp_part_prefix_,
-    const MergeTreeTransactionPtr & txn_,
     bool require_part_metadata_,
-    MergeTreeData::HardlinkedFiles * hardlinked_files_,
-    bool copy_instead_of_hardlink_,
-    const NameSet & files_to_copy_instead_of_hardlinks_
+    const IDataPartStorage::ClonePartParams & params_
 )
 : merge_tree_data(merge_tree_data_), src_part(src_part_), metadata_snapshot(metadata_snapshot_),
-    dst_part_info(dst_part_info_), tmp_part_prefix(tmp_part_prefix_),
-    txn(txn_), require_part_metadata(require_part_metadata_),
-    hardlinked_files(hardlinked_files_), copy_instead_of_hardlink(copy_instead_of_hardlink_),
-    files_to_copy_instead_of_hardlinks(files_to_copy_instead_of_hardlinks_),
-    log(&Poco::Logger::get("MergeTreeDataPartCloner"))
+    dst_part_info(dst_part_info_), tmp_part_prefix(tmp_part_prefix_), require_part_metadata(require_part_metadata_),
+    params(params_), log(&Poco::Logger::get("MergeTreeDataPartCloner"))
 {}
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeDataPartCloner::clone()
@@ -40,7 +34,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeDataPartClone
 
     auto [destination_part, temporary_directory_lock] = cloneSourcePart();
 
-    if (!copy_instead_of_hardlink && hardlinked_files)
+    if (!params.copy_instead_of_hardlink && params.hardlinked_files)
     {
         // think of a name for this method
         handleHardLinkedParameterFiles();
@@ -103,10 +97,8 @@ std::shared_ptr<IDataPartStorage> MergeTreeDataPartCloner::hardlinkAllFiles(
     return storage->freeze(
             merge_tree_data->getRelativeDataPath(),
             path,
-            false /* make_source_readonly */,
-            {},
-            false /* copy_instead_of_hardlinks */,
-            files_to_copy_instead_of_hardlinks
+            /*save_metadata_callback=*/ {},
+            params
     );
 }
 
@@ -143,12 +135,14 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeDataPartClone
 
 void MergeTreeDataPartCloner::handleHardLinkedParameterFiles() const
 {
+    const auto & hardlinked_files = params.hardlinked_files;
+
     hardlinked_files->source_part_name = src_part->name;
     hardlinked_files->source_table_shared_id = src_part->storage.getTableSharedID();
 
     for (auto it = src_part->getDataPartStorage().iterate(); it->isValid(); it->next())
     {
-        if (!files_to_copy_instead_of_hardlinks.contains(it->name())
+        if (!params.files_to_copy_instead_of_hardlinks.contains(it->name())
             && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED
             && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
         {
@@ -160,7 +154,7 @@ void MergeTreeDataPartCloner::handleHardLinkedParameterFiles() const
 MergeTreeDataPartCloner::MutableDataPartPtr MergeTreeDataPartCloner::finalizePart(const MutableDataPartPtr & dst_part) const
 {
     /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
-    TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
+    TransactionID tid = params.txn ? params.txn->tid : Tx::PrehistoricTID;
     dst_part->version.setCreationTID(tid, nullptr);
     dst_part->storeVersionMetadata();
 
@@ -182,11 +176,11 @@ void MergeTreeDataPartCloner::handleProjections() const
         for (auto it = projection_storage.iterate(); it->isValid(); it->next())
         {
             auto file_name_with_projection_prefix = fs::path(projection_storage.getPartDirectory()) / it->name();
-            if (!files_to_copy_instead_of_hardlinks.contains(file_name_with_projection_prefix)
+            if (!params.files_to_copy_instead_of_hardlinks.contains(file_name_with_projection_prefix)
                 && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED
                 && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
             {
-                hardlinked_files->hardlinks_from_source_part.insert(file_name_with_projection_prefix);
+                params.hardlinked_files->hardlinks_from_source_part.insert(file_name_with_projection_prefix);
             }
         }
     }

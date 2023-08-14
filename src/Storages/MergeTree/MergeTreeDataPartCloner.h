@@ -22,11 +22,8 @@ namespace DB
             const StorageMetadataPtr & metadata_snapshot,
             const MergeTreePartInfo & dst_part_info,
             const String & tmp_part_prefix,
-            const MergeTreeTransactionPtr & txn,
             bool require_part_metadata,
-            MergeTreeData::HardlinkedFiles * hardlinked_files,
-            bool copy_instead_of_hardlink,
-            const NameSet & files_to_copy_instead_of_hardlinks
+            const IDataPartStorage::ClonePartParams & params
         );
 
         virtual ~MergeTreeDataPartCloner() = default;
@@ -43,11 +40,8 @@ namespace DB
     private:
         const MergeTreePartInfo & dst_part_info;
         const String & tmp_part_prefix;
-        const MergeTreeTransactionPtr & txn;
         bool require_part_metadata;
-        MergeTreeData::HardlinkedFiles * hardlinked_files;
-        bool copy_instead_of_hardlink;
-        NameSet files_to_copy_instead_of_hardlinks;
+        const IDataPartStorage::ClonePartParams & params;
         std::atomic<Poco::Logger *> log;
 
         /// Check that the storage policy contains the disk where the src_part is located.
