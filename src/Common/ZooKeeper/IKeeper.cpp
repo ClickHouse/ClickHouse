@@ -21,29 +21,33 @@ namespace ProfileEvents
 namespace Coordination
 {
 
-Exception::Exception(const std::string & msg, const Error code_, int)
-    : DB::Exception(msg, DB::ErrorCodes::KEEPER_EXCEPTION), code(code_)
+void Exception::incrementErrorMetrics(const Error code_)
 {
-    if (Coordination::isUserError(code))
+    if (Coordination::isUserError(code_))
         ProfileEvents::increment(ProfileEvents::ZooKeeperUserExceptions);
-    else if (Coordination::isHardwareError(code))
+    else if (Coordination::isHardwareError(code_))
         ProfileEvents::increment(ProfileEvents::ZooKeeperHardwareExceptions);
     else
         ProfileEvents::increment(ProfileEvents::ZooKeeperOtherExceptions);
 }
 
-Exception::Exception(const std::string & msg, const Error code_)
-    : Exception(msg + " (" + errorMessage(code_) + ")", code_, 0)
+Exception::Exception(const std::string & msg, const Error code_, int)
+    : DB::Exception(msg, DB::ErrorCodes::KEEPER_EXCEPTION)
+    , code(code_)
 {
+    incrementErrorMetrics(code);
+}
+
+Exception::Exception(PreformattedMessage && msg, const Error code_)
+    : DB::Exception(std::move(msg), DB::ErrorCodes::KEEPER_EXCEPTION)
+    , code(code_)
+{
+    extendedMessage(errorMessage(code));
+    incrementErrorMetrics(code);
 }
 
 Exception::Exception(const Error code_)
-    : Exception(errorMessage(code_), code_, 0)
-{
-}
-
-Exception::Exception(const Error code_, const std::string & path)
-    : Exception(std::string{errorMessage(code_)} + ", path: " + path, code_, 0)
+    : Exception(code_, "Coordination error: {}", errorMessage(code_))
 {
 }
 
@@ -56,10 +60,10 @@ using namespace DB;
 static void addRootPath(String & path, const String & root_path)
 {
     if (path.empty())
-        throw Exception("Path cannot be empty", Error::ZBADARGUMENTS);
+        throw Exception::fromMessage(Error::ZBADARGUMENTS, "Path cannot be empty");
 
     if (path[0] != '/')
-        throw Exception("Path must begin with /, got path '" + path + "'", Error::ZBADARGUMENTS);
+        throw Exception(Error::ZBADARGUMENTS, "Path must begin with /, got path '{}'", path);
 
     if (root_path.empty())
         return;
@@ -76,7 +80,7 @@ static void removeRootPath(String & path, const String & root_path)
         return;
 
     if (path.size() <= root_path.size())
-        throw Exception("Received path is not longer than root_path", Error::ZDATAINCONSISTENCY);
+        throw Exception::fromMessage(Error::ZDATAINCONSISTENCY, "Received path is not longer than root_path");
 
     path = path.substr(root_path.size());
 }
