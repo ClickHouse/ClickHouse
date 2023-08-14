@@ -131,7 +131,7 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
 
     if (password && !settings.show_secrets)
     {
-        prefix = "";
+        prefix += " `[HIDDEN]'";
         password = false;
         salt = false;
         if (type)
