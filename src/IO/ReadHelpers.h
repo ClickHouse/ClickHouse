@@ -1130,10 +1130,7 @@ inline void readBinary(StackTrace::FramePointers & x, ReadBuffer & buf) { readPO
 template <std::endian endian, typename T>
 inline void readBinaryEndian(T & x, ReadBuffer & buf)
 {
-    if constexpr (std::is_same_v<T, UUID>)
-        readBinary(x, buf);
-    else
-        readPODBinary(x, buf);
+    readBinary(x, buf);
     transformEndianness<endian>(x);
 }
 

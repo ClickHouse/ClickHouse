@@ -162,7 +162,7 @@ uuid.toUnderType().items[1]
 
 //  uint64_t as HEX
 // [61 F0 C4 04 5C B3 11 E7] [90 7B A6 00 6A D3 DB A0]
-//       
+//                            ^^^^^^^^^^^^^^^^^^^^^^^
 ```
 
 :::warning
