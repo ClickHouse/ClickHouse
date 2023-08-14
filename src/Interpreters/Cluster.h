@@ -273,6 +273,8 @@ public:
     /// Are distributed DDL Queries (ON CLUSTER Clause) allowed for this cluster
     bool areDistributedDDLQueriesAllowed() const { return allow_distributed_ddl_queries; }
 
+    String getName() const { return name; }
+
 private:
     SlotToShard slot_to_shard;
 

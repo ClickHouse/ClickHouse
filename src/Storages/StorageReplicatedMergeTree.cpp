@@ -5153,7 +5153,18 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
 {
     auto table_id = getStorageID();
 
-    auto parallel_replicas_cluster = local_context->getCluster(local_context->getSettingsRef().cluster_for_parallel_replicas);
+    auto scalars = local_context->hasQueryContext() ? local_context->getQueryContext()->getScalars() : Scalars{};
+    String cluster_for_parallel_replicas = local_context->getSettingsRef().cluster_for_parallel_replicas;
+    {
+        auto it = scalars.find("_cluster_for_parallel_replicas");
+        if (it != scalars.end())
+        {
+            const Block & block = it->second;
+            cluster_for_parallel_replicas = block.getColumns()[0]->getDataAt(0).toString();
+        }
+    }
+    LOG_DEBUG(&Poco::Logger::get(__FUNCTION__), "_cluster_for_parallel_replicas: {}", cluster_for_parallel_replicas);
+    auto parallel_replicas_cluster = local_context->getCluster(cluster_for_parallel_replicas);
 
     ASTPtr modified_query_ast;
     Block header;

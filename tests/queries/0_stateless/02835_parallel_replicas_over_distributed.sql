@@ -14,13 +14,13 @@ insert into test select *, today() from numbers(100);
 
 SELECT count(), min(id), max(id), avg(id)
 FROM test_d
-SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 3, prefer_localhost_replica = 0, parallel_replicas_for_non_replicated_merge_tree=1, use_hedged_requests=0, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 3, prefer_localhost_replica = 0, parallel_replicas_for_non_replicated_merge_tree=1, use_hedged_requests=0; --, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 
 insert into test select *, today() from numbers(100);
 
 SELECT count(), min(id), max(id), avg(id)
 FROM test_d
-SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 3, prefer_localhost_replica = 0, parallel_replicas_for_non_replicated_merge_tree=1, use_hedged_requests=0, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 3, prefer_localhost_replica = 0, parallel_replicas_for_non_replicated_merge_tree=1, use_hedged_requests=0; --, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 
 -- 2 shards
 
@@ -38,10 +38,10 @@ insert into test2 select *, today() from numbers(100);
 
 SELECT count(), min(id), max(id), avg(id)
 FROM test2_d
-SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 3, prefer_localhost_replica = 0, parallel_replicas_for_non_replicated_merge_tree=1, use_hedged_requests=0, cluster_for_parallel_replicas = 'test_cluster_two_shard_three_replicas_localhost';
+SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 3, prefer_localhost_replica = 0, parallel_replicas_for_non_replicated_merge_tree=1, use_hedged_requests=0; --, cluster_for_parallel_replicas = 'test_cluster_two_shard_three_replicas_localhost';
 
 insert into test2 select *, today() from numbers(100);
 
 SELECT count(), min(id), max(id), avg(id)
 FROM test2_d
-SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 3, prefer_localhost_replica = 0, parallel_replicas_for_non_replicated_merge_tree=1, use_hedged_requests=0, cluster_for_parallel_replicas = 'test_cluster_two_shard_three_replicas_localhost';
+SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 3, prefer_localhost_replica = 0, parallel_replicas_for_non_replicated_merge_tree=1, use_hedged_requests=0; --, cluster_for_parallel_replicas = 'test_cluster_two_shard_three_replicas_localhost';

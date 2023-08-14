@@ -234,7 +234,8 @@ void executeQuery(
             std::move(external_tables),
             log,
             shards,
-            query_info.storage_limits);
+            query_info.storage_limits,
+            query_info.getCluster()->getName());
 
         read_from_remote->setStepDescription("Read from remote replica");
         plan->addStep(std::move(read_from_remote));
@@ -266,14 +267,16 @@ void executeQueryWithParallelReplicas(
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
     SelectStreamFactory & stream_factory,
-    const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info,
+    const ASTPtr & query_ast,
+    ContextPtr context,
+    const SelectQueryInfo & query_info,
     const ClusterPtr & not_optimized_cluster)
 {
     const auto & settings = context->getSettingsRef();
     auto new_context = Context::createCopy(context);
     auto scalars = new_context->hasQueryContext() ? new_context->getQueryContext()->getScalars() : Scalars{};
 
-    Int64 shard_num = 0; /// shard_num is 1-based, so 0 - no shard specified
+    UInt64 shard_num = 0; /// shard_num is 1-based, so 0 - no shard specified
     auto it = scalars.find("_shard_num");
     if (it != scalars.end())
     {
