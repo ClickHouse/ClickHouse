@@ -189,7 +189,7 @@ ORDER BY id;
 ```
 
 Annoy currently supports two distance functions:
-- `L2Distance`, also called Euclidean distance is the length of a line segment between two points in Euclidean space
+- `L2Distance`, also called Euclidean distance, is the length of a line segment between two points in Euclidean space
   ([Wikipedia](https://en.wikipedia.org/wiki/Euclidean_distance)).
 - `cosineDistance`, also called cosine similarity, is the cosine of the angle between two (non-zero) vectors
   ([Wikipedia](https://en.wikipedia.org/wiki/Cosine_similarity)).
