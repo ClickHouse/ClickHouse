@@ -460,7 +460,6 @@ try
     const auto * log = &Poco::Logger::get("AsynchronousInsertQueue");
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
     auto insert_context = Context::createCopy(global_context);
-    DB::CurrentThread::QueryScope query_scope_holder(insert_context);
     bool internal = false; // To enable logging this query
     bool async_insert = true;
 
@@ -482,6 +481,9 @@ try
     insert_context->setInitialQueryStartTime(query_start_time);
     insert_context->setCurrentQueryId(insert_query_id);
     insert_context->setInitialQueryId(insert_query_id);
+
+    DB::CurrentThread::QueryScope query_scope_holder(insert_context);
+
     size_t log_queries_cut_to_length = insert_context->getSettingsRef().log_queries_cut_to_length;
     String query_for_logging = insert_query.hasSecretParts()
         ? insert_query.formatForLogging(log_queries_cut_to_length)
