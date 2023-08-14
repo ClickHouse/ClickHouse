@@ -220,7 +220,18 @@ void StorageMergeTree::read(
             local_context, query_info.query,
             table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
 
-        auto cluster = local_context->getCluster(local_context->getSettingsRef().cluster_for_parallel_replicas);
+        auto scalars = local_context->hasQueryContext() ? local_context->getQueryContext()->getScalars() : Scalars{};
+        String cluster_for_parallel_replicas = local_context->getSettingsRef().cluster_for_parallel_replicas;
+        {
+            auto it = scalars.find("_cluster_for_parallel_replicas");
+            if (it != scalars.end())
+            {
+                const Block & block = it->second;
+                cluster_for_parallel_replicas = block.getColumns()[0]->getDataAt(0).toString();
+            }
+        }
+        LOG_DEBUG(&Poco::Logger::get("StorageMergeTree::read"), "_cluster_for_parallel_replicas: {}", cluster_for_parallel_replicas);
+        auto cluster = local_context->getCluster(cluster_for_parallel_replicas);
 
         Block header;
 
