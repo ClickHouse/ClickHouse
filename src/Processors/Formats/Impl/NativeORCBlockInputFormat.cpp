@@ -195,15 +195,12 @@ void ORCBlockInputFormat::prepareFileReader()
 
     orc_column_to_ch_column = std::make_unique<ORCColumnToCHColumn>(
         getPort().getHeader(),
-        format_settings.orc.import_nested,
         format_settings.orc.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.orc.case_insensitive_column_matching);
 
     const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
-    std::unordered_set<String> nested_table_names;
-    if (format_settings.orc.import_nested)
-        nested_table_names = Nested::getAllTableNames(getPort().getHeader(), ignore_case);
+    std::unordered_set<String> nested_table_names = Nested::getAllTableNames(getPort().getHeader(), ignore_case);
 
     for (size_t i = 0; i < schema.columns(); ++i)
     {
@@ -314,9 +311,8 @@ NamesAndTypesList ORCSchemaReader::readSchema()
 
 
 ORCColumnToCHColumn::ORCColumnToCHColumn(
-    const Block & header_, bool import_nested_, bool allow_missing_columns_, bool null_as_default_, bool case_insensitive_matching_)
+    const Block & header_, bool allow_missing_columns_, bool null_as_default_, bool case_insensitive_matching_)
     : header(header_)
-    , import_nested(import_nested_)
     , allow_missing_columns(allow_missing_columns_)
     , null_as_default(null_as_default_)
     , case_insensitive_matching(case_insensitive_matching_)
@@ -396,7 +392,7 @@ readColumnWithNumericData(const orc::ColumnVectorBatch * orc_column, const orc::
     auto & column_data = static_cast<VectorType &>(*internal_column).getData();
     column_data.reserve(orc_column->numElements);
 
-    const auto * orc_int_column = typeid_cast<const BatchType *>(orc_column);
+    const auto * orc_int_column = dynamic_cast<const BatchType *>(orc_column);
     column_data.insert_assume_reserved(orc_int_column->data.data(), orc_int_column->data.data() + orc_int_column->numElements);
 
     return {std::move(internal_column), std::move(internal_type), column_name};
@@ -412,7 +408,7 @@ readColumnWithNumericDataCast(const orc::ColumnVectorBatch * orc_column, const o
     auto & column_data = static_cast<VectorType &>(*internal_column).getData();
     column_data.reserve(orc_column->numElements);
 
-    const auto * orc_int_column = typeid_cast<const BatchType *>(orc_column);
+    const auto * orc_int_column = dynamic_cast<const BatchType *>(orc_column);
     for (size_t i = 0; i < orc_int_column->numElements; ++i)
         column_data.push_back(static_cast<NumericType>(orc_int_column->data[i]));
 
@@ -488,7 +484,7 @@ static ColumnWithTypeAndName readColumnWithDecimalDataCast(
     auto & column_data = static_cast<VectorType &>(*internal_column).getData();
     column_data.reserve(orc_column->numElements);
 
-    const auto * orc_decimal_column = typeid_cast<const BatchType *>(orc_column);
+    auto * orc_decimal_column = const_cast<BatchType *>(dynamic_cast<const BatchType *>(orc_column));
     for (size_t i = 0; i < orc_decimal_column->numElements; ++i)
     {
         DecimalType decimal_value;
@@ -946,47 +942,44 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
             bool read_from_nested = false;
 
             /// Check if it's a column from nested table.
-            if (import_nested)
+            String nested_table_name = Nested::extractTableName(header_column.name);
+            String search_nested_table_name = nested_table_name;
+            if (case_insensitive_matching)
+                boost::to_lower(search_nested_table_name);
+            if (name_to_column_ptr.contains(search_nested_table_name))
             {
-                String nested_table_name = Nested::extractTableName(header_column.name);
-                String search_nested_table_name = nested_table_name;
-                if (case_insensitive_matching)
-                    boost::to_lower(search_nested_table_name);
-                if (name_to_column_ptr.contains(search_nested_table_name))
+                if (!nested_tables.contains(search_nested_table_name))
                 {
-                    if (!nested_tables.contains(search_nested_table_name))
+                    NamesAndTypesList nested_columns;
+                    for (const auto & name_and_type : header.getNamesAndTypesList())
                     {
-                        NamesAndTypesList nested_columns;
-                        for (const auto & name_and_type : header.getNamesAndTypesList())
-                        {
-                            if (name_and_type.name.starts_with(nested_table_name + "."))
-                                nested_columns.push_back(name_and_type);
-                        }
-                        auto nested_table_type = Nested::collect(nested_columns).front().type;
-
-                        auto orc_column_with_type = name_to_column_ptr[search_nested_table_name];
-                        ColumnsWithTypeAndName cols = {readColumnFromORCColumn(
-                            orc_column_with_type.first,
-                            orc_column_with_type.second,
-                            nested_table_name,
-                            false,
-                            true,
-                            false,
-                            skipped,
-                            nested_table_type)};
-                        BlockPtr block_ptr = std::make_shared<Block>(cols);
-                        auto column_extractor = std::make_shared<NestedColumnExtractHelper>(*block_ptr, case_insensitive_matching);
-                        nested_tables[search_nested_table_name] = {block_ptr, column_extractor};
+                        if (name_and_type.name.starts_with(nested_table_name + "."))
+                            nested_columns.push_back(name_and_type);
                     }
+                    auto nested_table_type = Nested::collect(nested_columns).front().type;
 
-                    auto nested_column = nested_tables[search_nested_table_name].second->extractColumn(search_column_name);
-                    if (nested_column)
-                    {
-                        column = *nested_column;
-                        if (case_insensitive_matching)
-                            column.name = header_column.name;
-                        read_from_nested = true;
-                    }
+                    auto orc_column_with_type = name_to_column_ptr[search_nested_table_name];
+                    ColumnsWithTypeAndName cols = {readColumnFromORCColumn(
+                        orc_column_with_type.first,
+                        orc_column_with_type.second,
+                        nested_table_name,
+                        false,
+                        true,
+                        false,
+                        skipped,
+                        nested_table_type)};
+                    BlockPtr block_ptr = std::make_shared<Block>(cols);
+                    auto column_extractor = std::make_shared<NestedColumnExtractHelper>(*block_ptr, case_insensitive_matching);
+                    nested_tables[search_nested_table_name] = {block_ptr, column_extractor};
+                }
+
+                auto nested_column = nested_tables[search_nested_table_name].second->extractColumn(search_column_name);
+                if (nested_column)
+                {
+                    column = *nested_column;
+                    if (case_insensitive_matching)
+                        column.name = header_column.name;
+                    read_from_nested = true;
                 }
             }
 
@@ -1051,7 +1044,6 @@ void registerInputFormatORC(FormatFactory & factory)
         "ORC",
         [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams &, const FormatSettings & settings)
         { return std::make_shared<ORCBlockInputFormat>(buf, sample, settings); });
-    factory.markFormatSupportsSubcolumns("ORC");
     factory.markFormatSupportsSubsetOfColumns("ORC");
 }
 
