@@ -371,6 +371,7 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
     const auto & partition_key_sample = metadata_snapshot->getPartitionKey().sample_block;
     size_t key_size = partition_key_sample.columns();
 
+    // In some cases we create empty parts and value is empty.
     if (value.empty())
     {
         writeCString("tuple()", out);
@@ -384,38 +385,9 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
     {
         const DataTypePtr & type = partition_key_sample.getByPosition(0).type;
         auto column = type->createColumn();
-        // metadata_snapshot->
-        // TODO: here print out the type that causing the segfault.
         const auto & all_column_names = metadata_snapshot->getColumns().getAll();
-        // if (type.get() != nullptr)
-        // {
-        //     LOG_INFO(&Poco::Logger::get("DNSCacheUpdater"), "jianfeih debug type is not nil, name {}.", type->getName());
-        // }
-        // if (value.empty())
-        // {
-            // LOG_INFO(&Poco::Logger::get("DNSCacheUpdater"), "jianfeih debug: find the root cause, value is empty");
-            // writeCString("tuple()", out);
-            // LOG_INFO(
-            //     &Poco::Logger::get("DNSCacheUpdater"),
-            //     "jianfeih debug: type is nil: {}, colum is nil: {}, storage has partition key: {}, column size: {}, "
-            //     "column names: {} ",
-            //     type.get() == nullptr,
-            //     column == nullptr,
-            //     metadata_snapshot->hasPartitionKey(),
-            //     metadata_snapshot->columns.size(),
-            //     all_column_names.toString());
-            // return;
-        // }
-        // else
-        // {
-            // LOG_INFO(&Poco::Logger::get("DNSCacheUpdater"), "jianfeih debug: value[0] to be inserted: {}", value[0]);
-            // should be here causing the segfault. column might be empty. some type created column is not okay.
-            // let's check the table definition; type; parts info at this point.
-            // logging is not right, need to figure out include header properly.
-            column->insert(value[0]);
-            type->getDefaultSerialization()->serializeText(*column, 0, out, format_settings);
-            // LOG_INFO(&Poco::Logger::get("DNSCacheUpdater"), "jianfeih debug: finish the serialization no error.");
-        // }
+        column->insert(value[0]);
+        type->getDefaultSerialization()->serializeText(*column, 0, out, format_settings);
     }
     else
     {
