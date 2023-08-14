@@ -51,6 +51,15 @@ public:
         }
     };
 
+    bool satisfy(const PhysicalProperties & required) const
+    {
+        if (required.distribution.type == DistributionType::Any)
+            return true;
+
+        return *this == required;
+    }
+
+
     Distribution distribution;
 
     SortDescription sort_description;

@@ -18,6 +18,8 @@ class GroupNode
 public:
     GroupNode() = default;
     GroupNode(QueryPlanStepPtr step_) : step(step_) {}
+    GroupNode(QueryPlanStepPtr step_, bool is_enforce_node_) : step(step_), is_enforce_node(is_enforce_node_) {}
+
     GroupNode(QueryPlanStepPtr step_, const std::vector<Group *> & children_) : step(step_), children(children_) {}
 
     void addChild(Group & group)
@@ -45,7 +47,7 @@ public:
         return step;
     }
 
-    void addOutPutProperties(const PhysicalProperties & physical_properties, const std::vector<PhysicalProperties> & best_child_properties)
+    void addLowestCostChildPropertyMap(const PhysicalProperties & physical_properties, const std::vector<PhysicalProperties> & best_child_properties)
     {
         lowest_cost_expressions[physical_properties] = best_child_properties;
     }
@@ -57,6 +59,8 @@ public:
 
 private:
     QueryPlanStepPtr step;
+
+    bool is_enforce_node = false;
 
     std::vector<Group *> children;
 

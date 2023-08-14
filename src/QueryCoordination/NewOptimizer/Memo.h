@@ -26,7 +26,7 @@ public:
 
     void enforce();
 
-    void enforce(Group * group, const PhysicalProperties & required_properties);
+    Float64 enforce(Group * group, const PhysicalProperties & required_properties);
 
     void derivationProperties();
 

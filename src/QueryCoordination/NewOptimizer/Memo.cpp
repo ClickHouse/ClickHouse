@@ -122,87 +122,99 @@ void Memo::enforce()
     enforce(root_group, PhysicalProperties{.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
 }
 
-void Memo::enforce(Group * group, const PhysicalProperties & required_properties)
+Float64 Memo::enforce(Group * group, const PhysicalProperties & required_properties)
 {
     auto group_nodes = group->getGroupNodes();
 
     for (auto & group_node : group_nodes)
     {
-        auto output_prop_required_child_prop = DB::derivationProperties(group_node.getStep());
+        auto output_prop_required_child_prop = DB::derivationProperties(group_node.getStep()); /// TODO cache
 
         for (auto & [output_properties, required_child_prop] : output_prop_required_child_prop)
         {
             /// every alternative prop
-            for (auto & required_child_p : required_child_prop)
+            Float64 min_cost = std::numeric_limits<Float64>::max();
+            size_t min_cost_index = 0;
+            for (size_t i = 0; i < required_child_prop.size(); ++i)
             {
+                Float64 cost = 0;
                 auto & child_groups = group_node.getChildren();
-                for (size_t i = 0; i < group_node.getChildren().size(); ++i)
+                for (size_t j = 0; j < group_node.getChildren().size(); ++j)
                 {
-                    enforce(child_groups[i], required_child_p[i]);
+                    cost += enforce(child_groups[j], required_child_prop[i][j]);
+                }
+                if (cost < min_cost)
+                {
+                    min_cost = cost;
+                    min_cost_index = i;
                 }
             }
 
-            group_node.addOutPutProperties(output_properties, required_child_prop[0]); /// need keep lowest cost
-            group->addProperties(output_properties, &group_node); /// need keep lowest cost
+            /// TODO calc cost for group_node + min_cost(child total cost) = total cost
+            Float64 total_cost = 0.0;
+            group_node.addLowestCostChildPropertyMap(output_properties, required_child_prop.empty() ? std::vector<PhysicalProperties>() : required_child_prop[min_cost_index]); /// need keep lowest cost
+            group->addLowestCostGroupNode(output_properties, &group_node, total_cost); /// need keep lowest cost
 
-            if (required_properties.distribution.type != PhysicalProperties::DistributionType::Any && required_properties != output_properties)
+            if (!output_properties.satisfy(required_properties))
             {
+                std::shared_ptr<ExchangeDataStep> exchange_step;
+
                 switch (required_properties.distribution.type)
                 {
                     case PhysicalProperties::DistributionType::Singleton:
                     {
-                        //  GroupNode group_enforce_node(ExchangeDataStep(Singleton));
-                        GroupNode group_enforce_singleton_node;
-                        group_enforce_singleton_node.addOutPutProperties(required_properties);
-                        group->addGroupNode(group_enforce_singleton_node);
+                        // exchange_step = std::make_shared<ExchangeDataStep>(Singleton);
                     }
                     case PhysicalProperties::DistributionType::Replicated:
                     {
-                        //  GroupNode group_enforce_node(ExchangeDataStep(Singleton));
-                        GroupNode group_enforce_replicated_node;
-                        group_enforce_replicated_node.addOutPutProperties(required_properties);
-                        group->addGroupNode(group_enforce_replicated_node);
+                        // exchange_step = std::make_shared<ExchangeDataStep>(Replicated);
                     }
                     case PhysicalProperties::DistributionType::Hashed:
                     {
-                        //  GroupNode group_enforce_node(ExchangeDataStep(Singleton));
-                        GroupNode group_enforce_hashed_node;
-                        group_enforce_hashed_node.addOutPutProperties(required_properties);
-                        group->addGroupNode(group_enforce_hashed_node);
+                        // exchange_step = std::make_shared<ExchangeDataStep>(Hashed);
                     }
                     default:
                         break;
                 }
+
+                GroupNode group_enforce_singleton_node(exchange_step, true);
+                // GroupNode group_enforce_singleton_node(exchange_step);
+                const auto & added_node = group->addGroupNode(group_enforce_singleton_node);
+
+                group_enforce_singleton_node.addLowestCostChildPropertyMap(required_properties, {output_properties});
+                /// TODO calc cost for group_enforce_singleton_node cost + group->getCost(output_properties) = total cost
+                total_cost = 0.0;
+                group->addLowestCostGroupNode(required_properties, &added_node, total_cost);
             }
-
-            required_group_node.addOutPutProperties(required_properties, output_properties);
-            group->addProperties(required_properties, &required_group_node);
         }
     }
+
+    /// extract plan
+    return group->getLowestCost(required_properties);
 }
 
-
-void Memo::derivationProperties()
-{
-    derivationProperties(root_group);
-}
-
-void Memo::derivationProperties(Group * group)
-{
-    auto & group_nodes = group->getGroupNodes();
-
-    for (auto & group_node : group_nodes)
-    {
-        const auto & step = group_node.getStep();
-        auto properties = DB::derivationProperties(step);
-
-        group_node.addOutPutProperties(properties);
-
-        for (auto * child_group : group_node.getChildren())
-        {
-            derivationProperties(child_group);
-        }
-    }
-}
+//
+//void Memo::derivationProperties()
+//{
+//    derivationProperties(root_group);
+//}
+//
+//void Memo::derivationProperties(Group * group)
+//{
+//    auto & group_nodes = group->getGroupNodes();
+//
+//    for (auto & group_node : group_nodes)
+//    {
+//        const auto & step = group_node.getStep();
+//        auto properties = DB::derivationProperties(step);
+//
+//        group_node.addLowestCostChildPropertyMap(properties);
+//
+//        for (auto * child_group : group_node.getChildren())
+//        {
+//            derivationProperties(child_group);
+//        }
+//    }
+//}
 
 }
