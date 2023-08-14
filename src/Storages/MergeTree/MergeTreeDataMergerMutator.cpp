@@ -534,11 +534,22 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 String MergeTreeDataMergerMutator::getBestPartitionToOptimizeEntire(
     const PartitionsInfo & partitions_info) const
 {
-    const auto data_settings = data.getSettings();
+    const auto & data_settings = data.getSettings();
     if (!data_settings->min_age_to_force_merge_on_partition_only)
         return {};
     if (!data_settings->min_age_to_force_merge_seconds)
         return {};
+    size_t occupied = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
+    size_t max_tasks_count = data.getContext()->getMergeMutateExecutor()->getMaxTasksCount();
+    if (occupied > 1 && max_tasks_count - occupied < data_settings->number_of_free_entries_in_pool_to_execute_optimize_entire_partition)
+    {
+        LOG_INFO(
+            log,
+            "Not enough idle threads to execute optimizing entire partition. See settings "
+            "'number_of_free_entries_in_pool_to_execute_optimize_entire_partition' "
+            "and 'background_pool_size'");
+        return {};
+    }
 
     auto best_partition_it = std::max_element(
         partitions_info.begin(),
