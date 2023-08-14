@@ -3,6 +3,7 @@
 #include <Storages/CheckResults.h>
 #include <map>
 #include <base/types.h>
+#include <mutex>
 
 namespace Poco { class Logger; }
 
@@ -28,7 +29,11 @@ public:
     bool empty() const { return map.empty(); }
 
     /// Check the files whose parameters are specified in sizes.json
-    CheckResults check() const;
+    /// See comment in IStorage::checkDataNext
+    struct DataValidationTasks;
+    using DataValidationTasksPtr = std::unique_ptr<DataValidationTasks>;
+    DataValidationTasksPtr getDataValidationTasks();
+    CheckResult checkNextEntry(DataValidationTasksPtr & check_data_tasks, bool & has_nothing_to_do) const;
 
     /// Truncate files that have excessive size to the expected size.
     /// Throw exception if the file size is less than expected.
@@ -40,6 +45,36 @@ public:
 
     /// Returns total size of all files.
     size_t getTotalSize() const;
+
+    struct DataValidationTasks
+    {
+        DataValidationTasks(const std::map<String, size_t> & map_)
+            : map(map_), it(map.begin())
+        {}
+
+        bool next(String & out_name, size_t & out_size)
+        {
+            std::lock_guard lock(mutex);
+            if (it == map.end())
+                return true;
+            out_name = it->first;
+            out_size = it->second;
+            ++it;
+            return false;
+        }
+
+        size_t size() const
+        {
+            std::lock_guard lock(mutex);
+            return std::distance(it, map.end());
+        }
+
+        const std::map<String, size_t> & map;
+
+        mutable std::mutex mutex;
+        using Iterator = std::map<String, size_t>::const_iterator;
+        Iterator it;
+    };
 
 private:
     void load();
