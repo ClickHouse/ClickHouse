@@ -3,6 +3,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include "ConfigProcessor.h"
 #include <filesystem>
+#include <iostream>
 #include <base/types.h>
 
 namespace fs = std::filesystem;

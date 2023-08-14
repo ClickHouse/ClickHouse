@@ -331,7 +331,6 @@ void DataPartStorageOnDiskBase::backup(
     const NameSet & files_without_checksums,
     const String & path_in_backup,
     const BackupSettings & backup_settings,
-    const ReadSettings & read_settings,
     bool make_temporary_hard_links,
     BackupEntries & backup_entries,
     TemporaryFilesOnDisks * temp_dirs) const
@@ -351,7 +350,7 @@ void DataPartStorageOnDiskBase::backup(
             temp_dir_it = temp_dirs->emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/")).first;
 
         temp_dir_owner = temp_dir_it->second;
-        fs::path temp_dir = temp_dir_owner->getRelativePath();
+        fs::path temp_dir = temp_dir_owner->getPath();
         temp_part_dir = temp_dir / part_path_in_backup.relative_path();
         disk->createDirectories(temp_part_dir);
     }
@@ -383,7 +382,7 @@ void DataPartStorageOnDiskBase::backup(
 
         if (files_without_checksums.contains(filepath))
         {
-            backup_entries.emplace_back(filepath_in_backup, std::make_unique<BackupEntryFromSmallFile>(disk, filepath_on_disk, read_settings, copy_encrypted));
+            backup_entries.emplace_back(filepath_in_backup, std::make_unique<BackupEntryFromSmallFile>(disk, filepath_on_disk, copy_encrypted));
             continue;
         }
 
@@ -416,74 +415,62 @@ void DataPartStorageOnDiskBase::backup(
 MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     const std::string & to,
     const std::string & dir_path,
+    bool make_source_readonly,
     std::function<void(const DiskPtr &)> save_metadata_callback,
-    const ClonePartParams & params) const
+    bool copy_instead_of_hardlink,
+    const NameSet & files_to_copy_instead_of_hardlinks,
+    DiskTransactionPtr external_transaction) const
 {
     auto disk = volume->getDisk();
-    if (params.external_transaction)
-        params.external_transaction->createDirectories(to);
+    if (external_transaction)
+        external_transaction->createDirectories(to);
     else
         disk->createDirectories(to);
 
-    localBackup(disk, getRelativePath(), fs::path(to) / dir_path, params.make_source_readonly, {}, params.copy_instead_of_hardlink,
-                params.files_to_copy_instead_of_hardlinks, params.external_transaction);
+    localBackup(disk, getRelativePath(), fs::path(to) / dir_path, make_source_readonly, {}, copy_instead_of_hardlink, files_to_copy_instead_of_hardlinks, external_transaction);
 
     if (save_metadata_callback)
         save_metadata_callback(disk);
 
-    if (params.external_transaction)
+    if (external_transaction)
     {
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
-        if (!params.keep_metadata_version)
-            params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
+        external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
+        external_transaction->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
+        external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
     else
     {
         disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
         disk->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
-        if (!params.keep_metadata_version)
-            disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
+        disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
 
     /// Do not initialize storage in case of DETACH because part may be broken.
     bool to_detached = dir_path.starts_with("detached/");
-    return create(single_disk_volume, to, dir_path, /*initialize=*/ !to_detached && !params.external_transaction);
+    return create(single_disk_volume, to, dir_path, /*initialize=*/ !to_detached && !external_transaction);
 }
 
 MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
     const std::string & to,
     const std::string & dir_path,
-    const DiskPtr & dst_disk,
+    const DiskPtr & disk,
     Poco::Logger * log) const
 {
     String path_to_clone = fs::path(to) / dir_path / "";
-    auto src_disk = volume->getDisk();
 
-    if (dst_disk->exists(path_to_clone))
+    if (disk->exists(path_to_clone))
     {
-        throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS,
-                        "Cannot clone part {} from '{}' to '{}': path '{}' already exists",
-                        dir_path, getRelativePath(), path_to_clone, fullPath(dst_disk, path_to_clone));
+        LOG_WARNING(log, "Path {} already exists. Will remove it and clone again.", fullPath(disk, path_to_clone));
+        disk->removeRecursive(path_to_clone);
     }
 
-    try
-    {
-        dst_disk->createDirectories(to);
-        src_disk->copyDirectoryContent(getRelativePath(), dst_disk, path_to_clone);
-    }
-    catch (...)
-    {
-        /// It's safe to remove it recursively (even with zero-copy-replication)
-        /// because we've just did full copy through copyDirectoryContent
-        LOG_WARNING(log, "Removing directory {} after failed attempt to move a data part", path_to_clone);
-        dst_disk->removeRecursive(path_to_clone);
-        throw;
-    }
+    disk->createDirectories(to);
+    volume->getDisk()->copy(getRelativePath(), disk, to);
+    volume->getDisk()->removeFileIfExists(fs::path(path_to_clone) / "delete-on-destroy.txt");
 
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>(dst_disk->getName(), dst_disk, 0);
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
     return create(single_disk_volume, to, dir_path, /*initialize=*/ true);
 }
 

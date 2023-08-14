@@ -1,4 +1,5 @@
 #pragma once
+
 #include <IO/WriteHelpers.h>
 
 namespace DB
@@ -13,8 +14,8 @@ enum class KeeperApiVersion : uint8_t
     WITH_CHECK_NOT_EXISTS,
 };
 
-const String keeper_system_path = "/keeper";
-const String keeper_api_version_path = keeper_system_path + "/api_version";
-const String keeper_api_feature_flags_path = keeper_system_path + "/feature_flags";
-const String keeper_config_path = keeper_system_path + "/config";
+const std::string keeper_system_path = "/keeper";
+const std::string keeper_api_version_path = keeper_system_path + "/api_version";
+const std::string keeper_api_feature_flags_path = keeper_system_path + "/feature_flags";
+
 }

@@ -19,7 +19,14 @@ void WriteBufferFromOStream::nextImpl()
     ostr->flush();
 
     if (!ostr->good())
-        throw Exception(ErrorCodes::CANNOT_WRITE_TO_OSTREAM, "Cannot write to ostream at offset {}", count());
+    {
+        /// FIXME do not call finalize in dtors (and remove iostreams)
+        bool avoid_throwing_exceptions = std::uncaught_exceptions();
+        if (avoid_throwing_exceptions)
+            LOG_ERROR(&Poco::Logger::get("WriteBufferFromOStream"), "Cannot write to ostream at offset {}. Stack trace: {}", count(), StackTrace().toString());
+        else
+            throw Exception(ErrorCodes::CANNOT_WRITE_TO_OSTREAM, "Cannot write to ostream at offset {}", count());
+    }
 }
 
 WriteBufferFromOStream::WriteBufferFromOStream(
@@ -37,6 +44,11 @@ WriteBufferFromOStream::WriteBufferFromOStream(
     size_t alignment)
     : BufferWithOwnMemory<WriteBuffer>(size, existing_memory, alignment), ostr(&ostr_)
 {
+}
+
+WriteBufferFromOStream::~WriteBufferFromOStream()
+{
+    finalize();
 }
 
 }

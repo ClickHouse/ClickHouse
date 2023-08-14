@@ -6,6 +6,7 @@
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Disks/Executor.h>
 #include <Disks/DiskType.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
@@ -32,12 +33,6 @@ namespace Poco
         /// NOLINTNEXTLINE(cppcoreguidelines-virtual-class-destructor)
         class AbstractConfiguration;
     }
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric IDiskCopierThreads;
-    extern const Metric IDiskCopierThreadsActive;
 }
 
 namespace DB
@@ -115,15 +110,9 @@ class IDisk : public Space
 {
 public:
     /// Default constructor.
-    IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    explicit IDisk(const String & name_, std::shared_ptr<Executor> executor_ = std::make_shared<SyncExecutor>())
         : name(name_)
-        , copying_thread_pool(CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, config.getUInt(config_prefix + ".thread_pool_size", 16))
-    {
-    }
-
-    explicit IDisk(const String & name_)
-        : name(name_)
-        , copying_thread_pool(CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, 16)
+        , executor(executor_)
     {
     }
 
@@ -140,13 +129,13 @@ public:
     const String & getName() const override { return name; }
 
     /// Total available space on the disk.
-    virtual std::optional<UInt64> getTotalSpace() const = 0;
+    virtual UInt64 getTotalSpace() const = 0;
 
     /// Space currently available on the disk.
-    virtual std::optional<UInt64> getAvailableSpace() const = 0;
+    virtual UInt64 getAvailableSpace() const = 0;
 
     /// Space available for reservation (available space minus reserved space).
-    virtual std::optional<UInt64> getUnreservedSpace() const = 0;
+    virtual UInt64 getUnreservedSpace() const = 0;
 
     /// Amount of bytes which should be kept free on the disk.
     virtual UInt64 getKeepingFreeSpace() const { return 0; }
@@ -191,6 +180,9 @@ public:
     /// Move the file from `from_path` to `to_path`.
     /// If a file with `to_path` path already exists, it will be replaced.
     virtual void replaceFile(const String & from_path, const String & to_path) = 0;
+
+    /// Recursively copy data containing at `from_path` to `to_path` located at `to_disk`.
+    virtual void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path);
 
     /// Recursively copy files from from_dir to to_dir. Create to_dir if not exists.
     virtual void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir);
@@ -387,7 +379,7 @@ public:
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
 
     /// Applies new settings for disk in runtime.
-    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map);
+    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr, const String &, const DisksMap &) {}
 
     /// Quite leaky abstraction. Some disks can use additional disk to store
     /// some parts of metadata. In general case we have only one disk itself and
@@ -467,6 +459,9 @@ protected:
 
     const String name;
 
+    /// Returns executor to perform asynchronous operations.
+    virtual Executor & getExecutor() { return *executor; }
+
     /// Base implementation of the function copy().
     /// It just opens two files, reads data by portions from the first file, and writes it to the second one.
     /// A derived class may override copy() to provide a faster implementation.
@@ -475,7 +470,7 @@ protected:
     virtual void checkAccessImpl(const String & path);
 
 private:
-    ThreadPool copying_thread_pool;
+    std::shared_ptr<Executor> executor;
     bool is_custom_disk = false;
 
     /// Check access to the disk.
@@ -495,7 +490,7 @@ public:
 
     /// Space available for reservation
     /// (with this reservation already take into account).
-    virtual std::optional<UInt64> getUnreservedSpace() const = 0;
+    virtual UInt64 getUnreservedSpace() const = 0;
 
     /// Get i-th disk where reservation take place.
     virtual DiskPtr getDisk(size_t i = 0) const = 0; /// NOLINT

@@ -22,6 +22,8 @@
 namespace DB
 {
 
+static const auto RESCHEDULE_MS = 1000;
+static const auto BACKOFF_TRESHOLD_MS = 10000;
 static const auto CLEANUP_RESCHEDULE_MS = 600000 * 3; /// 30 min
 
 namespace ErrorCodes
@@ -78,10 +80,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , schema_list(replication_settings.materialized_postgresql_schema_list)
     , schema_as_a_part_of_table_name(!schema_list.empty() || replication_settings.materialized_postgresql_tables_list_with_schema)
     , user_provided_snapshot(replication_settings.materialized_postgresql_snapshot)
-    , reschedule_backoff_min_ms(replication_settings.materialized_postgresql_backoff_min_ms)
-    , reschedule_backoff_max_ms(replication_settings.materialized_postgresql_backoff_max_ms)
-    , reschedule_backoff_factor(replication_settings.materialized_postgresql_backoff_factor)
-    , milliseconds_to_wait(reschedule_backoff_min_ms)
+    , milliseconds_to_wait(RESCHEDULE_MS)
 {
     if (!schema_list.empty() && !tables_list.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot have schema list and tables list at the same time");
@@ -167,7 +166,7 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
             throw;
 
         LOG_ERROR(log, "Unable to set up connection. Reconnection attempt will continue. Error message: {}", pqxx_error.what());
-        startup_task->scheduleAfter(milliseconds_to_wait);
+        startup_task->scheduleAfter(RESCHEDULE_MS);
     }
     catch (...)
     {
@@ -436,18 +435,18 @@ void PostgreSQLReplicationHandler::consumerFunc()
 
     if (schedule_now)
     {
-        milliseconds_to_wait = reschedule_backoff_min_ms;
+        milliseconds_to_wait = RESCHEDULE_MS;
         consumer_task->schedule();
 
         LOG_DEBUG(log, "Scheduling replication thread: now");
     }
     else
     {
-        if (milliseconds_to_wait < reschedule_backoff_max_ms)
-            milliseconds_to_wait = std::min(milliseconds_to_wait * reschedule_backoff_factor, reschedule_backoff_max_ms);
+        consumer_task->scheduleAfter(milliseconds_to_wait);
+        if (milliseconds_to_wait < BACKOFF_TRESHOLD_MS)
+            milliseconds_to_wait *= 2;
 
         LOG_DEBUG(log, "Scheduling replication thread: after {} ms", milliseconds_to_wait);
-        consumer_task->scheduleAfter(milliseconds_to_wait);
     }
 }
 
@@ -893,7 +892,7 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
     catch (...)
     {
         consumer_task->activate();
-        consumer_task->scheduleAfter(milliseconds_to_wait);
+        consumer_task->scheduleAfter(RESCHEDULE_MS);
 
         auto error_message = getCurrentExceptionMessage(false);
         throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
@@ -923,7 +922,7 @@ void PostgreSQLReplicationHandler::removeTableFromReplication(const String & pos
     catch (...)
     {
         consumer_task->activate();
-        consumer_task->scheduleAfter(milliseconds_to_wait);
+        consumer_task->scheduleAfter(RESCHEDULE_MS);
 
         auto error_message = getCurrentExceptionMessage(false);
         throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,

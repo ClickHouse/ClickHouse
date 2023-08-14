@@ -125,8 +125,6 @@ def prepare_for_hung_check(drop_databases):
     # However, it obstruct checking for hung queries.
     logging.info("Will terminate gdb (if any)")
     call_with_retry("kill -TERM $(pidof gdb)")
-    # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
-    call_with_retry("kill -CONT $(lsof -ti:9000)")
 
     # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
     call_with_retry("clickhouse client -q 'SYSTEM STOP THREAD FUZZER'")
@@ -202,14 +200,13 @@ def prepare_for_hung_check(drop_databases):
     call(
         make_query_command(
             """
-    SELECT sleepEachRow((
-        SELECT maxOrDefault(300 - elapsed) + 1
-        FROM system.processes
-        WHERE query NOT LIKE '%FROM system.processes%' AND elapsed < 300
+    select sleepEachRow((
+        select maxOrDefault(300 - elapsed) + 1
+        from system.processes
+        where query not like '%from system.processes%' and elapsed < 300
     ) / 300)
-    FROM numbers(300)
-    FORMAT Null
-    SETTINGS function_sleep_max_microseconds_per_block = 0
+    from numbers(300)
+    format Null
     """
         ),
         shell=True,

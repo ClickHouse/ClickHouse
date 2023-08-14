@@ -55,17 +55,6 @@ def started_cluster():
                 "configs/named_collections.xml",
                 "configs/schema_cache.xml",
             ],
-            user_configs=["configs/access.xml", "configs/users.xml"],
-        )
-        cluster.add_instance(
-            "dummy_without_named_collections",
-            with_minio=True,
-            main_configs=[
-                "configs/defaultS3.xml",
-                "configs/named_collections.xml",
-                "configs/schema_cache.xml",
-            ],
-            user_configs=["configs/access.xml"],
         )
         cluster.add_instance(
             "s3_max_redirects",
@@ -929,61 +918,25 @@ def test_truncate_table(started_cluster):
 
 def test_predefined_connection_configuration(started_cluster):
     bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances[
-        "dummy_without_named_collections"
-    ]  # type: ClickHouseInstance
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     name = "test_table"
 
-    instance.query("CREATE USER user")
-    instance.query("GRANT CREATE ON *.* TO user")
-    instance.query("GRANT SOURCES ON *.* TO user")
-    instance.query("GRANT SELECT ON *.* TO user")
-
-    instance.query(f"drop table if exists {name}", user="user")
-    error = instance.query_and_get_error(
-        f"CREATE TABLE {name} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')"
-    )
-    assert (
-        "To execute this query it's necessary to have grant NAMED COLLECTION ON s3_conf1"
-        in error
-    )
-    error = instance.query_and_get_error(
-        f"CREATE TABLE {name} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')",
-        user="user",
-    )
-    assert (
-        "To execute this query it's necessary to have grant NAMED COLLECTION ON s3_conf1"
-        in error
-    )
-
-    instance.query("GRANT NAMED COLLECTION ON s3_conf1 TO user", user="admin")
+    instance.query("drop table if exists {}".format(name))
     instance.query(
-        f"CREATE TABLE {name} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')",
-        user="user",
+        "CREATE TABLE {} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')".format(name)
     )
 
-    instance.query(f"INSERT INTO {name} SELECT number FROM numbers(10)")
-    result = instance.query(f"SELECT * FROM {name}")
+    instance.query("INSERT INTO {} SELECT number FROM numbers(10)".format(name))
+    result = instance.query("SELECT * FROM {}".format(name))
     assert result == instance.query("SELECT number FROM numbers(10)")
 
     result = instance.query(
-        "SELECT * FROM s3(s3_conf1, format='CSV', structure='id UInt32')", user="user"
+        "SELECT * FROM s3(s3_conf1, format='CSV', structure='id UInt32')"
     )
     assert result == instance.query("SELECT number FROM numbers(10)")
 
-    error = instance.query_and_get_error("SELECT * FROM s3(no_collection)")
-    assert (
-        "To execute this query it's necessary to have grant NAMED COLLECTION ON no_collection"
-        in error
-    )
-    error = instance.query_and_get_error("SELECT * FROM s3(no_collection)", user="user")
-    assert (
-        "To execute this query it's necessary to have grant NAMED COLLECTION ON no_collection"
-        in error
-    )
-    instance = started_cluster.instances["dummy"]  # has named collection access
-    error = instance.query_and_get_error("SELECT * FROM s3(no_collection)")
-    assert "There is no named collection `no_collection`" in error
+    result = instance.query_and_get_error("SELECT * FROM s3(no_collection)")
+    assert "There is no named collection `no_collection`" in result
 
 
 result = ""
@@ -1408,16 +1361,16 @@ def test_select_columns(started_cluster):
 
     instance.query("SYSTEM FLUSH LOGS")
     result1 = instance.query(
-        f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT value2 FROM {name}'"
+        f"SELECT read_bytes FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT value2 FROM {name}'"
     )
 
     instance.query(f"SELECT * FROM {name}")
     instance.query("SYSTEM FLUSH LOGS")
     result2 = instance.query(
-        f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT * FROM {name}'"
+        f"SELECT read_bytes FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT * FROM {name}'"
     )
 
-    assert round(int(result2) / int(result1)) == 3
+    assert int(result1) * 3 <= int(result2)
 
 
 def test_insert_select_schema_inference(started_cluster):
@@ -1827,66 +1780,3 @@ def test_skip_empty_files(started_cluster):
     )
 
     assert len(res.strip()) == 0
-
-
-def test_read_subcolumns(started_cluster):
-    bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances["dummy"]
-
-    instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumns.tsv', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select  ((1, 2), 3)"
-    )
-
-    instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumns.jsonl', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select  ((1, 2), 3)"
-    )
-
-    res = instance.query(
-        f"select a.b.d, _path, a.b, _file, a.e from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumns.tsv', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
-    )
-
-    assert res == "2\troot/test_subcolumns.tsv\t(1,2)\ttest_subcolumns.tsv\t3\n"
-
-    res = instance.query(
-        f"select a.b.d, _path, a.b, _file, a.e from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumns.jsonl', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
-    )
-
-    assert res == "2\troot/test_subcolumns.jsonl\t(1,2)\ttest_subcolumns.jsonl\t3\n"
-
-    res = instance.query(
-        f"select x.b.d, _path, x.b, _file, x.e from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumns.jsonl', auto, 'x Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
-    )
-
-    assert res == "0\troot/test_subcolumns.jsonl\t(0,0)\ttest_subcolumns.jsonl\t0\n"
-
-    res = instance.query(
-        f"select x.b.d, _path, x.b, _file, x.e from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumns.jsonl', auto, 'x Tuple(b Tuple(c UInt32, d UInt32), e UInt32) default ((42, 42), 42)')"
-    )
-
-    assert res == "42\troot/test_subcolumns.jsonl\t(42,42)\ttest_subcolumns.jsonl\t42\n"
-
-    res = instance.query(
-        f"select a.b.d, _path, a.b, _file, a.e from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumns.tsv', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
-    )
-
-    assert res == "2\t/root/test_subcolumns.tsv\t(1,2)\ttest_subcolumns.tsv\t3\n"
-
-    res = instance.query(
-        f"select a.b.d, _path, a.b, _file, a.e from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumns.jsonl', auto, 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
-    )
-
-    assert res == "2\t/root/test_subcolumns.jsonl\t(1,2)\ttest_subcolumns.jsonl\t3\n"
-
-    res = instance.query(
-        f"select x.b.d, _path, x.b, _file, x.e from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumns.jsonl', auto, 'x Tuple(b Tuple(c UInt32, d UInt32), e UInt32)')"
-    )
-
-    assert res == "0\t/root/test_subcolumns.jsonl\t(0,0)\ttest_subcolumns.jsonl\t0\n"
-
-    res = instance.query(
-        f"select x.b.d, _path, x.b, _file, x.e from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumns.jsonl', auto, 'x Tuple(b Tuple(c UInt32, d UInt32), e UInt32) default ((42, 42), 42)')"
-    )
-
-    assert (
-        res == "42\t/root/test_subcolumns.jsonl\t(42,42)\ttest_subcolumns.jsonl\t42\n"
-    )

@@ -69,9 +69,6 @@ public:
     void skipRowEndDelimiter() override;
     void skipPrefixBeforeHeader() override;
 
-    bool checkForEndOfRow() override;
-    bool allowVariableNumberOfColumns() override;
-
     std::vector<String> readNames() override { return readHeaderRow(); }
     std::vector<String> readTypes() override { return readHeaderRow(); }
     std::vector<String> readHeaderRow() { return readRowImpl<true>(); }
@@ -89,8 +86,6 @@ public:
     void setReadBuffer(ReadBuffer & in_) override;
 
     FormatSettings::EscapingRule getEscapingRule() const override { return FormatSettings::EscapingRule::CSV; }
-    bool readFieldImpl(ReadBuffer & istr, DB::IColumn & column, const DB::DataTypePtr & type, const DB::SerializationPtr & serialization);
-    bool readFieldOrDefault(DB::IColumn & column, const DB::DataTypePtr & type, const DB::SerializationPtr & serialization);
 
 protected:
     PeekableReadBuffer * buf;

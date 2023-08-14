@@ -67,7 +67,6 @@ def cluster():
                 "configs/config.d/storage_conf.xml",
                 "configs/config.d/instant_moves.xml",
                 "configs/config.d/part_log.xml",
-                "configs/config.d/merge_tree.xml",
             ],
             with_minio=True,
         )
@@ -184,8 +183,7 @@ def test_move_failover(cluster):
         ) ENGINE=MergeTree()
         ORDER BY id
         TTL dt + INTERVAL 4 SECOND TO VOLUME 'external'
-        SETTINGS storage_policy='s3_cold', temporary_directories_lifetime=1,
-        merge_tree_clear_old_temporary_directories_interval_seconds=1
+        SETTINGS storage_policy='s3_cold'
         """
     )
 

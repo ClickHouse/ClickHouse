@@ -1,6 +1,7 @@
 #include <benchmark/benchmark.h>
 
 #include <iomanip>
+#include <iostream>
 #include <random>
 #include <vector>
 

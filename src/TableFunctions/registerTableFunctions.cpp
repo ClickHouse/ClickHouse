@@ -75,7 +75,6 @@ void registerTableFunctions()
 
 #if USE_AZURE_BLOB_STORAGE
     registerTableFunctionAzureBlobStorage(factory);
-    registerTableFunctionAzureBlobStorageCluster(factory);
 #endif
 
 

@@ -55,16 +55,16 @@ void TableFunctionViewIfPermitted::parseArguments(const ASTPtr & ast_function, C
     else_table_function = TableFunctionFactory::instance().get(else_ast, context);
 }
 
-ColumnsDescription TableFunctionViewIfPermitted::getActualTableStructure(ContextPtr context, bool is_insert_query) const
+ColumnsDescription TableFunctionViewIfPermitted::getActualTableStructure(ContextPtr context) const
 {
-    return else_table_function->getActualTableStructure(context, is_insert_query);
+    return else_table_function->getActualTableStructure(context);
 }
 
 StoragePtr TableFunctionViewIfPermitted::executeImpl(
-    const ASTPtr & /* ast_function */, ContextPtr context, const std::string & table_name, ColumnsDescription /* cached_columns */, bool is_insert_query) const
+    const ASTPtr & /* ast_function */, ContextPtr context, const std::string & table_name, ColumnsDescription /* cached_columns */) const
 {
     StoragePtr storage;
-    auto columns = getActualTableStructure(context, is_insert_query);
+    auto columns = getActualTableStructure(context);
 
     if (isPermitted(context, columns))
     {

@@ -1,6 +1,7 @@
 SELECT count()
 FROM t_02156_merge1
-PREWHERE notEmpty(v) AND (k = 3)
+PREWHERE k = 3
+WHERE (k = 3) AND notEmpty(v)
 2
 SELECT count()
 FROM t_02156_merge2

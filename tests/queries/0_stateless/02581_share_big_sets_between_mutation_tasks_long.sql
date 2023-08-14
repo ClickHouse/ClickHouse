@@ -1,6 +1,4 @@
--- Tags: long, no-debug, no-tsan, no-asan, no-ubsan, no-msan, no-parallel
-
--- no-parallel because the sets use a lot of memory, which may interfere with other tests
+-- Tags: long, no-debug, no-tsan, no-asan, no-ubsan, no-msan
 
 DROP TABLE IF EXISTS 02581_trips;
 

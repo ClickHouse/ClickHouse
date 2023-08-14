@@ -31,8 +31,8 @@ public:
     CapnProtoRowOutputFormat(
         WriteBuffer & out_,
         const Block & header_,
-        const CapnProtoSchemaInfo & info,
-        const FormatSettings & format_settings);
+        const FormatSchemaInfo & info,
+        const FormatSettings & format_settings_);
 
     String getName() const override { return "CapnProtoRowOutputFormat"; }
 

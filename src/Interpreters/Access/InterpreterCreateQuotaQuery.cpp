@@ -14,12 +14,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int ACCESS_ENTITY_ALREADY_EXISTS;
-}
-
 namespace
 {
     void updateQuotaFromQueryImpl(
@@ -96,15 +90,6 @@ BlockIO InterpreterCreateQuotaQuery::execute()
     if (query.roles)
         roles_from_query = RolesOrUsersSet{*query.roles, access_control, getContext()->getUserID()};
 
-    IAccessStorage * storage = &access_control;
-    MultipleAccessStorage::StoragePtr storage_ptr;
-
-    if (!query.storage_name.empty())
-    {
-        storage_ptr = access_control.getStorageByName(query.storage_name);
-        storage = storage_ptr.get();
-    }
-
     if (query.alter)
     {
         auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
@@ -115,11 +100,11 @@ BlockIO InterpreterCreateQuotaQuery::execute()
         };
         if (query.if_exists)
         {
-            auto ids = storage->find<Quota>(query.names);
-            storage->tryUpdate(ids, update_func);
+            auto ids = access_control.find<Quota>(query.names);
+            access_control.tryUpdate(ids, update_func);
         }
         else
-            storage->update(storage->getIDs<Quota>(query.names), update_func);
+            access_control.update(access_control.getIDs<Quota>(query.names), update_func);
     }
     else
     {
@@ -131,21 +116,12 @@ BlockIO InterpreterCreateQuotaQuery::execute()
             new_quotas.emplace_back(std::move(new_quota));
         }
 
-        if (!query.storage_name.empty())
-        {
-            for (const auto & name : query.names)
-            {
-                if (auto another_storage_ptr = access_control.findExcludingStorage(AccessEntityType::QUOTA, name, storage_ptr))
-                    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "Quota {} already exists in storage {}", name, another_storage_ptr->getStorageName());
-            }
-        }
-
         if (query.if_not_exists)
-            storage->tryInsert(new_quotas);
+            access_control.tryInsert(new_quotas);
         else if (query.or_replace)
-            storage->insertOrReplace(new_quotas);
+            access_control.insertOrReplace(new_quotas);
         else
-            storage->insert(new_quotas);
+            access_control.insert(new_quotas);
     }
 
     return {};

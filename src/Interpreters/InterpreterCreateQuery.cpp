@@ -764,7 +764,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// Table function without columns list.
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
-        properties.columns = table_function->getActualTableStructure(getContext(), /*is_insert_query*/ true);
+        properties.columns = table_function->getActualTableStructure(getContext());
     }
     else if (create.is_dictionary)
     {
@@ -881,24 +881,46 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
 }
 
-namespace
+String InterpreterCreateQuery::getTableEngineName(DefaultTableEngine default_table_engine)
 {
-    void checkTemporaryTableEngineName(const String& name)
+    switch (default_table_engine)
     {
-        if (name.starts_with("Replicated") || name == "KeeperMap")
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated or KeeperMap table engines");
-    }
+        case DefaultTableEngine::Log:
+            return "Log";
 
-    void setDefaultTableEngine(ASTStorage &storage, DefaultTableEngine engine)
-    {
-        if (engine == DefaultTableEngine::None)
-            throw Exception(ErrorCodes::ENGINE_REQUIRED, "Table engine is not specified in CREATE query");
+        case DefaultTableEngine::StripeLog:
+            return "StripeLog";
 
-        auto engine_ast = std::make_shared<ASTFunction>();
-        engine_ast->name = SettingFieldDefaultTableEngine(engine).toString();
-        engine_ast->no_empty_args = true;
-        storage.set(storage.engine, engine_ast);
+        case DefaultTableEngine::MergeTree:
+            return "MergeTree";
+
+        case DefaultTableEngine::ReplacingMergeTree:
+            return "ReplacingMergeTree";
+
+        case DefaultTableEngine::ReplicatedMergeTree:
+            return "ReplicatedMergeTree";
+
+        case DefaultTableEngine::ReplicatedReplacingMergeTree:
+            return "ReplicatedReplacingMergeTree";
+
+        case DefaultTableEngine::Memory:
+            return "Memory";
+
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "default_table_engine is set to unknown value");
     }
+}
+
+void InterpreterCreateQuery::setDefaultTableEngine(ASTStorage & storage, ContextPtr local_context)
+{
+    if (local_context->getSettingsRef().default_table_engine.value == DefaultTableEngine::None)
+        throw Exception(ErrorCodes::ENGINE_REQUIRED, "Table engine is not specified in CREATE query");
+
+    auto engine_ast = std::make_shared<ASTFunction>();
+    auto default_table_engine = local_context->getSettingsRef().default_table_engine.value;
+    engine_ast->name = getTableEngineName(default_table_engine);
+    engine_ast->no_empty_args = true;
+    storage.set(storage.engine, engine_ast);
 }
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
@@ -914,23 +936,32 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
     if (create.temporary)
     {
-        /// Some part of storage definition is specified, but ENGINE is not: just set the one from default_temporary_table_engine setting.
+        /// It's possible if some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not.
+        /// It makes sense when default_table_engine setting is used, but not for temporary tables.
+        /// For temporary tables we ignore this setting to allow CREATE TEMPORARY TABLE query without specifying ENGINE
 
         if (!create.cluster.empty())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with ON CLUSTER clause");
 
-        if (!create.storage)
+        if (create.storage)
         {
+            if (create.storage->engine)
+            {
+                if (create.storage->engine->name.starts_with("Replicated") || create.storage->engine->name == "KeeperMap")
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated or KeeperMap table engines");
+            }
+            else
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Invalid storage definition for temporary table");
+        }
+        else
+        {
+            auto engine_ast = std::make_shared<ASTFunction>();
+            engine_ast->name = "Memory";
+            engine_ast->no_empty_args = true;
             auto storage_ast = std::make_shared<ASTStorage>();
+            storage_ast->set(storage_ast->engine, engine_ast);
             create.set(create.storage, storage_ast);
         }
-
-        if (!create.storage->engine)
-        {
-            setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_temporary_table_engine.value);
-        }
-
-        checkTemporaryTableEngineName(create.storage->engine->name);
         return;
     }
 
@@ -938,7 +969,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     {
         /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
         if (!create.storage->engine)
-            setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_table_engine.value);
+            setDefaultTableEngine(*create.storage, getContext());
         return;
     }
 
@@ -977,7 +1008,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     }
 
     create.set(create.storage, std::make_shared<ASTStorage>());
-    setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_table_engine.value);
+    setDefaultTableEngine(*create.storage, getContext());
 }
 
 static void generateUUIDForTable(ASTCreateQuery & create)
@@ -1079,7 +1110,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         // Table SQL definition is available even if the table is detached (even permanently)
         auto query = database->getCreateTableQuery(create.getTable(), getContext());
-        FunctionNameNormalizer().visit(query.get());
         auto create_query = query->as<ASTCreateQuery &>();
 
         if (!create.is_dictionary && create_query.is_dictionary)

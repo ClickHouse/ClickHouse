@@ -191,39 +191,27 @@ public:
     struct FormatSettings
     {
         WriteBuffer & ostr;
+        bool hilite = false;
         bool one_line;
-        bool hilite;
-        bool always_quote_identifiers;
-        IdentifierQuotingStyle identifier_quoting_style;
-        bool show_secrets; /// Show secret parts of the AST (e.g. passwords, encryption keys).
-        char nl_or_ws; /// Newline or whitespace.
+        bool always_quote_identifiers = false;
+        IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
+        bool show_secrets = true; /// Show secret parts of the AST (e.g. passwords, encryption keys).
 
-        explicit FormatSettings(
-            WriteBuffer & ostr_,
-            bool one_line_,
-            bool hilite_ = false,
-            bool always_quote_identifiers_ = false,
-            IdentifierQuotingStyle identifier_quoting_style_ = IdentifierQuotingStyle::Backticks,
-            bool show_secrets_ = true)
-            : ostr(ostr_)
-            , one_line(one_line_)
-            , hilite(hilite_)
-            , always_quote_identifiers(always_quote_identifiers_)
-            , identifier_quoting_style(identifier_quoting_style_)
-            , show_secrets(show_secrets_)
-            , nl_or_ws(one_line ? ' ' : '\n')
+        // Newline or whitespace.
+        char nl_or_ws;
+
+        FormatSettings(WriteBuffer & ostr_, bool one_line_, bool show_secrets_ = true)
+            : ostr(ostr_), one_line(one_line_), show_secrets(show_secrets_)
         {
+            nl_or_ws = one_line ? ' ' : '\n';
         }
 
         FormatSettings(WriteBuffer & ostr_, const FormatSettings & other)
-            : ostr(ostr_)
-            , one_line(other.one_line)
-            , hilite(other.hilite)
-            , always_quote_identifiers(other.always_quote_identifiers)
-            , identifier_quoting_style(other.identifier_quoting_style)
-            , show_secrets(other.show_secrets)
-            , nl_or_ws(other.nl_or_ws)
+            : ostr(ostr_), hilite(other.hilite), one_line(other.one_line),
+            always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style),
+            show_secrets(other.show_secrets)
         {
+            nl_or_ws = one_line ? ' ' : '\n';
         }
 
         void writeIdentifier(const String & name) const;
@@ -302,7 +290,6 @@ public:
         Alter,
         Grant,
         Revoke,
-        Move,
         System,
         Set,
         Use,
@@ -318,7 +305,6 @@ public:
         Commit,
         Rollback,
         SetTransactionSnapshot,
-        AsyncInsertFlush
     };
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }

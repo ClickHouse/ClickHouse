@@ -17,8 +17,7 @@ Default value: 0.
 **Example**
 
 ``` sql
-INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
-SELECT * FROM table_1;
+insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
 ```
 ```response
 ┌─x─┬─y────┐
@@ -31,7 +30,7 @@ SELECT * FROM table_1;
 ```sql
 SELECT *
 FROM table_1
-SETTINGS additional_table_filters = {'table_1': 'x != 2'}
+SETTINGS additional_table_filters = (('table_1', 'x != 2'))
 ```
 ```response
 ┌─x─┬─y────┐
@@ -51,8 +50,7 @@ Default value: `''`.
 **Example**
 
 ``` sql
-INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
-SElECT * FROM table_1;
+insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
 ```
 ```response
 ┌─x─┬─y────┐
@@ -536,8 +534,6 @@ Possible values:
  [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
 
  The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/docs/en/operations/settings/query-complexity.md/#settings-max_bytes_in_join)), the number of buckets is increased and the assigned bucket for each row. Any rows which don’t belong to the current bucket are flushed and reassigned.
-
- Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
 - hash
 
@@ -3205,40 +3201,6 @@ ENGINE = Log
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-## default_temporary_table_engine {#default_temporary_table_engine}
-
-Same as [default_table_engine](#default_table_engine) but for temporary tables.
-
-Default value: `Memory`.
-
-In this example, any new temporary table that does not specify an `Engine` will use the `Log` table engine:
-
-Query:
-
-```sql
-SET default_temporary_table_engine = 'Log';
-
-CREATE TEMPORARY TABLE my_table (
-    x UInt32,
-    y UInt32
-);
-
-SHOW CREATE TEMPORARY TABLE my_table;
-```
-
-Result:
-
-```response
-┌─statement────────────────────────────────────────────────────────────────┐
-│ CREATE TEMPORARY TABLE default.my_table
-(
-    `x` UInt32,
-    `y` UInt32
-)
-ENGINE = Log
-└──────────────────────────────────────────────────────────────────────────┘
-```
-
 ## data_type_default_nullable {#data_type_default_nullable}
 
 Allows data types without explicit modifiers [NULL or NOT NULL](../../sql-reference/statements/create/table.md/#null-modifiers) in column definition will be [Nullable](../../sql-reference/data-types/nullable.md/#data_type-nullable).
@@ -3468,12 +3430,6 @@ Possible values:
 
 Default value: `0`.
 
-## enable_url_encoding {#enable_url_encoding}
-
-Allows to enable/disable decoding/encoding path in uri in [URL](../../engines/table-engines/special/url.md) engine tables.
-
-Enabled by default.
-
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
 Adds a modifier `SYNC` to all `DROP` and `DETACH` queries.
@@ -3545,7 +3501,7 @@ Possible values:
 - Any positive integer.
 - 0 - Disabled (infinite timeout).
 
-Default value: 30.
+Default value: 180.
 
 ## http_receive_timeout {#http_receive_timeout}
 
@@ -3556,7 +3512,7 @@ Possible values:
 - Any positive integer.
 - 0 - Disabled (infinite timeout).
 
-Default value: 30.
+Default value: 180.
 
 ## check_query_single_value_result {#check_query_single_value_result}
 
@@ -4532,7 +4488,6 @@ This setting allows to specify renaming pattern for files processed by `file` ta
 
 ### Placeholders
 
-- `%a` — Full original filename (e.g., "sample.csv").
 - `%f` — Original filename without extension (e.g., "sample").
 - `%e` — Original file extension with dot (e.g., ".csv").
 - `%t` — Timestamp (in microseconds).
@@ -4578,39 +4533,3 @@ Type: Int64
 
 Default: 0
 
-## rewrite_count_distinct_if_with_count_distinct_implementation
-
-Allows you to rewrite `countDistcintIf` with [count_distinct_implementation](#settings-count_distinct_implementation) setting.
-
-Possible values:
-
-- true — Allow.
-- false — Disallow.
-
-Default value: `false`.
-
-## precise_float_parsing {#precise_float_parsing}
-
-Switches [Float32/Float64](../../sql-reference/data-types/float.md) parsing algorithms:
-* If the value is `1`, then precise method is used. It is slower than fast method, but it always returns a number that is the closest machine representable number to the input.
-* Otherwise, fast method is used (default). It usually returns the same value as precise, but in rare cases result may differ by one or two least significant digits.
-
-Possible values: `0`, `1`.
-
-Default value: `0`.
-
-Example:
-
-```sql
-SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_parsing = 0;
-
-┌─toFloat64('1.7091')─┬─toFloat64('1.5008753E7')─┐
-│  1.7090999999999998 │       15008753.000000002 │
-└─────────────────────┴──────────────────────────┘
-
-SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_parsing = 1;
-
-┌─toFloat64('1.7091')─┬─toFloat64('1.5008753E7')─┐
-│              1.7091 │                 15008753 │
-└─────────────────────┴──────────────────────────┘
-```

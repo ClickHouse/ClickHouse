@@ -16,7 +16,6 @@ ln -s /usr/share/clickhouse-test/ci/get_previous_release_tag.py /usr/bin/get_pre
 
 # Stress tests and upgrade check uses similar code that was placed
 # in a separate bash library. See tests/ci/stress_tests.lib
-source /usr/share/clickhouse-test/ci/attach_gdb.lib
 source /usr/share/clickhouse-test/ci/stress_tests.lib
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
@@ -62,19 +61,11 @@ configure
 
 # it contains some new settings, but we can safely remove it
 rm /etc/clickhouse-server/config.d/merge_tree.xml
-rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 
 start
 stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
-
-# Start server from previous release
-# Let's enable S3 storage by default
-export USE_S3_STORAGE_FOR_MERGE_TREE=1
-# Previous version may not be ready for fault injections
-export ZOOKEEPER_FAULT_INJECTION=0
-configure
 
 # force_sync=false doesn't work correctly on some older versions
 sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
@@ -85,14 +76,19 @@ sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-serv
 # But we still need default disk because some tables loaded only into it
 sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml \
   | sed "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" \
-  > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp
-mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
+  > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp    mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 
+# Start server from previous release
+# Let's enable S3 storage by default
+export USE_S3_STORAGE_FOR_MERGE_TREE=1
+# Previous version may not be ready for fault injections
+export ZOOKEEPER_FAULT_INJECTION=0
+configure
+
 # it contains some new settings, but we can safely remove it
 rm /etc/clickhouse-server/config.d/merge_tree.xml
-rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 
 start
@@ -193,7 +189,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Authentication failed" \
            -e "Cannot flush" \
            -e "Container already exists" \
-           -e "doesn't have metadata version on disk" \
     clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | zgrep -Fa "<Error>" > /test_output/upgrade_error_messages.txt \
@@ -230,11 +225,5 @@ clickhouse-local --structure "test String, res String, time Nullable(Float32), d
 rowNumberInAllBlocks()
 LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
-
-# But OOMs in stress test are allowed
-if rg 'OOM in dmesg|Signal 9' /test_output/check_status.tsv
-then
-    sed -i 's/failure/success/' /test_output/check_status.tsv
-fi
 
 collect_core_dumps

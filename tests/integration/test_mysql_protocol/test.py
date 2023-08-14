@@ -679,7 +679,7 @@ def test_php_client(started_cluster, php_container):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "tables\ntables\ntables\n"
+    assert stdout.decode() == "tables\ntables\n"
 
     code, (stdout, stderr) = php_container.exec_run(
         "php -f test_ssl.php {host} {port} default 123".format(
@@ -688,7 +688,7 @@ def test_php_client(started_cluster, php_container):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "tables\ntables\ntables\n"
+    assert stdout.decode() == "tables\ntables\n"
 
     code, (stdout, stderr) = php_container.exec_run(
         "php -f test.php {host} {port} user_with_double_sha1 abacaba".format(
@@ -697,7 +697,7 @@ def test_php_client(started_cluster, php_container):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "tables\ntables\ntables\n"
+    assert stdout.decode() == "tables\ntables\n"
 
     code, (stdout, stderr) = php_container.exec_run(
         "php -f test_ssl.php {host} {port} user_with_double_sha1 abacaba".format(
@@ -706,7 +706,7 @@ def test_php_client(started_cluster, php_container):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "tables\ntables\ntables\n"
+    assert stdout.decode() == "tables\ntables\n"
 
 
 def test_mysqljs_client(started_cluster, nodejs_container):
