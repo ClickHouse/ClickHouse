@@ -66,13 +66,13 @@ RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
 
 ## DROP DNS CACHE
 
-Resets ClickHouse’s internal DNS cache. Sometimes (for old ClickHouse versions) it is necessary to use this command when changing the infrastructure (changing the IP address of another ClickHouse server or the server used by dictionaries).
+Clears ClickHouse’s internal DNS cache. Sometimes (for old ClickHouse versions) it is necessary to use this command when changing the infrastructure (changing the IP address of another ClickHouse server or the server used by dictionaries).
 
 For more convenient (automatic) cache management, see disable_internal_dns_cache, dns_cache_update_period parameters.
 
 ## DROP MARK CACHE
 
-Resets the mark cache.
+Clears the mark cache.
 
 ## DROP REPLICA
 
@@ -106,22 +106,18 @@ Similar to `SYSTEM DROP REPLICA`, but removes the `Replicated` database replica 
 
 ## DROP UNCOMPRESSED CACHE
 
-Reset the uncompressed data cache.
+Clears the uncompressed data cache.
 The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [use_uncompressed_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache).
 Its size can be configured using the server-level setting [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size).
 
 ## DROP COMPILED EXPRESSION CACHE
 
-Reset the compiled expression cache.
+Clears the compiled expression cache.
 The compiled expression cache is enabled/disabled with the query/user/profile-level setting [compile_expressions](../../operations/settings/settings.md#compile-expressions).
 
 ## DROP QUERY CACHE
 
-Resets the [query cache](../../operations/query-cache.md).
-
-```sql
-SYSTEM DROP QUERY CACHE [ON CLUSTER cluster_name]
-```
+Clears the [query cache](../../operations/query-cache.md).
 
 ## FLUSH LOGS
 

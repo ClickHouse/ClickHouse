@@ -61,7 +61,7 @@ public:
         removeOverflow();
     }
 
-    void reset(std::lock_guard<std::mutex> & /* cache_lock */) override
+    void clear(std::lock_guard<std::mutex> & /* cache_lock */) override
     {
         queue.clear();
         cells.clear();

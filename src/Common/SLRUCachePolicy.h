@@ -69,7 +69,7 @@ public:
         removeOverflow(probationary_queue, max_size_in_bytes, current_size_in_bytes, /*is_protected=*/false);
     }
 
-    void reset(std::lock_guard<std::mutex> & /* cache_lock */) override
+    void clear(std::lock_guard<std::mutex> & /* cache_lock */) override
     {
         cells.clear();
         probationary_queue.clear();
