@@ -12,7 +12,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-std::vector<SubQueryPlan> trySplitAggregation(QueryPlanStepPtr step)
+std::vector<SubQueryPlan> trySplitAggregation(QueryPlanStepPtr step, ContextPtr context)
 {
     auto * aggregate_step = typeid_cast<AggregatingStep *>(step.get());
 

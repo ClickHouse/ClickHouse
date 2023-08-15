@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <QueryPipeline/StreamLocalLimits.h>
+#include <QueryCoordination/NewOptimizer/PhysicalProperties.h>
 
 namespace DB
 {
@@ -21,6 +22,11 @@ public:
 
     ExchangeDataStep(Int32 fragment_id_, const DataStream & data_stream, StorageLimitsList & storage_limits_)
         : ISourceStep(data_stream), fragment_id(fragment_id_), storage_limits(std::make_shared<StorageLimitsList>(storage_limits_))
+    {
+    }
+
+    ExchangeDataStep(PhysicalProperties::DistributionType type_, const DataStream & data_stream)
+        : ISourceStep(data_stream), type(type_)
     {
     }
 
@@ -58,6 +64,8 @@ private:
     bool has_sort_info = false;
 
     SortInfo sort_info;
+
+    PhysicalProperties::DistributionType type;
 };
 
 }

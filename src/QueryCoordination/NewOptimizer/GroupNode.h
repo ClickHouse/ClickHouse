@@ -1,6 +1,5 @@
 #pragma once
 
-#include <QueryCoordination/NewOptimizer/Group.h>
 #include <QueryCoordination/NewOptimizer/PhysicalProperties.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 
@@ -13,14 +12,21 @@ using OutPutPropAndAlternativeRequiredChildProp = std::unordered_map<PhysicalPro
 
 using OutPutPropAndRequiredChildProp = std::unordered_map<PhysicalProperties, std::vector<PhysicalProperties>, PhysicalProperties::HashFunction>;
 
+class Group;
+
 class GroupNode
 {
 public:
     GroupNode() = default;
-    GroupNode(QueryPlanStepPtr step_) : step(step_) {}
+
+    explicit GroupNode(QueryPlanStepPtr step_) : step(step_) {}
     GroupNode(QueryPlanStepPtr step_, bool is_enforce_node_) : step(step_), is_enforce_node(is_enforce_node_) {}
 
     GroupNode(QueryPlanStepPtr step_, const std::vector<Group *> & children_) : step(step_), children(children_) {}
+
+    ~GroupNode() = default;
+    GroupNode(GroupNode &&) noexcept = default;
+    GroupNode & operator=(GroupNode &&) noexcept = default;
 
     void addChild(Group & group)
     {
@@ -52,9 +58,19 @@ public:
         lowest_cost_expressions[physical_properties] = best_child_properties;
     }
 
+    const std::vector<PhysicalProperties> & getChildProperties(const PhysicalProperties & physical_properties)
+    {
+        return lowest_cost_expressions[physical_properties];
+    }
+
     OutPutPropAndRequiredChildProp & getOutPutPropAndRequiredChildProp()
     {
         return lowest_cost_expressions;
+    }
+
+    bool isEnforceNode() const
+    {
+        return is_enforce_node;
     }
 
 private:

@@ -89,33 +89,51 @@ OutPutPropAndAlternativeRequiredChildProp derivationProperties(AggregatingStep &
     }
 };
 
-OutPutPropAndAlternativeRequiredChildProp derivationProperties(MergingAggregatedStep & step)
+OutPutPropAndAlternativeRequiredChildProp derivationProperties(MergingAggregatedStep & /*step*/)
 {
     OutPutPropAndAlternativeRequiredChildProp res;
     PhysicalProperties properties{.distribution = {.type = PhysicalProperties::DistributionType::Hashed}};
+
+    AlternativeProperties alternative_properties;
     std::vector<PhysicalProperties> required_child_prop;
 
     /// TODO Hashed by bucket
     required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Hashed}});
 
-    res[properties] = required_child_prop;
+    res[properties] = alternative_properties;
 
     return res;
 };
 
-OutPutPropAndAlternativeRequiredChildProp derivationProperties(SortingStep & step)
+OutPutPropAndAlternativeRequiredChildProp derivationProperties(ExpressionStep & /*step*/)
 {
+    OutPutPropAndAlternativeRequiredChildProp res;
+    PhysicalProperties properties{.distribution = {.type = PhysicalProperties::DistributionType::Any}};
 
+    AlternativeProperties alternative_properties;
+    std::vector<PhysicalProperties> required_child_prop;
+    required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
+
+    res[properties] = alternative_properties;
+    return res;
 };
 
-OutPutPropAndAlternativeRequiredChildProp derivationProperties(JoinStep & step)
+OutPutPropAndAlternativeRequiredChildProp derivationProperties(SortingStep & /*step*/)
 {
-
+    OutPutPropAndAlternativeRequiredChildProp res;
+    return res;
 };
 
-OutPutPropAndAlternativeRequiredChildProp derivationProperties(UnionStep & step)
+OutPutPropAndAlternativeRequiredChildProp derivationProperties(JoinStep & /*step*/)
 {
+    OutPutPropAndAlternativeRequiredChildProp res;
+    return res;
+};
 
+OutPutPropAndAlternativeRequiredChildProp derivationProperties(UnionStep & /*step*/)
+{
+    OutPutPropAndAlternativeRequiredChildProp res;
+    return res;
 };
 
 
@@ -167,6 +185,15 @@ OutPutPropAndAlternativeRequiredChildProp derivationProperties(QueryPlanStepPtr 
 //        pushDownLimitRelated(root_node.step, child_fragments[0]);
 //        result = child_fragments[0];
 //    }
+    OutPutPropAndAlternativeRequiredChildProp res;
+    PhysicalProperties properties{.distribution = {.type = PhysicalProperties::DistributionType::Any}};
+
+    AlternativeProperties alternative_properties;
+    std::vector<PhysicalProperties> required_child_prop;
+    required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
+
+    res[properties] = alternative_properties;
+    return res;
 }
 
 }

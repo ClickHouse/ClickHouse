@@ -1,175 +1,175 @@
-#include <Common/Exception.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/MergingAggregatedStep.h>
-#include <QueryCoordination/NewOptimizer/Rule/Optimizations.h>
-#include <QueryCoordination/NewOptimizer/Memo.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/UnionStep.h>
-
-#include <stack>
-
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int TOO_MANY_QUERY_PLAN_OPTIMIZATIONS;
-    extern const int PROJECTION_NOT_USED;
-}
-
-namespace QueryPlanOptimizations
-{
-
-void optimizeTree(Memo & memo, const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
-{
-    if (!settings.optimize_plan)
-        return;
-
-    const auto & optimizations = getOptimizations();
-
-    struct Frame
-    {
-        QueryPlan::Node * node = nullptr;
-
-        /// If not zero, traverse only depth_limit layers of tree (if no other optimizations happen).
-        /// Otherwise, traverse all children.
-        size_t depth_limit = 0;
-
-        /// Next child to process.
-        size_t next_child = 0;
-    };
-
-    std::stack<Frame> stack;
-    stack.push({.node = &root});
-
-    size_t max_optimizations_to_apply = settings.max_optimizations_to_apply;
-    size_t total_applied_optimizations = 0;
-
-    while (!stack.empty())
-    {
-        auto & frame = stack.top();
-
-        /// If traverse_depth_limit == 0, then traverse without limit (first entrance)
-        /// If traverse_depth_limit > 1, then traverse with (limit - 1)
-        if (frame.depth_limit != 1)
-        {
-            /// Traverse all children first.
-            if (frame.next_child < frame.node->children.size())
-            {
-                stack.push(
-                {
-                    .node = frame.node->children[frame.next_child],
-                    .depth_limit = frame.depth_limit ? (frame.depth_limit - 1) : 0,
-                });
-
-                ++frame.next_child;
-                continue;
-            }
-        }
-
-        /// Apply all optimizations.
-        for (const auto & optimization : optimizations)
-        {
-            if (!(settings.*(optimization.is_enabled)))
-                continue;
-
-            /// Just in case, skip optimization if it is not initialized.
-            if (!optimization.apply)
-                continue;
-
-            if (max_optimizations_to_apply && max_optimizations_to_apply < total_applied_optimizations)
-                throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
-                                "Too many optimizations applied to query plan. Current limit {}",
-                                max_optimizations_to_apply);
-
-            /// Try to apply optimization.
-            const auto & sub_query_plans = optimization.apply(frame.node, nodes);
-            if (!sub_query_plans.empty())
-                ++total_applied_optimizations;
-
-            for (const auto & sub_query_plan : sub_query_plans)
-            {
-                memo.addPlanNodeToGroup(sub_query_plan.getRoot());
-            }
-        }
-
-        /// Nothing was applied.
-        stack.pop();
-    }
-
-
-
-}
-
-void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
-{
-    size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
-    size_t num_applied_projection = 0;
-    bool has_reading_from_mt = false;
-
-    Stack stack;
-    stack.push_back({.node = &root});
-
-    while (!stack.empty())
-    {
-        auto & frame = stack.back();
-
-        if (frame.next_child == 0)
-        {
-            has_reading_from_mt |= typeid_cast<const ReadFromMergeTree *>(frame.node->step.get()) != nullptr;
-
-            if (optimization_settings.read_in_order)
-                optimizeReadInOrder(*frame.node, nodes);
-
-            if (optimization_settings.optimize_projection)
-                num_applied_projection += optimizeUseAggregateProjections(*frame.node, nodes);
-
-            if (optimization_settings.aggregation_in_order)
-                optimizeAggregationInOrder(*frame.node, nodes);
-
-            if (optimization_settings.distinct_in_order)
-                tryDistinctReadInOrder(frame.node);
-        }
-
-        /// Traverse all children first.
-        if (frame.next_child < frame.node->children.size())
-        {
-            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
-            ++frame.next_child;
-            stack.push_back(next_frame);
-            continue;
-        }
-
-        if (optimization_settings.optimize_projection)
-        {
-            if (optimizeUseNormalProjections(stack, nodes))
-            {
-                ++num_applied_projection;
-
-                if (max_optimizations_to_apply && max_optimizations_to_apply < num_applied_projection)
-                    throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
-                                    "Too many projection optimizations applied to query plan. Current limit {}",
-                                    max_optimizations_to_apply);
-
-                /// Stack is updated after this optimization and frame is not valid anymore.
-                /// Try to apply optimizations again to newly added plan steps.
-                --stack.back().next_child;
-                continue;
-            }
-        }
-
-        optimizePrewhere(stack, nodes);
-        optimizePrimaryKeyCondition(stack);
-        enableMemoryBoundMerging(*frame.node, nodes);
-
-        stack.pop_back();
-    }
-
-    if (optimization_settings.force_use_projection && has_reading_from_mt && num_applied_projection == 0)
-        throw Exception(
-            ErrorCodes::PROJECTION_NOT_USED,
-            "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1");
-}
-
-}
-}
+//#include <Common/Exception.h>
+//#include <Processors/QueryPlan/ReadFromMergeTree.h>
+//#include <Processors/QueryPlan/MergingAggregatedStep.h>
+//#include <QueryCoordination/NewOptimizer/Rule/Optimizations.h>
+//#include <QueryCoordination/NewOptimizer/Memo.h>
+//#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+//#include <Processors/QueryPlan/UnionStep.h>
+//
+//#include <stack>
+//
+//namespace DB
+//{
+//
+//namespace ErrorCodes
+//{
+//    extern const int TOO_MANY_QUERY_PLAN_OPTIMIZATIONS;
+//    extern const int PROJECTION_NOT_USED;
+//}
+//
+//namespace QueryPlanOptimizations
+//{
+//
+//void optimizeTree(Memo & memo, const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+//{
+//    if (!settings.optimize_plan)
+//        return;
+//
+//    const auto & optimizations = getOptimizations();
+//
+//    struct Frame
+//    {
+//        QueryPlan::Node * node = nullptr;
+//
+//        /// If not zero, traverse only depth_limit layers of tree (if no other optimizations happen).
+//        /// Otherwise, traverse all children.
+//        size_t depth_limit = 0;
+//
+//        /// Next child to process.
+//        size_t next_child = 0;
+//    };
+//
+//    std::stack<Frame> stack;
+//    stack.push({.node = &root});
+//
+//    size_t max_optimizations_to_apply = settings.max_optimizations_to_apply;
+//    size_t total_applied_optimizations = 0;
+//
+//    while (!stack.empty())
+//    {
+//        auto & frame = stack.top();
+//
+//        /// If traverse_depth_limit == 0, then traverse without limit (first entrance)
+//        /// If traverse_depth_limit > 1, then traverse with (limit - 1)
+//        if (frame.depth_limit != 1)
+//        {
+//            /// Traverse all children first.
+//            if (frame.next_child < frame.node->children.size())
+//            {
+//                stack.push(
+//                {
+//                    .node = frame.node->children[frame.next_child],
+//                    .depth_limit = frame.depth_limit ? (frame.depth_limit - 1) : 0,
+//                });
+//
+//                ++frame.next_child;
+//                continue;
+//            }
+//        }
+//
+//        /// Apply all optimizations.
+//        for (const auto & optimization : optimizations)
+//        {
+//            if (!(settings.*(optimization.is_enabled)))
+//                continue;
+//
+//            /// Just in case, skip optimization if it is not initialized.
+//            if (!optimization.apply)
+//                continue;
+//
+//            if (max_optimizations_to_apply && max_optimizations_to_apply < total_applied_optimizations)
+//                throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
+//                                "Too many optimizations applied to query plan. Current limit {}",
+//                                max_optimizations_to_apply);
+//
+//            /// Try to apply optimization.
+//            const auto & sub_query_plans = optimization.apply(frame.node->step, nodes);
+//            if (!sub_query_plans.empty())
+//                ++total_applied_optimizations;
+//
+//            for (const auto & sub_query_plan : sub_query_plans)
+//            {
+//                memo.addPlanNodeToGroup(sub_query_plan.getRoot());
+//            }
+//        }
+//
+//        /// Nothing was applied.
+//        stack.pop();
+//    }
+//
+//
+//
+//}
+//
+//void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+//{
+//    size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
+//    size_t num_applied_projection = 0;
+//    bool has_reading_from_mt = false;
+//
+//    Stack stack;
+//    stack.push_back({.node = &root});
+//
+//    while (!stack.empty())
+//    {
+//        auto & frame = stack.back();
+//
+//        if (frame.next_child == 0)
+//        {
+//            has_reading_from_mt |= typeid_cast<const ReadFromMergeTree *>(frame.node->step.get()) != nullptr;
+//
+//            if (optimization_settings.read_in_order)
+//                optimizeReadInOrder(*frame.node, nodes);
+//
+//            if (optimization_settings.optimize_projection)
+//                num_applied_projection += optimizeUseAggregateProjections(*frame.node, nodes);
+//
+//            if (optimization_settings.aggregation_in_order)
+//                optimizeAggregationInOrder(*frame.node, nodes);
+//
+//            if (optimization_settings.distinct_in_order)
+//                tryDistinctReadInOrder(frame.node);
+//        }
+//
+//        /// Traverse all children first.
+//        if (frame.next_child < frame.node->children.size())
+//        {
+//            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+//            ++frame.next_child;
+//            stack.push_back(next_frame);
+//            continue;
+//        }
+//
+//        if (optimization_settings.optimize_projection)
+//        {
+//            if (optimizeUseNormalProjections(stack, nodes))
+//            {
+//                ++num_applied_projection;
+//
+//                if (max_optimizations_to_apply && max_optimizations_to_apply < num_applied_projection)
+//                    throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
+//                                    "Too many projection optimizations applied to query plan. Current limit {}",
+//                                    max_optimizations_to_apply);
+//
+//                /// Stack is updated after this optimization and frame is not valid anymore.
+//                /// Try to apply optimizations again to newly added plan steps.
+//                --stack.back().next_child;
+//                continue;
+//            }
+//        }
+//
+//        optimizePrewhere(stack, nodes);
+//        optimizePrimaryKeyCondition(stack);
+//        enableMemoryBoundMerging(*frame.node, nodes);
+//
+//        stack.pop_back();
+//    }
+//
+//    if (optimization_settings.force_use_projection && has_reading_from_mt && num_applied_projection == 0)
+//        throw Exception(
+//            ErrorCodes::PROJECTION_NOT_USED,
+//            "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1");
+//}
+//
+//}
+//}

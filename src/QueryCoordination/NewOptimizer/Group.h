@@ -11,12 +11,12 @@ class Group
 public:
     Group() = default;
 
-    Group(const GroupNode & group_plan_node)
+    Group(GroupNode & group_plan_node)
     {
         addGroupNode(group_plan_node);
     }
 
-    const GroupNode & addGroupNode(const GroupNode & group_plan_node);
+    GroupNode & addGroupNode(GroupNode & group_plan_node);
 
     GroupNode & getOneGroupNode()
     {
@@ -33,19 +33,19 @@ public:
         return group_nodes;
     }
 
-    void addLowestCostGroupNode(const PhysicalProperties & properties, const GroupNode * group_node, Float64 cost)
+    void addLowestCostGroupNode(const PhysicalProperties & properties, GroupNode * group_node, Float64 cost)
     {
         auto it = lowest_cost_expressions.find(properties);
         if (it == lowest_cost_expressions.end())
         {
-            std::pair<Float64, const GroupNode *> cost_group_node{cost, group_node};
+            std::pair<Float64, GroupNode *> cost_group_node{cost, group_node};
             lowest_cost_expressions.emplace(properties, cost_group_node);
         }
         else
         {
             if (cost < it->second.first)
             {
-                std::pair<Float64, const GroupNode *> cost_group_node{cost, group_node};
+                std::pair<Float64, GroupNode *> cost_group_node{cost, group_node};
                 lowest_cost_expressions.emplace(properties, cost_group_node);
             }
         }
@@ -54,6 +54,11 @@ public:
     Float64 getCost(const PhysicalProperties & properties)
     {
         return lowest_cost_expressions[properties].first;
+    }
+
+    GroupNode & getBestGroupNode(const PhysicalProperties & properties)
+    {
+        return *lowest_cost_expressions[properties].second;
     }
 
     Float64 getLowestCost(const PhysicalProperties & required_properties)
@@ -76,7 +81,7 @@ public:
 private:
     std::vector<GroupNode> group_nodes;
 
-    std::unordered_map<PhysicalProperties, std::pair<Float64, const GroupNode *>, PhysicalProperties::HashFunction> lowest_cost_expressions;
+    std::unordered_map<PhysicalProperties, std::pair<Float64, GroupNode *>, PhysicalProperties::HashFunction> lowest_cost_expressions;
 };
 
 }

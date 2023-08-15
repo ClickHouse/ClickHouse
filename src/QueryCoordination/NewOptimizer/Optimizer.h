@@ -8,7 +8,7 @@ namespace DB
 class Optimizer
 {
 public:
-    QueryPlan optimize(QueryPlan && plan);
+    QueryPlan optimize(QueryPlan && plan, ContextPtr context);
 };
 
 }

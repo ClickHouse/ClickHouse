@@ -12,20 +12,20 @@ namespace QueryPlanOptimizations
 
 struct Optimization
 {
-    using Function = std::vector<SubQueryPlan> (*)(QueryPlanStepPtr step);
+    using Function = std::vector<SubQueryPlan> (*)(QueryPlanStepPtr step, ContextPtr context);
     const Function apply = nullptr;
     const char * name = "";
     const bool QueryPlanOptimizationSettings::* const is_enabled{};
 };
 
 
-std::vector<SubQueryPlan> trySplitAggregation(QueryPlanStepPtr step);
+std::vector<SubQueryPlan> trySplitAggregation(QueryPlanStepPtr step, ContextPtr context);
 
 
 inline const auto & getOptimizations()
 {
     static const std::array<Optimization, 10> optimizations = {{
-        {trySplitAggregation, "splitAggreagation", &QueryPlanOptimizationSettings::optimize_plan},
+        {trySplitAggregation, "splitAggregation", &QueryPlanOptimizationSettings::optimize_plan},
     }};
 
     return optimizations;

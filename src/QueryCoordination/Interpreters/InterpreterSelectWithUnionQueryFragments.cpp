@@ -26,6 +26,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryCoordination/NewOptimizer/Optimizer.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 
@@ -449,6 +450,9 @@ PlanFragmentPtrs InterpreterSelectWithUnionQueryFragments::buildFragments()
     query_plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
 
     const auto & resources = query_plan.getResources();
+
+    Optimizer optimizer;
+    optimizer.optimize(std::move(query_plan), context);
 
     PlanFragmentBuilder builder(storage_limits, context, query_plan);
     const auto & res_fragments = builder.build();

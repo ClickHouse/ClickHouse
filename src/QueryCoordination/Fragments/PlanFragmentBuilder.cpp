@@ -481,6 +481,4 @@ PlanFragmentPtr PlanFragmentBuilder::createUnpartitionedFragment(QueryPlanStepPt
     }
 }
 
-
-
 }

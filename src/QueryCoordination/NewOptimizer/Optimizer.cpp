@@ -4,17 +4,20 @@
 namespace DB
 {
 
-QueryPlan Optimizer::optimize(QueryPlan && plan)
+QueryPlan Optimizer::optimize(QueryPlan && plan, ContextPtr context)
 {
     /// rewrite plan by rule
 
     /// init Memo by plan
-    Memo memo(std::move(plan));
+    Memo memo(std::move(plan), context);
 
     /// logical equivalent transform
     memo.transform();
 
     /// enforce properties
+    memo.enforce();
+
+    return memo.extractPlan();
 }
 
 }
