@@ -110,8 +110,6 @@ void Keeper::createServer(const std::string & listen_host, const char * port_nam
     }
     catch (const Poco::Exception &)
     {
-        std::string message = "Listen [" + listen_host + "]:" + std::to_string(port) + " failed: " + getCurrentExceptionMessage(false);
-
         if (listen_try)
         {
             LOG_WARNING(&logger(), "Listen [{}]:{} failed: {}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, "
