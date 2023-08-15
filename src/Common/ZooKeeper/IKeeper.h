@@ -165,6 +165,10 @@ struct WatchResponse : virtual Response
 };
 
 using WatchCallback = std::function<void(const WatchResponse &)>;
+/// Passing watch callback as a shared_ptr allows to
+///  - avoid copying of the callback
+///  - registering the same callback only once per path
+using WatchCallbackPtr = std::shared_ptr<WatchCallback>;
 
 struct SetACLRequest : virtual Request
 {
@@ -557,12 +561,12 @@ public:
     virtual void exists(
         const String & path,
         ExistsCallback callback,
-        WatchCallback watch) = 0;
+        WatchCallbackPtr watch) = 0;
 
     virtual void get(
         const String & path,
         GetCallback callback,
-        WatchCallback watch) = 0;
+        WatchCallbackPtr watch) = 0;
 
     virtual void set(
         const String & path,
@@ -574,7 +578,7 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallback watch) = 0;
+        WatchCallbackPtr watch) = 0;
 
     virtual void check(
         const String & path,
