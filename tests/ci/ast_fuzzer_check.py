@@ -146,7 +146,7 @@ def main():
         "CLICKHOUSE_CI_LOGS_PASSWORD", "CLICKHOUSE_CI_LOGS_PASSWORD"
     )
 
-    if ci_logs_host != 'CLICKHOUSE_CI_LOGS_HOST':
+    if ci_logs_host != "CLICKHOUSE_CI_LOGS_HOST":
         subprocess.check_call(
             f"sed -i -r -e 's!{ci_logs_host}!CLICKHOUSE_CI_LOGS_HOST!g; s!{ci_logs_password}!CLICKHOUSE_CI_LOGS_PASSWORD!g;' '{run_log_path}' '{main_log_path}'",
             shell=True,
