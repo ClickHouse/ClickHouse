@@ -1811,7 +1811,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         }
         if (const auto * use_query = parsed_query->as<ASTUseQuery>())
         {
-            const String & new_database = use_query->database;
+            const String & new_database = use_query->getDatabase();
             /// If the client initiates the reconnection, it takes the settings from the config.
             config().setString("database", new_database);
             /// If the connection initiates the reconnection, it uses its variable.
