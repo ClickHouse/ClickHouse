@@ -1,4 +1,4 @@
-if (APPLE OR NOT ARCH_AMD64 OR SANITIZE STREQUAL "undefined")
+if (APPLE OR SANITIZE STREQUAL "undefined")
    set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
 else()
    set (ENABLE_EMBEDDED_COMPILER_DEFAULT ON)
@@ -10,8 +10,6 @@ if (NOT ENABLE_EMBEDDED_COMPILER)
     message(STATUS "Not using LLVM")
     return()
 endif()
-
-# TODO: Enable compilation on AArch64
 
 set (LLVM_VERSION "15.0.0bundled")
 set (LLVM_INCLUDE_DIRS
