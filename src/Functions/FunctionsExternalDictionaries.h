@@ -62,14 +62,13 @@ namespace ErrorCodes
   */
 
 
-class FunctionDictHelper : WithContext
+class FunctionDictHelper
 {
 public:
-    explicit FunctionDictHelper(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionDictHelper(ContextPtr context_) : current_context(context_) {}
 
     std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
-        auto current_context = getContext();
         auto dict = current_context->getExternalDictionariesLoader().getDictionary(dictionary_name, current_context);
 
         if (!access_checked)
@@ -132,10 +131,12 @@ public:
 
     DictionaryStructure getDictionaryStructure(const String & dictionary_name) const
     {
-        return getContext()->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, getContext());
+        return current_context->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, current_context);
     }
 
 private:
+    ContextPtr current_context;
+
     /// Access cannot be not granted, since in this case checkAccess() will throw and access_checked will not be updated.
     std::atomic<bool> access_checked = false;
 

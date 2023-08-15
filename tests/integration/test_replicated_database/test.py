@@ -1226,7 +1226,7 @@ def test_force_synchronous_settings(started_cluster):
 
     def select_func():
         dummy_node.query(
-            "SELECT sleepEachRow(1) FROM test_force_synchronous_settings.t"
+            "SELECT sleepEachRow(1) FROM test_force_synchronous_settings.t SETTINGS function_sleep_max_microseconds_per_block = 0"
         )
 
     select_thread = threading.Thread(target=select_func)
