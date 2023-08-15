@@ -10,6 +10,7 @@ import threading
 from helpers.cluster import ClickHouseCluster, run_and_check
 from helpers.test_tools import assert_logs_contain_with_retry
 
+from helpers.uclient import client, prompt
 
 MAX_SESSIONS_FOR_USER = 2
 POSTGRES_SERVER_PORT = 5433
@@ -27,7 +28,10 @@ proto_dir = os.path.join(SCRIPT_DIR, "./protos")
 gen_dir = os.path.join(SCRIPT_DIR, "./_gen")
 os.makedirs(gen_dir, exist_ok=True)
 run_and_check(
-    f"python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} {proto_dir}/clickhouse_grpc.proto",
+    "python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} \
+    {proto_dir}/clickhouse_grpc.proto".format(
+        proto_dir=proto_dir, gen_dir=gen_dir
+    ),
     shell=True,
 )
 
@@ -206,3 +210,36 @@ def test_profile_max_sessions_for_user_tcp_and_others(started_cluster):
 
 def test_profile_max_sessions_for_user_setting_in_query(started_cluster):
     instance.query_and_get_error("SET max_sessions_for_user = 10")
+
+
+def test_profile_max_sessions_for_user_client_suggestions_connection(started_cluster):
+    command_text = f"{started_cluster.get_client_cmd()} --host {instance.ip_address} --port 9000 -u {TEST_USER} --password {TEST_PASSWORD}"
+    command_text_without_suggestions = command_text + " --disable_suggestion"
+
+    # Launch client1 without suggestions to avoid a race condition:
+    # Client1 opens a session.
+    # Client1 opens a session for suggestion connection.
+    # Client2 fails to open a session and gets the USER_SESSION_LIMIT_EXCEEDED error.
+    #
+    # Expected order:
+    # Client1 opens a session.
+    # Client2 opens a session.
+    # Client2 fails to open a session for suggestions and with USER_SESSION_LIMIT_EXCEEDED (No error printed).
+    # Client3 fails to open a session.
+    # Client1 executes the query.
+    # Client2 loads suggestions from the server using the main connection and executes a query.
+    with client(
+        name="client1>", log=None, command=command_text_without_suggestions
+    ) as client1:
+        client1.expect(prompt)
+        with client(name="client2>", log=None, command=command_text) as client2:
+            client2.expect(prompt)
+            with client(name="client3>", log=None, command=command_text) as client3:
+                client3.expect("USER_SESSION_LIMIT_EXCEEDED")
+
+            client1.send("SELECT 'CLIENT_1_SELECT' FORMAT CSV")
+            client1.expect("CLIENT_1_SELECT")
+            client1.expect(prompt)
+            client2.send("SELECT 'CLIENT_2_SELECT' FORMAT CSV")
+            client2.expect("CLIENT_2_SELECT")
+            client2.expect(prompt)
