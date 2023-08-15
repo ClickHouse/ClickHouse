@@ -659,10 +659,10 @@ try
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
 #endif
 
-    const size_t memory_amount = getMemoryAmount();
+    const size_t physical_server_memory = getMemoryAmount();
 
     LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
-        formatReadableSizeWithBinarySuffix(memory_amount),
+        formatReadableSizeWithBinarySuffix(physical_server_memory),
         getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
         std::thread::hardware_concurrency());
 
@@ -1137,9 +1137,10 @@ try
             server_settings_.loadSettingsFromConfig(*config);
 
             size_t max_server_memory_usage = server_settings_.max_server_memory_usage;
-
             double max_server_memory_usage_to_ram_ratio = server_settings_.max_server_memory_usage_to_ram_ratio;
-            size_t default_max_server_memory_usage = static_cast<size_t>(memory_amount * max_server_memory_usage_to_ram_ratio);
+
+            size_t current_physical_server_memory = getMemoryAmount(); /// With cgroups, the amount of memory available to the server can be changed dynamically.
+            size_t default_max_server_memory_usage = static_cast<size_t>(current_physical_server_memory * max_server_memory_usage_to_ram_ratio);
 
             if (max_server_memory_usage == 0)
             {
@@ -1147,7 +1148,7 @@ try
                 LOG_INFO(log, "Setting max_server_memory_usage was set to {}"
                     " ({} available * {:.2f} max_server_memory_usage_to_ram_ratio)",
                     formatReadableSizeWithBinarySuffix(max_server_memory_usage),
-                    formatReadableSizeWithBinarySuffix(memory_amount),
+                    formatReadableSizeWithBinarySuffix(current_physical_server_memory),
                     max_server_memory_usage_to_ram_ratio);
             }
             else if (max_server_memory_usage > default_max_server_memory_usage)
@@ -1158,7 +1159,7 @@ try
                     " calculated as {} available"
                     " * {:.2f} max_server_memory_usage_to_ram_ratio",
                     formatReadableSizeWithBinarySuffix(max_server_memory_usage),
-                    formatReadableSizeWithBinarySuffix(memory_amount),
+                    formatReadableSizeWithBinarySuffix(current_physical_server_memory),
                     max_server_memory_usage_to_ram_ratio);
             }
 
@@ -1168,14 +1169,14 @@ try
 
             size_t merges_mutations_memory_usage_soft_limit = server_settings_.merges_mutations_memory_usage_soft_limit;
 
-            size_t default_merges_mutations_server_memory_usage = static_cast<size_t>(memory_amount * server_settings_.merges_mutations_memory_usage_to_ram_ratio);
+            size_t default_merges_mutations_server_memory_usage = static_cast<size_t>(current_physical_server_memory * server_settings_.merges_mutations_memory_usage_to_ram_ratio);
             if (merges_mutations_memory_usage_soft_limit == 0)
             {
                 merges_mutations_memory_usage_soft_limit = default_merges_mutations_server_memory_usage;
                 LOG_INFO(log, "Setting merges_mutations_memory_usage_soft_limit was set to {}"
                     " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
                     formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
-                    formatReadableSizeWithBinarySuffix(memory_amount),
+                    formatReadableSizeWithBinarySuffix(current_physical_server_memory),
                     server_settings_.merges_mutations_memory_usage_to_ram_ratio);
             }
             else if (merges_mutations_memory_usage_soft_limit > default_merges_mutations_server_memory_usage)
@@ -1184,7 +1185,7 @@ try
                 LOG_WARNING(log, "Setting merges_mutations_memory_usage_soft_limit was set to {}"
                     " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
                     formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
-                    formatReadableSizeWithBinarySuffix(memory_amount),
+                    formatReadableSizeWithBinarySuffix(current_physical_server_memory),
                     server_settings_.merges_mutations_memory_usage_to_ram_ratio);
             }
 
@@ -1486,7 +1487,7 @@ try
 
     /// Set up caches.
 
-    const size_t max_cache_size = static_cast<size_t>(memory_amount * server_settings.cache_size_to_ram_max_ratio);
+    const size_t max_cache_size = static_cast<size_t>(physical_server_memory * server_settings.cache_size_to_ram_max_ratio);
 
     String uncompressed_cache_policy = server_settings.uncompressed_cache_policy;
     size_t uncompressed_cache_size = server_settings.uncompressed_cache_size;
