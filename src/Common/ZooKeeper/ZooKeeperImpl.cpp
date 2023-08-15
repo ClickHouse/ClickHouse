@@ -782,9 +782,9 @@ void ZooKeeper::receiveEvent()
             }
             else
             {
-                for (auto & callback : it->second)
+                for (const auto & callback : it->second)
                     if (callback)
-                        callback(watch_response);   /// NOTE We may process callbacks not under mutex.
+                        (*callback)(watch_response);   /// NOTE We may process callbacks not under mutex.
 
                 CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, it->second.size());
                 watches.erase(it);
@@ -846,13 +846,17 @@ void ZooKeeper::receiveEvent()
 
             if (add_watch)
             {
-                CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
 
                 /// The key of wathces should exclude the args.chroot
                 String req_path = request_info.request->getPath();
                 removeRootPath(req_path, args.chroot);
                 std::lock_guard lock(watches_mutex);
-                watches[req_path].emplace_back(std::move(request_info.watch));
+                auto & callbacks = watches[req_path];
+                if (request_info.watch && *request_info.watch)
+                {
+                    if (callbacks.insert(request_info.watch).second)
+                        CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
+                }
             }
         }
 
@@ -1002,14 +1006,14 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                 response.state = EXPIRED_SESSION;
                 response.error = Error::ZSESSIONEXPIRED;
 
-                for (auto & callback : path_watches.second)
+                for (const auto & callback : path_watches.second)
                 {
                     watch_callback_count += 1;
                     if (callback)
                     {
                         try
                         {
-                            callback(response);
+                            (*callback)(response);
                         }
                         catch (...)
                         {
@@ -1054,7 +1058,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                 response.error = Error::ZSESSIONEXPIRED;
                 try
                 {
-                    info.watch(response);
+                    (*info.watch)(response);
                 }
                 catch (...)
                 {
@@ -1232,7 +1236,7 @@ void ZooKeeper::remove(
 void ZooKeeper::exists(
     const String & path,
     ExistsCallback callback,
-    WatchCallback watch)
+    WatchCallbackPtr watch)
 {
     ZooKeeperExistsRequest request;
     request.path = path;
@@ -1250,7 +1254,7 @@ void ZooKeeper::exists(
 void ZooKeeper::get(
     const String & path,
     GetCallback callback,
-    WatchCallback watch)
+    WatchCallbackPtr watch)
 {
     ZooKeeperGetRequest request;
     request.path = path;
@@ -1289,7 +1293,7 @@ void ZooKeeper::list(
     const String & path,
     ListRequestType list_request_type,
     ListCallback callback,
-    WatchCallback watch)
+    WatchCallbackPtr watch)
 {
     std::shared_ptr<ZooKeeperListRequest> request{nullptr};
     if (!isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
@@ -1310,7 +1314,8 @@ void ZooKeeper::list(
 
     RequestInfo request_info;
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListResponse &>(response)); };
-    request_info.watch = watch;
+    if (watch)
+        request_info.watch = std::move(watch);
     request_info.request = std::move(request);
 
     pushRequest(std::move(request_info));
