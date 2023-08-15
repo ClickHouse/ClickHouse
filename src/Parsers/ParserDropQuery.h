@@ -14,7 +14,7 @@ namespace DB
   * DETACH|TRUNCATE TABLE [IF EXISTS] [db.]name [PERMANENTLY]
   *
   * Or:
-  * DROP DATABASE [IF EXISTS|EMPTY] db
+  * DROP DATABASE [IF EXISTS] db
   *
   * Or:
   * DROP DICTIONARY [IF EXISTS] [db.]name
