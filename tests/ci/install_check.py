@@ -279,7 +279,7 @@ def main():
             sys.exit(0)
 
     docker_images = {
-        name: get_image_with_version(REPORTS_PATH, name)
+        name: get_image_with_version(REPORTS_PATH, name, args.download)
         for name in (RPM_IMAGE, DEB_IMAGE)
     }
     prepare_test_scripts()
@@ -296,6 +296,8 @@ def main():
                 is_match = is_match or path.endswith(".rpm")
             if args.tgz:
                 is_match = is_match or path.endswith(".tgz")
+            # We don't need debug packages, so let's filter them out
+            is_match = is_match and "-dbg" not in path
             return is_match
 
         download_builds_filter(
