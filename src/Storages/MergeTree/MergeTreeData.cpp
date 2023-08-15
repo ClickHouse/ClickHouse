@@ -8435,7 +8435,7 @@ void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
     }
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
+std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name,
         const MergeTreeTransactionPtr & txn)
 {
@@ -8454,6 +8454,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
     ReservationPtr reservation = reserveSpacePreferringTTLRules(metadata_snapshot, 0, move_ttl_infos, time(nullptr), 0, true);
     VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
+    auto tmp_dir_holder = getTemporaryPartDirectoryHolder(EMPTY_PART_TMP_PREFIX + new_part_name);
     auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, EMPTY_PART_TMP_PREFIX + new_part_name)
         .withBytesAndRowsOnDisk(0, 0)
         .withPartInfo(new_part_info)
@@ -8513,7 +8514,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
     out.finalizePart(new_data_part, sync_on_insert);
 
     new_data_part_storage->precommitTransaction();
-    return new_data_part;
+    return std::make_pair(std::move(new_data_part), std::move(tmp_dir_holder));
 }
 
 bool MergeTreeData::allowRemoveStaleMovingParts() const
