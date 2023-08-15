@@ -16,7 +16,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesNumberWithOpposite.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
 
@@ -593,7 +592,6 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
     /// For numeric types, the most complicated part.
     {
-        optimizeTypeIds(types, type_ids);
         auto numeric_type = getNumericType<on_error>(type_ids);
         if (numeric_type)
             return numeric_type;
@@ -601,38 +599,6 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
     /// All other data types (UUID, AggregateFunction, Enum...) are compatible only if they are the same (checked in trivial cases).
     return throwOrReturn<on_error>(types, "", ErrorCodes::NO_COMMON_TYPE);
-}
-
-// Convert the UInt64 type to Int64 in order to cover other signed_integer types and obtain the least super type of all ints.
-// Example, UInt64(both Int64), Int8 = Int64, Int8.
-void optimizeTypeIds(const DataTypes & types, TypeIndexSet & type_ids)
-{
-    if ((!type_ids.contains(TypeIndex::Int8) && !type_ids.contains(TypeIndex::Int16) && !type_ids.contains(TypeIndex::Int32) && !type_ids.contains(TypeIndex::Int64)) || !type_ids.contains(TypeIndex::UInt64))
-        return;
-
-    bool has_opposite = false;
-    TypeIndexSet opposite_type_ids;
-
-    for (const auto & type : types)
-    {
-        auto type_id = type->getTypeId();
-
-        if (type_id == TypeIndex::UInt64)
-        {
-            if (const auto * uint64_with_opposite = typeid_cast<const DataTypeUInt64WithOpposite *>(type.get()))
-            {
-                has_opposite = true;
-                opposite_type_ids.insert(uint64_with_opposite->getOppositeSignDataType()->getTypeId());
-            }else
-                return;
-        }
-    }
-
-    if (has_opposite)
-    {
-        type_ids.erase(TypeIndex::UInt64);
-        type_ids.insert(opposite_type_ids.begin(), opposite_type_ids.end());
-    }
 }
 
 DataTypePtr getLeastSupertypeOrString(const DataTypes & types)
