@@ -55,6 +55,14 @@ echo "$test_env" >> /etc/default/clickhouse
 systemctl start clickhouse-server
 clickhouse-client -q 'SELECT version()'
 grep "$test_env" /proc/$(cat /var/run/clickhouse-server/clickhouse-server.pid)/environ"""
+    initd_test = r"""#!/bin/bash
+set -e
+trap "bash -ex /packages/preserve_logs.sh" ERR
+test_env='TEST_THE_DEFAULT_PARAMETER=15'
+echo "$test_env" >> /etc/default/clickhouse
+/etc/init.d/clickhouse-server start
+clickhouse-client -q 'SELECT version()'
+grep "$test_env" /proc/$(cat /var/run/clickhouse-server/clickhouse-server.pid)/environ"""
     keeper_test = r"""#!/bin/bash
 set -e
 trap "bash -ex /packages/preserve_logs.sh" ERR
@@ -105,6 +113,7 @@ chmod a+rw -R /tests_logs
 exit 1
 """
     (TEMP_PATH / "server_test.sh").write_text(server_test, encoding="utf-8")
+    (TEMP_PATH / "initd_test.sh").write_text(initd_test, encoding="utf-8")
     (TEMP_PATH / "keeper_test.sh").write_text(keeper_test, encoding="utf-8")
     (TEMP_PATH / "binary_test.sh").write_text(binary_test, encoding="utf-8")
     (TEMP_PATH / "preserve_logs.sh").write_text(preserve_logs, encoding="utf-8")
@@ -115,6 +124,9 @@ def test_install_deb(image: DockerImage) -> TestResults:
         "Install server deb": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-{server,client,common}*deb
 bash -ex /packages/server_test.sh""",
+        "Run server init.d": r"""#!/bin/bash -ex
+apt-get install /packages/clickhouse-{server,client,common}*deb
+bash -ex /packages/initd_test.sh""",
         "Install keeper deb": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-keeper*deb
 bash -ex /packages/keeper_test.sh""",
