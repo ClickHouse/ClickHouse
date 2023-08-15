@@ -213,7 +213,7 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
             };
         }
         else
-            throw KeeperException(std::string("Unknown key ") + key + " in config file", Coordination::Error::ZBADARGUMENTS);
+            throw KeeperException(Coordination::Error::ZBADARGUMENTS, "Unknown key {} in config file", key);
     }
 }
 

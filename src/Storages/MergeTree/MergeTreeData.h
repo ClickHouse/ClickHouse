@@ -936,7 +936,9 @@ public:
     WriteAheadLogPtr getWriteAheadLog();
 
     constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
-    MergeTreeData::MutableDataPartPtr createEmptyPart(MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name, const MergeTreeTransactionPtr & txn);
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
+        MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
+        const String & new_part_name, const MergeTreeTransactionPtr & txn);
 
     MergeTreeDataFormatVersion format_version;
 
