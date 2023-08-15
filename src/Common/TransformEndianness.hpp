@@ -6,8 +6,6 @@
 
 #include <city.h>
 
-#include <city.h>
-
 #include <utility>
 
 namespace DB
