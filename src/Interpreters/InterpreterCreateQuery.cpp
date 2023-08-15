@@ -1337,7 +1337,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery() &&
             !DatabaseCatalog::instance().hasUUIDMapping(create.uuid) &&
             Context::getGlobalContextInstance()->isServerCompletelyStarted() &&
-            Context::getGlobalContextInstance()->getConfigRef().getBool("allow_moving_table_dir_to_trash", false))
+            Context::getGlobalContextInstance()->getConfigRef().getBool("allow_moving_table_directory_to_trash", false))
         {
             /// This is a secondary query from a Replicated database. It cannot be retried with another UUID, we must execute it as is.
             /// We don't have a table with this UUID (and all metadata is loaded),
