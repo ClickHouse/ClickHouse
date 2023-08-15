@@ -160,15 +160,18 @@ void OptimizeDateOrDateTimeConverterWithPreimageMatcher::visit(const ASTFunction
     auto data_type_and_name = data.tables[*pos].columns.tryGetByName(column_id->shortName());
     if (!data_type_and_name) return;
 
+    const auto column_type = data_type_and_name->type;
+    if (!column_type || (!isDateOrDate32(*column_type) && !isDateTime(*column_type) && !isDateTime64(*column_type))) return;
+
     const auto & converter = FunctionFactory::instance().tryGet(ast_func->name, data.context);
     if (!converter) return;
 
     ColumnsWithTypeAndName args;
-    args.emplace_back(data_type_and_name->type, "tmp");
+    args.emplace_back(column_type, "tmp");
     auto converter_base = converter->build(args);
     if (!converter_base || !converter_base->hasInformationAboutPreimage()) return;
 
-    auto preimage_range = converter_base->getPreimage(*(data_type_and_name->type), literal->value);
+    auto preimage_range = converter_base->getPreimage(*column_type, literal->value);
     if (!preimage_range) return;
 
     const auto new_ast = generateOptimizedDateFilterAST(comparator, *data_type_and_name, *preimage_range);
