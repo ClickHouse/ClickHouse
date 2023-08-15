@@ -1,4 +1,5 @@
 #pragma once
+#include "IO/ReadBufferFromString.h"
 #include "config.h"
 
 #if USE_ORC
@@ -13,19 +14,33 @@ namespace DB
 class ORCInputStream : public orc::InputStream
 {
 public:
-    explicit ORCInputStream(SeekableReadBuffer & in_);
+    ORCInputStream(SeekableReadBuffer & in_, size_t file_size_);
 
     uint64_t getLength() const override;
     uint64_t getNaturalReadSize() const override;
     void read(void * buf, uint64_t length, uint64_t offset) override;
     const std::string & getName() const override { return name; }
 
-private:
+protected:
     SeekableReadBuffer & in;
+    size_t file_size;
     std::string name = "ORCInputStream";
 };
 
-std::unique_ptr<orc::InputStream> asORCInputStream(ReadBuffer & in);
+class ORCInputStreamFromString : public ReadBufferFromOwnString, public ORCInputStream
+{
+public:
+    template <typename S>
+    ORCInputStreamFromString(S && s_, size_t file_size_)
+        : ReadBufferFromOwnString(std::forward<S>(s_)), ORCInputStream(dynamic_cast<SeekableReadBuffer &>(*this), file_size_)
+    {
+    }
+};
+
+std::unique_ptr<orc::InputStream> asORCInputStream(ReadBuffer & in, const FormatSettings & settings, std::atomic<int> & is_cancelled);
+
+// Reads the whole file into a memory buffer, owned by the returned RandomAccessFile.
+std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in, std::atomic<int> & is_cancelled);
 
 
 class ORCColumnToCHColumn;
@@ -91,11 +106,7 @@ public:
     using ORCColumnWithType = std::pair<ORCColumnPtr, ORCTypePtr>;
     using NameToColumnPtr = std::unordered_map<std::string, ORCColumnWithType>;
 
-    ORCColumnToCHColumn(
-        const Block & header_,
-        bool allow_missing_columns_,
-        bool null_as_default_,
-        bool case_insensitive_matching_ = false);
+    ORCColumnToCHColumn(const Block & header_, bool allow_missing_columns_, bool null_as_default_, bool case_insensitive_matching_ = false);
 
     void orcTableToCHChunk(
         Chunk & res,
