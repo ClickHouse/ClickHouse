@@ -1,4 +1,5 @@
 #include "NativeORCBlockInputFormat.h"
+#include "ArrowBufferedStreams.h"
 
 #if USE_ORC
 #    include <Columns/ColumnDecimal.h>
@@ -39,17 +40,17 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TYPE;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
-    extern const int BAD_ARGUMENTS;
     extern const int THERE_IS_NO_COLUMN;
+    extern const int INCORRECT_DATA;
 }
 
-ORCInputStream::ORCInputStream(SeekableReadBuffer & in_) : in(in_)
+ORCInputStream::ORCInputStream(SeekableReadBuffer & in_, size_t file_size_) : in(in_), file_size(file_size_)
 {
 }
 
 uint64_t ORCInputStream::getLength() const
 {
-    return getFileSizeFromReadBuffer(in);
+    return file_size;
 }
 
 uint64_t ORCInputStream::getNaturalReadSize() const
@@ -65,17 +66,34 @@ void ORCInputStream::read(void * buf, uint64_t length, uint64_t offset)
     in.readStrict(reinterpret_cast<char *>(buf), length);
 }
 
-std::unique_ptr<orc::InputStream> asORCInputStream(ReadBuffer & in)
+std::unique_ptr<orc::InputStream> asORCInputStream(ReadBuffer & in, const FormatSettings & settings, std::atomic<int> & is_cancelled)
 {
     bool has_file_size = isBufferWithFileSize(in);
-    if (!has_file_size)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORC format supports only input with known size");
-
     auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&in);
-    if (!seekable_in)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORC format supports only seekable input");
 
-    return std::make_unique<ORCInputStream>(*seekable_in);
+    if (has_file_size && seekable_in && settings.seekable_read)
+        return std::make_unique<ORCInputStream>(*seekable_in, getFileSizeFromReadBuffer(in));
+
+    // fallback to loading the entire file in memory
+    return asORCInputStreamLoadIntoMemory(in, is_cancelled);
+}
+
+std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in, std::atomic<int> & is_cancelled)
+{
+    size_t magic_size = strlen(ORC_MAGIC_BYTES);
+    std::string file_data(magic_size, '\0');
+
+    /// Avoid loading the whole file if it doesn't seem to even be in the correct format.
+    size_t bytes_read = in.read(file_data.data(), magic_size);
+    if (bytes_read < magic_size || file_data != ORC_MAGIC_BYTES)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Not an ORC file");
+
+    WriteBufferFromString file_buffer(file_data, AppendModeTag{});
+    copyData(in, file_buffer, is_cancelled);
+    file_buffer.finalize();
+
+    size_t file_size = file_data.size();
+    return std::make_unique<ORCInputStreamFromString>(std::move(file_data), file_size);
 }
 
 static DataTypePtr parseORCType(const orc::Type * orc_type)
@@ -158,14 +176,14 @@ static void getFileReaderAndSchema(
     ReadBuffer & in,
     std::unique_ptr<orc::Reader> & file_reader,
     Block & header,
-    const FormatSettings & /*format_settings*/,
+    const FormatSettings & format_settings,
     std::atomic<int> & is_stopped)
 {
     if (is_stopped)
         return;
 
     orc::ReaderOptions options;
-    auto input_stream = asORCInputStream(in);
+    auto input_stream = asORCInputStream(in, format_settings, is_stopped);
     file_reader = orc::createReader(std::move(input_stream), options);
     const auto & schema = file_reader->getType();
 
@@ -1050,8 +1068,7 @@ void registerInputFormatORC(FormatFactory & factory)
 void registerORCSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
-        "ORC",
-        [](ReadBuffer & buf, const FormatSettings & settings) { return std::make_shared<ORCSchemaReader>(buf, settings); });
+        "ORC", [](ReadBuffer & buf, const FormatSettings & settings) { return std::make_shared<ORCSchemaReader>(buf, settings); });
 
     factory.registerAdditionalInfoForSchemaCacheGetter(
         "ORC",
