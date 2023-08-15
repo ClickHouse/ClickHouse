@@ -191,6 +191,9 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> TestResults:
                 retcode = process.wait()
                 if retcode == 0:
                     status = OK
+                    subprocess.check_call(
+                        f"docker kill -s 9 {container_id}", shell=True
+                    )
                     break
 
                 status = FAIL
@@ -198,8 +201,8 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> TestResults:
             archive_path = TEMP_PATH / f"{container_name}-{retry}.tar.gz"
             compress_fast(LOGS_PATH, archive_path)
             logs.append(archive_path)
+            subprocess.check_call(f"docker kill -s 9 {container_id}", shell=True)
 
-        subprocess.check_call(f"docker kill -s 9 {container_id}", shell=True)
         test_results.append(TestResult(name, status, stopwatch.duration_seconds, logs))
 
     return test_results
