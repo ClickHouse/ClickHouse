@@ -729,6 +729,21 @@ private:
     /// Repairs metadata of staled replica. Called from cloneReplica(...)
     void cloneMetadataIfNeeded(const String & source_replica, const String & source_path, zkutil::ZooKeeperPtr & zookeeper);
 
+    /// @param is_new - is replica new (then it will be cloned, not restored)
+    /// @param is_lost_version - version of is_lost znode
+    /// @param create_is_lost - create is_lost node (compatibility with old versions)
+    /// @return true if replica is lost, and this means that it should be either restored or cloned from another.
+    static bool isReplicaLost(zkutil::ZooKeeperPtr zookeeper, const String & replica_path, bool & is_new, int & is_lost_version, bool create_is_lost = false);
+
+    /// Get the most recent replica, looks at:
+    /// - /is_lost
+    /// - /queue
+    /// - /log_pointer
+    ///
+    /// @param source_is_lost_stat - required to ensure that the replica will not became lost during clone
+    /// @return replica to clone from
+    String getReplicaToCloneFrom(zkutil::ZooKeeperPtr zookeeper, Coordination::Stat & source_is_lost_stat) const;
+
     /// Clone replica if it is lost.
     void cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zookeeper);
 

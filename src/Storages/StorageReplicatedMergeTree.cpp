@@ -3295,28 +3295,37 @@ void StorageReplicatedMergeTree::cloneMetadataIfNeeded(const String & source_rep
 }
 
 
-void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zookeeper)
+bool StorageReplicatedMergeTree::isReplicaLost(zkutil::ZooKeeperPtr zookeeper, const String & replica_path, bool & is_new, int & is_lost_version, bool create_is_lost)
 {
     Coordination::Stat is_lost_stat;
-    bool is_new_replica = true;
     String res;
+
+    is_new = true;
+    is_lost_version = -1;
 
     if (zookeeper->tryGet(fs::path(replica_path) / "is_lost", res, &is_lost_stat))
     {
         if (res == "0")
-            return;
+            return false;
+        is_lost_version = is_lost_stat.version;
         if (is_lost_stat.version)
-            is_new_replica = false;
+            is_new = false;
     }
     else
     {
         /// Replica was created by old version of CH, so me must create "/is_lost".
         /// Note that in old version of CH there was no "lost" replicas possible.
         /// TODO is_lost node should always exist since v18.12, maybe we can replace `tryGet` with `get` and remove old code?
-        zookeeper->create(fs::path(replica_path) / "is_lost", "0", zkutil::CreateMode::Persistent);
-        return;
+        if (create_is_lost)
+            zookeeper->create(fs::path(replica_path) / "is_lost", "0", zkutil::CreateMode::Persistent);
+        return false;
     }
 
+    return true;
+}
+
+String StorageReplicatedMergeTree::getReplicaToCloneFrom(zkutil::ZooKeeperPtr zookeeper, Coordination::Stat & source_is_lost_stat) const
+{
     /// is_lost is "1": it means that we are in repair mode.
     /// Try choose source replica to clone.
     /// Source replica must not be lost and should have minimal queue size and maximal log pointer.
@@ -3353,7 +3362,6 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
 
     size_t min_replication_lag = std::numeric_limits<size_t>::max();
     String source_replica;
-    Coordination::Stat source_is_lost_stat;
     size_t future_num = 0;
 
     for (const String & source_replica_name : replicas)
@@ -3406,6 +3414,19 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     if (source_replica.empty())
         throw Exception(ErrorCodes::ALL_REPLICAS_LOST, "All replicas are lost. "
                         "See SYSTEM DROP REPLICA and SYSTEM RESTORE REPLICA queries, they may help");
+
+    return source_replica;
+}
+
+void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zookeeper)
+{
+    bool is_new_replica;
+    int is_lost_version;
+    if (!isReplicaLost(zookeeper, replica_path, is_new_replica, is_lost_version, /* create_is_lost= */ true))
+        return;
+
+    Coordination::Stat source_is_lost_stat;
+    String source_replica = getReplicaToCloneFrom(zookeeper, source_is_lost_stat);
 
     if (is_new_replica)
         LOG_INFO(log, "Will mimic {}", source_replica);
