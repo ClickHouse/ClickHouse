@@ -56,18 +56,17 @@ InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, ContextMut
 BlockIO InterpreterDropQuery::execute()
 {
     auto & drop = query_ptr->as<ASTDropQuery &>();
-    if (!drop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
-    {
-        DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccessForDDLOnCluster();
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
-    }
 
     if (getContext()->getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously)
         drop.sync = true;
 
     if (drop.table)
         return executeToTable(drop);
+    else if (drop.database && !drop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext())) {
+            DDLQueryOnClusterParams params;
+            params.access_to_check = getRequiredAccessForDDLOnCluster();
+            return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+    }
     else if (drop.database)
         return executeToDatabase(drop);
     else
@@ -157,6 +156,18 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
         else
             drop_storage = AccessType::DROP_TABLE;
 
+        auto new_query_ptr = query.clone();
+        auto & query_to_send = new_query_ptr->as<ASTDropQuery &>();
+
+        if (!query.cluster.empty() && !maybeRemoveOnCluster(new_query_ptr, getContext()))
+        {
+            query_to_send.if_empty = false;
+
+            DDLQueryOnClusterParams params;
+            params.access_to_check = getRequiredAccessForDDLOnCluster();
+            return executeDDLQueryOnCluster(new_query_ptr, getContext(), params);
+        }
+
         if (database->shouldReplicateQuery(getContext(), query_ptr))
         {
             if (query.kind == ASTDropQuery::Kind::Detach)
@@ -169,11 +180,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             ddl_guard->releaseTableLock();
             table.reset();
 
-            auto new_query = query.clone();
-            auto & query_to_send = new_query->as<ASTDropQuery &>();
             query_to_send.if_empty = false;
 
-            return database->tryEnqueueReplicatedDDL(new_query, context_);
+            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_);
         }
 
         if (query.kind == ASTDropQuery::Kind::Detach)

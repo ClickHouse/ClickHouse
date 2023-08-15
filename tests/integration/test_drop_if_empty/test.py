@@ -36,29 +36,52 @@ def start_cluster():
 
 
 def test_drop_if_empty(start_cluster):
+    settings = {
+        "allow_experimental_database_replicated": 1,
+    }
+    node1.query(
+        "CREATE DATABASE replicateddb "
+        "ENGINE = Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node1')",
+        settings = settings,
+    )
+    node2.query(
+        "CREATE DATABASE replicateddb "
+        "ENGINE = Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node2')",
+        settings = settings,
+    )
     node1.query(
         "CREATE TABLE default.tbl ON CLUSTER 'cluster' ("
         "x UInt64"
         ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
         "ORDER BY x"
     )
-
-    time.sleep(5)
+    node1.query(
+        "CREATE TABLE replicateddb.tbl2 ("
+        "x UInt64"
+        ") ENGINE=MergeTree "
+        "ORDER BY x"
+    )
 
     assert 1 == int(node2.query("SELECT count() FROM system.tables WHERE name = 'tbl';"))
+    assert 1 == int(node2.query("SELECT count() FROM system.databases WHERE name = 'replicateddb';"))
+    assert 1 == int(node2.query("SELECT count() FROM system.tables WHERE name = 'tbl2';"))
 
     node2.query("SYSTEM STOP MERGES;")
     node2.query("SYSTEM STOP FETCHES;")
     node2.query("SYSTEM STOP REPLICATION QUEUES;")
 
     node1.query("INSERT INTO default.tbl SELECT * FROM system.numbers_mt LIMIT 10000;")
+    node1.query("INSERT INTO replicateddb.tbl2 SELECT * FROM system.numbers_mt LIMIT 10000;")
+
     time.sleep(5)
     assert 0 == int(node2.query("SELECT count() FROM default.tbl;"))
+    assert 0 == int(node2.query("SELECT count() FROM replicateddb.tbl2;"))
 
-    # node2.query("DROP TABLE IF EMPTY default.tbl ON CLUSTER 'cluster';")
     node2.query("DROP TABLE IF EMPTY default.tbl ON CLUSTER 'cluster';")
-    # node2.query("DROP TABLE IF EMPTY default.tbl;")
+    node2.query("DROP TABLE IF EMPTY replicateddb.tbl2;")
 
 
     assert 0 == int(node1.query("SELECT count() FROM system.tables WHERE name = 'tbl';"))
     assert 0 == int(node2.query("SELECT count() FROM system.tables WHERE name = 'tbl';"))
+    assert 0 == int(node1.query("SELECT count() FROM system.tables WHERE name = 'tbl2';"))
+    assert 0 == int(node2.query("SELECT count() FROM system.tables WHERE name = 'tbl2';"))

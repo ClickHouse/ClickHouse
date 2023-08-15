@@ -1,14 +1,14 @@
 <clickhouse>
     <http_port>8123</http_port>
     <tcp_port>9000</tcp_port>
-    <merge_tree>
-      <min_relative_delay_to_measure>1</min_relative_delay_to_measure>
-      <min_relative_delay_to_close>3</min_relative_delay_to_close>
-    </merge_tree>
     <profiles>
         <default>
-          <max_block_size>1</max_block_size>
-          <max_insert_block_size>1</max_insert_block_size>
+            <allow_experimental_database_replicated>1</allow_experimental_database_replicated>
         </default>
     </profiles>
+    <users>
+        <default>
+            <profile>default</profile>
+        </default>
+    </users>
 </clickhouse>
