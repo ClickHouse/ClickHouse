@@ -107,6 +107,9 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
         {
             gcd = gcd_func<T>(gcd, unalignedLoad<T>(cur_source));
         }
+        if (gcd == T(1)) {
+            break;
+        }
     }
 
     unalignedStore<T>(dest, gcd);
