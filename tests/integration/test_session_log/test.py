@@ -2,10 +2,8 @@ import os
 
 import grpc
 import pymysql.connections
-import psycopg2 as py_psql
 import pytest
 import random
-import logging
 import sys
 import threading
 
@@ -92,19 +90,20 @@ def grpc_query(query, user_, pass_, raise_exception):
 def postgres_query(query, user_, pass_, raise_exception):
     try:
         connection_string = f"host={instance.hostname} port={POSTGRES_SERVER_PORT} dbname=default user={user_} password={pass_}"
-        cluster.exec_in_container(cluster.postgres_id,
-                [
-                    "/usr/bin/psql",
-                    connection_string,
-                    "--no-align", 
-                    "--field-separator=' '",
-                    "-c",
-                    query
-                ],
-                shell=True
-            )
+        cluster.exec_in_container(
+            cluster.postgres_id,
+            [
+                "/usr/bin/psql",
+                connection_string,
+                "--no-align",
+                "--field-separator=' '",
+                "-c",
+                query,
+            ],
+            shell=True,
+        )
     except Exception:
-        assert raise_exception  
+        assert raise_exception
 
 
 def mysql_query(query, user_, pass_, raise_exception):
@@ -125,6 +124,7 @@ def mysql_query(query, user_, pass_, raise_exception):
         cursor.fetchall()
     except Exception:
         assert raise_exception
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
