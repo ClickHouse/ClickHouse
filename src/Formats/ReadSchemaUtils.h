@@ -10,9 +10,9 @@ namespace DB
 struct IReadBufferIterator
 {
     virtual ~IReadBufferIterator() = default;
-    
+
     virtual std::unique_ptr<ReadBuffer> next() = 0;
-    
+
     virtual std::optional<ColumnsDescription> getCachedColumns() { return std::nullopt; }
 
     virtual void setNumRowsToLastFile(size_t /*num_rows*/) {}

@@ -4,11 +4,11 @@
 
 #if USE_HDFS
 
-#    include <Processors/ISource.h>
-#    include <Storages/Cache/SchemaCache.h>
-#    include <Storages/IStorage.h>
-#    include <Storages/prepareReadingFromFormat.h>
-#    include <Poco/URI.h>
+#include <Processors/ISource.h>
+#include <Storages/Cache/SchemaCache.h>
+#include <Storages/IStorage.h>
+#include <Storages/prepareReadingFromFormat.h>
+#include <Poco/URI.h>
 
 namespace DB
 {
