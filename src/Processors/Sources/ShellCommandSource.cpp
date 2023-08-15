@@ -2,7 +2,6 @@
 
 #include <poll.h>
 
-#include <Common/Epoll.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
@@ -67,19 +66,14 @@ static void makeFdBlocking(int fd)
         throwFromErrno("Cannot set blocking mode of pipe", ErrorCodes::CANNOT_FCNTL);
 }
 
-static bool pollFd(int fd, size_t timeout_milliseconds, int events)
+static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_milliseconds)
 {
-    pollfd pfd;
-    pfd.fd = fd;
-    pfd.events = events;
-    pfd.revents = 0;
-
     int res;
 
     while (true)
     {
         Stopwatch watch;
-        res = poll(&pfd, 1, static_cast<int>(timeout_milliseconds));
+        res = poll(pfds, num, static_cast<int>(timeout_milliseconds));
 
         if (res < 0)
         {
@@ -97,7 +91,17 @@ static bool pollFd(int fd, size_t timeout_milliseconds, int events)
         }
     }
 
-    return res > 0;
+    return res;
+}
+
+static bool pollFd(int fd, size_t timeout_milliseconds, int events)
+{
+    pollfd pfd;
+    pfd.fd = fd;
+    pfd.events = events;
+    pfd.revents = 0;
+
+    return pollWithTimeout(&pfd, 1, timeout_milliseconds) > 0;
 }
 
 class TimeoutReadBufferFromFileDescriptor : public BufferWithOwnMemory<ReadBuffer>
@@ -116,35 +120,31 @@ public:
         makeFdNonBlocking(stdout_fd);
         makeFdNonBlocking(stderr_fd);
 
-#if defined(OS_LINUX)
-        epoll.add(stdout_fd);
-        if (stderr_reaction != ExternalCommandStderrReaction::NONE)
-            epoll.add(stderr_fd);
-#endif
+        pfds[0].fd = stdout_fd;
+        pfds[0].events = POLLIN;
+        pfds[1].fd = stderr_fd;
+        pfds[1].events = POLLIN;
+
+        if (stderr_reaction == ExternalCommandStderrReaction::NONE)
+            num_pfds = 1;
+        else
+            num_pfds = 2;
     }
 
     bool nextImpl() override
     {
         size_t bytes_read = 0;
 
-#if defined(OS_LINUX)
         while (!bytes_read)
         {
-            epoll_event events[2];
-            events[0].data.fd = events[1].data.fd = -1;
-            size_t num_events = epoll.getManyReady(2, events, static_cast<int>(timeout_milliseconds));
+            pfds[0].revents = 0;
+            pfds[1].revents = 0;
+            size_t num_events = pollWithTimeout(pfds, num_pfds, static_cast<int>(timeout_milliseconds));
             if (0 == num_events)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Pipe read timeout exceeded {} milliseconds", timeout_milliseconds);
 
-            bool has_stdout = false;
-            bool has_stderr = false;
-            for (size_t i = 0; i < num_events; ++i)
-            {
-                if (events[i].data.fd == stdout_fd)
-                    has_stdout = true;
-                else if (events[i].data.fd == stderr_fd)
-                    has_stderr = true;
-            }
+            bool has_stdout = pfds[0].revents > 0;
+            bool has_stderr = pfds[1].revents > 0;
 
             if (has_stderr)
             {
@@ -186,24 +186,6 @@ public:
                     bytes_read += res;
             }
         }
-#else
-        while (!bytes_read)
-        {
-            if (!pollFd(stdout_fd, timeout_milliseconds, POLLIN))
-                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Pipe read timeout exceeded {} milliseconds", timeout_milliseconds);
-
-            ssize_t res = ::read(stdout_fd, internal_buffer.begin(), internal_buffer.size());
-
-            if (-1 == res && errno != EINTR)
-                throwFromErrno("Cannot read from pipe", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
-
-            if (res == 0)
-                break;
-
-            if (res > 0)
-                bytes_read += res;
-        }
-#endif
 
         if (bytes_read > 0)
         {
@@ -229,7 +211,6 @@ public:
         tryMakeFdBlocking(stdout_fd);
         tryMakeFdBlocking(stderr_fd);
 
-#if defined(OS_LINUX)
         if (!stderr_result_buf.empty())
         {
             String stderr_result;
@@ -241,21 +222,19 @@ public:
                 stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST ? "beginning" : "end",
                 stderr_result);
         }
-#endif
     }
 
 private:
     int stdout_fd;
     int stderr_fd;
     size_t timeout_milliseconds;
-    [[maybe_unused]] ExternalCommandStderrReaction stderr_reaction;
+    ExternalCommandStderrReaction stderr_reaction;
 
-#if defined(OS_LINUX)
     static constexpr size_t BUFFER_SIZE = 4_KiB;
-    Epoll epoll;
+    pollfd pfds[2];
+    size_t num_pfds;
     std::unique_ptr<char[]> stderr_read_buf;
     boost::circular_buffer_space_optimized<char> stderr_result_buf{BUFFER_SIZE};
-#endif
 };
 
 class TimeoutWriteBufferFromFileDescriptor : public BufferWithOwnMemory<WriteBuffer>
