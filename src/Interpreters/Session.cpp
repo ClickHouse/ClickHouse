@@ -299,6 +299,7 @@ Session::~Session()
 
     if (notified_session_log_about_login)
     {
+        LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(*user_id));
         if (auto session_log = getSessionLog())
         {
             /// TODO: We have to ensure that the same info is added to the session log on a LoginSuccess event and on the corresponding Logout event.
@@ -320,6 +321,7 @@ AuthenticationType Session::getAuthenticationTypeOrLogInFailure(const String & u
     }
     catch (const Exception & e)
     {
+        LOG_ERROR(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
         if (auto session_log = getSessionLog())
             session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e);
 
