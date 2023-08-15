@@ -88,7 +88,7 @@ def create_tables(cluster, table_name):
         settings={"insert_distributed_sync": 1},
     )
     nodes[0].query(
-        f"INSERT INTO {table_name}_d SELECT number, number FROM numbers(1)",
+        f"INSERT INTO {table_name}_d SELECT number, number FROM numbers(3)",
         settings={"insert_distributed_sync": 1},
     )
 
@@ -102,7 +102,7 @@ def test_parallel_replicas_over_distributed(start_cluster, cluster):
     create_tables(cluster, table_name)
 
     node = nodes[0]
-    expected_result = f"6001\t-1999\t1999\t0\n"
+    expected_result = f"6003\t-1999\t1999\t3\n"
 
     # w/o parallel replicas
     assert (
@@ -119,7 +119,6 @@ def test_parallel_replicas_over_distributed(start_cluster, cluster):
                 "prefer_localhost_replica": 0,
                 "max_parallel_replicas": 4,
                 "use_hedged_requests": 0,
-                # "cluster_for_parallel_replicas": cluster,
             },
         )
         == expected_result
