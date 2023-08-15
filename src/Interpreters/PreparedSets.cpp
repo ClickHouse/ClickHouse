@@ -198,7 +198,11 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
 
-    set_and_key->set->checkIsCreated();
+    /// SET may not be created successfully at this step because the sub-query timeout, but we set
+    /// timeout_overflow_mode to `break` so no exception is throw and the executor just stops executing
+    /// the pipeline without setting `set_and_key->set->is_created` to true.
+    if (!set_and_key->set->isCreated())
+        return nullptr;
 
     return set_and_key->set;
 }
