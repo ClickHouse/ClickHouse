@@ -142,6 +142,8 @@ was specified for ANN indexes, the default value is 100 million.
 
 - [Annoy](/docs/en/engines/table-engines/mergetree-family/annindexes.md#annoy-annoy)
 
+- [USearch](/docs/en/engines/table-engines/mergetree-family/annindexes.md#usearch-usearch)
+
 ## Annoy {#annoy}
 
 Annoy indexes are currently experimental, to use them you first need to `SET allow_experimental_annoy_index = 1`. They are also currently
@@ -216,3 +218,42 @@ ORDER BY L2Distance(vectors, Point)
 LIMIT N
 SETTINGS annoy_index_search_k_nodes=100;
 ```
+
+
+## USearch {#usearch}
+
+USearch indexes are currently experimental, to use them you first need to `SET allow_experimental_usearch_index = 1`.
+
+This type of ANN index implements [the HNSW algorithm](https://github.com/unum-cloud/usearch).
+
+Syntax to create an USearch index over an [Array](../../../sql-reference/data-types/array.md) column:
+
+```sql
+CREATE TABLE table_with_usearch_index
+(
+  id Int64,
+  vectors Array(Float32),
+  INDEX [ann_index_name] vectors TYPE usearch([Distance]) [GRANULARITY N]
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+Syntax to create an ANN index over a [Tuple](../../../sql-reference/data-types/tuple.md) column:
+
+```sql
+CREATE TABLE table_with_usearch_index
+(
+  id Int64,
+  vectors Tuple(Float32[, Float32[, ...]]),
+  INDEX [ann_index_name] vectors TYPE usearch([Distance]) [GRANULARITY N]
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+USearch currently supports two distance functions:
+- `L2Distance`, also called Euclidean distance, is the length of a line segment between two points in Euclidean space
+  ([Wikipedia](https://en.wikipedia.org/wiki/Euclidean_distance)).
+- `cosineDistance`, also called cosine similarity, is the cosine of the angle between two (non-zero) vectors
+  ([Wikipedia](https://en.wikipedia.org/wiki/Cosine_similarity)).

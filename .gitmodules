@@ -347,3 +347,6 @@
 [submodule "contrib/incbin"]
 	path = contrib/incbin
 	url = https://github.com/graphitemaster/incbin.git
+[submodule "contrib/usearch"]
+	path = contrib/usearch
+	url = https://github.com/unum-cloud/usearch.git
