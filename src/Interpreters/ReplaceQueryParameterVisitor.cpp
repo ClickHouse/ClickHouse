@@ -131,6 +131,7 @@ void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
     if (ast_identifier->children.empty())
         return;
 
+    bool replaced_parameter = false;
     auto & name_parts = ast_identifier->name_parts;
     for (size_t i = 0, j = 0, size = name_parts.size(); i < size; ++i)
     {
@@ -138,8 +139,13 @@ void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
         {
             const auto & ast_param = ast_identifier->children[j++]->as<ASTQueryParameter &>();
             name_parts[i] = getParamValue(ast_param.name);
+            replaced_parameter = true;
         }
     }
+
+    /// Do not touch AST if there are no parameters
+    if (!replaced_parameter)
+        return;
 
     /// FIXME: what should this mean?
     if (!ast_identifier->semantic->special && name_parts.size() >= 2)

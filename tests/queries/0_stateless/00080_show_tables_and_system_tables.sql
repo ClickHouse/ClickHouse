@@ -16,16 +16,12 @@ SELECT name FROM system.tables WHERE is_temporary = 1 AND name = 'test_temporary
 
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.test_log(id UInt64) ENGINE = Log;
 CREATE MATERIALIZED VIEW {CLICKHOUSE_DATABASE:Identifier}.test_materialized ENGINE = Log AS SELECT * FROM {CLICKHOUSE_DATABASE:Identifier}.test_log;
-SELECT dependencies_database, dependencies_table FROM system.tables WHERE name = 'test_log';
+SELECT dependencies_database, dependencies_table FROM system.tables WHERE name = 'test_log' and database=currentDatabase();
 
 DROP DATABASE {CLICKHOUSE_DATABASE:Identifier};
 
-
 -- Check that create_table_query works for system tables and unusual Databases
-DROP DATABASE IF EXISTS test_DatabaseMemory;
-CREATE DATABASE test_DatabaseMemory ENGINE = Memory;
-CREATE TABLE test_DatabaseMemory.A (A UInt8) ENGINE = Null;
+CREATE DATABASE {CLICKHOUSE_DATABASE:Identifier} ENGINE = Memory;
+CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.A (A UInt8) ENGINE = Null;
 
-SELECT sum(ignore(*, metadata_modification_time, engine_full, create_table_query)) FROM system.tables WHERE database = 'test_DatabaseMemory';
-
-DROP DATABASE test_DatabaseMemory;
+SELECT sum(ignore(*, metadata_modification_time, engine_full, create_table_query)) FROM system.tables WHERE database = '{CLICKHOUSE_DATABASE:String}';
