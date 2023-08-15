@@ -502,7 +502,7 @@ static ColumnWithTypeAndName readColumnWithDecimalDataCast(
     auto & column_data = static_cast<VectorType &>(*internal_column).getData();
     column_data.reserve(orc_column->numElements);
 
-    auto * orc_decimal_column = const_cast<BatchType *>(dynamic_cast<const BatchType *>(orc_column));
+    const auto * orc_decimal_column = dynamic_cast<const BatchType *>(orc_column);
     for (size_t i = 0; i < orc_decimal_column->numElements; ++i)
     {
         DecimalType decimal_value;
