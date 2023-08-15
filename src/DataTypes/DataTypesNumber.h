@@ -10,7 +10,7 @@ namespace DB
 {
 
 template <typename T>
-class DataTypeNumber : public DataTypeNumberBase<T>
+class DataTypeNumber final : public DataTypeNumberBase<T>
 {
 public:
     bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }

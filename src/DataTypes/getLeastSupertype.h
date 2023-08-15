@@ -29,8 +29,6 @@ DataTypePtr tryGetLeastSupertype(const DataTypes & types);
 
 using TypeIndexSet = std::unordered_set<TypeIndex>;
 
-void optimizeTypeIds(const DataTypes & types, TypeIndexSet & type_ids);
-
 template <LeastSupertypeOnError on_error = LeastSupertypeOnError::Throw>
 DataTypePtr getLeastSupertype(const TypeIndexSet & types);
 

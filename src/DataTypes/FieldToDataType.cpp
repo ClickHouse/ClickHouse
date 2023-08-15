@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesNumberWithOpposite.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -37,7 +36,6 @@ DataTypePtr FieldToDataType<on_error>::operator() (const UInt64 & x) const
     if (x <= std::numeric_limits<UInt8>::max()) return std::make_shared<DataTypeUInt8>();
     if (x <= std::numeric_limits<UInt16>::max()) return std::make_shared<DataTypeUInt16>();
     if (x <= std::numeric_limits<UInt32>::max()) return std::make_shared<DataTypeUInt32>();
-    if (x <= std::numeric_limits<Int64>::max()) return std::make_shared<DataTypeUInt64WithOpposite>(std::make_shared<DataTypeInt64>());
     return std::make_shared<DataTypeUInt64>();
 }
 
@@ -138,8 +136,36 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Array & x) const
     DataTypes element_types;
     element_types.reserve(x.size());
 
+    auto checkIfConversionSigned = [&](bool& has_signed_int, bool& has_uint64, bool& uint64_could_opposite,
+                                       const DataTypePtr & type, const Field & elem) {
+        if (uint64_could_opposite) {
+            has_signed_int |= WhichDataType(type).isNativeInt();
+
+            if (type->getTypeId() == TypeIndex::UInt64) {
+                has_uint64 = true;
+                uint64_could_opposite &= (elem.template get<UInt64>() <= std::numeric_limits<Int64>::max());
+            }
+        }
+    };
+
+    bool has_signed_int = false;
+    bool has_uint64 = false;
+    bool uint64_could_opposite = true;
     for (const Field & elem : x)
-        element_types.emplace_back(applyVisitor(*this, elem));
+    {
+        DataTypePtr type = applyVisitor(*this, elem);
+        element_types.emplace_back(type);
+        checkIfConversionSigned(has_signed_int, has_uint64, uint64_could_opposite, type, elem);
+    }
+
+    // Convert the UInt64 type to Int64 in order to cover other signed_integer types
+    // and obtain the least super type of all ints.
+    if (has_signed_int && has_uint64 && uint64_could_opposite)
+    {
+        for (auto & type : element_types)
+            if (type->getTypeId() == TypeIndex::UInt64)
+                type = std::make_shared<DataTypeInt64>();
+    }
 
     return std::make_shared<DataTypeArray>(getLeastSupertype<on_error>(element_types));
 }
@@ -167,13 +193,51 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Map & map) const
     key_types.reserve(map.size());
     value_types.reserve(map.size());
 
+    auto checkIfConversionSigned = [&](bool& has_signed_int, bool& has_uint64, bool& uint64_could_opposite,
+                                       const DataTypePtr & type, const Field & elem) {
+        if (uint64_could_opposite) {
+            has_signed_int |= WhichDataType(type).isNativeInt();
+
+            if (type->getTypeId() == TypeIndex::UInt64) {
+                has_uint64 = true;
+                uint64_could_opposite &= (elem.template get<UInt64>() <= std::numeric_limits<Int64>::max());
+            }
+        }
+    };
+
+    auto updateUInt64Types = [](DataTypes types) {
+        for (auto& type : types) {
+            if (type->getTypeId() == TypeIndex::UInt64) {
+                type = std::make_shared<DataTypeInt64>();
+            }
+        }
+    };
+
+    bool k_has_signed_int = false;
+    bool k_has_uint64 = false;
+    bool k_uint64_could_opposite = true;
+    bool v_has_signed_int = false;
+    bool v_has_uint64 = false;
+    bool v_uint64_could_opposite = true;
     for (const auto & elem : map)
     {
         const auto & tuple = elem.safeGet<const Tuple &>();
         assert(tuple.size() == 2);
-        key_types.push_back(applyVisitor(*this, tuple[0]));
-        value_types.push_back(applyVisitor(*this, tuple[1]));
+        DataTypePtr k_type = applyVisitor(*this, tuple[0]);
+        key_types.push_back(k_type);
+        checkIfConversionSigned(k_has_signed_int, k_has_uint64, k_uint64_could_opposite, k_type, tuple[0]);
+        DataTypePtr v_type = applyVisitor(*this, tuple[1]);
+        value_types.push_back(v_type);
+        checkIfConversionSigned(v_has_signed_int, v_has_uint64, v_uint64_could_opposite, v_type, tuple[1]);
     }
+
+    // Convert the UInt64 type to Int64 in order to cover other signed_integer types
+    // and obtain the least super type of all ints.
+    if (k_has_signed_int && k_has_uint64 && k_uint64_could_opposite)
+        updateUInt64Types(key_types);
+
+    if (v_has_signed_int && v_has_uint64 && v_uint64_could_opposite)
+        updateUInt64Types(value_types);
 
     return std::make_shared<DataTypeMap>(
         getLeastSupertype<on_error>(key_types),
