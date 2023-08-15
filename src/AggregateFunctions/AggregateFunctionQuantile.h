@@ -250,12 +250,6 @@ public:
     }
 };
 
-template <typename T>
-inline void readBinary(std::pair<T, unsigned int> & x, ReadBuffer & buf)
-{
-    readPODBinary(x, buf);
-}
-
 struct NameQuantile { static constexpr auto name = "quantile"; };
 struct NameQuantiles { static constexpr auto name = "quantiles"; };
 struct NameQuantileDeterministic { static constexpr auto name = "quantileDeterministic"; };

@@ -895,6 +895,11 @@ inline void writeBinary(const IPv6 & x, WriteBuffer & buf) { writePODBinary(x, b
 
 inline void writeBinary(const StackTrace::FramePointers & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
+inline void writeBinary(const CityHash_v1_0_2::uint128 & x, WriteBuffer & buf)
+{
+    writePODBinary(x, buf);
+}
+
 /// Methods for outputting the value in text form for a tab-separated format.
 
 inline void writeText(is_integer auto x, WriteBuffer & buf)

@@ -1121,6 +1121,17 @@ inline void readBinary(UUID & x, ReadBuffer & buf)
     readUUIDBinary(x, buf);
 }
 
+template <typename A, typename B>
+inline void readBinary(std::pair<A, B> & x, ReadBuffer & buf)
+{
+    readPODBinary(x, buf);
+}
+
+inline void readBinary(CityHash_v1_0_2::uint128 & x, ReadBuffer & buf)
+{
+    readPODBinary(x, buf);
+}
+
 inline void readBinary(StackTrace::FramePointers & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 template <std::endian endian, typename T>

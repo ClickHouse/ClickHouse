@@ -38,16 +38,6 @@ struct MergeTreeDataPartChecksum
     void checkSize(const IDataPartStorage & storage, const String & name) const;
 };
 
-inline void writeBinary(const MergeTreeDataPartChecksum::uint128 & x, WriteBuffer & buf)
-{
-    writePODBinary(x, buf);
-}
-
-inline void readBinary(MergeTreeDataPartChecksum::uint128 & x, ReadBuffer & buf)
-{
-    readPODBinary(x, buf);
-}
-
 
 /** Checksums of all non-temporary files.
   * For compressed files, the check sum and the size of the decompressed data are stored to not depend on the compression method.
