@@ -176,7 +176,7 @@ UInt32 CompressionCodecGCD::doCompressData(const char * source, UInt32 source_si
         compressDataForType<UInt256>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
         break;
     }
-    return 1 + 1 + source_size;
+    return 2 + source_size;
 }
 
 void CompressionCodecGCD::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const

@@ -6,7 +6,7 @@
 
 namespace DB
 {
-    CompressionCodecPtr getCompressionCodecGCD(Int8 gcd_bytes_size);
+    CompressionCodecPtr getCompressionCodecGCD(UInt8 gcd_bytes_size);
 }
 
 struct AuxiliaryRandomData
