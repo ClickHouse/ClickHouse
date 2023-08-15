@@ -4,6 +4,7 @@ import time
 import pytest
 import requests
 from helpers.cluster import ClickHouseCluster
+from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__, zookeeper_config_path="configs/zookeeper.xml")
 
@@ -73,15 +74,19 @@ def test_drop_if_empty(start_cluster):
     node1.query("INSERT INTO default.tbl SELECT * FROM system.numbers_mt LIMIT 10000;")
     node1.query("INSERT INTO replicateddb.tbl2 SELECT * FROM system.numbers_mt LIMIT 10000;")
 
-    time.sleep(5)
     assert 0 == int(node2.query("SELECT count() FROM default.tbl;"))
     assert 0 == int(node2.query("SELECT count() FROM replicateddb.tbl2;"))
 
     node2.query("DROP TABLE IF EMPTY default.tbl ON CLUSTER 'cluster';")
     node2.query("DROP TABLE IF EMPTY replicateddb.tbl2;")
 
-
     assert 0 == int(node1.query("SELECT count() FROM system.tables WHERE name = 'tbl';"))
     assert 0 == int(node2.query("SELECT count() FROM system.tables WHERE name = 'tbl';"))
     assert 0 == int(node1.query("SELECT count() FROM system.tables WHERE name = 'tbl2';"))
     assert 0 == int(node2.query("SELECT count() FROM system.tables WHERE name = 'tbl2';"))
+
+    with pytest.raises(
+        QueryRuntimeException,
+        match="DB::Exception: DROP IF EMPTY is not implemented for databases.",
+    ):
+        node2.query("DROP DATABASE IF EMPTY replicateddb;")
