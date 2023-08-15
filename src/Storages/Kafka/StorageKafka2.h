@@ -3,7 +3,7 @@
 #include <Common/Macros.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
-#include <Storages/Kafka/KafkaConsumer.h>
+#include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Common/SettingsChanges.h>
 
@@ -26,19 +26,18 @@ namespace DB
 template <typename TStorageKafka>
 struct StorageKafkaInterceptors;
 
-using KafkaConsumerPtr = std::shared_ptr<KafkaConsumer>;
-using KafkaConsumerWeakPtr = std::weak_ptr<KafkaConsumer>;
+using KafkaConsumer2Ptr = std::shared_ptr<KafkaConsumer2>;
 
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
-class StorageKafka final : public IStorage, WithContext
+class StorageKafka2 final : public IStorage, WithContext
 {
-    using StorageKafkaInterceptors = StorageKafkaInterceptors<StorageKafka>;
+    using StorageKafkaInterceptors = StorageKafkaInterceptors<StorageKafka2>;
     friend StorageKafkaInterceptors;
 
 public:
-    StorageKafka(
+    StorageKafka2(
         const StorageID & table_id_,
         ContextPtr context_,
         const ColumnsDescription & columns_,
@@ -50,7 +49,7 @@ public:
     bool noPushingToViews() const override { return true; }
 
     void startup() override;
-    void shutdown(bool is_drop) override;
+    void shutdown() override;
 
     Pipe read(
         const Names & column_names,
@@ -70,24 +69,15 @@ public:
     /// We want to control the number of rows in a chunk inserted into Kafka
     bool prefersLargeBlocks() const override { return false; }
 
-    void pushConsumer(KafkaConsumerPtr consumer);
-    KafkaConsumerPtr popConsumer();
-    KafkaConsumerPtr popConsumer(std::chrono::milliseconds timeout);
+    void pushConsumer(KafkaConsumer2Ptr consumer);
+    KafkaConsumer2Ptr popConsumer();
+    KafkaConsumer2Ptr popConsumer(std::chrono::milliseconds timeout);
 
     const auto & getFormatName() const { return format_name; }
 
     NamesAndTypesList getVirtuals() const override;
     Names getVirtualColumnNames() const;
-    StreamingHandleErrorMode getStreamingHandleErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
-
-    struct SafeConsumers
-    {
-        std::shared_ptr<IStorage> storage_ptr;
-        std::unique_lock<std::mutex> lock;
-        std::vector<KafkaConsumerWeakPtr> & consumers;
-    };
-
-    SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(mutex), all_consumers};  }
+    HandleKafkaErrorMode getHandleKafkaErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
 
 private:
     // Configuration and state
@@ -112,8 +102,7 @@ private:
     /// In this case we still need to be able to shutdown() properly.
     size_t num_created_consumers = 0; /// number of actually created consumers.
 
-    std::vector<KafkaConsumerPtr> consumers; /// available consumers
-    std::vector<KafkaConsumerWeakPtr> all_consumers; /// busy (belong to a KafkaSource) and vacant consumers
+    std::vector<KafkaConsumer2Ptr> consumers; /// available consumers
 
     std::mutex mutex;
 
@@ -134,7 +123,7 @@ private:
     std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
 
     SettingsChanges createSettingsAdjustments();
-    KafkaConsumerPtr createConsumer(size_t consumer_number);
+    KafkaConsumer2Ptr createConsumer(size_t consumer_number);
 
     /// If named_collection is specified.
     String collection_name;
@@ -142,12 +131,7 @@ private:
     std::atomic<bool> shutdown_called = false;
 
     // Update Kafka configuration with values from CH user configuration.
-    void updateConfiguration(cppkafka::Configuration & kafka_config, std::shared_ptr<KafkaConsumerWeakPtr>);
-    void updateConfiguration(cppkafka::Configuration & kafka_config)
-    {
-        updateConfiguration(kafka_config, std::make_shared<KafkaConsumerWeakPtr>());
-    }
-
+    void updateConfiguration(cppkafka::Configuration & kafka_config);
     String getConfigPrefix() const;
     void threadFunc(size_t idx);
 
@@ -160,7 +144,6 @@ private:
 
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
-
 };
 
 }
