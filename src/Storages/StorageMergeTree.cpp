@@ -1816,7 +1816,9 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
             if (detach)
             {
                 auto metadata_snapshot = getInMemoryMetadataPtr();
-                LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
+                String part_dir = part->getDataPartStorage().getPartDirectory();
+                LOG_INFO(log, "Detaching {}", part_dir);
+                auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
                 part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
             }
 
@@ -1901,7 +1903,9 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                 for (const auto & part : parts)
                 {
                     auto metadata_snapshot = getInMemoryMetadataPtr();
-                    LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
+                    String part_dir = part->getDataPartStorage().getPartDirectory();
+                    LOG_INFO(log, "Detaching {}", part_dir);
+                    auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
                     part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
                 }
             }
@@ -1943,7 +1947,9 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
         /// NOTE: no race with background cleanup until we hold pointers to parts
         for (const auto & part : parts_to_remove)
         {
-            LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
+            String part_dir = part->getDataPartStorage().getPartDirectory();
+            LOG_INFO(log, "Detaching {}", part_dir);
+            auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
             part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
         }
     }
