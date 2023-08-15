@@ -196,6 +196,7 @@ if (ARCH_S390X)
     add_contrib(crc32-s390x-cmake crc32-s390x)
 endif()
 add_contrib (annoy-cmake annoy)
+add_contrib (usearch-cmake usearch)
 add_contrib (xxHash-cmake xxHash)
 
 add_contrib (libbcrypt-cmake libbcrypt)
