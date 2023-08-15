@@ -209,10 +209,11 @@ def run_stress_test(docker_image_name):
     ci_logs_password = os.getenv(
         "CLICKHOUSE_CI_LOGS_PASSWORD", "CLICKHOUSE_CI_LOGS_PASSWORD"
     )
-    subprocess.check_call(
-        f"sed -i -r -e 's!{ci_logs_host}!CLICKHOUSE_CI_LOGS_HOST!g; s!{ci_logs_password}!CLICKHOUSE_CI_LOGS_PASSWORD!g;' '{run_log_path}'",
-        shell=True,
-    )
+    if ci_logs_host != "CLICKHOUSE_CI_LOGS_HOST":
+        subprocess.check_call(
+            f"sed -i -r -e 's!{ci_logs_host}!CLICKHOUSE_CI_LOGS_HOST!g; s!{ci_logs_password}!CLICKHOUSE_CI_LOGS_PASSWORD!g;' '{run_log_path}'",
+            shell=True,
+        )
 
     report_url = upload_results(
         s3_helper,
