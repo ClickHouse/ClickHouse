@@ -37,7 +37,7 @@ public:
     QueryPlan extractPlan(Group & group, const PhysicalProperties & required_properties);
 
 private:
-    std::vector<Group> groups;
+    std::list<Group> groups;
 
     Group * root_group;
 

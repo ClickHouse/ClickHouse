@@ -20,15 +20,15 @@ public:
 
     GroupNode & getOneGroupNode()
     {
-        return group_nodes[0];
+        return group_nodes.front();
     }
 
-    const std::vector<GroupNode> & getGroupNodes() const
+    const std::list<GroupNode> & getGroupNodes() const
     {
         return group_nodes;
     }
 
-    std::vector<GroupNode> & getGroupNodes()
+    std::list<GroupNode> & getGroupNodes()
     {
         return group_nodes;
     }
@@ -79,7 +79,7 @@ public:
     }
 
 private:
-    std::vector<GroupNode> group_nodes;
+    std::list<GroupNode> group_nodes;
 
     std::unordered_map<PhysicalProperties, std::pair<Float64, GroupNode *>, PhysicalProperties::HashFunction> lowest_cost_expressions;
 };

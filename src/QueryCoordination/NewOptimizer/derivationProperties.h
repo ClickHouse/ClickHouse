@@ -83,6 +83,7 @@ OutPutPropAndAlternativeRequiredChildProp derivationProperties(AggregatingStep &
         std::vector<PhysicalProperties> required_child_prop;
         required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
 
+        alternative_properties.emplace_back(required_child_prop);
         res[properties] = alternative_properties;
 
         return res;
@@ -100,6 +101,7 @@ OutPutPropAndAlternativeRequiredChildProp derivationProperties(MergingAggregated
     /// TODO Hashed by bucket
     required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Hashed}});
 
+    alternative_properties.emplace_back(required_child_prop);
     res[properties] = alternative_properties;
 
     return res;
@@ -114,6 +116,7 @@ OutPutPropAndAlternativeRequiredChildProp derivationProperties(ExpressionStep & 
     std::vector<PhysicalProperties> required_child_prop;
     required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
 
+    alternative_properties.emplace_back(required_child_prop);
     res[properties] = alternative_properties;
     return res;
 };
@@ -192,6 +195,7 @@ OutPutPropAndAlternativeRequiredChildProp derivationProperties(QueryPlanStepPtr 
     std::vector<PhysicalProperties> required_child_prop;
     required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
 
+    alternative_properties.emplace_back(required_child_prop);
     res[properties] = alternative_properties;
     return res;
 }
