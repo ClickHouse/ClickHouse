@@ -997,7 +997,9 @@ namespace
         {
             /// sudo respects limits in /etc/security/limits.conf e.g. open files,
             /// that's why we are using it instead of the 'clickhouse su' tool.
-            command = fmt::format("sudo -u '{}' {}", user, command);
+            /// by default, sudo resets all the ENV variables, but we should preserve
+            /// the values /etc/default/clickhouse in /etc/init.d/clickhouse file
+            command = fmt::format("sudo --preserve-env -u '{}' {}", user, command);
         }
 
         fmt::print("Will run {}\n", command);
