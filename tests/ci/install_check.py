@@ -50,8 +50,11 @@ def prepare_test_scripts():
     server_test = r"""#!/bin/bash
 set -e
 trap "bash -ex /packages/preserve_logs.sh" ERR
+test_env='TEST_THE_DEFAULT_PARAMETER=15'
+echo "$test_env" >> /etc/default/clickhouse
 systemctl start clickhouse-server
-clickhouse-client -q 'SELECT version()'"""
+clickhouse-client -q 'SELECT version()'
+grep "$test_env" /proc/$(cat /var/run/clickhouse-server/clickhouse-server.pid)/environ"""
     keeper_test = r"""#!/bin/bash
 set -e
 trap "bash -ex /packages/preserve_logs.sh" ERR
