@@ -210,7 +210,7 @@ void listFilesWithRegexpMatchingImpl(
     re2::RE2 matcher(regexp);
     if (!matcher.ok())
         throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-            "Cannot compile regex from gllistFilesWithFoldedRegexpMatchingImplob ({}): {}", for_match, matcher.error());
+            "Cannot compile regex from glob ({}): {}", for_match, matcher.error());
 
     bool skip_regex = current_glob == "/*" ? true : false;
     if (!recursive)
