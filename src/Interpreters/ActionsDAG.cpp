@@ -498,7 +498,7 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_consta
         stack.pop();
 
         /// Constant folding.
-        if (allow_constant_folding && !node->children.empty() && node->column && isColumnConst(*node->column))
+        if (allow_constant_folding && node->column && isColumnConst(*node->column))
         {
             node->type = ActionsDAG::ActionType::COLUMN;
 
