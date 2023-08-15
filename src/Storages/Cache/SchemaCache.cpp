@@ -17,29 +17,41 @@ SchemaCache::SchemaCache(size_t max_elements_) : max_elements(max_elements_)
 {
 }
 
-void SchemaCache::add(const Key & key, const ColumnsDescription & columns)
+void SchemaCache::addColumns(const Key & key, const ColumnsDescription & columns)
 {
     std::lock_guard lock(mutex);
-    addUnlocked(key, columns);
+    addUnlocked(key, columns, std::nullopt);
 }
 
 
-void SchemaCache::addMany(const Keys & keys, const ColumnsDescription & columns)
+void SchemaCache::addManyColumns(const Keys & keys, const ColumnsDescription & columns)
 {
     std::lock_guard lock(mutex);
     for (const auto & key : keys)
-        addUnlocked(key, columns);
+        addUnlocked(key, columns, std::nullopt);
 }
 
-void SchemaCache::addUnlocked(const Key & key, const ColumnsDescription & columns)
+void SchemaCache::addNumRows(const DB::SchemaCache::Key & key, size_t num_rows)
 {
-    /// Do nothing if this key is already in cache;
-    if (data.contains(key))
+    std::lock_guard lock(mutex);
+    addUnlocked(key, std::nullopt, num_rows);
+}
+
+void SchemaCache::addUnlocked(const Key & key, const std::optional<ColumnsDescription> & columns, std::optional<size_t> num_rows)
+{
+    /// Update columns/num_rows with new values if this key is already in cache.
+    if (auto it = data.find(key); it != data.end())
+    {
+        if (columns)
+            it->second.schema_info.columns = columns;
+        if (num_rows)
+            it->second.schema_info.num_rows = num_rows;
         return;
+    }
 
     time_t now = std::time(nullptr);
     auto it = queue.insert(queue.end(), key);
-    data[key] = {SchemaInfo{columns, now}, it};
+    data[key] = {SchemaInfo{columns, num_rows, now}, it};
     checkOverflow();
 }
 
@@ -54,7 +66,19 @@ void SchemaCache::checkOverflow()
     ProfileEvents::increment(ProfileEvents::SchemaInferenceCacheEvictions);
 }
 
-std::optional<ColumnsDescription> SchemaCache::tryGet(const Key & key, LastModificationTimeGetter get_last_mod_time)
+std::optional<ColumnsDescription> SchemaCache::tryGetColumns(const DB::SchemaCache::Key & key, DB::SchemaCache::LastModificationTimeGetter get_last_mod_time)
+{
+    auto schema_info = tryGetImpl(key, get_last_mod_time);
+    return schema_info ? schema_info->columns : std::nullopt;
+}
+
+std::optional<size_t> SchemaCache::tryGetNumRows(const DB::SchemaCache::Key & key, DB::SchemaCache::LastModificationTimeGetter get_last_mod_time)
+{
+    auto schema_info = tryGetImpl(key, get_last_mod_time);
+    return schema_info ? schema_info->num_rows : std::nullopt;
+}
+
+std::optional<SchemaCache::SchemaInfo> SchemaCache::tryGetImpl(const Key & key, LastModificationTimeGetter get_last_mod_time)
 {
     std::lock_guard lock(mutex);
     auto it = data.find(key);
@@ -91,7 +115,7 @@ std::optional<ColumnsDescription> SchemaCache::tryGet(const Key & key, LastModif
     queue.splice(queue.end(), queue, queue_iterator);
 
     ProfileEvents::increment(ProfileEvents::SchemaInferenceCacheHits);
-    return schema_info.columns;
+    return schema_info;
 }
 
 void SchemaCache::clear()

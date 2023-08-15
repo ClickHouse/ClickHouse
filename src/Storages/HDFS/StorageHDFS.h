@@ -4,11 +4,11 @@
 
 #if USE_HDFS
 
-#include <Processors/ISource.h>
-#include <Storages/IStorage.h>
-#include <Storages/Cache/SchemaCache.h>
-#include <Storages/prepareReadingFromFormat.h>
-#include <Poco/URI.h>
+#    include <Processors/ISource.h>
+#    include <Storages/Cache/SchemaCache.h>
+#    include <Storages/IStorage.h>
+#    include <Storages/prepareReadingFromFormat.h>
+#    include <Poco/URI.h>
 
 namespace DB
 {
@@ -160,6 +160,9 @@ public:
     Chunk generate() override;
 
 private:
+    void addNumRowsToCache(const String & path, size_t num_rows);
+    std::optional<size_t> tryGetNumRowsFromCache(const StorageHDFS::PathWithInfo & path_with_info);
+
     StorageHDFSPtr storage;
     Block block_for_format;
     NamesAndTypesList requested_columns;
@@ -168,6 +171,7 @@ private:
     std::shared_ptr<IteratorWrapper> file_iterator;
     ColumnsDescription columns_description;
     bool need_only_count;
+    size_t total_rows_in_file = 0;
 
     std::unique_ptr<ReadBuffer> read_buf;
     std::shared_ptr<IInputFormat> input_format;

@@ -1036,11 +1036,12 @@ void Aggregator::executeImpl(
     ColumnRawPtrs & key_columns,
     AggregateFunctionInstruction * aggregate_instructions,
     bool no_more_keys,
+    bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
     #define M(NAME, IS_TWO_LEVEL) \
         else if (result.type == AggregatedDataVariants::Type::NAME) \
-            executeImpl(*result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions, no_more_keys, overflow_row);
+            executeImpl(*result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
 
     if (false) {} // NOLINT
     APPLY_FOR_AGGREGATED_VARIANTS(M)
@@ -1060,6 +1061,7 @@ void NO_INLINE Aggregator::executeImpl(
     ColumnRawPtrs & key_columns,
     AggregateFunctionInstruction * aggregate_instructions,
     bool no_more_keys,
+    bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
     typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
@@ -1074,30 +1076,57 @@ void NO_INLINE Aggregator::executeImpl(
         if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
         {
             if (prefetch)
-                executeImplBatch<false, true, true>(
-                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+            {
+                if (all_keys_are_const)
+                    executeImplBatch<false, true, true, true>(
+                        method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+                else
+                    executeImplBatch<false, true, true, false>(
+                        method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+            }
             else
-                executeImplBatch<false, true, false>(
-                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+            {
+                if (all_keys_are_const)
+                    executeImplBatch<false, true, false, true>(
+                        method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+                else
+                    executeImplBatch<false, true, false, false>(
+                        method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+            }
         }
         else
 #endif
         {
             if (prefetch)
-                executeImplBatch<false, false, true>(
-                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+            {
+                if (all_keys_are_const)
+                    executeImplBatch<false, false, true, true>(
+                        method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+                else
+                    executeImplBatch<false, false, true, false>(
+                        method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+            }
             else
-                executeImplBatch<false, false, false>(
-                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+            {
+                if (all_keys_are_const)
+                    executeImplBatch<false, false, false, true>(
+                        method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+                else
+                    executeImplBatch<false, false, false, false>(
+                        method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+            }
         }
     }
     else
     {
-        executeImplBatch<true, false, false>(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+        if (all_keys_are_const)
+            executeImplBatch<true, false, false, true>(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
+        else
+            executeImplBatch<true, false, false, false>(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
     }
 }
 
-template <bool no_more_keys, bool use_compiled_functions, bool prefetch, typename Method>
+template <bool no_more_keys, bool use_compiled_functions, bool prefetch, bool all_keys_are_const, typename Method>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
     typename Method::State & state,
@@ -1121,27 +1150,34 @@ void NO_INLINE Aggregator::executeImplBatch(
 
         /// For all rows.
         AggregateDataPtr place = aggregates_pool->alloc(0);
-        for (size_t i = row_begin; i < row_end; ++i)
+        if (all_keys_are_const)
         {
-            if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+            state.emplaceKey(method.data, 0, *aggregates_pool).setMapped(place);
+        }
+        else
+        {
+            for (size_t i = row_begin; i < row_end; ++i)
             {
-                if (i == row_begin + prefetching.iterationsToMeasure())
-                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
-
-                if (i + prefetch_look_ahead < row_end)
+                if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
                 {
-                    auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
-                    method.data.prefetch(std::move(key_holder));
-                }
-            }
+                    if (i == row_begin + prefetching.iterationsToMeasure())
+                        prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
 
-            state.emplaceKey(method.data, i, *aggregates_pool).setMapped(place);
+                    if (i + prefetch_look_ahead < row_end)
+                    {
+                        auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
+                        method.data.prefetch(std::move(key_holder));
+                    }
+                }
+
+                state.emplaceKey(method.data, i, *aggregates_pool).setMapped(place);
+            }
         }
         return;
     }
 
     /// Optimization for special case when aggregating by 8bit key.
-    if constexpr (!no_more_keys && std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type>)
+    if constexpr (!no_more_keys && !all_keys_are_const && std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type>)
     {
         /// We use another method if there are aggregate functions with -Array combinator.
         bool has_arrays = false;
@@ -1183,7 +1219,19 @@ void NO_INLINE Aggregator::executeImplBatch(
     std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[row_end]);
 
     /// For all rows.
-    for (size_t i = row_begin; i < row_end; ++i)
+    size_t start, end;
+    if constexpr (all_keys_are_const)
+    {
+        start = 0;
+        end = 1;
+    }
+    else
+    {
+        start = row_begin;
+        end = row_end;
+    }
+
+    for (size_t i = start; i < end; ++i)
     {
         AggregateDataPtr aggregate_data = nullptr;
 
@@ -1279,8 +1327,16 @@ void NO_INLINE Aggregator::executeImplBatch(
                 columns_data.emplace_back(getColumnData(inst->batch_arguments[argument_index]));
         }
 
-        auto add_into_aggregate_states_function = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function;
-        add_into_aggregate_states_function(row_begin, row_end, columns_data.data(), places.get());
+        if constexpr (all_keys_are_const)
+        {
+            auto add_into_aggregate_states_function_single_place = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function_single_place;
+            add_into_aggregate_states_function_single_place(row_begin, row_end, columns_data.data(), places[0]);
+        }
+        else
+        {
+            auto add_into_aggregate_states_function = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function;
+            add_into_aggregate_states_function(row_begin, row_end, columns_data.data(), places.get());
+        }
     }
 #endif
 
@@ -1295,12 +1351,24 @@ void NO_INLINE Aggregator::executeImplBatch(
 
         AggregateFunctionInstruction * inst = aggregate_instructions + i;
 
-        if (inst->offsets)
-            inst->batch_that->addBatchArray(row_begin, row_end, places.get(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
-        else if (inst->has_sparse_arguments)
-            inst->batch_that->addBatchSparse(row_begin, row_end, places.get(), inst->state_offset, inst->batch_arguments, aggregates_pool);
+        if constexpr (all_keys_are_const)
+        {
+            if (inst->offsets)
+                inst->batch_that->addBatchSinglePlace(inst->offsets[static_cast<ssize_t>(row_begin) - 1], inst->offsets[row_end - 1], places[0] + inst->state_offset, inst->batch_arguments, aggregates_pool);
+            else if (inst->has_sparse_arguments)
+                inst->batch_that->addBatchSparseSinglePlace(row_begin, row_end, places[0] + inst->state_offset, inst->batch_arguments, aggregates_pool);
+            else
+                inst->batch_that->addBatchSinglePlace(row_begin, row_end, places[0] + inst->state_offset, inst->batch_arguments, aggregates_pool);
+        }
         else
-            inst->batch_that->addBatch(row_begin, row_end, places.get(), inst->state_offset, inst->batch_arguments, aggregates_pool);
+        {
+            if (inst->offsets)
+                inst->batch_that->addBatchArray(row_begin, row_end, places.get(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
+            else if (inst->has_sparse_arguments)
+                inst->batch_that->addBatchSparse(row_begin, row_end, places.get(), inst->state_offset, inst->batch_arguments, aggregates_pool);
+            else
+                inst->batch_that->addBatch(row_begin, row_end, places.get(), inst->state_offset, inst->batch_arguments, aggregates_pool);
+        }
     }
 }
 
@@ -1540,12 +1608,30 @@ bool Aggregator::executeOnBlock(Columns columns,
       * To make them work anyway, we materialize them.
       */
     Columns materialized_columns;
+    bool all_keys_are_const = true;
+    if (params.optimize_group_by_constant_keys)
+    {
+        for (size_t i = 0; i < params.keys_size; ++i)
+            all_keys_are_const &= isColumnConst(*columns.at(keys_positions[i]));
+    }
+    else
+    {
+        all_keys_are_const = false;
+    }
 
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
     {
-        materialized_columns.push_back(recursiveRemoveSparse(columns.at(keys_positions[i]))->convertToFullColumnIfConst());
-        key_columns[i] = materialized_columns.back().get();
+        if (all_keys_are_const)
+        {
+            key_columns[i] = assert_cast<const ColumnConst &>(*columns.at(keys_positions[i])).getDataColumnPtr().get();
+        }
+        else
+        {
+            materialized_columns.push_back(recursiveRemoveSparse(columns.at(keys_positions[i]))->convertToFullColumnIfConst());
+            key_columns[i] = materialized_columns.back().get();
+        }
+
 
         if (!result.isLowCardinality())
         {
@@ -1590,7 +1676,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     {
         /// This is where data is written that does not fit in `max_rows_to_group_by` with `group_by_overflow_mode = any`.
         AggregateDataPtr overflow_row_ptr = params.overflow_row ? result.without_key : nullptr;
-        executeImpl(result, row_begin, row_end, key_columns, aggregate_functions_instructions.data(), no_more_keys, overflow_row_ptr);
+        executeImpl(result, row_begin, row_end, key_columns, aggregate_functions_instructions.data(), no_more_keys, all_keys_are_const, overflow_row_ptr);
     }
 
     size_t result_size = result.sizeWithoutOverflowRow();

@@ -79,6 +79,7 @@ public:
         const std::shared_ptr<const S3::Client> & client_,
         const String & bucket,
         const String & version_id,
+        const String & url_host_and_port,
         std::shared_ptr<IIterator> file_iterator_,
         std::shared_ptr<S3QueueFilesMetadata> files_metadata_,
         const S3QueueAction & action_,

@@ -31,11 +31,7 @@ void IInputFormat::setReadBuffer(ReadBuffer & in_)
 Chunk IInputFormat::getChunkForCount(size_t rows)
 {
     const auto & header = getPort().getHeader();
-    Columns columns;
-    columns.reserve(header.columns());
-    for (const auto & type : header.getDataTypes())
-        columns.push_back(type->createColumnConstWithDefaultValue(rows));
-    return Chunk(std::move(columns), rows);
+    return cloneConstWithDefault(Chunk{header.getColumns(), 0}, rows);
 }
 
 }
