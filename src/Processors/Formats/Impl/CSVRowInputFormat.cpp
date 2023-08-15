@@ -114,68 +114,6 @@ void CSVRowInputFormat::resetParser()
     buf->reset();
 }
 
-//size_t CSVRowInputFormat::countRows(size_t max_block_size)
-//{
-//    size_t num_rows = 0;
-//    ReadBuffer & istr = *buf;
-//    bool quotes = false;
-//    while (!istr.eof() && num_rows < max_block_size)
-//    {
-//        if (quotes)
-//        {
-//            auto * pos = find_first_symbols<'"'>(istr.position(), istr.buffer().end());
-//            istr.position() = pos;
-//
-//            if (pos > istr.buffer().end())
-//                throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-//            else if (pos == istr.buffer().end())
-//                continue;
-//            else if (*pos == '"')
-//            {
-//                ++istr.position();
-//                if (!istr.eof() && *istr.position() == '"')
-//                    ++istr.position();
-//                else
-//                    quotes = false;
-//            }
-//        }
-//        else
-//        {
-//            auto * pos = find_first_symbols<'"', '\r', '\n'>(istr.position(), istr.buffer().end());
-//            istr.position() = pos;
-//
-//            if (pos > istr.buffer().end())
-//                throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-//            else if (pos == istr.buffer().end())
-//                continue;
-//
-//            if (*pos == '"')
-//            {
-//                quotes = true;
-//                ++istr.position();
-//                continue;
-//            }
-//
-//            if (*pos == '\n')
-//            {
-//                ++istr.position();
-//                if (!istr.eof() && *istr.position() == '\r')
-//                    ++istr.position();
-//            }
-//            else if (*pos == '\r')
-//            {
-//                ++istr.position();
-//                if (!istr.eof() && *pos == '\n')
-//                    ++pos;
-//            }
-//
-//            ++num_rows;
-//        }
-//    }
-//
-//    return num_rows;
-//}
-
 void CSVFormatReader::skipRow()
 {
     bool quotes = false;
