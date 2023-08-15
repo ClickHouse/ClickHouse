@@ -691,7 +691,11 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
         if (remote_storage_id.hasDatabase())
             resolved_remote_storage_id = query_context->resolveStorageID(remote_storage_id);
 
-        auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_snapshot->metadata->getColumns(), distributed_storage_snapshot->object_columns);
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+
+        auto column_names_and_types = distributed_storage_snapshot->getColumns(get_column_options);
+
+        auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, ColumnsDescription{column_names_and_types});
         auto table_node = std::make_shared<TableNode>(std::move(storage), query_context);
 
         if (table_expression_modifiers)
