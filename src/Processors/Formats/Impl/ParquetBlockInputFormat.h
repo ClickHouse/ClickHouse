@@ -4,7 +4,6 @@
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
-#include <Processors/Formats/IRowCounter.h>
 #include <Formats/FormatSettings.h>
 
 namespace parquet { class FileMetaData; }
