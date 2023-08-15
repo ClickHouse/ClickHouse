@@ -188,7 +188,7 @@ Client::Client(
         }
     }
 
-    LOG_TRACE(log, "API mode: {}", toString(api_mode));
+    LOG_TRACE(log, "API mode of the S3 client: {}", api_mode);
 
     detect_region = provider_type == ProviderType::AWS && explicit_region == Aws::Region::AWS_GLOBAL;
 

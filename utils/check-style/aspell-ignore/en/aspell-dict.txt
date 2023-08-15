@@ -1892,7 +1892,6 @@ overfitting
 packetpool
 packetsize
 pageviews
-pandahouse
 parallelization
 parallelize
 parallelized
@@ -2001,6 +2000,7 @@ ptrs
 pushdown
 pwrite
 py
+PyArrow
 qryn
 quantile
 quantileBFloat
@@ -2434,6 +2434,7 @@ tsv
 tui
 tumbleEnd
 tumbleStart
+tupleConcat
 tupleDivide
 tupleDivideByNumber
 tupleElement
