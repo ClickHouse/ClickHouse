@@ -4618,6 +4618,7 @@ SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_pars
 ## ignore_eacces_multidirectory_globs {#ignore_eacces_multidirectory_globs}
 
 Allows to ignore 'permission denied' errors when using multi-directory `{}` globs for [File](../../sql-reference/table-functions/file.md#globs_in_path) and [HDFS](../../sql-reference/table-functions/hdfs.md) storages.
+This setting is only applicable when multi directory `{}` glob is used.
 
 Possible values: `0`, `1`.
 

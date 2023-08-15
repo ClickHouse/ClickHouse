@@ -4211,6 +4211,7 @@ SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_pars
 
 Позволяет игнорировать ошибку 'permission denied', возникающую при использовании шаблона `{}`, содержащего `/` внутри себя.
 Работает для [File](../../sql-reference/table-functions/file.md#globs_in_path) и [HDFS](../../sql-reference/table-functions/hdfs.md).
+Работает _только_ для указанных выше шаблонов `{}`.
 
 Возможные значения: `0`, `1`.
 
