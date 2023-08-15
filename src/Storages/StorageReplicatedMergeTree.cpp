@@ -5162,8 +5162,7 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
         if (it != scalars.end())
         {
             const Block & block = it->second;
-            chassert(block.columns() == 1);
-            const auto & column = block.getByPosition(0).column;
+            const auto & column = block.safeGetByPosition(0).column;
             cluster_for_parallel_replicas = column->getDataAt(0).toString();
         }
     }

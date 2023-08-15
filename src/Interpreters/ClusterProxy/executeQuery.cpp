@@ -276,11 +276,12 @@ void executeQueryWithParallelReplicas(
     auto scalars = new_context->hasQueryContext() ? new_context->getQueryContext()->getScalars() : Scalars{};
 
     UInt64 shard_num = 0; /// shard_num is 1-based, so 0 - no shard specified
-    auto it = scalars.find("_shard_num");
+    const auto it = scalars.find("_shard_num");
     if (it != scalars.end())
     {
         const Block & block = it->second;
-        shard_num = block.getColumns()[0]->get64(0);
+        const auto & column = block.safeGetByPosition(0).column;
+        shard_num = column->getUInt(0);
     }
 
     ClusterPtr new_cluster;
@@ -297,7 +298,6 @@ void executeQueryWithParallelReplicas(
 
     auto all_replicas_count = std::min(static_cast<size_t>(settings.max_parallel_replicas), new_cluster->getShardCount());
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(all_replicas_count);
-    auto remote_plan = std::make_unique<QueryPlan>();
 
     /// This is a little bit weird, but we construct an "empty" coordinator without
     /// any specified reading/coordination method (like Default, InOrder, InReverseOrder)
