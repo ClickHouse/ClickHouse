@@ -77,15 +77,6 @@ void ReplicatedMergeTreeQueue::initialize(zkutil::ZooKeeperPtr zookeeper)
         virtual_parts.add(part_name, nullptr);
     }
 
-    /// Drop parts can negatively affect virtual parts. So when we load parts
-    /// from zookeeper we can break invariant with virtual parts. To fix this we
-    /// have it here.
-    for (const LogEntryPtr & entry : queue)
-    {
-        if (entry->isDropPart(format_version))
-            virtual_parts.removePartAndCoveredParts(*entry->getDropRange(format_version));
-    }
-
     LOG_TRACE(log, "Queue initialized");
 }
 
