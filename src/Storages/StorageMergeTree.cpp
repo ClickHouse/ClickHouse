@@ -221,18 +221,6 @@ void StorageMergeTree::read(
             table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
 
         String cluster_for_parallel_replicas = local_context->getSettingsRef().cluster_for_parallel_replicas;
-        {
-            /// if parallel replicas query executed over Distributed table,
-            /// the cluster is defined by Distributed table and passed to shards via `_cluster_for_parallel_replicas` scalar value
-            const auto scalars = local_context->hasQueryContext() ? local_context->getQueryContext()->getScalars() : Scalars{};
-            const auto it = scalars.find("_cluster_for_parallel_replicas");
-            if (it != scalars.end())
-            {
-                const Block & block = it->second;
-                const auto & column = block.safeGetByPosition(0).column;
-                cluster_for_parallel_replicas = column->getDataAt(0).toString();
-            }
-        }
         auto cluster = local_context->getCluster(cluster_for_parallel_replicas);
 
         Block header;

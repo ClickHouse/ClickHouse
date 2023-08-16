@@ -239,9 +239,20 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
 
     if (context->getParallelReplicasMode() == Context::ParallelReplicasMode::READ_TASKS)
     {
+        if (context->getSettingsRef().cluster_for_parallel_replicas.changed)
+        {
+            const String cluster_for_parallel_replicas = context->getSettingsRef().cluster_for_parallel_replicas;
+            if (cluster_for_parallel_replicas != cluster_name)
+            {
+                LOG_INFO(log, "cluster_for_parallel_replicas was set for the query but has no effect: {}. Distributed table cluster is used: {}", cluster_for_parallel_replicas, cluster_name);
+            }
+        }
+
+        context->setSetting("cluster_for_parallel_replicas", cluster_name);
+
         /// the cluster is defined by Distributed table and passed to shards via `_cluster_for_parallel_replicas` scalar value
-        scalars["_cluster_for_parallel_replicas"] =
-            Block{{DataTypeString().createColumnConst(1, cluster_name), std::make_shared<DataTypeString>(), "_cluster_for_parallel_replicas"}};
+        // scalars["_cluster_for_parallel_replicas"] =
+        //     Block{{DataTypeString().createColumnConst(1, cluster_name), std::make_shared<DataTypeString>(), "_cluster_for_parallel_replicas"}};
     }
 
     std::shared_ptr<RemoteQueryExecutor> remote_query_executor;
