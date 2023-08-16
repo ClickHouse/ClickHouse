@@ -2097,8 +2097,10 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
         {
             if (auto part_to_detach = part.getPartIfItWasActive())
             {
-                LOG_INFO(log, "Detaching {}", part_to_detach->getDataPartStorage().getPartDirectory());
-                part_to_detach->makeCloneInDetached("", metadata_snapshot);
+                String part_dir = part_to_detach->getDataPartStorage().getPartDirectory();
+                LOG_INFO(log, "Detaching {}", part_dir);
+                auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
+                part_to_detach->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
             }
         }
     }
@@ -2828,7 +2830,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         for (const auto & part : parts_to_remove_from_working_set)
         {
             LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
-            part->makeCloneInDetached("clone", metadata_snapshot);
+            part->makeCloneInDetached("clone", metadata_snapshot, /*disk_transaction*/ {});
         }
     }
 
@@ -3794,12 +3796,12 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
             chassert(!broken_part);
             chassert(!storage_init);
             part->was_removed_as_broken = true;
-            part->makeCloneInDetached("broken", getInMemoryMetadataPtr());
+            part->makeCloneInDetached("broken", getInMemoryMetadataPtr(), /*disk_transaction*/ {});
             broken_part = part;
         }
         else
         {
-            part->makeCloneInDetached("covered-by-broken", getInMemoryMetadataPtr());
+            part->makeCloneInDetached("covered-by-broken", getInMemoryMetadataPtr(), /*disk_transaction*/ {});
         }
         detached_parts.push_back(part->name);
     }
@@ -6135,8 +6137,9 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
     /// TODO Allow to use quorum here.
-    ReplicatedMergeTreeSink output(*this, metadata_snapshot, 0, 0, 0, false, false, false, query_context,
-        /*is_attach*/true);
+    ReplicatedMergeTreeSink output(*this, metadata_snapshot, /* quorum */ 0, /* quorum_timeout_ms */ 0, /* max_parts_per_block */ 0,
+                                   /* quorum_parallel */ false, query_context->getSettingsRef().insert_deduplicate,
+                                   /* majority_quorum */ false, query_context, /*is_attach*/true);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
