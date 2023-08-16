@@ -816,7 +816,7 @@ create table slow_on_client_report engine File(TSV, 'report/slow-on-client.tsv')
     as select client, server, round(client/server, 3) p,
         test, query_display_name
     from total_client_time_per_query left join query_display_names using (test, query_index)
-    where p > round(1.02, 3) order by p desc;
+    where p > round(1.05, 3) order by p desc;
 
 create table wall_clock_time_per_test engine Memory as select *
     from file('wall-clock-times.tsv', TSV, 'test text, real float, user float, system float');
@@ -1035,26 +1035,6 @@ create table unstable_run_traces engine File(TSVWithNamesAndTypes,
     join unstable_query_runs using query_id
     group by test, query_index, query_id, metric
     order by count() desc
-    ;
-
-create table metric_devation engine File(TSVWithNamesAndTypes,
-        'report/metric-deviation.$version.tsv')
-    -- first goes the key used to split the file with grep
-    as select test, query_index, query_display_name,
-        toDecimal64(d, 3) d, q, metric
-    from (
-        select
-            test, query_index,
-            if(q[2] < 1e-9, 1e9, (q[3] - q[1])/q[2]) d,
-            quantilesExact(0, 0.5, 1)(value) q, metric
-        from (select * from unstable_run_metrics
-            union all select * from unstable_run_traces
-            union all select * from unstable_run_metrics_2) mm
-        group by test, query_index, metric
-        having isFinite(d) and d > 0.5 and q[3] > 5
-    ) metrics
-    left join query_display_names using (test, query_index)
-    order by test, query_index, d desc
     ;
 
 create table stacks engine File(TSV, 'report/stacks.$version.tsv') as
