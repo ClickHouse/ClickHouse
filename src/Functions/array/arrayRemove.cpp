@@ -62,6 +62,7 @@ ColumnPtr ArrayRemoveImpl::execute(const ColumnArray &array, T element)
 {
 
     auto filter_column = ColumnUInt8::create();
+    const auto & filter_column_data = filter_column->getData();
 
     const auto &data = array.getData();
     for (size_t i = 0; i < array.size(); ++i)
@@ -72,7 +73,7 @@ ColumnPtr ArrayRemoveImpl::execute(const ColumnArray &array, T element)
             filter_column->insert(UInt8(1));
     }
 
-    ColumnPtr filtered = array.getData().filter(filter_column, -1);
+    ColumnPtr filtered = array.getData().filter(filter_column_data, -1);
 
     const IColumn::Offsets & in_offsets = array.getOffsets();
     auto column_offsets = ColumnArray::ColumnOffsets::create(in_offsets.size());
@@ -84,7 +85,7 @@ ColumnPtr ArrayRemoveImpl::execute(const ColumnArray &array, T element)
     {
         for (; in_pos < in_offsets[i]; ++in_pos)
         {
-            if (filter_column[in_pos])
+            if (filter_column_data[in_pos])
                 ++out_pos;
         }
         out_offsets[i] = out_pos;

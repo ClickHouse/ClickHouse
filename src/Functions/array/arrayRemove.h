@@ -6,7 +6,9 @@
 
 
 namespace DB
-{/** arrayRemove(x -> predicate,array) - Returns a pointer to the modified array after removing the elements that passed the predicate condition.
+{
+
+/** arrayRemove(x -> predicate,array) - Returns a pointer to the modified array after removing the elements that passed the predicate condition.
   */
 struct ArrayRemoveImpl
 {
@@ -18,7 +20,9 @@ struct ArrayRemoveImpl
     {
         return std::make_shared<DataTypeArray>(array_element);
     }
-    // static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped);
+
+    static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped);
+
     template <typename T>
     static ColumnPtr execute(const ColumnArray &array, T element);
 };
