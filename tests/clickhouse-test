@@ -2152,7 +2152,7 @@ def reportLogStats(args):
     print("\n")
 
     query = """
-        SELECT message_format_string, count(), substr(any(message), 1, 120) AS any_message
+        SELECT message_format_string, count(), any(message) AS any_message
         FROM system.text_log
         WHERE (now() - toIntervalMinute(240)) < event_time
         AND (message NOT LIKE (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') AS s))

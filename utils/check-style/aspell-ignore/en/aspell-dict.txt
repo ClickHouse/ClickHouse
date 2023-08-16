@@ -1097,6 +1097,7 @@ avro
 avx
 aws
 azureBlobStorage
+azureBlobStorageCluster
 backend
 backoff
 backticks
@@ -1404,6 +1405,7 @@ encodings
 encryptions
 endian
 endsWith
+endsWithUTF
 enum
 enum's
 enums
@@ -1891,7 +1893,6 @@ overfitting
 packetpool
 packetsize
 pageviews
-pandahouse
 parallelization
 parallelize
 parallelized
@@ -2000,6 +2001,7 @@ ptrs
 pushdown
 pwrite
 py
+PyArrow
 qryn
 quantile
 quantileBFloat
@@ -2210,6 +2212,7 @@ src
 stacktrace
 stacktraces
 startsWith
+startsWithUTF
 statbox
 stateful
 stddev
@@ -2432,6 +2435,7 @@ tsv
 tui
 tumbleEnd
 tumbleStart
+tupleConcat
 tupleDivide
 tupleDivideByNumber
 tupleElement

@@ -183,9 +183,8 @@ arrayConcat(arrays)
 **Arguments**
 
 - `arrays` – Arbitrary number of arguments of [Array](../../sql-reference/data-types/array.md) type.
-    **Example**
 
-<!-- -->
+**Example**
 
 ``` sql
 SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
