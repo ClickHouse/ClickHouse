@@ -389,7 +389,7 @@ int Server::run()
     }
     if (config().hasOption("version"))
     {
-        std::cout << DBMS_NAME << " server version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
+        std::cout << VERSION_NAME << " server version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
         return 0;
     }
     return Application::run(); // NOLINT
@@ -1650,6 +1650,9 @@ try
         database_catalog.initializeAndLoadTemporaryDatabase();
         loadMetadataSystem(global_context);
         maybeConvertSystemDatabase(global_context);
+        /// This has to be done before the initialization of system logs,
+        /// otherwise there is a race condition between the system database initialization
+        /// and creation of new tables in the database.
         startupSystemTables();
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();

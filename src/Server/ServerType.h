@@ -2,13 +2,13 @@
 
 #include <base/types.h>
 #include <unordered_set>
+
 namespace DB
 {
 
 class ServerType
 {
 public:
-
     enum Type
     {
         TCP,
