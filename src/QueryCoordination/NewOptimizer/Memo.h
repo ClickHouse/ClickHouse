@@ -37,11 +37,17 @@ public:
     QueryPlan extractPlan(Group & group, const PhysicalProperties & required_properties);
 
 private:
+    UInt32 group_id_counter = 0;
+
+    UInt32 group_node_id_counter = 0;
+
     std::list<Group> groups;
 
     Group * root_group;
 
     ContextPtr context;
+
+    Poco::Logger * log = &Poco::Logger::get("Memo");
 };
 
 }

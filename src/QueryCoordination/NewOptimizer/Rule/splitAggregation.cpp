@@ -32,7 +32,7 @@ std::vector<SubQueryPlan> trySplitAggregation(QueryPlanStepPtr step, ContextPtr 
         sub_query_plan.addStep(partial_agg_step);
         sub_query_plan.addStep(merge_agg_step);
 
-        res.emplace_back(sub_query_plan);
+        res.emplace_back(std::move(sub_query_plan));
     }
     else
     {
@@ -41,7 +41,7 @@ std::vector<SubQueryPlan> trySplitAggregation(QueryPlanStepPtr step, ContextPtr 
         sub_query_plan.addStep(partial_agg_step);
         sub_query_plan.addStep(merge_agg_step);
 
-        res.emplace_back(sub_query_plan);
+        res.emplace_back(std::move(sub_query_plan));
     }
 
     return res;

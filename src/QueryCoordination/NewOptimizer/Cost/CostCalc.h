@@ -52,7 +52,7 @@ Float64 calcCost(AggregatingStep & step)
 Float64 calcCost(MergingAggregatedStep & /*step*/)
 {
     /// TODO get rows, cardinality by statistics
-    return 3;
+    return 1;
 };
 
 Float64 calcCost(ExchangeDataStep & /*step*/)

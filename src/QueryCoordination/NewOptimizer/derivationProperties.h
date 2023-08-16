@@ -139,6 +139,21 @@ OutPutPropAndAlternativeRequiredChildProp derivationProperties(UnionStep & /*ste
     return res;
 };
 
+OutPutPropAndAlternativeRequiredChildProp derivationProperties(ExchangeDataStep & step)
+{
+    OutPutPropAndAlternativeRequiredChildProp res;
+    PhysicalProperties properties{.distribution = {.type = step.getDistributionType()}};
+
+    AlternativeProperties alternative_properties;
+    std::vector<PhysicalProperties> required_child_prop;
+    required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
+
+    alternative_properties.emplace_back(required_child_prop);
+    res[properties] = alternative_properties;
+    return res;
+};
+
+
 
 OutPutPropAndAlternativeRequiredChildProp derivationProperties(QueryPlanStepPtr step)
 {

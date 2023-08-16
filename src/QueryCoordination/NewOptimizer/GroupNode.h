@@ -55,17 +55,17 @@ public:
 
     void addLowestCostChildPropertyMap(const PhysicalProperties & physical_properties, const std::vector<PhysicalProperties> & best_child_properties)
     {
-        lowest_cost_expressions[physical_properties] = best_child_properties;
+        best_prop_map[physical_properties] = best_child_properties;
     }
 
     const std::vector<PhysicalProperties> & getChildProperties(const PhysicalProperties & physical_properties)
     {
-        return lowest_cost_expressions[physical_properties];
+        return best_prop_map[physical_properties];
     }
 
     OutPutPropAndRequiredChildProp & getOutPutPropAndRequiredChildProp()
     {
-        return lowest_cost_expressions;
+        return best_prop_map;
     }
 
     bool isEnforceNode() const
@@ -73,14 +73,28 @@ public:
         return is_enforce_node;
     }
 
+    String toString() const;
+
+    UInt32 getId() const
+    {
+        return id;
+    }
+
+    void setId(UInt32 id_)
+    {
+        id = id_;
+    }
+
 private:
+    UInt32 id = 0;
+
     QueryPlanStepPtr step;
 
     bool is_enforce_node = false;
 
     std::vector<Group *> children;
 
-    OutPutPropAndRequiredChildProp lowest_cost_expressions; /// output properties and input properties
+    OutPutPropAndRequiredChildProp best_prop_map; /// output properties and input properties
 };
 
 }

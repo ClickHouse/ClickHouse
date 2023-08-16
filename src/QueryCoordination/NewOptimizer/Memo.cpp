@@ -16,6 +16,8 @@ void Memo::addPlanNodeToGroup(const QueryPlan::Node & node, Group & target_group
 {
     GroupNode group_node(node.step);
 
+    group_node.setId(++group_node_id_counter);
+
     /// get logical equivalence child
     const auto children = target_group.getOneGroupNode().getChildren();
 
@@ -41,6 +43,8 @@ Group & Memo::buildGroup(const QueryPlan::Node & node, const std::vector<Group *
 
     GroupNode group_node(node.step);
 
+    group_node.setId(++group_node_id_counter);
+
     if (node.children.size())
     {
         for (auto * child : node.children)
@@ -54,7 +58,7 @@ Group & Memo::buildGroup(const QueryPlan::Node & node, const std::vector<Group *
         group_node.replaceChildren(children_groups);
     }
 
-    groups.emplace_back(Group(group_node));
+    groups.emplace_back(Group(group_node, ++group_id_counter));
     return groups.back();
 }
 
@@ -62,31 +66,47 @@ Group & Memo::buildGroup(const QueryPlan::Node & node)
 {
     GroupNode group_node(node.step);
 
+    group_node.setId(++group_node_id_counter);
+
     for (auto * child : node.children)
     {
         auto & child_group = buildGroup(*child);
         group_node.addChild(child_group);
     }
 
-    groups.emplace_back(Group(group_node));
+    groups.emplace_back(Group(group_node, ++group_id_counter));
     return groups.back();
 }
 
-void Memo::dump(Group & group)
+void Memo::dump(Group & /*group*/)
 {
-    auto & group_nodes = group.getGroupNodes();
+//    auto & group_nodes = group.getGroupNodes();
+//
+//    for (auto & group_node : group_nodes)
+//    {
+//        String child;
+//        for (const auto & child_group : group_node.getChildren())
+//        {
+//            child += std::to_string(child_group->getId()) + ", ";
+//        }
+//
+//        LOG_DEBUG(log, "Group id {}, {}, child group : {}", group.getId(),  group_node.getStep()->getName(), child);
+//        for (auto * child_group : group_node.getChildren())
+//        {
+//            dump(*child_group);
+//        }
+//    }
 
-    for (auto & group_node : group_nodes)
+    for (auto & group : groups)
     {
-        for (auto * child_group : group_node.getChildren())
-        {
-            dump(*child_group);
-        }
+        LOG_DEBUG(log, "Group: {}", group.toString());
     }
 }
 
 void Memo::transform()
 {
+    dump(*root_group);
+
     std::unordered_map<Group *, std::vector<SubQueryPlan>> group_transformed_node;
     transform(*root_group, group_transformed_node);
 
@@ -97,6 +117,8 @@ void Memo::transform()
             addPlanNodeToGroup(sub_query_plan.getRoot(), *group);
         }
     }
+
+    dump(*root_group);
 }
 
 void Memo::transform(Group & group, std::unordered_map<Group *, std::vector<SubQueryPlan>> & group_transformed_node)
@@ -106,10 +128,10 @@ void Memo::transform(Group & group, std::unordered_map<Group *, std::vector<SubQ
     for (const auto & group_node : group_nodes)
     {
         const auto & step = group_node.getStep();
-        const auto & sub_query_plans = QueryPlanOptimizations::trySplitAggregation(step, context);
+        auto sub_query_plans = QueryPlanOptimizations::trySplitAggregation(step, context);
 
         if (!sub_query_plans.empty())
-            group_transformed_node.emplace(&group, sub_query_plans);
+            group_transformed_node.emplace(&group, std::move(sub_query_plans));
 
         for (auto * child_group : group_node.getChildren())
         {
@@ -121,6 +143,8 @@ void Memo::transform(Group & group, std::unordered_map<Group *, std::vector<SubQ
 void Memo::enforce()
 {
     enforce(*root_group, PhysicalProperties{.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
+
+    dump(*root_group);
 }
 
 Float64 Memo::enforce(Group & group, const PhysicalProperties & required_properties)
@@ -145,6 +169,7 @@ Float64 Memo::enforce(Group & group, const PhysicalProperties & required_propert
                 for (size_t j = 0; j < group_node.getChildren().size(); ++j)
                 {
                     cost += enforce(*child_groups[j], required_child_prop[i][j]);
+                    LOG_DEBUG(log, "Enforced end cost group id {}, {}, output_properties {}, required_child_prop {}", group.getId(), group_node.getStep()->getName(), output_properties.toString(), required_child_prop[i][j].toString());
                 }
                 if (cost < min_cost)
                 {
@@ -155,6 +180,9 @@ Float64 Memo::enforce(Group & group, const PhysicalProperties & required_propert
 
             /// TODO calc cost for group_node cost + min_cost(child total cost) = total cost
             Float64 total_cost = calcCost(group_node.getStep()) + (required_child_prop.empty() ? 0 : min_cost);
+
+            LOG_DEBUG(log, "Group id {}, {}, output_properties {}, total cost {}", group.getId(), group_node.getStep()->getName(), output_properties.toString(), total_cost);
+
             group_node.addLowestCostChildPropertyMap(output_properties, required_child_prop.empty() ? std::vector<PhysicalProperties>() : required_child_prop[min_cost_index]); /// need keep lowest cost
             group.addLowestCostGroupNode(output_properties, &group_node, total_cost); /// need keep lowest cost
 
@@ -186,6 +214,9 @@ Float64 Memo::enforce(Group & group, const PhysicalProperties & required_propert
                 }
 
                 GroupNode group_enforce_node(exchange_step, true);
+
+                group_enforce_node.setId(++group_node_id_counter);
+
                 enforced_nodes_child_prop.emplace_back(std::move(group_enforce_node), output_properties);
             }
         }
@@ -197,13 +228,23 @@ Float64 Memo::enforce(Group & group, const PhysicalProperties & required_propert
         auto & added_node = group.addGroupNode(group_enforce_node);
 
         /// TODO calc cost for group_enforce_singleton_node cost + group->getCost(output_properties) = total cost
-        Float64 total_cost = calcCost(added_node.getStep()) + group.getCost(output_properties);
+        auto child_cost = group.getCost(output_properties);
+
+        if (child_cost == 0)
+        {
+            child_cost = 0;
+        }
+
+        Float64 total_cost = calcCost(added_node.getStep()) + child_cost;
         added_node.addLowestCostChildPropertyMap(required_properties, {output_properties});
         group.addLowestCostGroupNode(required_properties, &added_node, total_cost);
     }
 
     /// extract plan
-    return group.getLowestCost(required_properties);
+    Float64 lowest_cost = group.getLowestCost(required_properties);
+
+    LOG_DEBUG(log, "Group id {}, required_properties {}, lowest cost {}", group.getId(), required_properties.toString(), lowest_cost);
+    return lowest_cost;
 }
 
 QueryPlan Memo::extractPlan()
@@ -213,8 +254,11 @@ QueryPlan Memo::extractPlan()
 
 QueryPlan Memo::extractPlan(Group & group, const PhysicalProperties & required_properties)
 {
-    auto & group_node = group.getBestGroupNode(required_properties);
-    auto child_properties = group_node.getChildProperties(required_properties);
+    const auto & group_node_properties = group.getBestGroupNode(required_properties);
+    auto & group_node = *group_node_properties.first;
+    LOG_DEBUG(log, "Best node: group id {}, {}, required_properties {}", group.getId(), group_node.getStep()->getName(), required_properties.toString());
+
+    auto child_properties = group_node.getChildProperties(group_node_properties.second);
 
     std::vector<QueryPlanPtr> child_plans;
     auto & children_group = group_node.getChildren();

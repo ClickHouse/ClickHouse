@@ -50,6 +50,11 @@ public:
         has_sort_info = true;
     }
 
+    PhysicalProperties::DistributionType getDistributionType()
+    {
+        return type;
+    }
+
 private:
     void mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_);
 

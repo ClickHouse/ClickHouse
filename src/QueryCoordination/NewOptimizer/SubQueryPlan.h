@@ -19,6 +19,11 @@ class SubQueryPlan
 public:
     using Node = PlanNode;
 
+    SubQueryPlan() = default;
+    ~SubQueryPlan() = default;
+    SubQueryPlan(SubQueryPlan &&) noexcept = default;
+    SubQueryPlan & operator=(SubQueryPlan &&) noexcept = default;
+
     void addStep(QueryPlanStepPtr step);
 
     const Node & getRoot() const

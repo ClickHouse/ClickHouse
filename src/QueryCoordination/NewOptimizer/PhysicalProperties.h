@@ -59,6 +59,11 @@ public:
         return *this == required;
     }
 
+    String toString() const
+    {
+        return "distribution type: " + std::to_string(distribution.type);
+    }
+
 
     Distribution distribution;
 
