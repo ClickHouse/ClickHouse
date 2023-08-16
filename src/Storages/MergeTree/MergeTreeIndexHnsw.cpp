@@ -17,6 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int ILLEGAL_COLUMN;
     extern const int INCORRECT_DATA;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
@@ -152,16 +153,13 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
 
         /// Add all rows of block
         if (!index->reserve(unum::usearch::ceil2(index->size() + num_rows)))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not reserve");
+            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for usearch index");
 
-        auto add_result = index->add(index->size(), array.data());
-        if (!add_result)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, add_result.error.release());
-        for (size_t current_row = 1; current_row < num_rows; ++current_row){
-            add_result = index->add(index->size(), &array[offsets[current_row - 1]]);
-            if (!add_result)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, add_result.error.release());
-        }
+        if (auto rc = index->add(index->size(), array.data()); !rc)
+            throw Exception(ErrorCodes::INCORRECT_DATA, rc.error.release());
+        for (size_t current_row = 1; current_row < num_rows; ++current_row)
+            if (auto rc = index->add(index->size(), &array[offsets[current_row - 1]]); !rc)
+                throw Exception(ErrorCodes::INCORRECT_DATA, add_result.error.release());
 
     }
     else if (const auto & column_tuple = typeid_cast<const ColumnTuple *>(column_cut.get()))
@@ -179,14 +177,13 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple has 0 rows, {} rows expected", rows_read);
 
         index = std::make_shared<USearchIndexWithSerialization<Metric>>(data[0].size());
-        if (!index->reserve(unum::usearch::ceil2(index->size() + data.size())))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not reserve");
 
-        for (const auto & item : data){
-            auto add_result = index->add(index->size(), item.data());
-            if (!add_result)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, add_result.error.release());
-        }
+        if (!index->reserve(unum::usearch::ceil2(index->size() + data.size())))
+            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for usearch index");
+
+        for (const auto & item : data)
+            if (auto rc = index->add(index->size(), item.data()); !rc)
+                throw Exception(ErrorCodes::INCORRECT_DATA, add_result.error.release());
     }
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Array or Tuple column");
