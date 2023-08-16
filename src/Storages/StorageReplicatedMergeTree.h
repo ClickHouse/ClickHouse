@@ -729,6 +729,24 @@ private:
     /// Repairs metadata of staled replica. Called from cloneReplica(...)
     void cloneMetadataIfNeeded(const String & source_replica, const String & source_path, zkutil::ZooKeeperPtr & zookeeper);
 
+    Strings getSourceQueueEntries(const String & source_replica, Coordination::Stat source_is_lost_stat, const zkutil::ZooKeeperPtr & zookeeper, bool update_source_replica_log_pointer);
+
+    /// String representation of the queue entry along with parsed entry
+    /// Used during clone.
+    struct QueueEntryInfo
+    {
+        String data = {};
+        Coordination::Stat stat = {};
+        LogEntryPtr parsed_entry = {};
+    };
+
+    /** If necessary, restore a part, replica itself adds a record for its receipt.
+      * What time should I put for this entry in the queue? Time is taken into account when calculating lag of replica.
+      * For these purposes, it makes sense to use creation time of missing part
+      *  (that is, in calculating lag, it will be taken into account how old is the part we need to recover).
+      */
+    static time_t tryGetPartCreateTime(const zkutil::ZooKeeperPtr & zookeeper, const String & replica_path, const String & part_name);
+
     /// @param is_new - is replica new (then it will be cloned, not restored)
     /// @param is_lost_version - version of is_lost znode
     /// @param create_is_lost - create is_lost node (compatibility with old versions)

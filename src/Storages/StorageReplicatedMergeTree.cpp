@@ -1392,24 +1392,6 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
 }
 
 
-/** If necessary, restore a part, replica itself adds a record for its receipt.
-  * What time should I put for this entry in the queue? Time is taken into account when calculating lag of replica.
-  * For these purposes, it makes sense to use creation time of missing part
-  *  (that is, in calculating lag, it will be taken into account how old is the part we need to recover).
-  */
-static time_t tryGetPartCreateTime(zkutil::ZooKeeperPtr & zookeeper, const String & replica_path, const String & part_name)
-{
-    time_t res = 0;
-
-    /// We get creation time of part, if it still exists (was not merged, for example).
-    Coordination::Stat stat;
-    String unused;
-    if (zookeeper->tryGet(fs::path(replica_path) / "parts" / part_name, unused, &stat))
-        res = stat.ctime / 1000;
-
-    return res;
-}
-
 void StorageReplicatedMergeTree::paranoidCheckForCoveredPartsInZooKeeperOnStart(const Strings & parts_in_zk, const Strings & parts_to_fetch) const
 {
 #ifdef ABORT_ON_LOGICAL_ERROR
@@ -2874,12 +2856,9 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
     }
 }
 
-
-void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coordination::Stat source_is_lost_stat, zkutil::ZooKeeperPtr & zookeeper)
+Strings StorageReplicatedMergeTree::getSourceQueueEntries(const String & source_replica, Coordination::Stat source_is_lost_stat, const zkutil::ZooKeeperPtr & zookeeper, bool update_source_replica_log_pointer)
 {
     String source_path = fs::path(zookeeper_path) / "replicas" / source_replica;
-
-    /// The order of the following three actions is important.
 
     Strings source_queue_names;
     /// We are trying to get consistent /log_pointer and /queue state. Otherwise
@@ -2893,7 +2872,8 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         String raw_log_pointer = zookeeper->get(fs::path(source_path) / "log_pointer", &log_pointer_stat);
 
         Coordination::Requests ops;
-        ops.push_back(zkutil::makeSetRequest(fs::path(replica_path) / "log_pointer", raw_log_pointer, -1));
+        if (update_source_replica_log_pointer)
+            ops.push_back(zkutil::makeSetRequest(fs::path(replica_path) / "log_pointer", raw_log_pointer, -1));
 
         /// For support old versions CH.
         if (source_is_lost_stat.version == -1)
@@ -2945,13 +2925,16 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     }
 
     ::sort(source_queue_names.begin(), source_queue_names.end());
+    return source_queue_names;
+}
 
-    struct QueueEntryInfo
-    {
-        String data = {};
-        Coordination::Stat stat = {};
-        LogEntryPtr parsed_entry = {};
-    };
+void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coordination::Stat source_is_lost_stat, zkutil::ZooKeeperPtr & zookeeper)
+{
+    String source_path = fs::path(zookeeper_path) / "replicas" / source_replica;
+
+    /// The order of the following three actions is important.
+
+    auto source_queue_names = getSourceQueueEntries(source_replica, source_is_lost_stat, zookeeper, /* update_source_replica_log_pointer= */ true);
 
     /// We got log pointer and list of queue entries of source replica.
     /// At first we will get queue entries and then we will get list of active parts of source replica
@@ -3294,6 +3277,23 @@ void StorageReplicatedMergeTree::cloneMetadataIfNeeded(const String & source_rep
     /// so all mutations which are greater or equal to our mutation pointer are still present in ZooKeeper.
 }
 
+/** If necessary, restore a part, replica itself adds a record for its receipt.
+  * What time should I put for this entry in the queue? Time is taken into account when calculating lag of replica.
+  * For these purposes, it makes sense to use creation time of missing part
+  *  (that is, in calculating lag, it will be taken into account how old is the part we need to recover).
+  */
+time_t StorageReplicatedMergeTree::tryGetPartCreateTime(const zkutil::ZooKeeperPtr & zookeeper, const String & replica_path, const String & part_name)
+{
+    time_t res = 0;
+
+    /// We get creation time of part, if it still exists (was not merged, for example).
+    Coordination::Stat stat;
+    String unused;
+    if (zookeeper->tryGet(fs::path(replica_path) / "parts" / part_name, unused, &stat))
+        res = stat.ctime / 1000;
+
+    return res;
+}
 
 bool StorageReplicatedMergeTree::isReplicaLost(zkutil::ZooKeeperPtr zookeeper, const String & replica_path, bool & is_new, int & is_lost_version, bool create_is_lost)
 {
