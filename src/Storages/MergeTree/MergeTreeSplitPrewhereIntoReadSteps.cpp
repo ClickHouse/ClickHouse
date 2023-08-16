@@ -239,6 +239,8 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
     };
     std::vector<Step> steps;
 
+    NameSet all_output_names;
+
     OriginalToNewNodeMap node_remap;
 
     for (const auto & condition_group : condition_groups)
@@ -285,13 +287,13 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
         }
 
         steps.push_back({step_dag, result_name});
+        all_output_names.insert(result_name);
     }
 
     /// 6. Find all outputs of the original DAG
     auto original_outputs = prewhere_info->prewhere_actions->getOutputs();
     /// 7. Find all outputs that were computed in the already built DAGs, mark these nodes as outputs in the steps where they were computed
     /// 8. Add computation of the remaining outputs to the last step with the procedure similar to 4
-    NameSet all_output_names;
     for (const auto * output : original_outputs)
     {
         all_output_names.insert(output->result_name);
