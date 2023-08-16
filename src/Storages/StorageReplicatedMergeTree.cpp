@@ -5155,17 +5155,6 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
 
     auto scalars = local_context->hasQueryContext() ? local_context->getQueryContext()->getScalars() : Scalars{};
     String cluster_for_parallel_replicas = local_context->getSettingsRef().cluster_for_parallel_replicas;
-    {
-        /// if parallel replicas query executed over Distributed table,
-        /// the cluster is defined by Distributed table and passed to shards via `_cluster_for_parallel_replicas` scalar value
-        const auto it = scalars.find("_cluster_for_parallel_replicas");
-        if (it != scalars.end())
-        {
-            const Block & block = it->second;
-            const auto & column = block.safeGetByPosition(0).column;
-            cluster_for_parallel_replicas = column->getDataAt(0).toString();
-        }
-    }
     auto parallel_replicas_cluster = local_context->getCluster(cluster_for_parallel_replicas);
 
     ASTPtr modified_query_ast;
