@@ -149,6 +149,8 @@ public:
 
     void gather(ColumnGathererStream & gatherer_stream) override;
 
+    bool canBeInsideNullable() const override { return true; }
+
     ColumnPtr compress() const override;
 
     void forEachSubcolumn(MutableColumnCallback callback) override

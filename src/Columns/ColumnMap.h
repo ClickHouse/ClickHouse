@@ -72,6 +72,7 @@ public:
     ColumnPtr replicate(const Offsets & offsets) const override;
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
     void gather(ColumnGathererStream & gatherer_stream) override;
+    bool canBeInsideNullable() const override { return true; }
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
