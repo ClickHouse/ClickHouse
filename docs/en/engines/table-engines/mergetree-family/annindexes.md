@@ -257,3 +257,6 @@ USearch currently supports two distance functions:
   ([Wikipedia](https://en.wikipedia.org/wiki/Euclidean_distance)).
 - `cosineDistance`, also called cosine similarity, is the cosine of the angle between two (non-zero) vectors
   ([Wikipedia](https://en.wikipedia.org/wiki/Cosine_similarity)).
+
+For normalized data, `L2Distance` is usually a better choice, otherwise `cosineDistance` is recommended to compensate for scale. If no
+distance function was specified during index creation, `L2Distance` is used as default.
