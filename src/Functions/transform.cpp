@@ -776,8 +776,12 @@ namespace
                         UInt64 key = 0;
                         auto * dst = reinterpret_cast<char *>(&key);
                         const auto ref = cache.from_column->getDataAt(i);
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
                         if constexpr (std::endian::native == std::endian::big)
                             dst += sizeof(key) - ref.size;
+#pragma clang diagnostic pop
 
                         memcpy(dst, ref.data, ref.size);
                         table[key] = i;
