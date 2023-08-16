@@ -633,8 +633,8 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
     delayed_chunk.reset();
 }
 
-template<bool async_insert>
-void ReplicatedMergeTreeSinkImpl<async_insert>::writeExistingPart(MergeTreeData::MutableDataPartPtr & part)
+template<>
+bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::MutableDataPartPtr & part)
 {
     /// NOTE: No delay in this case. That's Ok.
     auto origin_zookeeper = storage.getZooKeeper();
@@ -649,8 +649,13 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::writeExistingPart(MergeTreeData:
     try
     {
         part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-        commitPart(zookeeper, part, BlockIDsType(), replicas_num, true);
-        PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, watch.elapsed(), profile_events_scope.getSnapshot()));
+        String block_id = deduplicate ? fmt::format("{}_{}", part->info.partition_id, part->checksums.getTotalChecksumHex()) : "";
+        bool deduplicated = commitPart(zookeeper, part, block_id, replicas_num, /* writing_existing_part */ true).second;
+
+        /// Set a special error code if the block is duplicate
+        int error = (deduplicate && deduplicated) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
+        PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, watch.elapsed(), profile_events_scope.getSnapshot()), ExecutionStatus(error));
+        return deduplicated;
     }
     catch (...)
     {
