@@ -73,7 +73,7 @@ static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_millisecond
     while (true)
     {
         Stopwatch watch;
-        res = poll(pfds, num, static_cast<int>(timeout_milliseconds));
+        res = poll(pfds, static_cast<nfds_t>(num), static_cast<int>(timeout_milliseconds));
 
         if (res < 0)
         {
@@ -139,7 +139,7 @@ public:
         {
             pfds[0].revents = 0;
             pfds[1].revents = 0;
-            size_t num_events = pollWithTimeout(pfds, num_pfds, static_cast<int>(timeout_milliseconds));
+            size_t num_events = pollWithTimeout(pfds, num_pfds, timeout_milliseconds);
             if (0 == num_events)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Pipe read timeout exceeded {} milliseconds", timeout_milliseconds);
 
