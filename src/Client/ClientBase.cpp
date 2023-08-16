@@ -847,7 +847,9 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
         visitor.visit(parsed_query);
 
         /// Get new query after substitutions.
-        query = serializeAST(*parsed_query);
+        if (visitor.getNumberOfReplacedParameters())
+            query = serializeAST(*parsed_query);
+        chassert(!query.empty());
     }
 
     if (allow_merge_tree_settings && parsed_query->as<ASTCreateQuery>())
@@ -1332,7 +1334,9 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         visitor.visit(parsed_query);
 
         /// Get new query after substitutions.
-        query = serializeAST(*parsed_query);
+        if (visitor.getNumberOfReplacedParameters())
+            query = serializeAST(*parsed_query);
+        chassert(!query.empty());
     }
 
     /// Process the query that requires transferring data blocks to the server.

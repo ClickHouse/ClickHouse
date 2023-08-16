@@ -66,10 +66,11 @@ void ReplaceQueryParameterVisitor::visitChildren(ASTPtr & ast)
 const String & ReplaceQueryParameterVisitor::getParamValue(const String & name)
 {
     auto search = query_parameters.find(name);
-    if (search != query_parameters.end())
-        return search->second;
-    else
+    if (search == query_parameters.end())
         throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Substitution {} is not set", backQuote(name));
+
+    ++num_replaced_parameters;
+    return search->second;
 }
 
 void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
