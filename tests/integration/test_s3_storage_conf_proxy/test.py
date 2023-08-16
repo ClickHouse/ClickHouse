@@ -6,20 +6,10 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 
-# Runs simple proxy resolver in python env container.
-def run_resolver(cluster):
-    container_id = cluster.get_container_id("resolver")
-    current_dir = os.path.dirname(__file__)
-    cluster.copy_file_to_container(
-        container_id,
-        os.path.join(current_dir, "proxy-resolver", "resolver.py"),
-        "resolver.py",
-    )
-    cluster.exec_in_container(container_id, ["python", "resolver.py"], detach=True)
-
+def wait_resolver(cluster):
     for i in range(10):
         response = cluster.exec_in_container(
-            container_id,
+            cluster.get_container_id("resolver"),
             [
                 "curl",
                 "-s",
@@ -32,6 +22,20 @@ def run_resolver(cluster):
         time.sleep(i)
     else:
         assert False, "Resolver is not up"
+
+
+# Runs simple proxy resolver in python env container.
+def run_resolver(cluster):
+    container_id = cluster.get_container_id("resolver")
+    current_dir = os.path.dirname(__file__)
+    cluster.copy_file_to_container(
+        container_id,
+        os.path.join(current_dir, "proxy-resolver", "resolver.py"),
+        "resolver.py",
+    )
+    cluster.exec_in_container(container_id, ["python", "resolver.py"], detach=True)
+
+    wait_resolver(cluster)
 
 
 @pytest.fixture(scope="module")
@@ -62,7 +66,7 @@ def check_proxy_logs(cluster, proxy_instance, http_methods={"POST", "PUT", "GET"
                 return
             time.sleep(1)
         else:
-            assert False, "http method not found in logs"
+            assert False, f"{http_methods} method not found in logs of {proxy_instance}"
 
 
 @pytest.mark.parametrize("policy", ["s3", "s3_with_resolver"])

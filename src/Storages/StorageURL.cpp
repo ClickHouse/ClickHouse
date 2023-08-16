@@ -13,7 +13,6 @@
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/WriteBufferFromHTTP.h>
-#include <IO/WriteBufferFromHTTPBuilder.h>
 #include <IO/WriteHelpers.h>
 
 #include <Formats/FormatFactory.h>
@@ -479,15 +478,9 @@ StorageURLSink::StorageURLSink(
 
     auto proxy_config = getProxyConfiguration(http_method);
 
-    auto write_buffer = WriteBufferFromHTTPBuilder()
-        .withURI(Poco::URI(uri))
-        .withMethod(http_method)
-        .withContentType(content_type)
-        .withContentEncoding(content_encoding)
-        .withAdditionalHeaders(headers)
-        .withTimeouts(timeouts)
-        .withProxyConfiguration(proxy_config)
-        .build();
+    auto write_buffer = std::make_unique<WriteBufferFromHTTP>(
+        Poco::URI(uri), http_method, content_type, content_encoding, headers, timeouts, DBMS_DEFAULT_BUFFER_SIZE, proxy_config
+    );
 
     write_buf = wrapWriteBufferWithCompressionMethod(
         std::move(write_buffer),

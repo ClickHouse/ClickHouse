@@ -28,7 +28,9 @@ RemoteProxyConfigurationResolver::RemoteProxyConfigurationResolver(
 
 ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 {
-    LOG_DEBUG(&Poco::Logger::get("RemoteProxyConfigurationResolver"), "Obtain proxy using resolver: {}", endpoint.toString());
+    auto logger = &Poco::Logger::get("RemoteProxyConfigurationResolver");
+
+    LOG_DEBUG(logger, "Obtain proxy using resolver: {}", endpoint.toString());
 
     std::lock_guard lock(cache_mutex);
 
@@ -36,7 +38,7 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 
     if (cache_ttl.count() && cache_valid && now <= cache_timestamp + cache_ttl && now >= cache_timestamp)
     {
-        LOG_DEBUG(&Poco::Logger::get("RemoteProxyConfigurationResolver"),
+        LOG_DEBUG(logger,
                   "Use cached proxy: {}://{}:{}",
                   cached_config.protocol,
                   cached_config.host,
@@ -91,7 +93,7 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
         /// Read proxy host as string from response body.
         Poco::StreamCopier::copyToString(response_body_stream, proxy_host);
 
-        LOG_DEBUG(&Poco::Logger::get("RemoteProxyConfigurationResolver"), "Use proxy: {}://{}:{}", proxy_protocol, proxy_host, proxy_port);
+        LOG_DEBUG(logger, "Use proxy: {}://{}:{}", proxy_protocol, proxy_host, proxy_port);
 
         cached_config.protocol = ProxyConfiguration::protocolFromString(proxy_protocol);
         cached_config.host = proxy_host;

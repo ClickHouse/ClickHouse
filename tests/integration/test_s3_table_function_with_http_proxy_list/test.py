@@ -34,7 +34,7 @@ def check_proxy_logs(cluster, proxy_instance, http_methods={"POST", "PUT", "GET"
                 return
             time.sleep(1)
         else:
-            assert False, "http method not found in logs"
+            assert False, f"{http_methods} method not found in logs of {proxy_instance}"
 
 
 def test_s3_with_proxy_list(cluster):
