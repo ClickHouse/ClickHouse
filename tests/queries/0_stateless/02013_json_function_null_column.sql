@@ -12,8 +12,8 @@ SELECT JSONExtractBool('[1]', toNullable(1));
 SELECT JSONExtractFloat('[1]', toNullable(1));
 SELECT JSONExtractString('["a"]', toNullable(1));
 
-SELECT JSONExtractArrayRaw('["1"]', toNullable(1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT JSONExtractKeysAndValuesRaw('["1"]', toNullable(1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT JSONExtractArrayRaw('["1"]', toNullable(1));
+SELECT JSONExtractKeysAndValuesRaw('["1"]', toNullable(1));
 SELECT JSONExtractKeysAndValues('["1"]', toNullable(1)); -- { serverError ILLEGAL_COLUMN }
 
 SELECT JSONExtract('[1]', toNullable(1), 'Nullable(Int)');
