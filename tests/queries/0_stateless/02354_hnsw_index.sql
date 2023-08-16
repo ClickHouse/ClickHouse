@@ -7,8 +7,8 @@ SELECT '--- Negative tests ---';
 
 DROP TABLE IF EXISTS tab;
 
--- must have at most 2 arguments
-CREATE TABLE tab(id Int32, vector Array(Float32), INDEX usearch_index vector TYPE usearch('too', 'many', 'arguments')) ENGINE = MergeTree ORDER BY id; -- { serverError INCORRECT_QUERY }
+-- must have at most 1 arguments
+CREATE TABLE tab(id Int32, vector Array(Float32), INDEX usearch_index vector TYPE usearch('too', 'many')) ENGINE = MergeTree ORDER BY id; -- { serverError INCORRECT_QUERY }
 
 -- first argument (distance_function) must be String
 CREATE TABLE tab(id Int32, vector Array(Float32), INDEX usearch_index vector TYPE usearch(3)) ENGINE = MergeTree ORDER BY id; -- { serverError INCORRECT_QUERY }
@@ -100,7 +100,7 @@ SETTINGS max_limit_for_ann_queries=2; -- doesn't use the ann index
 
 DROP TABLE tab;
 
--- Test Tuple embeddings. Triggers different logic than Array inside MergeTreeIndexUSearch but the same logic as Array above MergeTreeIndexUSearch.
+-- Test Tuple embeddings. Triggers different logic than Array inside MergeTreeIndexUSearch but the same logic as Array above MergeTreeIndexusearch.
 -- Therefore test Tuple case just once.
 
 SELECT '--- Test with Tuple, GRANULARITY = 1, index_granularity = 5 ---';
