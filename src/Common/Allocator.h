@@ -84,7 +84,7 @@ public:
         try
         {
             checkSize(size);
-            freeNoTrack(buf, size);
+            freeNoTrack(buf);
             auto trace = CurrentMemoryTracker::free(size);
             trace.onFree(buf, size);
         }
@@ -217,7 +217,10 @@ private:
 
         auto [buf, len] = adjustToPageSize(buf_, len_, page_size);
         if (auto res = ::madvise(buf, len, MADV_POPULATE_WRITE); res < 0)
-            LOG_TRACE(&Poco::Logger::get("Allocator"), "Attempt to populate pages failed: {} (EINVAL is expected for kernels < 5.14)", errnoToString(res));
+            LOG_TRACE(
+                LogFrequencyLimiter(&Poco::Logger::get("Allocator"), 1),
+                "Attempt to populate pages failed: {} (EINVAL is expected for kernels < 5.14)",
+                errnoToString(res));
 #endif
     }
 };
