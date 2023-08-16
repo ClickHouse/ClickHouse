@@ -53,7 +53,7 @@ void USearchIndexWithSerialization<Metric>::deserialize([[maybe_unused]] ReadBuf
 
     auto copy = Base::copy();
     if (!copy)
-        throw std::runtime_error("Can't copy index");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not copy usearch index");
     Base::swap(copy.index);
 }
 
@@ -151,10 +151,18 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
         index = std::make_shared<USearchIndexWithSerialization<Metric>>(size);
 
         /// Add all rows of block
-        index->reserve(unum::usearch::ceil2(index->size() + num_rows + 1));
-        index->add(index->size(), array.data());
-        for (size_t current_row = 1; current_row < num_rows; ++current_row)
-            index->add(index->size(), &array[offsets[current_row - 1]]);
+        if (!index->reserve(unum::usearch::ceil2(index->size() + num_rows)))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not reserve");
+
+        auto add_result = index->add(index->size(), array.data());
+        if (!add_result)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, add_result.error.release());
+        for (size_t current_row = 1; current_row < num_rows; ++current_row){
+            add_result = index->add(index->size(), &array[offsets[current_row - 1]]);
+            if (!add_result)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, add_result.error.release());
+        }
+
     }
     else if (const auto & column_tuple = typeid_cast<const ColumnTuple *>(column_cut.get()))
     {
@@ -171,9 +179,14 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple has 0 rows, {} rows expected", rows_read);
 
         index = std::make_shared<USearchIndexWithSerialization<Metric>>(data[0].size());
-        index->reserve(unum::usearch::ceil2(index->size() + data.size()));
-        for (const auto & item : data)
-            index->add(index->size(), item.data());
+        if (!index->reserve(unum::usearch::ceil2(index->size() + data.size())))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not reserve");
+
+        for (const auto & item : data){
+            auto add_result = index->add(index->size(), item.data());
+            if (!add_result)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, add_result.error.release());
+        }
     }
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Array or Tuple column");
