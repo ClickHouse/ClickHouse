@@ -125,7 +125,7 @@ EOL
 
     # Setup a cluster for logs export to ClickHouse Cloud
     # Note: these variables are provided to the Docker run command by the Python script in tests/ci
-    if [ -n "${CLICKHOUSE_CI_LOGS_HOST}" ]
+    if [ -n "${CLICKHOUSE_CI_LOGS_HOST:-}" ]
     then
         echo "
 remote_servers:
@@ -243,7 +243,7 @@ quit
     echo 'Server started and responded'
 
     # Initialize export of system logs to ClickHouse Cloud
-    if [ -n "${CLICKHOUSE_CI_LOGS_HOST}" ]
+    if [ -n "${CLICKHOUSE_CI_LOGS_HOST:-}" ]
     then
         export EXTRA_COLUMNS_EXPRESSION="$PR_TO_TEST AS pull_request_number, '$SHA_TO_TEST' AS commit_sha, '$CHECK_START_TIME' AS check_start_time, '$CHECK_NAME' AS check_name, '$INSTANCE_TYPE' AS instance_type"
         # TODO: Check if the password will appear in the logs.
