@@ -735,7 +735,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(ast);
-            query = serializeAST(*ast);
+            if (visitor.getNumberOfReplacedParameters())
+                query = serializeAST(*ast);
+            else
+                query.assign(begin, query_end);
         }
         else
         {
