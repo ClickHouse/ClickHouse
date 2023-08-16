@@ -14,26 +14,26 @@
 #    include <Common/logger_useful.h>
 
 #    include <IO/S3/PocoHTTPClient.h>
-#    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/Client.h>
-#    include <IO/S3Common.h>
 
 #    include <fstream>
+#    include <base/EnumReflection.h>
 
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int AWS_ERROR;
 }
-}
 
-namespace DB::S3
+namespace S3
 {
 
 namespace
 {
+
 bool areCredentialsEmptyOrExpired(const Aws::Auth::AWSCredentials & credentials, uint64_t expiration_window_seconds)
 {
     if (credentials.IsEmpty())
@@ -565,6 +565,8 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
     /// Quite verbose provider (argues if file with credentials doesn't exist) so iut's the last one
     /// in chain.
     AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
+}
+
 }
 
 }
