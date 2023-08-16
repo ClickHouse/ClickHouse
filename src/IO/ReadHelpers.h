@@ -1130,7 +1130,8 @@ inline void readBinary(std::pair<A, B> & x, ReadBuffer & buf)
 
 inline void readBinary(CityHash_v1_0_2::uint128 & x, ReadBuffer & buf)
 {
-    readPODBinary(x, buf);
+    readPODBinary(x.low64, buf);
+    readPODBinary(x.high64, buf);
 }
 
 inline void readBinary(StackTrace::FramePointers & x, ReadBuffer & buf) { readPODBinary(x, buf); }

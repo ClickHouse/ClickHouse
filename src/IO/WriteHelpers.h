@@ -897,7 +897,8 @@ inline void writeBinary(const StackTrace::FramePointers & x, WriteBuffer & buf) 
 
 inline void writeBinary(const CityHash_v1_0_2::uint128 & x, WriteBuffer & buf)
 {
-    writePODBinary(x, buf);
+    writePODBinary(x.low64, buf);
+    writePODBinary(x.high64, buf);
 }
 
 /// Methods for outputting the value in text form for a tab-separated format.
