@@ -129,7 +129,7 @@ static Block flattenImpl(const Block & block, bool flatten_named_tuple)
                 }
             }
             else
-                res.insert(elem);
+                res.insert(col);
         }
         else if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(elem.type.get()); type_tuple && flatten_named_tuple)
         {
@@ -158,10 +158,10 @@ static Block flattenImpl(const Block & block, bool flatten_named_tuple)
                 }
             }
             else
-                res.insert(elem);
+                res.insert(col);
         }
         else
-            res.insert(elem);
+            res.insert(col);
     }
 
     return res;
