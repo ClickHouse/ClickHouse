@@ -29,7 +29,7 @@ public:
     {
         assertBlocksHaveEqualStructure(
             header_, getOutputPort().getHeader(),
-            "Expression for FilterSortedStreamByRange shoud not change header");
+            "Expression for FilterSortedStreamByRange should not change header");
     }
 
     String getName() const override { return "FilterSortedStreamByRange"; }
