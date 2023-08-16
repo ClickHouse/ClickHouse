@@ -9,7 +9,7 @@
 namespace DB
 {
 
-template <unum::usearch::metric_kind_t metric>
+template <unum::usearch::metric_kind_t Metric>
 class USearchIndexWithSerialization : public unum::usearch::index_dense_t
 {
     using Base = unum::usearch::index_dense_t;
@@ -21,15 +21,15 @@ public:
     size_t getDimensions() const;
 };
 
-template <unum::usearch::metric_kind_t metric>
-using USearchIndexWithSerializationPtr = std::shared_ptr<USearchIndexWithSerialization<metric>>;
+template <unum::usearch::metric_kind_t Metric>
+using USearchIndexWithSerializationPtr = std::shared_ptr<USearchIndexWithSerialization<Metric>>;
 
-template <unum::usearch::metric_kind_t metric>
+template <unum::usearch::metric_kind_t Metric>
 struct MergeTreeIndexGranuleUSearch final : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleUSearch(const String & index_name_, const Block & index_sample_block_);
     MergeTreeIndexGranuleUSearch(
-        const String & index_name_, const Block & index_sample_block_, USearchIndexWithSerializationPtr<metric> index_);
+        const String & index_name_, const Block & index_sample_block_, USearchIndexWithSerializationPtr<Metric> index_);
 
     ~MergeTreeIndexGranuleUSearch() override = default;
 
@@ -40,10 +40,10 @@ struct MergeTreeIndexGranuleUSearch final : public IMergeTreeIndexGranule
 
     const String index_name;
     const Block index_sample_block;
-    USearchIndexWithSerializationPtr<metric> index;
+    USearchIndexWithSerializationPtr<Metric> index;
 };
 
-template <unum::usearch::metric_kind_t metric>
+template <unum::usearch::metric_kind_t Metric>
 struct MergeTreeIndexAggregatorUSearch final : IMergeTreeIndexAggregator
 {
     MergeTreeIndexAggregatorUSearch(const String & index_name_, const Block & index_sample_block);
@@ -55,7 +55,7 @@ struct MergeTreeIndexAggregatorUSearch final : IMergeTreeIndexAggregator
 
     const String index_name;
     const Block index_sample_block;
-    USearchIndexWithSerializationPtr<metric> index;
+    USearchIndexWithSerializationPtr<Metric> index;
 };
 
 
@@ -72,7 +72,7 @@ public:
     std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const override;
 
 private:
-    template <unum::usearch::metric_kind_t metric>
+    template <unum::usearch::metric_kind_t Metric>
     std::vector<size_t> getUsefulRangesImpl(MergeTreeIndexGranulePtr idx_granule) const;
 
     const ApproximateNearestNeighborCondition ann_condition;
