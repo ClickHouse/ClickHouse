@@ -63,18 +63,13 @@ bool ServerType::shouldStart(Type server_type, const std::string & server_custom
         }
     };
 
-    auto is_type_custom = [](Type current_type)
-    {
-        return current_type == Type::CUSTOM;
-    };
-
     if (exclude_types.contains(Type::QUERIES_ALL))
         return false;
 
     if (exclude_types.contains(Type::QUERIES_DEFAULT) && is_type_default(server_type))
         return false;
 
-    if (exclude_types.contains(Type::QUERIES_CUSTOM) && is_type_custom(server_type))
+    if (exclude_types.contains(Type::QUERIES_CUSTOM) && server_type == Type::CUSTOM)
         return false;
 
     if (exclude_types.contains(server_type))
@@ -93,7 +88,7 @@ bool ServerType::shouldStart(Type server_type, const std::string & server_custom
         return is_type_default(server_type);
 
     if (type == Type::QUERIES_CUSTOM)
-        return is_type_custom(server_type);
+        return server_type == Type::CUSTOM;
 
     if (type == Type::CUSTOM)
         return server_type == type && server_custom_name == custom_name;
