@@ -1,4 +1,4 @@
--- Tags: no-random-settings
+-- Tags: no-random-merge-tree-settings
 -- Because we insert one million rows, it shouldn't choose too low index granularity.
 
 drop table if exists tab2;
