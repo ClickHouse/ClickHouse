@@ -1,6 +1,5 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <iostream>
 
 namespace DB
 {

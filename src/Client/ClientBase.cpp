@@ -105,6 +105,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_ALREADY_EXISTS;
+    extern const int USER_SESSION_LIMIT_EXCEEDED;
 }
 
 }
@@ -2408,6 +2409,13 @@ void ClientBase::runInteractive()
             }
         }
 
+        if (suggest && suggest->getLastError() == ErrorCodes::USER_SESSION_LIMIT_EXCEEDED)
+        {
+            // If a separate connection loading suggestions failed to open a new session,
+            // use the main session to receive them.
+            suggest->load(*connection, connection_parameters.timeouts, config().getInt("suggestion_limit"));
+        }
+
         try
         {
             if (!processQueryText(input))
@@ -2505,7 +2513,7 @@ void ClientBase::clearTerminal()
 
 void ClientBase::showClientVersion()
 {
-    std::cout << DBMS_NAME << " " + getName() + " version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
+    std::cout << VERSION_NAME << " " + getName() + " version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
 }
 
 namespace
