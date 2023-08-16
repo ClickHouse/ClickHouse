@@ -51,12 +51,17 @@ bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         }
         const auto * last_begin = *pos->begin == '.' ? pos->begin + 1 : pos->begin;
         const auto * last_end = pos->end;
+        const String numberic_member_name = String(last_begin, last_end);
         ++pos;
 
         if (pos.isValid() && pos->type == TokenType::BareWord && pos->begin == last_end)
         {
             member_name = std::make_shared<ASTIdentifier>(String(last_begin, pos->end));
             ++pos;
+        }
+        else if (!pos.isValid() && pos->type == TokenType::EndOfStream)
+        {
+            member_name = std::make_shared<ASTIdentifier>(numberic_member_name);
         }
         else
         {
