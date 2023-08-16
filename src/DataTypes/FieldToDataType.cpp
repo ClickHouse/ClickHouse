@@ -137,11 +137,14 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Array & x) const
     element_types.reserve(x.size());
 
     auto checkIfConversionSigned = [&](bool& has_signed_int, bool& has_uint64, bool& uint64_could_opposite,
-                                       const DataTypePtr & type, const Field & elem) {
-        if (uint64_could_opposite) {
+                                       const DataTypePtr & type, const Field & elem)
+    {
+        if (uint64_could_opposite)
+        {
             has_signed_int |= WhichDataType(type).isNativeInt();
 
-            if (type->getTypeId() == TypeIndex::UInt64) {
+            if (type->getTypeId() == TypeIndex::UInt64)
+            {
                 has_uint64 = true;
                 uint64_could_opposite &= (elem.template get<UInt64>() <= std::numeric_limits<Int64>::max());
             }
@@ -194,23 +197,25 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Map & map) const
     value_types.reserve(map.size());
 
     auto checkIfConversionSigned = [&](bool& has_signed_int, bool& has_uint64, bool& uint64_could_opposite,
-                                       const DataTypePtr & type, const Field & elem) {
-        if (uint64_could_opposite) {
+                                       const DataTypePtr & type, const Field & elem)
+    {
+        if (uint64_could_opposite)
+        {
             has_signed_int |= WhichDataType(type).isNativeInt();
 
-            if (type->getTypeId() == TypeIndex::UInt64) {
+            if (type->getTypeId() == TypeIndex::UInt64)
+            {
                 has_uint64 = true;
                 uint64_could_opposite &= (elem.template get<UInt64>() <= std::numeric_limits<Int64>::max());
             }
         }
     };
 
-    auto updateUInt64Types = [](DataTypes types) {
-        for (auto& type : types) {
-            if (type->getTypeId() == TypeIndex::UInt64) {
+    auto updateUInt64Types = [](DataTypes types)
+    {
+        for (auto& type : types)
+            if (type->getTypeId() == TypeIndex::UInt64)
                 type = std::make_shared<DataTypeInt64>();
-            }
-        }
     };
 
     bool k_has_signed_int = false;
