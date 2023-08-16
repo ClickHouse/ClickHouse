@@ -116,6 +116,13 @@ inline void readPODBinary(T & x, ReadBuffer & buf)
     buf.readStrict(reinterpret_cast<char *>(&x), sizeof(x)); /// NOLINT
 }
 
+inline void readUUIDBinary(UUID & x, ReadBuffer & buf)
+{
+    auto & uuid = x.toUnderType();
+    readPODBinary(uuid.items[0], buf);
+    readPODBinary(uuid.items[1], buf);
+}
+
 template <typename T>
 inline void readIntBinary(T & x, ReadBuffer & buf)
 {
@@ -1106,16 +1113,33 @@ inline void readBinary(Decimal64 & x, ReadBuffer & buf) { readPODBinary(x, buf);
 inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readPODBinary(x.value, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(UUID & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(IPv4 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(IPv6 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+
+inline void readBinary(UUID & x, ReadBuffer & buf)
+{
+    readUUIDBinary(x, buf);
+}
+
+template <typename A, typename B>
+inline void readBinary(std::pair<A, B> & x, ReadBuffer & buf)
+{
+    readPODBinary(x.first, buf);
+    readPODBinary(x.second, buf);
+}
+
+inline void readBinary(CityHash_v1_0_2::uint128 & x, ReadBuffer & buf)
+{
+    readPODBinary(x.low64, buf);
+    readPODBinary(x.high64, buf);
+}
 
 inline void readBinary(StackTrace::FramePointers & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 template <std::endian endian, typename T>
 inline void readBinaryEndian(T & x, ReadBuffer & buf)
 {
-    readPODBinary(x, buf);
+    readBinary(x, buf);
     transformEndianness<endian>(x);
 }
 
