@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-debug, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -8,6 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 TMP_DIR="/tmp"
 
 declare -a SearchTypes=("POLYGON_INDEX_EACH" "POLYGON_INDEX_CELL")
+# declare -a SearchTypes=("POLYGON_INDEX_EACH")
 
 tar -xf "${CURDIR}"/01037_test_data_perf.tar.gz -C "${CURDIR}"
 
