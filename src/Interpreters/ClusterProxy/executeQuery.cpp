@@ -296,7 +296,7 @@ void executeQueryWithParallelReplicas(
     else
         new_cluster = not_optimized_cluster->getClusterWithReplicasAsShards(settings);
 
-    auto all_replicas_count = std::min(static_cast<size_t>(settings.max_parallel_replicas), new_cluster->getShardCount());
+    auto all_replicas_count = std::min(static_cast<size_t>(settings.max_parallel_replicas), not_optimized_cluster->getShardCount());
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(all_replicas_count);
 
     /// This is a little bit weird, but we construct an "empty" coordinator without
