@@ -6,13 +6,13 @@
 # which allows exporting tables from servers of different versions.
 
 # Pre-configured destination cluster, where to export the data
-CLUSTER=${CLUSTER:=system_logs_export}
+CLUSTER=${CLUSTER:-system_logs_export}
 
-EXTRA_COLUMNS=${EXTRA_COLUMNS:="pull_request_number UInt32, commit_sha String, check_start_time DateTime, check_name LowCardinality(String), instance_type LowCardinality(String), "}
-EXTRA_COLUMNS_EXPRESSION=${EXTRA_COLUMNS_EXPRESSION:="0 AS pull_request_number, '' AS commit_sha, now() AS check_start_time, '' AS check_name, '' AS instance_type"}
-EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:="check_name, "}
+EXTRA_COLUMNS=${EXTRA_COLUMNS:-"pull_request_number UInt32, commit_sha String, check_start_time DateTime, check_name LowCardinality(String), instance_type LowCardinality(String), "}
+EXTRA_COLUMNS_EXPRESSION=${EXTRA_COLUMNS_EXPRESSION:-"0 AS pull_request_number, '' AS commit_sha, now() AS check_start_time, '' AS check_name, '' AS instance_type"}
+EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name, "}
 
-CONNECTION_PARAMETERS=${CONNECTION_PARAMETERS:=""}
+CONNECTION_PARAMETERS=${CONNECTION_PARAMETERS:-""}
 
 # Create all configured system logs:
 clickhouse-client --query "SYSTEM FLUSH LOGS"
