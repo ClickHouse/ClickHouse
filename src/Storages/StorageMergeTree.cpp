@@ -946,7 +946,7 @@ void StorageMergeTree::loadMutations()
         {
             if (startsWith(it->name(), "mutation_"))
             {
-                MergeTreeMutationEntry entry(disk, relative_data_path, it->name());
+                MergeTreeMutationEntry entry(disk, relative_data_path, it->name(), this, getContext());
                 UInt64 block_number = entry.block_number;
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands.size());
 
