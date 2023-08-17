@@ -229,7 +229,7 @@ MergeTreeMutationEntry::~MergeTreeMutationEntry()
 
 bool MergeTreeMutationEntry::affectsPartition(const String & partition_id) const
 {
-    bool affected = partition_ids.empty() || containsInPartitionIds(partition_ids, partition_id);
+    bool affected = containsInPartitionIdsOrEmpty(partition_ids, partition_id);
     LOG_TRACE(&Poco::Logger::get("MergeTreeMutationEntry"), "Partition {} {}affected by mutation {}",
         partition_id, affected?"":"not ", block_number);
     return affected;

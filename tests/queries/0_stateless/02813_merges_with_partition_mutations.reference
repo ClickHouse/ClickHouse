@@ -1,0 +1,35 @@
+global mutation
+7_8_8_1_11
+8_9_9_1_11
+local, then global mutation
+7_8_8_1_13
+8_9_9_1_13
+local, then global mutation, then optimize
+7_8_8_2_13
+8_9_9_2_13
+global, then local mutation
+7_8_8_2_15
+8_9_9_2_14
+global, then local mutation, then optimize
+7_8_8_3_15
+8_9_9_3_14
+global mutation
+7_8_8_3_16
+8_9_9_3_16
+global mutation, insert
+7_8_8_3_16
+8_9_9_3_16
+8_17_17_0
+global mutation, insert, optimize
+7_8_8_4_16
+8_9_17_4_16
+local mutation
+7_8_8_4_18
+8_9_17_4_16
+local mutation, insert
+7_8_8_4_18
+8_9_17_4_16
+8_19_19_0
+local mutation, insert, optimize
+7_8_8_5_18
+8_9_19_5_16
