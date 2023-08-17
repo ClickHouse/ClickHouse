@@ -1,6 +1,6 @@
 #ifdef ENABLE_USEARCH
 
-#include <Storages/MergeTree/MergeTreeIndexHnsw.h>
+#include <Storages/MergeTree/MergeTreeIndexUSearch.h>
 
 #include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
@@ -24,7 +24,6 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
 }
-
 
 template <unum::usearch::metric_kind_t Metric>
 USearchIndexWithSerialization<Metric>::USearchIndexWithSerialization(size_t dimensions)
@@ -64,17 +63,24 @@ size_t USearchIndexWithSerialization<Metric>::getDimensions() const
     return Base::dimensions();
 }
 
-
 template <unum::usearch::metric_kind_t Metric>
-MergeTreeIndexGranuleUSearch<Metric>::MergeTreeIndexGranuleUSearch(const String & index_name_, const Block & index_sample_block_)
-    : index_name(index_name_), index_sample_block(index_sample_block_), index(nullptr)
+MergeTreeIndexGranuleUSearch<Metric>::MergeTreeIndexGranuleUSearch(
+    const String & index_name_,
+    const Block & index_sample_block_)
+    : index_name(index_name_)
+    , index_sample_block(index_sample_block_)
+    , index(nullptr)
 {
 }
 
 template <unum::usearch::metric_kind_t Metric>
 MergeTreeIndexGranuleUSearch<Metric>::MergeTreeIndexGranuleUSearch(
-    const String & index_name_, const Block & index_sample_block_, USearchIndexWithSerializationPtr<Metric> index_)
-    : index_name(index_name_), index_sample_block(index_sample_block_), index(std::move(index_))
+    const String & index_name_,
+    const Block & index_sample_block_,
+    USearchIndexWithSerializationPtr<Metric> index_)
+    : index_name(index_name_)
+    , index_sample_block(index_sample_block_)
+    , index(std::move(index_))
 {
 }
 
@@ -97,8 +103,11 @@ void MergeTreeIndexGranuleUSearch<Metric>::deserializeBinary(ReadBuffer & istr, 
 }
 
 template <unum::usearch::metric_kind_t Metric>
-MergeTreeIndexAggregatorUSearch<Metric>::MergeTreeIndexAggregatorUSearch(const String & index_name_, const Block & index_sample_block_)
-    : index_name(index_name_), index_sample_block(index_sample_block_)
+MergeTreeIndexAggregatorUSearch<Metric>::MergeTreeIndexAggregatorUSearch(
+    const String & index_name_,
+    const Block & index_sample_block_)
+    : index_name(index_name_)
+    , index_sample_block(index_sample_block_)
 {
 }
 
@@ -191,10 +200,13 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
     *pos += rows_read;
 }
 
-
 MergeTreeIndexConditionUSearch::MergeTreeIndexConditionUSearch(
-    const IndexDescription & /*index_description*/, const SelectQueryInfo & query, const String & distance_function_, ContextPtr context)
-    : ann_condition(query, context), distance_function(distance_function_)
+    const IndexDescription & /*index_description*/,
+    const SelectQueryInfo & query,
+    const String & distance_function_,
+    ContextPtr context)
+    : ann_condition(query, context)
+    , distance_function(distance_function_)
 {
 }
 
@@ -265,10 +277,10 @@ std::vector<size_t> MergeTreeIndexConditionUSearch::getUsefulRangesImpl(MergeTre
 }
 
 MergeTreeIndexUSearch::MergeTreeIndexUSearch(const IndexDescription & index_, const String & distance_function_)
-    : IMergeTreeIndex(index_), distance_function(distance_function_)
+    : IMergeTreeIndex(index_)
+    , distance_function(distance_function_)
 {
 }
-
 
 MergeTreeIndexGranulePtr MergeTreeIndexUSearch::createIndexGranule() const
 {
@@ -356,6 +368,7 @@ void usearchIndexValidator(const IndexDescription & index, bool /* attach */)
     else
         throw_unsupported_underlying_column_exception();
 }
+
 }
 
 #endif
