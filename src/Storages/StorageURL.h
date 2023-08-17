@@ -1,17 +1,17 @@
 #pragma once
 
+#include <Poco/URI.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/ISource.h>
 #include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
-#include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <Processors/ISource.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Storages/Cache/SchemaCache.h>
+#include <IO/HTTPHeaderEntries.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageConfiguration.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/Cache/SchemaCache.h>
+#include <Storages/StorageConfiguration.h>
 #include <Storages/prepareReadingFromFormat.h>
-#include <Poco/URI.h>
 
 
 namespace DB

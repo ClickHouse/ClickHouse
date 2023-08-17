@@ -11,18 +11,17 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageS3Settings.h>
 
-#    include <IO/CompressionMethod.h>
-#    include <IO/S3/getObjectInfo.h>
-#    include <IO/SeekableReadBuffer.h>
-#    include <Interpreters/Context.h>
-#    include <Interpreters/threadPoolCallbackRunner.h>
-#    include <Processors/Executors/PullingPipelineExecutor.h>
-#    include <Processors/ISource.h>
-#    include <Processors/Formats/IInputFormat.h>
-#    include <Storages/Cache/SchemaCache.h>
-#    include <Storages/StorageConfiguration.h>
-#    include <Storages/prepareReadingFromFormat.h>
-#    include <Poco/URI.h>
+#include <Processors/ISource.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Poco/URI.h>
+#include <IO/S3/getObjectInfo.h>
+#include <IO/CompressionMethod.h>
+#include <IO/SeekableReadBuffer.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Storages/Cache/SchemaCache.h>
+#include <Storages/StorageConfiguration.h>
+#include <Storages/prepareReadingFromFormat.h>
 
 namespace Aws::S3
 {
