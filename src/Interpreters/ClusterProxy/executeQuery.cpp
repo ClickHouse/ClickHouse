@@ -284,19 +284,38 @@ void executeQueryWithParallelReplicas(
         shard_num = column->getUInt(0);
     }
 
+    size_t all_replicas_count = 0;
     ClusterPtr new_cluster;
     /// if got valid shard_num from query initiator, then parallel replicas scope is the specified shard
     /// shards are numbered in order of appearance in the cluster config
     if (shard_num > 0)
     {
-        LOG_DEBUG(&Poco::Logger::get("executeQueryWithParallelReplicas"), "Parallel replicas query in shard scope: shard_num={}", shard_num);
+        const auto shard_count = not_optimized_cluster->getShardCount();
+        if (shard_num > shard_count)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Shard number is greater than shard count: shard_num={} shard_count={} cluster={}",
+                shard_num,
+                shard_count,
+                not_optimized_cluster->getName());
+
+        chassert(shard_count == not_optimized_cluster->getShardsAddresses().size());
+
+        LOG_DEBUG(
+            &Poco::Logger::get("executeQueryWithParallelReplicas"), "Parallel replicas query in shard scope: shard_num={}", shard_num);
+
+        const auto shard_replicas_num = not_optimized_cluster->getShardsAddresses()[shard_num - 1].size();
+        all_replicas_count = std::min(static_cast<size_t>(settings.max_parallel_replicas), shard_replicas_num);
+
         /// shard_num is 1-based, but getClusterWithSingleShard expects 0-based index
         new_cluster = not_optimized_cluster->getClusterWithSingleShard(shard_num - 1);
     }
     else
+    {
         new_cluster = not_optimized_cluster->getClusterWithReplicasAsShards(settings);
+        all_replicas_count = std::min(static_cast<size_t>(settings.max_parallel_replicas), new_cluster->getShardCount());
+    }
 
-    auto all_replicas_count = std::min(static_cast<size_t>(settings.max_parallel_replicas), not_optimized_cluster->getShardCount());
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(all_replicas_count);
 
     /// This is a little bit weird, but we construct an "empty" coordinator without
