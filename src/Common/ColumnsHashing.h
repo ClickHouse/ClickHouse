@@ -756,10 +756,12 @@ struct HashMethodKeysAdaptive
     using ValueIdCacheMap = HashMap<UInt64, std::shared_ptr<ValueIdCache>>;
     mutable ValueIdCacheMap value_id_cache;
 
+    #if defined(__AVX512F__) && defined(__AVX512BW__)
     static constexpr size_t max_low_cardinality_cache_size = 16;
     mutable UInt64 low_cardinality_cache_value_ids[max_low_cardinality_cache_size] = {0};
     mutable std::vector<StringRef> low_cardinality_cache_keys;
     mutable size_t low_cardinality_cache_in_used = 0;
+    #endif
     std::vector<UInt64> value_ids;
 
     HashMethodKeysAdaptive(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & ctx_, UInt64 variant_index)
@@ -767,7 +769,9 @@ struct HashMethodKeysAdaptive
     {
         if (!variant_index)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "variant_index is zero");
+        #if defined(__AVX512F__) && defined(__AVX512BW__)
         low_cardinality_cache_keys.resize(max_low_cardinality_cache_size);
+        #endif
         auto * adaptive_ctx = static_cast<DB::ColumnsHashing::AdaptiveHashMethodContext *>(ctx.get());
         {
             /// Find the corresponding HashValueIdGeneratorState.

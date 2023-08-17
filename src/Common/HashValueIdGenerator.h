@@ -33,16 +33,20 @@ private:
     PaddedPODArray<UInt8> pool;
     // Each key will take 1 byte of the final value_id.
     const size_t max_distinct_values= 256;
+    using MAP= StringHashMap<UInt64>;
+    MAP m_value_ids;
     /// value_id assignment rules:
     /// - 0 is reserved for null values.
     /// - [1, 16] is reserved for short keys. When this is overflow, put keys in following.
     /// - [17, 255] is dynamically assigned for long keys.
+    #if defined(__AVX512F__) && defined(__AVX512BW__)
     UInt64 current_assigned_value_id = 65;
-    using MAP= StringHashMap<UInt64>;
-    MAP m_value_ids;
     static constexpr size_t low_cardinality_cache_size = 16;
     size_t low_cardinality_cache_index = 0;
     UInt64 low_cardinality_cache_values[low_cardinality_cache_size] = {0};
+    #else
+    UInt64 current_assigned_value_id = 1;
+    #endif
 
     ALWAYS_INLINE void assignValueIdDynamically(const UInt8 * pos, size_t len, UInt64 & current_col_value_id)
     {
@@ -91,8 +95,8 @@ private:
                     /// check next cache line
                     if (i < low_cardinality_cache_lines - 1)
                         continue;
-                    low_cardinality_cache_values[low_cardinality_cache_index] = value;
-                    value_id = low_cardinality_cache_index++;
+                    low_cardinality_cache_values[low_cardinality_cache_index++] = value;
+                    value_id = low_cardinality_cache_index;
 
                     // Also put this value id into the hash map.
                     emplaceValueId(pos, len, value_id);
