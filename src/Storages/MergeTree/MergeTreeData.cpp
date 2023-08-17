@@ -1461,7 +1461,6 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
     if (res.part->wasInvolvedInTransaction())
     {
-        LOG_TRACE(log, "res.part->wasInvolvedInTransaction()");
         /// Check if CSNs were written after committing transaction, update and write if needed.
         bool version_updated = false;
         auto & version = res.part->version;
@@ -1518,7 +1517,6 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         if (version.creation_csn == Tx::RolledBackCSN || version.removal_csn)
         {
             preparePartForRemoval(res.part);
-            LOG_TRACE(log, "res.part->wasInvolvedInTransaction() - DataPartState::Outdated");
             to_state = DataPartState::Outdated;
         }
     }
@@ -2512,7 +2510,6 @@ void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector &
     {
         /// We should modify it under data_parts_mutex
         part->assertState({DataPartState::Deleting});
-        LOG_TRACE(log, "rollbackDeletingParts");
         modifyPartState(part, DataPartState::Outdated);
     }
 }
@@ -4073,8 +4070,6 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
             part->remove_time.store(remove_time, std::memory_order_relaxed);
 
         if (part->getState() != MergeTreeDataPartState::Outdated)
-        {
-            LOG_TRACE(log, "MergeTreeData::removePartsFromWorkingSet()");
             modifyPartState(part, MergeTreeDataPartState::Outdated);
         }
     }
@@ -5978,7 +5973,6 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVector(const Me
 
 MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVector(CSN snapshot_version, TransactionID current_tid) const
 {
-    LOG_TRACE(log, "MergeTreeData::getVisibleDataPartsVector");
     auto res = getDataPartsVectorForInternalUsage({DataPartState::Active, DataPartState::Outdated});
     filterVisibleDataParts(res, snapshot_version, current_tid);
     return res;
@@ -6009,7 +6003,7 @@ std::unordered_set<String> MergeTreeData::getPartitionIDsFromQuery(const ASTs & 
     return partition_ids;
 }
 
-PartitionIds /* std::set<String> */ MergeTreeData::getPartitionIdsAffectedByCommands(
+PartitionIds MergeTreeData::getPartitionIdsAffectedByCommands(
     const MutationCommands & commands, ContextPtr query_context) const
 {
     PartitionIds affected_partition_ids;
@@ -6018,7 +6012,8 @@ PartitionIds /* std::set<String> */ MergeTreeData::getPartitionIdsAffectedByComm
     {
         if (!command.partition)
         {
-            return {};
+            affected_partition_ids.clear();
+            break;
         }
 
         affected_partition_ids.push_back(

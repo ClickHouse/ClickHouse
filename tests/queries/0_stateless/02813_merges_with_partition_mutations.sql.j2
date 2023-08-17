@@ -1,0 +1,55 @@
+DROP TABLE IF EXISTS multipart;
+CREATE TABLE multipart
+(
+    `n` UInt32,
+    `p` UInt32,
+    `s` String
+)
+ENGINE = MergeTree
+PARTITION BY p
+ORDER BY n;
+
+{% macro WATCH(message) -%}
+select '{{ message }}';
+select name from system.parts where table='multipart' and database=currentDatabase() and active=1 and (name LIKE '7\\_%' OR name LIKE '8\\_%');
+{%- endmacro %}
+
+INSERT INTO multipart select number, number%10, '' from numbers(18) settings max_partitions_per_insert_block=10;
+optimize table multipart final;
+
+alter table multipart update s='first' where p=7 SETTINGS mutations_sync = 2;
+{{ WATCH('global mutation') }}
+
+alter table multipart update s='second' IN PARTITION 7 where p=7 SETTINGS mutations_sync = 2;
+alter table multipart update s='third' where p=7 SETTINGS mutations_sync = 2;
+
+{{ WATCH('local, then global mutation') }}
+optimize table multipart final;
+{{ WATCH('local, then global mutation, then optimize') }}
+
+alter table multipart update s='fourth' where p=7 SETTINGS mutations_sync = 2;
+alter table multipart update s='fifth' IN PARTITION 7 where p=7 SETTINGS mutations_sync = 2;
+
+{{ WATCH('global, then local mutation') }}
+optimize table multipart final;
+{{ WATCH('global, then local mutation, then optimize') }}
+
+alter table multipart update s='testing merge' where p=7 SETTINGS mutations_sync = 2;
+{{ WATCH('global mutation') }}
+
+insert into multipart values(42, 8, 'inserted - 1');
+{{ WATCH('global mutation, insert') }}
+
+optimize table multipart final;
+{{ WATCH('global mutation, insert, optimize') }}
+
+alter table multipart update s='testing merge' IN PARTITION 7 where p=7 SETTINGS mutations_sync = 2;
+{{ WATCH('local mutation') }}
+
+insert into multipart values(42, 8, 'inserted - 2');
+{{ WATCH('local mutation, insert') }}
+
+optimize table multipart final;
+{{ WATCH('local mutation, insert, optimize') }}
+
+drop table multipart;
