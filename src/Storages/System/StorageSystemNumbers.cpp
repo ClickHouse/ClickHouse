@@ -106,7 +106,7 @@ public:
         RangesPos pos;
         mutable std::mutex mutex;
     };
-    
+
     using RangesStatePtr = std::shared_ptr<RangesState>;
 
     NumbersRangedSource(const Ranges & ranges_, RangesStatePtr & ranges_state_, UInt64 base_block_size_)
@@ -277,10 +277,10 @@ bool shouldPushdownLimit(SelectQueryInfo & query_info, UInt64 limit_length)
 
 /// Shrink ranges to size.
 ///     For example: ranges: [1, 5], [8, 100]; size: 7, we will get [1, 5], [8, 9]
-void shrinkRanges(Ranges &ranges, size_t size)
+void shrinkRanges(Ranges & ranges, size_t size)
 {
     size_t last_range_idx = 0;
-    for (size_t i=0; i<ranges.size(); i++)
+    for (size_t i = 0; i < ranges.size(); i++)
     {
         auto range_size = sizeOfRange(ranges[i]);
         if (range_size < size)
@@ -307,7 +307,6 @@ void shrinkRanges(Ranges &ranges, size_t size)
 
     /// delete the additional ranges
     ranges.erase(ranges.begin() + (last_range_idx + 1), ranges.end());
-
 }
 
 }
