@@ -16,19 +16,15 @@
 
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeFunction.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
 
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnSet.h>
 
 #include <Storages/StorageSet.h>
@@ -47,7 +43,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/ActionsVisitor.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
@@ -60,6 +55,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/queryToString.h>
+
 
 namespace DB
 {
@@ -78,6 +74,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
 }
 
 static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
@@ -95,38 +92,6 @@ static size_t getTypeDepth(const DataTypePtr & type)
         return 1 + (tuple_type->getElements().empty() ? 0 : getTypeDepth(tuple_type->getElements().at(0)));
 
     return 0;
-}
-
-template <typename T>
-static bool decimalEqualsFloat(Field field, Float64 float_value)
-{
-    auto decimal_field = field.get<DecimalField<T>>();
-    auto decimal_to_float = DecimalUtils::convertTo<Float64>(decimal_field.getValue(), decimal_field.getScale());
-    return decimal_to_float == float_value;
-}
-
-/// Applies stricter rules than convertFieldToType:
-/// Doesn't allow :
-/// - loss of precision converting to Decimal
-static bool convertFieldToTypeStrict(const Field & from_value, const IDataType & to_type, Field & result_value)
-{
-    result_value = convertFieldToType(from_value, to_type);
-    if (Field::isDecimal(from_value.getType()) && Field::isDecimal(result_value.getType()))
-        return applyVisitor(FieldVisitorAccurateEquals{}, from_value, result_value);
-    if (from_value.getType() == Field::Types::Float64 && Field::isDecimal(result_value.getType()))
-    {
-        /// Convert back to Float64 and compare
-        if (result_value.getType() == Field::Types::Decimal32)
-            return decimalEqualsFloat<Decimal32>(result_value, from_value.get<Float64>());
-        if (result_value.getType() == Field::Types::Decimal64)
-            return decimalEqualsFloat<Decimal64>(result_value, from_value.get<Float64>());
-        if (result_value.getType() == Field::Types::Decimal128)
-            return decimalEqualsFloat<Decimal128>(result_value, from_value.get<Float64>());
-        if (result_value.getType() == Field::Types::Decimal256)
-            return decimalEqualsFloat<Decimal256>(result_value, from_value.get<Float64>());
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown decimal type {}", result_value.getTypeName());
-    }
-    return true;
 }
 
 /// The `convertFieldToTypeStrict` is used to prevent unexpected results in case of conversion with loss of precision.
@@ -149,11 +114,10 @@ static Block createBlockFromCollection(const Collection & collection, const Data
     {
         if (columns_num == 1)
         {
-            Field field;
-            bool is_conversion_ok = convertFieldToTypeStrict(value, *types[0], field);
+            auto field = convertFieldToTypeStrict(value, *types[0]);
             bool need_insert_null = transform_null_in && types[0]->isNullable();
-            if (is_conversion_ok && (!field.isNull() || need_insert_null))
-                columns[0]->insert(field);
+            if (field && (!field->isNull() || need_insert_null))
+                columns[0]->insert(*field);
         }
         else
         {
@@ -174,9 +138,10 @@ static Block createBlockFromCollection(const Collection & collection, const Data
             size_t i = 0;
             for (; i < tuple_size; ++i)
             {
-                bool is_conversion_ok = convertFieldToTypeStrict(tuple[i], *types[i], tuple_values[i]);
-                if (!is_conversion_ok)
+                auto converted_field = convertFieldToTypeStrict(tuple[i], *types[i]);
+                if (!converted_field)
                     break;
+                tuple_values[i] = std::move(*converted_field);
 
                 bool need_insert_null = transform_null_in && types[i]->isNullable();
                 if (tuple_values[i].isNull() && !need_insert_null)
@@ -715,7 +680,7 @@ bool ActionsMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
         node->as<ASTExpressionList>())
         return false;
 
-    /// Do not go to FROM, JOIN, UNION.
+    /// Do not go to FROM, JOIN, UNION
     if (child->as<ASTTableExpression>() ||
         child->as<ASTSelectQuery>())
         return false;
@@ -980,7 +945,15 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (node.name == "indexHint")
     {
         if (data.only_consts)
+        {
+            /// We need to collect constants inside `indexHint` for index analysis.
+            if (node.arguments)
+            {
+                for (const auto & arg : node.arguments->children)
+                    visit(arg, data);
+            }
             return;
+        }
 
         /// Here we create a separate DAG for indexHint condition.
         /// It will be used only for index analysis.
@@ -1103,6 +1076,10 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 e.addMessage("Or unknown aggregate function " + node.name + ". Maybe you meant: " + toString(hints));
             throw;
         }
+
+        /// Normal functions are not parametric for now.
+        if (node.parameters)
+            throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", node.name);
     }
 
     Names argument_names;
@@ -1206,22 +1183,16 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             else if (data.is_create_parameterized_view && query_parameter)
             {
                 const auto data_type = DataTypeFactory::instance().get(query_parameter->type);
-                /// Use getUniqueName() to allow multiple use of query parameter in the query:
-                ///
-                ///     CREATE VIEW view AS
-                ///     SELECT *
-                ///     FROM system.one
-                ///     WHERE dummy = {k1:Int}+1 OR dummy = {k1:Int}+2
-                ///                    ^^                    ^^
-                ///
-                /// NOTE: query in the VIEW will not be modified this is needed
-                /// only during analysis for CREATE VIEW to avoid duplicated
-                /// column names.
-                ColumnWithTypeAndName column(data_type, data.getUniqueName("__" + query_parameter->getColumnName()));
-                data.addColumn(column);
+                /// During analysis for CREATE VIEW of a parameterized view, if parameter is
+                /// used multiple times, column is only added once
+                if (!data.hasColumn(query_parameter->name))
+                {
+                    ColumnWithTypeAndName column(data_type, query_parameter->name);
+                    data.addColumn(column);
+                }
 
                 argument_types.push_back(data_type);
-                argument_names.push_back(column.name);
+                argument_names.push_back(query_parameter->name);
             }
             else
             {
