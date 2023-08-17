@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
+#include <Storages/StorageMergeTree.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -7,6 +8,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Parsers/ASTPartition.h>
+#include <Interpreters/Context.h>
 
 #include <Common/logger_useful.h>
 
@@ -65,15 +67,11 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
     , path_prefix(path_prefix_)
     , file_name("tmp_mutation_" + toString(tmp_number) + ".txt")
     , is_temp(true)
+    , partition_ids(std::move(partition_ids_))
     , tid(tid_)
 {
     try
     {
-        if (!partition_ids_.empty())
-        {
-            partition_ids.emplace(std::move(partition_ids_));
-        }
-
         auto out = disk->writeFile(std::filesystem::path(path_prefix) / file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
         *out << "format version: 1\n"
             << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n";
@@ -130,7 +128,12 @@ void MergeTreeMutationEntry::writeCSN(CSN csn_)
     out->finalize();
 }
 
-MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_)
+MergeTreeMutationEntry::MergeTreeMutationEntry(
+    DiskPtr disk_,
+    const String & path_prefix_,
+    const String & file_name_,
+    StorageMergeTree * storage_,
+    ContextPtr context_)
     : disk(std::move(disk_))
     , path_prefix(path_prefix_)
     , file_name(file_name_)
@@ -140,6 +143,8 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     auto buf = disk->readFile(path_prefix + file_name);
 
     *buf >> "format version: 1\n";
+    // auto format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+
 
     LocalDateTime create_time_dt;
     *buf >> "create time: " >> create_time_dt >> "\n";
@@ -168,36 +173,43 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
         }
     }
 
-    PartitionIds affected_partition_ids;
+    assertEOF(*buf);
 
     for (const auto & command : commands)
     {
         if (!command.partition)
         {
-            affected_partition_ids.clear();
+            partition_ids.clear();
             break;
         }
 
-        const auto & partition_ast = command.partition->as<ASTPartition &>();
+        // const auto & partition_ast = command.partition->as<ASTPartition &>();
 
+
+        auto partition_id = storage_->getPartitionIDFromQuery(command.partition, context_);
+        partition_ids.push_back(partition_id);
+        LOG_TRACE(&Poco::Logger::get("MergeTreeMutationEntry"), "ctor: adding {}", partition_id);
+
+#if 0
         // partition_ast.all  ??
-        if (!partition_ast.value)
+        if (!partition_ast.value  && !partition_ast.id.empty())
         {
-            /// Looks like we do not know format version
             // MergeTreePartInfo::validatePartitionID(partition_ast.id, format_version);
-            affected_partition_ids.push_back(partition_ast.id);
+            partition_ids.push_back(partition_ast.id);
+            LOG_TRACE(&Poco::Logger::get("MergeTreeMutationEntry"), "ctor: adding {}", partition_ast.id);
         }
-
+#endif
     }
 
-    if (!affected_partition_ids.empty())
-    {
-        partition_ids = std::move(affected_partition_ids);
-        std::sort(partition_ids->begin(), partition_ids->end());
-        partition_ids->shrink_to_fit();
-    }
+    compactPartitionIds(partition_ids);
 
-    assertEOF(*buf);
+        // if (partition_ids->size() > 1)
+        // {
+        //     std::sort(partition_ids->begin(), partition_ids->end());
+        //     auto last = std::unique(partition_ids->begin(), partition_ids->end());
+        //     partition_ids->erase(last, partition_ids->end());
+        // }
+        // partition_ids->shrink_to_fit();
 }
 
 MergeTreeMutationEntry::~MergeTreeMutationEntry()
@@ -217,8 +229,7 @@ MergeTreeMutationEntry::~MergeTreeMutationEntry()
 
 bool MergeTreeMutationEntry::affectsPartition(const String & partition_id) const
 {
-    bool affected = !partition_ids.has_value() ||
-        std::binary_search(partition_ids->begin(), partition_ids->end(), partition_id);
+    bool affected = partition_ids.empty() || containsInPartitionIds(partition_ids, partition_id);
     LOG_TRACE(&Poco::Logger::get("MergeTreeMutationEntry"), "Partition {} {}affected by mutation {}",
         partition_id, affected?"":"not ", block_number);
     return affected;

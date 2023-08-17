@@ -10,10 +10,11 @@
 namespace DB
 {
 class IBackupEntry;
+class StorageMergeTree;
 
 /// A mutation entry for non-replicated MergeTree storage engines.
 /// Stores information about mutation in file mutation_*.txt.
-struct MergeTreeMutationEntry
+struct MergeTreeMutationEntry // : public WithContext
 {
     // using PartitionIds = std::vector<String>;
 
@@ -33,7 +34,7 @@ struct MergeTreeMutationEntry
     String latest_fail_reason;
 
     /// If no value, applied to all partitions. Not serialized.
-    std::optional<PartitionIds> partition_ids;
+    PartitionIds partition_ids;
 
     /// ID of transaction which has created mutation.
     TransactionID tid = Tx::PrehistoricTID;
@@ -63,7 +64,12 @@ struct MergeTreeMutationEntry
     static UInt64 parseFileName(const String & file_name_);
 
     /// Load an existing entry.
-    MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_);
+    MergeTreeMutationEntry(
+        DiskPtr disk_,
+        const String & path_prefix_,
+        const String & file_name_,
+        StorageMergeTree * storage_,
+        ContextPtr context_);
 
     ~MergeTreeMutationEntry();
 };
