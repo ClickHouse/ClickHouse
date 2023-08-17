@@ -7,15 +7,26 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
+#include <Common/Exception.h>
 #include <Common/PODArray.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/StringHashMap.h>
+
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
+
+#if defined(__AVX512F__) && defined(__AVX512BW__)
 #include <immintrin.h>
+#endif
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int CANNOT_ALLOCATE_MEMORY;
+}
 namespace ColumnsHashing
 {
 class HashMethodContext;
@@ -28,24 +39,25 @@ public:
     void computeValueId(const IColumn * col, std::vector<UInt64> & value_ids);
 private:
     AdaptiveKeysHolder::State * state;
-    /// Store the string values for eache value_id. Need to make the string address padded to
-    /// insert into the StringHashMap.
-    PaddedPODArray<UInt8> pool;
+    /// To use StringHashMap, need to make the memory address padded.
+    static constexpr size_t pad_right = integerRoundUp(PADDING_FOR_SIMD - 1, 1);
+    static constexpr size_t pad_left = integerRoundUp(PADDING_FOR_SIMD, 1);
+    Arena pool;
     // Each key will take 1 byte of the final value_id.
     const size_t max_distinct_values= 256;
     using MAP= StringHashMap<UInt64>;
     MAP m_value_ids;
     /// value_id assignment rules:
-    /// - 0 is reserved for null values.
-    /// - [1, 16] is reserved for short keys. When this is overflow, put keys in following.
-    /// - [17, 255] is dynamically assigned for long keys.
+    /// - 1 is reserved for null values.
+    /// - [2, 9] is reserved for short keys. When this is overflow, put keys in following.
+    /// - [10, 255] is dynamically assigned for long keys.
     #if defined(__AVX512F__) && defined(__AVX512BW__)
-    UInt64 current_assigned_value_id = 65;
-    static constexpr size_t low_cardinality_cache_size = 16;
+    UInt64 current_assigned_value_id = 10;
+    static constexpr size_t low_cardinality_cache_size = 8;
     size_t low_cardinality_cache_index = 0;
-    UInt64 low_cardinality_cache_values[low_cardinality_cache_size] = {0};
+    alignas(64) UInt64 low_cardinality_cache_values[low_cardinality_cache_size] = {0};
     #else
-    UInt64 current_assigned_value_id = 1;
+    UInt64 current_assigned_value_id = 2;
     #endif
 
     ALWAYS_INLINE void assignValueIdDynamically(const UInt8 * pos, size_t len, UInt64 & current_col_value_id)
@@ -66,12 +78,13 @@ private:
     {
         MAP::LookupResult m_it;
         bool inserted = false;
-        const size_t old_size = pool.size();
-        const size_t size_to_append = len;
-        const size_t new_size = old_size + size_to_append;
-        pool.resize(new_size);
-        const auto * new_str = pool.data() + old_size;
-        memcpy(pool.data() + old_size, pos, size_to_append);
+
+        size_t alloc_size = 0;
+        if (__builtin_add_overflow(len, pad_left + pad_right, &alloc_size))
+            throw DB::Exception(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Amount of memory requested to allocate is more than allowed");
+        /// need to pad the address.
+        auto * new_str = pool.alloc(alloc_size) + pad_left;
+        memcpy(new_str, pos, len);
 
         m_value_ids.emplace(StringRef(new_str, len), m_it, inserted);
         m_it->getMapped() = value_id;
@@ -82,32 +95,27 @@ private:
     #if defined(__AVX512F__) && defined(__AVX512BW__)
         if (low_cardinality_cache_index < low_cardinality_cache_size)
         {
-            constexpr UInt32 low_cardinality_cache_lines = low_cardinality_cache_size * sizeof(UInt64) / sizeof(__m512i);
             auto value_v = _mm512_set1_epi64(value);
-            for (UInt32 i = 0; i < low_cardinality_cache_lines; ++i)
+            auto value_line = _mm512_load_epi64(reinterpret_cast<const UInt8 *>(low_cardinality_cache_values));
+            // cmp_mask is 8 bits
+            auto cmp_mask = _mm512_cmpeq_epi64_mask(value_line, value_v);
+            auto cache_pos = _tzcnt_u32(cmp_mask);
+            if (cache_pos >= 8) [[unlikely]]
             {
-                auto value_line = _mm512_load_epi64(reinterpret_cast<const UInt8 *>(low_cardinality_cache_values) + i * sizeof(__m512i));
-                // cmp_mask is 8 bits
-                auto cmp_mask = _mm512_cmpeq_epi64_mask(value_v, value_line);
-                auto cache_pos = __builtin_ctz(cmp_mask);
-                if (cache_pos > 8) [[unlikely]]
-                {
-                    /// check next cache line
-                    if (i < low_cardinality_cache_lines - 1)
-                        continue;
-                    low_cardinality_cache_values[low_cardinality_cache_index++] = value;
-                    value_id = low_cardinality_cache_index;
+                /// check next cache line
+                value_id = low_cardinality_cache_index + 2;
+                low_cardinality_cache_values[low_cardinality_cache_index] = value;
+                low_cardinality_cache_index += 1;
 
-                    // Also put this value id into the hash map.
-                    emplaceValueId(pos, len, value_id);
+                // Also put this value id into the hash map.
+                emplaceValueId(pos, len, value_id);
 
-                    return true;
-                }
-                else
-                {
-                    value_id = low_cardinality_cache_values[cache_pos + i * 8];
-                    return true;
-                }
+                return true;
+            }
+            else
+            {
+                value_id = cache_pos + 2;
+                return true;
             }
         }
     #endif
@@ -136,14 +144,14 @@ private:
             {
                 if ((*null_map).getData()[offset_index])
                 {
-                    current_col_value_id = 0;
+                    current_col_value_id = 1;
                 }
                 else
                 {
                     if (str_len - 1 <= sizeof(UInt64))
                     {
                         UInt64 value = *reinterpret_cast<const UInt64 *>(pos);
-                        value &= (-1UL) >> ((sizeof(UInt64) - str_len + 1) >> 3);
+                        value &= (-1UL) >> ((sizeof(UInt64) - str_len + 1) << 3);
                         if (!tryAssignValueIdInLowCardinalityCache(value, current_col_value_id, pos, str_len - 1))
                             assignValueIdDynamically(pos, str_len - 1, current_col_value_id);
                     }
@@ -158,7 +166,7 @@ private:
                 if (str_len - 1 <= sizeof(UInt64))
                 {
                     UInt64 value = *reinterpret_cast<const UInt64 *>(pos);
-                    value &= (-1UL) >> ((sizeof(UInt64) - str_len + 1) >> 3);
+                    value &= (-1UL) >> ((sizeof(UInt64) - str_len + 1) << 3);
                     if (!tryAssignValueIdInLowCardinalityCache(value, current_col_value_id, pos, str_len - 1))
                         assignValueIdDynamically(pos, str_len - 1, current_col_value_id);
                 }
@@ -198,7 +206,7 @@ private:
             {
                 if ((*null_map).getData()[offset_index])
                 {
-                    current_col_value_id = 0;
+                    current_col_value_id = 1;
                 }
                 else
                 {
@@ -225,12 +233,6 @@ private:
     {
         if (state->hash_mode != AdaptiveKeysHolder::State::VALUE_ID)
             return;
-        if constexpr (is_nullable)
-        {
-            /// 1 is assigned to null values
-            if (current_assigned_value_id == 1)
-                current_assigned_value_id = 2;
-        }
         size_t str_len = col->getN();
         const auto & chars = col->getChars();
         UInt64 * value_id = value_ids.data();
@@ -238,6 +240,7 @@ private:
 #if defined(__AVX512F__) && defined(__AVX512BW__)
         if (str_len <= 8)
         {
+            auto value_mask =  (-1UL) >> ((sizeof(UInt64) - str_len) << 3);
             for (size_t i = 0, n = col->size(); i < n; ++i)
             {
                 UInt64 current_col_value_id = 0;
@@ -249,16 +252,16 @@ private:
                     }
                     else
                     {
-                        UInt64 value = 0;
-                        memcpy(&value, pos, str_len - 1);
+                        UInt64 value = *reinterpret_cast<const UInt64 *>(pos);
+                        value &= value_mask;
                         if (!tryAssignValueIdInLowCardinalityCache(value, current_col_value_id, pos, str_len - 1))
                             assignValueIdDynamically(pos, str_len, current_col_value_id);
                     }
                 }
                 else
                 {
-                    UInt64 value = 0;
-                    memcpy(&value, pos, str_len - 1);
+                    UInt64 value = *reinterpret_cast<const UInt64 *>(pos);
+                    value &= value_mask;
                     if (!tryAssignValueIdInLowCardinalityCache(value, current_col_value_id, pos, str_len - 1))
                         assignValueIdDynamically(pos, str_len, current_col_value_id);
                 }
@@ -303,12 +306,6 @@ private:
     template<bool is_nullable, typename ElementType, typename ColumnType>
     void computeValueIdForNumber(const ColumnUInt8 * null_map, const ColumnType * num_col, std::vector<UInt64> & value_ids)
     {
-        if constexpr (is_nullable)
-        {
-            /// 1 is assigned to null values
-            if (current_assigned_value_id == 1)
-                current_assigned_value_id = 2;
-        }
         size_t str_len = sizeof(ElementType);
         const auto * pos = reinterpret_cast<const UInt8 *>(num_col->getData().data());
         UInt64 * value_id = value_ids.data();

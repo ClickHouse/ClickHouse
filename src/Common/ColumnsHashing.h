@@ -9,6 +9,8 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashValueIdGenerator.h>
 #include <Common/assert_cast.h>
+#include <Common/PODArray_fwd.h>
+#include <Common/PODArray.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -16,8 +18,10 @@
 
 #include <cassert>
 #include <memory>
-#include <immintrin.h>
 
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+#include <immintrin.h>
+#endif
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 
@@ -757,8 +761,8 @@ struct HashMethodKeysAdaptive
     mutable ValueIdCacheMap value_id_cache;
 
     #if defined(__AVX512F__) && defined(__AVX512BW__)
-    static constexpr size_t max_low_cardinality_cache_size = 16;
-    mutable UInt64 low_cardinality_cache_value_ids[max_low_cardinality_cache_size] = {0};
+    static constexpr size_t max_low_cardinality_cache_size = 8;
+    alignas(64) mutable UInt64 low_cardinality_cache_value_ids[max_low_cardinality_cache_size] = {0};
     mutable std::vector<StringRef> low_cardinality_cache_keys;
     mutable size_t low_cardinality_cache_in_used = 0;
     #endif
@@ -824,32 +828,24 @@ struct HashMethodKeysAdaptive
 #if defined(__AVX512F__) && defined(__AVX512BW__)
             if (low_cardinality_cache_in_used < max_low_cardinality_cache_size) [[likely]]
             {
-                constexpr UInt32 low_cardinality_cache_lines = max_low_cardinality_cache_size * sizeof(UInt64) / sizeof(__m512i);
                 auto value_id_v = _mm512_set1_epi64(value_id);
-                for (UInt32 i = 0, n = low_cardinality_cache_lines; i < n; ++i)
+                auto value_id_line = _mm512_load_epi64(reinterpret_cast<const UInt8 *>(low_cardinality_cache_value_ids));
+                auto cmp_mask = _mm512_cmpeq_epi64_mask(value_id_line, value_id_v);
+                auto cache_pos = _tzcnt_u32(cmp_mask);
+                if (cache_pos >= 8) [[unlikely]]
                 {
-                    auto value_id_line
-                        = _mm512_load_epi64(reinterpret_cast<const UInt8 *>(low_cardinality_cache_value_ids) + i * sizeof(__m512i));
-                    auto cmp_mask = _mm512_cmpeq_epu64_mask(value_id_line, value_id_v);
-                    auto cache_pos = _tzcnt_u32(cmp_mask);
-                    if (cache_pos > 8) [[unlikely]]
-                    {
-                        if (i < n - 1)
-                            continue;
-                        low_cardinality_cache_value_ids[low_cardinality_cache_in_used] = value_id;
-                        low_cardinality_cache_keys[low_cardinality_cache_in_used] = serializeKeysToPoolContiguous(
-                            row, keys_size, key_columns, *value_id_generators_state->shared_keys_holder_state.pool);
-                        return AdaptiveKeysHolder{
-                            value_id,
-                            low_cardinality_cache_keys[low_cardinality_cache_in_used++],
-                            &value_id_generators_state->shared_keys_holder_state};
-                    }
-                    else
-                    {
-                        cache_pos = cache_pos + i * sizeof(__m512i) / sizeof(UInt64);
-                        return AdaptiveKeysHolder{
-                            value_id, low_cardinality_cache_keys[cache_pos], &value_id_generators_state->shared_keys_holder_state};
-                    }
+                    auto current_index = low_cardinality_cache_in_used;
+                    low_cardinality_cache_in_used += 1;
+                    low_cardinality_cache_value_ids[current_index] = value_id;
+                    low_cardinality_cache_keys[current_index] = serializeKeysToPoolContiguous(
+                        row, keys_size, key_columns, *value_id_generators_state->shared_keys_holder_state.pool);
+                    return AdaptiveKeysHolder{
+                        value_id, low_cardinality_cache_keys[current_index], &value_id_generators_state->shared_keys_holder_state};
+                }
+                else
+                {
+                    return AdaptiveKeysHolder{
+                        value_id, low_cardinality_cache_keys[cache_pos], &value_id_generators_state->shared_keys_holder_state};
                 }
             }
 #endif
