@@ -6058,7 +6058,7 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
         PartitionBlockNumbersHolder::BlockNumbersType block_numbers;
         for (const auto & lock : lock_holder.getLocks())
         {
-            if (mutation_affected_partition_ids.empty() || containsInPartitionIds(mutation_affected_partition_ids, lock.partition_id))
+            if (containsInPartitionIdsOrEmpty(mutation_affected_partition_ids, lock.partition_id))
                 block_numbers[lock.partition_id] = lock.number;
         }
 

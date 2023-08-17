@@ -199,19 +199,17 @@ using PartitionIds = std::vector<String>;
 
 void compactPartitionIds(PartitionIds &);
 
-inline bool containsInPartitionIds(const PartitionIds & haystack, const String & needle)
+inline bool containsInPartitionIdsOrEmpty(const PartitionIds & haystack, const String & needle)
 {
     switch (haystack.size())
     {
     case 0:
-        return false;
+        return true;
     case 1:
         return haystack.front() == needle;
     default:
         return std::binary_search(haystack.cbegin(), haystack.cend(), needle);
     }
 }
-
-
 
 }
