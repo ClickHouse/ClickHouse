@@ -13,7 +13,6 @@
 
 namespace DB
 {
-
 class TableJoin;
 class HashJoin;
 
@@ -23,11 +22,11 @@ class HashJoin;
  *
  * The joining algorithm consists of three stages:
  *
- * 1) During the first stage we accumulate blocks of the right table via @addJoinedBlock.
+ * 1) During the first stage we accumulate blocks of the right table via @addBlockToJoin.
  * Each input block is split into multiple buckets based on the hash of the row join keys.
  * The first bucket is added to the in-memory HashJoin, and the remaining buckets are written to disk for further processing.
  * When the size of HashJoin exceeds the limits, we double the number of buckets.
- * There can be multiple threads calling addJoinedBlock, just like @ConcurrentHashJoin.
+ * There can be multiple threads calling addBlockToJoin, just like @ConcurrentHashJoin.
  *
  * 2) At the second stage we process left table blocks via @joinBlock.
  * Again, each input block is split into multiple buckets by hash.
@@ -61,11 +60,12 @@ public:
 
     ~GraceHashJoin() override;
 
+    std::string getName() const override { return "GraceHashJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     void initialize(const Block & sample_block) override;
 
-    bool addJoinedBlock(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
 
@@ -79,7 +79,7 @@ public:
     bool supportTotals() const override { return false; }
 
     IBlocksStreamPtr
-    getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
+    getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size) const override;
 
     /// Open iterator over joined blocks.
     /// Must be called after all @joinBlock calls.
@@ -91,25 +91,26 @@ public:
 private:
     void initBuckets();
     /// Create empty join for in-memory processing.
-    InMemoryJoinPtr makeInMemoryJoin();
+    InMemoryJoinPtr makeInMemoryJoin(size_t reserve_num = 0);
 
     /// Add right table block to the @join. Calls @rehash on overflow.
-    void addJoinedBlockImpl(Block block);
+    void addBlockToJoinImpl(Block block);
 
     /// Check that join satisfies limits on rows/bytes in table_join.
     bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;
     bool hasMemoryOverflow(const InMemoryJoinPtr & hash_join_) const;
     bool hasMemoryOverflow(const BlocksList & blocks) const;
 
-    /// Create new bucket at the end of @destination.
-    void addBucket(Buckets & destination);
+    /// Add bucket_count new buckets
+    /// Throws if a bucket creation fails
+    void addBuckets(size_t bucket_count);
 
     /// Increase number of buckets to match desired_size.
     /// Called when HashJoin in-memory table for one bucket exceeds the limits.
     ///
     /// NB: after @rehashBuckets there may be rows that are written to the buckets that they do not belong to.
     /// It is fine; these rows will be written to the corresponding buckets during the third stage.
-    Buckets rehashBuckets(size_t to_size);
+    Buckets rehashBuckets();
 
     /// Perform some bookkeeping after all calls to @joinBlock.
     void startReadingDelayedBlocks();

@@ -20,7 +20,6 @@ For more information and documentation see https://clickhouse.com/.
 
 - The amd64 image requires support for [SSE3 instructions](https://en.wikipedia.org/wiki/SSE3). Virtually all x86 CPUs after 2005 support SSE3.
 - The arm64 image requires support for the [ARMv8.2-A architecture](https://en.wikipedia.org/wiki/AArch64#ARMv8.2-A). Most ARM CPUs after 2017 support ARMv8.2-A. A notable exception is Raspberry Pi 4 from 2019 whose CPU only supports ARMv8.0-A.
-- Since the Clickhouse 23.3 Ubuntu image started using `ubuntu:22.04` as its base image, it requires docker version >= `20.10.10`, or use `docker run -- privileged` instead. Alternatively, try the Clickhouse Alpine image.
 
 ## How to use this image
 
@@ -98,8 +97,8 @@ docker run -d \
 
 You may also want to mount:
 
-* `/etc/clickhouse-server/config.d/*.xml` - files with server configuration adjustmenets
-* `/etc/clickhouse-server/users.d/*.xml` - files with user settings adjustmenets
+* `/etc/clickhouse-server/config.d/*.xml` - files with server configuration adjustments
+* `/etc/clickhouse-server/users.d/*.xml` - files with user settings adjustments
 * `/docker-entrypoint-initdb.d/` - folder with database initialization scripts (see below).
 
 ### Linux capabilities

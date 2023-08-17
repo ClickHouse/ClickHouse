@@ -83,6 +83,8 @@ ThreadGroupPtr ThreadGroup::createForBackgroundProcess(ContextPtr storage_contex
     const Settings & settings = storage_context->getSettingsRef();
     group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
     group->memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
+    group->memory_tracker.setSampleMinAllocationSize(settings.memory_profiler_sample_min_allocation_size);
+    group->memory_tracker.setSampleMaxAllocationSize(settings.memory_profiler_sample_max_allocation_size);
     group->memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator);
     group->memory_tracker.setParent(&background_memory_tracker);
     if (settings.memory_tracker_fault_probability > 0.0)
@@ -158,6 +160,17 @@ void CurrentThread::attachQueryForLog(const String & query_)
     current_thread->attachQueryForLog(query_);
 }
 
+void ThreadStatus::applyGlobalSettings()
+{
+    auto global_context_ptr = global_context.lock();
+    if (!global_context_ptr)
+        return;
+
+    const Settings & settings = global_context_ptr->getSettingsRef();
+
+    DB::Exception::enable_job_stack_trace = settings.enable_job_stack_trace;
+}
+
 void ThreadStatus::applyQuerySettings()
 {
     auto query_context_ptr = query_context.lock();
@@ -165,6 +178,8 @@ void ThreadStatus::applyQuerySettings()
         return;
 
     const Settings & settings = query_context_ptr->getSettingsRef();
+
+    DB::Exception::enable_job_stack_trace = settings.enable_job_stack_trace;
 
     query_id_from_query_context = query_context_ptr->getCurrentQueryId();
     initQueryProfiler();
@@ -204,6 +219,7 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 
     local_data = thread_group->getSharedData();
 
+    applyGlobalSettings();
     applyQuerySettings();
     initPerformanceCounters();
 }
@@ -366,12 +382,10 @@ void ThreadStatus::finalizePerformanceCounters()
     updatePerformanceCounters();
 
     // We want to close perf file descriptors if the perf events were enabled for
-    // one query. What this code does in practice is less clear -- e.g., if I run
-    // 'select 1 settings metrics_perf_events_enabled = 1', I still get
-    // query_context->getSettingsRef().metrics_perf_events_enabled == 0 *shrug*.
+    // one query.
     bool close_perf_descriptors = true;
-    if (auto query_context_ptr = query_context.lock())
-        close_perf_descriptors = !query_context_ptr->getSettingsRef().metrics_perf_events_enabled;
+    if (auto global_context_ptr = global_context.lock())
+        close_perf_descriptors = !global_context_ptr->getSettingsRef().metrics_perf_events_enabled;
 
     try
     {
@@ -394,7 +408,7 @@ void ThreadStatus::finalizePerformanceCounters()
             if (settings.log_queries && settings.log_query_threads)
             {
                 const auto now = std::chrono::system_clock::now();
-                Int64 query_duration_ms = std::chrono::duration_cast<std::chrono::microseconds>(now - query_start_time.point).count();
+                Int64 query_duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - query_start_time.point).count();
                 if (query_duration_ms >= settings.log_queries_min_query_duration_ms.totalMilliseconds())
                 {
                     if (auto thread_log = global_context_ptr->getQueryThreadLog())
@@ -499,12 +513,12 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
         }
     }
 
-    thread_log.add(elem);
+    thread_log.add(std::move(elem));
 }
 
 static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 {
-    String res = serializeAST(*q, true);
+    String res = serializeAST(*q);
     if (auto * masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(res);
 
@@ -559,7 +573,7 @@ void ThreadStatus::logToQueryViewsLog(const ViewRuntimeData & vinfo)
             element.stack_trace = getExceptionStackTraceString(vinfo.exception);
     }
 
-    views_log->add(element);
+    views_log->add(std::move(element));
 }
 
 void CurrentThread::attachToGroup(const ThreadGroupPtr & thread_group)

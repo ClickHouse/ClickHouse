@@ -3,6 +3,9 @@ name: PullRequestCI
 env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
+  # Export system tables to ClickHouse Cloud
+  CLICKHOUSE_CI_LOGS_HOST: ${{ secrets.CLICKHOUSE_CI_LOGS_HOST }}
+  CLICKHOUSE_CI_LOGS_PASSWORD: ${{ secrets.CLICKHOUSE_CI_LOGS_PASSWORD }}
 
 on:  # yamllint disable-line rule:truthy
   pull_request:
@@ -911,6 +914,88 @@ jobs:
           docker ps --quiet | xargs --no-run-if-empty docker kill ||:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+  BuilderBinRISCV64:
+    needs: [DockerHubPush, FastTest, StyleCheck]
+    runs-on: [self-hosted, builder]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          BUILD_NAME=binary_riscv64
+          EOF
+      - name: Download changed images
+        uses: actions/download-artifact@v3
+        with:
+          name: changed_images
+          path: ${{ env.IMAGES_PATH }}
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+          submodules: true
+      - name: Build
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
+      - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+  BuilderBinS390X:
+    needs: [DockerHubPush, FastTest, StyleCheck]
+    runs-on: [self-hosted, builder]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          BUILD_NAME=binary_s390x
+          EOF
+      - name: Download changed images
+        uses: actions/download-artifact@v3
+        with:
+          name: changed_images
+          path: ${{ env.IMAGES_PATH }}
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+          submodules: true
+      - name: Build
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
+      - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
 ############################################################################################
 ##################################### Docker images  #######################################
 ############################################################################################
@@ -992,6 +1077,8 @@ jobs:
       - BuilderBinDarwinAarch64
       - BuilderBinFreeBSD
       - BuilderBinPPC64
+      - BuilderBinRISCV64
+      - BuilderBinS390X
       - BuilderBinAmd64Compat
       - BuilderBinAarch64V80Compat
       - BuilderBinClangTidy
@@ -3861,6 +3948,216 @@ jobs:
           docker ps --quiet | xargs --no-run-if-empty docker kill ||:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH"
+  IntegrationTestsAnalyzerAsan0:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/integration_tests_asan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Integration tests (asan, analyzer)
+          REPO_COPY=${{runner.temp}}/integration_tests_asan/ClickHouse
+          RUN_BY_HASH_NUM=0
+          RUN_BY_HASH_TOTAL=6
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v3
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+      - name: Integration test
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          sudo rm -fr "$TEMP_PATH"
+  IntegrationTestsAnalyzerAsan1:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/integration_tests_asan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Integration tests (asan, analyzer)
+          REPO_COPY=${{runner.temp}}/integration_tests_asan/ClickHouse
+          RUN_BY_HASH_NUM=1
+          RUN_BY_HASH_TOTAL=6
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v3
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+      - name: Integration test
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          sudo rm -fr "$TEMP_PATH"
+  IntegrationTestsAnalyzerAsan2:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/integration_tests_asan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Integration tests (asan, analyzer)
+          REPO_COPY=${{runner.temp}}/integration_tests_asan/ClickHouse
+          RUN_BY_HASH_NUM=2
+          RUN_BY_HASH_TOTAL=6
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v3
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+      - name: Integration test
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          sudo rm -fr "$TEMP_PATH"
+  IntegrationTestsAnalyzerAsan3:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/integration_tests_asan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Integration tests (asan, analyzer)
+          REPO_COPY=${{runner.temp}}/integration_tests_asan/ClickHouse
+          RUN_BY_HASH_NUM=3
+          RUN_BY_HASH_TOTAL=6
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v3
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+      - name: Integration test
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          sudo rm -fr "$TEMP_PATH"
+  IntegrationTestsAnalyzerAsan4:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/integration_tests_asan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Integration tests (asan, analyzer)
+          REPO_COPY=${{runner.temp}}/integration_tests_asan/ClickHouse
+          RUN_BY_HASH_NUM=4
+          RUN_BY_HASH_TOTAL=6
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v3
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+      - name: Integration test
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          sudo rm -fr "$TEMP_PATH"
+  IntegrationTestsAnalyzerAsan5:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/integration_tests_asan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Integration tests (asan, analyzer)
+          REPO_COPY=${{runner.temp}}/integration_tests_asan/ClickHouse
+          RUN_BY_HASH_NUM=5
+          RUN_BY_HASH_TOTAL=6
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v3
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+      - name: Integration test
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          sudo rm -fr "$TEMP_PATH"
   IntegrationTestsTsan0:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, stress-tester]
@@ -4289,7 +4586,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/unit_tests_asan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Unit tests (release-clang)
+          CHECK_NAME=Unit tests (release)
           REPO_COPY=${{runner.temp}}/unit_tests_asan/ClickHouse
           EOF
       - name: Download json reports
@@ -4847,6 +5144,12 @@ jobs:
       - IntegrationTestsAsan3
       - IntegrationTestsAsan4
       - IntegrationTestsAsan5
+      - IntegrationTestsAnalyzerAsan0
+      - IntegrationTestsAnalyzerAsan1
+      - IntegrationTestsAnalyzerAsan2
+      - IntegrationTestsAnalyzerAsan3
+      - IntegrationTestsAnalyzerAsan4
+      - IntegrationTestsAnalyzerAsan5
       - IntegrationTestsRelease0
       - IntegrationTestsRelease1
       - IntegrationTestsRelease2
@@ -4918,6 +5221,42 @@ jobs:
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
           cd "$REPO_COPY/tests/ci"
           python3 sqllogic_test.py "$CHECK_NAME" "$KILL_TIMEOUT"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          sudo rm -fr "$TEMP_PATH"
+##############################################################################################
+##################################### SQL TEST ###############################################
+##############################################################################################
+  SQLTest:
+    needs: [BuilderDebRelease]
+    runs-on: [self-hosted, fuzzer-unit-tester]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/sqltest
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=SQLTest
+          REPO_COPY=${{runner.temp}}/sqltest/ClickHouse
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v3
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+      - name: SQLTest
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 sqltest.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |

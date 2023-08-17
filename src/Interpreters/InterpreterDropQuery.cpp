@@ -247,10 +247,10 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
             database->dropTable(context_, table_id.table_name, query.sync);
 
-            /// We have to drop mmapio cache when dropping table from Ordinary database
+            /// We have to clear mmapio cache when dropping table from Ordinary database
             /// to avoid reading old data if new table with the same name is created
             if (database->getUUID() == UUIDHelpers::Nil)
-                context_->dropMMappedFileCache();
+                context_->clearMMappedFileCache();
         }
 
         db = database;
@@ -361,7 +361,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 std::vector<std::pair<String, bool>> tables_to_drop;
                 for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
                 {
-                    iterator->table()->flush();
+                    iterator->table()->flushAndPrepareForShutdown();
                     tables_to_drop.push_back({iterator->name(), iterator->table()->isDictionary()});
                 }
 
@@ -451,11 +451,11 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         auto drop_context = Context::createCopy(global_context);
         if (ignore_sync_setting)
             drop_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
-        drop_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        drop_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
         if (auto txn = current_context->getZooKeeperMetadataTransaction())
         {
             /// For Replicated database
-            drop_context->getClientInfo().is_replicated_database_internal = true;
+            drop_context->setQueryKindReplicatedDatabaseInternal();
             drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
             drop_context->initZooKeeperMetadataTransaction(txn, true);
         }

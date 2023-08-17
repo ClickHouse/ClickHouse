@@ -74,19 +74,22 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
 }
 
 void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
-    const FileSegment::Range & file_segment_range, CachedOnDiskReadBufferFromFile::ReadType type)
+    const FileSegment & file_segment, CachedOnDiskReadBufferFromFile::ReadType type)
 {
     if (!cache_log)
         return;
 
+    const auto range = file_segment.range();
     FilesystemCacheLogElement elem
     {
         .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
         .query_id = query_id,
         .source_file_path = source_file_path,
-        .file_segment_range = { file_segment_range.left, file_segment_range.right },
+        .file_segment_range = { range.left, range.right },
         .requested_range = { first_offset, read_until_position },
-        .file_segment_size = file_segment_range.size(),
+        .file_segment_key = file_segment.key().toString(),
+        .file_segment_offset = file_segment.offset(),
+        .file_segment_size = range.size(),
         .read_from_cache_attempted = true,
         .read_buffer_id = current_buffer_id,
         .profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(
@@ -108,7 +111,7 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
             break;
     }
 
-    cache_log->add(elem);
+    cache_log->add(std::move(elem));
 }
 
 void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
@@ -157,7 +160,7 @@ CachedOnDiskReadBufferFromFile::getCacheReadBuffer(const FileSegment & file_segm
     if (use_external_buffer)
         local_read_settings.local_fs_buffer_size = 0;
 
-    auto buf = createReadBufferFromFileBase(path, local_read_settings);
+    auto buf = createReadBufferFromFileBase(path, local_read_settings, std::nullopt, std::nullopt, file_segment.getFlagsForLocalRead());
 
     if (getFileSizeFromReadBuffer(*buf) == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {}", path);
@@ -495,7 +498,7 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
     auto completed_range = current_file_segment->range();
 
     if (cache_log)
-        appendFilesystemCacheLog(completed_range, read_type);
+        appendFilesystemCacheLog(*current_file_segment, read_type);
 
     chassert(file_offset_of_buffer_end > completed_range.right);
 
@@ -506,9 +509,6 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
     current_file_segment = &file_segments->front();
     current_file_segment->use();
     implementation_buffer = getImplementationBuffer(*current_file_segment);
-
-    if (read_type == ReadType::CACHED)
-        current_file_segment->incrementHitsCount();
 
     LOG_TEST(
         log, "New segment range: {}, old range: {}",
@@ -521,7 +521,7 @@ CachedOnDiskReadBufferFromFile::~CachedOnDiskReadBufferFromFile()
 {
     if (cache_log && file_segments && !file_segments->empty())
     {
-        appendFilesystemCacheLog(file_segments->front().range(), read_type);
+        appendFilesystemCacheLog(file_segments->front(), read_type);
     }
 }
 
@@ -852,9 +852,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     else
     {
         implementation_buffer = getImplementationBuffer(file_segments->front());
-
-        if (read_type == ReadType::CACHED)
-            file_segments->front().incrementHitsCount();
+        file_segments->front().use();
     }
 
     chassert(!internal_buffer.empty());
@@ -875,10 +873,11 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     LOG_TEST(
         log,
-        "Current read type: {}, read offset: {}, impl offset: {}, file segment: {}",
+        "Current read type: {}, read offset: {}, impl offset: {}, impl position: {}, file segment: {}",
         toString(read_type),
         file_offset_of_buffer_end,
         implementation_buffer->getFileOffsetOfBufferEnd(),
+        implementation_buffer->getPosition(),
         file_segment.getInfoForLog());
 
     chassert(current_read_range.left <= file_offset_of_buffer_end);
@@ -937,7 +936,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         // We don't support implementation_buffer implementations that use nextimpl_working_buffer_offset.
         chassert(implementation_buffer->position() == implementation_buffer->buffer().begin());
 
-        size = implementation_buffer->buffer().size();
+        if (result)
+            size = implementation_buffer->buffer().size();
 
         LOG_TEST(
             log,
@@ -951,15 +951,21 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheMicroseconds, elapsed);
 
-            const size_t new_file_offset = file_offset_of_buffer_end + size;
-            const size_t file_segment_write_offset = file_segment.getCurrentWriteOffset(true);
-            if (new_file_offset > file_segment.range().right + 1 || new_file_offset > file_segment_write_offset)
+            if (result)
             {
-                auto file_segment_path = file_segment.getPathInLocalCache();
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Read unexpected size. File size: {}, file path: {}, file segment info: {}",
-                    fs::file_size(file_segment_path), file_segment_path, file_segment.getInfoForLog());
+                const size_t new_file_offset = file_offset_of_buffer_end + size;
+                const size_t file_segment_write_offset = file_segment.getCurrentWriteOffset(true);
+                if (new_file_offset > file_segment.range().right + 1 || new_file_offset > file_segment_write_offset)
+                {
+                    auto file_segment_path = file_segment.getPathInLocalCache();
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR, "Read unexpected size. "
+                        "File size: {}, file segment path: {}, impl size: {}, impl path: {}"
+                        "file segment info: {}",
+                        fs::file_size(file_segment_path), file_segment_path,
+                        implementation_buffer->getFileSize(), implementation_buffer->getFileName(),
+                        file_segment.getInfoForLog());
+                }
             }
         }
         else
@@ -1083,6 +1089,10 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         read_until_position,
         first_offset,
         file_segments->toString());
+
+    /// Release buffer a little bit earlier.
+    if (read_until_position == file_offset_of_buffer_end)
+        implementation_buffer.reset();
 
     return result;
 }

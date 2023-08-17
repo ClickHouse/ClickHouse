@@ -67,9 +67,11 @@ ThreadGroup::ThreadGroup()
     : master_thread_id(CurrentThread::get().thread_id)
 {}
 
-ThreadStatus::ThreadStatus()
-    : thread_id{getThreadId()}
+ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
+    : thread_id{getThreadId()}, check_current_thread_on_destruction(check_current_thread_on_destruction_)
 {
+    chassert(!current_thread);
+
     last_rusage = std::make_unique<RUsageCounters>();
 
     memory_tracker.setDescription("(for thread)");
@@ -123,6 +125,7 @@ ThreadStatus::ThreadStatus()
 
 ThreadGroupPtr ThreadStatus::getThreadGroup() const
 {
+    chassert(current_thread == this);
     return thread_group;
 }
 
@@ -199,10 +202,14 @@ ThreadStatus::~ThreadStatus()
     if (deleter)
         deleter();
 
+    chassert(!check_current_thread_on_destruction || current_thread == this);
+
     /// Only change current_thread if it's currently being used by this ThreadStatus
     /// For example, PushingToViews chain creates and deletes ThreadStatus instances while running in the main query thread
     if (current_thread == this)
         current_thread = nullptr;
+    else if (check_current_thread_on_destruction)
+        LOG_ERROR(log, "current_thread contains invalid address");
 }
 
 void ThreadStatus::updatePerformanceCounters()

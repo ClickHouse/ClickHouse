@@ -10,6 +10,8 @@
 #include <Formats/ProtobufReader.h>
 #include <Core/Field.h>
 
+#include <ranges>
+
 namespace DB
 {
 
@@ -135,47 +137,39 @@ template <typename T>
 void SerializationNumber<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
     const typename ColumnVector<T>::Container & x = typeid_cast<const ColumnVector<T> &>(column).getData();
-
-    size_t size = x.size();
-
-    if (limit == 0 || offset + limit > size)
+    if (const size_t size = x.size(); limit == 0 || offset + limit > size)
         limit = size - offset;
 
-    if (limit)
+    if (limit == 0)
+        return;
+
+    if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
     {
-        if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
+        static constexpr auto to_little_endian = [](auto i)
         {
-            for (size_t i = 0; i < limit; i++)
-            {
-                auto tmp(x[offset+i]);
-                char *start = reinterpret_cast<char*>(&tmp);
-                char *end = start + sizeof(typename ColumnVector<T>::ValueType);
-                std::reverse(start, end);
-                ostr.write(reinterpret_cast<const char *>(&tmp), sizeof(typename ColumnVector<T>::ValueType));
-            }
-        }
-        else
-            ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnVector<T>::ValueType) * limit);
+            transformEndianness<std::endian::little>(i);
+            return i;
+        };
+
+        std::ranges::for_each(
+            x | std::views::drop(offset) | std::views::take(limit) | std::views::transform(to_little_endian),
+            [&ostr](const auto & i) { ostr.write(reinterpret_cast<const char *>(&i), sizeof(typename ColumnVector<T>::ValueType)); });
     }
+    else
+        ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnVector<T>::ValueType) * limit);
 }
 
 template <typename T>
 void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
     typename ColumnVector<T>::Container & x = typeid_cast<ColumnVector<T> &>(column).getData();
-    size_t initial_size = x.size();
+    const size_t initial_size = x.size();
     x.resize(initial_size + limit);
-    size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(typename ColumnVector<T>::ValueType) * limit);
-    if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
-    {
-        for (size_t i = 0; i < limit; i++)
-        {
-            char *start = reinterpret_cast<char*>(&x[initial_size + i]);
-            char *end = start + sizeof(typename ColumnVector<T>::ValueType);
-            std::reverse(start, end);
-        }
-    }
+    const size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(typename ColumnVector<T>::ValueType) * limit);
     x.resize(initial_size + size / sizeof(typename ColumnVector<T>::ValueType));
+
+    if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
+        std::ranges::for_each(x | std::views::drop(initial_size), [](auto & i) { transformEndianness<std::endian::big, std::endian::little>(i); });
 }
 
 template class SerializationNumber<UInt8>;

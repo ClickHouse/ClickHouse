@@ -19,7 +19,7 @@ public:
 
     MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const MarkRanges & mark_ranges,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
@@ -42,7 +42,9 @@ public:
     bool hasColumnFiles(const NameAndTypePair & column) const override { return !!getColumnPosition(column.getNameInStorage()); }
     String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return ""; }
     void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) override;
-    DataPartStoragePtr makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const override;
+    DataPartStoragePtr makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot,
+                                           const DiskTransactionPtr & disk_transaction) const override;
+    std::optional<time_t> getColumnModificationTime(const String & /* column_name */) const override { return {}; }
 
     MutableDataPartStoragePtr flushToDisk(const String & new_relative_path, const StorageMetadataPtr & metadata_snapshot) const;
 

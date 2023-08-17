@@ -10,6 +10,8 @@
 
 #include <pcg-random/pcg_random.hpp>
 
+#include <Common/StackTrace.h>
+#include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
@@ -103,6 +105,13 @@ inline void writeStringBinary(const std::string & s, WriteBuffer & buf)
 {
     writeVarUInt(s.size(), buf);
     buf.write(s.data(), s.size());
+}
+
+/// For historical reasons we store IPv6 as a String
+inline void writeIPv6Binary(const IPv6 & ip, WriteBuffer & buf)
+{
+    writeVarUInt(IPV6_BINARY_LENGTH, buf);
+    buf.write(reinterpret_cast<const char *>(&ip.toUnderType()), IPV6_BINARY_LENGTH);
 }
 
 inline void writeStringBinary(StringRef s, WriteBuffer & buf)
@@ -295,9 +304,10 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
 /** Will escape quote_character and a list of special characters('\b', '\f', '\n', '\r', '\t', '\0', '\\').
  *   - when escape_quote_with_quote is true, use backslash to escape list of special characters,
  *      and use quote_character to escape quote_character. such as: 'hello''world'
- *   - otherwise use backslash to escape list of special characters and quote_character
+ *     otherwise use backslash to escape list of special characters and quote_character
+ *   - when escape_backslash_with_backslash is true, backslash is escaped with another backslash
  */
-template <char quote_character, bool escape_quote_with_quote = false>
+template <char quote_character, bool escape_quote_with_quote = false, bool escape_backslash_with_backslash = true>
 void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & buf)
 {
     const char * pos = begin;
@@ -351,7 +361,8 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
                     writeChar('0', buf);
                     break;
                 case '\\':
-                    writeChar('\\', buf);
+                    if constexpr (escape_backslash_with_backslash)
+                        writeChar('\\', buf);
                     writeChar('\\', buf);
                     break;
                 default:
@@ -455,6 +466,13 @@ inline void writeQuotedString(StringRef ref, WriteBuffer & buf)
 inline void writeQuotedString(std::string_view ref, WriteBuffer & buf)
 {
     writeAnyQuotedString<'\''>(ref.data(), ref.data() + ref.size(), buf);
+}
+
+inline void writeQuotedStringPostgreSQL(std::string_view ref, WriteBuffer & buf)
+{
+    writeChar('\'', buf);
+    writeAnyEscapedString<'\'', true, false>(ref.data(), ref.data() + ref.size(), buf);
+    writeChar('\'', buf);
 }
 
 inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
@@ -868,6 +886,8 @@ inline void writeBinary(const UUID & x, WriteBuffer & buf) { writePODBinary(x, b
 inline void writeBinary(const IPv4 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const IPv6 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
+inline void writeBinary(const StackTrace::FramePointers & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+
 /// Methods for outputting the value in text form for a tab-separated format.
 
 inline void writeText(is_integer auto x, WriteBuffer & buf)
@@ -1147,6 +1167,15 @@ inline String toString(const T & x)
 {
     WriteBufferFromOwnString buf;
     writeText(x, buf);
+    return buf.str();
+}
+
+inline String toString(const CityHash_v1_0_2::uint128 & hash)
+{
+    WriteBufferFromOwnString buf;
+    writeText(hash.low64, buf);
+    writeChar('_', buf);
+    writeText(hash.high64, buf);
     return buf.str();
 }
 

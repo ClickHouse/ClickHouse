@@ -20,22 +20,41 @@ namespace DB
 
 void abortOnFailedAssertion(const String & description);
 
+/// This flag can be set for testing purposes - to check that no exceptions are thrown.
+extern bool terminate_on_any_exception;
+
+
 class Exception : public Poco::Exception
 {
 public:
     using FramePointers = std::vector<void *>;
 
-    Exception() = default;
+    Exception()
+    {
+        if (terminate_on_any_exception)
+            std::terminate();
+        capture_thread_frame_pointers = thread_frame_pointers;
+    }
 
     Exception(const PreformattedMessage & msg, int code): Exception(msg.text, code)
     {
+        if (terminate_on_any_exception)
+            std::terminate();
+        capture_thread_frame_pointers = thread_frame_pointers;
         message_format_string = msg.format_string;
     }
 
     Exception(PreformattedMessage && msg, int code): Exception(std::move(msg.text), code)
     {
+        if (terminate_on_any_exception)
+            std::terminate();
+        capture_thread_frame_pointers = thread_frame_pointers;
         message_format_string = msg.format_string;
     }
+
+    /// Collect call stacks of all previous jobs' schedulings leading to this thread job's execution
+    static thread_local bool enable_job_stack_trace;
+    static thread_local std::vector<StackTrace::FramePointers> thread_frame_pointers;
 
 protected:
     // used to remove the sensitive information from exceptions if query_masking_rules is configured
@@ -62,10 +81,11 @@ public:
     }
 
     /// Message must be a compile-time constant
-    template<typename T, typename = std::enable_if_t<std::is_convertible_v<T, String>>>
-    Exception(int code, T && message)
-        : Exception(message, code)
+    template <typename T>
+    requires std::is_convertible_v<T, String>
+    Exception(int code, T && message) : Exception(message, code)
     {
+        capture_thread_frame_pointers = thread_frame_pointers;
         message_format_string = tryGetStaticFormatString(message);
     }
 
@@ -80,6 +100,7 @@ public:
     Exception(int code, FormatStringHelper<Args...> fmt, Args &&... args)
         : Exception(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code)
     {
+        capture_thread_frame_pointers = thread_frame_pointers;
         message_format_string = fmt.message_format_string;
     }
 
@@ -131,6 +152,8 @@ private:
 
 protected:
     std::string_view message_format_string;
+    /// Local copy of static per-thread thread_frame_pointers, should be mutable to be unpoisoned on printout
+    mutable std::vector<StackTrace::FramePointers> capture_thread_frame_pointers;
 };
 
 

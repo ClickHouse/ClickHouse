@@ -7,6 +7,7 @@
 #include <Processors/ISource.h>
 #include <Storages/IStorage.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/prepareReadingFromFormat.h>
 #include <Poco/URI.h>
 
 namespace DB
@@ -29,6 +30,8 @@ public:
 
     struct PathWithInfo
     {
+        PathWithInfo() = default;
+        PathWithInfo(const String & path_, const std::optional<PathInfo> & info_) : path(path_), info(info_) {}
         String path;
         std::optional<PathInfo> info;
     };
@@ -73,6 +76,8 @@ public:
     /// So we can create a header of only required columns in read method and ask
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
     bool supportsSubsetOfColumns() const override;
+
+    bool supportsSubcolumns() const override { return true; }
 
     static ColumnsDescription getTableStructureFromData(
         const String & format,
@@ -140,16 +145,12 @@ public:
     using IteratorWrapper = std::function<StorageHDFS::PathWithInfo()>;
     using StorageHDFSPtr = std::shared_ptr<StorageHDFS>;
 
-    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
-
     HDFSSource(
+        const ReadFromFormatInfo & info,
         StorageHDFSPtr storage_,
-        const Block & block_for_format_,
-        const std::vector<NameAndTypePair> & requested_virtual_columns_,
         ContextPtr context_,
         UInt64 max_block_size_,
-        std::shared_ptr<IteratorWrapper> file_iterator_,
-        ColumnsDescription columns_description_);
+        std::shared_ptr<IteratorWrapper> file_iterator_);
 
     String getName() const override;
 
@@ -158,7 +159,8 @@ public:
 private:
     StorageHDFSPtr storage;
     Block block_for_format;
-    std::vector<NameAndTypePair> requested_virtual_columns;
+    NamesAndTypesList requested_columns;
+    NamesAndTypesList requested_virtual_columns;
     UInt64 max_block_size;
     std::shared_ptr<IteratorWrapper> file_iterator;
     ColumnsDescription columns_description;
@@ -168,11 +170,6 @@ private:
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
     String current_path;
-
-    UInt64 total_rows_approx_max = 0;
-    size_t total_rows_count_times = 0;
-    UInt64 total_rows_approx_accumulated = 0;
-    size_t total_files_size = 0;
 
     /// Recreate ReadBuffer and PullingPipelineExecutor for each file.
     bool initialize();
