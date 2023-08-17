@@ -159,7 +159,7 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
             throw Exception(ErrorCodes::INCORRECT_DATA, rc.error.release());
         for (size_t current_row = 1; current_row < num_rows; ++current_row)
             if (auto rc = index->add(index->size(), &array[offsets[current_row - 1]]); !rc)
-                throw Exception(ErrorCodes::INCORRECT_DATA, add_result.error.release());
+                throw Exception(ErrorCodes::INCORRECT_DATA, rc.error.release());
 
     }
     else if (const auto & column_tuple = typeid_cast<const ColumnTuple *>(column_cut.get()))
@@ -183,7 +183,7 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
 
         for (const auto & item : data)
             if (auto rc = index->add(index->size(), item.data()); !rc)
-                throw Exception(ErrorCodes::INCORRECT_DATA, add_result.error.release());
+                throw Exception(ErrorCodes::INCORRECT_DATA, rc.error.release());
     }
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Array or Tuple column");
@@ -210,9 +210,9 @@ bool MergeTreeIndexConditionUSearch::alwaysUnknownOrTrue() const
 
 std::vector<size_t> MergeTreeIndexConditionUSearch::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
 {
-    if (distance_function == "L2Distance")
+    if (distance_function == DISTANCE_FUNCTION_L2)
         return getUsefulRangesImpl<unum::usearch::metric_kind_t::l2sq_k>(idx_granule);
-    else if (distance_function == "cosineDistance")
+    else if (distance_function == DISTANCE_FUNCTION_COSINE)
         return getUsefulRangesImpl<unum::usearch::metric_kind_t::cos_k>(idx_granule);
     std::unreachable();
 }
@@ -272,18 +272,18 @@ MergeTreeIndexUSearch::MergeTreeIndexUSearch(const IndexDescription & index_, co
 
 MergeTreeIndexGranulePtr MergeTreeIndexUSearch::createIndexGranule() const
 {
-    if (distance_function == "L2Distance")
+    if (distance_function == DISTANCE_FUNCTION_L2)
         return std::make_shared<MergeTreeIndexGranuleUSearch<unum::usearch::metric_kind_t::l2sq_k>>(index.name, index.sample_block);
-    else if (distance_function == "cosineDistance")
+    else if (distance_function == DISTANCE_FUNCTION_COSINE)
         return std::make_shared<MergeTreeIndexGranuleUSearch<unum::usearch::metric_kind_t::cos_k>>(index.name, index.sample_block);
     std::unreachable();
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexUSearch::createIndexAggregator() const
 {
-    if (distance_function == "L2Distance")
+    if (distance_function == DISTANCE_FUNCTION_L2)
         return std::make_shared<MergeTreeIndexAggregatorUSearch<unum::usearch::metric_kind_t::l2sq_k>>(index.name, index.sample_block);
-    else if (distance_function == "cosineDistance")
+    else if (distance_function == DISTANCE_FUNCTION_COSINE)
         return std::make_shared<MergeTreeIndexAggregatorUSearch<unum::usearch::metric_kind_t::cos_k>>(index.name, index.sample_block);
     std::unreachable();
 }
@@ -295,7 +295,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexUSearch::createIndexCondition(const Sel
 
 MergeTreeIndexPtr usearchIndexCreator(const IndexDescription & index)
 {
-    static constexpr auto default_distance_function = "L2Distance";
+    static constexpr auto default_distance_function = DISTANCE_FUNCTION_L2;
     String distance_function = default_distance_function;
     if (!index.arguments.empty())
         distance_function = index.arguments[0].get<String>();
@@ -323,8 +323,8 @@ void usearchIndexValidator(const IndexDescription & index, bool /* attach */)
     if (!index.arguments.empty())
     {
         String distance_name = index.arguments[0].get<String>();
-        if (distance_name != "L2Distance" && distance_name != "cosineDistance")
-            throw Exception(ErrorCodes::INCORRECT_DATA, "USearch index only supports distance functions 'L2Distance' and 'cosineDistance'");
+        if (distance_name != DISTANCE_FUNCTION_L2 && distance_name != DISTANCE_FUNCTION_COSINE)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "USearch index only supports distance functions '{}' and '{}'", DISTANCE_FUNCTION_L2, DISTANCE_FUNCTION_COSINE);
     }
 
     /// Check data type of indexed column:
