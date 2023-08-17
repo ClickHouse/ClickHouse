@@ -20,8 +20,9 @@ struct BackupLogElement
     BackupLogElement(BackupLogElement &&) = default;
     BackupLogElement & operator=(BackupLogElement &&) = default;
 
-    time_t event_time;
-    BackupOperationInfo info;
+    std::chrono::system_clock::time_point event_time{};
+    Decimal64 event_time_usec{};
+    BackupOperationInfo info{};
 
     static std::string name() { return "BackupLog"; }
     static NamesAndTypesList getNamesAndTypes();
@@ -33,6 +34,9 @@ struct BackupLogElement
 class BackupLog : public SystemLog<BackupLogElement>
 {
     using SystemLog<BackupLogElement>::SystemLog;
+
+public:
+    static const char * getDefaultOrderBy() { return "event_date, event_time_microseconds"; }
 };
 
 }
