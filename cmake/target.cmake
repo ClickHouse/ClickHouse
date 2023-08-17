@@ -47,7 +47,7 @@ if (CMAKE_CROSSCOMPILING)
             set (ENABLE_RUST OFF CACHE INTERNAL "")
         elseif (ARCH_S390X)
             set (ENABLE_GRPC OFF CACHE INTERNAL "")
-            set (ENABLE_SENTRY OFF CACHE INTERNAL "")
+            set (ENABLE_RUST OFF CACHE INTERNAL "")
         endif ()
     elseif (OS_FREEBSD)
         # FIXME: broken dependencies

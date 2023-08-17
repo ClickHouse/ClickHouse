@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <boost/container/flat_set.hpp>
 
 
 namespace DB
@@ -21,11 +22,6 @@ public:
     explicit MemoryAccessStorage(const String & storage_name_, AccessChangesNotifier & changes_notifier_, bool allow_backup_);
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
-
-    /// Inserts an entity with a specified ID.
-    /// If `replace_if_exists == true` it can replace an existing entry with such ID and also remove an existing entry
-    /// with such name & type.
-    bool insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists);
 
     /// Removes all entities except the specified list `ids_to_keep`.
     /// The function skips IDs not contained in the storage.
@@ -44,7 +40,7 @@ private:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
-    std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
+    bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 
