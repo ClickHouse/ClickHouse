@@ -81,8 +81,8 @@ Hello	\N	World
 14
 x	Nullable(String)					
 y	Nullable(String)					
-z	Array(Nullable(Int64))					
-Hello	\N	[]
+z	Nullable(Array(Int64))					
+Hello	\N	\N
 \N	\N	[1,2,3]
 15
 c1	Nullable(String)					
