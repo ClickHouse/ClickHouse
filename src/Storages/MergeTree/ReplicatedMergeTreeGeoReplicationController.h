@@ -30,8 +30,8 @@ class StorageReplicatedMergeTree;
  * During replication, all replicas still pull log entries from zk log queue to its queue, no matter
  * which replica publish the entry. When replaying the log entry, if fetching needed, following constraints
  * apply:
- * 1. A leader can fetch part from any replica (in and out of its region)
- * 2. A follower can only fetch part from the leader replica
+ * 1. A leader can fetch part from any replica regardless the region
+ * 2. A follower can only fetch part from replicas within the region
  *
  * The location information is configurable. The leader is per-table. After being elected,
  * the leader will maintain a `lease` in zk, so other node know that there is a leader. All replicas within
@@ -47,6 +47,7 @@ class ReplicatedMergeTreeGeoReplicationController
 {
 public:
     explicit ReplicatedMergeTreeGeoReplicationController(StorageReplicatedMergeTree & storage_);
+    ~ReplicatedMergeTreeGeoReplicationController() { resetCurrentTerm(); }
 
     bool isValid() const { return !region.empty(); }
 
@@ -54,7 +55,9 @@ public:
 
     void startLeaderElection();
 
-    String getCurrentLeader() const;
+    std::optional<String> getCurrentLeader() const;
+
+    bool isLeader() const;
 
 private:
     StorageReplicatedMergeTree & storage;
@@ -64,7 +67,7 @@ private:
     zkutil::EphemeralNodeHolderPtr leader_lease_holder;
 
     void onLeader();
-    void exitLeaderElection();
+    void resetCurrentTerm();
     void enterLeaderElection();
 };
 

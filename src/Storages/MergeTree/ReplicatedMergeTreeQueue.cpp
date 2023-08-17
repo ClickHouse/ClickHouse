@@ -1552,7 +1552,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
     }
 
-    if (entry.waiting_for_region_leader > 0)
+    if (entry.wait_for_fetching_from_same_region > 0) /// Waiting state
     {
         auto extra_wait = entry.last_attempt_time + storage.getSettings()->geo_replication_control_leader_wait.totalSeconds() - time(nullptr);
         if (extra_wait > 0)

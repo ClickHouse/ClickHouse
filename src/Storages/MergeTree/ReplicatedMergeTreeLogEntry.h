@@ -178,12 +178,8 @@ struct ReplicatedMergeTreeLogEntryData
         return type == MUTATE_PART && alter_version != -1;
     }
 
-    /** Whether this entry is waiting for data from region leader
-     * = 0: no waiting, can wait if needed
-     * > 0: waiting, and the value is number of times this entry has been deferred to wait for region leader
-     * < 0: waited leader for too long, will not wait anymore
-     */
-    int waiting_for_region_leader = 0;
+    /// If this entry is waiting for fetching from this region, applied to GET_PART and ATTACH_PART
+    int wait_for_fetching_from_same_region = 0;  /// 0 - no wait now but can wait, 1 - waiting, 2 - no wait
 };
 
 

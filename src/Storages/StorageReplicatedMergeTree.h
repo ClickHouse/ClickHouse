@@ -690,7 +690,7 @@ private:
     /// NOTE: Attention! First of all tries to find covering part on other replica
     /// and set it into entry.actual_new_part_name. After that tries to fetch this new covering part.
     /// If fetch was not successful, clears entry.actual_new_part_name.
-    bool executeFetch(LogEntry & entry, bool need_to_check_missing_part=true);
+    bool executeFetch(LogEntry & entry, bool need_to_check_missing_part, bool only_fetch_within_region);
 
     bool executeReplaceRange(const LogEntry & entry);
     void executeClonePartFromShard(const LogEntry & entry);
@@ -764,8 +764,8 @@ private:
 
     /** Returns an empty string if no one has a part.
       */
-    String findReplicaHavingPart(LogEntry & entry, bool active);
-    String findReplicaHavingPart(const String & part_name, bool active);
+    String findReplicaHavingPart(LogEntry & entry, bool active = true, bool within_region = false);
+    String findReplicaHavingPart(const String & part_name, bool active = true, bool within_region = false);
     bool checkReplicaHavePart(const String & replica, const String & part_name);
     bool checkIfDetachedPartExists(const String & part_name);
     bool checkIfDetachedPartitionExists(const String & partition_name);
@@ -775,8 +775,8 @@ private:
       * If found, returns replica name and set 'entry->actual_new_part_name' to name of found largest covering part.
       * If not found, returns empty string.
       */
-    String findReplicaHavingCoveringPart(LogEntry & entry, bool active);
-    String findReplicaHavingCoveringPart(const String & part_name, bool active, String & found_part_name);
+    String findReplicaHavingCoveringPart(LogEntry & entry, bool active = true, bool within_region = false);
+    String findReplicaHavingCoveringPart(const String & part_name, bool active, bool within_region, String & found_part_name);
     static std::set<MergeTreePartInfo> findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, Poco::Logger * log_);
 
     /** Download the specified part from the specified replica.
@@ -974,8 +974,7 @@ private:
         const ReplicatedMergeTreeGeoReplicationController & geo_replication_controller,
         zkutil::ZooKeeperPtr zookeeper,
         const String & zookeeper_path,
-        const String & current_replica_name,
-        bool follower_prefer_leader = true);
+        bool strictly_within_region);
 
     bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name) override;
 

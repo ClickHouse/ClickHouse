@@ -1776,7 +1776,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             /// We surely don't have this part locally as we've checked it before, so download it.
             [[fallthrough]];
         case LogEntry::GET_PART:
-            return executeFetch(entry);
+            return executeFetch(entry, true, !geo_replication_controller.isLeader() && entry.wait_for_fetching_from_same_region >= 0);
         case LogEntry::MERGE_PARTS:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge has to be executed by another function");
         case LogEntry::MUTATE_PART:
@@ -1795,11 +1795,11 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 }
 
 
-bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_check_missing_part)
+bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_check_missing_part, bool only_fetch_within_region)
 {
     /// Looking for covering part. After that entry.actual_new_part_name may be filled.
-    String replica = findReplicaHavingCoveringPart(entry, true);
-    const auto storage_settings_ptr = getSettings();
+    String replica = findReplicaHavingCoveringPart(entry, true, only_fetch_within_region);
+    const auto & storage_settings_ptr = getSettings();
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     try
@@ -1848,7 +1848,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                 }
 
                 /// We verify that while we were collecting versions, the replica with the necessary part did not come alive.
-                replica = findReplicaHavingPart(entry.new_part_name, true);
+                replica = findReplicaHavingPart(entry.new_part_name, true, only_fetch_within_region);
 
                 /// Also during this time a completely new replica could be created.
                 /// But if a part does not appear on the old, then it can not be on the new one either.
@@ -1922,37 +1922,45 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                 if (!need_to_check_missing_part)
                     return false;
 
-                if (geo_replication_controller.isValid() && entry.waiting_for_region_leader >= 0)
+                if (only_fetch_within_region)
                 {
-                    auto region_leader = geo_replication_controller.getCurrentLeader();
-                    if (region_leader != getReplicaName())
+                    /// For GET_PART and ATTACH_PART, if wait long enough then loosen the constrains
+                    if (entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
                     {
-                        auto total_waited_seconds = entry.waiting_for_region_leader * getSettings()->geo_replication_control_leader_wait.totalSeconds();
+                        auto total_waited_seconds = time(nullptr) - entry.create_time;
                         if (total_waited_seconds < getSettings()->geo_replication_control_leader_wait_timeout.totalSeconds())
                         {
-                            LOG_INFO(
+                            entry.wait_for_fetching_from_same_region++;
+                            LOG_TRACE(
                                 log,
-                                "Leader of region {} ({}) has not been elected, or it doesn't have part {} or covering part yet, will defer executing {} : {} "
-                                "(has been deferred for {} seconds)",
+                                "Region {} doesn't have part {} or covering part yet, will defer executing {} : {}, waited for total {} "
+                                "seconds)",
                                 geo_replication_controller.getRegion(),
-                                region_leader.empty() ? String("NO LEADER") : region_leader,
                                 entry.new_part_name,
                                 entry.znode_name,
                                 entry.getDescriptionForLogs(format_version),
                                 total_waited_seconds);
-                            ++entry.waiting_for_region_leader;
-                            return false;
                         }
                         else
                         {
-                            LOG_INFO(log, "Waited regional leader for too long ({} seconds), stop waiting", total_waited_seconds);
-                            entry.waiting_for_region_leader = -1; /// Indicate this entry won't wait for leader anymore
+                            LOG_INFO(
+                                log,
+                                "Entry {} waited for too long ({} seconds) to fetch from a replica in region {}, stop waiting and fetch from anywhere",
+                                entry.getDescriptionForLogs(format_version),
+                                total_waited_seconds,
+                                geo_replication_controller.getRegion());
+                                entry.wait_for_fetching_from_same_region = -1;
                         }
                     }
+                    return false;
                 }
 
-                throw Exception(ErrorCodes::NO_REPLICA_HAS_PART, "No active replica has part {} or covering part (cannot execute {}: {})",
-                                entry.new_part_name, entry.znode_name, entry.getDescriptionForLogs(format_version));
+                throw Exception(
+                    ErrorCodes::NO_REPLICA_HAS_PART,
+                    "No active replica has part {} or covering part (cannot execute {}: {})",
+                    entry.new_part_name,
+                    entry.znode_name,
+                    entry.getDescriptionForLogs(format_version));
             }
         }
 
@@ -2366,7 +2374,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         }
 
         /// Firstly, try find exact part to produce more accurate part set
-        String replica = findReplicaHavingPart(part_desc->new_part_name, true);
+        String replica = findReplicaHavingPart(part_desc->new_part_name, true, false);
         String found_part_name;
         /// TODO: check version
 
@@ -2375,7 +2383,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             LOG_DEBUG(log, "Part {} is not found on remote replicas", part_desc->new_part_name);
 
             /// Fallback to covering part
-            replica = findReplicaHavingCoveringPart(part_desc->new_part_name, true, found_part_name);
+            replica = findReplicaHavingCoveringPart(part_desc->new_part_name, true, false, found_part_name);
 
             if (replica.empty())
             {
@@ -2600,8 +2608,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
         geo_replication_controller,
         zookeeper,
         entry.source_replica,
-        getReplicaName(),
-        /*follower_prefer_leader=*/entry.waiting_for_region_leader >= 0);
+        false);
     String replica;
     for (const String & candidate : replicas)
     {
@@ -3990,11 +3997,14 @@ bool StorageReplicatedMergeTree::checkReplicaHavePart(const String & replica, co
 }
 
 
-String StorageReplicatedMergeTree::findReplicaHavingPart(LogEntry & entry, bool active)
+String StorageReplicatedMergeTree::findReplicaHavingPart(LogEntry & entry, bool active, bool within_region)
 {
     auto zookeeper = getZooKeeper();
     Strings replicas = getAllReplicasPossiblyWithRegionAwareness(
-        geo_replication_controller, zookeeper, getZooKeeperPath(), getReplicaName(), /*follower_prefer_leader=*/ entry.waiting_for_region_leader >= 0);
+        geo_replication_controller,
+        zookeeper,
+        getZooKeeperPath(),
+        within_region);
 
     LOG_TRACE(log, "Candidate replicas: {}", fmt::join(replicas, ","));
 
@@ -4016,23 +4026,20 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(LogEntry & entry, bool 
     return {};
 }
 
-String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_name, bool active)
+String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_name, bool active, bool within_region)
 {
     auto zookeeper = getZooKeeper();
-    Strings replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
-    /// This method invoked during replaying REPLACE_PART entries, which doesn't required fetching
-    /// from other replica, so we don't care about the region here.
-    std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
-
-    LOG_TRACE(log, "Candidate replicas: {}", fmt::join(replicas, ","));
+    Strings replicas = getAllReplicasPossiblyWithRegionAwareness(
+        geo_replication_controller,
+        zookeeper,
+        getZooKeeperPath(),
+        within_region);
 
     for (const String & replica : replicas)
     {
         /// We aren't interested in ourself.
         if (replica == replica_name)
             continue;
-
-        LOG_TRACE(log, "Candidate replica: {}", replica);
 
         if (checkReplicaHavePart(replica, part_name) &&
             (!active || zookeeper->exists(fs::path(zookeeper_path) / "replicas" / replica / "is_active")))
@@ -4191,11 +4198,14 @@ std::set<MergeTreePartInfo> StorageReplicatedMergeTree::findReplicaUniqueParts(c
     return our_unique_parts;
 }
 
-String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(LogEntry & entry, bool active)
+String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(LogEntry & entry, bool active, bool within_region)
 {
     auto zookeeper = getZooKeeper();
     Strings replicas = getAllReplicasPossiblyWithRegionAwareness(
-        geo_replication_controller, zookeeper, getZooKeeperPath(), getReplicaName(), /*follwer_prefer_leader=*/entry.waiting_for_region_leader >= 0);
+        geo_replication_controller,
+        zookeeper,
+        getZooKeeperPath(),
+        within_region);
 
     LOG_TRACE(log, "Candidate replicas: {}", fmt::join(replicas, ","));
 
@@ -4203,6 +4213,8 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(LogEntry & entr
     {
         if (replica == replica_name)
             continue;
+
+        LOG_TRACE(log, "Candidate replica: {}", replica);
 
         if (active && !zookeeper->exists(fs::path(zookeeper_path) / "replicas" / replica / "is_active"))
             continue;
@@ -4246,13 +4258,14 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(LogEntry & entr
 
 
 String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(
-    const String & part_name, bool active, String & found_part_name)
+    const String & part_name, bool active, bool within_region, String & found_part_name)
 {
     auto zookeeper = getZooKeeper();
-    Strings replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
-    /// This method invoked during replaying REPLACE_PART entries, which doesn't required fetching
-    /// from other replica, so we don't care about the region here.
-    std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
+    Strings replicas = getAllReplicasPossiblyWithRegionAwareness(
+        geo_replication_controller,
+        zookeeper,
+        getZooKeeperPath(),
+        within_region);
 
     String largest_part_found;
     String largest_replica_found;
@@ -6826,7 +6839,7 @@ void StorageReplicatedMergeTree::fetchPartition(
         if (geo_replication_controller.isValid() && from_zookeeper_name == getZooKeeperName())
         {
             /// We're attach from same as zookeeper current table, can leverage the region information to reduce
-            /// fetching cost if possible by placing the leader in the begin, follow by replicas in same region
+            /// fetching cost if possible by favoring replicas in same region
             /// This logic belongs to an user query, so we can only do the best, cannot force fetching from leader
             std::partition(replicas.begin(), replicas.end(), [&](const auto & replica)
             {
@@ -6834,8 +6847,6 @@ void StorageReplicatedMergeTree::fetchPartition(
                 zookeeper->tryGet(fs::path(zookeeper_path) / "replicas" / replica / "region", region);
                 return region == geo_replication_controller.getRegion();
             });
-            if (auto it = std::find(replicas.begin(), replicas.end(), geo_replication_controller.getCurrentLeader()); it != replicas.end())
-                std::iter_swap(it, replicas.begin());
         }
 
         String part_path;
@@ -6905,7 +6916,7 @@ void StorageReplicatedMergeTree::fetchPartition(
         if (geo_replication_controller.isValid() && from_zookeeper_name == getZooKeeperName())
         {
             /// We're attach from same as zookeeper current table, can leverage the region information to reduce
-            /// fetching cost if possible by placing the leader in the begin, follow by replicas in same region
+            /// fetching cost if possible by favoring replicas in same region
             /// This logic belongs to an user query, so we can only do the best, cannot force fetching from leader
             std::partition(active_replicas.begin(), active_replicas.end(), [&](const auto & replica)
             {
@@ -6913,8 +6924,6 @@ void StorageReplicatedMergeTree::fetchPartition(
                 zookeeper->tryGet(fs::path(zookeeper_path) / "replicas" / replica / "region", region);
                 return region == geo_replication_controller.getRegion();
             });
-            if (auto it = std::find(active_replicas.begin(), active_replicas.end(), geo_replication_controller.getCurrentLeader()); it != active_replicas.end())
-                std::iter_swap(it, active_replicas.begin());
         }
 
         /** You must select the best (most relevant) replica.
@@ -10037,34 +10046,23 @@ template std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::all
     const String & zookeeper_path_prefix) const;
 
 Strings StorageReplicatedMergeTree::getAllReplicasPossiblyWithRegionAwareness(
-    const ReplicatedMergeTreeGeoReplicationController & geo_replication_controller, ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & current_replica_name, bool follower_prefer_leader)
+    const ReplicatedMergeTreeGeoReplicationController & geo_replication_controller, ZooKeeperPtr zookeeper, const String & zookeeper_path, bool strictly_within_region)
 {
     Strings replicas;
-    String regional_leader_replica = geo_replication_controller.isValid() ? geo_replication_controller.getCurrentLeader() : "";
+    replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
+    std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
 
-    if (geo_replication_controller.isValid() && regional_leader_replica != current_replica_name && follower_prefer_leader)
+    if (geo_replication_controller.isValid())
     {
-        /// We're in a region, and we're not the region leader, need to fetch from the leader
-        /// Note that the leader can be empty here, indicating a leader election in progress.
-        /// And that is ok, we will fetch again after leader election is done.
-        if (!regional_leader_replica.empty())
-            replicas.emplace_back(regional_leader_replica);
-    }
-    else
-    {
-        /// Either we don't care about region, or we're the region leader
-        replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
-        std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
-        if (regional_leader_replica == current_replica_name)
+        /// Prefer fetching from node in same region
+        auto it = std::partition(replicas.begin(), replicas.end(), [&](const auto & replica)
         {
-            /// If we're region leader, prefer fetching from node in same region
-            std::partition(replicas.begin(), replicas.end(), [&](const auto & replica)
-            {
-                String region;
-                zookeeper->tryGet(fs::path(zookeeper_path) / "replicas" / replica / "region", region);
-                return region == geo_replication_controller.getRegion();
-            });
-        }
+            String region;
+            zookeeper->tryGet(fs::path(zookeeper_path) / "replicas" / replica / "region", region);
+            return region == geo_replication_controller.getRegion();
+        });
+        if (strictly_within_region)
+            replicas.erase(it, replicas.end());
     }
     return replicas;
 }

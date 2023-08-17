@@ -56,7 +56,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     {
         /// If entry is old enough, and have enough size, and some replica has the desired part,
         /// then prefer fetching from replica.
-        String replica = storage.findReplicaHavingPart(entry, true);    /// NOTE excessive ZK requests for same data later, may remove.
+        String replica = storage.findReplicaHavingPart(entry, true, storage_settings_ptr->fetch_merged_part_within_region_only);    /// NOTE excessive ZK requests for same data later, may remove.
         if (!replica.empty())
         {
             LOG_DEBUG(log, "Prefer to fetch {} from replica {}", entry.new_part_name, replica);
@@ -119,7 +119,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         if (auto disk = reserved_space->getDisk(); disk->supportZeroCopyReplication())
         {
             String dummy;
-            if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, true, dummy).empty())
+            if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, true, false, dummy).empty())
             {
                 LOG_DEBUG(log, "Mutation of part {} finished by some other replica, will download mutated part", entry.new_part_name);
                 return PrepareResult{
@@ -167,7 +167,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
                     .part_log_writer = {}
                 };
             }
-            else if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, /* active */ false, dummy).empty())
+            else if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, /* active */ false, false, dummy).empty())
             {
                 /// Why this if still needed? We can check for part in zookeeper, don't find it and sleep for any amount of time. During this sleep part will be actually committed from other replica
                 /// and exclusive zero copy lock will be released. We will take the lock and execute mutation one more time, while it was possible just to download the part from other replica.

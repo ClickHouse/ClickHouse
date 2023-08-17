@@ -1,4 +1,5 @@
 #include "ReplicatedMergeTreeGeoReplicationController.h"
+#include <optional>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 namespace DB
@@ -9,7 +10,8 @@ namespace ErrorCodes
     extern const int NO_ZOOKEEPER;
 }
 
-ReplicatedMergeTreeGeoReplicationController::ReplicatedMergeTreeGeoReplicationController(StorageReplicatedMergeTree & storage_) : storage(storage_)
+ReplicatedMergeTreeGeoReplicationController::ReplicatedMergeTreeGeoReplicationController(StorageReplicatedMergeTree & storage_)
+    : storage(storage_)
 {
     region = storage.getSettings()->geo_replication_control_region;
 }
@@ -19,14 +21,13 @@ void ReplicatedMergeTreeGeoReplicationController::onLeader()
     auto lease_path = fs::path(storage.getZooKeeperPath()) / "regions" / region / "leader_lease";
     current_zookeeper->createAncestors(lease_path);
     leader_lease_holder = zkutil::EphemeralNodeHolder::create(lease_path, *current_zookeeper, storage.getReplicaName());
-    LOG_INFO(storage.log.load(),"Replica {} becomes leader for region {}", storage.getReplicaName(), region);
+    LOG_INFO(storage.log.load(), "Replica {} becomes leader for region {}", storage.getReplicaName(), region);
 }
 
-void ReplicatedMergeTreeGeoReplicationController::exitLeaderElection()
+void ReplicatedMergeTreeGeoReplicationController::resetCurrentTerm()
 {
     try
     {
-        leader_election.reset();
         leader_lease_holder.reset();
     }
     catch (...)
@@ -34,6 +35,18 @@ void ReplicatedMergeTreeGeoReplicationController::exitLeaderElection()
         /// Zookeeper session may have been expired
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+
+    try
+    {
+        leader_election.reset();
+    }
+    catch (...)
+    {
+        /// Zookeeper session may have been expired
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    current_zookeeper.reset();
 }
 
 void ReplicatedMergeTreeGeoReplicationController::enterLeaderElection()
@@ -52,8 +65,7 @@ void ReplicatedMergeTreeGeoReplicationController::enterLeaderElection()
             [this]() { return onLeader(); },
             "",
             storage.getSettings()->geo_replication_control_leader_election_period_ms,
-            false
-        );
+            false);
     }
     catch (...)
     {
@@ -64,18 +76,32 @@ void ReplicatedMergeTreeGeoReplicationController::enterLeaderElection()
 
 void ReplicatedMergeTreeGeoReplicationController::startLeaderElection()
 {
-    exitLeaderElection();
+    resetCurrentTerm();
     enterLeaderElection();
 }
 
-String ReplicatedMergeTreeGeoReplicationController::getCurrentLeader() const
+std::optional<String> ReplicatedMergeTreeGeoReplicationController::getCurrentLeader() const
 {
+    if (!isValid())
+        return std::nullopt;
+
     if (!current_zookeeper)
-        throw Exception(ErrorCodes::NO_ZOOKEEPER, "Zookeeper is not initialized, replica {} in region {} hasn't started leader election yet", storage.getReplicaName(), region);
+        throw Exception(
+            ErrorCodes::NO_ZOOKEEPER,
+            "Zookeeper is not initialized, replica {} in region {} hasn't started leader election yet",
+            storage.getReplicaName(),
+            region);
 
     String leader_replica;
     current_zookeeper->tryGet(fs::path(storage.getZooKeeperPath()) / "regions" / region / "leader_lease", leader_replica);
     return leader_replica;
+}
+
+bool ReplicatedMergeTreeGeoReplicationController::isLeader() const
+{
+    if (!isValid())
+        return true;
+    return current_zookeeper && !current_zookeeper->expired() && leader_lease_holder;
 }
 
 }
@@ -112,7 +138,7 @@ public:
         , zookeeper(zookeeper_)
         , handler(std::move(handler_))
         , identifier(allow_multiple_leaders_ ? (identifier_ + suffix) : identifier_)
-        , time_wait_ms(time_wait_ms_ > 0 ? time_wait_ms_ : 10*1000)
+        , time_wait_ms(time_wait_ms_ > 0 ? time_wait_ms_ : 10 * 1000)
         , allow_multiple_leaders(allow_multiple_leaders_)
         , log_name("LeaderElection (" + path + ")")
         , log(&Poco::Logger::get(log_name))
@@ -130,10 +156,7 @@ public:
         task->deactivate();
     }
 
-    ~LeaderElection()
-    {
-        releaseNode();
-    }
+    ~LeaderElection() { releaseNode(); }
 
 private:
     static inline constexpr auto suffix = " (multiple leaders Ok)";
@@ -151,7 +174,7 @@ private:
     EphemeralNodeHolderPtr node;
     std::string node_name;
 
-    std::atomic<bool> shutdown_called {false};
+    std::atomic<bool> shutdown_called{false};
 
     void createNode()
     {
@@ -176,7 +199,7 @@ private:
 
         try
         {
-            LOG_INFO(log,"Running leader election");
+            LOG_INFO(log, "Running leader election");
             Strings children = zookeeper.getChildren(path);
             std::sort(children.begin(), children.end());
 
