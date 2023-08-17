@@ -6058,8 +6058,7 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
         PartitionBlockNumbersHolder::BlockNumbersType block_numbers;
         for (const auto & lock : lock_holder.getLocks())
         {
-          if (mutation_affected_partition_ids.empty() ||
-            std::binary_search(mutation_affected_partition_ids.cbegin(), mutation_affected_partition_ids.cend(), lock.partition_id))
+            if (mutation_affected_partition_ids.empty() || containsInPartitionIds(mutation_affected_partition_ids, lock.partition_id))
                 block_numbers[lock.partition_id] = lock.number;
         }
 
