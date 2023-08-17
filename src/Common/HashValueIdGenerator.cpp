@@ -36,10 +36,24 @@ void HashValueIdGenerator::computeValueId(const IColumn * col, std::vector<UInt6
     }
     if (const auto * str_col = typeid_cast<const ColumnString *>(nested_col))
     {
-        if (null_map)
-            computeValueIdForString<true>(null_map, str_col, value_ids);
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+        const auto & offsets = str_col->getOffsets();
+        if (!str_col->empty() && offsets.back() / str_col->size() <= 9)
+        {
+            if (null_map)
+                computeValueIdForShortString<true>(null_map, str_col, value_ids);
+            else
+                computeValueIdForShortString<false>(null_map, str_col, value_ids);
+
+        }
         else
-            computeValueIdForString<false>(null_map, str_col, value_ids);
+#endif
+        {
+            if (null_map)
+                computeValueIdForString<true>(null_map, str_col, value_ids);
+            else
+                computeValueIdForString<false>(null_map, str_col, value_ids);
+        }
     }
     else if (const auto * fixed_str_col = typeid_cast<const ColumnFixedString *>(nested_col))
     {
@@ -107,14 +121,16 @@ void HashValueIdGenerator::computeValueIdForLowCardinality(const ColumnLowCardin
         for (size_t i = 0, n = col->size(); i < n; ++i)
         {
             UInt64 current_col_value_id = 0;
-            assignValueId(pos, str_len, current_col_value_id);
+            assignValueIdDynamically(pos, str_len, current_col_value_id);
             *value_id = *value_id * max_distinct_values + current_col_value_id;
             value_id++;
             pos += str_len;
         }
     }
     if (current_assigned_value_id > max_distinct_values)
+    {
         state->hash_mode = AdaptiveKeysHolder::State::HASH;
+    }
 }
 
 }

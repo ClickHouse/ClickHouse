@@ -1,0 +1,14 @@
+<test>
+    <create_query>DROP TABLE IF EXISTS aggregation_lowcardinality_keys</create_query>
+    <create_query>CREATE TABLE aggregation_lowcardinality_keys (low_card_str_key String, low_card_int_key UInt32, high_card_int_key UInt32) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO aggregation_lowcardinality_keys SELECT cast( number % 3 as String) AS low_card_str_key, number % 4 AS low_card_int_key, number % 1000000 AS high_card_int_key FROM numbers(200000000)
+    <fill_query>
+
+    <query>
+        SELECT low_card_str_key, low_card_int_key, count(1) FROM aggregation_lowcardinality_keys GROUP BY low_card_str_key, low_card_int_key Format Null
+    </query>
+    <query>
+        SELECT low_card_int_key, high_card_int_key, count(1) FROM aggregation_lowcardinality_keys GROUP BY low_card_int_key, high_card_int_key Format Null
+    </query>
+</test>

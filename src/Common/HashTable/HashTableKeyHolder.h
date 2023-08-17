@@ -136,14 +136,6 @@ inline void ALWAYS_INLINE keyHolderDiscardKey(DB::SerializedKeyHolder & holder)
 }
 namespace DB
 {
-namespace ColumnsHashing
-{
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-class HashMethodContext;
-}
 struct AdaptiveKeysHolder
 {
     /// State is shared between all AdaptiveKeysHolder instances.
@@ -175,10 +167,6 @@ struct AdaptiveKeysHolder
 
 inline bool ALWAYS_INLINE operator==(const DB::AdaptiveKeysHolder &a, const DB::AdaptiveKeysHolder &b)
 {
-    if (a.state->hash_mode != b.state->hash_mode)
-    {
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "hash_mode is not equal");
-    }
     /// a and b may come from different aggregate variants during the merging phase, in this case
     /// we cannot compare the value_ids.
     if (a.state->hash_mode == DB::AdaptiveKeysHolder::State::VALUE_ID && a.state == b.state)

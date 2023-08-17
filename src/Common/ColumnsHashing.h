@@ -1,21 +1,25 @@
 #pragma once
 
-#include <Common/HashTable/HashTable.h>
-#include <Common/HashTable/HashTableKeyHolder.h>
-#include <Common/ColumnsHashingImpl.h>
+#include <Core/Defines.h>
+#include <base/unaligned.h>
 #include <Common/Arena.h>
 #include <Common/CacheBase.h>
-#include <Common/assert_cast.h>
+#include <Common/ColumnsHashingImpl.h>
+#include <Common/HashTable/HashTable.h>
+#include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashValueIdGenerator.h>
-#include <base/unaligned.h>
+#include <Common/assert_cast.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 
-#include <Core/Defines.h>
-#include <memory>
 #include <cassert>
+#include <memory>
+#include <immintrin.h>
+
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -751,6 +755,11 @@ struct HashMethodKeysAdaptive
 
     using ValueIdCacheMap = HashMap<UInt64, std::shared_ptr<ValueIdCache>>;
     mutable ValueIdCacheMap value_id_cache;
+
+    static constexpr size_t max_low_cardinality_cache_size = 16;
+    mutable UInt64 low_cardinality_cache_value_ids[max_low_cardinality_cache_size] = {0};
+    mutable std::vector<StringRef> low_cardinality_cache_keys;
+    mutable size_t low_cardinality_cache_in_used = 0;
     std::vector<UInt64> value_ids;
 
     HashMethodKeysAdaptive(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & ctx_, UInt64 variant_index)
@@ -758,6 +767,7 @@ struct HashMethodKeysAdaptive
     {
         if (!variant_index)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "variant_index is zero");
+        low_cardinality_cache_keys.resize(max_low_cardinality_cache_size);
         auto * adaptive_ctx = static_cast<DB::ColumnsHashing::AdaptiveHashMethodContext *>(ctx.get());
         {
             /// Find the corresponding HashValueIdGeneratorState.
@@ -805,6 +815,41 @@ struct HashMethodKeysAdaptive
         if (value_id_generators_state->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
         {
             auto & value_id = value_ids[row];
+
+            /// For small enough value_id set, simd could accelate the query.
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+            if (low_cardinality_cache_in_used < max_low_cardinality_cache_size) [[likely]]
+            {
+                constexpr UInt32 low_cardinality_cache_lines = max_low_cardinality_cache_size * sizeof(UInt64) / sizeof(__m512i);
+                auto value_id_v = _mm512_set1_epi64(value_id);
+                for (UInt32 i = 0, n = low_cardinality_cache_lines; i < n; ++i)
+                {
+                    auto value_id_line
+                        = _mm512_load_epi64(reinterpret_cast<const UInt8 *>(low_cardinality_cache_value_ids) + i * sizeof(__m512i));
+                    auto cmp_mask = _mm512_cmpeq_epu64_mask(value_id_line, value_id_v);
+                    auto cache_pos = _tzcnt_u32(cmp_mask);
+                    if (cache_pos > 8) [[unlikely]]
+                    {
+                        if (i < n - 1)
+                            continue;
+                        low_cardinality_cache_value_ids[low_cardinality_cache_in_used] = value_id;
+                        low_cardinality_cache_keys[low_cardinality_cache_in_used] = serializeKeysToPoolContiguous(
+                            row, keys_size, key_columns, *value_id_generators_state->shared_keys_holder_state.pool);
+                        return AdaptiveKeysHolder{
+                            value_id,
+                            low_cardinality_cache_keys[low_cardinality_cache_in_used++],
+                            &value_id_generators_state->shared_keys_holder_state};
+                    }
+                    else
+                    {
+                        cache_pos = cache_pos + i * sizeof(__m512i) / sizeof(UInt64);
+                        return AdaptiveKeysHolder{
+                            value_id, low_cardinality_cache_keys[cache_pos], &value_id_generators_state->shared_keys_holder_state};
+                    }
+                }
+            }
+#endif
+
             StringRef serialized_keys;
             auto cache_it = value_id_cache.find(value_id);
             if (!cache_it) [[unlikely]]
