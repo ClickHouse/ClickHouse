@@ -289,7 +289,7 @@ static void removeRootPath(String & path, const String & chroot)
         return;
 
     if (path.size() <= chroot.size())
-        throw Exception(Error::ZDATAINCONSISTENCY, "Received path is not longer than chroot");
+        throw Exception::fromMessage(Error::ZDATAINCONSISTENCY, "Received path is not longer than chroot");
 
     path = path.substr(chroot.size());
 }
@@ -387,7 +387,7 @@ void ZooKeeper::connect(
     Poco::Timespan connection_timeout)
 {
     if (nodes.empty())
-        throw Exception(Error::ZBADARGUMENTS, "No nodes passed to ZooKeeper constructor");
+        throw Exception::fromMessage(Error::ZBADARGUMENTS, "No nodes passed to ZooKeeper constructor");
 
     static constexpr size_t num_tries = 3;
     bool connected = false;
@@ -479,8 +479,6 @@ void ZooKeeper::connect(
     if (!connected)
     {
         WriteBufferFromOwnString message;
-
-        message << "All connection tries failed while connecting to ZooKeeper. nodes: ";
         bool first = true;
         for (const auto & node : nodes)
         {
@@ -496,7 +494,7 @@ void ZooKeeper::connect(
         }
 
         message << fail_reasons.str() << "\n";
-        throw Exception(Error::ZCONNECTIONLOSS, message.str());
+        throw Exception(Error::ZCONNECTIONLOSS, "All connection tries failed while connecting to ZooKeeper. nodes: {}", message.str());
     }
     else
     {
@@ -543,7 +541,7 @@ void ZooKeeper::receiveHandshake()
         /// It's better for faster failover than just connection drop.
         /// Implemented in clickhouse-keeper.
         if (protocol_version_read == KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT)
-            throw Exception(Error::ZCONNECTIONLOSS,
+            throw Exception::fromMessage(Error::ZCONNECTIONLOSS,
                             "Keeper server rejected the connection during the handshake. "
                             "Possibly it's overloaded, doesn't see leader or stale");
         else
@@ -800,7 +798,7 @@ void ZooKeeper::receiveEvent()
 
             auto it = operations.find(xid);
             if (it == operations.end())
-                throw Exception("Received response for unknown xid " + DB::toString(xid), Error::ZRUNTIMEINCONSISTENCY);
+                throw Exception(Error::ZRUNTIMEINCONSISTENCY, "Received response for unknown xid {}", xid);
 
             /// After this point, we must invoke callback, that we've grabbed from 'operations'.
             /// Invariant: all callbacks are invoked either in case of success or in case of error.
@@ -1088,9 +1086,9 @@ void ZooKeeper::pushRequest(RequestInfo && info)
         {
             info.request->xid = next_xid.fetch_add(1);
             if (info.request->xid == CLOSE_XID)
-                throw Exception(Error::ZSESSIONEXPIRED, "xid equal to close_xid");
+                throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "xid equal to close_xid");
             if (info.request->xid < 0)
-                throw Exception(Error::ZSESSIONEXPIRED, "XID overflow");
+                throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "XID overflow");
 
             if (auto * multi_request = dynamic_cast<ZooKeeperMultiRequest *>(info.request.get()))
             {
@@ -1104,7 +1102,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
         if (!requests_queue.tryPush(std::move(info), args.operation_timeout_ms))
         {
             if (requests_queue.isFinished())
-                throw Exception(Error::ZSESSIONEXPIRED, "Session expired");
+                throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "Session expired");
 
             throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push request to queue within operation timeout of {} ms", args.operation_timeout_ms);
         }
@@ -1297,7 +1295,7 @@ void ZooKeeper::list(
     if (!isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
     {
         if (list_request_type != ListRequestType::ALL)
-            throw Exception(Error::ZBADARGUMENTS, "Filtered list request type cannot be used because it's not supported by the server");
+            throw Exception::fromMessage(Error::ZBADARGUMENTS, "Filtered list request type cannot be used because it's not supported by the server");
 
         request = std::make_shared<ZooKeeperListRequest>();
     }
@@ -1380,7 +1378,7 @@ void ZooKeeper::multi(
     ZooKeeperMultiRequest request(requests, default_acls);
 
     if (request.getOpNum() == OpNum::MultiRead && !isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
-            throw Exception(Error::ZBADARGUMENTS, "MultiRead request type cannot be used because it's not supported by the server");
+            throw Exception::fromMessage(Error::ZBADARGUMENTS, "MultiRead request type cannot be used because it's not supported by the server");
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperMultiRequest>(std::move(request));
@@ -1502,7 +1500,7 @@ void ZooKeeper::setupFaultDistributions()
 void ZooKeeper::checkSessionDeadline() const
 {
     if (unlikely(hasReachedDeadline()))
-        throw Exception(Error::ZSESSIONEXPIRED, "Session expired (force expiry client-side)");
+        throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "Session expired (force expiry client-side)");
 }
 
 bool ZooKeeper::hasReachedDeadline() const
@@ -1513,13 +1511,13 @@ bool ZooKeeper::hasReachedDeadline() const
 void ZooKeeper::maybeInjectSendFault()
 {
     if (unlikely(inject_setup.test() && send_inject_fault && send_inject_fault.value()(thread_local_rng)))
-        throw Exception(Error::ZSESSIONEXPIRED, "Session expired (fault injected on recv)");
+        throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "Session expired (fault injected on recv)");
 }
 
 void ZooKeeper::maybeInjectRecvFault()
 {
     if (unlikely(inject_setup.test() && recv_inject_fault && recv_inject_fault.value()(thread_local_rng)))
-        throw Exception(Error::ZSESSIONEXPIRED, "Session expired (fault injected on recv)");
+        throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "Session expired (fault injected on recv)");
 }
 
 void ZooKeeper::maybeInjectSendSleep()
