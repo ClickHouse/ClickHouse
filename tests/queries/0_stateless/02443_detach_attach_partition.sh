@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper, no-parallel
+# Tags: race, zookeeper, long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -29,9 +29,19 @@ function thread_attach()
     done
 }
 
+insert_type=$(($RANDOM % 3))
+$CLICKHOUSE_CLIENT -q "SELECT '$CLICKHOUSE_DATABASE', 'insert_type $insert_type' FORMAT Null"
+
 function insert()
 {
-    $CLICKHOUSE_CLIENT -q "INSERT INTO alter_table$(($RANDOM % 2)) SELECT $RANDOM, $i" 2>/dev/null
+    # Fault injection may lead to duplicates
+    if [[ "$insert_type" -eq 0 ]]; then
+        $CLICKHOUSE_CLIENT --insert_deduplication_token=$1 -q "INSERT INTO alter_table$(($RANDOM % 2)) SELECT $RANDOM, $1" 2>/dev/null
+    elif [[ "$insert_type" -eq 1 ]]; then
+        $CLICKHOUSE_CLIENT -q "INSERT INTO alter_table$(($RANDOM % 2)) SELECT $1, $1" 2>/dev/null
+    else
+        $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "INSERT INTO alter_table$(($RANDOM % 2)) SELECT $RANDOM, $1" 2>/dev/null
+    fi
 }
 
 thread_detach & PID_1=$!
@@ -41,8 +51,8 @@ thread_attach & PID_4=$!
 
 function do_inserts()
 {
-    for i in {1..20}; do
-        while ! insert; do $CLICKHOUSE_CLIENT -q "SELECT '$CLICKHOUSE_DATABASE', 'retrying insert $i' FORMAT Null"; done
+    for i in {1..30}; do
+        while ! insert $i; do $CLICKHOUSE_CLIENT -q "SELECT '$CLICKHOUSE_DATABASE', 'retrying insert $i' FORMAT Null"; done
     done
 }
 
