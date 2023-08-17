@@ -149,8 +149,8 @@ was specified for ANN indexes, the default value is 100 million.
 Annoy indexes are currently experimental, to use them you first need to `SET allow_experimental_annoy_index = 1`. They are also currently
 disabled on ARM due to memory safety problems with the algorithm.
 
-This type of ANN index implements [the Annoy algorithm](https://github.com/spotify/annoy) which is based on a recursive division of the
-space in random linear surfaces (lines in 2D, planes in 3D etc.).
+This type of ANN index is based on the [Annoy library](https://github.com/spotify/annoy) which recursively divides the space into random
+linear surfaces (lines in 2D, planes in 3D etc.).
 
 <div class='vimeo-container'>
   <iframe src="//www.youtube.com/embed/QkCCyLW0ehU"
@@ -219,12 +219,25 @@ LIMIT N
 SETTINGS annoy_index_search_k_nodes=100;
 ```
 
-
 ## USearch {#usearch}
 
 USearch indexes are currently experimental, to use them you first need to `SET allow_experimental_usearch_index = 1`.
 
-This type of ANN index implements [the HNSW algorithm](https://github.com/unum-cloud/usearch).
+This type of ANN index is based on the [the USearch library](https://github.com/unum-cloud/usearch) which implements the [HNSW
+algorithm](https://arxiv.org/abs/1603.09320), i.e. builds a hierarchical graph where each point represents a vector and the edges represent
+similarity.
+
+<div class='vimeo-container'>
+  <iframe src="//www.youtube.com/embed/QvKMwLjdK-s"
+    width="640"
+    height="360"
+    frameborder="0"
+    allow="autoplay;
+    fullscreen;
+    picture-in-picture"
+    allowfullscreen>
+  </iframe>
+</div>
 
 Syntax to create an USearch index over an [Array](../../../sql-reference/data-types/array.md) column:
 
