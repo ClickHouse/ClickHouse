@@ -1069,12 +1069,12 @@ struct VirtualColumns
             {
                 if (!part->getColumns().contains(BlockNumberColumn.name))
                 {
-                    ColumnWithTypeAndName mask_column;
-                    mask_column.type = BlockNumberColumn.type;
-                    mask_column.column = mask_column.type->createColumnConst(0, part->info.min_block);
-                    mask_column.name = std::move(columns_to_read[i]);
+                    ColumnWithTypeAndName block_number_column;
+                    block_number_column.type = BlockNumberColumn.type;
+                    block_number_column.column = block_number_column.type->createColumnConst(0, part->info.min_block);
+                    block_number_column.name = std::move(columns_to_read[i]);
 
-                    virtuals.emplace_back(ColumnAndPosition{.column = std::move(mask_column), .position = i});
+                    virtuals.emplace_back(ColumnAndPosition{.column = std::move(block_number_column), .position = i});
                 }
             }
         }

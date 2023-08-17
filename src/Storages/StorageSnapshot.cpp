@@ -25,8 +25,7 @@ void StorageSnapshot::init()
 
     if (storage.hasLightweightDeletedMask())
         system_columns[LightweightDeleteDescription::FILTER_COLUMN.name] = LightweightDeleteDescription::FILTER_COLUMN.type;
-    if (!projection)
-        system_columns[BlockNumberColumn.name] = BlockNumberColumn.type;
+    system_columns[BlockNumberColumn.name] = BlockNumberColumn.type;
 }
 
 NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options) const
