@@ -302,6 +302,7 @@ void ORCBlockInputFormat::resetParser()
     file_reader.reset();
     stripe_reader.reset();
     include_indices.clear();
+    batch.reset();
     block_missing_values.clear();
 }
 
