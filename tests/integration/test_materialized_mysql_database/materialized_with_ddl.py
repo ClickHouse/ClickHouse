@@ -2666,7 +2666,7 @@ def table_with_indexes(clickhouse_node, mysql_node, service_name):
         clickhouse_node,
         "SELECT data_uncompressed_bytes FROM system.data_skipping_indices WHERE "
         "database = 'table_with_indexes' and table = 't1' and name = 'data_idx'",
-        '65536\n',
+        "65536\n",
     )
 
     mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
