@@ -198,7 +198,7 @@ endif()
 add_contrib (annoy-cmake annoy)
 
 option(ENABLE_USEARCH "Enable USearch (Approximate Neighborhood Search, HNSW) support" ${ENABLE_LIBRARIES})
-if (ENABLE_USEARCH)
+if (ENABLE_USEARCH AND NOT ARCH_RISCV64)
     add_contrib (FP16-cmake FP16)
     add_contrib (robin-map-cmake robin-map)
     add_contrib (SimSIMD-cmake SimSIMD)
