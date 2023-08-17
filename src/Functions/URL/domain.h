@@ -91,6 +91,8 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         switch (*pos)
         {
         case '.':
+            if (has_open_bracket)
+                return std::string_view{};
             if (has_at_symbol || colon_pos == nullptr)
                 dot_pos = pos;
             break;
@@ -131,7 +133,7 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
                 has_end_bracket = true;
                 goto done;
             }
-            FMT_FALLTHROUGH;
+            [[fallthrough]];
         case ' ': /// restricted symbols in whole URL
         case '\t':
         case '<':
@@ -153,9 +155,11 @@ done:
     if (has_sub_delims)
         return std::string_view{};
     if (!has_at_symbol)
+    {
+        if (has_open_bracket && has_end_bracket)
+            return std::string_view(start_of_host, pos - start_of_host);
         pos = colon_pos ? colon_pos : pos;
-    if (has_open_bracket && has_end_bracket)
-        return std::string_view(start_of_host, pos - start_of_host);
+    }
     return checkAndReturnHost(pos, dot_pos, start_of_host);
 }
 
