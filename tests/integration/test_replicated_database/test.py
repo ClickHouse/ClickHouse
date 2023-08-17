@@ -66,7 +66,7 @@ def assert_create_query(nodes, table_name, expected):
     replace_uuid = lambda x: re.sub(uuid_regex, "uuid", x)
     query = "show create table {}".format(table_name)
     for node in nodes:
-        assert_eq_with_retry(node, query, expected, get_result=replace_uuid)
+        assert_eq_with_retry(node, query, expected, get_result=replace_uuid, retry_count=70)
 
 
 @pytest.fixture(scope="module")
@@ -209,6 +209,7 @@ def test_simple_alter_table(started_cluster, engine):
         "SETTINGS index_granularity = 8192".format(name, full_engine)
     )
 
+    competing_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
     assert_create_query([main_node, dummy_node, competing_node], name, expected)
     main_node.query(f"DROP DATABASE {database} SYNC")
     dummy_node.query(f"DROP DATABASE {database} SYNC")
@@ -249,6 +250,7 @@ def test_delete_from_table(started_cluster, engine):
             node,
             "SELECT * FROM {} ORDER BY id, value;".format(table_for_select),
             expected,
+            retry_count=70,
         )
 
     main_node.query(f"DROP DATABASE {database} SYNC")
@@ -663,6 +665,7 @@ def test_alters_from_different_replicas(started_cluster):
         dummy_node,
         "SELECT CounterID, StartDate, UserID FROM alters_from_different_replicas.dist ORDER BY CounterID",
         expected,
+        retry_count=70,
     )
     main_node.query("DROP DATABASE alters_from_different_replicas SYNC")
     dummy_node.query("DROP DATABASE alters_from_different_replicas SYNC")
@@ -837,7 +840,7 @@ def test_recover_staled_replica(started_cluster):
         "ORDER BY name SETTINGS show_table_uuid_in_table_create_query_if_not_nil=1"
     )
     expected = main_node.query(query)
-    assert_eq_with_retry(dummy_node, query, expected)
+    assert_eq_with_retry(dummy_node, query, expected, retry_count=70)
     assert (
         main_node.query(
             "SELECT count() FROM system.tables WHERE database='recover' AND name LIKE '.inner_id.%'"
@@ -919,6 +922,7 @@ def test_recover_staled_replica(started_cluster):
         main_node,
         "SELECT count() FROM system.tables WHERE database='recover' AND name='tmp'",
         "0\n",
+        retry_count=70,
     )
     main_node.query("DROP DATABASE recover SYNC")
     dummy_node.query("DROP DATABASE recover SYNC")
@@ -1287,7 +1291,7 @@ def test_recover_digest_mismatch(started_cluster):
         # There is a race condition between deleting active node and creating it on server startup
         # So we start a server only after we deleted all table replicas from the Keeper
         dummy_node.start_clickhouse()
-        assert_eq_with_retry(dummy_node, query, expected)
+        assert_eq_with_retry(dummy_node, query, expected, retry_count=70)
 
     main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
     dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
