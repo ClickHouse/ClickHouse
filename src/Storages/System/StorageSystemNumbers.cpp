@@ -1,3 +1,4 @@
+#include <mutex>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/Exception.h>
@@ -57,6 +58,36 @@ private:
     UInt64 step;
 };
 
+
+UInt128 sizeOfRange(const Range & r)
+{
+    UInt128 size;
+    if (r.right.isPositiveInfinity())
+        return static_cast<UInt128>(std::numeric_limits<uint64_t>::max()) - r.left.get<UInt64>() + r.left_included;
+
+    size = static_cast<UInt128>(r.right.get<UInt64>()) - r.left.get<UInt64>() + 1;
+
+    if (!r.left_included)
+        size--;
+    assert (size > 0);
+
+    if (!r.right_included)
+        size--;
+    assert (size > 0);
+    return size;
+};
+
+auto sizeOfRanges(const Ranges & rs)
+{
+    UInt128 total_size{};
+    for (const Range & r : rs)
+    {
+        /// total_size will never overflow
+        total_size += sizeOfRange(r);
+    }
+    return total_size;
+};
+
 /// Generate numbers according to ranges.
 /// Numbers generated is ordered in one stream.
 /// Notice that we will not generate additional numbers out of ranges.
@@ -70,17 +101,71 @@ public:
         UInt128 offset_in_range;
     };
 
-    NumbersRangedSource(const Ranges & ranges_, UInt64 base_block_size_, RangesPos start_, RangesPos end_, UInt128 size_)
+    struct RangesState
+    {
+        RangesPos pos;
+        mutable std::mutex mutex;
+    };
+    
+    using RangesStatePtr = std::shared_ptr<RangesState>;
+
+    NumbersRangedSource(const Ranges & ranges_, RangesStatePtr & ranges_state_, UInt64 base_block_size_)
         : ISource(NumbersSource::createHeader())
         , ranges(ranges_)
-        , base_block_size(base_block_size_)
-        , cursor(start_)
-        , end(end_)
-        , size(size_) {}
+        , ranges_state(ranges_state_)
+        , base_block_size(base_block_size_) {}
 
     String getName() const override { return "NumbersRange"; }
 
 protected:
+
+    /// Find the data range in ranges and return how many item found.
+    /// If no data left in ranges return 0.
+    UInt64 findRanges(RangesPos & start, RangesPos & end, UInt64 base_block_size_)
+    {
+        std::lock_guard lock(ranges_state->mutex);
+
+        UInt64 need = base_block_size_;
+        UInt64 size = 0; /// how many item found.
+
+        /// find start
+        start = ranges_state->pos;
+        end = start;
+
+        /// find end
+        while (need != 0)
+        {
+            UInt128 can_provide = end.offset_in_ranges == ranges.size() ? static_cast<UInt128>(0)
+                    : sizeOfRange(ranges[end.offset_in_ranges]) - end.offset_in_range;
+            if (can_provide == 0)
+                break;
+
+            if (can_provide > need)
+            {
+                end.offset_in_range += need;
+                size += need;
+                need = 0;
+            }
+            else if (can_provide == need)
+            {
+                end.offset_in_ranges++;
+                end.offset_in_range = 0;
+                size += need;
+                need = 0;
+            }
+            else
+            {
+                end.offset_in_ranges++;
+                end.offset_in_range = 0;
+                size += static_cast<UInt64>(can_provide);
+                need -= static_cast<UInt64>(can_provide);
+            }
+        }
+
+        ranges_state->pos = end;
+        return size;
+    }
+
     Chunk generate() override
     {
         if (ranges.empty())
@@ -96,10 +181,10 @@ protected:
             return r.right.get<UInt64>() - (r.right_included ? 0 : 1);
         };
 
+        /// Find the data range.
         /// If data left is small, shrink block size.
-        auto block_size = base_block_size;
-        if (block_size > size)
-            block_size = static_cast<UInt64>(size);
+        RangesPos start, end;
+        auto block_size = findRanges(start, end, base_block_size);
 
         if (!block_size)
             return {};
@@ -111,7 +196,9 @@ protected:
         UInt64 * pos = vec.data();
 
         UInt64 provided = 0;
-        while (size != 0 && block_size - provided != 0)
+        RangesPos cursor = start;
+
+        while (block_size - provided != 0)
         {
             UInt64 need = block_size - provided;
             auto& range = ranges[cursor.offset_in_ranges];
@@ -129,7 +216,6 @@ protected:
 
                 provided += need;
                 cursor.offset_in_range += need;
-                size -= need;
             }
             else if (can_provide == need)
             {
@@ -140,7 +226,6 @@ protected:
                 provided += need;
                 cursor.offset_in_ranges++;
                 cursor.offset_in_range = 0;
-                size -= need;
             }
             else
             {
@@ -151,7 +236,6 @@ protected:
                 provided += static_cast<UInt64>(can_provide);
                 cursor.offset_in_ranges++;
                 cursor.offset_in_range = 0;
-                size -= can_provide;
             }
         }
 
@@ -161,15 +245,14 @@ protected:
     }
 
 private:
+    /// The ranges is shared between all streams.
     Ranges ranges;
-    /// Base block size
+
+    /// Ranges state shared between all streams, actually is the start of the ranges.
+    RangesStatePtr ranges_state;
+
+    /// Base block size, will shrink when data left is not enough.
     UInt64 base_block_size;
-
-    RangesPos cursor;
-    RangesPos end; /// not included
-
-    /// how many numbers left
-    UInt128 size;
 };
 
 }
@@ -190,6 +273,41 @@ bool shouldPushdownLimit(SelectQueryInfo & query_info, UInt64 limit_length)
         && !query_info.has_window
         && !query_info.additional_filter_ast
         && (limit_length > 0 && !query.limit_with_ties);
+}
+
+/// Shrink ranges to size.
+///     For example: ranges: [1, 5], [8, 100]; size: 7, we will get [1, 5], [8, 9]
+void shrinkRanges(Ranges &ranges, size_t size)
+{
+    size_t last_range_idx = 0;
+    for (size_t i=0; i<ranges.size(); i++)
+    {
+        auto range_size = sizeOfRange(ranges[i]);
+        if (range_size < size)
+        {
+            size -= static_cast<UInt64>(range_size);
+            continue;
+        }
+        else if (range_size == size)
+        {
+            size = 0;
+            last_range_idx = i;
+            break;
+        }
+        else
+        {
+            auto & range = ranges[i];
+            UInt64 right = range.left.get<UInt64>() + static_cast<UInt64>(size);
+            range.right = Field(right);
+            range.right_included = !range.left_included;
+            last_range_idx = i;
+            break;
+        }
+    }
+
+    /// delete the additional ranges
+    ranges.erase(ranges.begin() + (last_range_idx + 1), ranges.end());
+
 }
 
 }
@@ -258,41 +376,17 @@ Pipe StorageSystemNumbers::read(
         /// If intersected ranges is limited or we can pushdown limit.
         if (!intersected_ranges.rbegin()->right.isPositiveInfinity() || should_pushdown_limit)
         {
-            auto size_of_range = [] (const Range & r) -> UInt128
-            {
-                UInt128 size;
-                if (r.right.isPositiveInfinity())
-                    return static_cast<UInt128>(std::numeric_limits<uint64_t>::max()) - r.left.get<UInt64>() + r.left_included;
-
-                size = static_cast<UInt128>(r.right.get<UInt64>()) - r.left.get<UInt64>() + 1;
-
-                if (!r.left_included)
-                    size--;
-                assert (size > 0);
-
-                if (!r.right_included)
-                    size--;
-                assert (size > 0);
-                return size;
-            };
-
-            auto size_of_ranges = [&size_of_range](const Ranges & rs) -> UInt128
-            {
-                UInt128 total_size{};
-                for (const Range & r : rs)
-                {
-                    /// total_size will never overflow
-                    total_size += size_of_range(r);
-                }
-                return total_size;
-            };
-
-            UInt128 total_size = size_of_ranges(intersected_ranges);
+            UInt128 total_size = sizeOfRanges(intersected_ranges);
             UInt128 query_limit = limit_length + limit_offset;
 
             /// limit total_size by query_limit
             if (should_pushdown_limit && query_limit < total_size)
+            {
                 total_size = query_limit;
+                /// We should shrink intersected_ranges for case:
+                ///     intersected_ranges: [1, 4], [7, 100]; query_limit: 2
+                shrinkRanges(intersected_ranges, total_size);
+            }
 
             if (total_size / max_block_size < num_streams)
                 num_streams = static_cast<size_t>(total_size / max_block_size);
@@ -300,39 +394,11 @@ Pipe StorageSystemNumbers::read(
             if (num_streams == 0)
                 num_streams = 1;
 
-            /// Split ranges evenly, every sub ranges will have approximately same amount of numbers.
-            NumbersRangedSource::RangesPos start({0, 0});
+            /// Ranges state, all streams will share the state.
+            auto ranges_state = std::make_shared<NumbersRangedSource::RangesState>();
             for (size_t i = 0; i < num_streams; ++i)
             {
-                UInt128 size = total_size * (i + 1) / num_streams - total_size * i / num_streams;
-                UInt128 need = size;
-
-                /// find end
-                NumbersRangedSource::RangesPos end(start);
-                while (need != 0)
-                {
-                    UInt128 can_provide = size_of_range(intersected_ranges[end.offset_in_ranges]) - end.offset_in_range;
-                    if (can_provide > need)
-                    {
-                        end.offset_in_range += need;
-                        need = 0;
-                    }
-                    else if (can_provide == need)
-                    {
-                        end.offset_in_ranges++;
-                        end.offset_in_range = 0;
-                        need = 0;
-                    }
-                    else
-                    {
-                        end.offset_in_ranges++;
-                        end.offset_in_range = 0;
-                        need -= can_provide;
-                    }
-                }
-
-                auto source = std::make_shared<NumbersRangedSource>(intersected_ranges, max_block_size, start, end, size);
-                start = end;
+                auto source = std::make_shared<NumbersRangedSource>(intersected_ranges, ranges_state, max_block_size);
 
                 if (i == 0)
                     source->addTotalRowsApprox(total_size);
