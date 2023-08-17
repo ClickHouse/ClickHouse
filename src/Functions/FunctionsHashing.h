@@ -126,6 +126,9 @@ namespace impl
         if (!checkColumn<ColumnUInt64>(*ret.key1))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "second element of the key tuple is not UInt64");
 
+        if (ret.size() == 1)
+            ret.is_const = true;
+
         return ret;
     }
 }
@@ -1384,8 +1387,7 @@ private:
                     icolumn->getName(), icolumn->size(), vec_to.size(), getName());
 
         if constexpr (Keyed)
-            if ((!key_cols.is_const && key_cols.size() != vec_to.size())
-                || (key_cols.is_const && key_cols.size() != 1))
+            if (key_cols.size() != vec_to.size() && key_cols.size() != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Key column size {} doesn't match result column size {} of function {}", key_cols.size(), vec_to.size(), getName());
 
         if      (which.isUInt8()) executeIntType<UInt8, first>(key_cols, icolumn, vec_to);

@@ -234,3 +234,5 @@ Check multiple keys as separate ints from a table with constant data
 F6D93D8FEA6D7DECCDD95A7A0A2AA36D
 Check asan bug
 0
+Check bug found fuzzing
+9042C6691B1A75F0EA3314B6F55728BB
