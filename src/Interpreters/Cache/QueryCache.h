@@ -4,7 +4,6 @@
 #include <Core/Block.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Sources/SourceFromChunks.h>
-#include <Poco/Util/LayeredConfiguration.h>
 #include <Processors/Chunk.h>
 #include <QueryPipeline/Pipe.h>
 
@@ -110,9 +109,6 @@ private:
     /// query --> query result
     using Cache = CacheBase<Key, Entry, KeyHasher, QueryCacheEntryWeight>;
 
-    /// query --> query execution count
-    using TimesExecuted = std::unordered_map<Key, size_t, KeyHasher>;
-
 public:
     /// Buffers multiple partial query result chunks (buffer()) and eventually stores them as cache entry (finalizeWrite()).
     ///
@@ -177,9 +173,9 @@ public:
         friend class QueryCache; /// for createReader()
     };
 
-    QueryCache();
+    QueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
-    void updateConfiguration(const Poco::Util::AbstractConfiguration & config);
+    void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
     Reader createReader(const Key & key);
     Writer createWriter(const Key & key, std::chrono::milliseconds min_query_runtime, bool squash_partial_results, size_t max_block_size, size_t max_query_cache_size_in_bytes_quota, size_t max_query_cache_entries_quota);
@@ -199,13 +195,14 @@ private:
     Cache cache; /// has its own locking --> not protected by mutex
 
     mutable std::mutex mutex;
+
+    /// query --> query execution count
+    using TimesExecuted = std::unordered_map<Key, size_t, KeyHasher>;
     TimesExecuted times_executed TSA_GUARDED_BY(mutex);
 
     /// Cache configuration
     size_t max_entry_size_in_bytes TSA_GUARDED_BY(mutex) = 0;
     size_t max_entry_size_in_rows TSA_GUARDED_BY(mutex) = 0;
-
-    size_t cache_size_in_bytes TSA_GUARDED_BY(mutex) = 0; /// Updated in each cache insert/delete
 
     friend class StorageSystemQueryCache;
 };

@@ -339,7 +339,7 @@ std::shared_ptr<zkutil::EphemeralNodeHolder> S3QueueFilesMetadata::acquireLock(z
         }
         else if (code != Coordination::Error::ZOK)
         {
-            throw Coordination::Exception(code, zookeeper_lock_path);
+            throw Coordination::Exception::fromPath(code, zookeeper_lock_path);
         }
         else
         {

@@ -1196,8 +1196,18 @@ class TestCase:
         # This is for .sh tests
         os.environ["CLICKHOUSE_LOG_COMMENT"] = args.testcase_basename
 
+        query_params = ""
+        if "need-query-parameters" in self.tags:
+            query_params = (
+                " --param_CLICKHOUSE_DATABASE="
+                + database
+                + " --param_CLICKHOUSE_DATABASE_1="
+                + database
+                + "_1"
+            )
+
         params = {
-            "client": client + " --database=" + database,
+            "client": client + " --database=" + database + query_params,
             "logs_level": server_logs_level,
             "options": client_options,
             "test": self.case_file,
@@ -1457,13 +1467,13 @@ class TestSuite:
             else:
                 raise Exception(f"Unknown file_extension: {filename}")
 
-        def parse_tags_from_line(line, comment_sign):
+        def parse_tags_from_line(line, comment_sign) -> set[str]:
             if not line.startswith(comment_sign):
-                return None
+                return set()
             tags_str = line[len(comment_sign) :].lstrip()  # noqa: ignore E203
             tags_prefix = "Tags:"
             if not tags_str.startswith(tags_prefix):
-                return None
+                return set()
             tags_str = tags_str[len(tags_prefix) :]  # noqa: ignore E203
             tags = tags_str.split(",")
             tags = {tag.strip() for tag in tags}
@@ -1481,12 +1491,23 @@ class TestSuite:
 
         def load_tags_from_file(filepath):
             comment_sign = get_comment_sign(filepath)
+            need_query_params = False
             with open(filepath, "r", encoding="utf-8") as file:
                 try:
-                    line = find_tag_line(file)
+                    tag_line = find_tag_line(file)
                 except UnicodeDecodeError:
                     return []
-            return parse_tags_from_line(line, comment_sign)
+                try:
+                    if filepath.endswith(".sql"):
+                        for line in file:
+                            if "{CLICKHOUSE_DATABASE" in line:
+                                need_query_params = True
+                except UnicodeDecodeError:
+                    pass
+            parsed_tags = parse_tags_from_line(tag_line, comment_sign)
+            if need_query_params:
+                parsed_tags.add("need-query-parameters")
+            return parsed_tags
 
         all_tags = {}
         start_time = datetime.now()
