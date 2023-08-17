@@ -122,9 +122,11 @@ def create_tables(cluster, table_name):
         pytest.param("test_multiple_shards_multiple_replicas", 3, 1),
         pytest.param("test_multiple_shards_multiple_replicas", 4, 1),
         pytest.param("test_multiple_shards_multiple_replicas", 10, 1),
-    ]
+    ],
 )
-def test_parallel_replicas_over_distributed(start_cluster, cluster, max_parallel_replicas, prefer_localhost_replica):
+def test_parallel_replicas_over_distributed(
+    start_cluster, cluster, max_parallel_replicas, prefer_localhost_replica
+):
     table_name = "test_table"
     create_tables(cluster, table_name)
 
