@@ -1249,7 +1249,7 @@ def err_sync_user_privs_with_materialized_mysql_database(
     )
     assert "priv_err_db" in clickhouse_node.query("SHOW DATABASES")
     assert "test_table_1" not in clickhouse_node.query("SHOW TABLES FROM priv_err_db")
-    clickhouse_node.query_with_retry("DETACH DATABASE priv_err_db")
+    clickhouse_node.query_with_retry("DETACH DATABASE priv_err_db SYNC")
 
     mysql_node.query("REVOKE SELECT ON priv_err_db.* FROM 'test'@'%'")
     time.sleep(3)
@@ -1442,7 +1442,7 @@ def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_nam
             time.sleep(sleep_time)
             clickhouse_node.query("SELECT * FROM test_database.test_table")
 
-    clickhouse_node.query_with_retry("DETACH DATABASE test_database")
+    clickhouse_node.query_with_retry("DETACH DATABASE test_database SYNC")
     clickhouse_node.query("ATTACH DATABASE test_database")
     check_query(
         clickhouse_node,
@@ -1506,7 +1506,7 @@ def mysql_killed_while_insert(clickhouse_node, mysql_node, service_name):
 
         mysql_node.alloc_connection()
 
-        clickhouse_node.query_with_retry("DETACH DATABASE kill_mysql_while_insert")
+        clickhouse_node.query_with_retry("DETACH DATABASE kill_mysql_while_insert SYNC")
         clickhouse_node.query("ATTACH DATABASE kill_mysql_while_insert")
 
         result = mysql_node.query_and_get_data(
@@ -2593,7 +2593,7 @@ def named_collections(clickhouse_node, mysql_node, service_name):
         "1\ta\t1\n2\tb\t2\n",
     )
     clickhouse_node.query(f"ALTER NAMED COLLECTION {db} SET port=9999")
-    clickhouse_node.query(f"DETACH DATABASE {db}")
+    clickhouse_node.query_with_retry(f"DETACH DATABASE {db} SYNC")
     mysql_node.query(f"INSERT INTO {db}.t1 VALUES (3, 'c', 3)")
     assert "ConnectionFailed:" in clickhouse_node.query_and_get_error(
         f"ATTACH DATABASE {db}"

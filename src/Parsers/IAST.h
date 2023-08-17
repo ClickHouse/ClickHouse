@@ -79,7 +79,7 @@ public:
 
     /** Get hash code, identifying this element and its subtree.
       */
-    using Hash = std::pair<UInt64, UInt64>;
+    using Hash = CityHash_v1_0_2::uint128;
     Hash getTreeHash() const;
     void updateTreeHash(SipHash & hash_state) const;
     virtual void updateTreeHashImpl(SipHash & hash_state) const;
