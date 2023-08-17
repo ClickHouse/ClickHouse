@@ -346,7 +346,7 @@ size_t ReplicatedMergeTreeSinkImpl<async_insert>::checkQuorumPrecondition(const 
     if (active_replicas < quorum_size)
     {
         if (Coordination::isHardwareError(keeper_error))
-            throw Coordination::Exception("Failed to check number of alive replicas", keeper_error);
+            throw Coordination::Exception::fromMessage(keeper_error, "Failed to check number of alive replicas");
 
         throw Exception(ErrorCodes::TOO_FEW_LIVE_REPLICAS, "Number of alive replicas ({}) is less than requested quorum ({}/{}).",
                         active_replicas, quorum_size, replicas_number);
