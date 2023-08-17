@@ -169,7 +169,6 @@ host = '127.0.0.1',
 port = 3306,
 database = 'test',
 connection_pool_size = 8,
-on_duplicate_clause = 1,
 replace_query = 1
 ```
 
@@ -185,7 +184,6 @@ replace_query = 1
             <port>3306</port>
             <database>test</database>
             <connection_pool_size>8</connection_pool_size>
-            <on_duplicate_clause>1</on_duplicate_clause>
             <replace_query>1</replace_query>
         </mymysql>
     </named_collections>

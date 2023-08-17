@@ -755,6 +755,9 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_multiply = IsOperation<Op>::multiply;
     static constexpr bool is_division = IsOperation<Op>::division;
     static constexpr bool is_bit_hamming_distance = IsOperation<Op>::bit_hamming_distance;
+    static constexpr bool is_modulo = IsOperation<Op>::modulo;
+    static constexpr bool is_div_int = IsOperation<Op>::div_int;
+    static constexpr bool is_div_int_or_zero = IsOperation<Op>::div_int_or_zero;
 
     ContextPtr context;
     bool check_decimal_overflow = true;
@@ -964,13 +967,28 @@ class FunctionBinaryArithmetic : public IFunction
                                                                   "argument of numeric type cannot be first", name);
 
         std::string function_name;
-        if (is_multiply)
+        if constexpr (is_multiply)
         {
             function_name = "tupleMultiplyByNumber";
         }
-        else
+        else // is_division
         {
-            function_name = "tupleDivideByNumber";
+            if constexpr (is_modulo)
+            {
+                function_name = "tupleModuloByNumber";
+            }
+            else if constexpr (is_div_int)
+            {
+                function_name = "tupleIntDivByNumber";
+            }
+            else if constexpr (is_div_int_or_zero)
+            {
+                function_name = "tupleIntDivOrZeroByNumber";
+            }
+            else
+            {
+                function_name = "tupleDivideByNumber";
+            }
         }
 
         return FunctionFactory::instance().get(function_name, context);
