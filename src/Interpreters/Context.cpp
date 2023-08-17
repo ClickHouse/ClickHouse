@@ -1561,7 +1561,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         }
     }
     auto hash = table_expression->getTreeHash();
-    String key = toString(hash.first) + '_' + toString(hash.second);
+    auto key = toString(hash);
     StoragePtr & res = table_function_results[key];
     if (!res)
     {
@@ -1712,7 +1712,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         auto new_hash = table_expression->getTreeHash();
         if (hash != new_hash)
         {
-            key = toString(new_hash.first) + '_' + toString(new_hash.second);
+            key = toString(new_hash);
             table_function_results[key] = res;
         }
     }
@@ -1721,8 +1721,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr)
 {
-    auto hash = table_expression->getTreeHash();
-    String key = toString(hash.first) + '_' + toString(hash.second);
+    const auto hash = table_expression->getTreeHash();
+    const auto key = toString(hash);
     StoragePtr & res = table_function_results[key];
 
     if (!res)
