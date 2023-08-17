@@ -25,7 +25,7 @@ SELECT
 FROM numbers(500);
 
 SELECT name, column, serialization_kind
-FROM system.parts_columns WHERE table = 't_sparse_full' AND database = currentDatabase() AND active
+FROM system.parts_columns WHERE table = 't_sparse_full' AND database = currentDatabase() AND column != '_block_number' AND active
 ORDER BY name, column;
 
 SELECT id, u FROM t_sparse_full ORDER BY id, u LIMIT 4;
@@ -95,7 +95,7 @@ OPTIMIZE TABLE t_sparse_full FINAL;
 SELECT '======';
 
 SELECT column, serialization_kind
-FROM system.parts_columns WHERE table = 't_sparse_full' AND database = currentDatabase() AND active
+FROM system.parts_columns WHERE table = 't_sparse_full' AND database = currentDatabase() AND column != '_block_number' AND active
 ORDER BY name, column;
 
 SELECT '======';
