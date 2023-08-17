@@ -106,7 +106,7 @@ struct LTTBData final
         // sort the data_list_x and data_list_y in ascending order of data_list_x using index
         std::vector<size_t> index(data_list_x.size());
         std::iota(index.begin(), index.end(), 0);
-        std::sort(index.begin(), index.end(), [&](size_t i1, size_t i2) { return data_list_x[i1] < data_list_x[i2]; });
+        ::sort(index.begin(), index.end(), [&](size_t i1, size_t i2) { return data_list_x[i1] < data_list_x[i2]; });
 
         PODArray<Float64> data_list_x_temp;
         PODArray<Float64> data_list_y_temp;
@@ -156,7 +156,6 @@ struct LTTBData final
             result.emplace_back(std::make_pair(data_list_x.back(), data_list_y.back()));
             return result;
         }
-
 
         // Find the size of each bucket
         unsigned long single_bucket_size = data_list_x.size() / total_buckets;
@@ -252,7 +251,6 @@ public:
         {
             y_scale = datetime64_type->getScale();
         }
-
 
         DataTypes types = {getDataTypeFromTypeIndex(x_type, x_scale), getDataTypeFromTypeIndex(y_type, y_scale)};
 
