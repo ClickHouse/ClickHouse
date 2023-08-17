@@ -777,7 +777,7 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr
     num_marks_saved = 0;
     total_rows = 0;
     total_bytes = 0;
-    getContext()->dropMMappedFileCache();
+    getContext()->clearMMappedFileCache();
 }
 
 
