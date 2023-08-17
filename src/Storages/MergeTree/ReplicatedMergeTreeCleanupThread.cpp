@@ -149,8 +149,7 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
         /// do it under share lock
         cleaned_other += storage.clearOldWriteAheadLogs();
         cleaned_part_like += storage.clearOldTemporaryDirectories(storage.getSettings()->temporary_directories_lifetime.totalSeconds());
-        if (storage.getSettings()->merge_tree_enable_clear_old_broken_detached)
-            cleaned_part_like += storage.clearOldBrokenPartsFromDetachedDirectory();
+        cleaned_part_like += storage.clearOldBrokenPartsFromDetachedDirectory();
     }
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment
@@ -492,7 +491,7 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldBlocks(const String & blocks_di
         }
         else
         {
-            LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", path, Coordination::errorMessage(rc));
+            LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", path, rc);
         }
         first_outdated_block++;
     }

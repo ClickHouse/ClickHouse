@@ -222,7 +222,6 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGet(
         : nullptr;
 }
 
-
 std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetProperties(String name) const
 {
     if (name.size() > MAX_AGGREGATE_FUNCTION_NAME_LENGTH)

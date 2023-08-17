@@ -65,6 +65,7 @@ echo 5
 # run in background
 rm -f "$tmp_file2" >/dev/null 2>&1
 bash -c "$CLICKHOUSE_CLIENT \
+  --function_sleep_max_microseconds_per_block 60000000 \
   --query=\"select sleepEachRow(1) from numbers(10) where ignore('find_me_TOPSECRET=TOPSECRET')=0 and ignore('fwerkh_that_magic_string_make_me_unique') = 0 FORMAT Null\" \
   --log_queries=1 --ignore-error --multiquery |& grep -v '^(query: ' > $tmp_file2" &
 

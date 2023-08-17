@@ -75,7 +75,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", needle);
 
         // Including 0-group, which is the whole regexp.
-        PODArrayWithStackMemory<re2_st::StringPiece, 128> matched_groups(groups_count + 1);
+        PODArrayWithStackMemory<std::string_view, 128> matched_groups(groups_count + 1);
 
         ColumnArray::ColumnOffsets::MutablePtr offsets_col = ColumnArray::ColumnOffsets::create();
         ColumnString::MutablePtr data_col = ColumnString::create();
@@ -89,7 +89,7 @@ public:
         {
             std::string_view current_row = column_haystack->getDataAt(i).toView();
 
-            if (re2->Match(re2_st::StringPiece(current_row.data(), current_row.size()),
+            if (re2->Match({current_row.data(), current_row.size()},
                 0, current_row.size(), re2_st::RE2::UNANCHORED, matched_groups.data(),
                 static_cast<int>(matched_groups.size())))
             {

@@ -9,5 +9,4 @@ SELECT
     x3,
     x4
 FROM prewhere_move
-PREWHERE x1 > 100
-WHERE (x1 > 100) AND ((x2 > 100) AND (x3 > 100) AND (x4 > 100))
+PREWHERE (x1 > 100) AND (x2 > 100) AND (x3 > 100) AND (x4 > 100)

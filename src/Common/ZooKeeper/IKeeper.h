@@ -2,7 +2,7 @@
 
 #include <base/types.h>
 #include <Common/Exception.h>
-#include <Coordination/KeeperConstants.h>
+#include <Coordination/KeeperFeatureFlags.h>
 #include <Poco/Net/SocketAddress.h>
 
 #include <vector>
@@ -17,6 +17,13 @@
   * - ZooKeeper emulation layer on top of Etcd, FoundationDB, whatever.
   */
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int KEEPER_EXCEPTION;
+}
+}
 
 namespace Coordination
 {
@@ -136,6 +143,8 @@ using ResponseCallback = std::function<void(const Response &)>;
 struct Response
 {
     Error error = Error::ZOK;
+    int64_t zxid = 0;
+
     Response() = default;
     Response(const Response &) = default;
     Response & operator=(const Response &) = default;
@@ -350,6 +359,29 @@ struct SyncResponse : virtual Response
     size_t bytesSize() const override { return path.size(); }
 };
 
+struct ReconfigRequest : virtual Request
+{
+    String joining;
+    String leaving;
+    String new_members;
+    int32_t version;
+
+    String getPath() const final { return keeper_config_path; }
+
+    size_t bytesSize() const final
+    {
+        return joining.size() + leaving.size() + new_members.size() + sizeof(version);
+    }
+};
+
+struct ReconfigResponse : virtual Response
+{
+    String value;
+    Stat stat;
+
+    size_t bytesSize() const override { return value.size() + sizeof(stat); }
+};
+
 struct MultiRequest : virtual Request
 {
     Requests requests;
@@ -395,8 +427,8 @@ using SetCallback = std::function<void(const SetResponse &)>;
 using ListCallback = std::function<void(const ListResponse &)>;
 using CheckCallback = std::function<void(const CheckResponse &)>;
 using SyncCallback = std::function<void(const SyncResponse &)>;
+using ReconfigCallback = std::function<void(const ReconfigResponse &)>;
 using MultiCallback = std::function<void(const MultiResponse &)>;
-
 
 /// For watches.
 enum State
@@ -425,17 +457,46 @@ class Exception : public DB::Exception
 private:
     /// Delegate constructor, used to minimize repetition; last parameter used for overload resolution.
     Exception(const std::string & msg, const Error code_, int); /// NOLINT
+    Exception(PreformattedMessage && msg, const Error code_);
+
+    /// Message must be a compile-time constant
+    template <typename T>
+    requires std::is_convertible_v<T, String>
+    Exception(T && message, const Error code_) : DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, std::forward<T>(message)), code(code_)
+    {
+        incrementErrorMetrics(code);
+    }
+
+    static void incrementErrorMetrics(const Error code_);
 
 public:
     explicit Exception(const Error code_); /// NOLINT
-    Exception(const std::string & msg, const Error code_); /// NOLINT
-    Exception(const Error code_, const std::string & path); /// NOLINT
     Exception(const Exception & exc);
 
     template <typename... Args>
-    Exception(const Error code_, fmt::format_string<Args...> fmt, Args &&... args)
-        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code_)
+    Exception(const Error code_, FormatStringHelper<Args...> fmt, Args &&... args)
+        : DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, std::move(fmt), std::forward<Args>(args)...)
+        , code(code_)
     {
+        incrementErrorMetrics(code);
+    }
+
+    inline static Exception createDeprecated(const std::string & msg, const Error code_)
+    {
+        return Exception(msg, code_, 0);
+    }
+
+    inline static Exception fromPath(const Error code_, const std::string & path)
+    {
+        return Exception(code_, "Coordination error: {}, path {}", errorMessage(code_), path);
+    }
+
+    /// Message must be a compile-time constant
+    template <typename T>
+    requires std::is_convertible_v<T, String>
+    inline static Exception fromMessage(const Error code_, T && message)
+    {
+        return Exception(std::forward<T>(message), code_);
     }
 
     const char * name() const noexcept override { return "Coordination::Exception"; }
@@ -466,8 +527,6 @@ public:
 
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;
-
-    virtual Poco::Net::SocketAddress getConnectedAddress() const = 0;
 
     /// If the method will throw an exception, callbacks won't be called.
     ///
@@ -526,14 +585,35 @@ public:
         const String & path,
         SyncCallback callback) = 0;
 
+    virtual void reconfig(
+        std::string_view joining,
+        std::string_view leaving,
+        std::string_view new_members,
+        int32_t version,
+        ReconfigCallback callback) = 0;
+
     virtual void multi(
         const Requests & requests,
         MultiCallback callback) = 0;
 
-    virtual DB::KeeperApiVersion getApiVersion() const = 0;
+    virtual bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const = 0;
+
+    virtual const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return nullptr; }
+
+    /// A ZooKeeper session can have an optional deadline set on it.
+    /// After it has been reached, the session needs to be finalized.
+    virtual bool hasReachedDeadline() const = 0;
 
     /// Expire session and finish all pending requests
     virtual void finalize(const String & reason) = 0;
 };
 
 }
+
+template <> struct fmt::formatter<Coordination::Error> : fmt::formatter<std::string_view>
+{
+    constexpr auto format(Coordination::Error code, auto & ctx)
+    {
+        return formatter<string_view>::format(Coordination::errorMessage(code), ctx);
+    }
+};

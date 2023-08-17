@@ -26,6 +26,7 @@ namespace DB
 {
 
 class ReadBufferFromFileBase;
+struct FileCacheReserveStat;
 
 /*
  * FileSegmentKind is used to specify the eviction policy for file segments.
@@ -129,6 +130,8 @@ public:
 
         bool operator==(const Range & other) const { return left == other.left && right == other.right; }
 
+        bool operator<(const Range & other) const { return right < other.left; }
+
         size_t size() const { return right - left + 1; }
 
         String toString() const { return fmt::format("[{}, {}]", std::to_string(left), std::to_string(right)); }
@@ -154,6 +157,8 @@ public:
 
     String getPathInLocalCache() const;
 
+    int getFlagsForLocalRead() const { return O_RDONLY | O_CLOEXEC; }
+
     /**
      * ========== Methods for _any_ file segment's owner ========================
      */
@@ -172,8 +177,6 @@ public:
     size_t getHitsCount() const { return hits_count; }
 
     size_t getRefCount() const { return ref_count; }
-
-    void incrementHitsCount() { ++hits_count; }
 
     size_t getCurrentWriteOffset(bool sync) const;
 
@@ -241,12 +244,7 @@ public:
 
     /// Try to reserve exactly `size` bytes (in addition to the getDownloadedSize() bytes already downloaded).
     /// Returns true if reservation was successful, false otherwise.
-    bool reserve(size_t size_to_reserve);
-
-    /// Try to reserve at max `size_to_reserve` bytes.
-    /// Returns actual size reserved. It can be less than size_to_reserve in non strict mode.
-    /// In strict mode throws an error on attempt to reserve space too much space.
-    size_t tryReserve(size_t size_to_reserve, bool strict = false);
+    bool reserve(size_t size_to_reserve, FileCacheReserveStat * reserve_stat = nullptr);
 
     /// Write data into reserved space.
     void write(const char * from, size_t size, size_t offset);

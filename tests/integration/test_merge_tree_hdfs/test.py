@@ -235,12 +235,7 @@ def test_attach_detach_partition(cluster):
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
     hdfs_objects = fs.listdir("/clickhouse")
-    assert (
-        len(hdfs_objects)
-        == FILES_OVERHEAD
-        + FILES_OVERHEAD_PER_PART_WIDE * 2
-        - FILES_OVERHEAD_METADATA_VERSION
-    )
+    assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
     node.query("ALTER TABLE hdfs_test DROP PARTITION '2020-01-03'")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(4096)"

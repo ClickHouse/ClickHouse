@@ -783,4 +783,15 @@ extern template class PODArray<Int8, 4096, Allocator<false>, PADDING_FOR_SIMD - 
 extern template class PODArray<Int16, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
 extern template class PODArray<Int32, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
 extern template class PODArray<Int64, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+
+extern template class PODArray<UInt8, 4096, Allocator<false>, 0, 0>;
+extern template class PODArray<UInt16, 4096, Allocator<false>, 0, 0>;
+extern template class PODArray<UInt32, 4096, Allocator<false>, 0, 0>;
+extern template class PODArray<UInt64, 4096, Allocator<false>, 0, 0>;
+
+extern template class PODArray<Int8, 4096, Allocator<false>, 0, 0>;
+extern template class PODArray<Int16, 4096, Allocator<false>, 0, 0>;
+extern template class PODArray<Int32, 4096, Allocator<false>, 0, 0>;
+extern template class PODArray<Int64, 4096, Allocator<false>, 0, 0>;
+
 }

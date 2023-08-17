@@ -299,7 +299,7 @@ void checkAccessRightsForSelect(
         }
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
-            "{}: Not enough privileges. To execute this query it's necessary to have grant SELECT for at least one column on {}",
+            "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
             context->getUserName(),
             table_id.getFullTableName());
     }
@@ -610,27 +610,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
-        NameToNameMap parameter_types;
         if (view)
         {
             query_info.is_parameterized_view = view->isParameterizedView();
-            /// We need to fetch the parameters set for SELECT ... FROM parameterized_view(<params>) before the query is replaced.
-            /// replaceWithSubquery replaces the function child and adds the subquery in its place.
-            /// the parameters are children of function child, if function (which corresponds to parametrised view and has
-            /// parameters in its arguments: `parametrised_view(<params>)`) is replaced the parameters are also gone from tree
-            /// So we need to get the parameters before they are removed from the tree
-            /// and after query is replaced, we use these parameters to substitute in the parameterized view query
-            if (query_info.is_parameterized_view)
-            {
-                query_info.parameterized_view_values = analyzeFunctionParamValues(query_ptr);
-                parameter_types = view->getParameterTypes();
-            }
             view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
-            if (query_info.is_parameterized_view)
-            {
-                view->replaceQueryParametersIfParametrizedView(query_ptr, query_info.parameterized_view_values);
-            }
-
         }
 
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(
@@ -639,10 +622,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             options,
             joined_tables.tablesWithColumns(),
             required_result_column_names,
-            table_join,
-            query_info.is_parameterized_view,
-            query_info.parameterized_view_values,
-            parameter_types);
+            table_join);
 
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
@@ -793,7 +773,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 query_info.filter_asts.push_back(parallel_replicas_custom_filter_ast);
             }
 
-            source_header = storage_snapshot->getSampleBlockForColumns(required_columns, query_info.parameterized_view_values);
+            source_header = storage_snapshot->getSampleBlockForColumns(required_columns);
         }
 
         /// Calculate structure of the result.
@@ -953,10 +933,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     if (storage && !options.only_analyze)
     {
-        query_analyzer->makeSetsForIndex(select_query.where());
-        query_analyzer->makeSetsForIndex(select_query.prewhere());
         query_info.prepared_sets = query_analyzer->getPreparedSets();
-
         from_stage = storage->getQueryProcessingStage(context, options.to_stage, storage_snapshot, query_info);
     }
 
@@ -2277,8 +2254,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 max_paralle
         && !settings.allow_experimental_query_deduplication
         && !settings.empty_result_for_aggregation_by_empty_set
         && storage
-        && storage->getName() != "MaterializedMySQL"
-        && !storage->hasLightweightDeletedMask()
+        && storage->supportsTrivialCountOptimization()
         && query_info.filter_asts.empty()
         && query_analyzer->hasAggregation()
         && (query_analyzer->aggregates().size() == 1)
@@ -3151,7 +3127,17 @@ void InterpreterSelectQuery::executeExtremes(QueryPlan & query_plan)
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_plan)
 {
-    addCreatingSetsStep(query_plan, prepared_sets, context);
+    auto subqueries = prepared_sets->getSubqueries();
+
+    if (!subqueries.empty())
+    {
+        auto step = std::make_unique<DelayedCreatingSetsStep>(
+                query_plan.getCurrentDataStream(),
+                std::move(subqueries),
+                context);
+
+        query_plan.addStep(std::move(step));
+    }
 }
 
 
@@ -3174,9 +3160,9 @@ void InterpreterSelectQuery::initSettings()
 {
     auto & query = getSelectQuery();
     if (query.settings())
-        InterpreterSetQuery(query.settings(), context).executeForCurrentContext();
+        InterpreterSetQuery(query.settings(), context).executeForCurrentContext(options.ignore_setting_constraints);
 
-    auto & client_info = context->getClientInfo();
+    const auto & client_info = context->getClientInfo();
     auto min_major = DBMS_MIN_MAJOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
     auto min_minor = DBMS_MIN_MINOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
 

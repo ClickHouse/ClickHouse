@@ -24,6 +24,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INVALID_SETTING_VALUE;
+}
+
 namespace
 {
 
@@ -52,7 +57,11 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     : AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_)
     , WithContext(global_context_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
-{}
+{
+    /// sanity check
+    if (update_period_seconds == 0 || heavy_metrics_update_period_seconds == 0)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting asynchronous_metrics_update_period_s and asynchronous_heavy_metrics_update_period_s must not be zero");
+}
 
 void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time)
 {
@@ -90,6 +99,12 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
             "The number of files opened with `mmap` (mapped in memory)."
             " This is used for queries with the setting `local_filesystem_read_method` set to  `mmap`."
             " The files opened with `mmap` are kept in the cache to avoid costly TLB flushes."};
+    }
+
+    if (auto query_cache = getContext()->getQueryCache())
+    {
+        new_values["QueryCacheBytes"] = { query_cache->weight(), "Total size of the query cache in bytes." };
+        new_values["QueryCacheEntries"] = { query_cache->count(), "Total number of entries in the query cache." };
     }
 
     {
@@ -191,14 +206,21 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
             auto available = disk->getAvailableSpace();
             auto unreserved = disk->getUnreservedSpace();
 
-            new_values[fmt::format("DiskTotal_{}", name)] = { total,
-                "The total size in bytes of the disk (virtual filesystem). Remote filesystems can show a large value like 16 EiB." };
-            new_values[fmt::format("DiskUsed_{}", name)] = { total - available,
-                "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
-            new_values[fmt::format("DiskAvailable_{}", name)] = { available,
-                "Available bytes on the disk (virtual filesystem). Remote filesystems can show a large value like 16 EiB." };
-            new_values[fmt::format("DiskUnreserved_{}", name)] = { unreserved,
-                "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems can show a large value like 16 EiB." };
+            new_values[fmt::format("DiskTotal_{}", name)] = { *total,
+                "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information." };
+
+            if (available)
+            {
+                new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
+                    "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
+
+                new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
+                    "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information." };
+            }
+
+            if (unreserved)
+                new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
+                    "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
         }
     }
 

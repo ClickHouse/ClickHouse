@@ -34,7 +34,7 @@ try
     elem.tid = tid;
     elem.csn = csn;
     elem.fillCommonFields(nullptr);
-    system_log->add(elem);
+    system_log->add(std::move(elem));
 }
 catch (...)
 {
@@ -409,7 +409,7 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
             {
                 std::bernoulli_distribution fault(fault_probability_before_commit);
                 if (fault(thread_local_rng))
-                    throw Coordination::Exception("Fault injected (before commit)", Coordination::Error::ZCONNECTIONLOSS);
+                    throw Coordination::Exception::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (before commit)");
             }
 
             /// Commit point
@@ -419,7 +419,7 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
             {
                 std::bernoulli_distribution fault(fault_probability_after_commit);
                 if (fault(thread_local_rng))
-                    throw Coordination::Exception("Fault injected (after commit)", Coordination::Error::ZCONNECTIONLOSS);
+                    throw Coordination::Exception::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (after commit)");
             }
         }
         catch (const Coordination::Exception & e)
@@ -482,7 +482,7 @@ CSN TransactionLog::finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN
         bool removed = running_list.erase(txn->tid.getHash());
         if (!removed)
         {
-            LOG_ERROR(log , "I's a bug: TID {} {} doesn't exist", txn->tid.getHash(), txn->tid);
+            LOG_ERROR(log, "It's a bug: TID {} {} doesn't exist", txn->tid.getHash(), txn->tid);
             abort();
         }
     }

@@ -13,6 +13,10 @@
 
 #include <memory>
 
+#if USE_EMBEDDED_COMPILER
+#    include <Core/ValuesWithType.h>
+#endif
+
 /// This file contains user interface for functions.
 
 namespace llvm
