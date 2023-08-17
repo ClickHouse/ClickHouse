@@ -389,7 +389,9 @@ ParquetBlockInputFormat::~ParquetBlockInputFormat()
 
 void ParquetBlockInputFormat::setQueryInfo(const SelectQueryInfo & query_info, ContextPtr context)
 {
-    if (format_settings.parquet.filter_push_down)
+    /// When analyzer is enabled, query_info.filter_asts is missing sets and maybe some type casts,
+    /// so don't use it. I'm not sure how to support analyzer here: https://github.com/ClickHouse/ClickHouse/issues/53536
+    if (format_settings.parquet.filter_push_down && !context->getSettingsRef().allow_experimental_analyzer)
         key_condition.emplace(query_info, context, getPort().getHeader().getNames(),
             std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(
                 getPort().getHeader().getColumnsWithTypeAndName())));
@@ -428,7 +430,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
         if (key_condition.has_value() &&
             !key_condition->checkInHyperrectangle(
-                getHyperrectangleForRowGroup(*metadata, idx, getPort().getHeader(), format_settings),
+                getHyperrectangleForRowGroup(*metadata, row_group, getPort().getHeader(), format_settings),
                 getPort().getHeader().getDataTypes()).can_be_true)
             continue;
 
