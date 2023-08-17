@@ -253,15 +253,11 @@ static inline T ALWAYS_INLINE packFixed(
 static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
     size_t i, size_t keys_size, const ColumnRawPtrs & key_columns)
 {
-    UInt128 key;
     SipHash hash;
-
     for (size_t j = 0; j < keys_size; ++j)
         key_columns[j]->updateHashWithValue(i, hash);
 
-    hash.get128(key);
-
-    return key;
+    return hash.get128();
 }
 
 /** Serialize keys into a continuous chunk of memory.
