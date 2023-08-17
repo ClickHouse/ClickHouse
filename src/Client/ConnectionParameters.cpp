@@ -1,6 +1,5 @@
 #include "ConnectionParameters.h"
 #include <fstream>
-#include <iostream>
 #include <Core/Defines.h>
 #include <Core/Protocol.h>
 #include <Core/Types.h>

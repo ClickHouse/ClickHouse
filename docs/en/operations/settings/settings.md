@@ -4578,6 +4578,17 @@ Type: Int64
 
 Default: 0
 
+## rewrite_count_distinct_if_with_count_distinct_implementation
+
+Allows you to rewrite `countDistcintIf` with [count_distinct_implementation](#settings-count_distinct_implementation) setting.
+
+Possible values:
+
+- true — Allow.
+- false — Disallow.
+
+Default value: `false`.
+
 ## precise_float_parsing {#precise_float_parsing}
 
 Switches [Float32/Float64](../../sql-reference/data-types/float.md) parsing algorithms:
