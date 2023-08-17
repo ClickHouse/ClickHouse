@@ -2169,7 +2169,7 @@ CommittingBlocks BaseMergePredicate<VirtualPartsT, MutationsStateT>::getCommitti
     {
         auto & response = locks_children[i];
         if (response.error != Coordination::Error::ZOK && !partition_ids_hint)
-            throw Coordination::Exception(response.error, paths[i]);
+            throw Coordination::Exception::fromPath(response.error, paths[i]);
 
         if (response.error != Coordination::Error::ZOK)
         {
