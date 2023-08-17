@@ -290,7 +290,6 @@ void shrinkRanges(Ranges & ranges, size_t size)
         }
         else if (range_size == size)
         {
-            size = 0;
             last_range_idx = i;
             break;
         }
