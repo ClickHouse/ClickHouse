@@ -1,4 +1,4 @@
-# Approximate Nearest Neighbor Search Indexes [experimental] {#table_engines-ANNIndex}
+# Approximate Nearest Neighbor Search Indexes [experimental]
 
 Nearest neighborhood search is the problem of finding the M closest points for a given point in an N-dimensional vector space. The most
 straightforward approach to solve this problem is a brute force search where the distance between all points in the vector space and the
@@ -17,7 +17,7 @@ In terms of SQL, the nearest neighborhood problem can be expressed as follows:
 
 ``` sql
 SELECT *
-FROM table
+FROM table_with_ann_index
 ORDER BY Distance(vectors, Point)
 LIMIT N
 ```
@@ -32,7 +32,7 @@ An alternative formulation of the nearest neighborhood search problem looks as f
 
 ``` sql
 SELECT *
-FROM table
+FROM table_with_ann_index
 WHERE Distance(vectors, Point) < MaxDistance
 LIMIT N
 ```
@@ -45,12 +45,12 @@ With brute force search, both queries are expensive (linear in the number of poi
 `Point` must be computed. To speed this process up, Approximate Nearest Neighbor Search Indexes (ANN indexes) store a compact representation
 of the search space (using clustering, search trees, etc.) which allows to compute an approximate answer much quicker (in sub-linear time).
 
-# Creating and Using ANN Indexes
+# Creating and Using ANN Indexes {#creating_using_ann_indexes}
 
 Syntax to create an ANN index over an [Array](../../../sql-reference/data-types/array.md) column:
 
 ```sql
-CREATE TABLE table
+CREATE TABLE table_with_ann_index
 (
   `id` Int64,
   `vectors` Array(Float32),
@@ -63,7 +63,7 @@ ORDER BY id;
 Syntax to create an ANN index over a [Tuple](../../../sql-reference/data-types/tuple.md) column:
 
 ```sql
-CREATE TABLE table
+CREATE TABLE table_with_ann_index
 (
   `id` Int64,
   `vectors` Tuple(Float32[, Float32[, ...]]),
@@ -83,7 +83,7 @@ ANN indexes support two types of queries:
 
   ``` sql
   SELECT *
-  FROM table
+  FROM table_with_ann_index
   [WHERE ...]
   ORDER BY Distance(vectors, Point)
   LIMIT N
@@ -93,7 +93,7 @@ ANN indexes support two types of queries:
 
    ``` sql
    SELECT *
-   FROM table
+   FROM table_with_ann_index
    WHERE Distance(vectors, Point) < MaxDistance
    LIMIT N
    ```
@@ -103,7 +103,7 @@ To avoid writing out large vectors, you can use [query
 parameters](/docs/en/interfaces/cli.md#queries-with-parameters-cli-queries-with-parameters), e.g.
 
 ```bash
-clickhouse-client --param_vec='hello' --query="SELECT * FROM table WHERE L2Distance(vectors, {vec: Array(Float32)}) < 1.0"
+clickhouse-client --param_vec='hello' --query="SELECT * FROM table_with_ann_index WHERE L2Distance(vectors, {vec: Array(Float32)}) < 1.0"
 ```
 :::
 
@@ -138,7 +138,7 @@ back to a smaller `GRANULARITY` values only in case of problems like excessive m
 was specified for ANN indexes, the default value is 100 million.
 
 
-# Available ANN Indexes
+# Available ANN Indexes {#available_ann_indexes}
 
 - [Annoy](/docs/en/engines/table-engines/mergetree-family/annindexes.md#annoy-annoy)
 
@@ -165,7 +165,7 @@ space in random linear surfaces (lines in 2D, planes in 3D etc.).
 Syntax to create an Annoy index over an [Array](../../../sql-reference/data-types/array.md) column:
 
 ```sql
-CREATE TABLE table
+CREATE TABLE table_with_annoy_index
 (
   id Int64,
   vectors Array(Float32),
@@ -178,7 +178,7 @@ ORDER BY id;
 Syntax to create an ANN index over a [Tuple](../../../sql-reference/data-types/tuple.md) column:
 
 ```sql
-CREATE TABLE table
+CREATE TABLE table_with_annoy_index
 (
   id Int64,
   vectors Tuple(Float32[, Float32[, ...]]),
@@ -188,23 +188,17 @@ ENGINE = MergeTree
 ORDER BY id;
 ```
 
-Annoy currently supports `L2Distance` and `cosineDistance` as distance function `Distance`. If no distance function was specified during
-index creation, `L2Distance` is used as default. Parameter `NumTrees` is the number of trees which the algorithm creates (default if not
-specified: 100). Higher values of `NumTree` mean more accurate search results but slower index creation / query times (approximately
-linearly) as well as larger index sizes.
+Annoy currently supports two distance functions:
+- `L2Distance`, also called Euclidean distance, is the length of a line segment between two points in Euclidean space
+  ([Wikipedia](https://en.wikipedia.org/wiki/Euclidean_distance)).
+- `cosineDistance`, also called cosine similarity, is the cosine of the angle between two (non-zero) vectors
+  ([Wikipedia](https://en.wikipedia.org/wiki/Cosine_similarity)).
 
-`L2Distance` is also called Euclidean distance, the Euclidean distance between two points in Euclidean space is the length of a line segment between the two points.
-For example: If we have point P(p1,p2), Q(q1,q2), their distance will be d(p,q)
-![L2Distance](https://en.wikipedia.org/wiki/Euclidean_distance#/media/File:Euclidean_distance_2d.svg)
+For normalized data, `L2Distance` is usually a better choice, otherwise `cosineDistance` is recommended to compensate for scale. If no
+distance function was specified during index creation, `L2Distance` is used as default.
 
-`cosineDistance` also called cosine similarity is a measure of similarity between two non-zero vectors defined in an inner product space. Cosine similarity is the cosine of the angle between the vectors; that is, it is the dot product of the vectors divided by the product of their lengths. 
-![cosineDistance](https://www.tyrrell4innovation.ca/wp-content/uploads/2021/06/rsz_jenny_du_miword.png)
-
-The Euclidean distance corresponds to the L2-norm of a difference between vectors. The cosine similarity is proportional to the dot product of two vectors and inversely proportional to the product of their magnitudes.
-![compare](https://www.researchgate.net/publication/320914786/figure/fig2/AS:558221849841664@1510101868614/The-difference-between-Euclidean-distance-and-cosine-similarity.png)
-In one sentence: cosine similarity care only about the angle between them, but do not care about the "distance" we normally think.
-![L2 distance](https://www.baeldung.com/wp-content/uploads/sites/4/2020/06/4-1.png)
-![cosineDistance](https://www.baeldung.com/wp-content/uploads/sites/4/2020/06/5.png)
+Parameter `NumTrees` is the number of trees which the algorithm creates (default if not specified: 100). Higher values of `NumTree` mean
+more accurate search results but slower index creation / query times (approximately linearly) as well as larger index sizes.
 
 :::note
 Indexes over columns of type `Array` will generally work faster than indexes on `Tuple` columns. All arrays **must** have same length. Use

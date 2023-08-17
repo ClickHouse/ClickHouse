@@ -1381,8 +1381,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
                 cleared_count += clearOldWriteAheadLogs();
                 cleared_count += clearOldMutations();
                 cleared_count += clearEmptyParts();
-                if (getSettings()->merge_tree_enable_clear_old_broken_detached)
-                    cleared_count += clearOldBrokenPartsFromDetachedDirectory();
+                cleared_count += clearOldBrokenPartsFromDetachedDirectory();
                 return cleared_count;
                 /// TODO maybe take into account number of cleared objects when calculating backoff
             }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
@@ -1655,11 +1654,7 @@ struct FutureNewEmptyPart
     MergeTreePartition partition;
     std::string part_name;
 
-    scope_guard tmp_dir_guard;
-
     StorageMergeTree::MutableDataPartPtr data_part;
-
-    std::string getDirName() const { return StorageMergeTree::EMPTY_PART_TMP_PREFIX + part_name; }
 };
 
 using FutureNewEmptyParts = std::vector<FutureNewEmptyPart>;
@@ -1690,19 +1685,19 @@ FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_pa
     return future_parts;
 }
 
-StorageMergeTree::MutableDataPartsVector createEmptyDataParts(MergeTreeData & data, FutureNewEmptyParts & future_parts, const MergeTreeTransactionPtr & txn)
+std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_guard>> createEmptyDataParts(
+    MergeTreeData & data, FutureNewEmptyParts & future_parts, const MergeTreeTransactionPtr & txn)
 {
-    StorageMergeTree::MutableDataPartsVector data_parts;
+    std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_guard>> data_parts;
     for (auto & part: future_parts)
-        data_parts.push_back(data.createEmptyPart(part.part_info, part.partition, part.part_name, txn));
+    {
+        auto [new_data_part, tmp_dir_holder] = data.createEmptyPart(part.part_info, part.partition, part.part_name, txn);
+        data_parts.first.emplace_back(std::move(new_data_part));
+        data_parts.second.emplace_back(std::move(tmp_dir_holder));
+    }
     return data_parts;
 }
 
-void captureTmpDirectoryHolders(MergeTreeData & data, FutureNewEmptyParts & future_parts)
-{
-    for (auto & part : future_parts)
-        part.tmp_dir_guard = data.getTemporaryPartDirectoryHolder(part.getDirName());
-}
 
 void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction)
 {
@@ -1769,9 +1764,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
                      fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
                      transaction.getTID());
 
-            captureTmpDirectoryHolders(*this, future_parts);
-
-            auto new_data_parts = createEmptyDataParts(*this, future_parts, txn);
+            auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
             renameAndCommitEmptyParts(new_data_parts, transaction);
 
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
@@ -1819,8 +1812,10 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
             if (detach)
             {
                 auto metadata_snapshot = getInMemoryMetadataPtr();
-                LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
-                part->makeCloneInDetached("", metadata_snapshot);
+                String part_dir = part->getDataPartStorage().getPartDirectory();
+                LOG_INFO(log, "Detaching {}", part_dir);
+                auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
+                part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
             }
 
             {
@@ -1830,9 +1825,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                          fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames({part}), ", "),
                          transaction.getTID());
 
-                captureTmpDirectoryHolders(*this, future_parts);
-
-                auto new_data_parts = createEmptyDataParts(*this, future_parts, txn);
+                auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
                 renameAndCommitEmptyParts(new_data_parts, transaction);
 
                 PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
@@ -1904,8 +1897,10 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                 for (const auto & part : parts)
                 {
                     auto metadata_snapshot = getInMemoryMetadataPtr();
-                    LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
-                    part->makeCloneInDetached("", metadata_snapshot);
+                    String part_dir = part->getDataPartStorage().getPartDirectory();
+                    LOG_INFO(log, "Detaching {}", part_dir);
+                    auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
+                    part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
                 }
             }
 
@@ -1916,9 +1911,8 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                      fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
                      transaction.getTID());
 
-            captureTmpDirectoryHolders(*this, future_parts);
 
-            auto new_data_parts = createEmptyDataParts(*this, future_parts, txn);
+            auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
             renameAndCommitEmptyParts(new_data_parts, transaction);
 
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
@@ -1946,8 +1940,10 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
         /// NOTE: no race with background cleanup until we hold pointers to parts
         for (const auto & part : parts_to_remove)
         {
-            LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
-            part->makeCloneInDetached("", metadata_snapshot);
+            String part_dir = part->getDataPartStorage().getPartDirectory();
+            LOG_INFO(log, "Detaching {}", part_dir);
+            auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
+            part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
         }
     }
 
@@ -2003,7 +1999,7 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     }
 
     /// New parts with other data may appear in place of deleted parts.
-    local_context->dropCaches();
+    local_context->clearCaches();
     return results;
 }
 

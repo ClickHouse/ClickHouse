@@ -247,10 +247,10 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
             database->dropTable(context_, table_id.table_name, query.sync);
 
-            /// We have to drop mmapio cache when dropping table from Ordinary database
+            /// We have to clear mmapio cache when dropping table from Ordinary database
             /// to avoid reading old data if new table with the same name is created
             if (database->getUUID() == UUIDHelpers::Nil)
-                context_->dropMMappedFileCache();
+                context_->clearMMappedFileCache();
         }
 
         db = database;
