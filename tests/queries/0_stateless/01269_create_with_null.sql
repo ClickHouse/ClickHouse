@@ -53,8 +53,7 @@ DETACH TABLE set_null;
 ATTACH TABLE set_null;
 SHOW CREATE TABLE set_null;
 
-CREATE TABLE cannot_be_nullable (n Int8, a Array(UInt8)) ENGINE=Memory; -- { serverError 43 }
-CREATE TABLE cannot_be_nullable (n Int8, a Array(UInt8) NOT NULL) ENGINE=Memory;
+CREATE TABLE cannot_be_nullable (n Int8, a Array(UInt8)) ENGINE=Memory;
 SHOW CREATE TABLE cannot_be_nullable;
 DETACH TABLE cannot_be_nullable;
 ATTACH TABLE cannot_be_nullable;
