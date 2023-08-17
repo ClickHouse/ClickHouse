@@ -352,7 +352,7 @@ def test_authentication():
 
 
 def test_logs():
-    query = "SELECT has(groupArray(number), 42) FROM numbers(100000)"
+    query = "SELECT has(groupArray(number), 42) FROM numbers(100000) SETTINGS max_block_size=10000"
     logs = query_and_get_logs(
         query,
         settings={"send_logs_level": "debug"},
