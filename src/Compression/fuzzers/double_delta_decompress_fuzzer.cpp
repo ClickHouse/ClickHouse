@@ -1,4 +1,3 @@
-#include <iostream>
 #include <string>
 
 #include <Compression/ICompressionCodec.h>
@@ -34,7 +33,7 @@ try
     DB::Memory<> memory;
     memory.resize(output_buffer_size + codec->getAdditionalSizeAtTheEndOfBuffer());
 
-    codec->doDecompressData(reinterpret_cast<const char *>(data), static_cast<UInt32>(size), memory.data(), static_cast<UInt32>(output_buffer_size));
+    codec->doDecompressData(reinterpret_cast<const char *>(data), size, memory.data(), output_buffer_size);
 
     return 0;
 }

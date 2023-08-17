@@ -269,7 +269,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
     try
     {
         ALLOW_ALLOCATIONS_IN_SCOPE;
-        item->task->getQueryId();
+        query_id = item->task->getQueryId();
         need_execute_again = item->task->executeStep();
     }
     catch (...)

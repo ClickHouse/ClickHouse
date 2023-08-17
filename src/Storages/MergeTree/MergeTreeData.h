@@ -434,6 +434,8 @@ public:
 
     bool areAsynchronousInsertsEnabled() const override { return getSettings()->async_insert; }
 
+    bool supportsTrivialCountOptimization() const override { return !hasLightweightDeletedMask(); }
+
     NamesAndTypesList getVirtuals() const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr, const StorageMetadataPtr & metadata_snapshot) const override;
@@ -934,7 +936,9 @@ public:
     WriteAheadLogPtr getWriteAheadLog();
 
     constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
-    MergeTreeData::MutableDataPartPtr createEmptyPart(MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name, const MergeTreeTransactionPtr & txn);
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
+        MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
+        const String & new_part_name, const MergeTreeTransactionPtr & txn);
 
     MergeTreeDataFormatVersion format_version;
 
@@ -1229,7 +1233,7 @@ protected:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
-    void checkProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach = false, ContextPtr local_context = nullptr) const;
+    void checkProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach, bool allow_empty_sorting_key, ContextPtr local_context) const;
 
     void setProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach = false, ContextPtr local_context = nullptr);
 
@@ -1334,7 +1338,7 @@ protected:
     using PartsBackupEntries = std::vector<PartBackupEntries>;
 
     /// Makes backup entries to backup the parts of this table.
-    PartsBackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ContextPtr & local_context);
+    PartsBackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ReadSettings & read_settings, const ContextPtr & local_context);
 
     class RestoredPartsHolder;
 
@@ -1484,7 +1488,7 @@ private:
     /// Check selected parts for movements. Used by ALTER ... MOVE queries.
     CurrentlyMovingPartsTaggerPtr checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
 
-    bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason = nullptr) const;
+    bool canUsePolymorphicParts(const MergeTreeSettings & settings, String & out_reason) const;
 
     std::mutex write_ahead_log_mutex;
     WriteAheadLogPtr write_ahead_log;

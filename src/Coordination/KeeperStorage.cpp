@@ -20,10 +20,10 @@
 
 #include <Coordination/pathUtils.h>
 #include <Coordination/KeeperConstants.h>
+#include <Coordination/KeeperReconfiguration.h>
 #include <Coordination/KeeperStorage.h>
+#include <Coordination/KeeperDispatcher.h>
 
-#include <sstream>
-#include <iomanip>
 #include <mutex>
 #include <functional>
 #include <base/defines.h>
@@ -53,7 +53,6 @@ namespace ErrorCodes
 
 namespace
 {
-
 String getSHA1(const String & userdata)
 {
     Poco::SHA1Engine engine;
@@ -1060,7 +1059,8 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
         ProfileEvents::increment(ProfileEvents::KeeperGetRequest);
         Coordination::ZooKeeperGetRequest & request = dynamic_cast<Coordination::ZooKeeperGetRequest &>(*zk_request);
 
-        if (request.path == Coordination::keeper_api_feature_flags_path)
+        if (request.path == Coordination::keeper_api_feature_flags_path
+            || request.path == Coordination::keeper_config_path)
             return {};
 
         if (!storage.uncommitted_state.getNode(request.path))
@@ -1083,6 +1083,14 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
                 response.error = result;
                 return response_ptr;
             }
+        }
+
+        if (request.path == Coordination::keeper_config_path)
+        {
+            response.data = serializeClusterConfig(
+                storage.keeper_context->getDispatcher()->getStateMachine().getClusterConfig());
+            response.error = Coordination::Error::ZOK;
+            return response_ptr;
         }
 
         auto & container = storage.container;
@@ -1784,7 +1792,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
                     throw DB::Exception(
                                         ErrorCodes::BAD_ARGUMENTS,
                                         "Illegal command as part of multi ZooKeeper request {}",
-                                        Coordination::toString(sub_zk_request->getOpNum()));
+                                        sub_zk_request->getOpNum());
             }
         }
 
@@ -1975,7 +1983,7 @@ public:
     {
         auto request_it = op_num_to_request.find(zk_request->getOpNum());
         if (request_it == op_num_to_request.end())
-            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unknown operation type {}", toString(zk_request->getOpNum()));
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unknown operation type {}", zk_request->getOpNum());
 
         return request_it->second(zk_request);
     }

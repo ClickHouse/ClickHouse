@@ -12,7 +12,7 @@ fi
 ROOT_PATH="$(git rev-parse --show-toplevel)"
 LIBS_PATH="${ROOT_PATH}/contrib"
 
-ls -1 -d ${LIBS_PATH}/*/ | ${GREP_CMD} -F -v -- '-cmake' | LC_ALL=C sort | while read LIB; do
+ls -1 -d ${LIBS_PATH}/*/ "${ROOT_PATH}/base/poco" | ${GREP_CMD} -F -v -- '-cmake' | LC_ALL=C sort | while read LIB; do
     LIB_NAME=$(basename $LIB)
 
     LIB_LICENSE=$(
@@ -72,7 +72,7 @@ ls -1 -d ${LIBS_PATH}/*/ | ${GREP_CMD} -F -v -- '-cmake' | LC_ALL=C sort | while
          echo "HPND") ||
         echo "Unknown")
 
-        RELATIVE_PATH=$(echo "$LIB_LICENSE" | sed -r -e 's!^.+/contrib/!/contrib/!')
+        RELATIVE_PATH=$(echo "$LIB_LICENSE" | sed -r -e 's!^.+/(contrib|base)/!/\1/!')
 
         echo -e "$LIB_NAME\t$LICENSE_TYPE\t$RELATIVE_PATH"
     fi

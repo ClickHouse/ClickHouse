@@ -9,7 +9,11 @@ import os
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
-    "node", main_configs=["configs/enable_keeper.xml"], stay_alive=True, with_minio=True
+    "node",
+    main_configs=["configs/enable_keeper.xml"],
+    stay_alive=True,
+    with_minio=True,
+    with_hdfs=True,
 )
 
 from kazoo.client import KazooClient, KazooState
@@ -115,6 +119,12 @@ def get_local_logs():
 
 def get_local_snapshots():
     return get_local_files("/var/lib/clickhouse/coordination/snapshots")
+
+
+def test_supported_disk_types(started_cluster):
+    node.stop_clickhouse()
+    node.start_clickhouse()
+    node.contains_in_log("Disk type 'hdfs' is not supported for Keeper")
 
 
 def test_logs_with_disks(started_cluster):

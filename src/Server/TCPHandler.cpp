@@ -184,14 +184,17 @@ void TCPHandler::runImpl()
     try
     {
         receiveHello();
+
+        /// In interserver mode queries are executed without a session context.
+        if (!is_interserver_mode)
+            session->makeSessionContext();
+
         sendHello();
         if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             receiveAddendum();
 
-        if (!is_interserver_mode) /// In interserver mode queries are executed without a session context.
+        if (!is_interserver_mode)
         {
-            session->makeSessionContext();
-
             /// If session created, then settings in session context has been updated.
             /// So it's better to update the connection settings for flexibility.
             extractConnectionSettingsFromContext(session->sessionContext());
@@ -1177,21 +1180,11 @@ std::unique_ptr<Session> TCPHandler::makeSession()
 
     auto res = std::make_unique<Session>(server.context(), interface, socket().secure(), certificate);
 
-    auto & client_info = res->getClientInfo();
-    client_info.forwarded_for = forwarded_for;
-    client_info.client_name = client_name;
-    client_info.client_version_major = client_version_major;
-    client_info.client_version_minor = client_version_minor;
-    client_info.client_version_patch = client_version_patch;
-    client_info.client_tcp_protocol_version = client_tcp_protocol_version;
-
-    client_info.connection_client_version_major = client_version_major;
-    client_info.connection_client_version_minor = client_version_minor;
-    client_info.connection_client_version_patch = client_version_patch;
-    client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
-
-    client_info.quota_key = quota_key;
-    client_info.interface = interface;
+    res->setForwardedFor(forwarded_for);
+    res->setClientName(client_name);
+    res->setClientVersion(client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
+    res->setConnectionClientVersion(client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
+    res->setClientInterface(interface);
 
     return res;
 }
@@ -1253,7 +1246,7 @@ void TCPHandler::receiveHello()
     }
 
     session = makeSession();
-    auto & client_info = session->getClientInfo();
+    const auto & client_info = session->getClientInfo();
 
 #if USE_SSL
     /// Authentication with SSL user certificate
@@ -1283,11 +1276,10 @@ void TCPHandler::receiveHello()
 void TCPHandler::receiveAddendum()
 {
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY)
-    {
         readStringBinary(quota_key, *in);
-        if (!is_interserver_mode)
-            session->getClientInfo().quota_key = quota_key;
-    }
+
+    if (!is_interserver_mode)
+        session->setQuotaClientKey(quota_key);
 }
 
 
@@ -1311,16 +1303,16 @@ void TCPHandler::receiveUnexpectedHello()
 void TCPHandler::sendHello()
 {
     writeVarUInt(Protocol::Server::Hello, *out);
-    writeStringBinary(DBMS_NAME, *out);
-    writeVarUInt(DBMS_VERSION_MAJOR, *out);
-    writeVarUInt(DBMS_VERSION_MINOR, *out);
+    writeStringBinary(VERSION_NAME, *out);
+    writeVarUInt(VERSION_MAJOR, *out);
+    writeVarUInt(VERSION_MINOR, *out);
     writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
         writeStringBinary(server_display_name, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
-        writeVarUInt(DBMS_VERSION_PATCH, *out);
+        writeVarUInt(VERSION_PATCH, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
     {
         auto rules = server.context()->getAccessControl().getPasswordComplexityRules();
@@ -1600,12 +1592,12 @@ void TCPHandler::receiveQuery()
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         /// Throw an exception if the passed settings violate the constraints.
-        query_context->checkSettingsConstraints(settings_changes);
+        query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     }
     else
     {
         /// Quietly clamp to the constraints if it's not an initial query.
-        query_context->clampToSettingsConstraints(settings_changes);
+        query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
     }
     query_context->applySettingsChanges(settings_changes);
 
