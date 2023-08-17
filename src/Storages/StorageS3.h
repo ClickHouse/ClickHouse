@@ -11,17 +11,18 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageS3Settings.h>
 
-#include <Processors/ISource.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Poco/URI.h>
-#include <IO/S3/getObjectInfo.h>
-#include <IO/CompressionMethod.h>
-#include <IO/SeekableReadBuffer.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
-#include <Storages/Cache/SchemaCache.h>
-#include <Storages/StorageConfiguration.h>
-#include <Storages/prepareReadingFromFormat.h>
+#    include <IO/CompressionMethod.h>
+#    include <IO/S3/getObjectInfo.h>
+#    include <IO/SeekableReadBuffer.h>
+#    include <Interpreters/Context.h>
+#    include <Interpreters/threadPoolCallbackRunner.h>
+#    include <Processors/Executors/PullingPipelineExecutor.h>
+#    include <Processors/ISource.h>
+#    include <Processors/Formats/IInputFormat.h>
+#    include <Storages/Cache/SchemaCache.h>
+#    include <Storages/StorageConfiguration.h>
+#    include <Storages/prepareReadingFromFormat.h>
+#    include <Poco/URI.h>
 
 namespace Aws::S3
 {
@@ -68,7 +69,7 @@ public:
             const S3::Client & client_,
             const S3::URI & globbed_uri_,
             ASTPtr query,
-            const Block & virtual_header,
+            const NamesAndTypesList & virtual_columns,
             ContextPtr context,
             KeysWithInfo * read_keys_ = nullptr,
             const S3Settings::RequestSettings & request_settings_ = {},
@@ -92,7 +93,7 @@ public:
             const String & bucket_,
             const S3Settings::RequestSettings & request_settings_,
             ASTPtr query,
-            const Block & virtual_header,
+            const NamesAndTypesList & virtual_columns,
             ContextPtr context,
             KeysWithInfo * read_keys = nullptr,
             std::function<void(FileProgress)> progress_callback_ = {});
@@ -333,7 +334,6 @@ private:
     Configuration configuration;
     std::mutex configuration_update_mutex;
     NamesAndTypesList virtual_columns;
-    Block virtual_block;
 
     String name;
     const bool distributed_processing;
@@ -347,7 +347,7 @@ private:
         bool distributed_processing,
         ContextPtr local_context,
         ASTPtr query,
-        const Block & virtual_block,
+        const NamesAndTypesList & virtual_columns,
         KeysWithInfo * read_keys = nullptr,
         std::function<void(FileProgress)> progress_callback = {});
 

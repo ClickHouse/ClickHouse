@@ -123,7 +123,7 @@ public:
     class DisclosedGlobIterator
     {
         public:
-            DisclosedGlobIterator(ContextPtr context_, const String & uri_);
+            DisclosedGlobIterator(const String & uri_, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
             StorageHDFS::PathWithInfo next();
         private:
             class Impl;
@@ -134,7 +134,7 @@ public:
     class URISIterator
     {
         public:
-            URISIterator(const std::vector<String> & uris_, ContextPtr context);
+            URISIterator(const std::vector<String> & uris_, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
             StorageHDFS::PathWithInfo next();
         private:
             class Impl;
