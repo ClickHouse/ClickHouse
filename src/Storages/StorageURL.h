@@ -1,17 +1,17 @@
 #pragma once
 
-#include <Poco/URI.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/ISource.h>
 #include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
-#include <Storages/IStorage.h>
-#include <Storages/StorageFactory.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
+#include <Processors/ISource.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/IStorage.h>
 #include <Storages/StorageConfiguration.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Poco/URI.h>
 
 
 namespace DB
@@ -88,6 +88,8 @@ protected:
     ASTPtr partition_by;
     bool distributed_processing;
 
+    NamesAndTypesList virtual_columns;
+
     virtual std::string getReadMethod() const;
 
     virtual std::vector<std::pair<std::string, std::string>> getReadURIParams(
@@ -146,7 +148,8 @@ public:
     class DisclosedGlobIterator
     {
     public:
-        DisclosedGlobIterator(const String & uri_, size_t max_addresses);
+        DisclosedGlobIterator(const String & uri_, size_t max_addresses, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
+
         String next();
         size_t size();
     private:

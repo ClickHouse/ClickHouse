@@ -93,7 +93,6 @@ private:
     std::shared_ptr<S3QueueFilesMetadata> files_metadata;
     Configuration configuration;
     NamesAndTypesList virtual_columns;
-    Block virtual_block;
     UInt64 reschedule_processing_interval_ms;
 
     std::optional<FormatSettings> format_settings;

@@ -8,7 +8,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 
-#include <IO/ParallelReadBuffer.h>
 #include <IO/SharedThreadPools.h>
 
 #include <Parsers/ASTCreateQuery.h>
@@ -18,7 +17,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <re2/re2.h>
 
-#include <azure/identity/managed_identity_credential.hpp>
 #include <azure/storage/common/storage_credential.hpp>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
@@ -29,7 +27,6 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/getVirtualsForStorage.h>
 #include <Storages/StorageURL.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Common/parseGlobs.h>
@@ -49,6 +46,11 @@ namespace CurrentMetrics
 {
     extern const Metric ObjectStorageAzureThreads;
     extern const Metric ObjectStorageAzureThreadsActive;
+}
+
+namespace ProfileEvents
+{
+    extern const Event EngineFileLikeReadFiles;
 }
 
 namespace DB
@@ -479,15 +481,7 @@ StorageAzureBlob::StorageAzureBlob(
     for (const auto & key : configuration.blobs_paths)
         objects.emplace_back(key);
 
-    auto default_virtuals = NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
-
-    auto columns = storage_metadata.getSampleBlock().getNamesAndTypesList();
-
-    virtual_columns = getVirtualsForStorage(columns, default_virtuals);
-    for (const auto & column : virtual_columns)
-        virtual_block.insert({column.type->createColumn(), column.type, column.name});
+    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 void StorageAzureBlob::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
@@ -684,13 +678,13 @@ Pipe StorageAzureBlob::read(
         /// Iterate through disclosed globs and make a source for each file
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::GlobIterator>(
             object_storage.get(), configuration.container, configuration.blob_path,
-            query_info.query, virtual_block, local_context, nullptr, local_context->getFileProgressCallback());
+            query_info.query, virtual_columns, local_context, nullptr, local_context->getFileProgressCallback());
     }
     else
     {
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::KeysIterator>(
             object_storage.get(), configuration.container, configuration.blobs_paths,
-            query_info.query, virtual_block, local_context, nullptr, local_context->getFileProgressCallback());
+            query_info.query, virtual_columns, local_context, nullptr, local_context->getFileProgressCallback());
     }
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
@@ -807,29 +801,12 @@ bool StorageAzureBlob::parallelizeOutputAfterReading(ContextPtr context) const
     return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration.format, context);
 }
 
-static void addPathToVirtualColumns(Block & block, const String & path, size_t idx)
-{
-    if (block.has("_path"))
-        block.getByName("_path").column->assumeMutableRef().insert(path);
-
-    if (block.has("_file"))
-    {
-        auto pos = path.find_last_of('/');
-        assert(pos != std::string::npos);
-
-        auto file = path.substr(pos + 1);
-        block.getByName("_file").column->assumeMutableRef().insert(file);
-    }
-
-    block.getByName("_idx").column->assumeMutableRef().insert(idx);
-}
-
 StorageAzureBlobSource::GlobIterator::GlobIterator(
     AzureObjectStorage * object_storage_,
     const std::string & container_,
     String blob_path_with_globs_,
     ASTPtr query_,
-    const Block & virtual_header_,
+    const NamesAndTypesList & virtual_columns_,
     ContextPtr context_,
     RelativePathsWithMetadata * outer_blobs_,
     std::function<void(FileProgress)> file_progress_callback_)
@@ -838,7 +815,7 @@ StorageAzureBlobSource::GlobIterator::GlobIterator(
     , container(container_)
     , blob_path_with_globs(blob_path_with_globs_)
     , query(query_)
-    , virtual_header(virtual_header_)
+    , virtual_columns(virtual_columns_)
     , outer_blobs(outer_blobs_)
     , file_progress_callback(file_progress_callback_)
 {
@@ -906,40 +883,28 @@ RelativePathWithMetadata StorageAzureBlobSource::GlobIterator::next()
         index = 0;
         if (!is_initialized)
         {
-            createFilterAST(new_batch.front().relative_path);
+            filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, getContext());
             is_initialized = true;
         }
 
         if (filter_ast)
         {
-            auto block = virtual_header.cloneEmpty();
-            for (size_t i = 0; i < new_batch.size(); ++i)
-                addPathToVirtualColumns(block, fs::path(container) / new_batch[i].relative_path, i);
+            std::vector<String> paths;
+            paths.reserve(new_batch.size());
+            for (auto & path_with_metadata : new_batch)
+                paths.push_back(fs::path(container) / path_with_metadata.relative_path);
 
-            VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), filter_ast);
-            const auto & idxs = typeid_cast<const ColumnUInt64 &>(*block.getByName("_idx").column);
-
-            blobs_with_metadata.clear();
-            for (UInt64 idx : idxs.getData())
-            {
-                if (file_progress_callback)
-                    file_progress_callback(FileProgress(0, new_batch[idx].metadata.size_bytes));
-                blobs_with_metadata.emplace_back(std::move(new_batch[idx]));
-                if (outer_blobs)
-                    outer_blobs->emplace_back(blobs_with_metadata.back());
-            }
+            VirtualColumnUtils::filterByPathOrFile(new_batch, paths, query, virtual_columns, getContext(), filter_ast);
         }
-        else
-        {
-            if (outer_blobs)
-                outer_blobs->insert(outer_blobs->end(), new_batch.begin(), new_batch.end());
 
-            blobs_with_metadata = std::move(new_batch);
-            if (file_progress_callback)
-            {
-                for (const auto & [_, info] : blobs_with_metadata)
-                    file_progress_callback(FileProgress(0, info.size_bytes));
-            }
+        if (outer_blobs)
+            outer_blobs->insert(outer_blobs->end(), new_batch.begin(), new_batch.end());
+
+        blobs_with_metadata = std::move(new_batch);
+        if (file_progress_callback)
+        {
+            for (const auto & [_, info] : blobs_with_metadata)
+                file_progress_callback(FileProgress(0, info.size_bytes));
         }
     }
 
@@ -949,28 +914,12 @@ RelativePathWithMetadata StorageAzureBlobSource::GlobIterator::next()
     return blobs_with_metadata[current_index];
 }
 
-
-void StorageAzureBlobSource::GlobIterator::createFilterAST(const String & any_key)
-{
-    if (!query || !virtual_header)
-        return;
-
-    /// Create a virtual block with one row to construct filter
-    /// Append "idx" column as the filter result
-    virtual_header.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
-
-    auto block = virtual_header.cloneEmpty();
-    addPathToVirtualColumns(block, fs::path(container) / any_key, 0);
-    VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast);
-}
-
-
 StorageAzureBlobSource::KeysIterator::KeysIterator(
     AzureObjectStorage * object_storage_,
     const std::string & container_,
     const Strings & keys_,
     ASTPtr query_,
-    const Block & virtual_header_,
+    const NamesAndTypesList & virtual_columns_,
     ContextPtr context_,
     RelativePathsWithMetadata * outer_blobs,
     std::function<void(FileProgress)> file_progress_callback)
@@ -978,37 +927,20 @@ StorageAzureBlobSource::KeysIterator::KeysIterator(
     , object_storage(object_storage_)
     , container(container_)
     , query(query_)
-    , virtual_header(virtual_header_)
+    , virtual_columns(virtual_columns_)
 {
     Strings all_keys = keys_;
 
-    /// Create a virtual block with one row to construct filter
-    if (query && virtual_header && !all_keys.empty())
+    auto filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, getContext());
+
+    if (filter_ast)
     {
-        /// Append "idx" column as the filter result
-        virtual_header.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
+        Strings paths;
+        paths.reserve(all_keys.size());
+        for (const auto & key : all_keys)
+            paths.push_back(fs::path(container) / key);
 
-        auto block = virtual_header.cloneEmpty();
-        addPathToVirtualColumns(block, fs::path(container) / all_keys.front(), 0);
-
-        VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast);
-
-        if (filter_ast)
-        {
-            block = virtual_header.cloneEmpty();
-            for (size_t i = 0; i < all_keys.size(); ++i)
-                addPathToVirtualColumns(block, fs::path(container) / all_keys[i], i);
-
-            VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), filter_ast);
-            const auto & idxs = typeid_cast<const ColumnUInt64 &>(*block.getByName("_idx").column);
-
-            Strings filtered_keys;
-            filtered_keys.reserve(block.rows());
-            for (UInt64 idx : idxs.getData())
-                filtered_keys.emplace_back(std::move(all_keys[idx]));
-
-            all_keys = std::move(filtered_keys);
-        }
+        VirtualColumnUtils::filterByPathOrFile(all_keys, paths, query, virtual_columns, getContext(), filter_ast);
     }
 
     for (auto && key : all_keys)
@@ -1049,22 +981,7 @@ Chunk StorageAzureBlobSource::generate()
             UInt64 num_rows = chunk.getNumRows();
             size_t chunk_size = reader.getInputFormat()->getApproxBytesReadForChunk();
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
-
-            const auto & file_path = reader.getPath();
-            for (const auto & virtual_column : requested_virtual_columns)
-            {
-                if (virtual_column.name == "_path")
-                {
-                    chunk.addColumn(virtual_column.type->createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
-                }
-                else if (virtual_column.name == "_file")
-                {
-                    size_t last_slash_pos = file_path.find_last_of('/');
-                    auto column = virtual_column.type->createColumnConst(num_rows, file_path.substr(last_slash_pos + 1));
-                    chunk.addColumn(column->convertToFullColumnIfConst());
-                }
-            }
-
+            VirtualColumnUtils::addRequestedPathAndFileVirtualsToChunk(chunk, requested_virtual_columns, reader.getPath());
             return chunk;
         }
 
@@ -1163,6 +1080,8 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
+    ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
+
     return ReaderHolder{fs::path(container) / current_key, std::move(read_buf), std::move(input_format), std::move(pipeline), std::move(current_reader)};
 }
 
@@ -1207,12 +1126,12 @@ ColumnsDescription StorageAzureBlob::getTableStructureFromData(
     else if (configuration.withGlobs())
     {
         file_iterator = std::make_shared<StorageAzureBlobSource::GlobIterator>(
-            object_storage, configuration.container, configuration.blob_path, nullptr, Block{}, ctx, &read_keys);
+            object_storage, configuration.container, configuration.blob_path, nullptr, NamesAndTypesList{}, ctx, &read_keys);
     }
     else
     {
         file_iterator = std::make_shared<StorageAzureBlobSource::KeysIterator>(
-            object_storage, configuration.container, configuration.blobs_paths, nullptr, Block{}, ctx, &read_keys);
+            object_storage, configuration.container, configuration.blobs_paths, nullptr, NamesAndTypesList{}, ctx, &read_keys);
     }
 
     std::optional<ColumnsDescription> columns_from_cache;

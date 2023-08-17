@@ -65,7 +65,7 @@ public:
     bool storesDataOnDisk() const override;
     Strings getDataPaths() const override;
 
-    NamesAndTypesList getVirtuals() const override;
+    NamesAndTypesList getVirtuals() const override { return virtual_columns; }
 
     static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read);
 
@@ -152,6 +152,8 @@ private:
     std::atomic<int32_t> readers_counter = 0;
     FileRenamer file_renamer;
     bool was_renamed = false;
+
+    NamesAndTypesList virtual_columns;
 };
 
 }

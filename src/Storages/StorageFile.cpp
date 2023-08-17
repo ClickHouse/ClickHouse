@@ -6,11 +6,13 @@
 #include <Storages/Distributed/DistributedAsyncInsertSource.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -64,6 +66,7 @@ namespace ProfileEvents
     extern const Event CreatedReadBufferOrdinary;
     extern const Event CreatedReadBufferMMap;
     extern const Event CreatedReadBufferMMapFailed;
+    extern const Event EngineFileLikeReadFiles;
 }
 
 namespace fs = std::filesystem;
@@ -699,6 +702,8 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     storage_metadata.setConstraints(args.constraints);
     storage_metadata.setComment(args.comment);
     setInMemoryMetadata(storage_metadata);
+
+    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 
@@ -721,9 +726,30 @@ public:
     {
     public:
         explicit FilesIterator(
-            const Strings & files_, std::vector<std::string> archives_, std::vector<std::pair<uint64_t, std::string>> files_in_archive_)
+            const Strings & files_,
+            std::vector<std::string> archives_,
+            std::vector<std::pair<uint64_t, std::string>> files_in_archive_,
+            ASTPtr query,
+            const NamesAndTypesList & virtual_columns,
+            ContextPtr context_)
             : files(files_), archives(std::move(archives_)), files_in_archive(std::move(files_in_archive_))
         {
+            auto filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, context_);
+            if (filter_ast)
+            {
+                if (files_in_archive.empty())
+                {
+                    VirtualColumnUtils::filterByPathOrFile(files, files, query, virtual_columns, context_, filter_ast);
+                }
+                else
+                {
+                    Strings paths;
+                    paths.reserve(files_in_archive.size());
+                    for (const auto & [_, file] : files_in_archive)
+                        paths.push_back(file);
+                    VirtualColumnUtils::filterByPathOrFile(files_in_archive, paths, query, virtual_columns, context_, filter_ast);
+                }
+            }
         }
 
         String next()
@@ -946,8 +972,9 @@ public:
                 });
 
                 pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
-
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
+
+                ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
             }
 
             Chunk chunk;
@@ -960,21 +987,7 @@ public:
                 progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
                 /// Enrich with virtual columns.
-
-                for (const auto & virtual_column : requested_virtual_columns)
-                {
-                    if (virtual_column.name == "_path")
-                    {
-                        chunk.addColumn(virtual_column.type->createColumnConst(num_rows, current_path)->convertToFullColumnIfConst());
-                    }
-                    else if (virtual_column.name == "_file")
-                    {
-                        size_t last_slash_pos = current_path.find_last_of('/');
-                        auto file_name = current_path.substr(last_slash_pos + 1);
-                        chunk.addColumn(virtual_column.type->createColumnConst(num_rows, file_name)->convertToFullColumnIfConst());
-                    }
-                }
-
+                VirtualColumnUtils::addRequestedPathAndFileVirtualsToChunk(chunk, requested_virtual_columns, current_path);
                 return chunk;
             }
 
@@ -1028,7 +1041,7 @@ private:
 Pipe StorageFile::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
@@ -1093,7 +1106,7 @@ Pipe StorageFile::read(
         files_in_archive_num = files_in_archive.size();
     }
 
-    auto files_iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, paths_to_archive, std::move(files_in_archive));
+    auto files_iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, paths_to_archive, std::move(files_in_archive), query_info.query, virtual_columns, context);
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
     size_t num_streams = max_num_streams;
@@ -1646,14 +1659,6 @@ void registerStorageFile(StorageFactory & factory)
                 return std::make_shared<StorageFile>(source_path, factory_args.getContext()->getUserFilesPath(), storage_args);
         },
         storage_features);
-}
-
-
-NamesAndTypesList StorageFile::getVirtuals() const
-{
-    return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
 SchemaCache & StorageFile::getSchemaCache(const ContextPtr & context)
