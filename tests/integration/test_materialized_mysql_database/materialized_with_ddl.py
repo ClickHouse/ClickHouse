@@ -2637,3 +2637,37 @@ def create_table_as_select(clickhouse_node, mysql_node, service_name):
 
     clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
     mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+
+
+def table_with_indexes(clickhouse_node, mysql_node, service_name):
+    db = "table_with_indexes"
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db}")
+
+    mysql_node.query(
+        f"CREATE TABLE {db}.t1(id INT NOT NULL PRIMARY KEY,"
+        f"data varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL) ENGINE = InnoDB"
+    )
+
+    mysql_node.query(f"INSERT INTO {db}.t1 VALUES(1, 'some test string 1')")
+    mysql_node.query(f"INSERT INTO {db}.t1 VALUES(2, 'some test string 2')")
+
+    clickhouse_node.query(
+        f"""
+        CREATE DATABASE {db} ENGINE = MaterializeMySQL('{service_name}:3306', '{db}', 'root', 'clickhouse')
+        TABLE OVERRIDE t1 (COLUMNS (
+            INDEX data_idx data TYPE ngrambf_v1(5, 65536, 4, 0) GRANULARITY 1
+        ))
+        """
+    )
+
+    check_query(
+        clickhouse_node,
+        "SELECT data_uncompressed_bytes FROM system.data_skipping_indices WHERE "
+        "database = 'table_with_indexes' and table = 't1' and name = 'data_idx'",
+        "65536\n",
+    )
+
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
