@@ -45,7 +45,7 @@ inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataType
     return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeGeneral, Trait>>(argument_type, parameters, std::forward<TArgs>(args)...);
 }
 
-static size_t getMaxArraySize()
+size_t getMaxArraySize()
 {
     if (auto context = Context::getGlobalContextInstance())
         return context->getServerSettings().aggregate_function_group_array_max_element_size;
