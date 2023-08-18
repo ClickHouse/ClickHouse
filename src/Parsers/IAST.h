@@ -195,7 +195,7 @@ public:
         bool one_line;
         bool always_quote_identifiers = false;
         IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
-        bool show_secrets = false; /// Show secret parts of the AST (e.g. passwords, encryption keys).
+        bool show_secrets; /// Show secret parts of the AST (e.g. passwords, encryption keys).
 
         // Newline or whitespace.
         char nl_or_ws;
