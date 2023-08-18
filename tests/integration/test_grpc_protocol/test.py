@@ -352,9 +352,13 @@ def test_authentication():
 
 
 def test_logs():
-    logs = query_and_get_logs("SELECT 1", settings={"send_logs_level": "debug"})
-    assert "SELECT 1" in logs
-    assert "Read 1 rows" in logs
+    query = "SELECT has(groupArray(number), 42) FROM numbers(100000) SETTINGS max_block_size=10000"
+    logs = query_and_get_logs(
+        query,
+        settings={"send_logs_level": "debug"},
+    )
+    assert query in logs
+    assert "Read 100000 rows" in logs
     assert "Peak memory usage" in logs
 
 
