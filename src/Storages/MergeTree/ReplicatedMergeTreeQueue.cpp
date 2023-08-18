@@ -866,7 +866,7 @@ ActiveDataPartSet getPartNamesToMutate(
 
 }
 
-void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
+void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallbackPtr watch_callback)
 {
     std::lock_guard lock(update_mutations_mutex);
 
