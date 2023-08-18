@@ -211,7 +211,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
 String PreparedSets::toString(const PreparedSets::Hash & key, const DataTypes & types)
 {
     WriteBufferFromOwnString buf;
-    buf << "__set_" << key.first << "_" << key.second;
+    buf << "__set_" << DB::toString(key);
     if (!types.empty())
     {
         buf << "(";

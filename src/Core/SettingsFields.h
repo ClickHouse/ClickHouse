@@ -428,9 +428,8 @@ constexpr auto getEnumValues()
         auto it = map.find(value); \
         if (it != map.end()) \
             return it->second; \
-        throw Exception::createDeprecated( \
-            "Unexpected value of " #NEW_NAME ":" + std::to_string(std::underlying_type<EnumType>::type(value)), \
-            ERROR_CODE_FOR_UNEXPECTED_NAME); \
+        throw Exception(ERROR_CODE_FOR_UNEXPECTED_NAME, \
+            "Unexpected value of " #NEW_NAME ":{}", std::to_string(std::underlying_type<EnumType>::type(value))); \
     } \
     \
     typename SettingField##NEW_NAME::EnumType SettingField##NEW_NAME##Traits::fromString(std::string_view str) \
@@ -444,7 +443,7 @@ constexpr auto getEnumValues()
         auto it = map.find(str); \
         if (it != map.end()) \
             return it->second; \
-        String msg = "Unexpected value of " #NEW_NAME ": '" + String{str} + "'. Must be one of ["; \
+        String msg; \
         bool need_comma = false; \
         for (auto & name : map | boost::adaptors::map_keys) \
         { \
@@ -452,8 +451,7 @@ constexpr auto getEnumValues()
                 msg += ", "; \
             msg += "'" + String{name} + "'"; \
         } \
-        msg += "]"; \
-        throw Exception::createDeprecated(msg, ERROR_CODE_FOR_UNEXPECTED_NAME); \
+        throw Exception(ERROR_CODE_FOR_UNEXPECTED_NAME, "Unexpected value of " #NEW_NAME ": '{}'. Must be one of [{}]", String{str}, msg); \
     }
 
 // Mostly like SettingFieldEnum, but can have multiple enum values (or none) set at once.
