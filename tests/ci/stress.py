@@ -302,7 +302,7 @@ if __name__ == "__main__":
             have_long_running_queries = prepare_for_hung_check(args.drop_databases)
         except Exception as ex:
             have_long_running_queries = True
-            logging.error("Failed to prepare for hung check %s", str(ex))
+            logging.error("Failed to prepare for hung check: %s", str(ex))
         logging.info("Checking if some queries hung")
         cmd = " ".join(
             [

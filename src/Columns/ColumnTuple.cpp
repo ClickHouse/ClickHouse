@@ -171,7 +171,7 @@ void ColumnTuple::popBack(size_t n)
         column->popBack(n);
 }
 
-StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
 {
     StringRef res(begin, 0);
     for (const auto & column : columns)
