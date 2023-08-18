@@ -1,4 +1,5 @@
--- Tags: no-fasttest, no-ubsan, no-cpu-aarch64, no-upgrade-check
+-- Tags: no-fasttest
+-- no-fasttest because needs usearch lib
 
 SET allow_experimental_usearch_index = 1;
 SET allow_experimental_analyzer = 0;
