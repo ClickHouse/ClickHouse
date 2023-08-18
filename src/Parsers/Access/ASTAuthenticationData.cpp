@@ -131,7 +131,6 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
 
     if (password && !settings.show_secrets)
     {
-        prefix += " `[HIDDEN]'";
         password = false;
         salt = false;
         if (type)
@@ -155,6 +154,9 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
     {
         settings.ostr << " ";
         children[0]->format(settings);
+    }
+    else{
+        settings.ostr << " '[HIDDEN]'";
     }
 
     if (salt)
