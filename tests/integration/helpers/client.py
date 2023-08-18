@@ -182,7 +182,8 @@ class CommandRequest:
         # we suppress stderror on client becase sometimes thread sanitizer
         # can print some debug information there
         env = {}
-        env["TSAN_OPTIONS"] = "verbosity=0"
+        env["ASAN_OPTIONS"] = "use_sigaltstack=0"
+        env["TSAN_OPTIONS"] = "use_sigaltstack=0 verbosity=0"
         self.process = sp.Popen(
             command,
             stdin=stdin_file,

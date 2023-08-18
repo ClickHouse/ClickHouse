@@ -371,6 +371,12 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
     const auto & partition_key_sample = metadata_snapshot->getPartitionKey().sample_block;
     size_t key_size = partition_key_sample.columns();
 
+    // In some cases we create empty parts and then value is empty.
+    if (value.empty())
+    {
+        writeCString("tuple()", out);
+        return;
+    }
     if (key_size == 0)
     {
         writeCString("tuple()", out);
