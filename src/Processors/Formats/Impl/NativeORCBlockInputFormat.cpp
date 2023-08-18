@@ -71,7 +71,7 @@ std::unique_ptr<orc::InputStream> asORCInputStream(ReadBuffer & in, const Format
     bool has_file_size = isBufferWithFileSize(in);
     auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&in);
 
-    if (has_file_size && seekable_in && settings.seekable_read)
+    if (has_file_size && seekable_in && settings.seekable_read && seekable_in->checkIfActuallySeekable())
         return std::make_unique<ORCInputStream>(*seekable_in, getFileSizeFromReadBuffer(in));
 
     // fallback to loading the entire file in memory
