@@ -391,7 +391,7 @@ static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UI
 static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
 {
     auto src_copy = src_uuid;
-    transformEndianness<std::endian::native, std::endian::little>(src_copy);
+    transformEndianness<std::endian::little, std::endian::native>(src_copy);
 
     const UInt128 & src = src_copy.toUnderType();
     UInt128 & dst = dst_uuid.toUnderType();
