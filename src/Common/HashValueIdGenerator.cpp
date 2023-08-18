@@ -4,12 +4,50 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/HashValueIdGenerator.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+void HashValueIdGenerator::initialize(const IColumn * col)
+{
+    is_nullable = col->isNullable();
+    current_assigned_value_id += is_nullable;
+
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+    const IColumn * nested_col = col;
+    if (col->isNullable())
+        nested_col = typeid_cast<const ColumnNullable *>(col);
+    DB::WhichDataType which_type(nested_col->getDataType());
+
+    if (which_type.isString())
+    {
+        const auto * str_col = typeid_cast<const ColumnString *>(nested_col);
+        const auto & offsets = str_col->getOffsets();
+        if (!str_col->empty() && offsets.back() / str_col->size() <= 9)
+        {
+            could_fitinto_cache = true;
+        }
+    }
+    else if (which_type.isFixedString())
+    {
+        const auto * fixed_str_col = typeid_cast<const ColumnFixedString *>(nested_col);
+        if (fixed_str_col->getN() <= 8)
+        {
+            could_fitinto_cache = true;
+        }
+    }
+    else if (which_type.isNativeInt() || which_type.isNativeUInt() || which_type.isFloat() || which_type.isLowCardinality())
+    {
+        could_fitinto_cache = true;
+    }
+#endif
+
+    has_initialized = true;
 }
 
 #define APPLY_FOR_NUMBER_COLUMN(Type, col, null_map) \
@@ -23,6 +61,11 @@ namespace ErrorCodes
 
 void HashValueIdGenerator::computeValueId(const IColumn * col, std::vector<UInt64> & value_ids)
 {
+    if (!has_initialized) [[unlikely]]
+    {
+        initialize(col);
+    }
+
     using Date = UInt16;
     using Date32 = UInt32;
     using DateTime = UInt32;
@@ -37,8 +80,7 @@ void HashValueIdGenerator::computeValueId(const IColumn * col, std::vector<UInt6
     if (const auto * str_col = typeid_cast<const ColumnString *>(nested_col))
     {
 #if defined(__AVX512F__) && defined(__AVX512BW__)
-        const auto & offsets = str_col->getOffsets();
-        if (!str_col->empty() && offsets.back() / str_col->size() <= 9)
+        if (could_fitinto_cache)
         {
             if (null_map)
                 computeValueIdForShortString<true>(null_map, str_col, value_ids);

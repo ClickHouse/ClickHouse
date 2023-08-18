@@ -35,30 +35,33 @@ class HashMethodContext;
 class HashValueIdGenerator
 {
 public:
-    explicit HashValueIdGenerator(AdaptiveKeysHolder::State * state_) : state(state_) {}
+    explicit HashValueIdGenerator(AdaptiveKeysHolder::State * state_, size_t max_distinct_values_ = 256)
+        : state(state_), max_distinct_values(max_distinct_values_)
+    {
+    }
     void computeValueId(const IColumn * col, std::vector<UInt64> & value_ids);
 private:
     AdaptiveKeysHolder::State * state;
+    const size_t max_distinct_values;
+    bool has_initialized = false;
+    bool is_nullable = false;
     /// To use StringHashMap, need to make the memory address padded.
     static constexpr size_t pad_right = integerRoundUp(PADDING_FOR_SIMD - 1, 1);
     static constexpr size_t pad_left = integerRoundUp(PADDING_FOR_SIMD, 1);
     Arena pool;
-    // Each key will take 1 byte of the final value_id.
-    const size_t max_distinct_values= 256;
+
     using MAP= StringHashMap<UInt64>;
     MAP m_value_ids;
-    /// value_id assignment rules:
-    /// - 1 is reserved for null values.
-    /// - [2, 9] is reserved for short keys. When this is overflow, put keys in following.
-    /// - [10, 255] is dynamically assigned for long keys.
+
+    UInt64 current_assigned_value_id = 1;
     #if defined(__AVX512F__) && defined(__AVX512BW__)
-    UInt64 current_assigned_value_id = 10;
+    bool could_fitinto_cache = false;
     static constexpr size_t low_cardinality_cache_size = 8;
     size_t low_cardinality_cache_index = 0;
     alignas(64) UInt64 low_cardinality_cache_values[low_cardinality_cache_size] = {0};
-    #else
-    UInt64 current_assigned_value_id = 2;
     #endif
+
+    void initialize(const IColumn * col);
 
     ALWAYS_INLINE void assignValueIdDynamically(const UInt8 * pos, size_t len, UInt64 & current_col_value_id)
     {
@@ -103,7 +106,7 @@ private:
             if (cache_pos >= 8) [[unlikely]]
             {
                 /// check next cache line
-                value_id = low_cardinality_cache_index + 2;
+                value_id = low_cardinality_cache_index + 1 + is_nullable;
                 low_cardinality_cache_values[low_cardinality_cache_index] = value;
                 low_cardinality_cache_index += 1;
 
@@ -114,7 +117,7 @@ private:
             }
             else
             {
-                value_id = cache_pos + 2;
+                value_id = cache_pos + 1 + is_nullable;
                 return true;
             }
         }
@@ -238,7 +241,7 @@ private:
         UInt64 * value_id = value_ids.data();
         const UInt8 * pos = chars.data();
 #if defined(__AVX512F__) && defined(__AVX512BW__)
-        if (str_len <= 8)
+        if (could_fitinto_cache)
         {
             auto value_mask =  (-1UL) >> ((sizeof(UInt64) - str_len) << 3);
             for (size_t i = 0, n = col->size(); i < n; ++i)
@@ -312,54 +315,76 @@ private:
 
         if (state->hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
         {
-            for (size_t i = 0, n = num_col->size(); i < n; ++i)
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+            if (could_fitinto_cache)
             {
                 UInt64 current_col_value_id = 0;
-                if constexpr (is_nullable)
+                auto assign_value = [&]()
                 {
-                    if ((*null_map).getData()[i])
-                    {
-                        current_col_value_id = 1;
-                    }
-                    else
-                    {
-#if defined(__AVX512F__) && defined(__AVX512BW__)
-                        if constexpr (sizeof(ElementType) <= 8)
-                        {
-                            if (!tryAssignValueIdInLowCardinalityCache(
-                                    static_cast<UInt64>(*reinterpret_cast<const ElementType *>(pos)), current_col_value_id, pos, str_len))
-                                assignValueIdDynamically(pos, str_len, current_col_value_id);
-                        }
-                        else
-#endif
-                        {
-                            assignValueIdDynamically(pos, str_len, current_col_value_id);
-                        }
-                    }
-                }
-                else
-                {
-#if defined(__AVX512F__) && defined(__AVX512BW__)
-                    if constexpr (sizeof(ElementType) <= 8)
+                    if constexpr (sizeof(ElementType) < sizeof(UInt64))
                     {
                         if (!tryAssignValueIdInLowCardinalityCache(
                                 static_cast<UInt64>(*reinterpret_cast<const ElementType *>(pos)), current_col_value_id, pos, str_len))
                             assignValueIdDynamically(pos, str_len, current_col_value_id);
                     }
                     else
-#endif
                     {
                         assignValueIdDynamically(pos, str_len, current_col_value_id);
                     }
+                };
+                for (size_t i = 0, n = num_col->size(); i < n; ++i)
+                {
+                    current_col_value_id = 0;
+                    if constexpr (is_nullable)
+                    {
+                        if ((*null_map).getData()[i])
+                        {
+                            current_col_value_id = 1;
+                        }
+                        else
+                        {
+                           assign_value(); 
+                        }
+                    }
+                    else
+                    {
+                        assign_value();
+                    }
+                    *value_id = *value_id * max_distinct_values + current_col_value_id;
+                    value_id++;
+                    pos += str_len;
                 }
-                *value_id = *value_id * max_distinct_values + current_col_value_id;
-                value_id++;
-                pos += str_len;
             }
-        }
-        if (current_assigned_value_id > max_distinct_values)
-        {
-            state->hash_mode = AdaptiveKeysHolder::State::HASH;
+            else
+#endif
+            {
+                for (size_t i = 0, n = num_col->size(); i < n; ++i)
+                {
+                    UInt64 current_col_value_id = 0;
+                    if constexpr (is_nullable)
+                    {
+                        if ((*null_map).getData()[i])
+                        {
+                            current_col_value_id = 1;
+                        }
+                        else
+                        {
+                            assignValueIdDynamically(pos, str_len, current_col_value_id);
+                        }
+                    }
+                    else
+                    {
+                        assignValueIdDynamically(pos, str_len, current_col_value_id);
+                    }
+                    *value_id = *value_id * max_distinct_values + current_col_value_id;
+                    value_id++;
+                    pos += str_len;
+                }
+            }
+            if (current_assigned_value_id > max_distinct_values)
+            {
+                state->hash_mode = AdaptiveKeysHolder::State::HASH;
+            }
         }
     }
 

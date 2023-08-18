@@ -794,10 +794,12 @@ struct HashMethodKeysAdaptive
         }
         if (value_id_generators_state->value_id_generators.empty())
         {
+            auto max_value_id_num_for_key = max_value_id_number/key_columns.size();
+            max_value_id_num_for_key = 256 > max_value_id_num_for_key ? 256 : max_value_id_num_for_key;
             for (size_t i = 0, n = key_columns.size(); i < n; ++i)
             {
                 value_id_generators_state->value_id_generators.emplace_back(
-                    std::make_unique<HashValueIdGenerator>(&(value_id_generators_state->shared_keys_holder_state)));
+                    std::make_unique<HashValueIdGenerator>(&(value_id_generators_state->shared_keys_holder_state), max_value_id_num_for_key));
             }
         }
 
