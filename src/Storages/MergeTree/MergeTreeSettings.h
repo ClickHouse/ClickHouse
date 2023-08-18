@@ -126,7 +126,7 @@ struct Settings;
     M(UInt64, geo_replication_control_leader_election_period_ms, 10*1000, "If there is no region leader, how frequent should this replica trigger a leader election", 0) \
     M(Seconds, geo_replication_control_leader_wait, 10, "When the target part is not yet on leader, how long follower should wait before try executing the log entry again", 0) \
     M(Seconds, geo_replication_control_leader_wait_timeout, 300, "Maximum time the follower should wait the leader to execute fetch, if timeout then follower will fetch from any replica", 0) \
-    M(Bool, fetch_merged_part_within_region_only, true, "If true, alway fetching merged parts from same region only, unless the local merge result in inconsistent part and need to fetch from somewhere to bring all replicas to a consistent state", 0) \
+    M(Bool, fetch_merged_part_within_region_only, true, "If true, always fetching merged parts from same region only, unless the local merge result in inconsistent part and need to fetch from somewhere to bring all replicas to a consistent state", 0) \
     \
     /** Check delay of replicas settings. */ \
     M(UInt64, min_relative_delay_to_measure, 120, "Calculate relative replica delay only if absolute delay is not less that this value.", 0) \
