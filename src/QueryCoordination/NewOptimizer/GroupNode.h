@@ -6,17 +6,25 @@
 namespace DB
 {
 
-using AlternativeProperties = std::vector<std::vector<PhysicalProperties>>;
+using ChildrenProp = std::vector<PhysicalProperties>;
 
-using OutPutPropAndAlternativeRequiredChildProp = std::unordered_map<PhysicalProperties, AlternativeProperties, PhysicalProperties::HashFunction>;
+using AlternativeChildrenProp = std::vector<ChildrenProp>;
 
-using OutPutPropAndRequiredChildProp = std::unordered_map<PhysicalProperties, std::vector<PhysicalProperties>, PhysicalProperties::HashFunction>;
+using PropAndAlternativeChildrenProp = std::unordered_map<PhysicalProperties, AlternativeChildrenProp, PhysicalProperties::HashFunction>;
 
 class Group;
 
 class GroupNode
 {
 public:
+    struct ChildrenPropCost
+    {
+        std::vector<PhysicalProperties> child_prop;
+        Float64 cost;
+    };
+
+    using PropAndChildrenProp = std::unordered_map<PhysicalProperties, ChildrenPropCost, PhysicalProperties::HashFunction>;
+
     GroupNode() = default;
 
     explicit GroupNode(QueryPlanStepPtr step_) : step(step_) {}
@@ -38,7 +46,7 @@ public:
         return children.size();
     }
 
-    const std::vector<Group *> getChildren() const
+    std::vector<Group *> getChildren() const
     {
         return children;
     }
@@ -53,20 +61,9 @@ public:
         return step;
     }
 
-    void addLowestCostChildPropertyMap(const PhysicalProperties & physical_properties, const std::vector<PhysicalProperties> & best_child_properties)
-    {
-        best_prop_map[physical_properties] = best_child_properties;
-    }
+    void updateBestChild(const PhysicalProperties & physical_properties, const std::vector<PhysicalProperties> & child_properties, Float64 child_cost);
 
-    const std::vector<PhysicalProperties> & getChildProperties(const PhysicalProperties & physical_properties)
-    {
-        return best_prop_map[physical_properties];
-    }
-
-    OutPutPropAndRequiredChildProp & getOutPutPropAndRequiredChildProp()
-    {
-        return best_prop_map;
-    }
+    const std::vector<PhysicalProperties> & getChildrenProp(const PhysicalProperties & physical_properties);
 
     bool isEnforceNode() const
     {
@@ -94,7 +91,7 @@ private:
 
     std::vector<Group *> children;
 
-    OutPutPropAndRequiredChildProp best_prop_map; /// output properties and input properties
+    PropAndChildrenProp prop_to_best_child; /// output properties and input properties
 };
 
 }

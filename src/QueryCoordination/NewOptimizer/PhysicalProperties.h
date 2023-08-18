@@ -18,6 +18,20 @@ public:
         Hashed = 4,
     };
 
+    static String distributionType(DistributionType type)
+    {
+        switch (type)
+        {
+            case DistributionType::Any:
+                return "Any";
+            case DistributionType::Singleton:
+                return "Singleton";
+            case DistributionType::Replicated:
+                return "Replicated";
+            case DistributionType::Hashed:
+                return "Hashed";
+        }
+    }
 
     struct Distribution
     {
@@ -61,7 +75,7 @@ public:
 
     String toString() const
     {
-        return "distribution type: " + std::to_string(distribution.type);
+        return "distribution type: " + distributionType(distribution.type);
     }
 
 

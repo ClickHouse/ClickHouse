@@ -55,10 +55,14 @@ Float64 calcCost(MergingAggregatedStep & /*step*/)
     return 1;
 };
 
-Float64 calcCost(ExchangeDataStep & /*step*/)
+Float64 calcCost(ExchangeDataStep & step)
 {
     /// TODO get rows, cardinality by statistics
     /// TODO by type
+    if (step.getDistributionType() == PhysicalProperties::DistributionType::Replicated)
+    {
+        return 3;
+    }
     return 1;
 };
 
@@ -76,6 +80,23 @@ Float64 calcCost(UnionStep & /*step*/)
 {
     return 1;
 };
+
+Float64 calcCost(LimitStep & step)
+{
+    if (step.getStepDescription().contains("preliminary LIMIT"))
+    {
+        return 1;
+    }
+    else if (step.getStepDescription().contains("final LIMIT"))
+    {
+        return 1;
+    }
+    else
+    {
+        return 3;
+    }
+};
+
 
 
 Float64 calcCost(QueryPlanStepPtr step)
@@ -107,6 +128,10 @@ Float64 calcCost(QueryPlanStepPtr step)
     else if (auto * exchange_step = dynamic_cast<ExchangeDataStep *>(step.get()))
     {
         return calcCost(*exchange_step);
+    }
+    else if (auto * limit_step = dynamic_cast<LimitStep *>(step.get()))
+    {
+        return calcCost(*limit_step);
     }
 
     //    else if (dynamic_cast<CreatingSetStep *>(root_node.step.get()))

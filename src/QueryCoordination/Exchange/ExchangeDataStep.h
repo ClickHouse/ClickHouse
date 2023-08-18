@@ -28,6 +28,7 @@ public:
     ExchangeDataStep(PhysicalProperties::DistributionType type_, const DataStream & data_stream)
         : ISourceStep(data_stream), type(type_)
     {
+        setStepDescription(PhysicalProperties::distributionType(type));
     }
 
     String getName() const override { return "ExchangeData"; }
@@ -48,6 +49,16 @@ public:
     {
         sort_info = sort_info_;
         has_sort_info = true;
+    }
+
+    bool hasSortInfo() const
+    {
+        return has_sort_info;
+    }
+
+    SortDescription getSortDescription() const
+    {
+        return sort_info.result_description;
     }
 
     PhysicalProperties::DistributionType getDistributionType()

@@ -3,6 +3,8 @@
 #include <QueryCoordination/NewOptimizer/derivationProperties.h>
 #include <QueryCoordination/NewOptimizer/Cost/CostCalc.h>
 #include <stack>
+#include <Common/typeid_cast.h>
+
 
 namespace DB
 {
@@ -21,7 +23,7 @@ void Memo::addPlanNodeToGroup(const QueryPlan::Node & node, Group & target_group
     /// get logical equivalence child
     const auto children = target_group.getOneGroupNode().getChildren();
 
-    if (node.children.size())
+    if (!node.children.empty())
     {
         for (auto * child : node.children)
         {
@@ -45,7 +47,7 @@ Group & Memo::buildGroup(const QueryPlan::Node & node, const std::vector<Group *
 
     group_node.setId(++group_node_id_counter);
 
-    if (node.children.size())
+    if (!node.children.empty())
     {
         for (auto * child : node.children)
         {
@@ -128,10 +130,20 @@ void Memo::transform(Group & group, std::unordered_map<Group *, std::vector<SubQ
     for (const auto & group_node : group_nodes)
     {
         const auto & step = group_node.getStep();
-        auto sub_query_plans = QueryPlanOptimizations::trySplitAggregation(step, context);
 
-        if (!sub_query_plans.empty())
-            group_transformed_node.emplace(&group, std::move(sub_query_plans));
+        const auto & optimizations = NewOptimizer::getOptimizations();
+
+        /// Apply all optimizations.
+        for (const auto & optimization : optimizations)
+        {
+            if (!optimization.apply)
+                continue;
+
+            auto sub_query_plans = optimization.apply(step, context);
+
+            if (!sub_query_plans.empty())
+                group_transformed_node.emplace(&group, std::move(sub_query_plans));
+        }
 
         for (auto * child_group : group_node.getChildren())
         {
@@ -153,38 +165,55 @@ Float64 Memo::enforce(Group & group, const PhysicalProperties & required_propert
 
     std::vector<std::pair<GroupNode, PhysicalProperties>> enforced_nodes_child_prop;
 
+    bool is_root_group = &group == root_group;
+
     for (auto & group_node : group_nodes)
     {
-        auto output_prop_required_child_prop = DB::derivationProperties(group_node.getStep()); /// TODO cache
+        if (group_node.isEnforceNode())
+            continue;
 
-        for (auto & [output_properties, required_child_prop] : output_prop_required_child_prop)
+        PropAndAlternativeChildrenProp prop_required_child_prop;
+        if (is_root_group)
         {
-            /// every alternative prop
+            PropAndAlternativeChildrenProp res;
+            PhysicalProperties properties{.distribution = {.type = PhysicalProperties::DistributionType::Singleton}};
+            AlternativeChildrenProp alternative_properties;
+            for (size_t j = 0; j < group_node.getChildren().size(); ++j)
+            {
+                std::vector<PhysicalProperties> required_child_prop;
+                required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
+                alternative_properties.emplace_back(required_child_prop);
+            }
+            res[properties] = alternative_properties;
+            prop_required_child_prop = std::move(res);
+        }
+        else
+        {
+            prop_required_child_prop = DB::derivationProperties(group_node.getStep()); /// TODO cache
+        }
+
+        for (auto & [output_properties, required_child_prop] : prop_required_child_prop)
+        {
             Float64 min_cost = std::numeric_limits<Float64>::max();
-            size_t min_cost_index = 0;
+            /// every alternative prop
             for (size_t i = 0; i < required_child_prop.size(); ++i)
             {
                 Float64 cost = 0;
-                auto & child_groups = group_node.getChildren();
+                const auto & child_groups = group_node.getChildren();
                 for (size_t j = 0; j < group_node.getChildren().size(); ++j)
                 {
                     cost += enforce(*child_groups[j], required_child_prop[i][j]);
                     LOG_DEBUG(log, "Enforced end cost group id {}, {}, output_properties {}, required_child_prop {}", group.getId(), group_node.getStep()->getName(), output_properties.toString(), required_child_prop[i][j].toString());
                 }
-                if (cost < min_cost)
-                {
-                    min_cost = cost;
-                    min_cost_index = i;
-                }
+                min_cost = std::min(cost, min_cost);
+                group_node.updateBestChild(output_properties, required_child_prop.empty() ? std::vector<PhysicalProperties>() : required_child_prop[i], cost);
             }
 
-            /// TODO calc cost for group_node cost + min_cost(child total cost) = total cost
             Float64 total_cost = calcCost(group_node.getStep()) + (required_child_prop.empty() ? 0 : min_cost);
 
             LOG_DEBUG(log, "Group id {}, {}, output_properties {}, total cost {}", group.getId(), group_node.getStep()->getName(), output_properties.toString(), total_cost);
 
-            group_node.addLowestCostChildPropertyMap(output_properties, required_child_prop.empty() ? std::vector<PhysicalProperties>() : required_child_prop[min_cost_index]); /// need keep lowest cost
-            group.addLowestCostGroupNode(output_properties, &group_node, total_cost); /// need keep lowest cost
+            group.updatePropBestNode(output_properties, &group_node, total_cost); /// need keep lowest cost
 
             if (!output_properties.satisfy(required_properties))
             {
@@ -213,6 +242,25 @@ Float64 Memo::enforce(Group & group, const PhysicalProperties & required_propert
                         break;
                 }
 
+                if (!output_properties.sort_description.empty())
+                {
+                    auto * sorting_step = typeid_cast<SortingStep *>(group_node.getStep().get());
+                    if (sorting_step)
+                    {
+                        const SortDescription & sort_description = sorting_step->getSortDescription();
+                        const UInt64 limit = sorting_step->getLimit();
+                        const auto max_block_size = context->getSettingsRef().max_block_size;
+                        const auto exact_rows_before_limit = context->getSettingsRef().exact_rows_before_limit;
+
+                        ExchangeDataStep::SortInfo sort_info{
+                            .max_block_size = max_block_size,
+                            .always_read_till_end = exact_rows_before_limit,
+                            .limit = limit,
+                            .result_description = sort_description};
+                        exchange_step->setSortInfo(sort_info);
+                    }
+                }
+
                 GroupNode group_enforce_node(exchange_step, true);
 
                 group_enforce_node.setId(++group_node_id_counter);
@@ -227,56 +275,58 @@ Float64 Memo::enforce(Group & group, const PhysicalProperties & required_propert
         // GroupNode group_enforce_singleton_node(exchange_step);
         auto & added_node = group.addGroupNode(group_enforce_node);
 
-        /// TODO calc cost for group_enforce_singleton_node cost + group->getCost(output_properties) = total cost
-        auto child_cost = group.getCost(output_properties);
-
-        if (child_cost == 0)
-        {
-            child_cost = 0;
-        }
+        auto child_cost = group.getCostByProp(output_properties);
 
         Float64 total_cost = calcCost(added_node.getStep()) + child_cost;
-        added_node.addLowestCostChildPropertyMap(required_properties, {output_properties});
-        group.addLowestCostGroupNode(required_properties, &added_node, total_cost);
+        added_node.updateBestChild(required_properties, {output_properties}, child_cost);
+        group.updatePropBestNode(required_properties, &added_node, total_cost);
     }
 
     /// extract plan
-    Float64 lowest_cost = group.getLowestCost(required_properties);
+    Float64 lowest_cost = group.getSatisfyBestCost(required_properties);
 
     LOG_DEBUG(log, "Group id {}, required_properties {}, lowest cost {}", group.getId(), required_properties.toString(), lowest_cost);
     return lowest_cost;
 }
 
-QueryPlan Memo::extractPlan()
+SubQueryPlan Memo::extractPlan()
 {
-    return extractPlan(*root_group, PhysicalProperties{.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
+    SubQueryPlan sub_plan = extractPlan(*root_group, PhysicalProperties{.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
+
+    WriteBufferFromOwnString buffer;
+    SubQueryPlan::ExplainPlanOptions settings;
+    sub_plan.explainPlan(buffer, settings);
+
+    LOG_INFO(log, "extractPlan dump: {}", buffer.str());
+
+    return sub_plan;
 }
 
-QueryPlan Memo::extractPlan(Group & group, const PhysicalProperties & required_properties)
+SubQueryPlan Memo::extractPlan(Group & group, const PhysicalProperties & required_properties)
 {
-    const auto & group_node_properties = group.getBestGroupNode(required_properties);
-    auto & group_node = *group_node_properties.first;
+    const auto & properties_group_node = group.getSatisfyBestGroupNode(required_properties);
+    auto & group_node = *properties_group_node.second.group_node;
     LOG_DEBUG(log, "Best node: group id {}, {}, required_properties {}", group.getId(), group_node.getStep()->getName(), required_properties.toString());
 
-    auto child_properties = group_node.getChildProperties(group_node_properties.second);
+    auto child_properties = group_node.getChildrenProp(properties_group_node.first);
 
-    std::vector<QueryPlanPtr> child_plans;
-    auto & children_group = group_node.getChildren();
+    std::vector<SubQueryPlanPtr> child_plans;
+    const auto & children_group = group_node.getChildren();
     for (size_t i = 0; i < child_properties.size(); ++i)
     {
-        QueryPlanPtr plan_ptr;
+        SubQueryPlanPtr plan_ptr;
         if (group_node.isEnforceNode())
         {
-            plan_ptr = std::make_unique<QueryPlan>(extractPlan(group, child_properties[i]));
+            plan_ptr = std::make_unique<SubQueryPlan>(extractPlan(group, child_properties[i]));
         }
         else
         {
-            plan_ptr = std::make_unique<QueryPlan>(extractPlan(*children_group[i], child_properties[i]));
+            plan_ptr = std::make_unique<SubQueryPlan>(extractPlan(*children_group[i], child_properties[i]));
         }
         child_plans.emplace_back(std::move(plan_ptr));
     }
 
-    QueryPlan plan;
+    SubQueryPlan plan;
     if (child_plans.size() > 1)
     {
         plan.unitePlans(group_node.getStep(), std::move(child_plans));

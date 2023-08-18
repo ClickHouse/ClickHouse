@@ -4,6 +4,19 @@
 namespace DB
 {
 
+void GroupNode::updateBestChild(const PhysicalProperties & physical_properties, const std::vector<PhysicalProperties> & child_properties, Float64 child_cost)
+{
+    if (!prop_to_best_child.contains(physical_properties) || child_cost < prop_to_best_child[physical_properties].cost)
+    {
+        prop_to_best_child[physical_properties] = {child_properties, child_cost};
+    }
+}
+
+const std::vector<PhysicalProperties> & GroupNode::getChildrenProp(const PhysicalProperties & physical_properties)
+{
+    return prop_to_best_child[physical_properties].child_prop;
+}
+
 String GroupNode::toString() const
 {
     String res;
@@ -19,19 +32,17 @@ String GroupNode::toString() const
     res += "children: " + child_ids;
 
     String prop_map;
-    for (auto & [output_prop, child_prop] : best_prop_map)
+    for (const auto & [output_prop, child_prop_cost] : prop_to_best_child)
     {
         prop_map += output_prop.toString() + "-";
 
-        for (auto & c_prop : child_prop)
+        for (const auto & c_prop : child_prop_cost.child_prop)
         {
             prop_map += c_prop.toString() + "|";
         }
-
-        prop_map += ", ";
     }
 
-    res += "best prop map: " + prop_map;
+    res += "best child prop map: " + prop_map;
 
     return res;
 }

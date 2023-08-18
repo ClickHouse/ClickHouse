@@ -9,7 +9,7 @@
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 
 
-namespace DB::QueryPlanOptimizations
+namespace DB::NewOptimizer
 {
 
 std::vector<SubQueryPlan> trySplitAggregation(QueryPlanStepPtr step, ContextPtr context)

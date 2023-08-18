@@ -65,7 +65,7 @@ InterpreterSelectWithUnionQueryFragments::InterpreterSelectWithUnionQueryFragmen
     if (!num_children)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no children in ASTSelectWithUnionQuery");
 
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY && !options_.is_subquery)
     {
         RewriteDistributedTableVisitor visitor(context);
         visitor.visit(query_ptr);
@@ -451,6 +451,7 @@ PlanFragmentPtrs InterpreterSelectWithUnionQueryFragments::buildFragments()
 
     const auto & resources = query_plan.getResources();
 
+    /// Test TODO remove
     Optimizer optimizer;
     optimizer.optimize(std::move(query_plan), context);
 

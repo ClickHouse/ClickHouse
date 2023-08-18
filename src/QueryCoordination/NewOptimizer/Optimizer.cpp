@@ -17,7 +17,10 @@ QueryPlan Optimizer::optimize(QueryPlan && plan, ContextPtr context)
     /// enforce properties
     memo.enforce();
 
-    return memo.extractPlan();
+    QueryPlan res_plan;
+    memo.extractPlan();
+
+    return res_plan;
 }
 
 }

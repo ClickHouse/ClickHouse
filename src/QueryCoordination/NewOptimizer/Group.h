@@ -9,6 +9,12 @@ namespace DB
 class Group
 {
 public:
+    struct GroupNodeCost
+    {
+        GroupNode * group_node = nullptr;
+        Float64 cost;
+    };
+
     Group() = default;
 
     Group(GroupNode & group_plan_node, UInt32 id_) : id(id_)
@@ -37,102 +43,27 @@ public:
         return group_nodes;
     }
 
-    void addLowestCostGroupNode(const PhysicalProperties & properties, GroupNode * group_node, Float64 cost)
-    {
-        auto it = prop_to_best_node.find(properties);
-        if (it == prop_to_best_node.end())
-        {
-            std::pair<Float64, GroupNode *> cost_group_node{cost, group_node};
-            prop_to_best_node.emplace(properties, cost_group_node);
-        }
-        else
-        {
-            if (cost < it->second.first)
-            {
-                std::pair<Float64, GroupNode *> cost_group_node{cost, group_node};
-                prop_to_best_node[properties] = cost_group_node;
-            }
-        }
-    }
+    void updatePropBestNode(const PhysicalProperties & properties, GroupNode * group_node, Float64 cost);
 
-    Float64 getCost(const PhysicalProperties & properties)
-    {
-        return prop_to_best_node[properties].first;
-    }
+    Float64 getCostByProp(const PhysicalProperties & properties);
 
-    std::pair<GroupNode *, PhysicalProperties> getBestGroupNode(const PhysicalProperties & required_properties) const
-    {
-        Float64 min_cost = std::numeric_limits<Float64>::max();
+    std::pair<PhysicalProperties, GroupNodeCost> getSatisfyBestGroupNode(const PhysicalProperties & required_properties) const;
 
-        std::pair<GroupNode *, PhysicalProperties> res{nullptr, {}};
-
-        for (auto & [properties, cost_group_node] : prop_to_best_node)
-        {
-            if (properties.satisfy(required_properties))
-            {
-                if (cost_group_node.first < min_cost)
-                {
-                    min_cost = cost_group_node.first;
-                    res.first = cost_group_node.second;
-                    res.second = properties;
-                }
-            }
-        }
-        if (!res.first)
-            throw;
-
-        return res;
-    }
-
-    Float64 getLowestCost(const PhysicalProperties & required_properties) const
-    {
-        Float64 min_cost = std::numeric_limits<Float64>::max();
-        for (auto & [properties, cost_group_node] : prop_to_best_node)
-        {
-            if (properties.satisfy(required_properties))
-            {
-                if (cost_group_node.first < min_cost)
-                {
-                    min_cost = cost_group_node.first;
-                }
-            }
-        }
-
-        return min_cost;
-    }
+    Float64 getSatisfyBestCost(const PhysicalProperties & required_properties) const;
 
     UInt32 getId() const
     {
         return id;
     }
 
-    String toString() const
-    {
-        String res;
-        res += std::to_string(getId()) + ",";
-
-        res += "group_nodes: ";
-        for (auto & node : group_nodes)
-        {
-            res += "{ " + node.toString() + "}, ";
-        }
-
-        String prop_map;
-        for(auto & [prop, cost_group_node] : prop_to_best_node)
-        {
-            prop_map += "{ " + prop.toString() + "-" + std::to_string(cost_group_node.first) + "|" + std::to_string(cost_group_node.second->getId()) + "}, ";
-        }
-
-        res += "prop_to_best_node: " + prop_map;
-        return res;
-    }
+    String toString() const;
 
 private:
     UInt32 id = 0;
 
     std::list<GroupNode> group_nodes;
 
-    std::unordered_map<PhysicalProperties, std::pair<Float64, GroupNode *>, PhysicalProperties::HashFunction> prop_to_best_node;
+    std::unordered_map<PhysicalProperties, GroupNodeCost, PhysicalProperties::HashFunction> prop_to_best_node;
 };
 
 }

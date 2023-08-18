@@ -136,8 +136,8 @@ private:
     {
         if (table_expression.database_and_table_name)
             tryVisit<ASTTableIdentifier>(table_expression.database_and_table_name);
-        else if (table_expression.subquery)
-            tryVisit<ASTSubquery>(table_expression.subquery);
+//        else if (table_expression.subquery)
+//            tryVisit<ASTSubquery>(table_expression.subquery);
     }
 
     void visit(const ASTTableIdentifier & identifier, ASTPtr & ast)

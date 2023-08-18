@@ -7,7 +7,7 @@
 namespace DB
 {
 
-namespace QueryPlanOptimizations
+namespace NewOptimizer
 {
 
 struct Optimization
@@ -20,12 +20,14 @@ struct Optimization
 
 
 std::vector<SubQueryPlan> trySplitAggregation(QueryPlanStepPtr step, ContextPtr context);
+std::vector<SubQueryPlan> trySplitLimit(QueryPlanStepPtr step, ContextPtr context);
 
 
 inline const auto & getOptimizations()
 {
     static const std::array<Optimization, 10> optimizations = {{
         {trySplitAggregation, "splitAggregation", &QueryPlanOptimizationSettings::optimize_plan},
+        {trySplitLimit, "splitLimit", &QueryPlanOptimizationSettings::optimize_plan},
     }};
 
     return optimizations;

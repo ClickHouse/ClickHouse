@@ -32,9 +32,9 @@ public:
 
     void derivationProperties(Group * group);
 
-    QueryPlan extractPlan();
+    SubQueryPlan extractPlan();
 
-    QueryPlan extractPlan(Group & group, const PhysicalProperties & required_properties);
+    SubQueryPlan extractPlan(Group & group, const PhysicalProperties & required_properties);
 
 private:
     UInt32 group_id_counter = 0;
