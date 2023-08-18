@@ -1031,6 +1031,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         };
 
         size_t num_threads = std::min<size_t>(num_streams, parts.size());
+        if (settings.max_threads_for_indexes)
+        {
+            num_threads = std::min<size_t>(num_streams, settings.max_threads_for_indexes);
+        }
 
         if (num_threads <= 1)
         {

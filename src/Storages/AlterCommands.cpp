@@ -1082,9 +1082,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (!command.if_exists)
                 {
-                    String exception_message = fmt::format("Wrong column. Cannot find column {} to modify", backQuote(column_name));
-                    all_columns.appendHintsMessage(exception_message, column_name);
-                    throw Exception::createDeprecated(exception_message, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+                    throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Wrong column. Cannot find column {} to modify{}",
+                                    backQuote(column_name), all_columns.getHintsMessage(column_name));
                 }
                 else
                     continue;

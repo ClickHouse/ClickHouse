@@ -9,6 +9,7 @@
 #include <Common/Macros.h>
 #include <Common/randomSeed.h>
 #include <Common/atomicRename.h>
+#include <Common/logger_useful.h>
 #include <base/hex.h>
 
 #include <Core/Defines.h>
@@ -72,7 +73,6 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeFixedString.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -1337,10 +1337,32 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     data_path = database->getTableDataPath(create);
+    auto full_data_path = fs::path{getContext()->getPath()} / data_path;
 
-    if (!create.attach && !data_path.empty() && fs::exists(fs::path{getContext()->getPath()} / data_path))
-        throw Exception(storage_already_exists_error_code,
-            "Directory for {} data {} already exists", Poco::toLower(storage_name), String(data_path));
+    if (!create.attach && !data_path.empty() && fs::exists(full_data_path))
+    {
+        if (getContext()->getZooKeeperMetadataTransaction() &&
+            !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery() &&
+            !DatabaseCatalog::instance().hasUUIDMapping(create.uuid) &&
+            Context::getGlobalContextInstance()->isServerCompletelyStarted() &&
+            Context::getGlobalContextInstance()->getConfigRef().getBool("allow_moving_table_directory_to_trash", false))
+        {
+            /// This is a secondary query from a Replicated database. It cannot be retried with another UUID, we must execute it as is.
+            /// We don't have a table with this UUID (and all metadata is loaded),
+            /// so the existing directory probably contains some leftovers from previous unsuccessful attempts to create the table
+
+            fs::path trash_path = fs::path{getContext()->getPath()} / "trash" / data_path / getHexUIntLowercase(thread_local_rng());
+            LOG_WARNING(&Poco::Logger::get("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
+                        Poco::toLower(storage_name), String(data_path), trash_path);
+            fs::create_directories(trash_path.parent_path());
+            renameNoReplace(full_data_path, trash_path);
+        }
+        else
+        {
+            throw Exception(storage_already_exists_error_code,
+                "Directory for {} data {} already exists", Poco::toLower(storage_name), String(data_path));
+        }
+    }
 
     bool from_path = create.attach_from_path.has_value();
     String actual_data_path = data_path;
