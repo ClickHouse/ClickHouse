@@ -91,6 +91,6 @@
   "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_http_named_session",
   "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_grpc",
   "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_tcp_and_others",
-  "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_tcp",
-  "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_end_session"
+  "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_setting_in_query",
+  "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_client_suggestions_load"
 ]
