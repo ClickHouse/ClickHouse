@@ -404,8 +404,8 @@ static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
     dst = hash.get128();
 
     const UInt64 trace[2] = {0x000000000000f000ull, 0xe000000000000000ull};
-    UUIDHelpers::getUUIDLow(dst_uuid) = (UUIDHelpers::getUUIDLow(dst_uuid) & (0xffffffffffffffffull - trace[1])) | (UUIDHelpers::getUUIDLow(src_uuid) & trace[1]);
-    UUIDHelpers::getUUIDHigh(dst_uuid) = (UUIDHelpers::getUUIDHigh(dst_uuid) & (0xffffffffffffffffull - trace[0])) | (UUIDHelpers::getUUIDHigh(src_uuid) & trace[0]);
+    UUIDHelpers::getLowBytes(dst_uuid) = (UUIDHelpers::getLowBytes(dst_uuid) & (0xffffffffffffffffull - trace[1])) | (UUIDHelpers::getLowBytes(src_uuid) & trace[1]);
+    UUIDHelpers::getHighBytes(dst_uuid) = (UUIDHelpers::getHighBytes(dst_uuid) & (0xffffffffffffffffull - trace[0])) | (UUIDHelpers::getHighBytes(src_uuid) & trace[0]);
 }
 
 class FixedStringModel : public IModel
