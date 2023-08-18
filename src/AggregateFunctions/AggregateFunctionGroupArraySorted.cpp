@@ -1,12 +1,11 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-// #include <AggregateFunctions/AggregateFunctionGroupArray.h>
 #include <AggregateFunctions/AggregateFunctionGroupArraySorted.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <Common/Exception.h>
 
-/// INFO: Trait - in this context means has_limit
 namespace DB
 {
 struct Settings;
@@ -32,20 +31,16 @@ IAggregateFunction * createWithNumericOrTimeType(const IDataType & argument_type
 }
 
 template <typename Trait, typename ... TArgs>
-inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataTypePtr & argument_type, const Array & parameters, TArgs ... args)
+inline AggregateFunctionPtr createAggregateFunctionGroupArraySortedImpl(const DataTypePtr & argument_type, const Array & parameters, TArgs ... args)
 {
     if (auto res = createWithNumericOrTimeType<GroupArraySortedNumericImpl, Trait>(*argument_type, argument_type, parameters, std::forward<TArgs>(args)...))
         return AggregateFunctionPtr(res);
 
     WhichDataType which(argument_type);
-    if (which.idx == TypeIndex::String)
-        return std::make_shared<GroupArraySortedGeneralImpl<GroupArrayNodeString, Trait>>(argument_type, parameters, std::forward<TArgs>(args)...);
-
     return std::make_shared<GroupArraySortedGeneralImpl<GroupArrayNodeGeneral, Trait>>(argument_type, parameters, std::forward<TArgs>(args)...);
 }
 
-/// INFO: if strings are not working, switch to GroupArrayGeneralImpl
-AggregateFunctionPtr createAggregateFunctionGroupArray(
+AggregateFunctionPtr createAggregateFunctionGroupArraySorted(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertUnary(name, argument_types);
@@ -72,13 +67,12 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
     }
     else
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Should be implemented next"); 
-            /// TODO:
+            "Function {} does not support this number of arguments", name);
 
-    if (!limit_size)
-        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ false, false, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters);
+    if (limit_size)
+        return createAggregateFunctionGroupArraySortedImpl<GroupArrayTrait</* Thas_limit= */ true, false, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters, max_elems);
     else
-        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ true, false, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters, max_elems);
+        return createAggregateFunctionGroupArraySortedImpl<GroupArrayTrait</* Thas_limit= */ false, false, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters);
 }
 
 }
@@ -88,7 +82,7 @@ void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factor
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
-    factory.registerFunction("groupArraySorted", { createAggregateFunctionGroupArray, properties });
+    factory.registerFunction("groupArraySorted", { createAggregateFunctionGroupArraySorted, properties });
 }
 
 }
