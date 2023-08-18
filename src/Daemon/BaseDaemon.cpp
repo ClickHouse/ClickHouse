@@ -38,7 +38,6 @@
 #include <base/coverage.h>
 #include <base/sleep.h>
 
-#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
@@ -173,6 +172,9 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
             /// This coarse method of synchronization is perfectly ok for fatal signals.
             sleepForSeconds(1);
         }
+
+        /// Wait for all logs flush operations
+        sleepForSeconds(3);
         call_default_signal_handler(sig);
     }
 
@@ -463,6 +465,10 @@ private:
         /// Write crash to system.crash_log table if available.
         if (collectCrashLog)
             collectCrashLog(sig, thread_num, query_id, stack_trace);
+
+#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+        Context::getGlobalContextInstance()->handleCrash();
+#endif
 
         /// Send crash report to developers (if configured)
         if (sig != SanitizerTrap)

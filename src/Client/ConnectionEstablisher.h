@@ -104,6 +104,8 @@ private:
 
     void resetResult();
 
+    bool haveMoreAddressesToConnect();
+
     ConnectionEstablisher connection_establisher;
     TryResult result;
     std::string fail_message;

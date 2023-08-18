@@ -107,12 +107,18 @@ struct RestoreSettings
     /// How the RESTORE command will handle if a user-defined function which it's going to restore already exists.
     RestoreUDFCreationMode create_function = RestoreUDFCreationMode::kCreateIfNotExists;
 
+    /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
+    bool allow_s3_native_copy = true;
+
     /// Internal, should not be specified by user.
     bool internal = false;
 
     /// Internal, should not be specified by user.
     /// The current host's ID in the format 'escaped_host_name:port'.
     String host_id;
+
+    /// Alternative storage policy that may be specified in the SETTINGS clause of RESTORE queries
+    std::optional<String> storage_policy;
 
     /// Internal, should not be specified by user.
     /// Cluster's hosts' IDs in the format 'escaped_host_name:port' for all shards and replicas in a cluster specified in BACKUP ON CLUSTER.

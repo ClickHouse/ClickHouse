@@ -208,7 +208,7 @@ namespace DB
         const String & column_name,
         ColumnPtr & column,
         const DataTypePtr & column_type,
-        const PaddedPODArray<UInt8> * null_bytemap,
+        const PaddedPODArray<UInt8> *,
         arrow::ArrayBuilder * array_builder,
         String format_name,
         size_t start,
@@ -231,7 +231,11 @@ namespace DB
             /// Start new array.
             components_status = builder.Append();
             checkStatus(components_status, nested_column->getName(), format_name);
-            fillArrowArray(column_name, nested_column, nested_type, null_bytemap, value_builder, format_name, offsets[array_idx - 1], offsets[array_idx], output_string_as_string, output_fixed_string_as_fixed_byte_array, dictionary_values);
+
+            /// Pass null null_map, because fillArrowArray will decide whether nested_type is nullable, if nullable, it will create a new null_map from nested_column
+            /// Note that it is only needed by gluten(https://github.com/oap-project/gluten), because array type in gluten is by default nullable.
+            /// And it does not influence the original ClickHouse logic, because null_map passed to fillArrowArrayWithArrayColumnData is always nullptr for ClickHouse doesn't allow nullable complex types including array type.
+            fillArrowArray(column_name, nested_column, nested_type, nullptr, value_builder, format_name, offsets[array_idx - 1], offsets[array_idx], output_string_as_string, output_fixed_string_as_fixed_byte_array, dictionary_values);
         }
     }
 
@@ -680,9 +684,6 @@ namespace DB
         bool output_fixed_string_as_fixed_byte_array,
         std::unordered_map<String, MutableColumnPtr> & dictionary_values)
     {
-        const String column_type_name = column_type->getFamilyName();
-        WhichDataType which(column_type);
-
         switch (column_type->getTypeId())
         {
             case TypeIndex::Nullable:
@@ -792,7 +793,7 @@ namespace DB
                 FOR_INTERNAL_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
             default:
-                throw Exception(ErrorCodes::UNKNOWN_TYPE, "Internal type '{}' of a column '{}' is not supported for conversion into {} data format.", column_type_name, column_name, format_name);
+                throw Exception(ErrorCodes::UNKNOWN_TYPE, "Internal type '{}' of a column '{}' is not supported for conversion into {} data format.", column_type->getFamilyName(), column_name, format_name);
         }
     }
 

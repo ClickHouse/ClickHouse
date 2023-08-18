@@ -29,6 +29,10 @@ struct IntervalKind
 
     constexpr std::string_view toString() const { return magic_enum::enum_name(kind); }
 
+    /// Returns number of nanoseconds in one interval.
+    /// For `Month`, `Quarter` and `Year` the function returns an average number of nanoseconds.
+    Int64 toAvgNanoseconds() const;
+
     /// Returns number of seconds in one interval.
     /// For `Month`, `Quarter` and `Year` the function returns an average number of seconds.
     Int32 toAvgSeconds() const;

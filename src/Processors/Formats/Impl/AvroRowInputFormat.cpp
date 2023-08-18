@@ -52,6 +52,8 @@
 #include <Poco/Buffer.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/Net/HTTPCredentials.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
@@ -367,14 +369,25 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             break;
         case avro::AVRO_UNION:
         {
-            if (root_node->leaves() == 2
+            if (root_node->leaves() == 1)
+            {
+                auto nested_deserialize = createDeserializeFn(root_node->leafAt(0), target_type);
+                return [nested_deserialize](IColumn & column, avro::Decoder & decoder)
+                {
+                    decoder.decodeUnionIndex();
+                    nested_deserialize(column, decoder);
+                    return true;
+                };
+            }
+            /// FIXME Support UNION has more than two datatypes.
+            else if (
+                root_node->leaves() == 2
                 && (root_node->leafAt(0)->type() == avro::AVRO_NULL || root_node->leafAt(1)->type() == avro::AVRO_NULL))
             {
                 int non_null_union_index = root_node->leafAt(0)->type() == avro::AVRO_NULL ? 1 : 0;
                 if (target.isNullable())
                 {
-                    auto nested_deserialize = this->createDeserializeFn(
-                        root_node->leafAt(non_null_union_index), removeNullable(target_type));
+                    auto nested_deserialize = createDeserializeFn(root_node->leafAt(non_null_union_index), removeNullable(target_type));
                     return [non_null_union_index, nested_deserialize](IColumn & column, avro::Decoder & decoder)
                     {
                         ColumnNullable & col = assert_cast<ColumnNullable &>(column);
@@ -393,7 +406,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 }
                 else if (null_as_default)
                 {
-                    auto nested_deserialize = this->createDeserializeFn(root_node->leafAt(non_null_union_index), target_type);
+                    auto nested_deserialize = createDeserializeFn(root_node->leafAt(non_null_union_index), target_type);
                     return [non_null_union_index, nested_deserialize](IColumn & column, avro::Decoder & decoder)
                     {
                         int union_index = static_cast<int>(decoder.decodeUnionIndex());
@@ -934,6 +947,27 @@ private:
                 Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
                 request.setHost(url.getHost());
 
+                if (!url.getUserInfo().empty())
+                {
+                    Poco::Net::HTTPCredentials http_credentials;
+                    Poco::Net::HTTPBasicCredentials http_basic_credentials;
+
+                    http_credentials.fromUserInfo(url.getUserInfo());
+
+                    std::string decoded_username;
+                    Poco::URI::decode(http_credentials.getUsername(), decoded_username);
+                    http_basic_credentials.setUsername(decoded_username);
+
+                    if (!http_credentials.getPassword().empty())
+                    {
+                        std::string decoded_password;
+                        Poco::URI::decode(http_credentials.getPassword(), decoded_password);
+                        http_basic_credentials.setPassword(decoded_password);
+                    }
+
+                    http_basic_credentials.authenticate(request);
+                }
+
                 auto session = makePooledHTTPSession(url, timeouts, 1);
                 session->sendRequest(request);
 
@@ -977,7 +1011,7 @@ private:
 using ConfluentSchemaRegistry = AvroConfluentRowInputFormat::SchemaRegistry;
 #define SCHEMA_REGISTRY_CACHE_MAX_SIZE 1000
 /// Cache of Schema Registry URL -> SchemaRegistry
-static CacheBase<std::string, ConfluentSchemaRegistry>  schema_registry_cache(SCHEMA_REGISTRY_CACHE_MAX_SIZE);
+static CacheBase<std::string, ConfluentSchemaRegistry> schema_registry_cache(SCHEMA_REGISTRY_CACHE_MAX_SIZE);
 
 static std::shared_ptr<ConfluentSchemaRegistry> getConfluentSchemaRegistry(const FormatSettings & format_settings)
 {
@@ -1169,12 +1203,19 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
         case avro::Type::AVRO_NULL:
             return std::make_shared<DataTypeNothing>();
         case avro::Type::AVRO_UNION:
-            if (node->leaves() == 2 && (node->leafAt(0)->type() == avro::Type::AVRO_NULL || node->leafAt(1)->type() == avro::Type::AVRO_NULL))
+            if (node->leaves() == 1)
+            {
+                return avroNodeToDataType(node->leafAt(0));
+            }
+            else if (
+                node->leaves() == 2
+                && (node->leafAt(0)->type() == avro::Type::AVRO_NULL || node->leafAt(1)->type() == avro::Type::AVRO_NULL))
             {
                 int nested_leaf_index = node->leafAt(0)->type() == avro::Type::AVRO_NULL ? 1 : 0;
                 auto nested_type = avroNodeToDataType(node->leafAt(nested_leaf_index));
                 return nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
             }
+            /// FIXME Support UNION has more than two datatypes.
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Avro type  UNION is not supported for inserting.");
         case avro::Type::AVRO_SYMBOLIC:
             return avroNodeToDataType(avro::resolveSymbol(node));
@@ -1217,6 +1258,8 @@ void registerInputFormatAvro(FormatFactory & factory)
     {
         return std::make_shared<AvroConfluentRowInputFormat>(sample, buf, params, settings);
     });
+
+    factory.markFormatSupportsSubsetOfColumns("AvroConfluent");
 }
 
 void registerAvroSchemaReader(FormatFactory & factory)

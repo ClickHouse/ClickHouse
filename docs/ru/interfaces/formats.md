@@ -401,8 +401,8 @@ $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FOR
 - [output_format_csv_crlf_end_of_line](../operations/settings/settings.md#output_format_csv_crlf_end_of_line) - если установлено значение true, конец строки в формате вывода CSV будет `\r\n` вместо `\n`. Значение по умолчанию - `false`.
 - [input_format_csv_skip_first_lines](../operations/settings/settings.md#input_format_csv_skip_first_lines) - пропустить указанное количество строк в начале данных. Значение по умолчанию - `0`.
 - [input_format_csv_detect_header](../operations/settings/settings.md#input_format_csv_detect_header) - обнаружить заголовок с именами и типами в формате CSV. Значение по умолчанию - `true`.
-- [input_format_csv_trim_whitespaces](../operations/settings/settings.md#input_format_csv_trim_whitespaces) - удалить пробелы и символы табуляции из строк без кавычек.
-Значение по умолчанию - `true`.
+- [input_format_csv_trim_whitespaces](../operations/settings/settings.md#input_format_csv_trim_whitespaces) - удалить пробелы и символы табуляции из строк без кавычек. Значение по умолчанию - `true`.
+- [input_format_csv_allow_variable_number_of_columns](../operations/settings/settings.md/#input_format_csv_allow_variable_number_of_columns) - игнорировать дополнительные столбцы (если файл содержит больше столбцов чем ожидается) и рассматривать отсутствующие поля в CSV в качестве значений по умолчанию. Значение по умолчанию - `false`.
 
 ## CSVWithNames {#csvwithnames}
 
@@ -1353,8 +1353,6 @@ ClickHouse поддерживает настраиваемую точность 
 $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
 
-Чтобы вставить данные в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) в виде массива структур, нужно включить настройку [input_format_parquet_import_nested](../operations/settings/settings.md#input_format_parquet_import_nested).
-
 Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата Parquet, используйте команду следующего вида:
 
 ``` bash
@@ -1413,8 +1411,6 @@ ClickHouse поддерживает настраиваемую точность 
 $ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
-Чтобы вставить данные в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) в виде массива структур, нужно включить настройку [input_format_arrow_import_nested](../operations/settings/settings.md#input_format_arrow_import_nested).
-
 ### Вывод данных {#selecting-data-arrow}
 
 Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата Arrow, используйте команду следующего вида:
@@ -1470,8 +1466,6 @@ ClickHouse поддерживает настраиваемую точность 
 ``` bash
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
-
-Чтобы вставить данные в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) в виде массива структур, нужно включить настройку [input_format_orc_import_nested](../operations/settings/settings.md#input_format_orc_import_nested).
 
 ### Вывод данных {#selecting-data-2}
 

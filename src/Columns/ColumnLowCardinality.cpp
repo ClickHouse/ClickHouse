@@ -255,7 +255,7 @@ void ColumnLowCardinality::insertData(const char * pos, size_t length)
     idx.insertPosition(dictionary.getColumnUnique().uniqueInsertData(pos, length));
 }
 
-StringRef ColumnLowCardinality::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnLowCardinality::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
 {
     return getDictionary().serializeValueIntoArena(getIndexes().getUInt(n), arena, begin);
 }

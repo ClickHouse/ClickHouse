@@ -4,9 +4,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-echo "default distributed_ddl_entry_format_version"
+echo "distributed_ddl_entry_format_version=OPENTELEMETRY_ENABLED_VERSION (older then PRESERVE_INITIAL_QUERY_ID_VERSION)"
+OPENTELEMETRY_ENABLED_VERSION=4
 query_id="$(random_str 10)"
-$CLICKHOUSE_CLIENT --query_id "$query_id" --distributed_ddl_output_mode=none -q "DROP TABLE IF EXISTS foo ON CLUSTER test_shard_localhost"
+$CLICKHOUSE_CLIENT --distributed_ddl_entry_format_version=$OPENTELEMETRY_ENABLED_VERSION --query_id "$query_id" --distributed_ddl_output_mode=none -q "DROP TABLE IF EXISTS foo ON CLUSTER test_shard_localhost"
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 $CLICKHOUSE_CLIENT -q "SELECT query FROM system.query_log WHERE initial_query_id = '$query_id' AND type != 'QueryStart'"
 
