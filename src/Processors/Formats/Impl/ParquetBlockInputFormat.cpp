@@ -278,7 +278,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
     condvar.notify_all();
 }
 
-void ParquetBlockInputFormat::scheduleMoreWorkIfNeeded(std::optional<size_t> row_group_touched)
+void ParquetBlockInputFormat::scheduleMoreWorkIfNeeded(std::optional<size_t> row_group_batch_touched)
 {
     while (row_group_batches_completed < row_group_batches.size())
     {
@@ -294,12 +294,12 @@ void ParquetBlockInputFormat::scheduleMoreWorkIfNeeded(std::optional<size_t> row
                row_group_batches_started < row_group_batches.size())
             scheduleRowGroup(row_group_batches_started++);
 
-        if (row_group_touched)
+        if (row_group_batch_touched)
         {
-            auto & row_group = row_group_batches[*row_group_touched];
+            auto & row_group = row_group_batches[*row_group_batch_touched];
             if (row_group.status == RowGroupBatchState::Status::Paused &&
                 row_group.num_pending_chunks < max_pending_chunks_per_row_group_batch)
-                scheduleRowGroup(*row_group_touched);
+                scheduleRowGroup(*row_group_batch_touched);
         }
     }
 }
