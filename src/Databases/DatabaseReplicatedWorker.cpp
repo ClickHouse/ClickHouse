@@ -356,7 +356,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
                 /// We use tryRemove(...) because multiple hosts (including initiator) may try to do it concurrently.
                 auto code = zookeeper->tryRemove(try_node_path);
                 if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-                    throw Coordination::Exception(code, try_node_path);
+                    throw Coordination::Exception::fromPath(code, try_node_path);
 
                 if (!zookeeper->exists(fs::path(entry_path) / "committed"))
                 {

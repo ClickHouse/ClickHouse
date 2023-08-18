@@ -27,5 +27,5 @@ echo "with_on_cluster_$CLICKHOUSE_TEST_UNIQUE_NAME"
 $CLICKHOUSE_CLIENT --user "with_on_cluster_$CLICKHOUSE_TEST_UNIQUE_NAME" -q "CREATE DATABASE IF NOT EXISTS db_with_on_cluster_$CLICKHOUSE_TEST_UNIQUE_NAME ON CLUSTER test_shard_localhost" >/dev/null
 echo "without_on_cluster_$CLICKHOUSE_TEST_UNIQUE_NAME"
 $CLICKHOUSE_CLIENT --user "without_on_cluster_$CLICKHOUSE_TEST_UNIQUE_NAME" -q "CREATE DATABASE IF NOT EXISTS db_without_on_cluster_$CLICKHOUSE_TEST_UNIQUE_NAME ON CLUSTER test_shard_localhost" |& {
-    grep -m1 -F -o "Not enough privileges. To execute this query it's necessary to have grant CLUSTER ON *.*. (ACCESS_DENIED)"
+    grep -m1 -F -o "Not enough privileges. To execute this query, it's necessary to have the grant CLUSTER ON *.*. (ACCESS_DENIED)"
 }

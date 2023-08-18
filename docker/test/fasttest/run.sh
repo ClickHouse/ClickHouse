@@ -141,13 +141,14 @@ function clone_submodules
             contrib/jemalloc
             contrib/replxx
             contrib/wyhash
-            contrib/hashidsxx
             contrib/c-ares
             contrib/morton-nd
             contrib/xxHash
             contrib/simdjson
             contrib/liburing
             contrib/libfiu
+            contrib/incbin
+            contrib/yaml-cpp
         )
 
         git submodule sync
@@ -170,6 +171,7 @@ function run_cmake
         "-DENABLE_SIMDJSON=1"
         "-DENABLE_JEMALLOC=1"
         "-DENABLE_LIBURING=1"
+        "-DENABLE_YAML_CPP=1"
     )
 
     export CCACHE_DIR="$FASTTEST_WORKSPACE/ccache"

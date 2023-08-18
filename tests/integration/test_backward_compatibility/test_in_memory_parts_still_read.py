@@ -12,6 +12,7 @@ node = cluster.add_instance(
     tag="23.4",
     stay_alive=True,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
 
 

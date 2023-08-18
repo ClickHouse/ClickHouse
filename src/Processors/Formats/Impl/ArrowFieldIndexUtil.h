@@ -35,7 +35,7 @@ public:
     ///   - key: field name with full path. eg. a struct field's name is like a.x.i
     ///   - value: a pair, first value refers to this field's start index, second value refers to how many
     ///   indices this field take. eg.
-    /// For a parquet schema {x: int , y: {i: int, j: int}}, the return will be
+    /// For a parquet schema {x: int, y: {i: int, j: int}}, the return will be
     /// - x: (0, 1)
     /// - y: (1, 2)
     /// - y.i: (1, 1)
@@ -75,7 +75,7 @@ public:
             {
                 if (!allow_missing_columns)
                     throw Exception(
-                        ErrorCodes::THERE_IS_NO_COLUMN, "Not found field({}) in arrow schema:{}.", named_col.name, schema.ToString());
+                        ErrorCodes::THERE_IS_NO_COLUMN, "Not found field ({}) in the following Arrow schema:\n{}\n", named_col.name, schema.ToString());
                 else
                     continue;
             }
@@ -168,4 +168,3 @@ private:
 };
 }
 #endif
-

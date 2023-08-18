@@ -25,6 +25,9 @@ struct BackupSettings
     /// Password used to encrypt the backup.
     String password;
 
+    /// S3 storage class.
+    String s3_storage_class = "";
+
     /// If this is set to true then only create queries will be written to backup,
     /// without the data of tables.
     bool structure_only = false;
@@ -37,6 +40,13 @@ struct BackupSettings
 
     /// Whether the BACKUP will omit similar files (within one backup only).
     bool deduplicate_files = true;
+
+    /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
+    bool allow_s3_native_copy = true;
+
+    /// Allow to use the filesystem cache in passive mode - benefit from the existing cache entries,
+    /// but don't put more entries into the cache.
+    bool read_from_filesystem_cache = true;
 
     /// 1-based shard index to store in the backup. 0 means all shards.
     /// Can only be used with BACKUP ON CLUSTER.

@@ -205,7 +205,7 @@ The optional keyword `EXTENDED` currently has no effect, it only exists for MySQ
 
 The optional keyword `FULL` causes the output to include the collation, comment and privilege columns.
 
-`SHOW COLUMNS` produces a result table with the following structure:
+The statement produces a result table with the following structure:
 - field - The name of the column (String)
 - type - The column data type (String)
 - null - If the column data type is Nullable (UInt8)
@@ -272,6 +272,10 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 
 Displays a list of primary and data skipping indexes of a table.
 
+This statement mostly exists for compatibility with MySQL. System tables [system.tables](../../operations/system-tables/tables.md) (for
+primary keys) and [system.data_skipping_indices](../../operations/system-tables/data_skipping_indices.md) (for data skipping indices)
+provide equivalent information but in a fashion more native to ClickHouse.
+
 ```sql
 SHOW [EXTENDED] {INDEX | INDEXES | INDICES | KEYS } {FROM | IN} <table> [{FROM | IN} <db>] [WHERE <expr>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
@@ -281,22 +285,22 @@ equivalent. If no database is specified, the query assumes the current database 
 
 The optional keyword `EXTENDED` currently has no effect, it only exists for MySQL compatibility.
 
-`SHOW INDEX` produces a result table with the following structure:
-- table - The name of the table (String)
-- non_unique - 0 if the index cannot contain duplicates, 1 otherwise (UInt8)
-- key_name - The name of the index, `PRIMARY` if the index is a primary key index (String)
-- seq_in_index - Currently unused
-- column_name - Currently unused
-- collation - The sorting of the column in the index, `A` if ascending, `D` if descending, `NULL` if unsorted (Nullable(String))
-- cardinality - Currently unused
-- sub_part - Currently unused
-- packed - Currently unused
+The statement produces a result table with the following structure:
+- table - The name of the table. (String)
+- non_unique - Always `1` as ClickHouse does not support uniqueness constraints. (UInt8)
+- key_name - The name of the index, `PRIMARY` if the index is a primary key index. (String)
+- seq_in_index - For a primary key index, the position of the column starting from `1`. For a data skipping index: always `1`. (UInt8)
+- column_name - For a primary key index, the name of the column. For a data skipping index: `''` (empty string), see field "expression". (String)
+- collation - The sorting of the column in the index: `A` if ascending, `D` if descending, `NULL` if unsorted. (Nullable(String))
+- cardinality - An estimation of the index cardinality (number of unique values in the index). Currently always 0. (UInt64)
+- sub_part - Always `NULL` because ClickHouse does not support index prefixes like MySQL. (Nullable(String))
+- packed - Always `NULL` because ClickHouse does not support packed indexes (like MySQL). (Nullable(String))
 - null - Currently unused
-- index_type - The index type, e.g. `primary`, `minmax`, `bloom_filter` etc. (String)
-- comment - Currently unused
-- index_comment - Currently unused
-- visible - If the index is visible to the optimizer, always `YES` (String)
-- expression - The index expression (String)
+- index_type - The index type, e.g. `PRIMARY`, `MINMAX`, `BLOOM_FILTER` etc. (String)
+- comment - Additional information about the index, currently always `''` (empty string). (String)
+- index_comment - `''` (empty string) because indexes in ClickHouse cannot have a `COMMENT` field (like in MySQL). (String)
+- visible - If the index is visible to the optimizer, always `YES`. (String)
+- expression - For a data skipping index, the index expression. For a primary key index: `''` (empty string). (String)
 
 **Examples**
 
@@ -310,11 +314,12 @@ Result:
 
 ``` text
 ┌─table─┬─non_unique─┬─key_name─┬─seq_in_index─┬─column_name─┬─collation─┬─cardinality─┬─sub_part─┬─packed─┬─null─┬─index_type───┬─comment─┬─index_comment─┬─visible─┬─expression─┐
-│ tbl   │          0 │ blf_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ bloom_filter │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ          │ YES     │ d, b       │
-│ tbl   │          0 │ mm1_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ minmax       │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ          │ YES     │ a, c, d    │
-│ tbl   │          0 │ mm2_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ minmax       │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ          │ YES     │ c, d, e    │
-│ tbl   │          0 │ PRIMARY  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ A         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ primary      │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ          │ YES     │ c, a       │
-│ tbl   │          0 │ set_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ set          │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ          │ YES     │ e          │
+│ tbl   │          1 │ blf_idx  │ 1            │ 1           │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ BLOOM_FILTER │         │               │ YES     │ d, b       │
+│ tbl   │          1 │ mm1_idx  │ 1            │ 1           │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ MINMAX       │         │               │ YES     │ a, c, d    │
+│ tbl   │          1 │ mm2_idx  │ 1            │ 1           │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ MINMAX       │         │               │ YES     │ c, d, e    │
+│ tbl   │          1 │ PRIMARY  │ 1            │ c           │ A         │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ PRIMARY      │         │               │ YES     │            │
+│ tbl   │          1 │ PRIMARY  │ 2            │ a           │ A         │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ PRIMARY      │         │               │ YES     │            │
+│ tbl   │          1 │ set_idx  │ 1            │ 1           │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ SET          │         │               │ YES     │ e          │
 └───────┴────────────┴──────────┴──────────────┴─────────────┴───────────┴─────────────┴──────────┴────────┴──────┴──────────────┴─────────┴───────────────┴─────────┴────────────┘
 ```
 

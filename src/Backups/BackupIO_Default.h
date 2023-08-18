@@ -3,7 +3,6 @@
 #include <Backups/BackupIO.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
-#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -19,7 +18,7 @@ enum class WriteMode;
 class BackupReaderDefault : public IBackupReader
 {
 public:
-    BackupReaderDefault(Poco::Logger * log_, const ContextPtr & context_);
+    BackupReaderDefault(const ReadSettings & read_settings_, const WriteSettings & write_settings_, Poco::Logger * log_);
     ~BackupReaderDefault() override = default;
 
     /// The function copyFileToDisk() can be much faster than reading the file with readFile() and then writing it to some disk.
@@ -46,7 +45,7 @@ protected:
 class BackupWriterDefault : public IBackupWriter
 {
 public:
-    BackupWriterDefault(Poco::Logger * log_, const ContextPtr & context_);
+    BackupWriterDefault(const ReadSettings & read_settings_, const WriteSettings & write_settings_, Poco::Logger * log_);
     ~BackupWriterDefault() override = default;
 
     bool fileContentsEqual(const String & file_name, const String & expected_file_contents) override;
