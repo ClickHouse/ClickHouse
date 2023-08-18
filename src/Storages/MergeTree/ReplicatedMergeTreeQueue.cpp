@@ -866,7 +866,7 @@ ActiveDataPartSet getPartNamesToMutate(
 
 }
 
-void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
+void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallbackPtr watch_callback)
 {
     std::lock_guard lock(update_mutations_mutex);
 
@@ -2169,7 +2169,7 @@ CommittingBlocks BaseMergePredicate<VirtualPartsT, MutationsStateT>::getCommitti
     {
         auto & response = locks_children[i];
         if (response.error != Coordination::Error::ZOK && !partition_ids_hint)
-            throw Coordination::Exception(response.error, paths[i]);
+            throw Coordination::Exception::fromPath(response.error, paths[i]);
 
         if (response.error != Coordination::Error::ZOK)
         {

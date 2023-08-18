@@ -116,10 +116,10 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         return rewritten_query.str();
     }
 
-    if (query.temporary && !query.from.empty())
+    if (query.temporary && !query.getFrom().empty())
         throw Exception(ErrorCodes::SYNTAX_ERROR, "The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`");
 
-    String database = getContext()->resolveDatabase(query.from);
+    String database = getContext()->resolveDatabase(query.getFrom());
     DatabaseCatalog::instance().assertDatabaseExists(database);
 
     WriteBufferFromOwnString rewritten_query;
