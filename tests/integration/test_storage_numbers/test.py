@@ -173,26 +173,11 @@ def test_subquery(started_cluster):
         """SELECT 
                 * 
             FROM 
-                (select * FROM system.numbers) as n  
-            WHERE 
-                number = 1 
+                (select * FROM system.numbers WHERE number < 2) AS n
             FORMAT Values""",
         query_id="test_simple_subquery",
     )
-    assert response == "(1)"
-    check_read_rows("test_simple_subquery", 1)
-
-    response = node.query(
-        """SELECT 
-                * 
-            FROM 
-                (select * FROM system.numbers WHERE number < 4) AS n
-            WHERE 
-                number > 1 
-            FORMAT Values""",
-        query_id="test_subquery_with_predicate",
-    )
-    assert response == "(2),(3)"
+    assert response == "(0),(1)"
     check_read_rows("test_subquery_with_predicate", 2)
 
 

@@ -28,6 +28,7 @@
 #include <IO/Operators.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
+#include <Planner/Utils.h>
 
 #include <base/defines.h>
 
@@ -1176,7 +1177,11 @@ KeyCondition::KeyCondition(
     bool single_point_,
     bool strict_)
     : KeyCondition(
-        query_info.query,
+        context->getSettingsRef().allow_experimental_analyzer
+            /// The new analyzer will standardize column names in the format of table.column,
+            /// but the columns in key_column_names do not have a table prefix.
+            ? queryNodeToSelectQuery(query_info.query_tree, {.add_cast_for_constants = false, .fully_qualified_identifiers = false})
+            : query_info.query,
         query_info.filter_asts,
         KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context),
         query_info.prepared_sets,
