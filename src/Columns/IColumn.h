@@ -218,7 +218,7 @@ public:
       *  For example, to obtain unambiguous representation of Array of strings, strings data should be interleaved with their sizes.
       * Parameter begin should be used with Arena::allocContinue.
       */
-    virtual StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const = 0;
+    virtual StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit = nullptr) const = 0;
 
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Returns pointer to the position after the read data.
