@@ -1640,7 +1640,7 @@ Keys for server/client settings:
 - verificationMode (default: relaxed) – The method for checking the node’s certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `none`, `relaxed`, `strict`, `once`.
 - verificationDepth (default: 9) – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
 - loadDefaultCAFile (default: true) – Wether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `/etc/ssl/cert.pem` (resp. the directory `/etc/ssl/certs`) or in file (resp. directory) specified by the environment variable `SSL_CERT_FILE` (resp. `SSL_CERT_DIR`).
-- cipherList (default: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`) - Supported OpenSSL encryptions.
+- cipherList (default: `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`) - Supported OpenSSL encryptions.
 - cacheSessions (default: false) – Enables or disables caching sessions. Must be used in combination with `sessionIdContext`. Acceptable values: `true`, `false`.
 - sessionIdContext (default: `${application.name}`) – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `SSL_MAX_SSL_SESSION_ID_LENGTH`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching. Default value: `${application.name}`.
 - sessionCacheSize (default: [1024\*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978)) – The maximum number of sessions that the server caches. A value of 0 means unlimited sessions.
@@ -2288,6 +2288,8 @@ This section contains the following parameters:
 - `session_timeout_ms` — Maximum timeout for the client session in milliseconds.
 - `operation_timeout_ms` — Maximum timeout for one operation in milliseconds.
 - `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
+- `fallback_session_lifetime.min` - If the first zookeeper host resolved by zookeeper_load_balancing strategy is unavailable, limit the lifetime of a zookeeper session to the fallback node. This is done for load-balancing purposes to avoid excessive load on one of zookeeper hosts. This setting sets the minimal duration of the fallback session. Set in seconds. Optional. Default is 3 hours.
+- `fallback_session_lifetime.max` - If the first zookeeper host resolved by zookeeper_load_balancing strategy is unavailable, limit the lifetime of a zookeeper session to the fallback node. This is done for load-balancing purposes to avoid excessive load on one of zookeeper hosts. This setting sets the maximum duration of the fallback session. Set in seconds. Optional. Default is 6 hours.
 - `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
 - zookeeper_load_balancing - Specifies the algorithm of ZooKeeper node selection.
   * random - randomly selects one of ZooKeeper nodes.

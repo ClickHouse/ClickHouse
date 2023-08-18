@@ -3,11 +3,13 @@
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Access/ContextAccess.h>
+#include <Access/SettingsProfilesInfo.h>
 #include <Access/User.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
+#include <Interpreters/SessionTracker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/Cluster.h>
@@ -200,7 +202,6 @@ private:
 
         LOG_TEST(log, "Schedule closing session with session_id: {}, user_id: {}",
                  session.key.second, session.key.first);
-
     }
 
     void cleanThread()
@@ -298,6 +299,7 @@ Session::~Session()
 
     if (notified_session_log_about_login)
     {
+        LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(*user_id));
         if (auto session_log = getSessionLog())
         {
             /// TODO: We have to ensure that the same info is added to the session log on a LoginSuccess event and on the corresponding Logout event.
@@ -319,6 +321,7 @@ AuthenticationType Session::getAuthenticationTypeOrLogInFailure(const String & u
     }
     catch (const Exception & e)
     {
+        LOG_ERROR(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
         if (auto session_log = getSessionLog())
             session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e);
 
@@ -335,6 +338,9 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 {
     if (session_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "If there is a session context it must be created after authentication");
+
+    if (session_tracker_handle)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session tracker handle was created before authentication finish");
 
     auto address = address_;
     if ((address == Poco::Net::SocketAddress{}) && (prepared_client_info->interface == ClientInfo::Interface::LOCAL))
@@ -490,6 +496,8 @@ ContextMutablePtr Session::makeSessionContext()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created before any query context");
     if (!user_id)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created after authentication");
+    if (session_tracker_handle)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session tracker handle was created before making session");
 
     LOG_DEBUG(log, "{} Creating session context with user_id: {}",
             toString(auth_id), toString(*user_id));
@@ -503,12 +511,18 @@ ContextMutablePtr Session::makeSessionContext()
     prepared_client_info.reset();
 
     /// Set user information for the new context: current profiles, roles, access rights.
-    if (user_id)
-        new_session_context->setUser(*user_id);
+    new_session_context->setUser(*user_id);
 
     /// Session context is ready.
     session_context = new_session_context;
     user = session_context->getUser();
+
+    session_tracker_handle = session_context->getSessionTracker().trackSession(
+        *user_id,
+        {},
+        session_context->getSettingsRef().max_sessions_for_user);
+
+    recordLoginSucess(session_context);
 
     return session_context;
 }
@@ -521,6 +535,8 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created before any query context");
     if (!user_id)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created after authentication");
+    if (session_tracker_handle)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session tracker handle was created before making session");
 
     LOG_DEBUG(log, "{} Creating named session context with name: {}, user_id: {}",
             toString(auth_id), session_name_, toString(*user_id));
@@ -541,15 +557,36 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     new_session_context->setClientInfo(*prepared_client_info);
     prepared_client_info.reset();
 
+    auto access = new_session_context->getAccess();
+    UInt64 max_sessions_for_user = 0;
     /// Set user information for the new context: current profiles, roles, access rights.
-    if (user_id && !new_session_context->getAccess()->tryGetUser())
+    if (!access->tryGetUser())
+    {
         new_session_context->setUser(*user_id);
+        max_sessions_for_user = new_session_context->getSettingsRef().max_sessions_for_user;
+    }
+    else
+    {
+        // Always get setting from profile
+        // profile can be changed by ALTER PROFILE during single session
+        auto settings = access->getDefaultSettings();
+        const Field * max_session_for_user_field = settings.tryGet("max_sessions_for_user");
+        if (max_session_for_user_field)
+            max_sessions_for_user = max_session_for_user_field->safeGet<UInt64>();
+    }
 
     /// Session context is ready.
     session_context = std::move(new_session_context);
     named_session = new_named_session;
     named_session_created = new_named_session_created;
     user = session_context->getUser();
+
+    session_tracker_handle = session_context->getSessionTracker().trackSession(
+        *user_id,
+        { session_name_ },
+        max_sessions_for_user);
+
+    recordLoginSucess(session_context);
 
     return session_context;
 }
@@ -624,21 +661,35 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     if (user_id)
         user = query_context->getUser();
 
-    if (!notified_session_log_about_login)
-    {
-        if (auto session_log = getSessionLog())
-        {
-            session_log->addLoginSuccess(
-                    auth_id,
-                    named_session ? std::optional<std::string>(named_session->key.second) : std::nullopt,
-                    *query_context,
-                    user);
-
-            notified_session_log_about_login = true;
-        }
-    }
+    /// Interserver does not create session context
+    recordLoginSucess(query_context);
 
     return query_context;
+}
+
+
+void Session::recordLoginSucess(ContextPtr login_context) const
+{
+    if (notified_session_log_about_login)
+        return;
+
+    if (!login_context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session or query context must be created");
+
+    if (auto session_log = getSessionLog())
+    {
+        const auto & settings   = login_context->getSettingsRef();
+        const auto access       = login_context->getAccess();
+
+        session_log->addLoginSuccess(auth_id,
+                                     named_session ? named_session->key.second : "",
+                                     settings,
+                                     access,
+                                     getClientInfo(),
+                                     user);
+    }
+
+    notified_session_log_about_login = true;
 }
 
 

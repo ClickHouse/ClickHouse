@@ -112,31 +112,17 @@ void ZooKeeper::init(ZooKeeperArgs args_)
                 throw KeeperException("Cannot use any of provided ZooKeeper nodes", Coordination::Error::ZCONNECTIONLOSS);
         }
 
-        impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
+        impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log, [this](size_t node_idx, const Coordination::ZooKeeper::Node & node)
+        {
+            connected_zk_host = node.address.host().toString();
+            connected_zk_port = node.address.port();
+            connected_zk_index = node_idx;
+        });
 
         if (args.chroot.empty())
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
         else
             LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", fmt::join(args.hosts, ","), args.chroot);
-
-        Poco::Net::SocketAddress address = impl->getConnectedAddress();
-
-        connected_zk_host = address.host().toString();
-        connected_zk_port = address.port();
-
-        connected_zk_index = 0;
-
-        if (args.hosts.size() > 1)
-        {
-            for (size_t i = 0; i < args.hosts.size(); i++)
-            {
-                if (args.hosts[i] == address.toString())
-                {
-                    connected_zk_index = i;
-                    break;
-                }
-            }
-        }
     }
     else if (args.implementation == "testkeeper")
     {
@@ -166,7 +152,7 @@ void ZooKeeper::init(ZooKeeperArgs args_)
             throw KeeperException(code, "/");
 
         if (code == Coordination::Error::ZNONODE)
-            throw KeeperException("ZooKeeper root doesn't exist. You should create root node " + args.chroot + " before start.", Coordination::Error::ZNONODE);
+            throw KeeperException(Coordination::Error::ZNONODE, "ZooKeeper root doesn't exist. You should create root node {} before start.", args.chroot);
     }
 }
 
@@ -505,7 +491,7 @@ std::string ZooKeeper::get(const std::string & path, Coordination::Stat * stat, 
     if (tryGet(path, res, stat, watch, &code))
         return res;
     else
-        throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);
+        throw KeeperException(code, "Can't get data for node '{}': node doesn't exist", path);
 }
 
 std::string ZooKeeper::getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback)
@@ -515,7 +501,7 @@ std::string ZooKeeper::getWatch(const std::string & path, Coordination::Stat * s
     if (tryGetWatch(path, res, stat, watch_callback, &code))
         return res;
     else
-        throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);
+        throw KeeperException(code, "Can't get data for node '{}': node doesn't exist", path);
 }
 
 bool ZooKeeper::tryGet(
