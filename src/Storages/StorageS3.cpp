@@ -276,7 +276,7 @@ private:
 
         if (!is_initialized)
         {
-            filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, getContext());
+            filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, fs::path(globbed_uri.bucket) / temp_buffer.front().key, getContext());
             is_initialized = true;
         }
 
@@ -387,7 +387,9 @@ public:
         , virtual_columns(virtual_columns_)
         , file_progress_callback(file_progress_callback_)
     {
-        auto filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, getContext());
+        ASTPtr filter_ast;
+        if (!keys.empty())
+            filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, fs::path(bucket) / keys[0], getContext());
 
         if (filter_ast)
         {

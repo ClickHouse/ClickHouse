@@ -883,7 +883,7 @@ RelativePathWithMetadata StorageAzureBlobSource::GlobIterator::next()
         index = 0;
         if (!is_initialized)
         {
-            filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, getContext());
+            filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, fs::path(container) / new_batch.front().relative_path, getContext());
             is_initialized = true;
         }
 
@@ -931,7 +931,9 @@ StorageAzureBlobSource::KeysIterator::KeysIterator(
 {
     Strings all_keys = keys_;
 
-    auto filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, getContext());
+    ASTPtr filter_ast;
+    if (!all_keys.empty())
+        filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, fs::path(container) / all_keys[0], getContext());
 
     if (filter_ast)
     {

@@ -48,7 +48,7 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
 
 NamesAndTypesList getPathAndFileVirtualsForStorage(NamesAndTypesList storage_columns);
 
-ASTPtr createPathAndFileFilterAst(const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
+ASTPtr createPathAndFileFilterAst(const ASTPtr & query, const NamesAndTypesList & virtual_columns, const String & path_example, const ContextPtr & context);
 
 ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context, ASTPtr filter_ast);
 

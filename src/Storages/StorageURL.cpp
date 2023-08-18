@@ -170,7 +170,9 @@ public:
     {
         uris = parseRemoteDescription(uri_, 0, uri_.size(), ',', max_addresses);
 
-        auto filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, context);
+        ASTPtr filter_ast;
+        if (!uris.empty())
+            filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, Poco::URI(uris[0]).getPath(), context);
 
         if (filter_ast)
         {

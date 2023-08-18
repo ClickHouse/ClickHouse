@@ -734,7 +734,12 @@ public:
             ContextPtr context_)
             : files(files_), archives(std::move(archives_)), files_in_archive(std::move(files_in_archive_))
         {
-            auto filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, context_);
+            ASTPtr filter_ast;
+            if (!files_in_archive.empty())
+                filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, files_in_archive[0].second, context_);
+            else if (!files.empty())
+                filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, files[0], context_);
+
             if (filter_ast)
             {
                 if (files_in_archive.empty())

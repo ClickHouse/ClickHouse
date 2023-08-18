@@ -367,7 +367,10 @@ public:
     {
         const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
         uris = getPathsList(path_from_uri, uri_without_path, context);
-        auto filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, context);
+        ASTPtr filter_ast;
+        if (!uris.empty())
+             filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, uris[0].path, context);
+
         if (filter_ast)
         {
             std::vector<String> paths;
@@ -411,7 +414,10 @@ public:
     explicit Impl(const std::vector<String> & uris_, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context_)
         : WithContext(context_), uris(uris_), file_progress_callback(context_->getFileProgressCallback())
     {
-        auto filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, getContext());
+        ASTPtr filter_ast;
+        if (!uris.empty())
+            filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, getPathFromUriAndUriWithoutPath(uris[0]).first, getContext());
+
         if (filter_ast)
         {
             std::vector<String> paths;
@@ -581,12 +587,11 @@ Chunk HDFSSource::generate()
         Chunk chunk;
         if (reader->pull(chunk))
         {
-            Columns columns = chunk.getColumns();
             UInt64 num_rows = chunk.getNumRows();
             size_t chunk_size = input_format->getApproxBytesReadForChunk();
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
             VirtualColumnUtils::addRequestedPathAndFileVirtualsToChunk(chunk, requested_virtual_columns, current_path);
-            return Chunk(std::move(columns), num_rows);
+            return chunk;
         }
 
         reader.reset();
