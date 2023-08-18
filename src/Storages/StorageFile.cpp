@@ -965,13 +965,13 @@ public:
                 {
                     if (virtual_column.name == "_path")
                     {
-                        chunk.addColumn(virtual_column.type->createColumnConst(num_rows, current_path)->convertToFullColumnIfConst());
+                        chunk.addColumn(virtual_column.type->createColumnConst(num_rows, current_path));
                     }
                     else if (virtual_column.name == "_file")
                     {
                         size_t last_slash_pos = current_path.find_last_of('/');
                         auto file_name = current_path.substr(last_slash_pos + 1);
-                        chunk.addColumn(virtual_column.type->createColumnConst(num_rows, file_name)->convertToFullColumnIfConst());
+                        chunk.addColumn(virtual_column.type->createColumnConst(num_rows, file_name));
                     }
                 }
 
