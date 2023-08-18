@@ -124,7 +124,11 @@ protected:
 
     Cell * buf; /// A piece of memory for all elements.
 
-    void alloc() { buf = reinterpret_cast<Cell *>(Allocator::alloc(NUM_CELLS * sizeof(Cell))); }
+    void alloc()
+    {
+        buf = reinterpret_cast<Cell *>(Allocator::alloc(NUM_CELLS * sizeof(Cell)));
+        Allocator::prefaultPages(buf, NUM_CELLS * sizeof(Cell));
+    }
 
     void free()
     {
