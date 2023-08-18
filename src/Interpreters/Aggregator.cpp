@@ -1114,7 +1114,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
         /// For all rows.
         AggregateDataPtr place = aggregates_pool->alloc(0);
-        if (all_keys_are_const)
+        if constexpr (all_keys_are_const)
         {
             state.emplaceKey(method.data, 0, *aggregates_pool).setMapped(place);
         }
