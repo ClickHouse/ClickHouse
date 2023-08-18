@@ -247,3 +247,9 @@
 [submodule "contrib/sysroot"]
 	path = contrib/sysroot
 	url = https://github.com/ClickHouse-Extras/sysroot.git
+[submodule "contrib/qpl"]
+	path = contrib/qpl
+	url = https://github.com/intel/qpl
+[submodule "contrib/idxd-config"]
+	path = contrib/idxd-config
+	url = https://github.com/intel/idxd-config

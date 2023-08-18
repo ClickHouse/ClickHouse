@@ -295,6 +295,18 @@ if (USE_S2_GEOMETRY)
     add_subdirectory(s2geometry-cmake)
 endif()
 
+if (OS_LINUX AND ARCH_AMD64 AND ENABLE_SSE42)
+    option (ENABLE_QPL "Enable Intel® Query Processing Library" ${ENABLE_LIBRARIES})
+elseif(ENABLE_QPL)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "QPL library is only supported on x86_64 arch with SSE 4.2 or higher")
+endif()
+if (ENABLE_QPL)
+    add_subdirectory (idxd-config-cmake)
+    add_subdirectory (qpl-cmake) # requires: idxd-config
+else()
+    message(STATUS "Not using QPL")
+endif ()
+
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
 # in "contrib/..." as originally planned, so we workaround this by fixing FOLDER properties of all targets manually,
