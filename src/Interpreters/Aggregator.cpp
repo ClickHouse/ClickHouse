@@ -1180,7 +1180,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// - this affects only optimize_aggregation_in_order,
     /// - this is just a pointer, so it should not be significant,
     /// - and plus this will require other changes in the interface.
-    std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[row_end]);
+    std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[all_keys_are_const ? 1 : row_end]);
 
     /// For all rows.
     size_t start, end;
@@ -1202,7 +1202,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
         if constexpr (!no_more_keys)
         {
-            if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+            if constexpr (prefetch && !all_keys_are_const && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
             {
                 if (i == row_begin + prefetching.iterationsToMeasure())
                     prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
@@ -1267,9 +1267,17 @@ void NO_INLINE Aggregator::executeImplBatch(
             /// Add only if the key already exists.
             auto find_result = state.findKey(method.data, i, *aggregates_pool);
             if (find_result.isFound())
+            {
                 aggregate_data = find_result.getMapped();
+            }
             else
+            {
+                /// If all keys are constant and this is new key
+                /// we don't need to do anything and just skip the whole block.
+                if constexpr (all_keys_are_const)
+                    return;
                 aggregate_data = overflow_row;
+            }
         }
 
         places[i] = aggregate_data;
