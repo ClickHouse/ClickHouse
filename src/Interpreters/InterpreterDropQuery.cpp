@@ -432,8 +432,9 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
 }
 
 void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context,
-                                            const StorageID & target_table_id, bool sync, bool ignore_sync_setting)
+                                            const StorageID & target_table_id, bool sync, bool ignore_sync_setting, bool need_ddl_guard)
 {
+    auto ddl_guard = (need_ddl_guard ? DatabaseCatalog::instance().getDDLGuard(target_table_id.database_name, target_table_id.table_name) : nullptr);
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
     {
         /// We create and execute `drop` query for internal table.

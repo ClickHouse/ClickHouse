@@ -383,19 +383,19 @@ def get_stacktraces_from_clickhouse(args):
     )
     replicated_msg = (
         f"{args.client} {settings_str} --query "
-        '"SELECT materialize((hostName(), tcpPort())) as host, thread_id, '
+        '"SELECT materialize((hostName(), tcpPort())) as host, thread_name, thread_id, query_id, trace, '
         "arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), "
         "arrayMap(x -> addressToLine(x), trace), "
-        "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace "
+        "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace_str "
         "FROM clusterAllReplicas('test_cluster_database_replicated', 'system.stack_trace') "
         'ORDER BY host, thread_id FORMAT Vertical"'
     )
 
     msg = (
         f"{args.client} {settings_str} --query "
-        "\"SELECT arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), "
+        "\"SELECT thread_name, thread_id, query_id, trace, arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), "
         "arrayMap(x -> addressToLine(x), trace), "
-        "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace "
+        "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace_str "
         'FROM system.stack_trace FORMAT Vertical"'
     )
 
