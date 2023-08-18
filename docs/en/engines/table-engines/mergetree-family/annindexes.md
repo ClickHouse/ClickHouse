@@ -221,14 +221,16 @@ SETTINGS annoy_index_search_k_nodes=100;
 
 ## USearch {#usearch}
 
-USearch indexes are currently experimental, to use them you first need to `SET allow_experimental_usearch_index = 1`.
-
-This type of ANN index is based on the [the USearch library](https://github.com/unum-cloud/usearch) which implements the [HNSW
-algorithm](https://arxiv.org/abs/1603.09320), i.e. builds a hierarchical graph where each point represents a vector and the edges represent
-similarity.
+This type of ANN index is based on the [the USearch library](https://github.com/unum-cloud/usearch), which implements the [HNSW
+algorithm](https://arxiv.org/abs/1603.09320), i.e., builds a hierarchical graph where each point represents a vector and the edges represent
+similarity. Such hierarchical structures can be very efficient on large collections. They may often fetch 0.05% or less data from the
+overall dataset, while still providing 99% recall. This is especially useful when working with high-dimensionality vectors,
+that are expensive to load and compare. The library also has several hardware-specific SIMD optimizations to accelerate further
+distance computations on modern Arm (NEON and SVE) and x86 (AVX2 and AVX-512) CPUs and OS-specific optimizations to allow efficient
+navigation around immutable persistent files, without loading them into RAM.
 
 <div class='vimeo-container'>
-  <iframe src="//www.youtube.com/embed/QvKMwLjdK-s"
+  <iframe src="//www.youtube.com/embed/UMrhB3icP9w"
     width="640"
     height="360"
     frameborder="0"
