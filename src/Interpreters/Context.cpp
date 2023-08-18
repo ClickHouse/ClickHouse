@@ -4595,4 +4595,9 @@ void Context::setClientProtocolVersion(UInt64 version)
     client_protocol_version = version;
 }
 
+const ServerSettings & Context::getServerSettings() const
+{
+    return shared->server_settings;
+}
+
 }
