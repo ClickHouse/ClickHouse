@@ -99,6 +99,8 @@ set(_ldap_srcs
     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/bind.c"
     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/open.c"
     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/result.c"
+    "${OPENLDAP_SOURCE_DIR}/libraries/libldap/avl.c"
+    "${OPENLDAP_SOURCE_DIR}/libraries/libldap/tavl.c"
     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/error.c"
     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/compare.c"
     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/search.c"
@@ -161,6 +163,17 @@ set(_ldap_srcs
     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/lbase64.c"
     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/msctrl.c"
     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/psearchctrl.c"
+
+    "${OPENLDAP_SOURCE_DIR}/libraries/libldap/threads.c"
+    "${OPENLDAP_SOURCE_DIR}/libraries/libldap/rdwr.c"
+    "${OPENLDAP_SOURCE_DIR}/libraries/libldap/tpool.c"
+    "${OPENLDAP_SOURCE_DIR}/libraries/libldap/rq.c"
+    "${OPENLDAP_SOURCE_DIR}/libraries/libldap/thr_posix.c"
+    "${OPENLDAP_SOURCE_DIR}/libraries/libldap/thr_thr.c"
+    "${OPENLDAP_SOURCE_DIR}/libraries/libldap/thr_nt.c"
+    "${OPENLDAP_SOURCE_DIR}/libraries/libldap/thr_pth.c"
+    # "${OPENLDAP_SOURCE_DIR}/libraries/libldap/thr_stub.c"
+    "${OPENLDAP_SOURCE_DIR}/libraries/libldap/thr_debug.c"
 )
 
 mkversion(ldap)
@@ -185,43 +198,43 @@ target_compile_definitions(_ldap
     PRIVATE LDAP_LIBRARY
 )
 
-set(_ldap_r_specific_srcs
-    "${OPENLDAP_SOURCE_DIR}/libraries/libldap_r/threads.c"
-    "${OPENLDAP_SOURCE_DIR}/libraries/libldap_r/rdwr.c"
-    "${OPENLDAP_SOURCE_DIR}/libraries/libldap_r/tpool.c"
-    "${OPENLDAP_SOURCE_DIR}/libraries/libldap_r/rq.c"
-    "${OPENLDAP_SOURCE_DIR}/libraries/libldap_r/thr_posix.c"
-    "${OPENLDAP_SOURCE_DIR}/libraries/libldap_r/thr_thr.c"
-    "${OPENLDAP_SOURCE_DIR}/libraries/libldap_r/thr_nt.c"
-    "${OPENLDAP_SOURCE_DIR}/libraries/libldap_r/thr_pth.c"
-    "${OPENLDAP_SOURCE_DIR}/libraries/libldap_r/thr_stub.c"
-    "${OPENLDAP_SOURCE_DIR}/libraries/libldap_r/thr_debug.c"
-)
+# set(_ldap_r_specific_srcs
+#     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/threads.c"
+#     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/rdwr.c"
+#     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/tpool.c"
+#     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/rq.c"
+#     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/thr_posix.c"
+#     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/thr_thr.c"
+#     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/thr_nt.c"
+#     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/thr_pth.c"
+#     # "${OPENLDAP_SOURCE_DIR}/libraries/libldap/thr_stub.c"
+#     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/thr_debug.c"
+# )
 
-mkversion(ldap_r)
+# mkversion(ldap_r)
 
-add_library(_ldap_r
-    ${_ldap_r_specific_srcs}
-    ${_ldap_srcs}
-    "${CMAKE_CURRENT_BINARY_DIR}/ldap_r-version.c"
-)
+# add_library(_ldap_r
+#     ${_ldap_r_specific_srcs}
+#     ${_ldap_srcs}
+#     "${CMAKE_CURRENT_BINARY_DIR}/ldap_r-version.c"
+# )
 
-target_link_libraries(_ldap_r
-    PRIVATE _lber
-    PRIVATE OpenSSL::Crypto OpenSSL::SSL
-)
+# target_link_libraries(_ldap_r
+#     PRIVATE _lber
+#     PRIVATE OpenSSL::Crypto OpenSSL::SSL
+# )
 
-target_include_directories(_ldap_r SYSTEM
-    PUBLIC ${_extra_build_dir}/include
-    PUBLIC "${OPENLDAP_SOURCE_DIR}/include"
-    PRIVATE "${OPENLDAP_SOURCE_DIR}/libraries/libldap_r"
-    PRIVATE "${OPENLDAP_SOURCE_DIR}/libraries/libldap"
-)
+# target_include_directories(_ldap_r SYSTEM
+#     PUBLIC ${_extra_build_dir}/include
+#     PUBLIC "${OPENLDAP_SOURCE_DIR}/include"
+#     PRIVATE "${OPENLDAP_SOURCE_DIR}/libraries/libldap_r"
+#     PRIVATE "${OPENLDAP_SOURCE_DIR}/libraries/libldap"
+# )
 
-target_compile_definitions(_ldap_r
-    PRIVATE LDAP_R_COMPILE
-    PRIVATE LDAP_LIBRARY
-)
+# target_compile_definitions(_ldap_r
+#     PRIVATE LDAP_R_COMPILE
+#     PRIVATE LDAP_LIBRARY
+# )
 
-add_library(ch_contrib::ldap ALIAS _ldap_r)
+add_library(ch_contrib::ldap ALIAS _ldap)
 add_library(ch_contrib::lber ALIAS _lber)
