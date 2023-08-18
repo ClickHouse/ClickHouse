@@ -226,9 +226,6 @@ void ORCBlockInputFormat::prepareFileReader()
         if (getPort().getHeader().has(name, ignore_case) || nested_table_names.contains(ignore_case ? boost::to_lower_copy(name) : name))
             include_indices.push_back(static_cast<int>(i));
     }
-
-    // std::cout << "schema:" << schema.dumpStructure() << std::endl;
-    // std::cout << "header:" << getPort().getHeader().dumpStructure() << std::endl;
 }
 
 bool ORCBlockInputFormat::prepareStripeReader()
@@ -243,7 +240,6 @@ bool ORCBlockInputFormat::prepareStripeReader()
     if (current_stripe >= total_stripes)
         return false;
 
-    /// Seek to current stripe
     current_stripe_info = file_reader->getStripe(current_stripe);
     if (!current_stripe_info->getNumberOfRows())
         return false;
@@ -401,6 +397,21 @@ static ColumnPtr readOffsetsFromORCListColumn(const BatchType * orc_column)
     return offsets_column;
 }
 
+static ColumnWithTypeAndName
+readColumnWithBooleanData(const orc::ColumnVectorBatch * orc_column, const orc::Type *, const String & column_name)
+{
+    const auto * orc_bool_column = dynamic_cast<const orc::LongVectorBatch *>(orc_column);
+    auto internal_type = DataTypeFactory::instance().get("Bool");
+    auto internal_column = internal_type->createColumn();
+    auto & column_data = assert_cast<ColumnVector<UInt8> &>(*internal_column).getData();
+    column_data.reserve(orc_bool_column->numElements);
+
+    for (size_t i = 0; i < orc_bool_column->numElements; ++i)
+        column_data.push_back(static_cast<UInt8>(orc_bool_column->data[i]));
+
+    return {std::move(internal_column), internal_type, column_name};
+}
+
 /// Inserts numeric data right into internal column data to reduce an overhead
 template <typename NumericType, typename BatchType, typename VectorType = ColumnVector<NumericType>>
 static ColumnWithTypeAndName
@@ -417,7 +428,6 @@ readColumnWithNumericData(const orc::ColumnVectorBatch * orc_column, const orc::
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
-/// Inserts numeric data right into internal column data to reduce an overhead
 template <typename NumericType, typename BatchType, typename VectorType = ColumnVector<NumericType>>
 static ColumnWithTypeAndName
 readColumnWithNumericDataCast(const orc::ColumnVectorBatch * orc_column, const orc::Type *, const String & column_name)
@@ -434,7 +444,6 @@ readColumnWithNumericDataCast(const orc::ColumnVectorBatch * orc_column, const o
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
-/// Inserts chars and offsets right into internal column data to reduce an overhead.
 static ColumnWithTypeAndName
 readColumnWithStringData(const orc::ColumnVectorBatch * orc_column, const orc::Type *, const String & column_name)
 {
@@ -491,7 +500,6 @@ readColumnWithFixedStringData(const orc::ColumnVectorBatch * orc_column, const o
 }
 
 
-/// Inserts decimal data right into internal column data to reduce an overhead
 template <typename DecimalType, typename BatchType, typename VectorType = ColumnDecimal<DecimalType>>
 static ColumnWithTypeAndName readColumnWithDecimalDataCast(
     const orc::ColumnVectorBatch * orc_column, const orc::Type *, const String & column_name, DataTypePtr internal_type)
@@ -518,15 +526,10 @@ static ColumnWithTypeAndName readColumnWithDecimalDataCast(
             decimal_value.value = static_cast<NativeType>(orc_decimal_column->values[i]);
 
         column_data.push_back(std::move(decimal_value));
-        // std::cout << "i:" << i << "size:" << column_data.size() << "size2:" << internal_column->size()
-        //   << ", value:" << static_cast<Int64>(column_data.back().value) << std::endl;
     }
-    // std::cout << "orc rows:" << orc_decimal_column->numElements << std::endl;
-    // std::cout << "ch rows:" << internal_column->size() << std::endl;
 
     return {std::move(internal_column), internal_type, column_name};
 }
-
 
 static ColumnWithTypeAndName
 readIPv6ColumnFromBinaryData(const orc::ColumnVectorBatch * orc_column, const orc::Type * orc_type, const String & column_name)
@@ -555,7 +558,6 @@ readIPv6ColumnFromBinaryData(const orc::ColumnVectorBatch * orc_column, const or
 
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
-
 
 static ColumnWithTypeAndName
 readIPv4ColumnWithInt32Data(const orc::ColumnVectorBatch * orc_column, const orc::Type *, const String & column_name)
@@ -592,7 +594,6 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(
     }
     return {std::move(internal_column), column_type, column_name};
 }
-
 
 static ColumnWithTypeAndName readColumnWithDateData(
     const orc::ColumnVectorBatch * orc_column, const orc::Type *, const String & column_name, const DataTypePtr & type_hint)
@@ -650,7 +651,6 @@ readColumnWithTimestampData(const orc::ColumnVectorBatch * orc_column, const orc
     }
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
-
 
 static ColumnWithTypeAndName readColumnFromORCColumn(
     const orc::ColumnVectorBatch * orc_column,
@@ -727,6 +727,8 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
             }
             return readColumnWithFixedStringData(orc_column, orc_type, column_name);
         }
+        case orc::BOOLEAN:
+            return readColumnWithBooleanData(orc_column, orc_type, column_name);
         case orc::BYTE:
             return readColumnWithNumericDataCast<Int8, orc::LongVectorBatch>(orc_column, orc_type, column_name);
         case orc::SHORT:
@@ -1055,7 +1057,6 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
 
     res.setColumns(columns_list, num_rows);
 }
-
 
 void registerInputFormatORC(FormatFactory & factory)
 {
