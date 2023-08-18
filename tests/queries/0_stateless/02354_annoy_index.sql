@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-ubsan, no-cpu-aarch64
+-- Tags: no-fasttest, no-ubsan, no-cpu-aarch64, no-ordinary-database
 
 SET allow_experimental_annoy_index = 1;
 SET allow_experimental_analyzer = 0;
@@ -249,3 +249,35 @@ DROP TABLE tab;
 
 -- (*) Storage and search in Annoy indexes is inherently random. Tests which check for exact row matches would be unstable. Therefore,
 -- comment them out.
+
+SELECT '--- Test correctness of Annoy index with > 1 mark';
+
+CREATE TABLE tab(id Int32, vector Array(Float32), INDEX annoy_index vector TYPE annoy()) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes=0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0; -- disable adaptive granularity due to bug
+INSERT INTO tab SELECT number, [toFloat32(number), 0., 0., 0.] from numbers(10000);
+
+SELECT *
+FROM tab
+ORDER BY L2Distance(vector, [1.0, 0.0, 0.0, 0.0])
+LIMIT 1;
+
+SELECT *
+FROM tab
+ORDER BY L2Distance(vector, [9000.0, 0.0, 0.0, 0.0])
+LIMIT 1;
+
+DROP TABLE tab;
+
+CREATE TABLE tab(id Int32, vector Tuple(Float32, Float32, Float32, Float32), INDEX annoy_index vector TYPE annoy()) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes=0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0; -- disable adaptive granularity due to bug
+INSERT INTO tab SELECT number, (toFloat32(number), 0., 0., 0.) from numbers(10000);
+
+SELECT *
+FROM tab
+ORDER BY L2Distance(vector, (1.0, 0.0, 0.0, 0.0))
+LIMIT 1;
+
+SELECT *
+FROM tab
+ORDER BY L2Distance(vector, (9000.0, 0.0, 0.0, 0.0))
+LIMIT 1;
+
+DROP TABLE tab;

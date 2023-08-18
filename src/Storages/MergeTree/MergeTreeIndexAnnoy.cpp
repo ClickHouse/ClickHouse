@@ -172,7 +172,8 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
             if (offsets[i + 1] - offsets[i] != size)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column {} must have equal length", index_column_name);
 
-        index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(size);
+        if (!index)
+            index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(size);
 
         /// Add all rows of block
         index->add_item(index->get_n_items(), array.data());
@@ -195,7 +196,8 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
         if (data.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple has 0 rows, {} rows expected", rows_read);
 
-        index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(data[0].size());
+        if (!index)
+            index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(data[0].size());
 
         for (const auto & item : data)
             index->add_item(index->get_n_items(), item.data());
