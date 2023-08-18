@@ -1264,11 +1264,16 @@ size_t getFailedOpIndex(Coordination::Error exception_code, const Coordination::
 }
 
 
-KeeperMultiException::KeeperMultiException(Coordination::Error exception_code, const Coordination::Requests & requests_, const Coordination::Responses & responses_)
-        : KeeperException(exception_code, "Transaction failed: Op #{}, path", failed_op_index),
-          requests(requests_), responses(responses_), failed_op_index(getFailedOpIndex(exception_code, responses))
+KeeperMultiException::KeeperMultiException(Coordination::Error exception_code, size_t failed_op_index_, const Coordination::Requests & requests_, const Coordination::Responses & responses_)
+        : KeeperException(exception_code, "Transaction failed: Op #{}, path", failed_op_index_),
+          requests(requests_), responses(responses_), failed_op_index(failed_op_index_)
 {
     addMessage(getPathForFirstFailedOp());
+}
+
+KeeperMultiException::KeeperMultiException(Coordination::Error exception_code, const Coordination::Requests & requests_, const Coordination::Responses & responses_)
+        : KeeperMultiException(exception_code, getFailedOpIndex(exception_code, responses_), requests_, responses_)
+{
 }
 
 
