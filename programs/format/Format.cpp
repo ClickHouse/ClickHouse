@@ -58,7 +58,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("backslash", "add a backslash at the end of each line of the formatted query")
             ("allow_settings_after_format_in_insert", "Allow SETTINGS after FORMAT, but note, that this is not always safe")
             ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
-            ("show-secrets" , "show secret parts of the AST. For example in query: CREATE USER user IDENTIFIED WITH PLAINTEXT_PASSWORD BY 'hello', 'hello' is a secret part of AST")
+            ("show-secrets" , "show secret parts of the AST, e.g. passwords or API keys")
         ;
 
         Settings cmd_settings;
@@ -91,13 +91,13 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
         if (quiet && (hilite || oneline || show_secrets || obfuscate))
         {
-            std::cerr << "Options 'hilite' or 'oneline' or 'obfuscate' have no sense in 'quiet' mode." << std::endl;
+            std::cerr << "Options 'hilite' or 'oneline' or 'show-secrets' or 'obfuscate' have no sense in 'quiet' mode." << std::endl;
             return 2;
         }
 
         if (obfuscate && (hilite || oneline || show_secrets || quiet))
         {
-            std::cerr << "Options 'hilite' or 'oneline' or 'quiet' have no sense in 'obfuscate' mode." << std::endl;
+            std::cerr << "Options 'hilite' or 'oneline' or 'show-secrets' or 'quiet' have no sense in 'obfuscate' mode." << std::endl;
             return 2;
         }
 
