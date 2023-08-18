@@ -60,8 +60,8 @@ public:
         {
             /// https://tools.ietf.org/html/rfc4122#section-4.4
 
-            UUIDHelpers::getUUIDHigh(uuid) = (UUIDHelpers::getUUIDHigh(uuid) & 0xffffffffffff0fffull) | 0x0000000000004000ull;
-            UUIDHelpers::getUUIDLow(uuid) = (UUIDHelpers::getUUIDLow(uuid) & 0x3fffffffffffffffull) | 0x8000000000000000ull;
+            UUIDHelpers::getHighBytes(uuid) = (UUIDHelpers::getHighBytes(uuid) & 0xffffffffffff0fffull) | 0x0000000000004000ull;
+            UUIDHelpers::getLowBytes(uuid) = (UUIDHelpers::getLowBytes(uuid) & 0x3fffffffffffffffull) | 0x8000000000000000ull;
         }
 
         return col_res;

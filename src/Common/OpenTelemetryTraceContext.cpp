@@ -228,8 +228,8 @@ bool TracingContext::parseTraceparentHeader(std::string_view traceparent, String
 
     ++data;
     this->trace_flags = unhex2(data);
-    UUIDHelpers::getUUIDHigh(this->trace_id) = trace_id_higher_64;
-    UUIDHelpers::getUUIDLow(this->trace_id) = trace_id_lower_64;
+    UUIDHelpers::getHighBytes(this->trace_id) = trace_id_higher_64;
+    UUIDHelpers::getLowBytes(this->trace_id) = trace_id_lower_64;
     this->span_id = span_id_64;
     return true;
 }
@@ -240,8 +240,8 @@ String TracingContext::composeTraceparentHeader() const
     // parent id.
     return fmt::format(
         "00-{:016x}{:016x}-{:016x}-{:02x}",
-        UUIDHelpers::getUUIDHigh(trace_id),
-        UUIDHelpers::getUUIDLow(trace_id),
+        UUIDHelpers::getHighBytes(trace_id),
+        UUIDHelpers::getLowBytes(trace_id),
         span_id,
         // This cast is needed because fmt is being weird and complaining that
         // "mixing character types is not allowed".
@@ -336,8 +336,8 @@ TracingContextHolder::TracingContextHolder(
             while (_parent_trace_context.trace_id == UUID())
             {
                 // Make sure the random generated trace_id is not 0 which is an invalid id.
-                UUIDHelpers::getUUIDHigh(_parent_trace_context.trace_id) = thread_local_rng();
-                UUIDHelpers::getUUIDLow(_parent_trace_context.trace_id) = thread_local_rng();
+                UUIDHelpers::getHighBytes(_parent_trace_context.trace_id) = thread_local_rng();
+                UUIDHelpers::getLowBytes(_parent_trace_context.trace_id) = thread_local_rng();
             }
             _parent_trace_context.span_id = 0;
         }

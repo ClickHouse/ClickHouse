@@ -1124,8 +1124,8 @@ inline void readBinary(UUID & x, ReadBuffer & buf)
 template <typename A, typename B>
 inline void readBinary(std::pair<A, B> & x, ReadBuffer & buf)
 {
-    readPODBinary(x.first, buf);
-    readPODBinary(x.second, buf);
+    readBinary(x.first, buf);
+    readBinary(x.second, buf);
 }
 
 inline void readBinary(CityHash_v1_0_2::uint128 & x, ReadBuffer & buf)
