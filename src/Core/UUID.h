@@ -11,7 +11,7 @@
  * you the 8 higher bytes, and index 1 will give you the 8 lower bytes. On a Big Endian platform, this is reversed where
  * index 0 will give you the 8 lower bytes, and index 1 will give you the 8 higher bytes.
  *
- *    uuid.toUnderType().items[0] 
+ *    uuid.toUnderType().items[0]
  *
  *    //  uint64_t   uint64_t
  *    // [xxxxxxxx] [        ]
