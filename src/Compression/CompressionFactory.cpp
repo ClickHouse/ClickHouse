@@ -165,6 +165,7 @@ void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecLZ4(CompressionCodecFactory & factory);
 void registerCodecLZ4HC(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
+void registerCodecDeflateQpl(CompressionCodecFactory & factory);
 void registerCodecDelta(CompressionCodecFactory & factory);
 void registerCodecT64(CompressionCodecFactory & factory);
 void registerCodecDoubleDelta(CompressionCodecFactory & factory);
@@ -184,6 +185,9 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecGorilla(*this);
     registerCodecEncrypted(*this);
     registerCodecMultiple(*this);
+#ifdef ENABLE_QPL_COMPRESSION
+	registerCodecDeflateQpl(*this);
+#endif
 
     default_codec = get("LZ4", {});
 }

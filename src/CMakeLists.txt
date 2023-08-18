@@ -302,6 +302,12 @@ set_source_files_properties(
         Columns/ColumnDecimal.cpp
         PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
+if (ENABLE_QPL)
+set_source_files_properties(
+        Compression/CompressionCodecDeflateQpl.cpp
+        PROPERTIES COMPILE_FLAGS "-mwaitpkg")
+endif ()
+
 if(RE2_LIBRARY)
     target_link_libraries(clickhouse_common_io PUBLIC ${RE2_LIBRARY})
 endif()
@@ -389,6 +395,10 @@ if (ZSTD_LIBRARY)
         dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
     endif ()
 endif()
+
+if (ENABLE_QPL)
+    dbms_target_link_libraries(PRIVATE qpl)
+endif ()
 
 if (XZ_LIBRARY)
     target_link_libraries (clickhouse_common_io PUBLIC ${XZ_LIBRARY})
