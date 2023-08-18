@@ -20,6 +20,7 @@ public:
     ASTPtr index_decl;
 
     bool if_not_exists{false};
+    bool unique{false};
 
     String getID(char delim) const override;
 

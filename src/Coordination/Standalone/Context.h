@@ -98,6 +98,14 @@ public:
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
 
+    enum class ApplicationType
+    {
+        KEEPER
+    };
+
+    void setApplicationType(ApplicationType) {}
+    ApplicationType getApplicationType() const { return ApplicationType::KEEPER; }
+
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
     ThreadPool & getThreadPoolWriter() const;
