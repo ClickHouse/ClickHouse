@@ -205,6 +205,8 @@ using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
 class SessionTracker;
 
+struct ServerSettings;
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -1189,6 +1191,8 @@ public:
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
+
+    const ServerSettings & getServerSettings() const;
 
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
