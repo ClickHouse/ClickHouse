@@ -75,7 +75,7 @@ std::unique_ptr<QueryPlan> createLocalPlan(
         new_context->setClientInterface(ClientInfo::Interface::LOCAL);
         new_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
         new_context->setReplicaInfo(true, replica_count, replica_num);
-        new_context->setConnectionClientVersion(DBMS_VERSION_MAJOR, DBMS_VERSION_MINOR, DBMS_VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
+        new_context->setConnectionClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
         new_context->setParallelReplicasGroupUUID(group_uuid);
         new_context->setMergeTreeAllRangesCallback([coordinator](InitialAllRangesAnnouncement announcement)
         {

@@ -177,7 +177,7 @@ struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
                 requests.push_back(std::make_shared<TestKeeperCheckRequest>(*concrete_request_check));
             }
             else
-                throw Exception("Illegal command as part of multi ZooKeeper request", Error::ZBADARGUMENTS);
+                throw Exception::fromMessage(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
         }
     }
 
@@ -389,7 +389,7 @@ std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Containe
     {
         auto path_prefix = path;
         if (path_prefix.empty())
-            throw Exception("Logical error: path cannot be empty", Error::ZSESSIONEXPIRED);
+            throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "Logical error: path cannot be empty");
 
         if (path_prefix.back() != '/')
             path_prefix += '/';
@@ -705,10 +705,10 @@ void TestKeeper::pushRequest(RequestInfo && request)
         std::lock_guard lock(push_request_mutex);
 
         if (expired)
-            throw Exception("Session expired", Error::ZSESSIONEXPIRED);
+            throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "Session expired");
 
         if (!requests_queue.tryPush(std::move(request), args.operation_timeout_ms))
-            throw Exception("Cannot push request to queue within operation timeout", Error::ZOPERATIONTIMEOUT);
+            throw Exception::fromMessage(Error::ZOPERATIONTIMEOUT, "Cannot push request to queue within operation timeout");
     }
     catch (...)
     {

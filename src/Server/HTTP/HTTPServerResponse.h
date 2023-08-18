@@ -5,8 +5,8 @@
 #include <Poco/Net/HTTPServerSession.h>
 #include <Poco/Net/HTTPResponse.h>
 
-#include <iostream>
 #include <memory>
+
 
 namespace DB
 {

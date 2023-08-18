@@ -1,5 +1,4 @@
 #include <Processors/IAccumulatingTransform.h>
-#include <iostream>
 
 namespace DB
 {

@@ -17,6 +17,13 @@
   * - ZooKeeper emulation layer on top of Etcd, FoundationDB, whatever.
   */
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int KEEPER_EXCEPTION;
+}
+}
 
 namespace Coordination
 {
@@ -450,17 +457,46 @@ class Exception : public DB::Exception
 private:
     /// Delegate constructor, used to minimize repetition; last parameter used for overload resolution.
     Exception(const std::string & msg, const Error code_, int); /// NOLINT
+    Exception(PreformattedMessage && msg, const Error code_);
+
+    /// Message must be a compile-time constant
+    template <typename T>
+    requires std::is_convertible_v<T, String>
+    Exception(T && message, const Error code_) : DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, std::forward<T>(message)), code(code_)
+    {
+        incrementErrorMetrics(code);
+    }
+
+    static void incrementErrorMetrics(const Error code_);
 
 public:
     explicit Exception(const Error code_); /// NOLINT
-    Exception(const std::string & msg, const Error code_); /// NOLINT
-    Exception(const Error code_, const std::string & path); /// NOLINT
     Exception(const Exception & exc);
 
     template <typename... Args>
-    Exception(const Error code_, fmt::format_string<Args...> fmt, Args &&... args)
-        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code_)
+    Exception(const Error code_, FormatStringHelper<Args...> fmt, Args &&... args)
+        : DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, std::move(fmt), std::forward<Args>(args)...)
+        , code(code_)
     {
+        incrementErrorMetrics(code);
+    }
+
+    inline static Exception createDeprecated(const std::string & msg, const Error code_)
+    {
+        return Exception(msg, code_, 0);
+    }
+
+    inline static Exception fromPath(const Error code_, const std::string & path)
+    {
+        return Exception(code_, "Coordination error: {}, path {}", errorMessage(code_), path);
+    }
+
+    /// Message must be a compile-time constant
+    template <typename T>
+    requires std::is_convertible_v<T, String>
+    inline static Exception fromMessage(const Error code_, T && message)
+    {
+        return Exception(std::forward<T>(message), code_);
     }
 
     const char * name() const noexcept override { return "Coordination::Exception"; }
@@ -491,8 +527,6 @@ public:
 
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;
-
-    virtual Poco::Net::SocketAddress getConnectedAddress() const = 0;
 
     /// If the method will throw an exception, callbacks won't be called.
     ///
@@ -565,6 +599,10 @@ public:
     virtual bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const = 0;
 
     virtual const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return nullptr; }
+
+    /// A ZooKeeper session can have an optional deadline set on it.
+    /// After it has been reached, the session needs to be finalized.
+    virtual bool hasReachedDeadline() const = 0;
 
     /// Expire session and finish all pending requests
     virtual void finalize(const String & reason) = 0;
