@@ -290,6 +290,7 @@ NamesAndTypesList getPathAndFileVirtualsForStorage(NamesAndTypesList storage_col
 
 static void addPathAndFileToVirtualColumns(Block & block, const String & path, size_t idx)
 {
+    std::cerr << "Path: " << path << "\n";
     if (block.has("_path"))
         block.getByName("_path").column->assumeMutableRef().insert(path);
 
@@ -299,13 +300,14 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
         assert(pos != std::string::npos);
 
         auto file = path.substr(pos + 1);
+        std::cerr << "File: " << file << "\n";
         block.getByName("_file").column->assumeMutableRef().insert(file);
     }
 
     block.getByName("_idx").column->assumeMutableRef().insert(idx);
 }
 
-ASTPtr createPathAndFileFilterAst(const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
+ASTPtr createPathAndFileFilterAst(const ASTPtr & query, const NamesAndTypesList & virtual_columns, const String & path_example, const ContextPtr & context)
 {
     if (!query || virtual_columns.empty())
         return {};
@@ -316,7 +318,7 @@ ASTPtr createPathAndFileFilterAst(const ASTPtr & query, const NamesAndTypesList 
     /// Create a block with one row to construct filter
     /// Append "idx" column as the filter result
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
-    addPathAndFileToVirtualColumns(block, "path/file", 0);
+    addPathAndFileToVirtualColumns(block, path_example, 0);
     ASTPtr filter_ast;
     prepareFilterBlockWithQuery(query, context, block, filter_ast);
     return filter_ast;
@@ -330,9 +332,14 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
     for (size_t i = 0; i != paths.size(); ++i)
+    {
+        std::cerr << "Add path " << paths[i] << "\n";
         addPathAndFileToVirtualColumns(block, paths[i], i);
+    }
 
     filterBlockWithQuery(query, block, context, filter_ast);
+    std::cerr << "Done filter\n";
+
     return block.getByName("_idx").column;
 }
 
