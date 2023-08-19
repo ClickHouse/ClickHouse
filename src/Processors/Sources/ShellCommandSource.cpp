@@ -266,7 +266,7 @@ namespace
         {
             for (auto && send_data_task : send_data_tasks)
             {
-                send_data_threads.emplace_back([task = std::move(send_data_task), this]()
+                send_data_threads.emplace_back([task = std::move(send_data_task), this]() mutable
                 {
                     try
                     {
@@ -276,6 +276,10 @@ namespace
                     {
                         std::lock_guard lock(send_data_lock);
                         exception_during_send_data = std::current_exception();
+
+                        /// task should be reset inside catch block or else it breaks d'tor
+                        /// invariants such as in ~WriteBuffer.
+                        task = {};
                     }
                 });
             }
