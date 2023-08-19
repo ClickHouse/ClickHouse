@@ -56,18 +56,23 @@ set (REQUIRED_LLVM_LIBRARIES
     LLVMDemangle
 )
 
-# if (ARCH_AMD64)
+if (ARCH_AMD64)
     list(APPEND REQUIRED_LLVM_LIBRARIES LLVMX86Info LLVMX86Desc LLVMX86CodeGen)
-# elseif (ARCH_AARCH64)
-#     list(APPEND REQUIRED_LLVM_LIBRARIES LLVMAArch64Info LLVMAArch64Desc LLVMAArch64CodeGen)
-# endif ()
+elseif (ARCH_AARCH64)
+    list(APPEND REQUIRED_LLVM_LIBRARIES LLVMAArch64Info LLVMAArch64Desc LLVMAArch64CodeGen)
+endif ()
 
 set (CMAKE_INSTALL_RPATH "ON") # Do not adjust RPATH in llvm, since then it will not be able to find libcxx/libcxxabi/libunwind
 set (LLVM_COMPILER_CHECKED 1 CACHE INTERNAL "") # Skip internal compiler selection
 set (LLVM_ENABLE_EH 1 CACHE INTERNAL "") # With exception handling
 set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
 set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
-set (LLVM_TARGETS_TO_BUILD "X86" CACHE STRING "") # for x86 + ARM: "X86;AArch64"
+
+if (ARCH_AMD64)
+    set (LLVM_TARGETS_TO_BUILD "X86" CACHE STRING "")
+elseif (ARCH_AARCH64)
+    set (LLVM_TARGETS_TO_BUILD "AArch64" CACHE STRING "")
+endif ()
 
 # Omit unnecessary stuff (just the options which are ON by default)
 set(LLVM_ENABLE_BACKTRACES 0 CACHE INTERNAL "")
