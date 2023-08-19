@@ -101,6 +101,9 @@ set(LLVM_ENABLE_BINDINGS 0 CACHE INTERNAL "")
 
 set (LLVM_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/llvm")
 set (LLVM_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm")
+if (CMAKE_CROSSCOMPILING)
+    set (LLVM_HOST_TRIPLE "${CMAKE_C_COMPILER_TARGET}")
+endif()
 
 add_subdirectory ("${LLVM_SOURCE_DIR}" "${LLVM_BINARY_DIR}")
 
