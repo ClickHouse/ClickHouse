@@ -212,8 +212,8 @@ sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_defau
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 
 sudo cat /etc/clickhouse-server/config.d/logger_trace.xml \
-  | sed "s|<level>trace</level>|<level>test</level>|" \
-  > /etc/clickhouse-server/config.d/logger_trace.xml.tmp
+   | sed "s|<level>trace</level>|<level>test</level>|" \
+   > /etc/clickhouse-server/config.d/logger_trace.xml.tmp
 mv /etc/clickhouse-server/config.d/logger_trace.xml.tmp /etc/clickhouse-server/config.d/logger_trace.xml
 
 start
