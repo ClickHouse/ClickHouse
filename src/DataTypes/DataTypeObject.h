@@ -29,10 +29,7 @@ public:
 
     MutableColumnPtr createColumn() const override { return ColumnObject::create(is_nullable); }
 
-    Field getDefault() const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDefault() is not implemented for data type {}", getName());
-    }
+    Field getDefault() const override;
 
     bool haveSubtypes() const override { return false; }
     bool equals(const IDataType & rhs) const override;

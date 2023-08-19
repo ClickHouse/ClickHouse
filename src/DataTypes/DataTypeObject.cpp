@@ -44,6 +44,11 @@ String DataTypeObject::doGetName() const
     return out.str();
 }
 
+Field DataTypeObject::getDefault() const
+{
+    return Object{{"dummy", 1}};
+}
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
