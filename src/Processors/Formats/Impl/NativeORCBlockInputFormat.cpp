@@ -242,7 +242,7 @@ bool ORCBlockInputFormat::prepareStripeReader()
 
     current_stripe_info = file_reader->getStripe(current_stripe);
     if (!current_stripe_info->getNumberOfRows())
-        return false;
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ORC stripe {} has no rows", current_stripe);
 
     orc::RowReaderOptions row_reader_options;
     row_reader_options.include(include_indices);
@@ -363,7 +363,7 @@ void ORCColumnToCHColumn::orcTableToCHChunk(
     orcColumnsToCHChunk(res, name_to_column_ptr, num_rows, block_missing_values);
 }
 
-/// Creates a null bytemap from arrow's null bitmap
+/// Creates a null bytemap from ORC's not-null bytemap
 static ColumnPtr readByteMapFromORCColumn(const orc::ColumnVectorBatch * orc_column)
 {
     if (!orc_column->hasNulls)
