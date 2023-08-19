@@ -364,6 +364,7 @@ CREATE TABLE system.merges
     `source_part_paths` Array(String),
     `result_part_path` String,
     `partition_id` String,
+    `partition` String,
     `is_mutation` UInt8,
     `total_size_bytes_compressed` UInt64,
     `total_size_bytes_uncompressed` UInt64,

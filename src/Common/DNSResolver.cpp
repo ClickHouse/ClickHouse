@@ -313,8 +313,8 @@ bool DNSResolver::updateCacheImpl(
     UpdateF && update_func,
     ElemsT && elems,
     UInt32 max_consecutive_failures,
-    const String & notfound_log_msg,
-    const String & dropped_log_msg)
+    FormatStringHelper<String> notfound_log_msg,
+    FormatStringHelper<String> dropped_log_msg)
 {
     bool updated = false;
     String lost_elems;
@@ -351,7 +351,7 @@ bool DNSResolver::updateCacheImpl(
     }
 
     if (!lost_elems.empty())
-        LOG_INFO(log, fmt::runtime(notfound_log_msg), lost_elems);
+        LOG_INFO(log, notfound_log_msg.format(std::move(lost_elems)));
     if (elements_to_drop.size())
     {
         updated = true;
@@ -363,7 +363,7 @@ bool DNSResolver::updateCacheImpl(
             deleted_elements += cacheElemToString(it->first);
             elems.erase(it);
         }
-        LOG_INFO(log, fmt::runtime(dropped_log_msg), deleted_elements);
+        LOG_INFO(log, dropped_log_msg.format(std::move(deleted_elements)));
     }
 
     return updated;

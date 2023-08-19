@@ -130,13 +130,13 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
             MarkInCompressedFile mark;
             size_t granularity;
 
-            readBinary(mark.offset_in_compressed_file, *marks_reader);
-            readBinary(mark.offset_in_decompressed_block, *marks_reader);
+            readBinaryLittleEndian(mark.offset_in_compressed_file, *marks_reader);
+            readBinaryLittleEndian(mark.offset_in_decompressed_block, *marks_reader);
             ++marks_count;
 
             if (index_granularity_info_.mark_type.adaptive)
             {
-                readIntBinary(granularity, *marks_reader);
+                readBinaryLittleEndian(granularity, *marks_reader);
                 index_granularity_.appendMark(granularity);
             }
         }
