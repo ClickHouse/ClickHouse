@@ -8,11 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class DataTypeObject : public IDataType
 {
 private:
