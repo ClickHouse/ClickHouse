@@ -215,6 +215,7 @@ struct ContextSharedPart : boost::noncopyable
     String user_files_path;                                 /// Path to the directory with user provided files, usable by 'file' table function.
     String dictionaries_lib_path;                           /// Path to the directory with user provided binaries and libraries for external dictionaries.
     String user_scripts_path;                               /// Path to the directory with user provided scripts.
+    String filesystem_caches_path;                          /// Path to the directory with filesystem caches.
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
@@ -771,6 +772,12 @@ String Context::getUserScriptsPath() const
     return shared->user_scripts_path;
 }
 
+String Context::getFilesystemCachesPath() const
+{
+    auto lock = getLock();
+    return shared->filesystem_caches_path;
+}
+
 Strings Context::getWarnings() const
 {
     Strings common_warnings;
@@ -860,6 +867,16 @@ void Context::setPath(const String & path)
 
     if (shared->user_scripts_path.empty())
         shared->user_scripts_path = shared->path + "user_scripts/";
+}
+
+void Context::setFilesystemCachesPath(const String & path)
+{
+    auto lock = getLock();
+
+    if (!fs::path(path).is_absolute())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filesystem caches path must be absolute: {}", path);
+
+    shared->filesystem_caches_path = path;
 }
 
 static void setupTmpPath(Poco::Logger * log, const std::string & path)
