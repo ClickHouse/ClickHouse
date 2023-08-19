@@ -40,6 +40,15 @@ There are multiple ways of user identification:
 - `IDENTIFIED WITH ssl_certificate CN 'mysite.com:user'`
 - `IDENTIFIED BY 'qwerty'`
 
+If a password is defined, by default it must meet the following complexity requirements:
+- Be at least 12 characters long
+- Contain at least 1 numeric character
+- Contain at least 1 uppercase character
+- Contain at least 1 lowercase character
+- Contain at least 1 special character
+
+Password complexity requirements can be edited in [config.xml](/docs/en/operations/configuration-files).
+
 ## Examples
 
 1. The following username is `name1` and does not require a password - which obviously doesn't provide much security:
