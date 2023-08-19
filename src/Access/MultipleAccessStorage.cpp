@@ -502,4 +502,15 @@ void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
     throwBackupNotAllowed();
 }
 
+bool MultipleAccessStorage::containsStorage(std::string_view storage_type) const
+{
+    auto storages = getStoragesInternal();
+
+    for (const auto & storage : *storages)
+    {
+        if (storage->getStorageType() == storage_type)
+            return true;
+    }
+    return false;
+}
 }

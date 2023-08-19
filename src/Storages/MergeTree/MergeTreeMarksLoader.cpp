@@ -160,7 +160,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
             size_t granularity;
             reader->readStrict(
                 reinterpret_cast<char *>(plain_marks.data() + i * columns_in_mark), columns_in_mark * sizeof(MarkInCompressedFile));
-            readIntBinary(granularity, *reader);
+            readBinaryLittleEndian(granularity, *reader);
         }
 
         if (!reader->eof())
@@ -169,6 +169,16 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
                 "Too many marks in file {}, marks expected {} (bytes size {})",
                 mrk_path, marks_count, expected_uncompressed_size);
     }
+
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    std::ranges::for_each(
+        plain_marks,
+        [](auto & plain_mark)
+        {
+            plain_mark.offset_in_compressed_file = std::byteswap(plain_mark.offset_in_compressed_file);
+            plain_mark.offset_in_decompressed_block = std::byteswap(plain_mark.offset_in_decompressed_block);
+        });
+#endif
 
     auto res = std::make_shared<MarksInCompressedFile>(plain_marks);
 
