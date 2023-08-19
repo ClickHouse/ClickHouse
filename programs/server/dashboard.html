@@ -877,7 +877,7 @@ async function draw(idx, chart, url_params, query) {
     user = document.getElementById('user').value;
     password = document.getElementById('password').value;
 
-    let url = `${host}?default_format=JSONCompactColumns`
+    let url = `${host}?default_format=JSONCompactColumns&enable_http_compression=1`
 
     if (add_http_cors_header) {
         // For debug purposes, you may set add_http_cors_header from a browser console
