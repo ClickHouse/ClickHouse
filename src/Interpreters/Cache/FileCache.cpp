@@ -51,12 +51,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-FileCache::FileCache(const FileCacheSettings & settings)
+FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & settings)
     : max_file_segment_size(settings.max_file_segment_size)
     , bypass_cache_threshold(settings.enable_bypass_cache_with_threashold ? settings.bypass_cache_threashold : 0)
     , boundary_alignment(settings.boundary_alignment)
     , background_download_threads(settings.background_download_threads)
-    , log(&Poco::Logger::get("FileCache"))
+    , log(&Poco::Logger::get("FileCache(" + cache_name + ")"))
     , metadata(settings.base_path)
 {
     main_priority = std::make_unique<LRUFileCachePriority>(settings.max_size, settings.max_elements);
@@ -976,6 +976,7 @@ void FileCache::loadMetadata()
                         fs::remove(offset_it->path());
                         continue;
                     }
+                    LOG_TEST(log, "Added file segment {}:{} (size: {}) with path: {}", key, offset, size, offset_it->path().string());
 
                     const auto & file_segment_metadata = file_segment_metadata_it->second;
                     chassert(file_segment_metadata->file_segment->assertCorrectness());
