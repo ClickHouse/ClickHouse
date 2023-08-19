@@ -58,7 +58,7 @@ public:
     using PriorityIterator = IFileCachePriority::Iterator;
     using PriorityIterationResult = IFileCachePriority::IterationResult;
 
-    explicit FileCache(const FileCacheSettings & settings);
+    FileCache(const std::string & cache_name, const FileCacheSettings & settings);
 
     ~FileCache();
 
