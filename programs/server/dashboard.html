@@ -389,6 +389,7 @@
         </div>
         <div id="button-options">
             <span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
+            <input id="edit" type="button" value="✎" style="display: none;">
             <input id="add" type="button" value="Add chart" style="display: none;">
             <input id="reload" type="button" value="Reload">
             <div id="chart-params"></div>
@@ -865,7 +866,7 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
     };
 }
 
-let add_http_cors_header = false;
+let add_http_cors_header = true;
 
 async function draw(idx, chart, url_params, query) {
     if (plots[idx]) {
@@ -913,8 +914,7 @@ async function draw(idx, chart, url_params, query) {
         const match = error.match(errorMatch.regex);
         const message = errorMatch.messageFunc(match);
         if (message) {
-            const authError = new Error(message);
-            throw authError;
+            throw new Error(message);
         }
     }
 
@@ -981,23 +981,23 @@ async function draw(idx, chart, url_params, query) {
 }
 
 function showAuthError(message) {
-    const charts = document.querySelector('#charts');
+    const charts = document.getElementById('charts');
     charts.style.height = '0px';
     charts.style.opacity = '0';
-    const add = document.querySelector('#add');
+    const add = document.getElementById('add');
     add.style.display = 'none';
 
-    const authError = document.querySelector('#auth-error');
+    const authError = document.getElementById('auth-error');
     authError.textContent = message;
     authError.style.display = 'flex';
 }
 
 function hideAuthError() {
-    const charts = document.querySelector('#charts');
+    const charts = document.getElementById('charts');
     charts.style.height = 'auto';
     charts.style.opacity = '1';
 
-    const authError = document.querySelector('#auth-error');
+    const authError = document.getElementById('auth-error');
     authError.textContent = '';
     authError.style.display = 'none';
 }
@@ -1028,11 +1028,11 @@ async function drawAll() {
         if (results.includes(true)) {
             const element = document.querySelector('.inputs');
             element.classList.remove('unconnected');
-            const add = document.querySelector('#add');
+            const add = document.getElementById('add');
             add.style.display = 'block';
         } 
         else {
-            const charts = document.querySelector('#charts')
+            const charts = document.getElementById('charts')
             charts.style.height = '0px';
         }
     })
