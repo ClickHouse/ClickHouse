@@ -430,7 +430,7 @@
 </div>
 <div id="charts"></div>
 <div id="mass-editor">
-    <textarea id="mass-editor-textarea" spellcheck="false"></textarea>
+    <textarea id="mass-editor-textarea" spellcheck="false" data-gramm="false"></textarea>
     <span id="mass-editor-message">&nbsp;</span>
     <input type="submit" id="mass-editor-cancel" class="edit-cancel" value="Cancel">
     <input type="submit" id="mass-editor-confirm" class="edit-confirm" value="Apply">
@@ -738,6 +738,7 @@ function insertChart(i) {
     query_editor_textarea.spellcheck = false;
     query_editor_textarea.value = q.query;
     query_editor_textarea.placeholder = 'Query';
+    query_editor_textarea.setAttribute('data-gramm', false);
     query_editor.appendChild(query_editor_textarea);
 
     let query_editor_title = document.createElement('input');
