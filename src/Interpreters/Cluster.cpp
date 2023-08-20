@@ -389,9 +389,6 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
     config_prefix += ".";
 
-    name_alias = config.getString(config_prefix + "cluster_name_alias", "");
-    boost::range::remove_erase(config_keys, "cluster_name_alias");
-
     secret = config.getString(config_prefix + "secret", "");
     boost::range::remove_erase(config_keys, "secret");
 
@@ -766,7 +763,6 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
     secret = from.secret;
     name = from.name;
-    name_alias = from.name_alias;
 
     initMisc();
 }
@@ -788,7 +784,6 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
 
     secret = from.secret;
     name = from.name;
-    name_alias = from.name_alias;
 
     initMisc();
 }
