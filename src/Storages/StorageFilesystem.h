@@ -4,6 +4,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 
+
 namespace DB
 {
 
@@ -44,4 +45,5 @@ private:
     String path;
     String user_files_absolute_path_string;
 };
+
 }
