@@ -257,8 +257,6 @@ public:
 
     const String & getSecret() const { return secret; }
 
-    const String & getNameAlias() const { return name_alias; }
-
     /// Get a subcluster consisting of one shard - index by count (from 0) of the shard of this cluster.
     std::unique_ptr<Cluster> getClusterWithSingleShard(size_t index) const;
 
@@ -315,7 +313,6 @@ private:
     size_t local_shard_count = 0;
 
     String name;
-    String name_alias;
 };
 
 using ClusterPtr = std::shared_ptr<Cluster>;
