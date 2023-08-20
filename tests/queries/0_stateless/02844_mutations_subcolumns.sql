@@ -21,7 +21,7 @@ SET mutations_sync = 2;
 ALTER TABLE t_mutations_subcolumns DELETE WHERE obj.k3 = 5;
 SELECT count(), min(id) FROM t_mutations_subcolumns;
 
-ALTER TABLE t_mutations_subcolumns DELETE WHERE obj.k1.k2 = 'fee';
+DELETE FROM t_mutations_subcolumns WHERE obj.k1.k2 = 'fee';
 SELECT count(), min(id) FROM t_mutations_subcolumns;
 
 ALTER TABLE t_mutations_subcolumns DELETE WHERE obj.k1 = ('foo', 'baz');
