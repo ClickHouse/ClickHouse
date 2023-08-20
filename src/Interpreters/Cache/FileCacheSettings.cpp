@@ -49,6 +49,12 @@ void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration &
 
     if (config.has(config_prefix + ".background_download_threads"))
         background_download_threads = config.getUInt(config_prefix + ".background_download_threads");
+
+    if (config.has(config_prefix + ".keep_free_space_size_ratio"))
+        filecache_keep_free_space_size_ratio = config.getDouble(config_prefix + ".keep_free_space_size_ratio");
+
+    if (config.has(config_prefix + ".keep_free_space_elements_ratio"))
+        filecache_keep_free_space_elements_ratio = config.getDouble(config_prefix + ".keep_free_space_elements_ratio");
 }
 
 }

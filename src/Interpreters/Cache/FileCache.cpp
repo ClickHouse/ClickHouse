@@ -58,6 +58,8 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , background_download_threads(settings.background_download_threads)
     , log(&Poco::Logger::get("FileCache(" + cache_name + ")"))
     , metadata(settings.base_path)
+    , keep_current_size_to_max_ratio(1 - settings.filecache_keep_free_space_size_ratio)
+    , keep_current_elements_to_max_ratio(1 - settings.filecache_keep_free_space_elements_ratio)
 {
     main_priority = std::make_unique<LRUFileCachePriority>(settings.max_size, settings.max_elements);
 
@@ -134,6 +136,7 @@ void FileCache::initialize()
          download_threads.emplace_back([this] { metadata.downloadThreadFunc(); });
 
     cleanup_thread = std::make_unique<ThreadFromGlobalPool>(std::function{ [this]{ metadata.cleanupThreadFunc(); }});
+    cache_evicting_thread = std::make_unique<ThreadFromGlobalPool>(std::function{ [this]{ freeSpaceRatioKeepingThreadFunc(); }});
 }
 
 CacheGuard::Lock FileCache::lockCache() const
@@ -799,6 +802,9 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
         file_segment.setQueueIterator(queue_iterator);
     }
 
+    if (!isFreeSpaceRatioSatisfied(cache_lock))
+        cache_evicting_cv.notify_one();
+
     file_segment.reserved_size += size;
     chassert(file_segment.reserved_size == queue_iterator->getEntry().size);
 
@@ -815,6 +821,69 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
 
     return true;
+}
+
+bool FileCache::isFreeSpaceRatioSatisfied(const CacheGuard::Lock & lock) const
+{
+    size_t size_limit = main_priority->getSizeLimit();
+    size_t elements_limit = main_priority->getElementsLimit();
+
+    return (size_limit == 0
+            || main_priority->getSize(lock) < keep_current_size_to_max_ratio * size_limit)
+        || (elements_limit == 0
+            || main_priority->getElementsCount(lock) < keep_current_elements_to_max_ratio * elements_limit);
+}
+
+void FileCache::freeSpaceRatioKeepingThreadFunc()
+{
+    while (true)
+    {
+        auto lock = lockCache();
+        if (shutdown_called)
+            return;
+
+        try
+        {
+            if (isFreeSpaceRatioSatisfied(lock))
+            {
+                cache_evicting_cv.wait(lock, [&](){ return shutdown_called || !isFreeSpaceRatioSatisfied(lock); });
+                if (shutdown_called)
+                    return;
+            }
+
+            keepUpFreeSpaceRatio(lock);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+}
+
+void FileCache::keepUpFreeSpaceRatio(const CacheGuard::Lock & lock)
+{
+    auto iterate_func = [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
+    {
+        chassert(segment_metadata->file_segment->assertCorrectness());
+
+        if (segment_metadata->releasable())
+        {
+            auto segment = segment_metadata->file_segment;
+            locked_key.removeFileSegment(segment->offset(), segment->lock());
+
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->getDownloadedSize(false));
+
+            return PriorityIterationResult::REMOVE_AND_CONTINUE;
+        }
+        else
+            return PriorityIterationResult::CONTINUE;
+    };
+
+    main_priority->iterate(
+        [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
+        { return isFreeSpaceRatioSatisfied(lock) ? PriorityIterationResult::BREAK : iterate_func(locked_key, segment_metadata); },
+        lock);
 }
 
 void FileCache::removeKey(const Key & key)
@@ -1026,6 +1095,7 @@ FileCache::~FileCache()
 
 void FileCache::deactivateBackgroundOperations()
 {
+    shutdown_called = true;
     metadata.cancelDownload();
     metadata.cancelCleanup();
 
@@ -1035,6 +1105,9 @@ void FileCache::deactivateBackgroundOperations()
 
     if (cleanup_thread && cleanup_thread->joinable())
         cleanup_thread->join();
+
+    if (cache_evicting_thread && cache_evicting_thread->joinable())
+        cache_evicting_thread->join();
 }
 
 FileSegmentsHolderPtr FileCache::getSnapshot()

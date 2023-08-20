@@ -163,6 +163,7 @@ private:
     std::exception_ptr init_exception;
     std::atomic<bool> is_initialized = false;
     mutable std::mutex init_mutex;
+    bool shutdown_called = false;
 
     CacheMetadata metadata;
 
@@ -201,6 +202,11 @@ private:
      */
     std::vector<ThreadFromGlobalPool> download_threads;
     std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
+    std::unique_ptr<ThreadFromGlobalPool> cache_evicting_thread;
+
+    std::condition_variable cache_evicting_cv;
+    const double keep_current_size_to_max_ratio;
+    const double keep_current_elements_to_max_ratio;
 
     void assertInitialized() const;
 
@@ -231,6 +237,12 @@ private:
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
         const CacheGuard::Lock *);
+
+    bool isFreeSpaceRatioSatisfied(const CacheGuard::Lock &) const;
+
+    void keepUpFreeSpaceRatio(const CacheGuard::Lock &);
+
+    void freeSpaceRatioKeepingThreadFunc();
 };
 
 }
