@@ -18,7 +18,7 @@ CONNECTION_PARAMETERS=${CONNECTION_PARAMETERS:=""}
 clickhouse-client --query "SYSTEM FLUSH LOGS"
 
 # It's doesn't make sense to try creating tables if SYNC fails
-echo "SYSTEM SYNC DATABASE REPLICA default" | clickhouse-client --receive_timeout 180 $CONNECTION_PARAMETERS || exit 0
+echo "SYSTEM SYNC DATABASE REPLICA default" | clickhouse-client --distributed_ddl_task_timeout 10 --distributed_ddl_output_mode never_throw --receive_timeout 180 $CONNECTION_PARAMETERS || exit 0
 
 # For each system log table:
 clickhouse-client --query "SHOW TABLES FROM system LIKE '%\\_log'" | while read -r table
