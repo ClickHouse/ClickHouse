@@ -24,7 +24,10 @@ namespace ErrorCodes
 }
 
 
-class StorageFilesystemSource final : public ISource
+namespace
+{
+
+class FilesystemSource final : public ISource
 {
 public:
     struct PathInfo
@@ -177,7 +180,7 @@ public:
         return {std::move(columns), num_rows};
     }
 
-    StorageFilesystemSource(
+    FilesystemSource(
         const StorageSnapshotPtr & metadata_snapshot_, UInt64 max_block_size_, PathInfoPtr path_info_, Names column_names)
         : ISource(metadata_snapshot_->getSampleBlockForColumns(column_names))
         , storage_snapshot(metadata_snapshot_)
@@ -211,6 +214,8 @@ private:
     };
 };
 
+}
+
 
 Pipe StorageFilesystem::read(
     const Names & column_names,
@@ -223,7 +228,7 @@ Pipe StorageFilesystem::read(
 {
     auto this_ptr = std::static_pointer_cast<StorageFilesystem>(shared_from_this());
 
-    auto path_info = std::make_shared<StorageFilesystemSource::PathInfo>(num_streams, user_files_absolute_path_string, !local_mode);
+    auto path_info = std::make_shared<FilesystemSource::PathInfo>(num_streams, user_files_absolute_path_string, !local_mode);
 
     fs::path file_path(path);
     if (file_path.is_relative())
@@ -248,7 +253,7 @@ Pipe StorageFilesystem::read(
     Pipes pipes;
     for (size_t i = 0; i < num_streams; ++i)
     {
-        pipes.emplace_back(std::make_shared<StorageFilesystemSource>(storage_snapshot, max_block_size, path_info, column_names));
+        pipes.emplace_back(std::make_shared<FilesystemSource>(storage_snapshot, max_block_size, path_info, column_names));
     }
     auto pipe = Pipe::unitePipes(std::move(pipes));
     return pipe;
