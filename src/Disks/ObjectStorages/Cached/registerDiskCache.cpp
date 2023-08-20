@@ -60,8 +60,6 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
             }
         }
 
-        file_cache_settings.base_path = fs::absolute(file_cache_settings.base_path);
-
         auto cache = FileCacheFactory::instance().getOrCreate(name, file_cache_settings);
         auto disk = disk_it->second;
         if (!dynamic_cast<const DiskObjectStorage *>(disk.get()))
