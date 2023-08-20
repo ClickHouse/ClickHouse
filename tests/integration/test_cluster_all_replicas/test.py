@@ -20,11 +20,11 @@ def start_cluster():
 def test_remote(start_cluster):
     assert (
         node1.query(
-            """SELECT hostName() FROM clusterAllReplicas("two_shards", system.one)"""
+            """SELECT hostName() FROM clusterAllReplicas("one_shard_two_nodes", system.one)"""
         )
         == "node1\nnode2\n"
     )
     assert (
-        node1.query("""SELECT hostName() FROM cluster("two_shards", system.one)""")
+        node1.query("""SELECT hostName() FROM cluster("one_shard_two_nodes", system.one)""")
         == "node1\n"
     )
