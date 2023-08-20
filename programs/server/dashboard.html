@@ -906,12 +906,15 @@ async function draw(idx, chart, url_params, query) {
     }
 
     if (error) {
-        const errorMatch = errorMessages.find(({ regex }) => error.match(regex))
-        const match = error.match(errorMatch.regex)
-        const message = errorMatch.messageFunc(match)
+        const errorMatch = errorMessages.find(({ regex }) => error.match(regex));
+        if (!errorMatch) {
+            throw new Error(error);
+        }
+        const match = error.match(errorMatch.regex);
+        const message = errorMatch.messageFunc(match);
         if (message) {
-            const authError = new Error(message)
-            throw authError
+            const authError = new Error(message);
+            throw authError;
         }
     }
 
