@@ -7,11 +7,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/TransactionLog.h>
 #include <Backups/BackupEntryFromMemory.h>
-#include <Parsers/ASTPartition.h>
 #include <Interpreters/Context.h>
-
-#include <Common/logger_useful.h>
-
 #include <utility>
 
 
@@ -59,8 +55,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
     UInt64 tmp_number,
     PartitionIds && partition_ids_,
     const TransactionID & tid_,
-    const WriteSettings & settings
-)
+    const WriteSettings & settings)
     : create_time(time(nullptr))
     , commands(std::move(commands_))
     , disk(std::move(disk_))
@@ -143,8 +138,6 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
     auto buf = disk->readFile(path_prefix + file_name);
 
     *buf >> "format version: 1\n";
-    // auto format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
-
 
     LocalDateTime create_time_dt;
     *buf >> "create time: " >> create_time_dt >> "\n";
@@ -183,33 +176,11 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
             break;
         }
 
-        // const auto & partition_ast = command.partition->as<ASTPartition &>();
-
-
         auto partition_id = storage_->getPartitionIDFromQuery(command.partition, context_);
         partition_ids.push_back(partition_id);
-        LOG_TRACE(&Poco::Logger::get("MergeTreeMutationEntry"), "ctor: adding {}", partition_id);
-
-#if 0
-        // partition_ast.all  ??
-        if (!partition_ast.value  && !partition_ast.id.empty())
-        {
-            // MergeTreePartInfo::validatePartitionID(partition_ast.id, format_version);
-            partition_ids.push_back(partition_ast.id);
-            LOG_TRACE(&Poco::Logger::get("MergeTreeMutationEntry"), "ctor: adding {}", partition_ast.id);
-        }
-#endif
     }
 
     compactPartitionIds(partition_ids);
-
-        // if (partition_ids->size() > 1)
-        // {
-        //     std::sort(partition_ids->begin(), partition_ids->end());
-        //     auto last = std::unique(partition_ids->begin(), partition_ids->end());
-        //     partition_ids->erase(last, partition_ids->end());
-        // }
-        // partition_ids->shrink_to_fit();
 }
 
 MergeTreeMutationEntry::~MergeTreeMutationEntry()
@@ -225,14 +196,6 @@ MergeTreeMutationEntry::~MergeTreeMutationEntry()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
-}
-
-bool MergeTreeMutationEntry::affectsPartition(const String & partition_id) const
-{
-    bool affected = containsInPartitionIdsOrEmpty(partition_ids, partition_id);
-    LOG_TRACE(&Poco::Logger::get("MergeTreeMutationEntry"), "Partition {} {}affected by mutation {}",
-        partition_id, affected?"":"not ", block_number);
-    return affected;
 }
 
 std::shared_ptr<const IBackupEntry> MergeTreeMutationEntry::backup() const

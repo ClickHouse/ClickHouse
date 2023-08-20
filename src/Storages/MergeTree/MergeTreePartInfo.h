@@ -210,5 +210,4 @@ inline bool containsInPartitionIdsOrEmpty(const PartitionIds & haystack, const S
     }
 }
 
-
 }

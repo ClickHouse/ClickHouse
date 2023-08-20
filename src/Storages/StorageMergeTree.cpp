@@ -480,7 +480,6 @@ CurrentlyMergingPartsTagger::~CurrentlyMergingPartsTagger()
 
 Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
 {
-    /// Validate partition IDs (if any) before starting mutation
     auto partitions = getPartitionIdsAffectedByCommands(commands, query_context);
 
     /// Choose any disk, because when we load mutations we search them at each disk
@@ -609,9 +608,6 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
 {
     delayMutationOrThrowIfNeeded(nullptr, query_context);
 
-    // /// Validate partition IDs (if any) before starting mutation
-    // getPartitionIdsAffectedByCommands(commands, query_context);
-
     Int64 version;
     {
         /// It's important to serialize order of mutations with alter queries because
@@ -692,7 +688,6 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
                 if (mutation_ids)
                 {
                     auto mutations_begin_it = current_mutations_by_version.upper_bound(data_version);
-                    std::optional<UInt64> possible_last_mutation_version = data_part->info.getDataVersion(); // getPartitionSpecificMutationVersion(data_part);
                     for (auto it = mutations_begin_it; it != current_mutations_by_version.end(); ++it)
                     {
                         if (!it->second.affectsPartition(data_part->info.partition_id))
@@ -701,9 +696,6 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
                         /// All applicable mutations with the same failure
                         if (it->second.latest_fail_reason == result.latest_fail_reason)
                             mutation_ids->insert(it->second.file_name);
-
-                        if (it->first == possible_last_mutation_version)
-                            break;
                     }
                 }
             }
@@ -835,19 +827,6 @@ void StorageMergeTree::loadDeduplicationLog()
     deduplication_log->load();
 }
 
-// std::optional<UInt64> StorageMergeTree::getPartitionSpecificMutationVersion(const DataPartPtr & part) const
-// {
-//     // auto possible_last_mutation_version_it = last_mutation_by_partition.find(part->info.partition_id);
-//     // if (possible_last_mutation_version_it != last_mutation_by_partition.end())
-//     // {
-//     //     return possible_last_mutation_version_it->second;
-//     // }
-//     // else
-//     // {
-//         return {};
-//     // }
-// }
-
 void StorageMergeTree::loadMutations()
 {
     for (const auto & disk : getDisks())
@@ -907,13 +886,9 @@ bool StorageMergeTree::mutationVersionsEquivalent(const DataPartPtr & left, cons
         {
             if (mutations_it->second.affectsPartition(follower_part->info.partition_id))
             {
-                LOG_TRACE(log, "mutationVersionsEquivalent - no");
                 return false;
             }
         }
-        LOG_TRACE(log, "mutationVersionsEquivalent - yes");
-        return true;
-
     }
 
     return true;
@@ -932,8 +907,6 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
     bool optimize_skip_merged_partitions,
     SelectPartsDecision * select_decision_out)
 {
-    // LOG_TRACE(log, "top of selectPartsToMerge");
-
     auto data_settings = getSettings();
 
     auto future_part = std::make_shared<FutureMergedMutatedPart>();
@@ -947,7 +920,6 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
 
     auto can_merge = [this, &lock](const DataPartPtr & left, const DataPartPtr & right, const MergeTreeTransaction * tx, String & disable_reason) -> bool
     {
-        // LOG_TRACE(log, "top of can_merge");
         if (tx)
         {
             /// Cannot merge parts if some of them are not visible in current snapshot
@@ -990,7 +962,6 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
         if (!mutationVersionsEquivalent(left, right, lock))
         {
             disable_reason = "Some parts have different mutation versions";
-            LOG_TRACE(log, "can_merge - Some parts have different mutation versions - false");
             return false;
         }
 
@@ -1004,7 +975,6 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
             return false;
         }
 
-        // LOG_TRACE(log, "bottom of can_merge - true");
         return true;
     };
 
@@ -1022,7 +992,6 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
 
     if (partition_id.empty())
     {
-        // LOG_TRACE(log, "partition_id.empty()");
         if (is_background_memory_usage_ok(out_disable_reason))
         {
             UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge();
@@ -1048,7 +1017,6 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
     }
     else
     {
-        LOG_TRACE(log, "!partition_id.empty()");
         while (true)
         {
             auto timeout_ms = getSettings()->lock_acquire_timeout_for_background_operations.totalMilliseconds();
@@ -1493,14 +1461,8 @@ UInt64 StorageMergeTree::getCurrentMutationVersion(
 {
     auto it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
     if (it == current_mutations_by_version.begin())
-    {
-
-        // LOG_TRACE(log, "getCurrentMutationVersion: {}", 0);
         return 0;
-    }
-
     --it;
-    LOG_TRACE(log, "getCurrentMutationVersion: {}", it->first);
     return it->first;
 }
 
@@ -2420,17 +2382,6 @@ std::map<int64_t, MutationCommands> StorageMergeTree::getAlterMutationCommandsFo
         }
         else
             break;
-        // Int64 part_data_version = part->info.getDataVersion();
-
-        // auto it = current_mutations_by_version.rbegin();
-        // auto end_it = current_mutations_by_version.rend();
-        // for (; it != end_it && part_data_version < static_cast<int64_t>(it->first); ++it)
-        // {
-        //     if (it->second.affectsPartition(part->info.partition_id))
-        //     {
-        //         result[it->first] = it->second.commands;
-        //     }
-        // }
     }
 
     return result;
