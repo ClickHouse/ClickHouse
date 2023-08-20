@@ -1,13 +1,13 @@
 #pragma once
 
 #include <base/types.h>
+
 namespace DB
 {
 
 class ServerType
 {
 public:
-
     enum Type
     {
         TCP,

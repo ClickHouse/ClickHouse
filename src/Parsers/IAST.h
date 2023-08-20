@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
+#include <Parsers/LiteralEscapingStyle.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
 #include <IO/WriteBufferFromString.h>
@@ -78,7 +79,7 @@ public:
 
     /** Get hash code, identifying this element and its subtree.
       */
-    using Hash = std::pair<UInt64, UInt64>;
+    using Hash = CityHash_v1_0_2::uint128;
     Hash getTreeHash() const;
     void updateTreeHash(SipHash & hash_state) const;
     virtual void updateTreeHashImpl(SipHash & hash_state) const;
@@ -197,6 +198,7 @@ public:
         IdentifierQuotingStyle identifier_quoting_style;
         bool show_secrets; /// Show secret parts of the AST (e.g. passwords, encryption keys).
         char nl_or_ws; /// Newline or whitespace.
+        LiteralEscapingStyle literal_escaping_style;
 
         explicit FormatSettings(
             WriteBuffer & ostr_,
@@ -204,7 +206,8 @@ public:
             bool hilite_ = false,
             bool always_quote_identifiers_ = false,
             IdentifierQuotingStyle identifier_quoting_style_ = IdentifierQuotingStyle::Backticks,
-            bool show_secrets_ = true)
+            bool show_secrets_ = true,
+            LiteralEscapingStyle literal_escaping_style_ = LiteralEscapingStyle::Regular)
             : ostr(ostr_)
             , one_line(one_line_)
             , hilite(hilite_)
@@ -212,6 +215,7 @@ public:
             , identifier_quoting_style(identifier_quoting_style_)
             , show_secrets(show_secrets_)
             , nl_or_ws(one_line ? ' ' : '\n')
+            , literal_escaping_style(literal_escaping_style_)
         {
         }
 
@@ -223,6 +227,7 @@ public:
             , identifier_quoting_style(other.identifier_quoting_style)
             , show_secrets(other.show_secrets)
             , nl_or_ws(other.nl_or_ws)
+            , literal_escaping_style(other.literal_escaping_style)
         {
         }
 
@@ -302,6 +307,7 @@ public:
         Alter,
         Grant,
         Revoke,
+        Move,
         System,
         Set,
         Use,

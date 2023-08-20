@@ -207,7 +207,7 @@ def test_mysql_client(started_cluster):
     expected_msg = "\n".join(
         [
             "mysql: [Warning] Using a password on the command line interface can be insecure.",
-            "ERROR 81 (00000) at line 1: Code: 81. DB::Exception: Database system2 doesn't exist",
+            "ERROR 81 (00000) at line 1: Code: 81. DB::Exception: Database system2 does not exist",
         ]
     )
     assert stderr[: len(expected_msg)].decode() == expected_msg
@@ -621,7 +621,7 @@ def test_python_client(started_cluster):
         client.select_db("system2")
 
     assert exc_info.value.args[1].startswith(
-        "Code: 81. DB::Exception: Database system2 doesn't exist"
+        "Code: 81. DB::Exception: Database system2 does not exist"
     ), exc_info.value.args[1]
 
     cursor = client.cursor(pymysql.cursors.DictCursor)
@@ -646,7 +646,7 @@ def test_golang_client(started_cluster, golang_container):
     )
 
     assert code == 1
-    assert stderr.decode() == "Error 81: Database abc doesn't exist\n"
+    assert stderr.decode() == "Error 81: Database abc does not exist\n"
 
     code, (stdout, stderr) = golang_container.exec_run(
         "./main --host {host} --port {port} --user default --password 123 --database "
