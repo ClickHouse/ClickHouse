@@ -14,6 +14,9 @@
 #include <cstdint>
 #include <numeric>
 
+#include <libdivide-config.h>
+#include <libdivide.h>
+
 namespace DB
 {
 
@@ -25,10 +28,6 @@ T gcd_func(T a, T b)
         T c = a % b;
         a = b;
         b = c;
-    }
-    if (a == T(-1))
-    {
-        return -a;
     }
     return a;
 }
@@ -116,12 +115,26 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
     unalignedStore<T>(dest, gcd);
     dest += sizeof(T);
 
-    cur_source = source;
-    while (cur_source < source_end)
+    if (sizeof(T) == 4 || sizeof(T) == 8)
     {
-        unalignedStore<T>(dest, unalignedLoad<T>(cur_source) / gcd);
-        cur_source += sizeof(T);
-        dest += sizeof(T);
+        libdivide::divider<T> divider(gcd);
+        cur_source = source;
+        while (cur_source < source_end)
+        {
+            unalignedStore<T>(dest, unalignedLoad<T>(cur_source) / divider);
+            cur_source += sizeof(T);
+            dest += sizeof(T);
+        }
+    }
+    else
+    {
+        cur_source = source;
+        while (cur_source < source_end)
+        {
+            unalignedStore<T>(dest, unalignedLoad<T>(cur_source) / gcd);
+            cur_source += sizeof(T);
+            dest += sizeof(T);
+        }
     }
 }
 
