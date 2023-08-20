@@ -237,6 +237,32 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static void reorderColumns(ActionsDAG & dag, const Block & header, const std::string & filter_column)
+{
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> inputs_map;
+    for (const auto * input : dag.getInputs())
+        inputs_map[input->result_name] = input;
+
+    for (const auto & col : header)
+    {
+        auto & input = inputs_map[col.name];
+        if (!input)
+            input = &dag.addInput(col);
+    }
+
+    ActionsDAG::NodeRawConstPtrs new_outputs;
+    new_outputs.reserve(header.columns() + 1);
+
+    new_outputs.push_back(&dag.findInOutputs(filter_column));
+    for (const auto & col : header)
+    {
+        auto & input = inputs_map[col.name];
+        new_outputs.push_back(input);
+    }
+
+    dag.getOutputs() = std::move(new_outputs);
+}
+
 Pipes buildPipesForReadingByPKRanges(
     const KeyDescription & primary_key,
     ExpressionActionsPtr sorting_expr,
@@ -262,6 +288,7 @@ Pipes buildPipesForReadingByPKRanges(
             continue;
         auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());
         auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
+        reorderColumns(*actions, pipes[i].getHeader(), filter_function->getColumnName());
         ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
         auto description = fmt::format(
             "filter values in [{}, {})", i ? ::toString(borders[i - 1]) : "-inf", i < borders.size() ? ::toString(borders[i]) : "+inf");
