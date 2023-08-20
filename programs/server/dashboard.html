@@ -861,7 +861,7 @@ function showMassEditor() {
     editor_div.style.display = 'grid';
 
     let editor = document.getElementById('mass-editor-textarea');
-    editor.value = JSON.stringify(queries, null, 2);
+    editor.value = JSON.stringify({params: params, queries: queries}, null, 2);
 
     mass_editor_active = true;
 }
@@ -875,7 +875,7 @@ function hideMassEditor() {
 
 function massEditorApplyChanges() {
     let editor = document.getElementById('mass-editor-textarea');
-    queries = JSON.parse(editor.value);
+    ({params, queries} = JSON.parse(editor.value));
     hideMassEditor();
     regenerate();
     drawAll();
