@@ -3,7 +3,6 @@
 #include <memory>
 #include <sys/resource.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <pwd.h>
 #include <unistd.h>
 #include <Poco/Net/HTTPServer.h>
@@ -42,6 +41,7 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
+#include <Common/setThreadName.h>
 #include <Server/waitServersToFinish.h>
 #include <Core/ServerUUID.h>
 #include <IO/ReadHelpers.h>
@@ -575,6 +575,7 @@ static void sanityChecks(Server & server)
 int Server::main(const std::vector<std::string> & /*args*/)
 try
 {
+    setThreadName("Main");
     Stopwatch startup_watch;
 
     Poco::Logger * log = &logger();
