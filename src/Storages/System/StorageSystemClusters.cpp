@@ -14,6 +14,7 @@ NamesAndTypesList StorageSystemClusters::getNamesAndTypes()
     return
     {
         {"cluster", std::make_shared<DataTypeString>()},
+        {"name", std::make_shared<DataTypeString>()},
         {"shard_num", std::make_shared<DataTypeUInt32>()},
         {"shard_weight", std::make_shared<DataTypeUInt32>()},
         {"replica_num", std::make_shared<DataTypeUInt32>()},
@@ -56,6 +57,7 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const Nam
 {
     const String & cluster_name = name_and_cluster.first;
     const ClusterPtr & cluster = name_and_cluster.second;
+    const String & cluster_name_alias = cluster->getNameAlias();
     const auto & shards_info = cluster->getShardsInfo();
     const auto & addresses_with_failover = cluster->getShardsAddresses();
 
@@ -72,6 +74,7 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const Nam
             const auto & address = shard_addresses[replica_index];
 
             res_columns[i++]->insert(cluster_name);
+            res_columns[i++]->insert(cluster_name_alias);
             res_columns[i++]->insert(shard_info.shard_num);
             res_columns[i++]->insert(shard_info.weight);
             res_columns[i++]->insert(replica_index + 1);
