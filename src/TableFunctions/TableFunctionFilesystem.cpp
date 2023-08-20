@@ -10,7 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -41,20 +41,22 @@ void TableFunctionFilesystem::parseArguments(const ASTPtr & ast_function, Contex
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' must have arguments.", getName());
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Wrong AST structure in table function '{}'.", getName());
 
     ASTs & args = args_func.at(0)->children;
 
+    /// With no arguments it assumes empty path.
     if (args.empty())
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires at least one argument", getName());
+        return;
+
+    if (args.size() > 1)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires path as its only argument.", getName());
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    path = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    path = args.front()->as<ASTLiteral &>().value.safeGet<String>();
 
-    if (args.size() > 1)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires path", getName());
 }
 
 ColumnsDescription TableFunctionFilesystem::getActualTableStructure(ContextPtr /* context */, bool /* is_insert_query */) const

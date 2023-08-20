@@ -1,7 +1,5 @@
 #pragma once
 
-#include <QueryPipeline/Pipe.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 
 

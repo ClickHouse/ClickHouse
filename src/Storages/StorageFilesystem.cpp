@@ -9,10 +9,12 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
+
 namespace fs = std::filesystem;
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int DATABASE_ACCESS_DENIED;
@@ -43,7 +45,7 @@ public:
     };
     using PathInfoPtr = std::shared_ptr<PathInfo>;
 
-    String getName() const override { return DB::String(); }
+    String getName() const override { return "Filesystem"; }
 
     Chunk generate() override
     {
@@ -142,7 +144,6 @@ public:
                 }
             }
 
-
             for (const auto & [column_name, perm] : permissions_columns_names)
             {
                 if (!columns_map.contains(column_name))
@@ -154,6 +155,7 @@ public:
             {
                 columns_map["name"]->insert(file.path().filename().string());
             }
+
             LOG_TEST(&Poco::Logger::get("StorageFilesystem"), "Processed path {} columns_map. {} ", file.path().string(),
                 columns_map.empty() ? -1 : columns_map.begin()->second->size());
         }
@@ -192,7 +194,8 @@ private:
     UInt64 max_block_size;
     Names columns_in_use;
 
-    const std::vector<std::pair<String, fs::perms>> permissions_columns_names{
+    const std::vector<std::pair<String, fs::perms>> permissions_columns_names\
+    {
         {"owner_read", fs::perms::owner_read},
         {"owner_write", fs::perms::owner_write},
         {"owner_exec", fs::perms::owner_exec},
@@ -204,7 +207,8 @@ private:
         {"others_exec", fs::perms::others_exec},
         {"set_gid", fs::perms::set_gid},
         {"set_uid", fs::perms::set_uid},
-        {"sticky_bit", fs::perms::sticky_bit}};
+        {"sticky_bit", fs::perms::sticky_bit}
+    };
 };
 
 
@@ -267,10 +271,12 @@ StorageFilesystem::StorageFilesystem(
     metadata.setComment(comment);
     setInMemoryMetadata(metadata);
 }
+
 Strings StorageFilesystem::getDataPaths() const
 {
     return {path};
 }
+
 NamesAndTypesList StorageFilesystem::getVirtuals() const
 {
     return {};
@@ -283,24 +289,28 @@ void registerStorageFilesystem(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
 
-        if (engine_args.size() != 1)
+        if (engine_args.size() > 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Storage Filesystem requires one argument: path.");
 
         String path;
 
-        const auto & ast_literal = engine_args[0]->as<const ASTLiteral &>();
-        if (!ast_literal.value.isNull())
-            path = checkAndGetLiteralArgument<String>(ast_literal, "path");
+        if (!engine_args.empty())
+        {
+            const auto & ast_literal = engine_args.front()->as<const ASTLiteral &>();
+            if (!ast_literal.value.isNull())
+                path = checkAndGetLiteralArgument<String>(ast_literal, "path");
+        }
 
         String user_files_absolute_path_string = fs::canonical(fs::path(args.getContext()->getUserFilesPath()).string());
         bool local_mode = args.getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
 
-        return std::make_shared<StorageFilesystem>(args.table_id, args.columns, args.constraints, args.comment, local_mode, path,
+        return std::make_shared<StorageFilesystem>(
+            args.table_id, args.columns, args.constraints, args.comment, local_mode, path,
             user_files_absolute_path_string);
     },
     {
-            .source_access_type = AccessType::FILESYSTEM,
+        .source_access_type = AccessType::FILESYSTEM,
     });
 }
 }
