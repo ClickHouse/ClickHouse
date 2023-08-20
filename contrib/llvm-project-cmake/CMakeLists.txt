@@ -4,7 +4,7 @@ else()
    set (ENABLE_EMBEDDED_COMPILER_DEFAULT ON)
 endif()
 
-option (ENABLE_EMBEDDED_COMPILER "Enable support for 'compile_expressions' option for query execution" ${ENABLE_EMBEDDED_COMPILER_DEFAULT})
+option (ENABLE_EMBEDDED_COMPILER "Enable support for JIT compilation during query execution" ${ENABLE_EMBEDDED_COMPILER_DEFAULT})
 
 if (NOT ENABLE_EMBEDDED_COMPILER)
     message(STATUS "Not using LLVM")
@@ -58,17 +58,22 @@ set (REQUIRED_LLVM_LIBRARIES
 
 if (ARCH_AMD64)
     set (LLVM_TARGETS_TO_BUILD "X86" CACHE INTERNAL "")
+    list(APPEND REQUIRED_LLVM_LIBRARIES LLVMX86Info LLVMX86Desc LLVMX86CodeGen)
 elseif (ARCH_AARCH64)
     set (LLVM_TARGETS_TO_BUILD "AArch64" CACHE INTERNAL "")
+    list(APPEND REQUIRED_LLVM_LIBRARIES LLVMAArch64Info LLVMAArch64Desc LLVMAArch64CodeGen)
+elseif (ARCH_PPC64LE)
+    set (LLVM_TARGETS_TO_BUILD "PowerPC" CACHE INTERNAL "")
+    list(APPEND REQUIRED_LLVM_LIBRARIES LLVMPowerPCInfo LLVMPowerPCDesc LLVMPowerPCCodeGen)
+elseif (ARCH_S390X)
+    set (LLVM_TARGETS_TO_BUILD "SystemZ" CACHE INTERNAL "")
+    list(APPEND REQUIRED_LLVM_LIBRARIES LLVMSystemZInfo LLVMSystemZDesc LLVMSystemZCodeGen)
+elseif (ARCH_RISCV64)
+    set (LLVM_TARGETS_TO_BUILD "RISCV" CACHE INTERNAL "")
+    list(APPEND REQUIRED_LLVM_LIBRARIES LLVMRISCVInfo LLVMRISCVDesc LLVMRISCVDescCodeGen)
 endif ()
 
 message (STATUS "LLVM TARGETS TO BUILD ${LLVM_TARGETS_TO_BUILD}")
-
-if (ARCH_AMD64)
-    list(APPEND REQUIRED_LLVM_LIBRARIES LLVMX86Info LLVMX86Desc LLVMX86CodeGen)
-elseif (ARCH_AARCH64)
-    list(APPEND REQUIRED_LLVM_LIBRARIES LLVMAArch64Info LLVMAArch64Desc LLVMAArch64CodeGen)
-endif ()
 
 set (CMAKE_INSTALL_RPATH "ON") # Do not adjust RPATH in llvm, since then it will not be able to find libcxx/libcxxabi/libunwind
 set (LLVM_COMPILER_CHECKED 1 CACHE INTERNAL "") # Skip internal compiler selection
