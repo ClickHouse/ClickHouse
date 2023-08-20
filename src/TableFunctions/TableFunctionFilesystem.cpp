@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 static const FunctionDocumentation format_table_function_documentation =
 {
-    .description=R"(
+    .description = R"(
 Provides access to file system to list files and return its metadata and contents. Recursively iterates directories.
 This table function provides access to filesystem of a server that runs a query.)",
     .examples
@@ -28,7 +28,7 @@ This table function provides access to filesystem of a server that runs a query.
 )", ""
         }
     },
-    .categories{"format", "table-functions"}
+    .categories{"table-functions"}
 };
 
 void registerTableFunctionFilesystem(TableFunctionFactory & factory)
@@ -38,7 +38,6 @@ void registerTableFunctionFilesystem(TableFunctionFactory & factory)
 
 void TableFunctionFilesystem::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
-    /// Parse args
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
@@ -47,7 +46,7 @@ void TableFunctionFilesystem::parseArguments(const ASTPtr & ast_function, Contex
     ASTs & args = args_func.at(0)->children;
 
     if (args.empty())
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires at least 1 argument", getName());
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires at least one argument", getName());
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
@@ -55,7 +54,7 @@ void TableFunctionFilesystem::parseArguments(const ASTPtr & ast_function, Contex
     path = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
     if (args.size() > 1)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,"Table function '{}' requires path", getName());
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires path", getName());
 }
 
 ColumnsDescription TableFunctionFilesystem::getActualTableStructure(ContextPtr /* context */, bool /* is_insert_query */) const
@@ -66,7 +65,7 @@ ColumnsDescription TableFunctionFilesystem::getActualTableStructure(ContextPtr /
     {
         {
             {"type", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-            {"symlink", bool_type},
+            {"is_symlink", bool_type},
             {"path", std::make_shared<DataTypeString>()},
             {"size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>())},
             {"modification_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
