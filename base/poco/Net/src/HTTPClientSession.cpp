@@ -26,7 +26,6 @@
 #include "Poco/CountingStream.h"
 #include "Poco/RegularExpression.h"
 #include <sstream>
-#include <iostream>
 
 
 using Poco::NumberFormatter;
