@@ -17,6 +17,7 @@ void registerTableFunctionURLCluster(TableFunctionFactory & factory);
 void registerTableFunctionValues(TableFunctionFactory & factory);
 void registerTableFunctionInput(TableFunctionFactory & factory);
 void registerTableFunctionGenerate(TableFunctionFactory & factory);
+void registerTableFunctionFilesystem(TableFunctionFactory & factory);
 void registerTableFunctionMongoDB(TableFunctionFactory & factory);
 void registerTableFunctionRedis(TableFunctionFactory & factory);
 

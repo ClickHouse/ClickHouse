@@ -25,8 +25,6 @@ void registerStorageLiveView(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory);
-
-// MEILISEARCH
 void registerStorageMeiliSearch(StorageFactory& factory);
 
 #if USE_AWS_S3
@@ -98,6 +96,7 @@ void registerStorageSQLite(StorageFactory & factory);
 #endif
 
 void registerStorageKeeperMap(StorageFactory & factory);
+void registerStorageFilesystem(StorageFactory & factory);
 
 #if USE_AZURE_BLOB_STORAGE
 void registerStorageAzureBlob(StorageFactory & factory);
@@ -126,8 +125,6 @@ void registerStorages()
     registerStorageGenerateRandom(factory);
     registerStorageExecutable(factory);
     registerStorageWindowView(factory);
-
-    // MEILISEARCH
     registerStorageMeiliSearch(factory);
 
     #if USE_AWS_S3
@@ -204,6 +201,8 @@ void registerStorages()
     #if USE_AZURE_BLOB_STORAGE
     registerStorageAzureBlob(factory);
     #endif
+
+    registerStorageFilesystem(factory);
 }
 
 }
