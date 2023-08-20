@@ -575,7 +575,7 @@ static void sanityChecks(Server & server)
 int Server::main(const std::vector<std::string> & /*args*/)
 try
 {
-    setThreadName("Main");
+    setThreadName("ClickHouse");
     Stopwatch startup_watch;
 
     Poco::Logger * log = &logger();
