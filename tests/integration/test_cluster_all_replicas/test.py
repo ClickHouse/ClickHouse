@@ -4,12 +4,8 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance(
-    "node1", main_configs=["configs/remote_servers.xml"]
-)
-node2 = cluster.add_instance(
-    "node2", main_configs=["configs/remote_servers.xml"]
-)
+node1 = cluster.add_instance("node1", main_configs=["configs/remote_servers.xml"])
+node2 = cluster.add_instance("node2", main_configs=["configs/remote_servers.xml"])
 
 
 @pytest.fixture(scope="module")
