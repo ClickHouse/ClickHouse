@@ -290,7 +290,6 @@ NamesAndTypesList getPathAndFileVirtualsForStorage(NamesAndTypesList storage_col
 
 static void addPathAndFileToVirtualColumns(Block & block, const String & path, size_t idx)
 {
-    std::cerr << "Path: " << path << "\n";
     if (block.has("_path"))
         block.getByName("_path").column->assumeMutableRef().insert(path);
 
@@ -300,7 +299,6 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
         assert(pos != std::string::npos);
 
         auto file = path.substr(pos + 1);
-        std::cerr << "File: " << file << "\n";
         block.getByName("_file").column->assumeMutableRef().insert(file);
     }
 
