@@ -31,10 +31,10 @@ public:
     /// TODO: construct from special struct with cache policy parameters (also with max_protected_size).
     SLRUCachePolicy(size_t max_size_in_bytes_, size_t max_count_, double size_ratio_, OnWeightLossFunction on_weight_loss_function_)
         : Base(std::make_unique<NoCachePolicyUserQuota>())
-        , size_ratio(size_ratio_)
-        , max_protected_size(static_cast<size_t>(max_size_in_bytes_ * std::min(1.0, size_ratio)))
         , max_size_in_bytes(max_size_in_bytes_)
+        , max_protected_size(static_cast<size_t>(max_size_in_bytes_ * std::min(1.0, size_ratio)))
         , max_count(max_count_)
+        , size_ratio(size_ratio_)
         , on_weight_loss_function(on_weight_loss_function_)
     {
     }
@@ -208,12 +208,12 @@ private:
 
     Cells cells;
 
+    size_t max_size_in_bytes;
+    size_t max_protected_size;
+    size_t max_count;
     const double size_ratio;
     size_t current_protected_size = 0;
     size_t current_size_in_bytes = 0;
-    size_t max_protected_size;
-    size_t max_size_in_bytes;
-    size_t max_count;
 
     WeightFunction weight_function;
     OnWeightLossFunction on_weight_loss_function;
