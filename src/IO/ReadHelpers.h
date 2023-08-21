@@ -529,6 +529,11 @@ void tryReadIntTextUnsafe(T & x, ReadBuffer & buf)
 template <typename T> void readFloatText(T & x, ReadBuffer & in);
 template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in);
 
+template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in);
+template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in);
+template <typename T> void readFloatTextFast(T & x, ReadBuffer & in);
+template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in);
+
 
 /// simple: all until '\n' or '\t'
 void readString(String & s, ReadBuffer & buf);
@@ -1096,17 +1101,14 @@ inline void readBinary(bool & x, ReadBuffer & buf)
 }
 
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
-inline void readBinary(Int32 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(Int128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(Int256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(UInt32 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(UInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(UInt256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal32 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal64 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readPODBinary(x.value, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(UUID & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(IPv4 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(IPv6 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 inline void readBinary(StackTrace::FramePointers & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 

@@ -299,6 +299,7 @@ Session::~Session()
 
     if (notified_session_log_about_login)
     {
+        LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(*user_id));
         if (auto session_log = getSessionLog())
         {
             /// TODO: We have to ensure that the same info is added to the session log on a LoginSuccess event and on the corresponding Logout event.
@@ -320,6 +321,7 @@ AuthenticationType Session::getAuthenticationTypeOrLogInFailure(const String & u
     }
     catch (const Exception & e)
     {
+        LOG_ERROR(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
         if (auto session_log = getSessionLog())
             session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e);
 
@@ -520,6 +522,8 @@ ContextMutablePtr Session::makeSessionContext()
         {},
         session_context->getSettingsRef().max_sessions_for_user);
 
+    recordLoginSucess(session_context);
+
     return session_context;
 }
 
@@ -582,6 +586,8 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         { session_name_ },
         max_sessions_for_user);
 
+    recordLoginSucess(session_context);
+
     return session_context;
 }
 
@@ -616,7 +622,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     if (auto query_context_user = query_context->getAccess()->tryGetUser())
     {
-        LOG_DEBUG(log, "{} Creating query context from {} context, user_id: {}, parent context user: {}",
+        LOG_TRACE(log, "{} Creating query context from {} context, user_id: {}, parent context user: {}",
                   toString(auth_id),
                   from_session_context ? "session" : "global",
                   toString(*user_id),
@@ -655,21 +661,35 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     if (user_id)
         user = query_context->getUser();
 
-    if (!notified_session_log_about_login)
-    {
-        if (auto session_log = getSessionLog())
-        {
-            session_log->addLoginSuccess(
-                    auth_id,
-                    named_session ? std::optional<std::string>(named_session->key.second) : std::nullopt,
-                    *query_context,
-                    user);
-
-            notified_session_log_about_login = true;
-        }
-    }
+    /// Interserver does not create session context
+    recordLoginSucess(query_context);
 
     return query_context;
+}
+
+
+void Session::recordLoginSucess(ContextPtr login_context) const
+{
+    if (notified_session_log_about_login)
+        return;
+
+    if (!login_context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session or query context must be created");
+
+    if (auto session_log = getSessionLog())
+    {
+        const auto & settings   = login_context->getSettingsRef();
+        const auto access       = login_context->getAccess();
+
+        session_log->addLoginSuccess(auth_id,
+                                     named_session ? named_session->key.second : "",
+                                     settings,
+                                     access,
+                                     getClientInfo(),
+                                     user);
+    }
+
+    notified_session_log_about_login = true;
 }
 
 

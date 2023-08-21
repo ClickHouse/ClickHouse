@@ -51,10 +51,11 @@ public:
     {
         auto on_weight_loss_function = [&](size_t weight_loss) { onRemoveOverflowWeightLoss(weight_loss); };
 
-        static constexpr std::string_view default_cache_policy = "SLRU";
-
         if (cache_policy_name.empty())
+        {
+            static constexpr auto default_cache_policy = "SLRU";
             cache_policy_name = default_cache_policy;
+        }
 
         if (cache_policy_name == "LRU")
         {

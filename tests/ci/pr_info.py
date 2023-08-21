@@ -279,7 +279,7 @@ class PRInfo:
             "user_orgs": self.user_orgs,
         }
 
-    def has_changes_in_documentation(self):
+    def has_changes_in_documentation(self) -> bool:
         # If the list wasn't built yet the best we can do is to
         # assume that there were changes.
         if self.changed_files is None or not self.changed_files:
@@ -287,10 +287,9 @@ class PRInfo:
 
         for f in self.changed_files:
             _, ext = os.path.splitext(f)
-            path_in_docs = "docs" in f
-            path_in_website = "website" in f
+            path_in_docs = f.startswith("docs/")
             if (
-                ext in DIFF_IN_DOCUMENTATION_EXT and (path_in_docs or path_in_website)
+                ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs
             ) or "docker/docs" in f:
                 return True
         return False
