@@ -337,8 +337,10 @@ void TabSeparatedFormatReader::skipRow()
         {
             ++istr.position();
             if (!istr.eof() && *istr.position() == '\n')
+            {
                 ++istr.position();
-            return;
+                return;
+            }
         }
     }
 }
