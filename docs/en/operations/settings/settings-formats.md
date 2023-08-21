@@ -1223,6 +1223,12 @@ Allow skipping columns with unsupported types while schema inference for format 
 
 Disabled by default.
 
+### input_format_parquet_local_file_min_bytes_for_seek {#input_format_parquet_local_file_min_bytes_for_seek}
+
+min bytes required for local read (file) to do seek, instead of read with ignore in Parquet input format.
+
+Default value - `8192`.
+
 ### output_format_parquet_string_as_string {#output_format_parquet_string_as_string}
 
 Use Parquet String type instead of Binary for String columns.
