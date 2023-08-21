@@ -118,7 +118,7 @@ private:
         {
             size_t operator() (const IAST::Hash & hash) const
             {
-                return hash.first;
+                return hash.low64;
             }
         };
 

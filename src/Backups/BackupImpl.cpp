@@ -375,7 +375,7 @@ void BackupImpl::readBackupMetadata()
         if (!archive_reader->fileExists(".backup"))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Archive {} is not a backup", backup_name_for_logging);
         setCompressedSize();
-        in = archive_reader->readFile(".backup");
+        in = archive_reader->readFile(".backup", /*throw_on_not_found=*/true);
     }
     else
     {
@@ -685,7 +685,7 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecks
     {
         /// Make `read_buffer` if there is data for this backup entry in this backup.
         if (use_archive)
-            read_buffer = archive_reader->readFile(info.data_file_name);
+            read_buffer = archive_reader->readFile(info.data_file_name, /*throw_on_not_found=*/true);
         else
             read_buffer = reader->readFile(info.data_file_name);
     }

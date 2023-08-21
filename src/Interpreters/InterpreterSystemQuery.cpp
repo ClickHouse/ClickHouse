@@ -319,27 +319,27 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::DROP_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
-            system_context->dropMarkCache();
+            system_context->clearMarkCache();
             break;
         case Type::DROP_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
-            system_context->dropUncompressedCache();
+            system_context->clearUncompressedCache();
             break;
         case Type::DROP_INDEX_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
-            system_context->dropIndexMarkCache();
+            system_context->clearIndexMarkCache();
             break;
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
-            system_context->dropIndexUncompressedCache();
+            system_context->clearIndexUncompressedCache();
             break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
-            system_context->dropMMappedFileCache();
+            system_context->clearMMappedFileCache();
             break;
         case Type::DROP_QUERY_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
-            getContext()->dropQueryCache();
+            getContext()->clearQueryCache();
             break;
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
