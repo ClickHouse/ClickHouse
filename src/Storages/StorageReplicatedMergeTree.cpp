@@ -338,6 +338,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     mutations_updating_task->deactivate();
 
+    mutations_watch_callback = std::make_shared<Coordination::WatchCallback>(mutations_updating_task->getWatchCallback());
+
     merge_selecting_task = getContext()->getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mergeSelectingTask)", [this] { mergeSelectingTask(); });
 
@@ -713,7 +715,7 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     {
         auto res = future.get();
         if (res.error != Coordination::Error::ZOK && res.error != Coordination::Error::ZNODEEXISTS)
-            throw Coordination::Exception(fmt::format("Failed to create new nodes at {}", zookeeper_path), res.error);
+            throw Coordination::Exception(res.error, "Failed to create new nodes at {}", zookeeper_path);
     }
 }
 
@@ -749,7 +751,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
             }
             else if (code != Coordination::Error::ZOK)
             {
-                throw Coordination::Exception(code, drop_lock_path);
+                throw Coordination::Exception::fromPath(code, drop_lock_path);
             }
             else
             {
@@ -3217,7 +3219,7 @@ void StorageReplicatedMergeTree::mutationsUpdatingTask()
 {
     try
     {
-        queue.updateMutations(getZooKeeper(), mutations_updating_task->getWatchCallback());
+        queue.updateMutations(getZooKeeper(), mutations_watch_callback);
     }
     catch (const Coordination::Exception & e)
     {
@@ -4309,7 +4311,7 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_
                 continue;
             }
             else
-                throw Coordination::Exception(code, quorum_status_path);
+                throw Coordination::Exception::fromPath(code, quorum_status_path);
         }
         else
         {
@@ -4333,7 +4335,7 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_
                 continue;
             }
             else
-                throw Coordination::Exception(code, quorum_status_path);
+                throw Coordination::Exception::fromPath(code, quorum_status_path);
         }
     }
 }
@@ -4391,7 +4393,7 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
             continue;
         }
         else
-            throw Coordination::Exception(code, quorum_last_part_path);
+            throw Coordination::Exception::fromPath(code, quorum_last_part_path);
     }
 }
 
@@ -5155,7 +5157,9 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
 {
     auto table_id = getStorageID();
 
-    auto parallel_replicas_cluster = local_context->getCluster(local_context->getSettingsRef().cluster_for_parallel_replicas);
+    auto scalars = local_context->hasQueryContext() ? local_context->getQueryContext()->getScalars() : Scalars{};
+    String cluster_for_parallel_replicas = local_context->getSettingsRef().cluster_for_parallel_replicas;
+    auto parallel_replicas_cluster = local_context->getCluster(cluster_for_parallel_replicas);
 
     ASTPtr modified_query_ast;
     Block header;
@@ -5890,7 +5894,7 @@ void StorageReplicatedMergeTree::alter(
         }
         else
         {
-            throw Coordination::Exception("Alter cannot be assigned because of Zookeeper error", rc);
+            throw Coordination::Exception::fromMessage(rc, "Alter cannot be assigned because of Zookeeper error");
         }
     }
 
@@ -7052,7 +7056,7 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
             continue;
         }
         else
-            throw Coordination::Exception("Unable to create a mutation znode", rc);
+            throw Coordination::Exception::fromMessage(rc, "Unable to create a mutation znode");
     }
 
     merge_selecting_task->schedule();
@@ -8675,7 +8679,7 @@ void StorageReplicatedMergeTree::createTableSharedID() const
         }
         else if (code != Coordination::Error::ZOK)
         {
-            throw zkutil::KeeperException(code, zookeeper_table_id_path);
+            throw zkutil::KeeperException::fromPath(code, zookeeper_table_id_path);
         }
     }
 
@@ -9118,7 +9122,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
             }
             else
             {
-                throw zkutil::KeeperException(ec, zookeeper_part_replica_node);
+                throw zkutil::KeeperException::fromPath(ec, zookeeper_part_replica_node);
             }
         }
 
@@ -9153,7 +9157,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         }
         else
         {
-            throw zkutil::KeeperException(error_code, zookeeper_part_uniq_node);
+            throw zkutil::KeeperException::fromPath(error_code, zookeeper_part_uniq_node);
         }
 
 
@@ -9185,7 +9189,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
             }
             else
             {
-                throw zkutil::KeeperException(error_code, zookeeper_part_uniq_node);
+                throw zkutil::KeeperException::fromPath(error_code, zookeeper_part_uniq_node);
             }
         }
         else
