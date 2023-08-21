@@ -28,7 +28,7 @@ RemoteProxyConfigurationResolver::RemoteProxyConfigurationResolver(
 
 ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 {
-    auto logger = &Poco::Logger::get("RemoteProxyConfigurationResolver");
+    auto * logger = &Poco::Logger::get("RemoteProxyConfigurationResolver");
 
     LOG_DEBUG(logger, "Obtain proxy using resolver: {}", endpoint.toString());
 
