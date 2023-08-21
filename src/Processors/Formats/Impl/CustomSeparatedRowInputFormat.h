@@ -74,7 +74,9 @@ public:
 
     std::vector<String> readRowForHeaderDetection() override { return readRowImpl<ReadFieldMode::AS_POSSIBLE_STRING>(); }
 
-    bool checkEndOfRow();
+    bool checkForEndOfRow() override;
+    bool allowVariableNumberOfColumns() const override { return format_settings.custom.allow_variable_number_of_columns; }
+
     bool checkForSuffixImpl(bool check_eof);
     inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf, true); }
 
@@ -109,9 +111,11 @@ public:
     CustomSeparatedSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_setting_);
 
 private:
-    DataTypes readRowAndGetDataTypesImpl() override;
+    bool allowVariableNumberOfColumns() const override { return format_settings.custom.allow_variable_number_of_columns; }
 
-    std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() override;
+    std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
+
+    std::optional<std::pair<std::vector<String>, DataTypes>> readRowAndGetFieldsAndDataTypes() override;
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 

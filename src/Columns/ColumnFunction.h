@@ -96,7 +96,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override
+    StringRef serializeValueIntoArena(size_t, Arena &, char const *&, const UInt8 *) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot serialize from {}", getName());
     }

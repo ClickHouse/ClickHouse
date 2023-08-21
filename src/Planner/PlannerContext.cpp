@@ -115,8 +115,7 @@ const ColumnIdentifier * PlannerContext::getColumnNodeIdentifierOrNull(const Que
 
 PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node)
 {
-    auto set_source_hash = set_source_node->getTreeHash();
-
+    const auto set_source_hash = set_source_node->getTreeHash();
     if (set_source_node->as<ConstantNode>())
     {
         /* We need to hash the type of the left operand because we can build different sets for different types.
@@ -127,11 +126,11 @@ PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_ope
          *   - `{1, 2.5} :: Set(Decimal(9, 1))` for a
          *   - `{1} :: Set(Decimal(9, 0))` for b (2.5 omitted because bercause it's not representable as Decimal(9, 0)).
          */
-        return "__set_" + left_operand_type->getName() + '_' + toString(set_source_hash.first) + '_' + toString(set_source_hash.second);
+        return "__set_" + left_operand_type->getName() + '_' + toString(set_source_hash);
     }
 
     /// For other cases we will cast left operand to the type of the set source, so no difference in types.
-    return "__set_" + toString(set_source_hash.first) + '_' + toString(set_source_hash.second);
+    return "__set_" + toString(set_source_hash);
 }
 
 }
