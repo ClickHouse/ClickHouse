@@ -6,7 +6,7 @@ sidebar_label: MySQL Interface
 
 # MySQL Interface
 
-ClickHouse supports the MySQL wire protocol. This allow tools that are MySQL compatible to interact with ClickHouse seamlessly (eg. [Looker Studio](../integrations/data-visualization/looker-studio-and-clickhouse.md)).
+ClickHouse supports the MySQL wire protocol. This allow tools that are MySQL-compatible to interact with ClickHouse seamlessly (e.g. [Looker Studio](../integrations/data-visualization/looker-studio-and-clickhouse.md)).
 
 ## Enabling the MySQL Interface On ClickHouse Cloud
 
@@ -18,7 +18,7 @@ ClickHouse supports the MySQL wire protocol. This allow tools that are MySQL com
 
 ![Credentials screen - Enabled MySQL](./images/mysql2.png)
 
-Alternatively, in order to enable the MySQL interface for an exisitng service:
+Alternatively, in order to enable the MySQL interface for an existing service:
 
 1. Ensure your service is in `Running` state then click on the "View connection string" button for the service you want to enable the MySQL interface for
 
@@ -33,7 +33,7 @@ Alternatively, in order to enable the MySQL interface for an exisitng service:
 
 ## Enabling the MySQL Interface On Self-managed ClickHouse
 
-Add the [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d` folder:
+Add the [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d/` [folder](../operations/configuration-files):
 
 ``` xml
 <clickhouse>
@@ -47,7 +47,7 @@ Startup your ClickHouse server and look for a log message similar to the followi
 {} <Information> Application: Listening for MySQL compatibility protocol: 127.0.0.1:9004
 ```
 
-## Connect mysql to ClickHouse
+## Connect MySQL to ClickHouse
 
 The following command demonstrates how to connect the MySQL client `mysql` to ClickHouse:
 
