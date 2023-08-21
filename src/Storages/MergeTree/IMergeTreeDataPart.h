@@ -89,7 +89,7 @@ public:
 
     virtual MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns_,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const MarkRanges & mark_ranges,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
@@ -121,6 +121,9 @@ public:
     /// NOTE: Returns zeros if secondary indexes are not found in checksums.
     /// Otherwise return information about secondary index size on disk.
     IndexSize getSecondaryIndexSize(const String & secondary_index_name) const;
+
+    /// Returns true if there is materialized index with specified name in part.
+    bool hasSecondaryIndex(const String & index_name) const;
 
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const { return total_columns_size; }
@@ -368,7 +371,8 @@ public:
     virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists);
 
     /// Makes clone of a part in detached/ directory via hard links
-    virtual DataPartStoragePtr makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
+    virtual DataPartStoragePtr makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot,
+                                                   const DiskTransactionPtr & disk_transaction) const;
 
     /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
     MutableDataPartStoragePtr makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;

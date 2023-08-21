@@ -26,6 +26,10 @@ def started_cluster():
         cluster.start()
         node1.query("CREATE DATABASE test")
         node2.query("CREATE DATABASE test")
+        # Wait for the PostgreSQL handler to start.
+        # cluster.start waits until port 9000 becomes accessible.
+        # Server opens the PostgreSQL compatibility port a bit later.
+        node1.wait_for_log_line("PostgreSQL compatibility protocol")
         yield cluster
 
     finally:
@@ -724,6 +728,22 @@ def test_auto_close_connection(started_cluster):
 
     # Connection from python + pg_stat table also has a connection at the moment of current query
     assert count == 2
+
+
+def test_literal_escaping(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute(f"DROP TABLE IF EXISTS escaping")
+    cursor.execute(f"CREATE TABLE escaping(text varchar(255))")
+    node1.query(
+        "CREATE TABLE default.escaping (text String) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'escaping', 'postgres', 'mysecretpassword')"
+    )
+    node1.query("SELECT * FROM escaping WHERE text = ''''")  # ' -> ''
+    node1.query("SELECT * FROM escaping WHERE text = '\\''")  # ' -> ''
+    node1.query("SELECT * FROM escaping WHERE text = '\\\\\\''")  # \' -> \''
+    node1.query("SELECT * FROM escaping WHERE text = '\\\\\\''")  # \' -> \''
+    node1.query("SELECT * FROM escaping WHERE text like '%a''a%'")  # %a'a% -> %a''a%
+    node1.query("SELECT * FROM escaping WHERE text like '%a\\'a%'")  # %a'a% -> %a''a%
+    cursor.execute(f"DROP TABLE escaping")
 
 
 if __name__ == "__main__":
