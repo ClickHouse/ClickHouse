@@ -19,10 +19,11 @@ add_library (_boost_filesystem ${SRCS_FILESYSTEM})
 add_library (boost::filesystem ALIAS _boost_filesystem)
 target_include_directories (_boost_filesystem SYSTEM BEFORE PUBLIC ${LIBRARY_DIR})
 
-target_compile_definitions (_boost_filesystem PRIVATE
-    BOOST_FILESYSTEM_HAS_POSIX_AT_APIS=1
-
-)
+if (OS_LINUX)
+    target_compile_definitions (_boost_filesystem PRIVATE
+        BOOST_FILESYSTEM_HAS_POSIX_AT_APIS=1
+    )
+endif ()
 
 # headers-only
 
