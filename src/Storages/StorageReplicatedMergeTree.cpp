@@ -197,6 +197,7 @@ namespace ActionLocks
     extern const StorageActionBlockType ReplicationQueue;
     extern const StorageActionBlockType PartsTTLMerge;
     extern const StorageActionBlockType PartsMove;
+    extern const StorageActionBlockType PullReplicationLog;
 }
 
 
@@ -336,6 +337,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsUpdatingTask)", [this]{ mutationsUpdatingTask(); });
 
     mutations_updating_task->deactivate();
+
+    mutations_watch_callback = std::make_shared<Coordination::WatchCallback>(mutations_updating_task->getWatchCallback());
 
     merge_selecting_task = getContext()->getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mergeSelectingTask)", [this] { mergeSelectingTask(); });
@@ -712,7 +715,7 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     {
         auto res = future.get();
         if (res.error != Coordination::Error::ZOK && res.error != Coordination::Error::ZNODEEXISTS)
-            throw Coordination::Exception(fmt::format("Failed to create new nodes at {}", zookeeper_path), res.error);
+            throw Coordination::Exception(res.error, "Failed to create new nodes at {}", zookeeper_path);
     }
 }
 
@@ -748,7 +751,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
             }
             else if (code != Coordination::Error::ZOK)
             {
-                throw Coordination::Exception(code, drop_lock_path);
+                throw Coordination::Exception::fromPath(code, drop_lock_path);
             }
             else
             {
@@ -2096,8 +2099,10 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
         {
             if (auto part_to_detach = part.getPartIfItWasActive())
             {
-                LOG_INFO(log, "Detaching {}", part_to_detach->getDataPartStorage().getPartDirectory());
-                part_to_detach->makeCloneInDetached("", metadata_snapshot);
+                String part_dir = part_to_detach->getDataPartStorage().getPartDirectory();
+                LOG_INFO(log, "Detaching {}", part_dir);
+                auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
+                part_to_detach->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
             }
         }
     }
@@ -2827,7 +2832,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         for (const auto & part : parts_to_remove_from_working_set)
         {
             LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
-            part->makeCloneInDetached("clone", metadata_snapshot);
+            part->makeCloneInDetached("clone", metadata_snapshot, /*disk_transaction*/ {});
         }
     }
 
@@ -3214,7 +3219,7 @@ void StorageReplicatedMergeTree::mutationsUpdatingTask()
 {
     try
     {
-        queue.updateMutations(getZooKeeper(), mutations_updating_task->getWatchCallback());
+        queue.updateMutations(getZooKeeper(), mutations_watch_callback);
     }
     catch (const Coordination::Exception & e)
     {
@@ -3793,12 +3798,12 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
             chassert(!broken_part);
             chassert(!storage_init);
             part->was_removed_as_broken = true;
-            part->makeCloneInDetached("broken", getInMemoryMetadataPtr());
+            part->makeCloneInDetached("broken", getInMemoryMetadataPtr(), /*disk_transaction*/ {});
             broken_part = part;
         }
         else
         {
-            part->makeCloneInDetached("covered-by-broken", getInMemoryMetadataPtr());
+            part->makeCloneInDetached("covered-by-broken", getInMemoryMetadataPtr(), /*disk_transaction*/ {});
         }
         detached_parts.push_back(part->name);
     }
@@ -4306,7 +4311,7 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_
                 continue;
             }
             else
-                throw Coordination::Exception(code, quorum_status_path);
+                throw Coordination::Exception::fromPath(code, quorum_status_path);
         }
         else
         {
@@ -4330,7 +4335,7 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_
                 continue;
             }
             else
-                throw Coordination::Exception(code, quorum_status_path);
+                throw Coordination::Exception::fromPath(code, quorum_status_path);
         }
     }
 }
@@ -4340,7 +4345,7 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
 {
     auto zookeeper = getZooKeeper();
 
-    LOG_DEBUG(log, "Cleaning up last parent node for partition {}", partition_id);
+    LOG_DEBUG(log, "Cleaning up last part node for partition {}", partition_id);
 
     /// The name of the previous part for which the quorum was reached.
     const String quorum_last_part_path = fs::path(zookeeper_path) / "quorum" / "last_part";
@@ -4361,6 +4366,7 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
         if (!parts_with_quorum.added_parts.contains(partition_id))
         {
             /// There is no information about interested part.
+            LOG_TEST(log, "There is no information about the partition");
             break;
         }
 
@@ -4378,6 +4384,7 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
         else if (code == Coordination::Error::ZNONODE)
         {
             /// Node is deleted. It is impossible, but it is Ok.
+            LOG_WARNING(log, "The last part node {} was deleted", quorum_last_part_path);
             break;
         }
         else if (code == Coordination::Error::ZBADVERSION)
@@ -4386,7 +4393,7 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
             continue;
         }
         else
-            throw Coordination::Exception(code, quorum_last_part_path);
+            throw Coordination::Exception::fromPath(code, quorum_last_part_path);
     }
 }
 
@@ -5150,7 +5157,9 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
 {
     auto table_id = getStorageID();
 
-    auto parallel_replicas_cluster = local_context->getCluster(local_context->getSettingsRef().cluster_for_parallel_replicas);
+    auto scalars = local_context->hasQueryContext() ? local_context->getQueryContext()->getScalars() : Scalars{};
+    String cluster_for_parallel_replicas = local_context->getSettingsRef().cluster_for_parallel_replicas;
+    auto parallel_replicas_cluster = local_context->getCluster(cluster_for_parallel_replicas);
 
     ASTPtr modified_query_ast;
     Block header;
@@ -5885,7 +5894,7 @@ void StorageReplicatedMergeTree::alter(
         }
         else
         {
-            throw Coordination::Exception("Alter cannot be assigned because of Zookeeper error", rc);
+            throw Coordination::Exception::fromMessage(rc, "Alter cannot be assigned because of Zookeeper error");
         }
     }
 
@@ -6130,8 +6139,9 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
     /// TODO Allow to use quorum here.
-    ReplicatedMergeTreeSink output(*this, metadata_snapshot, 0, 0, 0, false, false, false, query_context,
-        /*is_attach*/true);
+    ReplicatedMergeTreeSink output(*this, metadata_snapshot, /* quorum */ 0, /* quorum_timeout_ms */ 0, /* max_parts_per_block */ 0,
+                                   /* quorum_parallel */ false, query_context->getSettingsRef().insert_deduplicate,
+                                   /* majority_quorum */ false, query_context, /*is_attach*/true);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
@@ -7046,7 +7056,7 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
             continue;
         }
         else
-            throw Coordination::Exception("Unable to create a mutation znode", rc);
+            throw Coordination::Exception::fromMessage(rc, "Unable to create a mutation znode");
     }
 
     merge_selecting_task->schedule();
@@ -8169,6 +8179,9 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
     if (action_type == ActionLocks::PartsMove)
         return parts_mover.moves_blocker.cancel();
 
+    if (action_type == ActionLocks::PullReplicationLog)
+        return queue.pull_log_blocker.cancel();
+
     return {};
 }
 
@@ -8666,7 +8679,7 @@ void StorageReplicatedMergeTree::createTableSharedID() const
         }
         else if (code != Coordination::Error::ZOK)
         {
-            throw zkutil::KeeperException(code, zookeeper_table_id_path);
+            throw zkutil::KeeperException::fromPath(code, zookeeper_table_id_path);
         }
     }
 
@@ -9109,7 +9122,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
             }
             else
             {
-                throw zkutil::KeeperException(ec, zookeeper_part_replica_node);
+                throw zkutil::KeeperException::fromPath(ec, zookeeper_part_replica_node);
             }
         }
 
@@ -9144,7 +9157,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         }
         else
         {
-            throw zkutil::KeeperException(error_code, zookeeper_part_uniq_node);
+            throw zkutil::KeeperException::fromPath(error_code, zookeeper_part_uniq_node);
         }
 
 
@@ -9176,7 +9189,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
             }
             else
             {
-                throw zkutil::KeeperException(error_code, zookeeper_part_uniq_node);
+                throw zkutil::KeeperException::fromPath(error_code, zookeeper_part_uniq_node);
             }
         }
         else
@@ -9503,7 +9516,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
         }
     }
 
-    MergeTreeData::MutableDataPartPtr new_data_part = createEmptyPart(new_part_info, partition, lost_part_name, NO_TRANSACTION_PTR);
+    auto [new_data_part, tmp_dir_holder] = createEmptyPart(new_part_info, partition, lost_part_name, NO_TRANSACTION_PTR);
     new_data_part->setName(lost_part_name);
 
     try
@@ -9820,6 +9833,7 @@ void StorageReplicatedMergeTree::backupData(
     /// because we need to coordinate them with other replicas (other replicas can have better parts).
 
     const auto & backup_settings = backup_entries_collector.getBackupSettings();
+    const auto & read_settings = backup_entries_collector.getReadSettings();
     auto local_context = backup_entries_collector.getContext();
 
     DataPartsVector data_parts;
@@ -9828,7 +9842,7 @@ void StorageReplicatedMergeTree::backupData(
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    auto parts_backup_entries = backupParts(data_parts, /* data_path_in_backup */ "", backup_settings, local_context);
+    auto parts_backup_entries = backupParts(data_parts, /* data_path_in_backup */ "", backup_settings, read_settings, local_context);
 
     auto coordination = backup_entries_collector.getBackupCoordination();
     String shared_id = getTableSharedID();

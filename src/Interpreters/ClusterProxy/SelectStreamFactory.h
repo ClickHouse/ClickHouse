@@ -60,9 +60,6 @@ public:
         /// (When there is a local replica with big delay).
         bool lazy = false;
         time_t local_delay = 0;
-
-        /// Set only if parallel reading from replicas is used.
-        std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator;
     };
 
     using Shards = std::vector<Shard>;

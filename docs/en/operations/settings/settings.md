@@ -98,6 +98,18 @@ Default value: 0.
 </profiles>
 ```
 
+## mutations_execute_nondeterministic_on_initiator {#mutations_execute_nondeterministic_on_initiator}
+
+If true constant nondeterministic functions (e.g. function `now()`) are executed on initiator and replaced to literals in `UPDATE` and `DELETE` queries. It helps to keep data in sync on replicas while executing mutations with constant nondeterministic functions. Default value: `false`.
+
+## mutations_execute_subqueries_on_initiator {#mutations_execute_subqueries_on_initiator}
+
+If true scalar subqueries are executed on initiator and replaced to literals in `UPDATE` and `DELETE` queries. Default value: `false`.
+
+## mutations_max_literal_size_to_replace {#mutations_max_literal_size_to_replace}
+
+The maximum size of serialized literal in bytes to replace in `UPDATE` and `DELETE` queries. Takes effect only if at least one the two settings above is enabled. Default value: 16384 (16 KiB).
+
 ## distributed_product_mode {#distributed-product-mode}
 
 Changes the behaviour of [distributed subqueries](../../sql-reference/operators/in.md).
@@ -4298,7 +4310,7 @@ Use this setting only for backward compatibility if your use cases depend on old
 ## session_timezone {#session_timezone}
 
 Sets the implicit time zone of the current session or query.
-The implicit time zone is the time zone applied to values of type DateTime/DateTime64 which have no explicitly specified time zone. 
+The implicit time zone is the time zone applied to values of type DateTime/DateTime64 which have no explicitly specified time zone.
 The setting takes precedence over the globally configured (server-level) implicit time zone.
 A value of '' (empty string) means that the implicit time zone of the current session or query is equal to the [server time zone](../server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
 
@@ -4333,7 +4345,7 @@ SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zuric
 ```
 
 :::warning
-Not all functions that parse DateTime/DateTime64 respect `session_timezone`. This can lead to subtle errors. 
+Not all functions that parse DateTime/DateTime64 respect `session_timezone`. This can lead to subtle errors.
 See the following example and explanation.
 :::
 
@@ -4578,3 +4590,39 @@ Type: Int64
 
 Default: 0
 
+## rewrite_count_distinct_if_with_count_distinct_implementation
+
+Allows you to rewrite `countDistcintIf` with [count_distinct_implementation](#settings-count_distinct_implementation) setting.
+
+Possible values:
+
+- true — Allow.
+- false — Disallow.
+
+Default value: `false`.
+
+## precise_float_parsing {#precise_float_parsing}
+
+Switches [Float32/Float64](../../sql-reference/data-types/float.md) parsing algorithms:
+* If the value is `1`, then precise method is used. It is slower than fast method, but it always returns a number that is the closest machine representable number to the input.
+* Otherwise, fast method is used (default). It usually returns the same value as precise, but in rare cases result may differ by one or two least significant digits.
+
+Possible values: `0`, `1`.
+
+Default value: `0`.
+
+Example:
+
+```sql
+SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_parsing = 0;
+
+┌─toFloat64('1.7091')─┬─toFloat64('1.5008753E7')─┐
+│  1.7090999999999998 │       15008753.000000002 │
+└─────────────────────┴──────────────────────────┘
+
+SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_parsing = 1;
+
+┌─toFloat64('1.7091')─┬─toFloat64('1.5008753E7')─┐
+│              1.7091 │                 15008753 │
+└─────────────────────┴──────────────────────────┘
+```

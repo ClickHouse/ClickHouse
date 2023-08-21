@@ -17,6 +17,13 @@
   * - ZooKeeper emulation layer on top of Etcd, FoundationDB, whatever.
   */
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int KEEPER_EXCEPTION;
+}
+}
 
 namespace Coordination
 {
@@ -158,6 +165,10 @@ struct WatchResponse : virtual Response
 };
 
 using WatchCallback = std::function<void(const WatchResponse &)>;
+/// Passing watch callback as a shared_ptr allows to
+///  - avoid copying of the callback
+///  - registering the same callback only once per path
+using WatchCallbackPtr = std::shared_ptr<WatchCallback>;
 
 struct SetACLRequest : virtual Request
 {
@@ -450,17 +461,46 @@ class Exception : public DB::Exception
 private:
     /// Delegate constructor, used to minimize repetition; last parameter used for overload resolution.
     Exception(const std::string & msg, const Error code_, int); /// NOLINT
+    Exception(PreformattedMessage && msg, const Error code_);
+
+    /// Message must be a compile-time constant
+    template <typename T>
+    requires std::is_convertible_v<T, String>
+    Exception(T && message, const Error code_) : DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, std::forward<T>(message)), code(code_)
+    {
+        incrementErrorMetrics(code);
+    }
+
+    static void incrementErrorMetrics(const Error code_);
 
 public:
     explicit Exception(const Error code_); /// NOLINT
-    Exception(const std::string & msg, const Error code_); /// NOLINT
-    Exception(const Error code_, const std::string & path); /// NOLINT
     Exception(const Exception & exc);
 
     template <typename... Args>
-    Exception(const Error code_, fmt::format_string<Args...> fmt, Args &&... args)
-        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code_)
+    Exception(const Error code_, FormatStringHelper<Args...> fmt, Args &&... args)
+        : DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, std::move(fmt), std::forward<Args>(args)...)
+        , code(code_)
     {
+        incrementErrorMetrics(code);
+    }
+
+    inline static Exception createDeprecated(const std::string & msg, const Error code_)
+    {
+        return Exception(msg, code_, 0);
+    }
+
+    inline static Exception fromPath(const Error code_, const std::string & path)
+    {
+        return Exception(code_, "Coordination error: {}, path {}", errorMessage(code_), path);
+    }
+
+    /// Message must be a compile-time constant
+    template <typename T>
+    requires std::is_convertible_v<T, String>
+    inline static Exception fromMessage(const Error code_, T && message)
+    {
+        return Exception(std::forward<T>(message), code_);
     }
 
     const char * name() const noexcept override { return "Coordination::Exception"; }
@@ -521,12 +561,12 @@ public:
     virtual void exists(
         const String & path,
         ExistsCallback callback,
-        WatchCallback watch) = 0;
+        WatchCallbackPtr watch) = 0;
 
     virtual void get(
         const String & path,
         GetCallback callback,
-        WatchCallback watch) = 0;
+        WatchCallbackPtr watch) = 0;
 
     virtual void set(
         const String & path,
@@ -538,7 +578,7 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallback watch) = 0;
+        WatchCallbackPtr watch) = 0;
 
     virtual void check(
         const String & path,
