@@ -4,38 +4,7 @@ import time
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-
-
-def wait_resolver(cluster):
-    for i in range(10):
-        response = cluster.exec_in_container(
-            cluster.get_container_id("resolver"),
-            [
-                "curl",
-                "-s",
-                f"http://resolver:8080/hostname",
-            ],
-            nothrow=True,
-        )
-        if response == "proxy1" or response == "proxy2":
-            return
-        time.sleep(i)
-    else:
-        assert False, "Resolver is not up"
-
-
-# Runs simple proxy resolver in python env container.
-def run_resolver(cluster):
-    container_id = cluster.get_container_id("resolver")
-    current_dir = os.path.dirname(__file__)
-    cluster.copy_file_to_container(
-        container_id,
-        os.path.join(current_dir, "proxy-resolver", "resolver.py"),
-        "resolver.py",
-    )
-    cluster.exec_in_container(container_id, ["python", "resolver.py"], detach=True)
-
-    wait_resolver(cluster)
+import helpers.s3_url_proxy_tests_util as proxy_util
 
 
 @pytest.fixture(scope="module")
@@ -49,7 +18,7 @@ def cluster():
         cluster.start()
         logging.info("Cluster started")
 
-        run_resolver(cluster)
+        proxy_util.run_resolver(cluster)
         logging.info("Proxy resolver started")
 
         yield cluster

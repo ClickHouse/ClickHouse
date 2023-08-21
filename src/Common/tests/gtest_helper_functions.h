@@ -78,8 +78,15 @@ struct EnvironmentProxySetter
 {
     EnvironmentProxySetter(const Poco::URI & http_proxy, const Poco::URI & https_proxy)
     {
-        setenv("http_proxy", http_proxy.toString().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
-        setenv("https_proxy", https_proxy.toString().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+        if (!http_proxy.empty())
+        {
+            setenv("http_proxy", http_proxy.toString().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+        }
+
+        if (!https_proxy.empty())
+        {
+            setenv("https_proxy", https_proxy.toString().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+        }
     }
 
     ~EnvironmentProxySetter()
