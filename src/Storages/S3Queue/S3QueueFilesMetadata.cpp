@@ -98,7 +98,9 @@ void S3QueueFilesMetadata::S3QueueProcessedCollection::parse(const String & coll
 
 void S3QueueFilesMetadata::S3QueueProcessedCollection::add(const String & file_name)
 {
-    TrackedCollectionItem processed_file = { .file_path=file_name, .timestamp = getCurrentTime() };
+    TrackedCollectionItem processed_file;
+    processed_file.file_path = file_name;
+    processed_file.timestamp = getCurrentTime();
     files.push_back(processed_file);
 
     /// TODO: it is strange that in parse() we take into account only max_age, but here only max_size.
@@ -337,7 +339,7 @@ std::shared_ptr<zkutil::EphemeralNodeHolder> S3QueueFilesMetadata::acquireLock(z
         }
         else if (code != Coordination::Error::ZOK)
         {
-            throw Coordination::Exception(code, zookeeper_lock_path);
+            throw Coordination::Exception::fromPath(code, zookeeper_lock_path);
         }
         else
         {

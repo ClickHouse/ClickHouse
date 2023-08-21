@@ -139,7 +139,6 @@ IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation, ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
     {{"clickhouse", Dialect::clickhouse},
      {"kusto", Dialect::kusto},
-     {"kusto", Dialect::kusto},
      {"prql", Dialect::prql}})
     // FIXME: do not add 'kusto_auto' to the list. Maybe remove it from code completely?
 
@@ -182,4 +181,12 @@ IMPLEMENT_SETTING_ENUM(S3QueueMode, ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM(S3QueueAction, ErrorCodes::BAD_ARGUMENTS,
                        {{"keep", S3QueueAction::KEEP},
                         {"delete", S3QueueAction::DELETE}})
+
+IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
+    {{"none", ExternalCommandStderrReaction::NONE},
+     {"log", ExternalCommandStderrReaction::LOG},
+     {"log_first", ExternalCommandStderrReaction::LOG_FIRST},
+     {"log_last", ExternalCommandStderrReaction::LOG_LAST},
+     {"throw", ExternalCommandStderrReaction::THROW}})
+
 }

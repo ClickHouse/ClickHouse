@@ -263,6 +263,17 @@ void TCPHandler::runImpl()
         std::unique_ptr<DB::Exception> exception;
         bool network_error = false;
         bool query_duration_already_logged = false;
+        auto log_query_duration = [this, &query_duration_already_logged]()
+        {
+            if (query_duration_already_logged)
+                return;
+            query_duration_already_logged = true;
+            auto elapsed_sec = state.watch.elapsedSeconds();
+            /// We already logged more detailed info if we read some rows
+            if (elapsed_sec < 1.0 && state.progress.read_rows)
+                return;
+            LOG_DEBUG(log, "Processed in {} sec.", elapsed_sec);
+        };
 
         try
         {
@@ -492,9 +503,7 @@ void TCPHandler::runImpl()
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
             query_scope->logPeakMemoryUsage();
-
-            LOG_DEBUG(log, "Processed in {} sec.", state.watch.elapsedSeconds());
-            query_duration_already_logged = true;
+            log_query_duration();
 
             if (state.is_connection_closed)
                 break;
@@ -616,10 +625,7 @@ void TCPHandler::runImpl()
             LOG_WARNING(log, "Can't skip data packets after query failure.");
         }
 
-        if (!query_duration_already_logged)
-        {
-            LOG_DEBUG(log, "Processed in {} sec.", state.watch.elapsedSeconds());
-        }
+        log_query_duration();
 
         /// QueryState should be cleared before QueryScope, since otherwise
         /// the MemoryTracker will be wrong for possible deallocations.
@@ -1303,16 +1309,16 @@ void TCPHandler::receiveUnexpectedHello()
 void TCPHandler::sendHello()
 {
     writeVarUInt(Protocol::Server::Hello, *out);
-    writeStringBinary(DBMS_NAME, *out);
-    writeVarUInt(DBMS_VERSION_MAJOR, *out);
-    writeVarUInt(DBMS_VERSION_MINOR, *out);
+    writeStringBinary(VERSION_NAME, *out);
+    writeVarUInt(VERSION_MAJOR, *out);
+    writeVarUInt(VERSION_MINOR, *out);
     writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
         writeStringBinary(server_display_name, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
-        writeVarUInt(DBMS_VERSION_PATCH, *out);
+        writeVarUInt(VERSION_PATCH, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
     {
         auto rules = server.context()->getAccessControl().getPasswordComplexityRules();

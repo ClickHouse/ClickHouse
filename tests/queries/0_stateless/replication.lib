@@ -37,7 +37,7 @@ function try_sync_replicas()
         pids[${i}]=$!
         i=$((i + 1))
     done
-    for pid in ${pids[*]}; do
+    for pid in "${pids[@]}"; do
         wait $pid || (echo "Failed to sync some replicas" && exit 1)
     done
     echo "Replication did not hang: synced all replicas of $table_name_prefix"
@@ -114,3 +114,5 @@ function check_replication_consistency()
     fi
 
 }
+
+# vi: ft=bash

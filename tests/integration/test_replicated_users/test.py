@@ -1,3 +1,4 @@
+import inspect
 import pytest
 import time
 
@@ -79,6 +80,37 @@ def test_create_replicated_on_cluster(started_cluster, entity):
             f"CREATE {entity.keyword} {entity.name} ON CLUSTER default {entity.options}"
         )
     )
+    node1.query(f"DROP {entity.keyword} {entity.name} {entity.options}")
+
+
+@pytest.mark.parametrize("entity", entities, ids=get_entity_id)
+def test_create_replicated_on_cluster_ignore(started_cluster, entity):
+    node1.replace_config(
+        "/etc/clickhouse-server/users.d/users.xml",
+        inspect.cleandoc(
+            f"""
+            <clickhouse>
+                <profiles>
+                    <default>
+                        <ignore_on_cluster_for_replicated_access_entities_queries>true</ignore_on_cluster_for_replicated_access_entities_queries>
+                    </default>
+                </profiles>
+            </clickhouse>
+            """
+        ),
+    )
+    node1.query("SYSTEM RELOAD CONFIG")
+
+    node1.query(
+        f"CREATE {entity.keyword} {entity.name} ON CLUSTER default {entity.options}"
+    )
+    assert (
+        f"cannot insert because {entity.keyword.lower()} `{entity.name}{entity.options}` already exists in replicated"
+        in node2.query_and_get_error_with_retry(
+            f"CREATE {entity.keyword} {entity.name} {entity.options}"
+        )
+    )
+
     node1.query(f"DROP {entity.keyword} {entity.name} {entity.options}")
 
 

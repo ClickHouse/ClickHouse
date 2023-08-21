@@ -388,7 +388,7 @@ int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
     bool blocking = !static_cast<bool>(async_callback);
     while (events_count == 0)
     {
-        events_count = epoll.getManyReady(1, &event, blocking);
+        events_count = epoll.getManyReady(1, &event, blocking ? -1 : 0);
         if (!events_count && async_callback)
             async_callback(epoll.getFileDescriptor(), 0, AsyncEventTimeoutType::NONE, epoll.getDescription(), AsyncTaskExecutor::Event::READ | AsyncTaskExecutor::Event::ERROR);
     }
