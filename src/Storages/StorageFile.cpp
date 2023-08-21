@@ -735,26 +735,11 @@ public:
             : files(files_), archives(std::move(archives_)), name_filter(name_filter_)
         {
             ASTPtr filter_ast;
-            if (!files_in_archive.empty())
-                filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, files_in_archive[0].second, context_);
-            else if (!files.empty())
+            else if (archives.empty() && !files.empty())
                 filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, files[0], context_);
 
             if (filter_ast)
-            {
-                if (files_in_archive.empty())
-                {
-                    VirtualColumnUtils::filterByPathOrFile(files, files, query, virtual_columns, context_, filter_ast);
-                }
-                else
-                {
-                    Strings paths;
-                    paths.reserve(files_in_archive.size());
-                    for (const auto & [_, file] : files_in_archive)
-                        paths.push_back(file);
-                    VirtualColumnUtils::filterByPathOrFile(files_in_archive, paths, query, virtual_columns, context_, filter_ast);
-                }
-            }
+                VirtualColumnUtils::filterByPathOrFile(files, files, query, virtual_columns, context_, filter_ast);
         }
 
         String next()
