@@ -995,13 +995,7 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
         {
             auto orc_column_with_type = name_to_column_ptr[search_column_name];
             column = readColumnFromORCColumn(
-                orc_column_with_type.first,
-                orc_column_with_type.second,
-                header_column.name,
-                false,
-                false,
-                skipped,
-                header_column.type);
+                orc_column_with_type.first, orc_column_with_type.second, header_column.name, false, false, skipped, header_column.type);
         }
 
         if (null_as_default)
@@ -1028,45 +1022,6 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
     res.setColumns(columns_list, num_rows);
 }
 
-/*
-void registerInputFormatORC(FormatFactory & factory)
-{
-    factory.registerInputFormat(
-        "ORC",
-        [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams &, const FormatSettings & settings)
-        { return std::make_shared<NativeORCBlockInputFormat>(buf, sample, settings); });
-    factory.markFormatSupportsSubsetOfColumns("ORC");
 }
-
-void registerORCSchemaReader(FormatFactory & factory)
-{
-    factory.registerSchemaReader(
-        "ORC", [](ReadBuffer & buf, const FormatSettings & settings) { return std::make_shared<ORCSchemaReader>(buf, settings); });
-
-    factory.registerAdditionalInfoForSchemaCacheGetter(
-        "ORC",
-        [](const FormatSettings & settings)
-        { return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable); });
-}
-*/
-}
-
-#else
-
-namespace DB
-{
-
-/*
-class FormatFactory;
-void registerInputFormatORC(FormatFactory &)
-{
-}
-
-void registerORCSchemaReader(FormatFactory &)
-{
-}
-*/
-}
-
 
 #endif
