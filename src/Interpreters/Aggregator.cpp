@@ -694,8 +694,7 @@ void Aggregator::compileAggregateFunctionsIfNeeded()
     SipHash aggregate_functions_description_hash;
     aggregate_functions_description_hash.update(functions_description);
 
-    UInt128 aggregate_functions_description_hash_key;
-    aggregate_functions_description_hash.get128(aggregate_functions_description_hash_key);
+    const auto aggregate_functions_description_hash_key = aggregate_functions_description_hash.get128();
 
     {
         std::lock_guard<std::mutex> lock(mutex);

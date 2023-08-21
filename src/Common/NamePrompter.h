@@ -106,10 +106,20 @@ public:
         return prompter.getHints(name, getAllRegisteredNames());
     }
 
+    std::vector<String> getHints(const String & name, const std::vector<String> & prompting_strings) const
+    {
+        return prompter.getHints(name, prompting_strings);
+    }
+
     void appendHintsMessage(String & error_message, const String & name) const
     {
         auto hints = getHints(name);
         DB::appendHintsMessage(error_message, hints);
+    }
+
+    String getHintsMessage(const String & name) const
+    {
+        return getHintsErrorMessageSuffix(getHints(name));
     }
 
     IHints() = default;

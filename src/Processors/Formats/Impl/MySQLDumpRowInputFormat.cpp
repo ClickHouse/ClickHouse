@@ -441,7 +441,7 @@ NamesAndTypesList MySQLDumpSchemaReader::readSchema()
     return IRowSchemaReader::readSchema();
 }
 
-DataTypes MySQLDumpSchemaReader::readRowAndGetDataTypes()
+std::optional<DataTypes> MySQLDumpSchemaReader::readRowAndGetDataTypes()
 {
     if (in.eof())
         return {};

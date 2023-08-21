@@ -344,7 +344,7 @@ bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
     return true;
 }
 
-bool CSVFormatReader::allowVariableNumberOfColumns()
+bool CSVFormatReader::allowVariableNumberOfColumns() const
 {
     return format_settings.csv.allow_variable_number_of_columns;
 }
@@ -470,19 +470,22 @@ CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_t
 {
 }
 
-std::pair<std::vector<String>, DataTypes> CSVSchemaReader::readRowAndGetFieldsAndDataTypes()
+std::optional<std::pair<std::vector<String>, DataTypes>> CSVSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
     if (buf.eof())
         return {};
 
     auto fields = reader.readRow();
     auto data_types = tryInferDataTypesByEscapingRule(fields, format_settings, FormatSettings::EscapingRule::CSV);
-    return {fields, data_types};
+    return std::make_pair(std::move(fields), std::move(data_types));
 }
 
-DataTypes CSVSchemaReader::readRowAndGetDataTypesImpl()
+std::optional<DataTypes> CSVSchemaReader::readRowAndGetDataTypesImpl()
 {
-    return std::move(readRowAndGetFieldsAndDataTypes().second);
+    auto fields_with_types = readRowAndGetFieldsAndDataTypes();
+    if (!fields_with_types)
+        return {};
+    return std::move(fields_with_types->second);
 }
 
 

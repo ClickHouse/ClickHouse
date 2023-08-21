@@ -212,8 +212,24 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
     format_reader->skipRowStartDelimiter();
 
     ext.read_columns.resize(data_types.size());
-    for (size_t file_column = 0; file_column < column_mapping->column_indexes_for_input_fields.size(); ++file_column)
+    size_t file_column = 0;
+    for (; file_column < column_mapping->column_indexes_for_input_fields.size(); ++file_column)
     {
+        if (format_reader->allowVariableNumberOfColumns() && format_reader->checkForEndOfRow())
+        {
+            while (file_column < column_mapping->column_indexes_for_input_fields.size())
+            {
+                const auto & rem_column_index = column_mapping->column_indexes_for_input_fields[file_column];
+                if (rem_column_index)
+                    columns[*rem_column_index]->insertDefault();
+                ++file_column;
+            }
+            break;
+        }
+
+        if (file_column != 0)
+            format_reader->skipFieldDelimiter();
+
         const auto & column_index = column_mapping->column_indexes_for_input_fields[file_column];
         const bool is_last_file_column = file_column + 1 == column_mapping->column_indexes_for_input_fields.size();
         if (column_index)
@@ -225,22 +241,6 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
                 column_mapping->names_of_columns[file_column]);
         else
             format_reader->skipField(file_column);
-
-        if (!is_last_file_column)
-        {
-            if (format_reader->allowVariableNumberOfColumns() && format_reader->checkForEndOfRow())
-            {
-                ++file_column;
-                while (file_column < column_mapping->column_indexes_for_input_fields.size())
-                {
-                    const auto & rem_column_index = column_mapping->column_indexes_for_input_fields[file_column];
-                    columns[*rem_column_index]->insertDefault();
-                    ++file_column;
-                }
-            }
-            else
-                format_reader->skipFieldDelimiter();
-        }
     }
 
     if (format_reader->allowVariableNumberOfColumns() && !format_reader->checkForEndOfRow())
@@ -248,7 +248,7 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
         do
         {
             format_reader->skipFieldDelimiter();
-            format_reader->skipField(1);
+            format_reader->skipField(file_column++);
         }
         while (!format_reader->checkForEndOfRow());
     }
@@ -443,11 +443,13 @@ namespace
 
 void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & column_names, std::vector<String> & type_names)
 {
-    auto [first_row_values, first_row_types] = readRowAndGetFieldsAndDataTypes();
+    auto first_row = readRowAndGetFieldsAndDataTypes();
 
     /// No data.
-    if (first_row_values.empty())
+    if (!first_row)
         return;
+
+    const auto & [first_row_values, first_row_types] = *first_row;
 
     /// The first row contains non String elements, it cannot be a header.
     if (!checkIfAllTypesAreString(first_row_types))
@@ -456,14 +458,16 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
         return;
     }
 
-    auto [second_row_values, second_row_types] = readRowAndGetFieldsAndDataTypes();
+    auto second_row = readRowAndGetFieldsAndDataTypes();
 
     /// Data contains only 1 row, don't treat it as a header.
-    if (second_row_values.empty())
+    if (!second_row)
     {
         buffered_types = first_row_types;
         return;
     }
+
+    const auto & [second_row_values, second_row_types] = *second_row;
 
     DataTypes data_types;
     bool second_row_can_be_type_names = checkIfAllTypesAreString(second_row_types) && checkIfAllValuesAreTypeNames(readNamesFromFields(second_row_values));
@@ -474,15 +478,16 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
     }
     else
     {
-        data_types = readRowAndGetDataTypes();
+        auto data_types_maybe = readRowAndGetDataTypes();
         /// Data contains only 2 rows.
-        if (data_types.empty())
+        if (!data_types_maybe)
         {
             second_row_can_be_type_names = false;
             data_types = second_row_types;
         }
         else
         {
+            data_types = *data_types_maybe;
             ++row;
         }
     }
@@ -514,10 +519,10 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
             return;
         }
 
-        auto next_row_types = readRowAndGetDataTypes();
+        auto next_row_types_maybe = readRowAndGetDataTypes();
         /// Check if there are no more rows in data. It means that all rows contains only String values and Nulls,
         /// so, the first two rows with all String elements can be real data and we cannot use them as a header.
-        if (next_row_types.empty())
+        if (!next_row_types_maybe)
         {
             /// Buffer first data types from the first row, because it doesn't contain Nulls.
             buffered_types = first_row_types;
@@ -526,11 +531,11 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
 
         ++row;
         /// Combine types from current row and from previous rows.
-        chooseResultColumnTypes(*this, data_types, next_row_types, getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule::CSV), default_colum_names, row);
+        chooseResultColumnTypes(*this, data_types, *next_row_types_maybe, getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule::CSV), default_colum_names, row);
     }
 }
 
-DataTypes FormatWithNamesAndTypesSchemaReader::readRowAndGetDataTypes()
+std::optional<DataTypes> FormatWithNamesAndTypesSchemaReader::readRowAndGetDataTypes()
 {
     /// Check if we tried to detect a header and have buffered types from read rows.
     if (!buffered_types.empty())

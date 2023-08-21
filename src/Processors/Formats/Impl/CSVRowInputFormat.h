@@ -74,7 +74,7 @@ public:
     void skipPrefixBeforeHeader() override;
 
     bool checkForEndOfRow() override;
-    bool allowVariableNumberOfColumns() override;
+    bool allowVariableNumberOfColumns() const override;
 
     std::vector<String> readNames() override { return readHeaderRow(); }
     std::vector<String> readTypes() override { return readHeaderRow(); }
@@ -106,8 +106,10 @@ public:
     CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
 private:
-    DataTypes readRowAndGetDataTypesImpl() override;
-    std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() override;
+    bool allowVariableNumberOfColumns() const override { return format_settings.csv.allow_variable_number_of_columns; }
+
+    std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
+    std::optional<std::pair<std::vector<String>, DataTypes>> readRowAndGetFieldsAndDataTypes() override;
 
     PeekableReadBuffer buf;
     CSVFormatReader reader;

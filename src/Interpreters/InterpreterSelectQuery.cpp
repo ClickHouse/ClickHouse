@@ -299,7 +299,7 @@ void checkAccessRightsForSelect(
         }
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
-            "{}: Not enough privileges. To execute this query it's necessary to have grant SELECT for at least one column on {}",
+            "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
             context->getUserName(),
             table_id.getFullTableName());
     }
@@ -1193,12 +1193,12 @@ static InterpolateDescriptionPtr getInterpolateDescription(
             }
 
             col_set.clear();
-            for (const auto & column : source_block)
+            for (const auto & column : result_block)
             {
                 source_columns.emplace_back(column.name, column.type);
                 col_set.insert(column.name);
             }
-            for (const auto & column : result_block)
+            for (const auto & column : source_block)
                 if (!col_set.contains(column.name))
                     source_columns.emplace_back(column.name, column.type);
         }

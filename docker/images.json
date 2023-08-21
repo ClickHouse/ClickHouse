@@ -125,6 +125,7 @@
             "docker/test/keeper-jepsen",
             "docker/test/server-jepsen",
             "docker/test/sqllogic",
+            "docker/test/sqltest",
             "docker/test/stateless"
          ]
     },
@@ -155,11 +156,14 @@
     },
     "docker/docs/builder": {
         "name": "clickhouse/docs-builder",
-        "dependent": [
-        ]
+        "dependent": []
     },
     "docker/test/sqllogic": {
         "name": "clickhouse/sqllogic-test",
+        "dependent": []
+    },
+    "docker/test/sqltest": {
+        "name": "clickhouse/sqltest",
         "dependent": []
     },
     "docker/test/integration/nginx_dav": {
