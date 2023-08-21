@@ -45,7 +45,7 @@ SharedMergeTree已经是所有开发实例（development tier）中的默认表�
 
 对于支持SharedMergeTree表引擎的实例，您不需要做任何额外变更。您可以像以前一样创建表，它会自动使用基于SharedMergeTree的表引擎，该引擎与您在CREATE TABLE查询中指定的引擎相对应。
 
-This will create the table `my_table` using the SharedMergeTree table engine.
+通过使用 SharedMergeTree 表引擎可以创建 my_table 表。
 
 ```sql
 CREATE TABLE my_table(
@@ -56,7 +56,7 @@ ENGINE =MergeTree
 ORDER BY key 
 ```
 
-You don’t need to specify `ENGINE=MergeTree` as `default_table_engine=MergeTree` in ClickHouse Cloud. The following query is identical to the query above.
+在ClickHouse Cloud中，由于default_table_engine=MergeTree，你不必再特别设置ENGINE=MergeTree。下面的查询语句和上面的完全一样。
 
 ```sql
 
