@@ -399,14 +399,14 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
                 throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
                     "Cannot compile regex from glob ({}): {}", current_path, matcher->error());
 
-            return reader->readFile([matcher = std::move(matcher)](const std::string & path)
+            return reader->readFile([my_matcher = std::move(matcher)](const std::string & path)
             {
-                return re2::RE2::FullMatch(path, *matcher);
-            });
+                return re2::RE2::FullMatch(path, *my_matcher);
+            }, /*throw_on_not_found=*/true);
         }
         else
         {
-            return reader->readFile(current_path);
+            return reader->readFile(current_path, /*throw_on_not_found=*/true);
         }
     }
 
@@ -728,11 +728,11 @@ public:
         explicit FilesIterator(
             const Strings & files_,
             std::vector<std::string> archives_,
-            std::vector<std::pair<uint64_t, std::string>> files_in_archive_,
+            const IArchiveReader::NameFilter & name_filter_,
             ASTPtr query,
             const NamesAndTypesList & virtual_columns,
             ContextPtr context_)
-            : files(files_), archives(std::move(archives_)), files_in_archive(std::move(files_in_archive_))
+            : files(files_), archives(std::move(archives_)), name_filter(name_filter_)
         {
             ASTPtr filter_ast;
             if (!files_in_archive.empty())
@@ -759,21 +759,13 @@ public:
 
         String next()
         {
+            const auto & fs = fromArchive() ? archives : files;
+
             auto current_index = index.fetch_add(1, std::memory_order_relaxed);
-            if (current_index >= files.size())
+            if (current_index >= fs.size())
                 return "";
 
-            return files[current_index];
-        }
-
-        std::pair<String, String> nextFileFromArchive()
-        {
-            auto current_index = index.fetch_add(1, std::memory_order_relaxed);
-            if (current_index >= files_in_archive.size())
-                return {"", ""};
-
-            const auto & [archive_index, filename] = files_in_archive[current_index];
-            return {archives[archive_index], filename};
+            return fs[current_index];
         }
 
         bool fromArchive() const
@@ -781,10 +773,31 @@ public:
             return !archives.empty();
         }
 
+        bool readSingleFileFromArchive() const
+        {
+            return !name_filter;
+        }
+
+        bool passesFilter(const std::string & name) const
+        {
+            std::lock_guard lock(filter_mutex);
+            return name_filter(name);
+        }
+
+        const String & getFileName()
+        {
+            if (files.size() != 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected only 1 filename but got {}", files.size());
+
+            return files[0];
+        }
     private:
         std::vector<std::string> files;
+
         std::vector<std::string> archives;
-        std::vector<std::pair<uint64_t, std::string>> files_in_archive;
+        mutable std::mutex filter_mutex;
+        IArchiveReader::NameFilter name_filter;
+
         std::atomic<size_t> index = 0;
     };
 
@@ -894,25 +907,62 @@ public:
                 {
                     if (files_iterator->fromArchive())
                     {
-                        auto [archive, filename] = files_iterator->nextFileFromArchive();
-                        if (archive.empty())
-                            return {};
-
-                        current_path = std::move(filename);
-
-                        if (!archive_reader || archive_reader->getPath() != archive)
+                        if (files_iterator->readSingleFileFromArchive())
                         {
+                            auto archive = files_iterator->next();
+                            if (archive.empty())
+                                return {};
+
+                            struct stat file_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
+                            if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
+                                continue;
+
                             archive_reader = createArchiveReader(archive);
-                            file_enumerator = archive_reader->firstFile();
+                            current_path = files_iterator->getFileName();
+                            read_buf = archive_reader->readFile(current_path, /*throw_on_not_found=*/false);
+                            if (!read_buf)
+                                continue;
                         }
-
-                        if (file_enumerator == nullptr)
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a file in archive {}", archive);
-
-                        while (file_enumerator->getFileName() != current_path)
+                        else
                         {
-                            if (!file_enumerator->nextFile())
-                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected file {} is missing from archive {}", current_path, archive);
+                            while (true)
+                            {
+                                if (file_enumerator == nullptr)
+                                {
+                                    auto archive = files_iterator->next();
+                                    if (archive.empty())
+                                        return {};
+
+                                    struct stat file_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
+                                    if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
+                                        continue;
+
+                                    archive_reader = createArchiveReader(archive);
+                                    file_enumerator = archive_reader->firstFile();
+                                    continue;
+                                }
+
+                                bool file_found = true;
+                                while (!files_iterator->passesFilter(file_enumerator->getFileName()))
+                                {
+                                    if (!file_enumerator->nextFile())
+                                    {
+                                        file_found = false;
+                                        break;
+                                    }
+                                }
+
+                                if (file_found)
+                                {
+                                    current_path = file_enumerator->getFileName();
+                                    break;
+                                }
+
+                                file_enumerator = nullptr;
+                            }
+
+                            chassert(file_enumerator);
+                            read_buf = archive_reader->readFile(std::move(file_enumerator));
                         }
                     }
                     else
@@ -934,23 +984,12 @@ public:
                 if (!read_buf)
                 {
                     struct stat file_stat;
-                    if (archive_reader == nullptr)
-                    {
-                        file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
+                    file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
 
-                        if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
-                            continue;
-                    }
+                    if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
+                        continue;
 
-                    if (archive_reader == nullptr)
-                    {
-                        read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, context);
-                    }
-                    else
-                    {
-                        chassert(file_enumerator);
-                        read_buf = archive_reader->readFile(std::move(file_enumerator));
-                    }
+                    read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, context);
                 }
 
                 const Settings & settings = context->getSettingsRef();
@@ -1005,10 +1044,10 @@ public:
             pipeline.reset();
             input_format.reset();
 
-            if (archive_reader != nullptr)
+            if (files_iterator->fromArchive() && !files_iterator->readSingleFileFromArchive())
                 file_enumerator = archive_reader->nextFile(std::move(read_buf));
-            else
-                read_buf.reset();
+
+            read_buf.reset();
         }
 
         return {};
@@ -1068,9 +1107,7 @@ Pipe StorageFile::read(
         }
     }
 
-    std::vector<std::pair<uint64_t, std::string>> files_in_archive;
-
-    size_t files_in_archive_num = 0;
+    IArchiveReader::NameFilter filter;
     if (!paths_to_archive.empty())
     {
         if (paths.size() != 1)
@@ -1078,7 +1115,6 @@ Pipe StorageFile::read(
 
         const auto & path = paths[0];
 
-        IArchiveReader::NameFilter filter;
         if (path.find_first_of("*?{") != std::string::npos)
         {
             auto matcher = std::make_shared<re2::RE2>(makeRegexpPatternFromGlobs(path));
@@ -1091,32 +1127,14 @@ Pipe StorageFile::read(
                 return re2::RE2::FullMatch(p, *matcher);
             };
         }
-
-        for (size_t i = 0; i < paths_to_archive.size(); ++i)
-        {
-            if (filter)
-            {
-                const auto & path_to_archive = paths_to_archive[i];
-                auto archive_reader = createArchiveReader(path_to_archive);
-                auto files = archive_reader->getAllFiles(filter);
-                for (auto & file : files)
-                    files_in_archive.push_back({i, std::move(file)});
-            }
-            else
-            {
-                files_in_archive.push_back({i, path});
-            }
-        }
-
-        files_in_archive_num = files_in_archive.size();
     }
 
-    auto files_iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, paths_to_archive, std::move(files_in_archive), query_info.query, virtual_columns, context);
+    auto files_iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, paths_to_archive, std::move(filter), query_info.query, virtual_columns, context);
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
     size_t num_streams = max_num_streams;
 
-    auto files_to_read = std::max(files_in_archive_num, paths.size());
+    auto files_to_read = std::max(paths_to_archive.size(), paths.size());
     if (max_num_streams > files_to_read)
         num_streams = files_to_read;
 
