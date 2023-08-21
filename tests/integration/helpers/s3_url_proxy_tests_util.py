@@ -2,7 +2,9 @@ import os
 import time
 
 
-def check_proxy_logs(cluster, proxy_instance, protocol, bucket, http_methods={"POST", "PUT", "GET"}):
+def check_proxy_logs(
+    cluster, proxy_instance, protocol, bucket, http_methods={"POST", "PUT", "GET"}
+):
     for i in range(10):
         logs = cluster.get_container_logs(proxy_instance)
         # Check with retry that all possible interactions with Minio are present
