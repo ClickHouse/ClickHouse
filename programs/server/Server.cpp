@@ -1572,6 +1572,11 @@ try
     global_context->setFormatSchemaPath(format_schema_path);
     fs::create_directories(format_schema_path);
 
+    /// Set path for filesystem caches
+    fs::path filesystem_caches_path(config().getString("filesystem_caches_path", ""));
+    if (!filesystem_caches_path.empty())
+        global_context->setFilesystemCachesPath(filesystem_caches_path);
+
     /// Check sanity of MergeTreeSettings on server startup
     {
         size_t background_pool_tasks = global_context->getMergeMutateExecutor()->getMaxTasksCount();
