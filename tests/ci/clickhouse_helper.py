@@ -67,6 +67,7 @@ class ClickHouseHelper:
         if args:
             url = args[0]
         url = kwargs.get("url", url)
+        kwargs["timeout"] = kwargs.get("timeout", 100)
 
         for i in range(5):
             try:
