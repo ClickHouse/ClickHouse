@@ -77,10 +77,12 @@ BackupEntriesCollector::BackupEntriesCollector(
     const ASTBackupQuery::Elements & backup_query_elements_,
     const BackupSettings & backup_settings_,
     std::shared_ptr<IBackupCoordination> backup_coordination_,
+    const ReadSettings & read_settings_,
     const ContextPtr & context_)
     : backup_query_elements(backup_query_elements_)
     , backup_settings(backup_settings_)
     , backup_coordination(backup_coordination_)
+    , read_settings(read_settings_)
     , context(context_)
     , on_cluster_first_sync_timeout(context->getConfigRef().getUInt64("backups.on_cluster_first_sync_timeout", 180000))
     , consistent_metadata_snapshot_timeout(context->getConfigRef().getUInt64("backups.consistent_metadata_snapshot_timeout", 600000))

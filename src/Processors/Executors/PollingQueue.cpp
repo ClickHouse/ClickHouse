@@ -74,7 +74,7 @@ PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
 
     epoll_event event;
     event.data.ptr = nullptr;
-    epoll.getManyReady(1, &event, true);
+    epoll.getManyReady(1, &event, -1);
 
     lock.lock();
 

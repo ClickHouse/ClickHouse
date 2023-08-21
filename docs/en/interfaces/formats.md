@@ -11,82 +11,83 @@ results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
 The supported formats are:
 
 | Format                                                                                    | Input | Output |
-|-------------------------------------------------------------------------------------------|------|--------|
-| [TabSeparated](#tabseparated)                                                             | ✔    | ✔      |
-| [TabSeparatedRaw](#tabseparatedraw)                                                       | ✔    | ✔      |
-| [TabSeparatedWithNames](#tabseparatedwithnames)                                           | ✔    | ✔      |
-| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                           | ✔    | ✔      |
-| [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                     | ✔    | ✔      |
-| [TabSeparatedRawWithNamesAndTypes](#tabseparatedrawwithnamesandtypes)                     | ✔    | ✔      |
-| [Template](#format-template)                                                              | ✔    | ✔      |
-| [TemplateIgnoreSpaces](#templateignorespaces)                                             | ✔    | ✗      |
-| [CSV](#csv)                                                                               | ✔    | ✔      |
-| [CSVWithNames](#csvwithnames)                                                             | ✔    | ✔      |
-| [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                             | ✔    | ✔      |
-| [CustomSeparated](#format-customseparated)                                                | ✔    | ✔      |
-| [CustomSeparatedWithNames](#customseparatedwithnames)                                     | ✔    | ✔      |
-| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                     | ✔    | ✔      |
-| [SQLInsert](#sqlinsert)                                                                   | ✗    | ✔      |
-| [Values](#data-format-values)                                                             | ✔    | ✔      |
-| [Vertical](#vertical)                                                                     | ✗    | ✔      |
-| [JSON](#json)                                                                             | ✔    | ✔      |
-| [JSONAsString](#jsonasstring)                                                             | ✔    | ✗      |
-| [JSONStrings](#jsonstrings)                                                               | ✔    | ✔      |
-| [JSONColumns](#jsoncolumns)                                                               | ✔    | ✔      |
-| [JSONColumnsWithMetadata](#jsoncolumnsmonoblock))                                         | ✔    | ✔      |
-| [JSONCompact](#jsoncompact)                                                               | ✔    | ✔      |
-| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗    | ✔      |
-| [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔    | ✔      |
-| [JSONEachRow](#jsoneachrow)                                                               | ✔    | ✔      |
-| [PrettyJSONEachRow](#prettyjsoneachrow)                                                   | ✗    | ✔      |
-| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                       | ✗    | ✔      |
-| [JSONStringsEachRow](#jsonstringseachrow)                                                 | ✔    | ✔      |
-| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                         | ✗    | ✔      |
-| [JSONCompactEachRow](#jsoncompacteachrow)                                                 | ✔    | ✔      |
-| [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)                               | ✔    | ✔      |
-| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)               | ✔    | ✔      |
-| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔    | ✔      |
-| [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames)                 | ✔    | ✔      |
-| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔    | ✔      |
-| [JSONObjectEachRow](#jsonobjecteachrow)                                                   | ✔    | ✔      |
-| [BSONEachRow](#bsoneachrow)                                                               | ✔    | ✔      |
-| [TSKV](#tskv)                                                                             | ✔    | ✔      |
-| [Pretty](#pretty)                                                                         | ✗    | ✔      |
-| [PrettyNoEscapes](#prettynoescapes)                                                       | ✗    | ✔      |
-| [PrettyMonoBlock](#prettymonoblock)                                                       | ✗    | ✔      |
-| [PrettyNoEscapesMonoBlock](#prettynoescapesmonoblock)                                     | ✗    | ✔      |
-| [PrettyCompact](#prettycompact)                                                           | ✗    | ✔      |
-| [PrettyCompactNoEscapes](#prettycompactnoescapes)                                         | ✗    | ✔      |
-| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                         | ✗    | ✔      |
-| [PrettyCompactNoEscapesMonoBlock](#prettycompactnoescapesmonoblock)                       | ✗    | ✔      |
-| [PrettySpace](#prettyspace)                                                               | ✗    | ✔      |
-| [PrettySpaceNoEscapes](#prettyspacenoescapes)                                             | ✗    | ✔      |
-| [PrettySpaceMonoBlock](#prettyspacemonoblock)                                             | ✗    | ✔      |
-| [PrettySpaceNoEscapesMonoBlock](#prettyspacenoescapesmonoblock)                           | ✗    | ✔      |
-| [Prometheus](#prometheus)                                                                 | ✗    | ✔      |
-| [Protobuf](#protobuf)                                                                     | ✔    | ✔      |
-| [ProtobufSingle](#protobufsingle)                                                         | ✔    | ✔      |
-| [Avro](#data-format-avro)                                                                 | ✔    | ✔      |
-| [AvroConfluent](#data-format-avro-confluent)                                              | ✔    | ✗      |
-| [Parquet](#data-format-parquet)                                                           | ✔    | ✔      |
-| [ParquetMetadata](#data-format-parquet-metadata)                                          | ✔    | ✗      |
-| [Arrow](#data-format-arrow)                                                               | ✔    | ✔      |
-| [ArrowStream](#data-format-arrow-stream)                                                  | ✔    | ✔      |
-| [ORC](#data-format-orc)                                                                   | ✔    | ✔      |
-| [RowBinary](#rowbinary)                                                                   | ✔    | ✔      |
-| [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔    | ✔      |
-| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔    | ✔      |
-| [RowBinaryWithDefaults](#rowbinarywithdefaults)                                           | ✔    | ✔      |
-| [Native](#native)                                                                         | ✔    | ✔      |
-| [Null](#null)                                                                             | ✗    | ✔      |
-| [XML](#xml)                                                                               | ✗    | ✔      |
-| [CapnProto](#capnproto)                                                                   | ✔    | ✔      |
-| [LineAsString](#lineasstring)                                                             | ✔    | ✔      |
-| [Regexp](#data-format-regexp)                                                             | ✔    | ✗      |
-| [RawBLOB](#rawblob)                                                                       | ✔    | ✔      |
-| [MsgPack](#msgpack)                                                                       | ✔    | ✔      |
-| [MySQLDump](#mysqldump)                                                                   | ✔    | ✗      |
-| [Markdown](#markdown)                                                                     | ✗    | ✔      |
+|-------------------------------------------------------------------------------------------|------|-------|
+| [TabSeparated](#tabseparated)                                                             | ✔    | ✔     |
+| [TabSeparatedRaw](#tabseparatedraw)                                                       | ✔    | ✔     |
+| [TabSeparatedWithNames](#tabseparatedwithnames)                                           | ✔    | ✔     |
+| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                           | ✔    | ✔     |
+| [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                     | ✔    | ✔     |
+| [TabSeparatedRawWithNamesAndTypes](#tabseparatedrawwithnamesandtypes)                     | ✔    | ✔     |
+| [Template](#format-template)                                                              | ✔    | ✔     |
+| [TemplateIgnoreSpaces](#templateignorespaces)                                             | ✔    | ✗     |
+| [CSV](#csv)                                                                               | ✔    | ✔     |
+| [CSVWithNames](#csvwithnames)                                                             | ✔    | ✔     |
+| [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                             | ✔    | ✔     |
+| [CustomSeparated](#format-customseparated)                                                | ✔    | ✔     |
+| [CustomSeparatedWithNames](#customseparatedwithnames)                                     | ✔    | ✔     |
+| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                     | ✔    | ✔     |
+| [SQLInsert](#sqlinsert)                                                                   | ✗    | ✔     |
+| [Values](#data-format-values)                                                             | ✔    | ✔     |
+| [Vertical](#vertical)                                                                     | ✗    | ✔     |
+| [JSON](#json)                                                                             | ✔    | ✔     |
+| [JSONAsString](#jsonasstring)                                                             | ✔    | ✗     |
+| [JSONStrings](#jsonstrings)                                                               | ✔    | ✔     |
+| [JSONColumns](#jsoncolumns)                                                               | ✔    | ✔     |
+| [JSONColumnsWithMetadata](#jsoncolumnsmonoblock))                                         | ✔    | ✔     |
+| [JSONCompact](#jsoncompact)                                                               | ✔    | ✔     |
+| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗    | ✔     |
+| [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔    | ✔     |
+| [JSONEachRow](#jsoneachrow)                                                               | ✔    | ✔     |
+| [PrettyJSONEachRow](#prettyjsoneachrow)                                                   | ✗    | ✔     |
+| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                       | ✗    | ✔     |
+| [JSONStringsEachRow](#jsonstringseachrow)                                                 | ✔    | ✔     |
+| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                         | ✗    | ✔     |
+| [JSONCompactEachRow](#jsoncompacteachrow)                                                 | ✔    | ✔     |
+| [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)                               | ✔    | ✔     |
+| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)               | ✔    | ✔     |
+| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔    | ✔     |
+| [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames)                 | ✔    | ✔     |
+| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔    | ✔     |
+| [JSONObjectEachRow](#jsonobjecteachrow)                                                   | ✔    | ✔     |
+| [BSONEachRow](#bsoneachrow)                                                               | ✔    | ✔     |
+| [TSKV](#tskv)                                                                             | ✔    | ✔     |
+| [Pretty](#pretty)                                                                         | ✗    | ✔     |
+| [PrettyNoEscapes](#prettynoescapes)                                                       | ✗    | ✔     |
+| [PrettyMonoBlock](#prettymonoblock)                                                       | ✗    | ✔     |
+| [PrettyNoEscapesMonoBlock](#prettynoescapesmonoblock)                                     | ✗    | ✔     |
+| [PrettyCompact](#prettycompact)                                                           | ✗    | ✔     |
+| [PrettyCompactNoEscapes](#prettycompactnoescapes)                                         | ✗    | ✔     |
+| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                         | ✗    | ✔     |
+| [PrettyCompactNoEscapesMonoBlock](#prettycompactnoescapesmonoblock)                       | ✗    | ✔     |
+| [PrettySpace](#prettyspace)                                                               | ✗    | ✔     |
+| [PrettySpaceNoEscapes](#prettyspacenoescapes)                                             | ✗    | ✔     |
+| [PrettySpaceMonoBlock](#prettyspacemonoblock)                                             | ✗    | ✔     |
+| [PrettySpaceNoEscapesMonoBlock](#prettyspacenoescapesmonoblock)                           | ✗    | ✔     |
+| [Prometheus](#prometheus)                                                                 | ✗    | ✔     |
+| [Protobuf](#protobuf)                                                                     | ✔    | ✔     |
+| [ProtobufSingle](#protobufsingle)                                                         | ✔    | ✔     |
+| [Avro](#data-format-avro)                                                                 | ✔    | ✔     |
+| [AvroConfluent](#data-format-avro-confluent)                                              | ✔    | ✗     |
+| [Parquet](#data-format-parquet)                                                           | ✔    | ✔     |
+| [ParquetMetadata](#data-format-parquet-metadata)                                          | ✔    | ✗     |
+| [Arrow](#data-format-arrow)                                                               | ✔    | ✔     |
+| [ArrowStream](#data-format-arrow-stream)                                                  | ✔    | ✔     |
+| [ORC](#data-format-orc)                                                                   | ✔    | ✔     |
+| [One](#data-format-one)                                                                   | ✔    | ✗     |
+| [RowBinary](#rowbinary)                                                                   | ✔    | ✔     |
+| [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔    | ✔     |
+| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔    | ✔     |
+| [RowBinaryWithDefaults](#rowbinarywithdefaults)                                           | ✔    | ✔     |
+| [Native](#native)                                                                         | ✔    | ✔     |
+| [Null](#null)                                                                             | ✗    | ✔     |
+| [XML](#xml)                                                                               | ✗    | ✔     |
+| [CapnProto](#capnproto)                                                                   | ✔    | ✔     |
+| [LineAsString](#lineasstring)                                                             | ✔    | ✔     |
+| [Regexp](#data-format-regexp)                                                             | ✔    | ✗     |
+| [RawBLOB](#rawblob)                                                                       | ✔    | ✔     |
+| [MsgPack](#msgpack)                                                                       | ✔    | ✔     |
+| [MySQLDump](#mysqldump)                                                                   | ✔    | ✗     |
+| [Markdown](#markdown)                                                                     | ✗    | ✔     |
 
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](/docs/en/operations/settings/settings-formats.md) section.
@@ -2135,6 +2136,7 @@ To exchange data with Hadoop, you can use [HDFS table engine](/docs/en/engines/t
 - [input_format_parquet_case_insensitive_column_matching](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_case_insensitive_column_matching) - ignore case when matching Parquet columns with ClickHouse columns. Default value - `false`.
 - [input_format_parquet_allow_missing_columns](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_allow_missing_columns) - allow missing columns while reading Parquet data. Default value - `false`.
 - [input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference) - allow skipping columns with unsupported types while schema inference for Parquet format. Default value - `false`.
+- [input_format_parquet_local_file_min_bytes_for_seek](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_local_file_min_bytes_for_seek) - min bytes required for local read (file) to do seek, instead of read with ignore in Parquet input format. Default value - `8192`.
 - [output_format_parquet_fixed_string_as_fixed_byte_array](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_fixed_string_as_fixed_byte_array) - use Parquet FIXED_LENGTH_BYTE_ARRAY type instead of Binary/String for FixedString columns. Default value - `true`.
 - [output_format_parquet_version](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_version) - The version of Parquet format used in output format. Default value - `2.latest`.
 - [output_format_parquet_compression_method](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_compression_method) - compression method used in output Parquet format. Default value - `snappy`.
@@ -2336,7 +2338,6 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filenam
 
 - [output_format_arrow_low_cardinality_as_dictionary](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_low_cardinality_as_dictionary) - enable output ClickHouse LowCardinality type as Dictionary Arrow type. Default value - `false`.
 - [output_format_arrow_string_as_string](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_string_as_string) - use Arrow String type instead of Binary for String columns. Default value - `false`.
-- [input_format_arrow_import_nested](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_import_nested) - allow inserting array of structs into Nested table in Arrow input format. Default value - `false`.
 - [input_format_arrow_case_insensitive_column_matching](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_case_insensitive_column_matching) - ignore case when matching Arrow columns with ClickHouse columns. Default value - `false`.
 - [input_format_arrow_allow_missing_columns](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_allow_missing_columns) - allow missing columns while reading Arrow data. Default value - `false`.
 - [input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference) - allow skipping columns with unsupported types while schema inference for Arrow format. Default value - `false`.
@@ -2402,13 +2403,40 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT ORC" > {filename.
 
 - [output_format_arrow_string_as_string](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_string_as_string) - use Arrow String type instead of Binary for String columns. Default value - `false`.
 - [output_format_orc_compression_method](/docs/en/operations/settings/settings-formats.md/#output_format_orc_compression_method) - compression method used in output ORC format. Default value - `none`.
-- [input_format_arrow_import_nested](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_import_nested) - allow inserting array of structs into Nested table in Arrow input format. Default value - `false`.
 - [input_format_arrow_case_insensitive_column_matching](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_case_insensitive_column_matching) - ignore case when matching Arrow columns with ClickHouse columns. Default value - `false`.
 - [input_format_arrow_allow_missing_columns](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_allow_missing_columns) - allow missing columns while reading Arrow data. Default value - `false`.
 - [input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference) - allow skipping columns with unsupported types while schema inference for Arrow format. Default value - `false`.
 
 
 To exchange data with Hadoop, you can use [HDFS table engine](/docs/en/engines/table-engines/integrations/hdfs.md).
+
+## One {#data-format-one}
+
+Special input format that doesn't read any data from file and returns only one row with column of type `UInt8`, name `dummy` and value `0` (like `system.one` table).
+Can be used with virtual columns `_file/_path`  to list all files without reading actual data.
+
+Example:
+
+Query:
+```sql
+SELECT _file FROM file('path/to/files/data*', One);
+```
+
+Result:
+```text
+┌─_file────┐
+│ data.csv │
+└──────────┘
+┌─_file──────┐
+│ data.jsonl │
+└────────────┘
+┌─_file────┐
+│ data.tsv │
+└──────────┘
+┌─_file────────┐
+│ data.parquet │
+└──────────────┘
+```
 
 ## LineAsString {#lineasstring}
 

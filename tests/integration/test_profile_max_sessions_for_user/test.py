@@ -8,6 +8,9 @@ import sys
 import threading
 
 from helpers.cluster import ClickHouseCluster, run_and_check
+from helpers.test_tools import assert_logs_contain_with_retry
+
+from helpers.uclient import client, prompt
 
 MAX_SESSIONS_FOR_USER = 2
 POSTGRES_SERVER_PORT = 5433
@@ -25,10 +28,7 @@ proto_dir = os.path.join(SCRIPT_DIR, "./protos")
 gen_dir = os.path.join(SCRIPT_DIR, "./_gen")
 os.makedirs(gen_dir, exist_ok=True)
 run_and_check(
-    "python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} \
-    {proto_dir}/clickhouse_grpc.proto".format(
-        proto_dir=proto_dir, gen_dir=gen_dir
-    ),
+    f"python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} {proto_dir}/clickhouse_grpc.proto",
     shell=True,
 )
 
@@ -49,12 +49,17 @@ instance = cluster.add_instance(
         "configs/server.key",
     ],
     user_configs=["configs/users.xml"],
-    env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
+    env_variables={
+        "UBSAN_OPTIONS": "print_stacktrace=1",
+        # Bug in TSAN reproduces in this test https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
+        "TSAN_OPTIONS": "report_atomic_races=0 "
+        + os.getenv("TSAN_OPTIONS", default=""),
+    },
 )
 
 
 def get_query(name, id):
-    return f"SElECT '{name}', {id}, sleep(1)"
+    return f"SElECT '{name}', {id}, number from system.numbers"
 
 
 def grpc_get_url():
@@ -83,43 +88,41 @@ def grpc_query(query_text, channel, session_id_):
 
 
 def threaded_run_test(sessions):
+    instance.rotate_logs()
     thread_list = []
     for i in range(len(sessions)):
         thread = ThreadWithException(target=sessions[i], args=(i,))
         thread_list.append(thread)
         thread.start()
 
+    if len(sessions) > MAX_SESSIONS_FOR_USER:
+        assert_logs_contain_with_retry(instance, "overflown session count")
+
+    instance.query(f"KILL QUERY WHERE user='{TEST_USER}' SYNC")
+
     for thread in thread_list:
         thread.join()
-
-    exception_count = 0
-    for i in range(len(sessions)):
-        if thread_list[i].run_exception != None:
-            exception_count += 1
-
-    assert exception_count == 1
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
+        # Wait for the PostgreSQL handler to start.
+        # Cluster.start waits until port 9000 becomes accessible.
+        # Server opens the PostgreSQL compatibility port a bit later.
+        instance.wait_for_log_line("PostgreSQL compatibility protocol")
         yield cluster
     finally:
         cluster.shutdown()
 
 
 class ThreadWithException(threading.Thread):
-    run_exception = None
-
     def run(self):
         try:
             super().run()
         except:
-            self.run_exception = sys.exc_info()
-
-    def join(self):
-        super().join()
+            pass
 
 
 def postgres_session(id):
@@ -206,17 +209,38 @@ def test_profile_max_sessions_for_user_tcp_and_others(started_cluster):
     threaded_run_test([tcp_session, postgres_session, http_session])
 
 
-def test_profile_max_sessions_for_user_end_session(started_cluster):
-    for conection_func in [
-        tcp_session,
-        http_session,
-        grpc_session,
-        mysql_session,
-        postgres_session,
-    ]:
-        threaded_run_test([conection_func] * MAX_SESSIONS_FOR_USER)
-        threaded_run_test([conection_func] * MAX_SESSIONS_FOR_USER)
-
-
-def test_profile_max_sessions_for_user_end_session(started_cluster):
+def test_profile_max_sessions_for_user_setting_in_query(started_cluster):
     instance.query_and_get_error("SET max_sessions_for_user = 10")
+
+
+def test_profile_max_sessions_for_user_client_suggestions_connection(started_cluster):
+    command_text = f"{started_cluster.get_client_cmd()} --host {instance.ip_address} --port 9000 -u {TEST_USER} --password {TEST_PASSWORD}"
+    command_text_without_suggestions = command_text + " --disable_suggestion"
+
+    # Launch client1 without suggestions to avoid a race condition:
+    # Client1 opens a session.
+    # Client1 opens a session for suggestion connection.
+    # Client2 fails to open a session and gets the USER_SESSION_LIMIT_EXCEEDED error.
+    #
+    # Expected order:
+    # Client1 opens a session.
+    # Client2 opens a session.
+    # Client2 fails to open a session for suggestions and with USER_SESSION_LIMIT_EXCEEDED (No error printed).
+    # Client3 fails to open a session.
+    # Client1 executes the query.
+    # Client2 loads suggestions from the server using the main connection and executes a query.
+    with client(
+        name="client1>", log=None, command=command_text_without_suggestions
+    ) as client1:
+        client1.expect(prompt)
+        with client(name="client2>", log=None, command=command_text) as client2:
+            client2.expect(prompt)
+            with client(name="client3>", log=None, command=command_text) as client3:
+                client3.expect("USER_SESSION_LIMIT_EXCEEDED")
+
+            client1.send("SELECT 'CLIENT_1_SELECT' FORMAT CSV")
+            client1.expect("CLIENT_1_SELECT")
+            client1.expect(prompt)
+            client2.send("SELECT 'CLIENT_2_SELECT' FORMAT CSV")
+            client2.expect("CLIENT_2_SELECT")
+            client2.expect(prompt)
