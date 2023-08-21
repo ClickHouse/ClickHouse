@@ -579,6 +579,7 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
     const SizeLimits & limits,
     PreparedSetsCachePtr prepared_sets_cache)
 {
+    dropTotalsAndExtremes();
     resize(1);
 
     auto transform = std::make_shared<CreatingSetsTransform>(
@@ -589,12 +590,7 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
             limits,
             std::move(prepared_sets_cache));
 
-    InputPort * totals_port = nullptr;
-
-    if (pipe.getTotalsPort())
-        totals_port = transform->addTotalsPort();
-
-    pipe.addTransform(std::move(transform), totals_port, nullptr);
+    pipe.addTransform(std::move(transform));
 }
 
 void QueryPipelineBuilder::addPipelineBefore(QueryPipelineBuilder pipeline)
