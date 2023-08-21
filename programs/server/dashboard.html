@@ -230,8 +230,8 @@
             filter: contrast(125%);
         }
 
-        #add, #reload {
-            padding: .25rem 0.5rem;
+        #add, #reload, #edit {
+            padding: 0.25rem 0.5rem;
             text-align: center;
             font-weight: bold;
             user-select: none;
@@ -244,13 +244,10 @@
             margin-right: 1rem !important;
             margin-left: 0rem;
             margin-bottom: 1rem;
+            height: 3ex;
         }
 
-        /* .unconnected #reload {
-            margin-left: 3px;
-        } */
-
-        #add:hover, #reload:hover {
+        #add:hover, #reload:hover, #edit:hover {
             background: var(--button-background-color);
         }
 
@@ -333,18 +330,21 @@
             padding: 2rem;
         }
 
-        .query-editor textarea {
-            grid-row: 1;
-            grid-column: 1 / span 2;
-            z-index: 11;
+        textarea {
             padding: 0.5rem;
             outline: none;
             border: none;
             font-size: 12pt;
-            border-bottom: 1px solid var(--edit-title-border);
             background: var(--chart-background);
             color: var(--text-color);
             resize: none;
+        }
+
+        .query-editor textarea {
+            grid-row: 1;
+            grid-column: 1 / span 2;
+            z-index: 11;
+            border-bottom: 1px solid var(--edit-title-border);
             margin: 0;
         }
 
@@ -367,8 +367,39 @@
             filter: contrast(125%);
         }
 
+        .edit-cancel {
+            cursor: pointer;
+            background: var(--new-chart-background-color);
+        }
+        .edit-cancel:hover {
+            filter: contrast(125%);
+        }
+
         .nowrap {
             white-space: pre;
+        }
+
+        #mass-editor {
+            display: none;
+            grid-template-columns: auto fit-content(10%) fit-content(10%);
+            grid-template-rows: auto fit-content(10%);
+            row-gap: 1rem;
+            column-gap: 1rem;
+        }
+
+        #mass-editor-textarea {
+            width: 100%;
+            height: 100%;
+            grid-row: 1;
+            grid-column: 1 / span 3;
+        }
+
+        #mass-editor input {
+            padding: 0.5rem;
+        }
+
+        #mass-editor-message {
+            color: var(--auth-error-color);
         }
 
         /* Source: https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.min.css
@@ -389,6 +420,7 @@
         </div>
         <div id="button-options">
             <span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
+            <input id="edit" type="button" value="✎" style="display: none;">
             <input id="add" type="button" value="Add chart" style="display: none;">
             <input id="reload" type="button" value="Reload">
             <div id="chart-params"></div>
@@ -397,6 +429,12 @@
     <div id="auth-error"></div>
 </div>
 <div id="charts"></div>
+<div id="mass-editor">
+    <textarea id="mass-editor-textarea" spellcheck="false" data-gramm="false"></textarea>
+    <span id="mass-editor-message">&nbsp;</span>
+    <input type="submit" id="mass-editor-cancel" class="edit-cancel" value="Cancel">
+    <input type="submit" id="mass-editor-confirm" class="edit-confirm" value="Apply">
+</div>
 <script>
 
 /** Implementation note: it might be more natural to use some reactive framework.
@@ -405,9 +443,7 @@
   *
   * TODO:
   * - zoom on the graphs should work on touch devices;
-  * - add mass edit capability (edit the JSON config as a whole);
   * - compress the state for URL's #hash;
-  * - save/load JSON configuration;
   * - footer with "about" or a link to source code;
   * - allow to configure a table on a server to save the dashboards;
   * - multiple lines on chart;
@@ -702,6 +738,7 @@ function insertChart(i) {
     query_editor_textarea.spellcheck = false;
     query_editor_textarea.value = q.query;
     query_editor_textarea.placeholder = 'Query';
+    query_editor_textarea.setAttribute('data-gramm', false);
     query_editor.appendChild(query_editor_textarea);
 
     let query_editor_title = document.createElement('input');
@@ -815,6 +852,66 @@ document.getElementById('reload').addEventListener('click', e => {
     reloadAll();
 });
 
+
+let mass_editor_active = false;
+
+function showMassEditor() {
+    document.getElementById('charts').style.display = 'none';
+
+    let editor_div = document.getElementById('mass-editor');
+    editor_div.style.display = 'grid';
+
+    let editor = document.getElementById('mass-editor-textarea');
+    editor.value = JSON.stringify({params: params, queries: queries}, null, 2);
+
+    mass_editor_active = true;
+}
+
+function hideMassEditor() {
+    document.getElementById('mass-editor').style.display = 'none';
+    document.getElementById('charts').style.display = 'flex';
+
+    mass_editor_active = false;
+}
+
+function massEditorApplyChanges() {
+    let editor = document.getElementById('mass-editor-textarea');
+    ({params, queries} = JSON.parse(editor.value));
+    hideMassEditor();
+    regenerate();
+    drawAll();
+    saveState();
+}
+
+document.getElementById('edit').addEventListener('click', e => {
+    if (mass_editor_active) {
+        massEditorApplyChanges();
+        hideMassEditor();
+    } else {
+        showMassEditor();
+    }
+});
+
+document.getElementById('mass-editor-confirm').addEventListener('click', e => {
+    massEditorApplyChanges();
+    hideMassEditor();
+});
+
+document.getElementById('mass-editor-cancel').addEventListener('click', e => {
+    hideMassEditor();
+});
+
+document.getElementById('mass-editor-textarea').addEventListener('input', e => {
+    let message = document.getElementById('mass-editor-message').firstChild;
+    message.data = '';
+    if (e.target.value != '') {
+        try { JSON.parse(e.target.value) } catch (e) {
+            message.data = e.toString();
+        }
+    }
+});
+
+
 function legendAsTooltipPlugin({ className, style = { background: "var(--legend-background)" } } = {}) {
     let legendEl;
 
@@ -906,12 +1003,14 @@ async function draw(idx, chart, url_params, query) {
     }
 
     if (error) {
-        const errorMatch = errorMessages.find(({ regex }) => error.match(regex))
-        const match = error.match(errorMatch.regex)
-        const message = errorMatch.messageFunc(match)
+        const errorMatch = errorMessages.find(({ regex }) => error.match(regex));
+        if (!errorMatch) {
+            throw new Error(error);
+        }
+        const match = error.match(errorMatch.regex);
+        const message = errorMatch.messageFunc(match);
         if (message) {
-            const authError = new Error(message)
-            throw authError
+            throw new Error(message);
         }
     }
 
@@ -978,23 +1077,23 @@ async function draw(idx, chart, url_params, query) {
 }
 
 function showAuthError(message) {
-    const charts = document.querySelector('#charts');
+    const charts = document.getElementById('charts');
     charts.style.height = '0px';
     charts.style.opacity = '0';
-    const add = document.querySelector('#add');
-    add.style.display = 'none';
+    document.getElementById('add').style.display = 'none';
+    document.getElementById('edit').style.display = 'none';
 
-    const authError = document.querySelector('#auth-error');
+    const authError = document.getElementById('auth-error');
     authError.textContent = message;
     authError.style.display = 'flex';
 }
 
 function hideAuthError() {
-    const charts = document.querySelector('#charts');
+    const charts = document.getElementById('charts');
     charts.style.height = 'auto';
     charts.style.opacity = '1';
 
-    const authError = document.querySelector('#auth-error');
+    const authError = document.getElementById('auth-error');
     authError.textContent = '';
     authError.style.display = 'none';
 }
@@ -1025,11 +1124,11 @@ async function drawAll() {
         if (results.includes(true)) {
             const element = document.querySelector('.inputs');
             element.classList.remove('unconnected');
-            const add = document.querySelector('#add');
-            add.style.display = 'block';
+            document.getElementById('add').style.display = 'inline-block';
+            document.getElementById('edit').style.display = 'inline-block';
         } 
         else {
-            const charts = document.querySelector('#charts')
+            const charts = document.getElementById('charts')
             charts.style.height = '0px';
         }
     })
@@ -1048,14 +1147,14 @@ new ResizeObserver(resize).observe(document.body);
 
 function disableReloadButton() {
     const reloadButton = document.getElementById('reload')
-    reloadButton.value = 'Reloading...'
+    reloadButton.value = 'Reloading…'
     reloadButton.disabled = true
     reloadButton.classList.add('disabled')
 }
 
 function disableRunButton() {
     const runButton = document.getElementById('run')
-    runButton.value = 'Reloading...'
+    runButton.value = 'Reloading…'
     runButton.disabled = true
     runButton.classList.add('disabled')
 }
