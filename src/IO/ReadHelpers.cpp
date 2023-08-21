@@ -12,6 +12,8 @@
 #include <cstdlib>
 #include <bit>
 
+#include <base/simd.h>
+
 #ifdef __SSE2__
     #include <emmintrin.h>
 #endif
@@ -819,14 +821,11 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
                 auto rc = vdupq_n_u8('\r');
                 auto nc = vdupq_n_u8('\n');
                 auto dc = vdupq_n_u8(delimiter);
-                /// Returns a 64 bit mask of nibbles (4 bits for each byte).
-                auto get_nibble_mask = [](uint8x16_t input) -> uint64_t
-                { return vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(input), 4)), 0); };
                 for (; next_pos + 15 < buf.buffer().end(); next_pos += 16)
                 {
                     uint8x16_t bytes = vld1q_u8(reinterpret_cast<const uint8_t *>(next_pos));
                     auto eq = vorrq_u8(vorrq_u8(vceqq_u8(bytes, rc), vceqq_u8(bytes, nc)), vceqq_u8(bytes, dc));
-                    uint64_t bit_mask = get_nibble_mask(eq);
+                    uint64_t bit_mask = getNibbleMask(eq);
                     if (bit_mask)
                     {
                         next_pos += std::countr_zero(bit_mask) >> 2;
@@ -1354,7 +1353,7 @@ Exception readException(ReadBuffer & buf, const String & additional_message, boo
     String stack_trace;
     bool has_nested = false;    /// Obsolete
 
-    readBinary(code, buf);
+    readBinaryLittleEndian(code, buf);
     readBinary(name, buf);
     readBinary(message, buf);
     readBinary(stack_trace, buf);

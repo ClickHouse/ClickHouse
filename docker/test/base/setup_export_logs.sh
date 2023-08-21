@@ -17,6 +17,9 @@ CONNECTION_PARAMETERS=${CONNECTION_PARAMETERS:=""}
 # Create all configured system logs:
 clickhouse-client --query "SYSTEM FLUSH LOGS"
 
+# It's doesn't make sense to try creating tables if SYNC fails
+echo "SYSTEM SYNC DATABASE REPLICA default" | clickhouse-client --receive_timeout 180 $CONNECTION_PARAMETERS || exit 0
+
 # For each system log table:
 clickhouse-client --query "SHOW TABLES FROM system LIKE '%\\_log'" | while read -r table
 do
@@ -38,7 +41,7 @@ do
 
     echo "Creating destination table ${table}_${hash}" >&2
 
-    echo "$statement" | clickhouse-client $CONNECTION_PARAMETERS
+    echo "$statement" | clickhouse-client --distributed_ddl_task_timeout=10 $CONNECTION_PARAMETERS || continue
 
     echo "Creating table system.${table}_sender" >&2
 
@@ -46,6 +49,7 @@ do
     clickhouse-client --query "
         CREATE TABLE system.${table}_sender
         ENGINE = Distributed(${CLUSTER}, default, ${table}_${hash})
+        SETTINGS flush_on_detach=0
         EMPTY AS
         SELECT ${EXTRA_COLUMNS_EXPRESSION}, *
         FROM system.${table}

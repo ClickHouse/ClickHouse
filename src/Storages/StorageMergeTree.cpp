@@ -220,7 +220,8 @@ void StorageMergeTree::read(
             local_context, query_info.query,
             table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
 
-        auto cluster = local_context->getCluster(local_context->getSettingsRef().cluster_for_parallel_replicas);
+        String cluster_for_parallel_replicas = local_context->getSettingsRef().cluster_for_parallel_replicas;
+        auto cluster = local_context->getCluster(cluster_for_parallel_replicas);
 
         Block header;
 
@@ -919,7 +920,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
 
         if (getCurrentMutationVersion(left, lock) != getCurrentMutationVersion(right, lock))
         {
-            disable_reason = "Some parts have differ mmutatuon version";
+            disable_reason = "Some parts have different mutation version";
             return false;
         }
 
@@ -1379,8 +1380,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
                 cleared_count += clearOldWriteAheadLogs();
                 cleared_count += clearOldMutations();
                 cleared_count += clearEmptyParts();
-                if (getSettings()->merge_tree_enable_clear_old_broken_detached)
-                    cleared_count += clearOldBrokenPartsFromDetachedDirectory();
+                cleared_count += clearOldBrokenPartsFromDetachedDirectory();
                 return cleared_count;
                 /// TODO maybe take into account number of cleared objects when calculating backoff
             }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
@@ -1811,8 +1811,10 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
             if (detach)
             {
                 auto metadata_snapshot = getInMemoryMetadataPtr();
-                LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
-                part->makeCloneInDetached("", metadata_snapshot);
+                String part_dir = part->getDataPartStorage().getPartDirectory();
+                LOG_INFO(log, "Detaching {}", part_dir);
+                auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
+                part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
             }
 
             {
@@ -1894,8 +1896,10 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                 for (const auto & part : parts)
                 {
                     auto metadata_snapshot = getInMemoryMetadataPtr();
-                    LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
-                    part->makeCloneInDetached("", metadata_snapshot);
+                    String part_dir = part->getDataPartStorage().getPartDirectory();
+                    LOG_INFO(log, "Detaching {}", part_dir);
+                    auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
+                    part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
                 }
             }
 
@@ -1935,8 +1939,10 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
         /// NOTE: no race with background cleanup until we hold pointers to parts
         for (const auto & part : parts_to_remove)
         {
-            LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
-            part->makeCloneInDetached("", metadata_snapshot);
+            String part_dir = part->getDataPartStorage().getPartDirectory();
+            LOG_INFO(log, "Detaching {}", part_dir);
+            auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
+            part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
         }
     }
 
@@ -1992,7 +1998,7 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     }
 
     /// New parts with other data may appear in place of deleted parts.
-    local_context->dropCaches();
+    local_context->clearCaches();
     return results;
 }
 
