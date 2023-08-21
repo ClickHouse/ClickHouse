@@ -330,13 +330,9 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
     for (size_t i = 0; i != paths.size(); ++i)
-    {
-        std::cerr << "Add path " << paths[i] << "\n";
         addPathAndFileToVirtualColumns(block, paths[i], i);
-    }
 
     filterBlockWithQuery(query, block, context, filter_ast);
-    std::cerr << "Done filter\n";
 
     return block.getByName("_idx").column;
 }
