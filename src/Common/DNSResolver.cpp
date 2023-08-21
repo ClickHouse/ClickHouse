@@ -270,8 +270,8 @@ std::unordered_set<String> DNSResolver::reverseResolve(const Poco::Net::IPAddres
 
 void DNSResolver::dropCache()
 {
-    impl->cache_host.reset();
-    impl->cache_address.reset();
+    impl->cache_host.clear();
+    impl->cache_address.clear();
 
     std::scoped_lock lock(impl->update_mutex, impl->drop_mutex);
 
