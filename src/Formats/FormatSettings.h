@@ -175,6 +175,7 @@ struct FormatSettings
         EscapingRule escaping_rule = EscapingRule::Escaped;
         bool try_detect_header = true;
         bool skip_trailing_empty_lines = false;
+        bool allow_variable_number_of_columns = false;
     } custom;
 
     struct
@@ -197,6 +198,7 @@ struct FormatSettings
         bool validate_types_from_metadata = true;
         bool validate_utf8 = false;
         bool allow_object_type = false;
+        bool compact_allow_variable_number_of_columns = false;
     } json;
 
     struct
@@ -241,6 +243,7 @@ struct FormatSettings
         bool output_compliant_nested_types = true;
         size_t data_page_size = 1024 * 1024;
         size_t write_batch_size = 1024;
+        size_t local_read_min_bytes_for_seek = 8192;
     } parquet;
 
     struct Pretty
@@ -316,6 +319,7 @@ struct FormatSettings
         UInt64 skip_first_lines = 0;
         bool try_detect_header = true;
         bool skip_trailing_empty_lines = false;
+        bool allow_variable_number_of_columns = false;
     } tsv;
 
     struct

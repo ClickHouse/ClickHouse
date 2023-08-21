@@ -206,6 +206,8 @@ using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
 class SessionTracker;
 
+struct ServerSettings;
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -489,6 +491,7 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
     String getUserScriptsPath() const;
+    String getFilesystemCachesPath() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
@@ -498,6 +501,8 @@ public:
     TemporaryDataOnDiskScopePtr getTempDataOnDisk() const;
     TemporaryDataOnDiskScopePtr getSharedTempDataOnDisk() const;
     void setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_);
+
+    void setFilesystemCachesPath(const String & path);
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
@@ -1191,6 +1196,8 @@ public:
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
+
+    const ServerSettings & getServerSettings() const;
 
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;

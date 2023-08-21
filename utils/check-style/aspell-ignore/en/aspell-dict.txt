@@ -1464,6 +1464,7 @@ formatter
 freezed
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
+fromUTCTimestamp
 fromUnixTimestamp
 fromUnixTimestampInJodaSyntax
 fsync
@@ -2394,6 +2395,7 @@ toTimeZone
 toType
 toTypeName
 toUInt
+toUTCTimestamp
 toUUID
 toUUIDOrDefault
 toUUIDOrNull

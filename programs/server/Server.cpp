@@ -1572,6 +1572,11 @@ try
     global_context->setFormatSchemaPath(format_schema_path);
     fs::create_directories(format_schema_path);
 
+    /// Set path for filesystem caches
+    fs::path filesystem_caches_path(config().getString("filesystem_caches_path", ""));
+    if (!filesystem_caches_path.empty())
+        global_context->setFilesystemCachesPath(filesystem_caches_path);
+
     /// Check sanity of MergeTreeSettings on server startup
     {
         size_t background_pool_tasks = global_context->getMergeMutateExecutor()->getMaxTasksCount();
@@ -2067,6 +2072,9 @@ void Server::createServers(
 
     for (const auto & protocol : protocols)
     {
+        if (!server_type.shouldStart(ServerType::Type::CUSTOM, protocol))
+            continue;
+
         std::string prefix = "protocols." + protocol + ".";
         std::string port_name = prefix + "port";
         std::string description {"<undefined> protocol"};
@@ -2074,9 +2082,6 @@ void Server::createServers(
             description = config.getString(prefix + "description");
 
         if (!config.has(prefix + "port"))
-            continue;
-
-        if (!server_type.shouldStart(ServerType::Type::CUSTOM, port_name))
             continue;
 
         std::vector<std::string> hosts;
