@@ -563,8 +563,13 @@ void BackupsWorker::writeBackupEntries(BackupMutablePtr backup, BackupEntries &&
             }
         };
 
-        if (always_single_threaded || !backups_thread_pool->trySchedule([job] { job(true); }))
+        if (always_single_threaded)
+        {
             job(false);
+            continue;
+        }
+
+        backups_thread_pool->scheduleOrThrowOnError([job] { job(true); }))
     }
 
     {
@@ -854,8 +859,7 @@ void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr 
             }
         };
 
-        if (!thread_pool.trySchedule([job] { job(true); }))
-            job(false);
+        thread_pool.scheduleOrThrowOnError([job] { job(true); }));
     }
 
     {
