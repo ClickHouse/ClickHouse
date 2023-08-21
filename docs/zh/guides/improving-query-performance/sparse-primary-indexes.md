@@ -1361,7 +1361,7 @@ ORDER BY Ratio ASC
 下面我们将说明，为什么主键列按基数升序排列有利于提高表列的压缩率。
 
 下图描绘了主键的磁盘上行顺序，其中键列是按基数升序排列的：
-<img src={require('./images/sparse-primary-indexes-14a.png').default} class="image"/>
+<img src={require('../../../en/guides/best-practices/images/sparse-primary-indexes-14a.png').default} class="image"/>
 
 我们讨论过 [表的行数据按主键列有序存储在磁盘上]（#data-is-stored-on-disk-ordered-by-primary-key-columns）。
 
@@ -1371,7 +1371,7 @@ ORDER BY Ratio ASC
 一般来说，压缩算法会受益于数据的运行长度（看到的数据越多，压缩效果越好）和局部性（数据越相似，压缩率越高）。
 
 与上图不同的是，下图勾画了主键的磁盘上行顺序，其中主键列是按基数降序排列的：
-<img src={require('./images/sparse-primary-indexes-14b.png').default} class="image"/>
+<img src={require('../../../en/guides/best-practices/images/sparse-primary-indexes-14b.png').default} class="image"/>
 
 现在，表格的行首先按其 `ch` 值排序，具有相同 `ch` 值的行按其 `cl` 值排序。
 但是，由于第一键列 `ch` 的基数很高，因此不太可能存在具有相同 `ch` 值的行。因此，`cl`值也不太可能是有序的（局部地--对于具有相同`ch`值的行而言）。
@@ -1413,7 +1413,7 @@ ORDER BY Ratio ASC
 下图显示了
 - 当内容发生变化时（例如由于按键将文本键入文本框），行的插入顺序，以及
 - 当使用 `PRIMARY KEY (hash)` 时，插入行数据的磁盘顺序：
-<img src={require('./images/sparse-primary-indexes-15a.png').default} class="image"/>
+<img src={require('../../../en/guides/best-practices/images/sparse-primary-indexes-15a.png').default} class="image"/>
 
 由于 `hash` 列被用作主键列
 - 可以[非常快速](#the-primary-index-is-used-for-selecting-granules) 检索特定行，但
@@ -1428,7 +1428,7 @@ ORDER BY Ratio ASC
 - 当内容发生变化时（例如，由于按键将文本输入文本区），行的插入顺序以及
 - 当使用复合主键`(fingerprint,hash)` 时，插入行数据的磁盘顺序：
 
-<img src={require('./images/sparse-primary-indexes-15b.png').default} class="image"/>
+<img src={require('../../../en/guides/best-practices/images/sparse-primary-indexes-15b.png').default} class="image"/>
 
 现在，磁盘上的行首先按指纹 (`fingerprint`) 排序，对于`fingerprint` 值相同的行，其哈希(`hash`)值决定最终的排序。
 
