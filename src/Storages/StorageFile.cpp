@@ -735,7 +735,7 @@ public:
             : files(files_), archives(std::move(archives_)), name_filter(name_filter_)
         {
             ASTPtr filter_ast;
-            if (archives.empty() && !files.empty())
+            if (archives.empty() && !files.empty() && !files[0].empty())
                 filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, files[0], context_);
 
             if (filter_ast)
