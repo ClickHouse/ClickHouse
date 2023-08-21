@@ -1,9 +1,9 @@
 #pragma once
-#include "IO/ReadBufferFromString.h"
 #include "config.h"
 
 #if USE_ORC
 #    include <Formats/FormatSettings.h>
+#    include <IO/ReadBufferFromString.h>
 #    include <Processors/Formats/IInputFormat.h>
 #    include <Processors/Formats/ISchemaReader.h>
 #    include <orc/OrcFile.hh>
@@ -44,10 +44,10 @@ std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
 
 
 class ORCColumnToCHColumn;
-class ORCBlockInputFormat : public IInputFormat
+class NativeORCBlockInputFormat : public IInputFormat
 {
 public:
-    ORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_);
+    NativeORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "ORCBlockInputFormat"; }
 
@@ -87,10 +87,10 @@ private:
     std::atomic<int> is_stopped{0};
 };
 
-class ORCSchemaReader : public ISchemaReader
+class NativeORCSchemaReader : public ISchemaReader
 {
 public:
-    ORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
+    NativeORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
 
