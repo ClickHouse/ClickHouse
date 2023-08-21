@@ -130,7 +130,7 @@ public:
         return true;
     }
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         auto * join_node = node->as<JoinNode>();
@@ -232,8 +232,8 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     ContextMutablePtr & mutable_context,
     size_t subquery_depth)
 {
-    auto subquery_hash = subquery_node->getTreeHash();
-    String temporary_table_name = fmt::format("_data_{}_{}", subquery_hash.first, subquery_hash.second);
+    const auto subquery_hash = subquery_node->getTreeHash();
+    const auto temporary_table_name = fmt::format("_data_{}", toString(subquery_hash));
 
     const auto & external_tables = mutable_context->getExternalTables();
     auto external_table_it = external_tables.find(temporary_table_name);

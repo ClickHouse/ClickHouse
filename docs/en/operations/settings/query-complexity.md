@@ -298,7 +298,7 @@ Default value: `THROW`.
 - [JOIN clause](../../sql-reference/statements/select/join.md#select-join)
 - [Join table engine](../../engines/table-engines/special/join.md)
 
-## max_partitions_per_insert_block {#max-partitions-per-insert-block}
+## max_partitions_per_insert_block {#settings-max_partitions_per_insert_block}
 
 Limits the maximum number of partitions in a single inserted block.
 
@@ -309,9 +309,18 @@ Default value: 100.
 
 **Details**
 
-When inserting data, ClickHouse calculates the number of partitions in the inserted block. If the number of partitions is more than `max_partitions_per_insert_block`, ClickHouse throws an exception with the following text:
+When inserting data, ClickHouse calculates the number of partitions in the inserted block. If the number of partitions is more than `max_partitions_per_insert_block`, ClickHouse either logs a warning or throws an exception based on `throw_on_max_partitions_per_insert_block`. Exceptions have the following text:
 
-> “Too many partitions for single INSERT block (more than” + toString(max_parts) + “). The limit is controlled by ‘max_partitions_per_insert_block’ setting. A large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc).”
+> “Too many partitions for a single INSERT block (`partitions_count` partitions, limit is ” + toString(max_partitions) + “). The limit is controlled by the ‘max_partitions_per_insert_block’ setting. A large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc).”
+
+## throw_on_max_partitions_per_insert_block {#settings-throw_on_max_partition_per_insert_block}
+
+Allows you to control behaviour when `max_partitions_per_insert_block` is reached.
+
+- `true`  - When an insert block reaches `max_partitions_per_insert_block`, an exception is raised.
+- `false` - Logs a warning when `max_partitions_per_insert_block` is reached.
+
+Default value: `true`
 
 ## max_temporary_data_on_disk_size_for_user {#settings_max_temporary_data_on_disk_size_for_user}
 
@@ -327,3 +336,39 @@ The maximum amount of data consumed by temporary files on disk in bytes for all 
 Zero means unlimited.
 
 Default value: 0.
+
+## max_sessions_for_user {#max-sessions-per-user}
+
+Maximum number of simultaneous sessions per authenticated user to the ClickHouse server.
+
+Example:
+
+``` xml
+<profiles>
+    <single_session_profile>
+        <max_sessions_for_user>1</max_sessions_for_user>
+    </single_session_profile>
+    <two_sessions_profile>
+        <max_sessions_for_user>2</max_sessions_for_user>
+    </two_sessions_profile>
+    <unlimited_sessions_profile>
+        <max_sessions_for_user>0</max_sessions_for_user>
+    </unlimited_sessions_profile>
+</profiles>
+<users>
+     <!-- User Alice can connect to a ClickHouse server no more than once at a time. -->
+    <Alice>
+        <profile>single_session_user</profile>
+    </Alice>
+    <!-- User Bob can use 2 simultaneous sessions. -->
+    <Bob>
+        <profile>two_sessions_profile</profile>
+    </Bob>
+    <!-- User Charles can use arbitrarily many of simultaneous sessions. -->
+    <Charles>
+       <profile>unlimited_sessions_profile</profile>
+    </Charles>
+</users>
+```
+
+Default value: 0 (Infinite count of simultaneous sessions).
