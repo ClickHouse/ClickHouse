@@ -1488,6 +1488,47 @@ ClickHouse использует потоки из глобального пул�
 </crash_log>
 ```
 
+## backup_log {#server_configuration_parameters-backup_log}
+
+Настройки для системной таблицы [backup_log](../../operations/system-tables/backup_log.md), предназначенной для логирования операций `BACKUP` и `RESTORE`.
+
+Параметры:
+
+- `database` — имя базы данных.
+- `table` — имя таблицы.
+- `partition_by` — [произвольный ключ партиционирования](../../engines/table-engines/mergetree-family/custom-partitioning-key.md). Нельзя использовать одновременно с `engine`.
+- `order_by` - [произвольный ключ сортировки](../../engines/table-engines/mergetree-family/mergetree.md#order_by). Нельзя использовать одновременно с `engine`.
+- `engine` - [настройки MergeTree Engine](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table). Нельзя использовать с `partition_by` или `order_by`.
+- `flush_interval_milliseconds` — период сброса данных из буфера в памяти в таблицу.
+- `max_size_rows` – максимальный размер в строках для буфера с логами. Когда буфер будет заполнен полностью, сбрасывает логи на диск.
+Значение по умолчанию: 1024.
+- `reserved_size_rows` –  преаллоцированный размер в строках для буфера с логами.
+Значение по умолчанию: 1024.
+- `buffer_size_rows_flush_threshold` – количество строк в логе, при достижении которого логи начнут скидываться на диск в неблокирующем режиме.
+Значение по умолчанию: `max_size_rows / 2`.
+- `flush_on_crash` - должны ли логи быть сброшены на диск в случае неожиданной остановки программы.
+Значение по умолчанию: false.
+- `storage_policy` – название политики хранения (необязательный параметр).
+- `settings` - [дополнительные настройки MergeTree Engine](../../engines/table-engines/mergetree-family/mergetree.md#settings) (необязательный параметр).
+
+**Пример**
+
+```xml
+<clickhouse>
+    <backup_log>
+        <database>system</database>
+        <table>backup_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+        <!-- <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine> -->
+    </backup_log>
+</clickhouse>
+```
+
 ## query_masking_rules {#query-masking-rules}
 
 Правила, основанные на регулярных выражениях, которые будут применены для всех запросов, а также для всех сообщений перед сохранением их в лог на сервере,
