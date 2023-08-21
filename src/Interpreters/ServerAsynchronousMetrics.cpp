@@ -24,6 +24,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INVALID_SETTING_VALUE;
+}
+
 namespace
 {
 
@@ -52,7 +57,11 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     : AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_)
     , WithContext(global_context_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
-{}
+{
+    /// sanity check
+    if (update_period_seconds == 0 || heavy_metrics_update_period_seconds == 0)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting asynchronous_metrics_update_period_s and asynchronous_heavy_metrics_update_period_s must not be zero");
+}
 
 void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time)
 {
@@ -242,15 +251,26 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
         size_t total_number_of_rows = 0;
         size_t total_number_of_parts = 0;
 
+        size_t total_number_of_tables_system = 0;
+
+        size_t total_number_of_bytes_system = 0;
+        size_t total_number_of_rows_system = 0;
+        size_t total_number_of_parts_system = 0;
+
         for (const auto & db : databases)
         {
             /// Check if database can contain MergeTree tables
             if (!db.second->canContainMergeTreeTables())
                 continue;
 
+            bool is_system = db.first == DatabaseCatalog::SYSTEM_DATABASE;
+
             for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
                 ++total_number_of_tables;
+                if (is_system)
+                    ++total_number_of_tables_system;
+
                 const auto & table = iterator->table();
                 if (!table)
                     continue;
@@ -260,9 +280,21 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
                     const auto & settings = getContext()->getSettingsRef();
 
                     calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountAndSizeForPartition().first);
-                    total_number_of_bytes += table_merge_tree->totalBytes(settings).value();
-                    total_number_of_rows += table_merge_tree->totalRows(settings).value();
-                    total_number_of_parts += table_merge_tree->getActivePartsCount();
+
+                    size_t bytes = table_merge_tree->totalBytes(settings).value();
+                    size_t rows = table_merge_tree->totalRows(settings).value();
+                    size_t parts = table_merge_tree->getActivePartsCount();
+
+                    total_number_of_bytes += bytes;
+                    total_number_of_rows += rows;
+                    total_number_of_parts += parts;
+
+                    if (is_system)
+                    {
+                        total_number_of_bytes_system += bytes;
+                        total_number_of_rows_system += rows;
+                        total_number_of_parts_system += parts;
+                    }
                 }
 
                 if (StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get()))
@@ -316,6 +348,12 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
         new_values["TotalRowsOfMergeTreeTables"] = { total_number_of_rows, "Total amount of rows (records) stored in all tables of MergeTree family." };
         new_values["TotalPartsOfMergeTreeTables"] = { total_number_of_parts, "Total amount of data parts in all tables of MergeTree family."
             " Numbers larger than 10 000 will negatively affect the server startup time and it may indicate unreasonable choice of the partition key." };
+
+        new_values["NumberOfTablesSystem"] = { total_number_of_tables_system, "Total number of tables in the system database on the server stored in tables of MergeTree family."};
+
+        new_values["TotalBytesOfMergeTreeTablesSystem"] = { total_number_of_bytes_system, "Total amount of bytes (compressed, including data and indices) stored in tables of MergeTree family in the system database." };
+        new_values["TotalRowsOfMergeTreeTablesSystem"] = { total_number_of_rows_system, "Total amount of rows (records) stored in tables of MergeTree family in the system database." };
+        new_values["TotalPartsOfMergeTreeTablesSystem"] = { total_number_of_parts_system, "Total amount of data parts in tables of MergeTree family in the system database." };
     }
 
 #if USE_NURAFT

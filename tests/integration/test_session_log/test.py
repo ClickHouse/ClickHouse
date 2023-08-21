@@ -1,8 +1,6 @@
 import os
-
 import grpc
 import pymysql.connections
-import psycopg2 as py_psql
 import pytest
 import random
 import sys
@@ -45,6 +43,7 @@ instance = cluster.add_instance(
     env_variables={
         "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS", default="")
     },
+    with_postgres=True,
 )
 
 
@@ -89,16 +88,19 @@ def grpc_query(query, user_, pass_, raise_exception):
 
 def postgres_query(query, user_, pass_, raise_exception):
     try:
-        client = py_psql.connect(
-            host=instance.ip_address,
-            port=POSTGRES_SERVER_PORT,
-            user=user_,
-            password=pass_,
-            database="default",
+        connection_string = f"host={instance.hostname} port={POSTGRES_SERVER_PORT} dbname=default user={user_} password={pass_}"
+        cluster.exec_in_container(
+            cluster.postgres_id,
+            [
+                "/usr/bin/psql",
+                connection_string,
+                "--no-align",
+                "--field-separator=' '",
+                "-c",
+                query,
+            ],
+            shell=True,
         )
-        cursor = client.cursor()
-        cursor.execute(query)
-        cursor.fetchall()
     except Exception:
         assert raise_exception
 
@@ -127,6 +129,10 @@ def mysql_query(query, user_, pass_, raise_exception):
 def started_cluster():
     try:
         cluster.start()
+        # Wait for the PostgreSQL handler to start.
+        # Cluster.start waits until port 9000 becomes accessible.
+        # Server opens the PostgreSQL compatibility port a bit later.
+        instance.wait_for_log_line("PostgreSQL compatibility protocol")
         yield cluster
     finally:
         cluster.shutdown()

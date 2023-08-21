@@ -39,6 +39,7 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
+#include <Parsers/Access/ASTMoveAccessEntityQuery.h>
 #include <Parsers/Access/ASTSetRoleQuery.h>
 #include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
 #include <Parsers/Access/ASTShowAccessQuery.h>
@@ -96,6 +97,7 @@
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
 #include <Interpreters/Access/InterpreterDropAccessEntityQuery.h>
 #include <Interpreters/Access/InterpreterGrantQuery.h>
+#include <Interpreters/Access/InterpreterMoveAccessEntityQuery.h>
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
 #include <Interpreters/Access/InterpreterShowAccessEntitiesQuery.h>
 #include <Interpreters/Access/InterpreterShowAccessQuery.h>
@@ -313,6 +315,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTDropAccessEntityQuery>())
     {
         return std::make_unique<InterpreterDropAccessEntityQuery>(query, context);
+    }
+    else if (query->as<ASTMoveAccessEntityQuery>())
+    {
+        return std::make_unique<InterpreterMoveAccessEntityQuery>(query, context);
     }
     else if (query->as<ASTDropNamedCollectionQuery>())
     {
