@@ -2,6 +2,7 @@
 
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_helper_functions.h>
 
 using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -30,8 +31,7 @@ Poco::URI https_list_proxy_server = Poco::URI("http://https_list_proxy:3128");
 
 TEST_F(ProxyConfigurationResolverProviderTests, EnvironmentResolverShouldBeUsedIfNoSettings)
 {
-    setenv("http_proxy", http_env_proxy_server.toString().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
-    setenv("https_proxy", https_env_proxy_server.toString().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+    EnvironmentProxySetter setter(http_env_proxy_server, https_env_proxy_server);
 
     auto http_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTP)->resolve();
     auto https_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTPS)->resolve();
@@ -43,9 +43,6 @@ TEST_F(ProxyConfigurationResolverProviderTests, EnvironmentResolverShouldBeUsedI
     ASSERT_EQ(https_configuration.host, https_env_proxy_server.getHost());
     ASSERT_EQ(https_configuration.port, https_env_proxy_server.getPort());
     ASSERT_EQ(https_configuration.protocol, DB::ProxyConfiguration::protocolFromString(https_env_proxy_server.getScheme()));
-
-    unsetenv("http_proxy"); // NOLINT(concurrency-mt-unsafe)
-    unsetenv("https_proxy"); // NOLINT(concurrency-mt-unsafe)
 }
 
 TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPOnly)
