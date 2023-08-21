@@ -444,6 +444,34 @@ def test_kafka_settings_new_syntax(kafka_cluster):
     assert members[0]["client_id"] == "instance test 1234"
 
 
+def test_kafka_settings_predefined_macros(kafka_cluster):
+    instance.query(
+        """
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = '{kafka_broker}:19092',
+                     kafka_topic_list = '{database}_{table}_topic',
+                     kafka_group_name = '{database}_{table}_group',
+                     kafka_format = '{kafka_format_json_each_row}',
+                     kafka_row_delimiter = '\\n',
+                     kafka_commit_on_select = 1,
+                     kafka_client_id = '{database}_{table} test 1234',
+                     kafka_skip_broken_messages = 1;
+        """
+    )
+
+    messages = []
+    for i in range(50):
+        messages.append(json.dumps({"key": i, "value": i}))
+    kafka_produce(kafka_cluster, "test_kafka_topic", messages)
+
+    result = instance.query("SELECT * FROM test.kafka", ignore_error=True)
+    kafka_check_result(result, True)
+
+    members = describe_consumer_group(kafka_cluster, "test_kafka_group")
+    assert members[0]["client_id"] == "test_kafka test 1234"
+
+
 def test_kafka_json_as_string(kafka_cluster):
     kafka_produce(
         kafka_cluster,
@@ -1158,6 +1186,7 @@ def test_kafka_consumer_hang2(kafka_cluster):
     instance.query(
         """
         DROP TABLE IF EXISTS test.kafka;
+        DROP TABLE IF EXISTS test.kafka2;
 
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
@@ -4515,6 +4544,294 @@ def test_block_based_formats_2(kafka_cluster):
         assert result == expected
 
         kafka_delete_topic(admin_client, format_name)
+
+
+def test_system_kafka_consumers(kafka_cluster):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    topic = "system_kafka_cons"
+    kafka_create_topic(admin_client, topic)
+
+    # Check that format_csv_delimiter parameter works now - as part of all available format settings.
+    kafka_produce(
+        kafka_cluster,
+        topic,
+        ["1|foo", "2|bar", "42|answer", "100|multi\n101|row\n103|message"],
+    )
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.kafka;
+
+        CREATE TABLE test.kafka (a UInt64, b String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic}',
+                     kafka_group_name = '{topic}',
+                     kafka_commit_on_select = 1,
+                     kafka_format = 'CSV',
+                     kafka_row_delimiter = '\\n',
+                     format_csv_delimiter = '|';
+        """
+    )
+
+    result = instance.query("SELECT * FROM test.kafka ORDER BY a;")
+
+    result_system_kafka_consumers = instance.query(
+        """
+        create or replace function stable_timestamp as
+          (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 30, 'now', toString(d));
+
+        SELECT database, table, length(consumer_id), assignments.topic, assignments.partition_id,
+          assignments.current_offset,
+          if(length(exceptions.time)>0, exceptions.time[1]::String, 'never') as last_exception_time_,
+          if(length(exceptions.text)>0, exceptions.text[1], 'no exception') as last_exception_,
+          stable_timestamp(last_poll_time) as last_poll_time_, num_messages_read, stable_timestamp(last_commit_time) as last_commit_time_,
+          num_commits, stable_timestamp(last_rebalance_time) as last_rebalance_time_,
+          num_rebalance_revocations, num_rebalance_assignments, is_currently_used
+          FROM system.kafka_consumers WHERE database='test' and table='kafka' format Vertical;
+        """
+    )
+    logging.debug(f"result_system_kafka_consumers: {result_system_kafka_consumers}")
+    assert (
+        result_system_kafka_consumers
+        == """Row 1:
+──────
+database:                   test
+table:                      kafka
+length(consumer_id):        67
+assignments.topic:          ['system_kafka_cons']
+assignments.partition_id:   [0]
+assignments.current_offset: [4]
+last_exception_time_:       never
+last_exception_:            no exception
+last_poll_time_:            now
+num_messages_read:          4
+last_commit_time_:          now
+num_commits:                1
+last_rebalance_time_:       never
+num_rebalance_revocations:  0
+num_rebalance_assignments:  1
+is_currently_used:          0
+"""
+    )
+
+    instance.query("DROP TABLE test.kafka")
+    kafka_delete_topic(admin_client, topic)
+
+
+def test_system_kafka_consumers_rebalance(kafka_cluster, max_retries=15):
+    # based on test_kafka_consumer_hang2
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    producer = KafkaProducer(
+        bootstrap_servers="localhost:{}".format(cluster.kafka_port),
+        value_serializer=producer_serializer,
+        key_serializer=producer_serializer,
+    )
+
+    topic = "system_kafka_cons2"
+    kafka_create_topic(admin_client, topic, num_partitions=2)
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.kafka;
+        DROP TABLE IF EXISTS test.kafka2;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic}',
+                     kafka_group_name = '{topic}',
+                     kafka_commit_on_select = 1,
+                     kafka_format = 'JSONEachRow';
+
+        CREATE TABLE test.kafka2 (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic}',
+                     kafka_commit_on_select = 1,
+                     kafka_group_name = '{topic}',
+                     kafka_format = 'JSONEachRow';
+        """
+    )
+
+    producer.send(topic=topic, value=json.dumps({"key": 1, "value": 1}), partition=0)
+    producer.send(topic=topic, value=json.dumps({"key": 11, "value": 11}), partition=1)
+    time.sleep(3)
+
+    # first consumer subscribe the topic, try to poll some data, and go to rest
+    instance.query("SELECT * FROM test.kafka")
+
+    # second consumer do the same leading to rebalance in the first
+    # consumer, try to poll some data
+    instance.query("SELECT * FROM test.kafka2")
+
+    producer.send(topic=topic, value=json.dumps({"key": 1, "value": 1}), partition=0)
+    producer.send(topic=topic, value=json.dumps({"key": 10, "value": 10}), partition=1)
+    time.sleep(3)
+
+    instance.query("SELECT * FROM test.kafka")
+    instance.query("SELECT * FROM test.kafka2")
+    instance.query("SELECT * FROM test.kafka")
+    instance.query("SELECT * FROM test.kafka2")
+
+    result_system_kafka_consumers = instance.query(
+        """
+        create or replace function stable_timestamp as
+          (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 30, 'now', toString(d));
+        SELECT database, table, length(consumer_id), assignments.topic, assignments.partition_id,
+          assignments.current_offset,
+          if(length(exceptions.time)>0, exceptions.time[1]::String, 'never') as last_exception_time_,
+          if(length(exceptions.text)>0, exceptions.text[1], 'no exception') as last_exception_,
+          stable_timestamp(last_poll_time) as last_poll_time_, num_messages_read, stable_timestamp(last_commit_time) as last_commit_time_,
+          num_commits, stable_timestamp(last_rebalance_time) as last_rebalance_time_,
+          num_rebalance_revocations, num_rebalance_assignments, is_currently_used
+          FROM system.kafka_consumers WHERE database='test' and table IN ('kafka', 'kafka2') format Vertical;
+        """
+    )
+    logging.debug(f"result_system_kafka_consumers: {result_system_kafka_consumers}")
+    assert (
+        result_system_kafka_consumers
+        == """Row 1:
+──────
+database:                   test
+table:                      kafka
+length(consumer_id):        67
+assignments.topic:          ['system_kafka_cons2']
+assignments.partition_id:   [0]
+assignments.current_offset: [2]
+last_exception_time_:       never
+last_exception_:            no exception
+last_poll_time_:            now
+num_messages_read:          4
+last_commit_time_:          now
+num_commits:                2
+last_rebalance_time_:       now
+num_rebalance_revocations:  1
+num_rebalance_assignments:  2
+is_currently_used:          0
+
+Row 2:
+──────
+database:                   test
+table:                      kafka2
+length(consumer_id):        68
+assignments.topic:          ['system_kafka_cons2']
+assignments.partition_id:   [1]
+assignments.current_offset: [2]
+last_exception_time_:       never
+last_exception_:            no exception
+last_poll_time_:            now
+num_messages_read:          1
+last_commit_time_:          now
+num_commits:                1
+last_rebalance_time_:       never
+num_rebalance_revocations:  0
+num_rebalance_assignments:  1
+is_currently_used:          0
+"""
+    )
+
+    instance.query("DROP TABLE test.kafka")
+    instance.query("DROP TABLE test.kafka2")
+
+    kafka_delete_topic(admin_client, topic)
+
+
+def test_system_kafka_consumers_rebalance_mv(kafka_cluster, max_retries=15):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    producer = KafkaProducer(
+        bootstrap_servers="localhost:{}".format(cluster.kafka_port),
+        value_serializer=producer_serializer,
+        key_serializer=producer_serializer,
+    )
+
+    topic = "system_kafka_cons_mv"
+    kafka_create_topic(admin_client, topic, num_partitions=2)
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.kafka;
+        DROP TABLE IF EXISTS test.kafka2;
+        DROP TABLE IF EXISTS test.kafka_persistent;
+        DROP TABLE IF EXISTS test.kafka_persistent2;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic}',
+                     kafka_group_name = '{topic}',
+                     kafka_commit_on_select = 1,
+                     kafka_format = 'JSONEachRow';
+
+        CREATE TABLE test.kafka2 (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic}',
+                     kafka_commit_on_select = 1,
+                     kafka_group_name = '{topic}',
+                     kafka_format = 'JSONEachRow';
+
+        CREATE TABLE test.kafka_persistent (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE TABLE test.kafka_persistent2 (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.persistent_kafka_mv TO test.kafka_persistent AS
+        SELECT key, value
+        FROM test.kafka;
+
+        CREATE MATERIALIZED VIEW test.persistent_kafka_mv2 TO test.kafka_persistent2 AS
+        SELECT key, value
+        FROM test.kafka2;
+        """
+    )
+
+    producer.send(topic=topic, value=json.dumps({"key": 1, "value": 1}), partition=0)
+    producer.send(topic=topic, value=json.dumps({"key": 11, "value": 11}), partition=1)
+    time.sleep(3)
+
+    retries = 0
+    result_rdkafka_stat = ""
+    while True:
+        result_rdkafka_stat = instance.query(
+            """
+            SELECT table, JSONExtractString(rdkafka_stat, 'type')
+            FROM system.kafka_consumers WHERE database='test' and table = 'kafka' format Vertical;
+            """
+        )
+        if result_rdkafka_stat.find("consumer") or retries > max_retries:
+            break
+        retries += 1
+        time.sleep(1)
+
+    assert (
+        result_rdkafka_stat
+        == """Row 1:
+──────
+table:                                   kafka
+JSONExtractString(rdkafka_stat, 'type'): consumer
+"""
+    )
+
+    instance.query("DROP TABLE test.kafka")
+    instance.query("DROP TABLE test.kafka2")
+    instance.query("DROP TABLE test.kafka_persistent")
+    instance.query("DROP TABLE test.kafka_persistent2")
+    instance.query("DROP TABLE test.persistent_kafka_mv")
+    instance.query("DROP TABLE test.persistent_kafka_mv2")
+
+    kafka_delete_topic(admin_client, topic)
 
 
 if __name__ == "__main__":
