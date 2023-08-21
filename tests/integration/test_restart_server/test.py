@@ -24,11 +24,13 @@ def test_drop_memory_database():
 
 def test_flushes_async_insert_queue():
     node.query(
-        "CREATE TABLE flush_test (a String, b UInt64) ENGINE = MergeTree ORDER BY a;"
+        """
+    CREATE TABLE flush_test (a String, b UInt64) ENGINE = MergeTree ORDER BY a;
+    SET async_insert = 1;
+    SET wait_for_async_insert = 0;
+    SET async_insert_busy_timeout_ms = 1000000;
+    INSERT INTO flush_test VALUES ('world', 23456);
+    """
     )
-    node.query("SET async_insert = 1;")
-    node.query("SET wait_for_async_insert = 0;")
-    node.query("SET async_insert_busy_timeout_ms = 1000000;")
-    node.query("INSERT INTO flush_test VALUES ('world', 23456);")
     node.restart_clickhouse()
     assert node.query("SELECT * FROM flush_test") == "world\t23456\n"
