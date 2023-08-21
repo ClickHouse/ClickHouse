@@ -66,12 +66,18 @@
 #define DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH 1000
 
 /// Default maximum (total and entry) sizes and policies of various caches
-static constexpr auto DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE = 0_MiB;
 static constexpr auto DEFAULT_UNCOMPRESSED_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_MARK_CACHE_MAX_SIZE = 5368_MiB;
+static constexpr auto DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE = 0_MiB;
+static constexpr auto DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO = 0.5l;
 static constexpr auto DEFAULT_MARK_CACHE_POLICY = "SLRU";
+static constexpr auto DEFAULT_MARK_CACHE_MAX_SIZE = 5368_MiB;
+static constexpr auto DEFAULT_MARK_CACHE_SIZE_RATIO = 0.5l;
+static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE = 0_MiB;
+static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO = 0.5l;
+static constexpr auto DEFAULT_INDEX_MARK_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_INDEX_MARK_CACHE_MAX_SIZE = 0_MiB;
+static constexpr auto DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO = 0.5l;
 static constexpr auto DEFAULT_MMAP_CACHE_MAX_SIZE = 1_KiB; /// chosen by rolling dice
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE = 128_MiB;
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES = 10'000;

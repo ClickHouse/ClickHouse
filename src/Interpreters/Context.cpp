@@ -2268,14 +2268,14 @@ QueryStatusPtr Context::getProcessListElement() const
 }
 
 
-void Context::setUncompressedCache(const String & uncompressed_cache_policy, size_t max_size_in_bytes)
+void Context::setUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
 {
     auto lock = getLock();
 
     if (shared->uncompressed_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Uncompressed cache has been already created.");
 
-    shared->uncompressed_cache = std::make_shared<UncompressedCache>(uncompressed_cache_policy, max_size_in_bytes);
+    shared->uncompressed_cache = std::make_shared<UncompressedCache>(cache_policy, max_size_in_bytes, size_ratio);
 }
 
 void Context::updateUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
@@ -2303,14 +2303,14 @@ void Context::clearUncompressedCache() const
         shared->uncompressed_cache->clear();
 }
 
-void Context::setMarkCache(const String & mark_cache_policy, size_t cache_size_in_bytes)
+void Context::setMarkCache(const String & cache_policy, size_t cache_size_in_bytes, double size_ratio)
 {
     auto lock = getLock();
 
     if (shared->mark_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache has been already created.");
 
-    shared->mark_cache = std::make_shared<MarkCache>(mark_cache_policy, cache_size_in_bytes);
+    shared->mark_cache = std::make_shared<MarkCache>(cache_policy, cache_size_in_bytes, size_ratio);
 }
 
 void Context::updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
@@ -2353,14 +2353,14 @@ ThreadPool & Context::getLoadMarksThreadpool() const
     return *shared->load_marks_threadpool;
 }
 
-void Context::setIndexUncompressedCache(size_t max_size_in_bytes)
+void Context::setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
 {
     auto lock = getLock();
 
     if (shared->index_uncompressed_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache has been already created.");
 
-    shared->index_uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes);
+    shared->index_uncompressed_cache = std::make_shared<UncompressedCache>(cache_policy, max_size_in_bytes, size_ratio);
 }
 
 void Context::updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
@@ -2388,14 +2388,14 @@ void Context::clearIndexUncompressedCache() const
         shared->index_uncompressed_cache->clear();
 }
 
-void Context::setIndexMarkCache(size_t cache_size_in_bytes)
+void Context::setIndexMarkCache(const String & cache_policy, size_t cache_size_in_bytes, double size_ratio)
 {
     auto lock = getLock();
 
     if (shared->index_mark_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache has been already created.");
 
-    shared->index_mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes);
+    shared->index_mark_cache = std::make_shared<MarkCache>(cache_policy, cache_size_in_bytes, size_ratio);
 }
 
 void Context::updateIndexMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
