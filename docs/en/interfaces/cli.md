@@ -323,9 +323,9 @@ clickhouse-client clickhouse://192.168.1.15,192.168.1.25
 `clickhouse-client` uses the first existing file of the following:
 
 - Defined in the `--config-file` parameter.
-- `./clickhouse-client.xml`
-- `~/.clickhouse-client/config.xml`
-- `/etc/clickhouse-client/config.xml`
+- `./clickhouse-client.xml`, `.yaml`, `.yml`
+- `~/.clickhouse-client/config.xml`, `.yaml`, `.yml`
+- `/etc/clickhouse-client/config.xml`, `.yaml`, `.yml`
 
 Example of a config file:
 
@@ -340,6 +340,17 @@ Example of a config file:
       </client>
     </openSSL>
 </config>
+```
+
+Or the same config in a YAML format:
+ 
+```yaml
+user: username
+password: 'password'
+secure: true
+openSSL:
+  client:
+    caConfig: '/etc/ssl/cert.pem'
 ```
 
 ### Query ID Format {#query-id-format}

@@ -243,9 +243,7 @@ void ColumnsDescription::remove(const String & column_name)
     auto range = getNameRange(columns, column_name);
     if (range.first == range.second)
     {
-        String exception_message = fmt::format("There is no column {} in table", column_name);
-        appendHintsMessage(exception_message, column_name);
-        throw Exception::createDeprecated(exception_message, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table{}", column_name, getHintsMessage(column_name));
     }
 
     for (auto list_it = range.first; list_it != range.second;)
@@ -260,9 +258,8 @@ void ColumnsDescription::rename(const String & column_from, const String & colum
     auto it = columns.get<1>().find(column_from);
     if (it == columns.get<1>().end())
     {
-        String exception_message = fmt::format("Cannot find column {} in ColumnsDescription", column_from);
-        appendHintsMessage(exception_message, column_from);
-        throw Exception::createDeprecated(exception_message, ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find column {} in ColumnsDescription{}",
+                        column_from, getHintsMessage(column_from));
     }
 
     columns.get<1>().modify_key(it, [&column_to] (String & old_name)

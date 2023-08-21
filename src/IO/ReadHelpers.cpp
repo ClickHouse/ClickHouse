@@ -1354,7 +1354,7 @@ Exception readException(ReadBuffer & buf, const String & additional_message, boo
     String stack_trace;
     bool has_nested = false;    /// Obsolete
 
-    readBinary(code, buf);
+    readBinaryLittleEndian(code, buf);
     readBinary(name, buf);
     readBinary(message, buf);
     readBinary(stack_trace, buf);
