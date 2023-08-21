@@ -151,8 +151,11 @@ void MemoryTracker::logPeakMemoryUsage()
 {
     log_peak_memory_usage_in_destructor = false;
     const auto * description = description_ptr.load(std::memory_order_relaxed);
+    auto peak_bytes = peak.load(std::memory_order::relaxed);
+    if (peak_bytes < 128 * 1024)
+        return;
     LOG_DEBUG(&Poco::Logger::get("MemoryTracker"),
-        "Peak memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(peak));
+        "Peak memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(peak_bytes));
 }
 
 void MemoryTracker::logMemoryUsage(Int64 current) const

@@ -267,10 +267,10 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
             database->dropTable(context_, table_id.table_name, query.sync);
 
-            /// We have to drop mmapio cache when dropping table from Ordinary database
+            /// We have to clear mmapio cache when dropping table from Ordinary database
             /// to avoid reading old data if new table with the same name is created
             if (database->getUUID() == UUIDHelpers::Nil)
-                context_->dropMMappedFileCache();
+                context_->clearMMappedFileCache();
         }
 
         db = database;
@@ -349,13 +349,12 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     database = tryGetDatabase(database_name, query.if_exists);
     if (database)
     {
-        if (query.kind == ASTDropQuery::Kind::Truncate)
-        {
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Unable to truncate database");
-        }
-        else if (query.kind == ASTDropQuery::Kind::Detach || query.kind == ASTDropQuery::Kind::Drop)
+        if (query.kind == ASTDropQuery::Kind::Detach || query.kind == ASTDropQuery::Kind::Drop
+            || query.kind == ASTDropQuery::Kind::Truncate)
         {
             bool drop = query.kind == ASTDropQuery::Kind::Drop;
+            bool truncate = query.kind == ASTDropQuery::Kind::Truncate;
+
             getContext()->checkAccess(AccessType::DROP_DATABASE, database_name);
 
             if (query.kind == ASTDropQuery::Kind::Detach && query.permanently)
@@ -372,6 +371,9 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             {
                 ASTDropQuery query_for_table;
                 query_for_table.kind = query.kind;
+                // For truncate operation on database, drop the tables
+                if (truncate)
+                    query_for_table.kind = ASTDropQuery::Kind::Drop;
                 query_for_table.if_exists = true;
                 query_for_table.if_empty = false;
                 query_for_table.setDatabase(database_name);
@@ -400,8 +402,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     uuids_to_wait.push_back(table_to_wait);
                 }
             }
-
-            if (!drop && query.sync)
+           // only if operation is DETACH
+            if ((!drop || !truncate) && query.sync)
             {
                 /// Avoid "some tables are still in use" when sync mode is enabled
                 for (const auto & table_uuid : uuids_to_wait)
@@ -410,12 +412,13 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
             /// Protects from concurrent CREATE TABLE queries
             auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);
-
-            if (!drop)
+            // only if operation is DETACH
+            if (!drop || !truncate)
                 database->assertCanBeDetached(true);
 
-            /// DETACH or DROP database itself
-            DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
+            /// DETACH or DROP database itself. If TRUNCATE skip dropping/erasing the database.
+            if (!truncate)
+                DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
         }
     }
 
@@ -457,8 +460,9 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
 }
 
 void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context,
-                                            const StorageID & target_table_id, bool sync, bool ignore_sync_setting)
+                                            const StorageID & target_table_id, bool sync, bool ignore_sync_setting, bool need_ddl_guard)
 {
+    auto ddl_guard = (need_ddl_guard ? DatabaseCatalog::instance().getDDLGuard(target_table_id.database_name, target_table_id.table_name) : nullptr);
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
     {
         /// We create and execute `drop` query for internal table.
