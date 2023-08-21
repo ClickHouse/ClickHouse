@@ -527,7 +527,8 @@ StorageS3Source::StorageS3Source(
     const String & bucket_,
     const String & version_id_,
     std::shared_ptr<IIterator> file_iterator_,
-    const size_t download_thread_num_)
+    const size_t download_thread_num_,
+    bool need_only_count_)
     : ISource(info.source_header, false)
     , WithContext(context_)
     , name(std::move(name_))
@@ -545,6 +546,7 @@ StorageS3Source::StorageS3Source(
     , requested_virtual_columns(info.requested_virtual_columns)
     , file_iterator(file_iterator_)
     , download_thread_num(download_thread_num_)
+    , need_only_count(need_only_count_)
     , create_reader_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "CreateS3Reader"))
 {
@@ -570,10 +572,17 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
     auto compression_method = chooseCompressionMethod(key_with_info.key, compression_hint);
 
     auto read_buf = createS3ReadBuffer(key_with_info.key, object_size);
+    std::optional<size_t> max_parsing_threads;
+    if (need_only_count)
+        max_parsing_threads = 1;
+
     auto input_format = FormatFactory::instance().getInput(
             format, *read_buf, sample_block, getContext(), max_block_size,
-            format_settings, std::nullopt, std::nullopt,
+            format_settings, max_parsing_threads, std::nullopt,
             /* is_remote_fs */ true, compression_method);
+
+    if (need_only_count)
+        input_format->needOnlyCount();
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
@@ -702,13 +711,13 @@ Chunk StorageS3Source::generate()
             {
                 if (virtual_column.name == "_path")
                 {
-                    chunk.addColumn(virtual_column.type->createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
+                    chunk.addColumn(virtual_column.type->createColumnConst(num_rows, file_path));
                 }
                 else if (virtual_column.name == "_file")
                 {
                     size_t last_slash_pos = file_path.find_last_of('/');
                     auto column = virtual_column.type->createColumnConst(num_rows, file_path.substr(last_slash_pos + 1));
-                    chunk.addColumn(column->convertToFullColumnIfConst());
+                    chunk.addColumn(column);
                 }
             }
 
@@ -1030,6 +1039,8 @@ Pipe StorageS3::read(
         query_configuration, distributed_processing, local_context, query_info.query, virtual_block, nullptr, local_context->getFileProgressCallback());
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+        && local_context->getSettingsRef().optimize_count_from_files;
 
     const size_t max_download_threads = local_context->getSettingsRef().max_download_threads;
     for (size_t i = 0; i < num_streams; ++i)
@@ -1047,7 +1058,8 @@ Pipe StorageS3::read(
             query_configuration.url.bucket,
             query_configuration.url.version_id,
             iterator_wrapper,
-            max_download_threads));
+            max_download_threads,
+            need_only_count));
     }
 
     return Pipe::unitePipes(std::move(pipes));

@@ -2,6 +2,7 @@
 #include <Storages/PartitionedSink.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
@@ -224,7 +225,8 @@ StorageURLSource::StorageURLSource(
     size_t download_threads,
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
-    bool glob_url)
+    bool glob_url,
+    bool need_only_count_)
     : ISource(info.source_header, false)
     , name(std::move(name_))
     , columns_description(info.columns_description)
@@ -232,6 +234,7 @@ StorageURLSource::StorageURLSource(
     , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
     , uri_iterator(uri_iterator_)
+    , need_only_count(need_only_count_)
 {
     auto headers = getHeaders(headers_);
 
@@ -270,7 +273,6 @@ StorageURLSource::StorageURLSource(
         if (auto file_progress_callback = context->getFileProgressCallback())
         {
             size_t file_size = tryGetFileSizeFromReadBuffer(*read_buf).value_or(0);
-            LOG_DEBUG(&Poco::Logger::get("URL"), "Send file size {}", file_size);
             file_progress_callback(FileProgress(0, file_size));
         }
 
@@ -282,10 +284,13 @@ StorageURLSource::StorageURLSource(
             context,
             max_block_size,
             format_settings,
-            download_threads,
+            need_only_count ? 1 : download_threads,
             /*max_download_threads*/ std::nullopt,
             /* is_remote_fs */ true,
             compression_method);
+
+        if (need_only_count)
+            input_format->needOnlyCount();
 
         QueryPipelineBuilder builder;
         builder.init(Pipe(input_format));
@@ -338,13 +343,13 @@ Chunk StorageURLSource::generate()
             {
                 if (virtual_column.name == "_path")
                 {
-                    chunk.addColumn(virtual_column.type->createColumnConst(num_rows, path)->convertToFullColumnIfConst());
+                    chunk.addColumn(virtual_column.type->createColumnConst(num_rows, path));
                 }
                 else if (virtual_column.name == "_file")
                 {
                     size_t last_slash_pos = path.find_last_of('/');
                     auto column = virtual_column.type->createColumnConst(num_rows, path.substr(last_slash_pos + 1));
-                    chunk.addColumn(column->convertToFullColumnIfConst());
+                    chunk.addColumn(column);
                 }
             }
 
@@ -748,6 +753,8 @@ Pipe IStorageURLBase::read(
     }
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+        && local_context->getSettingsRef().optimize_count_from_files;
 
     Pipes pipes;
     pipes.reserve(num_streams);
@@ -776,7 +783,8 @@ Pipe IStorageURLBase::read(
             download_threads,
             headers,
             params,
-            is_url_with_globs));
+            is_url_with_globs,
+            need_only_count));
     }
 
     return Pipe::unitePipes(std::move(pipes));

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Storages/IStorage.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/IStorage.h>
 #include <Common/FileRenamer.h>
 
 #include <atomic>
@@ -96,6 +96,8 @@ public:
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
     static void parseFileSource(String source, String & filename, String & path_to_archive);
+
+    bool supportsTrivialCountOptimization() const override { return true; }
 
 protected:
     friend class StorageFileSource;

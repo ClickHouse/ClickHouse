@@ -467,7 +467,8 @@ HDFSSource::HDFSSource(
     StorageHDFSPtr storage_,
     ContextPtr context_,
     UInt64 max_block_size_,
-    std::shared_ptr<IteratorWrapper> file_iterator_)
+    std::shared_ptr<IteratorWrapper> file_iterator_,
+    bool need_only_count_)
     : ISource(info.source_header, false)
     , WithContext(context_)
     , storage(std::move(storage_))
@@ -477,6 +478,7 @@ HDFSSource::HDFSSource(
     , max_block_size(max_block_size_)
     , file_iterator(file_iterator_)
     , columns_description(info.columns_description)
+    , need_only_count(need_only_count_)
 {
     initialize();
 }
@@ -514,7 +516,14 @@ bool HDFSSource::initialize()
 
     current_path = path_with_info.path;
 
-    input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
+    std::optional<size_t> max_parsing_threads;
+    if (need_only_count)
+        max_parsing_threads = 1;
+
+    input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, std::nullopt, max_parsing_threads);
+
+    if (need_only_count)
+        input_format->needOnlyCount();
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
@@ -727,7 +736,7 @@ bool StorageHDFS::supportsSubsetOfColumns() const
 Pipe StorageHDFS::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
@@ -760,6 +769,9 @@ Pipe StorageHDFS::read(
     }
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+        && context_->getSettingsRef().optimize_count_from_files;
+
     Pipes pipes;
     auto this_ptr = std::static_pointer_cast<StorageHDFS>(shared_from_this());
     for (size_t i = 0; i < num_streams; ++i)
@@ -769,7 +781,8 @@ Pipe StorageHDFS::read(
             this_ptr,
             context_,
             max_block_size,
-            iterator_wrapper));
+            iterator_wrapper,
+            need_only_count));
     }
     return Pipe::unitePipes(std::move(pipes));
 }
