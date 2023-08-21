@@ -282,6 +282,6 @@ namespace DB
 template <typename T>
 void readBinary(std::pair<T, UInt32> & x, ReadBuffer & buf)
 {
-   readPODBinary(x, buf);
+    readPODBinary(x, buf);
 }
 }
