@@ -9,14 +9,20 @@ create view logs as select * from system.text_log where now() - toIntervalMinute
 
 -- Check that we don't have too many messages formatted with fmt::runtime or strings concatenation.
 -- 0.001 threshold should be always enough, the value was about 0.00025
-select 'runtime messages', max2(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0), 0.001) from logs;
+select 'runtime messages', greatest(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0), 0.001) from logs;
 
 -- Check the same for exceptions. The value was 0.03
-select 'runtime exceptions', max2(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0), 0.05) from logs where message like '%DB::Exception%';
+select 'runtime exceptions', max2(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0), 0.05) from logs
+    where (message like '%DB::Exception%' or message like '%Coordination::Exception%')
+    and message not like '% Received from %clickhouse-staging.com:9440%';
+
+select 'unknown runtime exceptions', max2(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0), 0.01) from logs where
+    (message like '%DB::Exception%' or message like '%Coordination::Exception%')
+    and message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%';
 
 -- FIXME some of the following messages are not informative and it has to be fixed
 create temporary table known_short_messages (s String) as select * from (select
-['', '({}) Keys: {}', '({}) {}', 'Aggregating', 'Became leader', 'Cleaning queue',
+['', '{} ({})', '({}) Keys: {}', '({}) {}', 'Aggregating', 'Became leader', 'Cleaning queue',
 'Creating set.', 'Cyclic aliases', 'Detaching {}', 'Executing {}', 'Fire events: {}',
 'Found part {}', 'Loaded queue', 'No sharding key', 'No tables', 'Query: {}', 'Removed',
 'Removed part {}', 'Removing parts.', 'Request URI: {}', 'Sending part {}',

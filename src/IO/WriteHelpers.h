@@ -1170,6 +1170,15 @@ inline String toString(const T & x)
     return buf.str();
 }
 
+inline String toString(const CityHash_v1_0_2::uint128 & hash)
+{
+    WriteBufferFromOwnString buf;
+    writeText(hash.low64, buf);
+    writeChar('_', buf);
+    writeText(hash.high64, buf);
+    return buf.str();
+}
+
 template <typename T>
 inline String toStringWithFinalSeparator(const std::vector<T> & x, const String & final_sep)
 {
