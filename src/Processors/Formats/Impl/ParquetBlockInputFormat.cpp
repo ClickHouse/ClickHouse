@@ -308,11 +308,17 @@ Chunk ParquetBlockInputFormat::generate()
 {
     initializeIfNeeded();
 
-    if (is_stopped || row_groups_completed == row_groups.size())
+    if (is_stopped || row_group_batches_completed == row_group_batches.size())
         return {};
 
     if (need_only_count)
-        return getChunkForCount(metadata->RowGroup(static_cast<int>(row_groups_completed++))->num_rows());
+    {
+        auto & row_group_batch = row_group_batches[row_group_batches_completed++];
+        size_t num_rows = 0;
+        for (int row_group_index : row_group_batch.row_groups_idxs)
+            num_rows += metadata->RowGroup(row_group_index)->num_rows();
+        return num_rows;
+    }
 
     std::unique_lock lock(mutex);
 
