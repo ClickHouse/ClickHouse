@@ -254,14 +254,9 @@ namespace
                     for (const auto & col : cols)
                         col->updateHashWithValue(j, hash);
                 }
-                union
-                {
-                    char bytes[16];
-                    UInt64 words[2];
-                } hash_value;
-                hash.get128(hash_value.bytes);
 
-                block_id_vec.push_back(partition_id + "_" + DB::toString(hash_value.words[0]) + "_" + DB::toString(hash_value.words[1]));
+                const auto hash_value = hash.get128();
+                block_id_vec.push_back(partition_id + "_" + DB::toString(hash_value.items[0]) + "_" + DB::toString(hash_value.items[1]));
             }
             else
                 block_id_vec.push_back(partition_id + "_" + std::string(token));
@@ -351,7 +346,7 @@ size_t ReplicatedMergeTreeSinkImpl<async_insert>::checkQuorumPrecondition(const 
     if (active_replicas < quorum_size)
     {
         if (Coordination::isHardwareError(keeper_error))
-            throw Coordination::Exception("Failed to check number of alive replicas", keeper_error);
+            throw Coordination::Exception::fromMessage(keeper_error, "Failed to check number of alive replicas");
 
         throw Exception(ErrorCodes::TOO_FEW_LIVE_REPLICAS, "Number of alive replicas ({}) is less than requested quorum ({}/{}).",
                         active_replicas, quorum_size, replicas_number);

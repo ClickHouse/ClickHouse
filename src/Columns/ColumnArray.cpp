@@ -205,7 +205,7 @@ void ColumnArray::insertData(const char * pos, size_t length)
 }
 
 
-StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
 {
     size_t array_size = sizeAt(n);
     size_t offset = offsetAt(n);

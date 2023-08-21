@@ -62,7 +62,7 @@ void read(std::array<char, N> & s, ReadBuffer & in)
     int32_t size = 0;
     read(size, in);
     if (size != N)
-        throw Exception("Unexpected array size while reading from ZooKeeper", Error::ZMARSHALLINGERROR);
+        throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected array size while reading from ZooKeeper");
     in.readStrict(s.data(), N);
 }
 
@@ -72,9 +72,9 @@ void read(std::vector<T> & arr, ReadBuffer & in)
     int32_t size = 0;
     read(size, in);
     if (size < 0)
-        throw Exception("Negative size while reading array from ZooKeeper", Error::ZMARSHALLINGERROR);
+        throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Negative size while reading array from ZooKeeper");
     if (size > MAX_STRING_OR_ARRAY_SIZE)
-        throw Exception("Too large array size while reading from ZooKeeper", Error::ZMARSHALLINGERROR);
+        throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Too large array size while reading from ZooKeeper");
     arr.resize(size);
     for (auto & elem : arr)
         read(elem, in);

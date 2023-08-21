@@ -1,16 +1,17 @@
 #include <Interpreters/Access/InterpreterCreateQuotaQuery.h>
-#include <Parsers/Access/ASTCreateQuotaQuery.h>
-#include <Parsers/Access/ASTRolesOrUsersSet.h>
+
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/Quota.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/removeOnClusterClauseIfNeeded.h>
+#include <Parsers/Access/ASTCreateQuotaQuery.h>
+#include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <base/range.h>
 #include <boost/range/algorithm/find_if.hpp>
-#include <boost/range/algorithm/upper_bound.hpp>
 #include <boost/range/algorithm/sort.hpp>
-
+#include <boost/range/algorithm/upper_bound.hpp>
 
 namespace DB
 {
@@ -82,14 +83,16 @@ namespace
 
 BlockIO InterpreterCreateQuotaQuery::execute()
 {
-    auto & query = query_ptr->as<ASTCreateQuotaQuery &>();
+    const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
+    auto & query = updated_query_ptr->as<ASTCreateQuotaQuery &>();
+
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(query.alter ? AccessType::ALTER_QUOTA : AccessType::CREATE_QUOTA);
 
     if (!query.cluster.empty())
     {
         query.replaceCurrentUserTag(getContext()->getUserName());
-        return executeDDLQueryOnCluster(query_ptr, getContext());
+        return executeDDLQueryOnCluster(updated_query_ptr, getContext());
     }
 
     std::optional<RolesOrUsersSet> roles_from_query;
