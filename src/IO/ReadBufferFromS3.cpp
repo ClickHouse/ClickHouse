@@ -40,9 +40,15 @@ DB::PooledHTTPSessionPtr getSession(Aws::S3::Model::GetObjectResult & read_resul
 {
     if (auto * session_aware_stream = dynamic_cast<DB::S3::SessionAwareIOStream<DB::PooledHTTPSessionPtr> *>(&read_result.GetBody()))
         return static_cast<DB::PooledHTTPSessionPtr &>(session_aware_stream->getSession());
-    else if (!dynamic_cast<DB::S3::SessionAwareIOStream<DB::HTTPSessionPtr> *>(&read_result.GetBody()))
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session of unexpected type encountered");
-    return {};
+
+    if (dynamic_cast<DB::S3::SessionAwareIOStream<DB::HTTPSessionPtr> *>(&read_result.GetBody()))
+        return {};
+
+    /// accept result from S# mock in gtest_writebuffer_s3.cpp
+    if (dynamic_cast<Aws::Utils::Stream::DefaultUnderlyingStream *>(&read_result.GetBody()))
+        return {};
+
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session of unexpected type encountered");
 }
 
 void resetSession(Aws::S3::Model::GetObjectResult & read_result)
@@ -259,6 +265,7 @@ bool ReadBufferFromS3::processException(Poco::Exception & e, size_t read_offset,
         "Caught exception while reading S3 object. Bucket: {}, Key: {}, Version: {}, Offset: {}, "
         "Attempt: {}, Message: {}",
         bucket, key, version_id.empty() ? "Latest" : version_id, read_offset, attempt, e.message());
+
 
     if (auto * s3_exception = dynamic_cast<S3Exception *>(&e))
     {
