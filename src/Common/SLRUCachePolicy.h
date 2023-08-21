@@ -32,7 +32,7 @@ public:
     SLRUCachePolicy(size_t max_size_in_bytes_, size_t max_count_, double size_ratio_, OnWeightLossFunction on_weight_loss_function_)
         : Base(std::make_unique<NoCachePolicyUserQuota>())
         , max_size_in_bytes(max_size_in_bytes_)
-        , max_protected_size(static_cast<size_t>(max_size_in_bytes_ * std::min(1.0, size_ratio)))
+        , max_protected_size(calculateMaxProtectedSize(max_size_in_bytes_, size_ratio_))
         , max_count(max_count_)
         , size_ratio(size_ratio_)
         , on_weight_loss_function(on_weight_loss_function_)
@@ -63,7 +63,7 @@ public:
 
     void setMaxSize(size_t max_size_in_bytes_, std::lock_guard<std::mutex> & /* cache_lock */) override
     {
-        max_protected_size = static_cast<size_t>(max_size_in_bytes_ * std::min(1.0, size_ratio));
+        max_protected_size = calculateMaxProtectedSize(max_size_in_bytes_, size_ratio);
         max_size_in_bytes = max_size_in_bytes_;
         removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
         removeOverflow(probationary_queue, max_size_in_bytes, current_size_in_bytes, /*is_protected=*/false);
@@ -217,6 +217,11 @@ private:
 
     WeightFunction weight_function;
     OnWeightLossFunction on_weight_loss_function;
+
+    static size_t calculateMaxProtectedSize(size_t max_size_in_bytes, double size_ratio)
+    {
+        return static_cast<size_t>(max_size_in_bytes * std::max(0.0, std::min(1.0, size_ratio)));
+    }
 
     void removeOverflow(SLRUQueue & queue, size_t max_weight_size, size_t & current_weight_size, bool is_protected)
     {
