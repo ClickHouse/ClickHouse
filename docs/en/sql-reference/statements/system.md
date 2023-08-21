@@ -443,9 +443,9 @@ SYSTEM STOP LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QU
 ```
 
 - If `CUSTOM 'protocol'` modifier is specified, the custom protocol with the specified name defined in the protocols section of the server configuration will be stopped.
-- If `QUERIES ALL` modifier is specified, all protocols are stopped.
-- If `QUERIES DEFAULT` modifier is specified, all default protocols are stopped.
-- If `QUERIES CUSTOM` modifier is specified, all custom protocols are stopped.
+- If `QUERIES ALL [EXCEPT .. [,..]]` modifier is specified, all protocols are stopped, unless specified with `EXCEPT` clause.
+- If `QUERIES DEFAULT [EXCEPT .. [,..]]` modifier is specified, all default protocols are stopped, unless specified with `EXCEPT` clause.
+- If `QUERIES CUSTOM [EXCEPT .. [,..]]` modifier is specified, all custom protocols are stopped, unless specified with `EXCEPT` clause.
 
 ### SYSTEM START LISTEN
 
