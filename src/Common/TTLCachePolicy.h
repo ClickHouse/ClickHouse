@@ -94,7 +94,7 @@ public:
     {
     }
 
-    size_t weight() const override
+    size_t sizeInBytes() const override
     {
         return size_in_bytes;
     }
@@ -104,7 +104,7 @@ public:
         return cache.size();
     }
 
-    size_t maxSize() const override
+    size_t maxSizeInBytes() const override
     {
         return max_size_in_bytes;
     }
@@ -115,7 +115,7 @@ public:
         max_count = max_count_;
     }
 
-    void setMaxSize(size_t max_size_in_bytes_) override
+    void setMaxSizeInBytes(size_t max_size_in_bytes_) override
     {
         /// lazy behavior: the cache only shrinks upon the next insert
         max_size_in_bytes = max_size_in_bytes_;

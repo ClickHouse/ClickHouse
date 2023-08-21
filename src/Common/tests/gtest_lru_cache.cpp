@@ -9,7 +9,7 @@ TEST(LRUCache, set)
     lru_cache.set(1, std::make_shared<int>(2));
     lru_cache.set(2, std::make_shared<int>(3));
 
-    auto w = lru_cache.weight();
+    auto w = lru_cache.sizeInBytes();
     auto n = lru_cache.count();
     ASSERT_EQ(w, 2);
     ASSERT_EQ(n, 2);
@@ -74,7 +74,7 @@ TEST(LRUCache, evictOnWeight)
     auto n = lru_cache.count();
     ASSERT_EQ(n, 2);
 
-    auto w = lru_cache.weight();
+    auto w = lru_cache.sizeInBytes();
     ASSERT_EQ(w, 9);
 
     auto value = lru_cache.get(1);

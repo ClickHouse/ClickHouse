@@ -480,7 +480,7 @@ QueryCache::QueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_
 void QueryCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
 {
     std::lock_guard lock(mutex);
-    cache.setMaxSize(max_size_in_bytes);
+    cache.setMaxSizeInBytes(max_size_in_bytes);
     cache.setMaxCount(max_entries);
     max_entry_size_in_bytes = max_entry_size_in_bytes_;
     max_entry_size_in_rows = max_entry_size_in_rows_;
@@ -510,9 +510,9 @@ void QueryCache::clear()
     times_executed.clear();
 }
 
-size_t QueryCache::weight() const
+size_t QueryCache::sizeInBytes() const
 {
-    return cache.weight();
+    return cache.sizeInBytes();
 }
 
 size_t QueryCache::count() const

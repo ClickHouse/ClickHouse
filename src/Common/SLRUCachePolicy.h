@@ -39,7 +39,7 @@ public:
     {
     }
 
-    size_t weight() const override
+    size_t sizeInBytes() const override
     {
         return current_size_in_bytes;
     }
@@ -49,7 +49,7 @@ public:
         return cells.size();
     }
 
-    size_t maxSize() const override
+    size_t maxSizeInBytes() const override
     {
         return max_size_in_bytes;
     }
@@ -61,7 +61,7 @@ public:
         removeOverflow(probationary_queue, max_size_in_bytes, current_size_in_bytes, /*is_protected=*/false);
     }
 
-    void setMaxSize(size_t max_size_in_bytes_) override
+    void setMaxSizeInBytes(size_t max_size_in_bytes_) override
     {
         max_protected_size = calculateMaxProtectedSize(max_size_in_bytes_, size_ratio);
         max_size_in_bytes = max_size_in_bytes_;
