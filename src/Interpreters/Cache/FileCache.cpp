@@ -830,7 +830,7 @@ bool FileCache::isFreeSpaceRatioSatisfied(const CacheGuard::Lock & lock) const
 
     return (size_limit == 0
             || main_priority->getSize(lock) < keep_current_size_to_max_ratio * size_limit)
-        || (elements_limit == 0
+        && (elements_limit == 0
             || main_priority->getElementsCount(lock) < keep_current_elements_to_max_ratio * elements_limit);
 }
 
