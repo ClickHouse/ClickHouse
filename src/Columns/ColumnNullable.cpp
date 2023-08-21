@@ -806,7 +806,7 @@ ColumnPtr ColumnNullable::getNestedColumnWithDefaultOnNull() const
 
         size_t next_none_null_index = next_null_index;
         while (next_none_null_index < end && null_map_data[next_none_null_index])
-            ++ next_none_null_index;
+            ++next_none_null_index;
 
         if (next_null_index != next_none_null_index)
             res->insertManyDefaults(next_none_null_index - next_null_index);
