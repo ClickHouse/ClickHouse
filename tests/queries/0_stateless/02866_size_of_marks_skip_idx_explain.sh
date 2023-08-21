@@ -9,7 +9,7 @@ CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --optimize_move_to_prewhere=1 --convert_qu
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_skip_idx"
 
-$CLICKHOUSE_CLIENT -q "CREATE TABLE test_skip_idx (id UInt32, INDEX name_idx_g2 id TYPE minmax GRANULARITY 2, INDEX name_idx_g1 id TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1, index_granularity_bytes = 0"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE test_skip_idx (id UInt32, INDEX name_idx_g2 id TYPE minmax GRANULARITY 2, INDEX name_idx_g1 id TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0"
 $CLICKHOUSE_CLIENT -q "INSERT INTO test_skip_idx SELECT number FROM system.numbers LIMIT 5 OFFSET 1"
 
 $CLICKHOUSE_CLIENT -q "
