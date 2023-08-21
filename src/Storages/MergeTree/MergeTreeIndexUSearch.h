@@ -4,7 +4,10 @@
 
 #include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wpass-failed"
 #include <usearch/index_dense.hpp>
+#pragma clang diagnostic pop
 
 namespace DB
 {
@@ -97,6 +100,7 @@ private:
 
 
 }
+
 
 #endif
 
