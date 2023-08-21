@@ -832,7 +832,7 @@ You can see which parts of `s` were stored using the sparse serialization:
 └────────┴────────────────────┘
 ```
 
-## replace_long_file_name_to_hash {#ratio_of_defaults_for_sparse_serialization}
+## replace_long_file_name_to_hash {#replace_long_file_name_to_hash}
 If the file name for column is too long (more than `max_file_name_length` bytes) replace it to SipHash128. Default value: `false`.
 
 ## max_file_name_length {#max_file_name_length}

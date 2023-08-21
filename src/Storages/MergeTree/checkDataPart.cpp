@@ -165,17 +165,14 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         {
             get_serialization(column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
-                auto stream_name = ISerialization::getFileNameForStream(column, substream_path);
-                auto file_name = stream_name + ".bin";
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage);
 
-                if (!data_part_storage.exists(file_name))
-                    file_name = sipHash128String(stream_name) + ".bin";
-
-                if (!data_part_storage.exists(file_name))
+                if (!stream_name)
                     throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
                         "There is no file for column '{}' in data part '{}'",
                         column.name, data_part->name);
 
+                auto file_name = *stream_name + ".bin";
                 checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
             });
         }
