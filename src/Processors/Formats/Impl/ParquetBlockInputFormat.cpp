@@ -317,7 +317,7 @@ Chunk ParquetBlockInputFormat::generate()
         size_t num_rows = 0;
         for (int row_group_index : row_group_batch.row_groups_idxs)
             num_rows += metadata->RowGroup(row_group_index)->num_rows();
-        return num_rows;
+        return getChunkForCount(num_rows);
     }
 
     std::unique_lock lock(mutex);
