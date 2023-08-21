@@ -3,10 +3,24 @@ add_subdirectory(divide)
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_functions .)
 
-list(REMOVE_ITEM clickhouse_functions_sources IFunction.cpp FunctionFactory.cpp FunctionHelpers.cpp extractTimeZoneFromFunctionArguments.cpp FunctionsLogical.cpp)
-list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h FunctionHelpers.h extractTimeZoneFromFunctionArguments.h FunctionsLogical.h)
+extract_into_parent_list(clickhouse_functions_sources dbms_sources
+    IFunction.cpp
+    FunctionFactory.cpp
+    FunctionHelpers.cpp
+    extractTimeZoneFromFunctionArguments.cpp
+    FunctionsLogical.cpp
+    indexHint.cpp
+)
+extract_into_parent_list(clickhouse_functions_headers dbms_headers
+    IFunction.h
+    FunctionFactory.h
+    FunctionHelpers.h
+    extractTimeZoneFromFunctionArguments.h
+    FunctionsLogical.h
+    indexHint.h
+)
 
-add_library(clickhouse_functions_obj OBJECT ${clickhouse_functions_sources})
+add_library(clickhouse_functions_obj OBJECT ${clickhouse_functions_headers} ${clickhouse_functions_sources})
 
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_obj>)
 
