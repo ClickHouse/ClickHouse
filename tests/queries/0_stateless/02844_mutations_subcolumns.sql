@@ -19,7 +19,7 @@ SELECT count(), min(id) FROM t_mutations_subcolumns;
 SET mutations_sync = 2;
 
 ALTER TABLE t_mutations_subcolumns DELETE WHERE obj.k3 = 5;
-SELECT count(), min(id) FROM t_mutations_subcolumns;
+SELECT count(), min(id) FROM t_mutations_subcolumns;  
 
 DELETE FROM t_mutations_subcolumns WHERE obj.k1.k2 = 'fee';
 SELECT count(), min(id) FROM t_mutations_subcolumns;
@@ -29,3 +29,20 @@ SELECT count(), min(id) FROM t_mutations_subcolumns;
 
 ALTER TABLE t_mutations_subcolumns UPDATE n = 'ttt' WHERE obj.k1.k2 = 'foo';
 SELECT id, n FROM t_mutations_subcolumns;
+
+DROP TABLE IF EXISTS t_mutations_subcolumns;
+
+CREATE TABLE t_mutations_subcolumns (a UInt64, obj JSON)
+ENGINE = MergeTree ORDER BY a PARTITION BY a;
+
+INSERT INTO t_mutations_subcolumns VALUES (1, '{"k1": 1}');
+INSERT INTO t_mutations_subcolumns VALUES (2, '{"k2": 1}');
+INSERT INTO t_mutations_subcolumns VALUES (3, '{"k3": 1}');
+
+ALTER TABLE t_mutations_subcolumns DELETE WHERE obj.k2 = 1;
+SELECT * FROM t_mutations_subcolumns ORDER BY a FORMAT JSONEachRow;
+
+ALTER TABLE t_mutations_subcolumns DELETE WHERE obj.k1 = 0;
+SELECT * FROM t_mutations_subcolumns ORDER BY a FORMAT JSONEachRow;
+
+DROP TABLE t_mutations_subcolumns;

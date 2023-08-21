@@ -112,6 +112,12 @@ public:
         return storage.getPartitionIDFromQuery(ast, context);
     }
 
+    StorageSnapshotPtr getStorageSnapshotForQuery(
+        const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context) const override
+    {
+        return storage.getStorageSnapshot(metadata_snapshot, query_context);
+    }
+
     bool materializeTTLRecalculateOnly() const
     {
         if (parts.empty())
