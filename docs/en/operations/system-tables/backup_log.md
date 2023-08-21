@@ -18,7 +18,7 @@ Columns:
     - `'RESTORING'`
     - `'RESTORED'`
     - `'RESTORE_FAILED'`
-- `error` ([String](../../sql-reference/data-types/string.md)) — Error message of the failed operation (empty string for successful opetations).
+- `error` ([String](../../sql-reference/data-types/string.md)) — Error message of the failed operation (empty string for successful operations).
 - `start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time of the operation.
 - `end_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — End time of the operation.
 - `num_files` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of files stored in the backup.
