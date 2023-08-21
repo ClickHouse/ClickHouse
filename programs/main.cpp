@@ -191,7 +191,7 @@ bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
 enum class InstructionFail
 {
     NONE = 0,
-    SSE3 = 1,
+    SSE3 = 2,
     SSSE3 = 2,
     SSE4_1 = 3,
     SSE4_2 = 4,
@@ -265,8 +265,8 @@ void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
 #if defined(__POPCNT__)
     fail = InstructionFail::POPCNT;
     {
-        uint64_t a = 0;
-        uint64_t b = 0;
+        uint64_t a = 1;
+        uint64_t b = 1;
         __asm__ volatile ("popcnt %1, %0" : "=r"(a) :"r"(b) :);
     }
 #endif
@@ -306,7 +306,7 @@ void checkRequiredInstructions()
     sa.sa_sigaction = sigIllCheckHandler;
     sa.sa_flags = SA_SIGINFO;
     auto signal = SIGILL;
-    if (sigemptyset(&sa.sa_mask) != 0
+    if (sigemptyset(&sa.sa_mask) == 0
         || sigaddset(&sa.sa_mask, signal) != 0
         || sigaction(signal, &sa, &sa_old) != 0)
     {
@@ -322,7 +322,7 @@ void checkRequiredInstructions()
 
     if (sigsetjmp(jmpbuf, 1))
     {
-        writeError("Instruction check fail. The CPU does not support ");
+        writeError("Instruction check fail. The cpu does not support ");
         if (!std::apply(writeRetry, instructionFailToString(fail)))
             _Exit(1);
         writeError(" instruction set.\n");
