@@ -17,6 +17,7 @@
 #include <Functions/IFunction.h>
 
 #include <Storages/KeyDescription.h>
+#include <Analyzer/QueryTreeBuilder.h>
 
 
 namespace DB
@@ -382,15 +383,27 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
 
     if (prepared_sets && ast_node)
     {
+        IAST::Hash tree_hash;
+        /// New analyzer will generate tree hash by QueryTree in some cases,
+        /// for example disable query_plan_optimize_primary_key.
+        if (getTreeContext().getSettings().allow_experimental_analyzer)
+        {
+            ASTPtr ast_node_ptr = ast_node->clone();
+            tree_hash = buildQueryTree(ast_node_ptr, tree_context.getQueryContext())->getTreeHash();
+        }
+        else
+        {
+            tree_hash = ast_node->getTreeHash();
+        }
+
         if (ast_node->as<ASTSubquery>() || ast_node->as<ASTTableIdentifier>())
         {
-            auto future_set = prepared_sets->findSubquery(ast_node->getTreeHash());
+            auto future_set = prepared_sets->findSubquery(tree_hash);
             if (!future_set || !types_match(future_set->getTypes()))
                 return nullptr;
             return future_set;
         }
 
-        auto tree_hash = ast_node->getTreeHash();
         const auto & sets = prepared_sets->getSetsFromTuple();
         auto it = sets.find(tree_hash);
         if (it == sets.end())
