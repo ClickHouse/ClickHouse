@@ -7,7 +7,10 @@ def check_proxy_logs(cluster, proxy_instance, protocol, bucket, http_methods={"P
         logs = cluster.get_container_logs(proxy_instance)
         # Check with retry that all possible interactions with Minio are present
         for http_method in http_methods:
-            if logs.find(http_method + f" {protocol}://minio1:9001/root/data/{bucket}") >= 0:
+            if (
+                logs.find(http_method + f" {protocol}://minio1:9001/root/data/{bucket}")
+                >= 0
+            ):
                 return
             time.sleep(1)
         else:

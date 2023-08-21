@@ -13,13 +13,17 @@ def cluster():
 
         cluster.add_instance(
             "remote_proxy_node",
-            main_configs=["configs/config.d/proxy_remote.xml",],
+            main_configs=[
+                "configs/config.d/proxy_remote.xml",
+            ],
             with_minio=True,
         )
 
         cluster.add_instance(
             "proxy_list_node",
-            main_configs=["configs/config.d/proxy_list.xml",],
+            main_configs=[
+                "configs/config.d/proxy_list.xml",
+            ],
             with_minio=True,
         )
 

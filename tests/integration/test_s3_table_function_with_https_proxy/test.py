@@ -15,20 +15,28 @@ def cluster():
 
         cluster.add_instance(
             "remote_proxy_node",
-            main_configs=["configs/config.d/proxy_remote.xml", "configs/config.d/ssl.xml",],
+            main_configs=[
+                "configs/config.d/proxy_remote.xml",
+                "configs/config.d/ssl.xml",
+            ],
             with_minio=True,
             minio_certs_dir="minio_certs",
         )
 
         cluster.add_instance(
             "proxy_list_node",
-            main_configs=["configs/config.d/proxy_list.xml", "configs/config.d/ssl.xml",],
+            main_configs=[
+                "configs/config.d/proxy_list.xml",
+                "configs/config.d/ssl.xml",
+            ],
             with_minio=True,
         )
 
         cluster.add_instance(
             "env_node",
-            main_configs=["configs/config.d/ssl.xml",],
+            main_configs=[
+                "configs/config.d/ssl.xml",
+            ],
             with_minio=True,
             env_variables={
                 "https_proxy": "https://proxy1",
