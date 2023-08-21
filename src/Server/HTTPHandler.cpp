@@ -561,8 +561,7 @@ void HTTPHandler::processQuery(
         session->makeSessionContext();
     }
 
-    auto client_info = session->getClientInfo();
-    auto context = session->makeQueryContext(std::move(client_info));
+    auto context = session->makeQueryContext();
 
     /// This parameter is used to tune the behavior of output formats (such as Native) for compatibility.
     if (params.has("client_protocol_version"))
@@ -764,7 +763,7 @@ void HTTPHandler::processQuery(
         context->setDefaultFormat(default_format);
 
     /// For external data we also want settings
-    context->checkSettingsConstraints(settings_changes);
+    context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
 
     /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.

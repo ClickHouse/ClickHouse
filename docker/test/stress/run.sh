@@ -51,7 +51,38 @@ configure
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 ./setup_minio.sh stateless # to have a proper environment
 
+# Setup a cluster for logs export to ClickHouse Cloud
+# Note: these variables are provided to the Docker run command by the Python script in tests/ci
+if [ -n "${CLICKHOUSE_CI_LOGS_HOST}" ]
+then
+    echo "
+remote_servers:
+    system_logs_export:
+        shard:
+            replica:
+                secure: 1
+                user: ci
+                host: '${CLICKHOUSE_CI_LOGS_HOST}'
+                password: '${CLICKHOUSE_CI_LOGS_PASSWORD}'
+" > /etc/clickhouse-server/config.d/system_logs_export.yaml
+fi
+
 start
+
+# Initialize export of system logs to ClickHouse Cloud
+if [ -n "${CLICKHOUSE_CI_LOGS_HOST}" ]
+then
+    export EXTRA_COLUMNS_EXPRESSION="$PULL_REQUEST_NUMBER AS pull_request_number, '$COMMIT_SHA' AS commit_sha, '$CHECK_START_TIME' AS check_start_time, '$CHECK_NAME' AS check_name, '$INSTANCE_TYPE' AS instance_type"
+    # TODO: Check if the password will appear in the logs.
+    export CONNECTION_PARAMETERS="--secure --user ci --host ${CLICKHOUSE_CI_LOGS_HOST} --password ${CLICKHOUSE_CI_LOGS_PASSWORD}"
+
+    ./setup_export_logs.sh
+
+    # Unset variables after use
+    export CONNECTION_PARAMETERS=''
+    export CLICKHOUSE_CI_LOGS_HOST=''
+    export CLICKHOUSE_CI_LOGS_PASSWORD=''
+fi
 
 # shellcheck disable=SC2086 # No quotes because I want to split it into words.
 /s3downloader --url-prefix "$S3_URL" --dataset-names $DATASETS
@@ -180,6 +211,11 @@ mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/cli
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 
+sudo cat /etc/clickhouse-server/config.d/logger_trace.xml \
+   | sed "s|<level>trace</level>|<level>test</level>|" \
+   > /etc/clickhouse-server/config.d/logger_trace.xml.tmp
+mv /etc/clickhouse-server/config.d/logger_trace.xml.tmp /etc/clickhouse-server/config.d/logger_trace.xml
+
 start
 
 stress --hung-check --drop-databases --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 \
@@ -232,5 +268,11 @@ clickhouse-local --structure "test String, res String, time Nullable(Float32), d
 rowNumberInAllBlocks()
 LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
+
+# But OOMs in stress test are allowed
+if rg 'OOM in dmesg|Signal 9' /test_output/check_status.tsv
+then
+    sed -i 's/failure/success/' /test_output/check_status.tsv
+fi
 
 collect_core_dumps
