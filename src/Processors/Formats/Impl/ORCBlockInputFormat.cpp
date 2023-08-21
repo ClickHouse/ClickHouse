@@ -1,16 +1,17 @@
 #include "ORCBlockInputFormat.h"
-#include <boost/algorithm/string/case_conv.hpp>
-#if USE_ORC
 
-#include <Formats/FormatFactory.h>
-#include <Formats/SchemaInferenceUtils.h>
-#include <IO/ReadBufferFromMemory.h>
-#include <IO/WriteHelpers.h>
-#include <IO/copyData.h>
-#include "ArrowBufferedStreams.h"
-#include "ArrowColumnToCHColumn.h"
-#include "ArrowFieldIndexUtil.h"
-#include <DataTypes/NestedUtils.h>
+#if USE_ORC
+#    include <DataTypes/NestedUtils.h>
+#    include <Formats/FormatFactory.h>
+#    include <Formats/SchemaInferenceUtils.h>
+#    include <IO/ReadBufferFromMemory.h>
+#    include <IO/WriteHelpers.h>
+#    include <IO/copyData.h>
+#    include <boost/algorithm/string/case_conv.hpp>
+#    include "ArrowBufferedStreams.h"
+#    include "ArrowColumnToCHColumn.h"
+#    include "ArrowFieldIndexUtil.h"
+#    include "NativeORCBlockInputFormat.h"
 
 namespace DB
 {
@@ -156,31 +157,34 @@ NamesAndTypesList ORCSchemaReader::readSchema()
         return getNamesAndRecursivelyNullableTypes(header);
     return header.getNamesAndTypesList();}
 
-void registerInputFormatDeprecatedORC(FormatFactory & factory)
+void registerInputFormatORC(FormatFactory & factory)
 {
     factory.registerInputFormat(
-            "DeprecatedORC",
-            [](ReadBuffer &buf,
-                const Block &sample,
-                const RowInputFormatParams &,
-                const FormatSettings & settings)
-            {
+        "ORC",
+        [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams &, const FormatSettings & settings)
+        {
+            if (settings.orc.use_fast_decoder)
+                return std::make_shared<NativeORCBlockInputFormat>(buf, sample, settings);
+            else
                 return std::make_shared<ORCBlockInputFormat>(buf, sample, settings);
-            });
-    factory.markFormatSupportsSubsetOfColumns("DeprecatedORC");
+        });
+    factory.markFormatSupportsSubsetOfColumns("ORC");
 }
 
-void registerDeprecatedORCSchemaReader(FormatFactory & factory)
+void registerORCSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
-        "DeprecatedORC",
+        "ORC",
         [](ReadBuffer & buf, const FormatSettings & settings)
         {
-            return std::make_shared<ORCSchemaReader>(buf, settings);
+            if (settings.orc.use_fast_decoder)
+                return std::make_shared<NativeORCSchemaReader>(buf, settings);
+            else
+                return std::make_shared<ORCSchemaReader>(buf, settings);
         }
         );
 
-    factory.registerAdditionalInfoForSchemaCacheGetter("DeprecatedORC", [](const FormatSettings & settings)
+    factory.registerAdditionalInfoForSchemaCacheGetter("ORC", [](const FormatSettings & settings)
     {
         return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
     });
@@ -192,11 +196,11 @@ void registerDeprecatedORCSchemaReader(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
-    void registerInputFormatDeprecatedORC(FormatFactory &)
+    void registerInputFormatORC(FormatFactory &)
     {
     }
 
-    void registerDeprecatedORCSchemaReader(FormatFactory &)
+    void registerORCSchemaReader(FormatFactory &)
     {
     }
 }

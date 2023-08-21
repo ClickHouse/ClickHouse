@@ -1,5 +1,4 @@
 #include "NativeORCBlockInputFormat.h"
-#include "ArrowBufferedStreams.h"
 
 #if USE_ORC
 #    include <Columns/ColumnDecimal.h>
@@ -30,6 +29,7 @@
 #    include <IO/copyData.h>
 #    include <Interpreters/castColumn.h>
 #    include <boost/algorithm/string/case_conv.hpp>
+#    include "ArrowBufferedStreams.h"
 
 
 namespace DB
@@ -42,6 +42,7 @@ namespace ErrorCodes
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
     extern const int THERE_IS_NO_COLUMN;
     extern const int INCORRECT_DATA;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 ORCInputStream::ORCInputStream(SeekableReadBuffer & in_, size_t file_size_) : in(in_), file_size(file_size_)
@@ -74,7 +75,7 @@ std::unique_ptr<orc::InputStream> asORCInputStream(ReadBuffer & in, const Format
     if (has_file_size && seekable_in && settings.seekable_read && seekable_in->checkIfActuallySeekable())
         return std::make_unique<ORCInputStream>(*seekable_in, getFileSizeFromReadBuffer(in));
 
-    // fallback to loading the entire file in memory
+    /// Fallback to loading the entire file in memory
     return asORCInputStreamLoadIntoMemory(in, is_cancelled);
 }
 
@@ -196,12 +197,12 @@ static void getFileReaderAndSchema(
     }
 }
 
-ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
+NativeORCBlockInputFormat::NativeORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
     : IInputFormat(std::move(header_), &in_), format_settings(format_settings_), skip_stripes(format_settings.orc.skip_stripes)
 {
 }
 
-void ORCBlockInputFormat::prepareFileReader()
+void NativeORCBlockInputFormat::prepareFileReader()
 {
     Block schema;
     getFileReaderAndSchema(*in, file_reader, schema, format_settings, is_stopped);
@@ -228,7 +229,7 @@ void ORCBlockInputFormat::prepareFileReader()
     }
 }
 
-bool ORCBlockInputFormat::prepareStripeReader()
+bool NativeORCBlockInputFormat::prepareStripeReader()
 {
     assert(file_reader);
 
@@ -255,7 +256,7 @@ bool ORCBlockInputFormat::prepareStripeReader()
     return true;
 }
 
-Chunk ORCBlockInputFormat::generate()
+Chunk NativeORCBlockInputFormat::generate()
 {
     block_missing_values.clear();
 
@@ -291,7 +292,7 @@ Chunk ORCBlockInputFormat::generate()
     return res;
 }
 
-void ORCBlockInputFormat::resetParser()
+void NativeORCBlockInputFormat::resetParser()
 {
     IInputFormat::resetParser();
 
@@ -302,17 +303,17 @@ void ORCBlockInputFormat::resetParser()
     block_missing_values.clear();
 }
 
-const BlockMissingValues & ORCBlockInputFormat::getMissingValues() const
+const BlockMissingValues & NativeORCBlockInputFormat::getMissingValues() const
 {
     return block_missing_values;
 }
 
-ORCSchemaReader::ORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
+NativeORCSchemaReader::NativeORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
     : ISchemaReader(in_), format_settings(format_settings_)
 {
 }
 
-NamesAndTypesList ORCSchemaReader::readSchema()
+NamesAndTypesList NativeORCSchemaReader::readSchema()
 {
     Block header;
     std::unique_ptr<orc::Reader> file_reader;
@@ -493,7 +494,7 @@ readColumnWithFixedStringData(const orc::ColumnVectorBatch * orc_column, const o
         if (orc_str_column->data[i])
             column_chars_t.insert_assume_reserved(orc_str_column->data[i], orc_str_column->data[i] + orc_str_column->length[i]);
         else
-            column_chars_t.resize(column_chars_t.size() + fixed_len);
+            column_chars_t.resize_fill(column_chars_t.size() + fixed_len);
     }
 
     return {std::move(internal_column), std::move(internal_type), column_name};
@@ -575,7 +576,7 @@ readIPv4ColumnWithInt32Data(const orc::ColumnVectorBatch * orc_column, const orc
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
-template <typename ColumnType, typename ValueType = typename ColumnType::ValueType>
+template <typename ColumnType>
 static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(
     const orc::ColumnVectorBatch * orc_column, const orc::Type *, const String & column_name, const DataTypePtr & column_type)
 {
@@ -590,7 +591,17 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(
         if (!orc_str_column->data[i]) [[unlikely]]
             integer_column.insertDefault();
         else
+        {
+            if (sizeof(typename ColumnType::ValueType) != orc_str_column->length[i])
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "ValueType size {} of column {} is not equal to size of binary data {}",
+                    sizeof(typename ColumnType::ValueType),
+                    integer_column.getName(),
+                    orc_str_column->length[i]);
+
             integer_column.insertData(orc_str_column->data[i], orc_str_column->length[i]);
+        }
     }
     return {std::move(internal_column), column_type, column_name};
 }
@@ -657,7 +668,6 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
     const orc::Type * orc_type,
     const std::string & column_name,
     bool inside_nullable,
-    bool allow_null_type,
     bool skip_columns_with_unsupported_types,
     bool & skipped,
     DataTypePtr type_hint = nullptr)
@@ -670,7 +680,7 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
             nested_type_hint = removeNullable(type_hint);
 
         auto nested_column = readColumnFromORCColumn(
-            orc_column, orc_type, column_name, true, allow_null_type, skip_columns_with_unsupported_types, skipped, nested_type_hint);
+            orc_column, orc_type, column_name, true, skip_columns_with_unsupported_types, skipped, nested_type_hint);
 
         if (skipped)
             return {};
@@ -753,41 +763,23 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
             return readColumnWithTimestampData(orc_column, orc_type, column_name);
         case orc::DECIMAL: {
             auto interal_type = parseORCType(orc_type);
-
             auto precision = orc_type->getPrecision();
             if (precision == 0)
                 precision = 38;
 
-            if (precision > 18)
-            {
-                if (precision <= DecimalUtils::max_precision<Decimal32>)
-                    return readColumnWithDecimalDataCast<Decimal32, orc::Decimal128VectorBatch>(
-                        orc_column, orc_type, column_name, interal_type);
-                else if (precision <= DecimalUtils::max_precision<Decimal64>)
-                    return readColumnWithDecimalDataCast<Decimal64, orc::Decimal128VectorBatch>(
-                        orc_column, orc_type, column_name, interal_type);
-                else if (precision <= DecimalUtils::max_precision<Decimal128>)
-                    return readColumnWithDecimalDataCast<Decimal128, orc::Decimal128VectorBatch>(
-                        orc_column, orc_type, column_name, interal_type);
-                else
-                    return readColumnWithDecimalDataCast<Decimal256, orc::Decimal128VectorBatch>(
-                        orc_column, orc_type, column_name, interal_type);
-            }
+            if (precision <= DecimalUtils::max_precision<Decimal32>)
+                return readColumnWithDecimalDataCast<Decimal32, orc::Decimal64VectorBatch>(orc_column, orc_type, column_name, interal_type);
+            else if (precision <= DecimalUtils::max_precision<Decimal64>)
+                return readColumnWithDecimalDataCast<Decimal64, orc::Decimal64VectorBatch>(orc_column, orc_type, column_name, interal_type);
+            else if (precision <= DecimalUtils::max_precision<Decimal128>)
+                return readColumnWithDecimalDataCast<Decimal128, orc::Decimal128VectorBatch>(
+                    orc_column, orc_type, column_name, interal_type);
             else
-            {
-                if (precision <= DecimalUtils::max_precision<Decimal32>)
-                    return readColumnWithDecimalDataCast<Decimal32, orc::Decimal64VectorBatch>(
-                        orc_column, orc_type, column_name, interal_type);
-                else if (precision <= DecimalUtils::max_precision<Decimal64>)
-                    return readColumnWithDecimalDataCast<Decimal64, orc::Decimal64VectorBatch>(
-                        orc_column, orc_type, column_name, interal_type);
-                else if (precision <= DecimalUtils::max_precision<Decimal128>)
-                    return readColumnWithDecimalDataCast<Decimal128, orc::Decimal64VectorBatch>(
-                        orc_column, orc_type, column_name, interal_type);
-                else
-                    return readColumnWithDecimalDataCast<Decimal256, orc::Decimal64VectorBatch>(
-                        orc_column, orc_type, column_name, interal_type);
-            }
+                throw Exception(
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "Decimal precision {} in ORC type {} is out of bound",
+                    precision,
+                    orc_type->toString());
         }
         case orc::MAP: {
             DataTypePtr key_type_hint;
@@ -809,7 +801,7 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
             const auto * orc_value_type = orc_type->getSubtype(1);
 
             auto key_column = readColumnFromORCColumn(
-                orc_key_column, orc_key_type, "key", false, allow_null_type, skip_columns_with_unsupported_types, skipped, key_type_hint);
+                orc_key_column, orc_key_type, "key", false, skip_columns_with_unsupported_types, skipped, key_type_hint);
             if (skipped)
                 return {};
 
@@ -822,14 +814,7 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
             }
 
             auto value_column = readColumnFromORCColumn(
-                orc_value_column,
-                orc_value_type,
-                "value",
-                false,
-                allow_null_type,
-                skip_columns_with_unsupported_types,
-                skipped,
-                value_type_hint);
+                orc_value_column, orc_value_type, "value", false, skip_columns_with_unsupported_types, skipped, value_type_hint);
             if (skipped)
                 return {};
 
@@ -859,14 +844,7 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
             const auto * orc_nested_column = getNestedORCColumn(orc_list_column);
             const auto * orc_nested_type = orc_type->getSubtype(0);
             auto nested_column = readColumnFromORCColumn(
-                orc_nested_column,
-                orc_nested_type,
-                column_name,
-                false,
-                allow_null_type,
-                skip_columns_with_unsupported_types,
-                skipped,
-                nested_type_hint);
+                orc_nested_column, orc_nested_type, column_name, false, skip_columns_with_unsupported_types, skipped, nested_type_hint);
 
             if (skipped)
                 return {};
@@ -903,14 +881,7 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
                 const auto * nested_orc_column = orc_struct_column->fields[i];
                 const auto * nested_orc_type = orc_type->getSubtype(i);
                 auto element = readColumnFromORCColumn(
-                    nested_orc_column,
-                    nested_orc_type,
-                    field_name,
-                    false,
-                    allow_null_type,
-                    skip_columns_with_unsupported_types,
-                    skipped,
-                    nested_type_hint);
+                    nested_orc_column, nested_orc_type, field_name, false, skip_columns_with_unsupported_types, skipped, nested_type_hint);
 
                 if (skipped)
                     return {};
@@ -986,7 +957,6 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                         orc_column_with_type.second,
                         nested_table_name,
                         false,
-                        true,
                         false,
                         skipped,
                         nested_table_type)};
@@ -1029,7 +999,6 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                 orc_column_with_type.second,
                 header_column.name,
                 false,
-                true,
                 false,
                 skipped,
                 header_column.type);
@@ -1059,12 +1028,13 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
     res.setColumns(columns_list, num_rows);
 }
 
+/*
 void registerInputFormatORC(FormatFactory & factory)
 {
     factory.registerInputFormat(
         "ORC",
         [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams &, const FormatSettings & settings)
-        { return std::make_shared<ORCBlockInputFormat>(buf, sample, settings); });
+        { return std::make_shared<NativeORCBlockInputFormat>(buf, sample, settings); });
     factory.markFormatSupportsSubsetOfColumns("ORC");
 }
 
@@ -1078,12 +1048,15 @@ void registerORCSchemaReader(FormatFactory & factory)
         [](const FormatSettings & settings)
         { return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable); });
 }
+*/
 }
 
 #else
 
 namespace DB
 {
+
+/*
 class FormatFactory;
 void registerInputFormatORC(FormatFactory &)
 {
@@ -1092,6 +1065,7 @@ void registerInputFormatORC(FormatFactory &)
 void registerORCSchemaReader(FormatFactory &)
 {
 }
+*/
 }
 
 

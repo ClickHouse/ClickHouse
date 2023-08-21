@@ -12,7 +12,7 @@ int main()
     // String path = "/data1/clickhouse_official/data/user_files/bigolive_audience_stats_orc.orc";
     {
         ReadBufferFromFile in(path);
-        ORCSchemaReader schema_reader(in, {});
+        NativeORCSchemaReader schema_reader(in, {});
         auto schema = schema_reader.readSchema();
         std::cout << "schema:" << schema.toString() << std::endl;
     }
@@ -28,7 +28,7 @@ int main()
 
         content.resize(out.count());
         ReadBufferFromString in2(content);
-        ORCSchemaReader schema_reader(in2, {});
+        NativeORCSchemaReader schema_reader(in2, {});
         auto schema = schema_reader.readSchema();
         std::cout << "schema:" << schema.toString() << std::endl;
     }
