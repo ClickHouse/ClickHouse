@@ -105,7 +105,7 @@ public:
     ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);
 
 private:
-    DataTypes readRowAndGetDataTypes() override;
+    std::optional<DataTypes> readRowAndGetDataTypes() override;
 
     PeekableReadBuffer buf;
     ParserExpression parser;
