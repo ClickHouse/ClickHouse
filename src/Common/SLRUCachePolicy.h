@@ -39,29 +39,29 @@ public:
     {
     }
 
-    size_t weight(std::lock_guard<std::mutex> & /* cache_lock */) const override
+    size_t weight() const override
     {
         return current_size_in_bytes;
     }
 
-    size_t count(std::lock_guard<std::mutex> & /* cache_lock */) const override
+    size_t count() const override
     {
         return cells.size();
     }
 
-    size_t maxSize(std::lock_guard<std::mutex> & /* cache_lock */) const override
+    size_t maxSize() const override
     {
         return max_size_in_bytes;
     }
 
-    void setMaxCount(size_t max_count_, std::lock_guard<std::mutex> & /* cache_lock */) override
+    void setMaxCount(size_t max_count_) override
     {
         max_count = max_count_;
         removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
         removeOverflow(probationary_queue, max_size_in_bytes, current_size_in_bytes, /*is_protected=*/false);
     }
 
-    void setMaxSize(size_t max_size_in_bytes_, std::lock_guard<std::mutex> & /* cache_lock */) override
+    void setMaxSize(size_t max_size_in_bytes_) override
     {
         max_protected_size = calculateMaxProtectedSize(max_size_in_bytes_, size_ratio);
         max_size_in_bytes = max_size_in_bytes_;
@@ -69,7 +69,7 @@ public:
         removeOverflow(probationary_queue, max_size_in_bytes, current_size_in_bytes, /*is_protected=*/false);
     }
 
-    void clear(std::lock_guard<std::mutex> & /* cache_lock */) override
+    void clear() override
     {
         cells.clear();
         probationary_queue.clear();
@@ -78,7 +78,7 @@ public:
         current_protected_size = 0;
     }
 
-    void remove(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) override
+    void remove(const Key & key) override
     {
         auto it = cells.find(key);
         if (it == cells.end())
@@ -95,7 +95,7 @@ public:
         cells.erase(it);
     }
 
-    MappedPtr get(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) override
+    MappedPtr get(const Key & key) override
     {
         auto it = cells.find(key);
         if (it == cells.end())
@@ -116,7 +116,7 @@ public:
         return cell.value;
     }
 
-    std::optional<KeyMapped> getWithKey(const Key & key, std::lock_guard<std::mutex> & /*cache_lock*/) override
+    std::optional<KeyMapped> getWithKey(const Key & key) override
     {
         auto it = cells.find(key);
         if (it == cells.end())
@@ -137,7 +137,7 @@ public:
         return std::make_optional<KeyMapped>({it->first, cell.value});
     }
 
-    void set(const Key & key, const MappedPtr & mapped, std::lock_guard<std::mutex> & /* cache_lock */) override
+    void set(const Key & key, const MappedPtr & mapped) override
     {
         auto [it, inserted] = cells.emplace(std::piecewise_construct,
             std::forward_as_tuple(key),

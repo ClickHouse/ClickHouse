@@ -79,7 +79,7 @@ public:
     MappedPtr get(const Key & key)
     {
         std::lock_guard lock(mutex);
-        auto res = cache_policy->get(key, lock);
+        auto res = cache_policy->get(key);
         if (res)
             ++hits;
         else
@@ -90,7 +90,7 @@ public:
     std::optional<KeyMapped> getWithKey(const Key & key)
     {
         std::lock_guard lock(mutex);
-        auto res = cache_policy->getWithKey(key, lock);
+        auto res = cache_policy->getWithKey(key);
         if (res.has_value())
             ++hits;
         else
@@ -101,7 +101,7 @@ public:
     void set(const Key & key, const MappedPtr & mapped)
     {
         std::lock_guard lock(mutex);
-        cache_policy->set(key, mapped, lock);
+        cache_policy->set(key, mapped);
     }
 
     /// If the value for the key is in the cache, returns it. If it is not, calls load_func() to
@@ -118,7 +118,7 @@ public:
         InsertTokenHolder token_holder;
         {
             std::lock_guard cache_lock(mutex);
-            auto val = cache_policy->get(key, cache_lock);
+            auto val = cache_policy->get(key);
             if (val)
             {
                 ++hits;
@@ -156,7 +156,7 @@ public:
         auto token_it = insert_tokens.find(key);
         if (token_it != insert_tokens.end() && token_it->second.get() == token)
         {
-            cache_policy->set(key, token->value, cache_lock);
+            cache_policy->set(key, token->value);
             result = true;
         }
 
@@ -185,49 +185,49 @@ public:
         insert_tokens.clear();
         hits = 0;
         misses = 0;
-        cache_policy->clear(lock);
+        cache_policy->clear();
     }
 
     void remove(const Key & key)
     {
         std::lock_guard lock(mutex);
-        cache_policy->remove(key, lock);
+        cache_policy->remove(key);
     }
 
     size_t weight() const
     {
         std::lock_guard lock(mutex);
-        return cache_policy->weight(lock);
+        return cache_policy->weight();
     }
 
     size_t count() const
     {
         std::lock_guard lock(mutex);
-        return cache_policy->count(lock);
+        return cache_policy->count();
     }
 
     size_t maxSize() const
     {
         std::lock_guard lock(mutex);
-        return cache_policy->maxSize(lock);
+        return cache_policy->maxSize();
     }
 
     void setMaxCount(size_t max_count)
     {
         std::lock_guard lock(mutex);
-        cache_policy->setMaxCount(max_count, lock);
+        cache_policy->setMaxCount(max_count);
     }
 
     void setMaxSize(size_t max_size_in_bytes)
     {
         std::lock_guard lock(mutex);
-        cache_policy->setMaxSize(max_size_in_bytes, lock);
+        cache_policy->setMaxSize(max_size_in_bytes);
     }
 
     void setQuotaForUser(const String & user_name, size_t max_size_in_bytes, size_t max_entries)
     {
         std::lock_guard lock(mutex);
-        cache_policy->setQuotaForUser(user_name, max_size_in_bytes, max_entries, lock);
+        cache_policy->setQuotaForUser(user_name, max_size_in_bytes, max_entries);
     }
 
     virtual ~CacheBase() = default;
