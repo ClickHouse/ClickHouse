@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 #include <IO/WriteHelpers.h>
 #include <IO/NFS/WriteBufferFromNFS.h>
 #include <sys/uio.h>
@@ -9,13 +9,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int NETWORK_ERROR;
-extern const int CANNOT_OPEN_FILE;
-extern const int CANNOT_FSYNC;
-extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
-extern const int FILE_DOESNT_EXIST;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_FSYNC;
+    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
+    extern const int FILE_DOESNT_EXIST;
 }
-
 
 struct WriteBufferFromNFS::WriteBufferFromNFSImpl
 {
@@ -59,12 +57,11 @@ struct WriteBufferFromNFS::WriteBufferFromNFSImpl
         ::close(fd);
     }
 
-    int write(const char * start, size_t size) const
+    size_t write(const char * start, size_t size) const
     {
         size_t bytes_written = 0;
         ssize_t res = 0;
         {
-            //res = ::write(fd, start, size);
             struct iovec vec[1];
             vec[0].iov_base = const_cast<char*>(start);
             vec[0].iov_len = size;
@@ -96,35 +93,32 @@ struct WriteBufferFromNFS::WriteBufferFromNFSImpl
     }
 };
 
+
 WriteBufferFromNFS::WriteBufferFromNFS(
         const std::string & nfs_file_path_,
         const Poco::Util::AbstractConfiguration & config_,
         const WriteSettings write_settings_,
         size_t buf_size_,
         int flags)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size_)
+    : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , impl(std::make_unique<WriteBufferFromNFSImpl>(nfs_file_path_, config_, write_settings_, flags))
+    , file_name(nfs_file_path_)
 {
 }
-
 
 void WriteBufferFromNFS::nextImpl()
 {
     if (!offset())
         return;
-
     size_t bytes_written = 0;
-
     while (bytes_written != offset())
         bytes_written += impl->write(working_buffer.begin() + bytes_written, offset() - bytes_written);
 }
-
 
 void WriteBufferFromNFS::sync()
 {
     impl->sync();
 }
-
 
 void WriteBufferFromNFS::finalizeImpl()
 {
@@ -138,11 +132,9 @@ void WriteBufferFromNFS::finalizeImpl()
     }
 }
 
-
 WriteBufferFromNFS::~WriteBufferFromNFS()
 {
     finalize();
 }
 
 }
-

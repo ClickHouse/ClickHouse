@@ -3,10 +3,10 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <Common/Stopwatch.h>
-#include <Common/hex.h>
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <base/sleep.h>
+#include <base/hex.h>
 
 #include <sys/stat.h>
 #include <mutex>
@@ -24,8 +24,9 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int CANNOT_GET_SIZE_OF_FIELD;
-    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
 }
+
+#define POINT_TO_STRING(p) getHexUIntLowercase(reinterpret_cast<uint64_t>(static_cast<void*>(p)))
 
 struct ReadBufferFromNFS::ReadBufferFromNFSImpl : public BufferWithOwnMemory<SeekableReadBuffer>
 {
@@ -187,21 +188,15 @@ struct ReadBufferFromNFS::ReadBufferFromNFSImpl : public BufferWithOwnMemory<See
             {
                 read_until_position = position;
                 resetWorkingBuffer();
-                //LOG_TEST(log, "setReadUntilPosition {}. {}", position, getInfoForLog());
+                LOG_TEST(log, "setReadUntilPosition {}. {}", position, getInfoForLog());
             }
         }
-    }
-
-    SeekableReadBuffer::Range getRemainingReadRange() const override
-    {
-        auto range = Range{ .left = static_cast<size_t>(file_offset_of_buffer_end), .right = read_until_position };
-        return range;
     }
 
     String getInfoForLog() override
     {
         auto info = String("NFSImplBufferInfo path ") + nfs_file_path
-            + ", class address " + getHexUIntLowercase(static_cast<void*>(this))
+            + ", class address " + POINT_TO_STRING(this)
             + ", file size " + toString(getFileSize())
             + ", file offset " + toString(file_offset_of_init.load())
             + ", readUntilPosition " + toString(read_until_position.load())
@@ -209,7 +204,7 @@ struct ReadBufferFromNFS::ReadBufferFromNFSImpl : public BufferWithOwnMemory<See
             + ", offset " + toString(offset())
             + ", available " + toString(available())
             + ", buffer size " + toString(internalBuffer().size())
-            + ", buffer address " + getHexUIntLowercase(static_cast<void*>(internalBuffer().begin()));
+            + ", buffer address " + POINT_TO_STRING(internalBuffer().begin());
         return info;
     }
 };
@@ -227,12 +222,10 @@ ReadBufferFromNFS::ReadBufferFromNFS(
         offset_, read_until_position_, use_external_buffer_))
     , log(&Poco::Logger::get("ReadBufferFromNFS"))
 {
-    //LOG_TEST(log, "Constructor {}", getInfoForLog());
 }
 
 ReadBufferFromNFS::~ReadBufferFromNFS()
 {
-    //LOG_TEST(log, "~Constructor {}", getInfoForLog());
 };
 
 bool ReadBufferFromNFS::nextImpl()
@@ -254,7 +247,7 @@ bool ReadBufferFromNFS::nextImpl()
     if (result)
         BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset()); /// use the buffer returned by `impl`
 
-    //LOG_TEST(log, "nextImpl {}", getInfoForLog());
+    LOG_TEST(log, "nextImpl {}", getInfoForLog());
     return result;
 }
 
@@ -263,10 +256,10 @@ bool ReadBufferFromNFS::nextImpl()
 off_t ReadBufferFromNFS::seek(off_t offset_, int whence)
 {
     if (whence != SEEK_SET)
-        throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+        throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
 
     if (offset_ < 0)
-        throw Exception("Seek position is out of bounds. Offset: " + std::to_string(offset_), ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}", offset_);
 
     if (!working_buffer.empty()
         && size_t(offset_) >= impl->getPosition() - working_buffer.size()
@@ -281,7 +274,7 @@ off_t ReadBufferFromNFS::seek(off_t offset_, int whence)
         resetWorkingBuffer();
         impl->seek(offset_, whence);
     }
-    //LOG_TEST(log, "seek offset {}, {}", offset_, getInfoForLog());
+    LOG_TEST(log, "seek offset {}, {}", offset_, getInfoForLog());
     return impl->getPosition();
 }
 
@@ -309,13 +302,8 @@ size_t ReadBufferFromNFS::getFileOffsetOfBufferEnd() const
 off_t ReadBufferFromNFS::getPosition()
 {
     auto position = impl->getPosition() - available();
-    //LOG_TEST(log, "getPosition {}. {}", position, getInfoForLog());
+    LOG_TEST(log, "getPosition {}. {}", position, getInfoForLog());
     return position;
-}
-
-SeekableReadBuffer::Range ReadBufferFromNFS::getRemainingReadRange() const
-{
-    return impl->getRemainingReadRange();
 }
 
 String ReadBufferFromNFS::getFileName() const
@@ -326,17 +314,16 @@ String ReadBufferFromNFS::getFileName() const
 String ReadBufferFromNFS::getInfoForLog()
 {
     auto info = String("NFSBufferInfo path ") + impl->nfs_file_path
-        + ", class address " + getHexUIntLowercase(static_cast<void*>(this));
+        + ", class address " + POINT_TO_STRING(this);
     if (impl != nullptr)
     {
         info += ", file size " + toString(getFileSize())
         + ", file offset " + toString(impl->file_offset_of_init.load())
-        + ", readUntilPosition " + toString(impl->getRemainingReadRange().right.value())
         + ", file position " + toString(impl->getPosition() - available())
         + ", buffer offset " + toString(offset())
         + ", buffer available " + toString(available())
         + ", buffer size " + toString(impl->internalBuffer().size())
-        + ", buffer address " + getHexUIntLowercase(static_cast<void*>(impl->internalBuffer().begin()))
+        + ", buffer address " + POINT_TO_STRING(impl->internalBuffer().begin())
         + ". " + impl->getInfoForLog();
     }
 
@@ -344,4 +331,3 @@ String ReadBufferFromNFS::getInfoForLog()
 }
 
 }
-

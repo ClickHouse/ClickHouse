@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 #include <Common/logger_useful.h>
 #include <Disks/IDisk.h>
 #include <Disks/DiskLocal.h>
@@ -17,20 +17,14 @@ class DiskLocalReservation;
 struct NFSObjectStorageSettings
 {
     size_t min_bytes_for_seek;
-    size_t remote_file_buffer_size;
-    int thread_pool_size;
     int objects_chunk_size_to_delete;
     size_t nfs_max_single_read_retries;
 
     NFSObjectStorageSettings(
             size_t min_bytes_for_seek_,
-            size_t remote_file_buffer_size_,
-            int thread_pool_size_,
             int objects_chunk_size_to_delete_,
             size_t nfs_max_single_read_retries_)
         : min_bytes_for_seek(min_bytes_for_seek_)
-        , remote_file_buffer_size(remote_file_buffer_size_)
-        , thread_pool_size(thread_pool_size_)
         , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
         , nfs_max_single_read_retries(nfs_max_single_read_retries_)
     {
@@ -82,7 +76,7 @@ public:
 
     bool exists(const StoredObject & object) const override;
 
-    void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
@@ -103,7 +97,6 @@ public:
         const StoredObject & object,
         WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
-        FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
@@ -127,11 +120,6 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    void applyNewSettings(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context) override;
-
     std::string generateBlobNameForPath(const std::string & path) override;
 
 private:
@@ -145,4 +133,3 @@ private:
 };
 
 }
-

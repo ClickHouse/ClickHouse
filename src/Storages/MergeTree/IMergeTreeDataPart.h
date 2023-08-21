@@ -249,9 +249,6 @@ public:
     /// If true it means that there are no ZooKeeper node for this part, so it should be deleted only from filesystem
     bool is_duplicate = false;
 
-    /// If true, it means that part is shared by multiple replicas on network file system
-    bool is_shared = false;
-
     /// Frozen by ALTER TABLE ... FREEZE ... It is used for information purposes in system.parts table.
     mutable std::atomic<bool> is_frozen {false};
 

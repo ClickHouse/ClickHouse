@@ -6,9 +6,12 @@
                 <path>/nfs/00/</path>
                 <data_cache_enabled>true</data_cache_enabled>
             </d_nfs>
-            <d_local>
-                <path>./data/</path>
-            </d_local>
+            <d_nfs_cache>
+                <type>cache</type>
+                <disk>d_nfs</disk>
+                <path>./nfs_cache/</path>
+                <max_size>1000000</max_size>
+            </d_nfs_cache>
         </disks>
         <policies>
             <p_nfs>
@@ -18,13 +21,13 @@
                     </main>
                 </volumes>
             </p_nfs>
-            <p_local>
+            <p_nfs_cache>
                 <volumes>
                     <main>
-                        <disk>d_local</disk>
+                        <disk>d_nfs_cache</disk>
                     </main>
                 </volumes>
-            </p_local>
+            </p_nfs_cache>
         </policies>
     </storage_configuration>
 

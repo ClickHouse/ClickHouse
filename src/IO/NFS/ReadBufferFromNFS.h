@@ -1,21 +1,20 @@
 #pragma once
 
-#include <Common/config.h>
-
+#include "config.h"
+#include <string>
+#include <base/types.h>
+#include <Interpreters/Context.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/SeekableReadBuffer.h>
-#include <Interpreters/Context.h>
-#include <string>
-#include <memory>
-#include <base/types.h>
 #include <IO/ReadBufferFromFileBase.h>
 
 
 namespace DB
 {
 
-/** Accepts DFS path to file and opens it.
+/**
+ * Accepts NFS path to file and opens it.
  * Closes file by himself (thus "owns" a file descriptor).
  */
 class ReadBufferFromNFS : public ReadBufferFromFileBase
@@ -47,8 +46,6 @@ public:
 
     void setReadUntilPosition(size_t position) override;
 
-    SeekableReadBuffer::Range getRemainingReadRange() const override;
-
     String getFileName() const override;
 
     String getInfoForLog() override;
@@ -61,4 +58,3 @@ private:
 };
 
 }
-

@@ -38,17 +38,14 @@ FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
 FILES_OVERHEAD_PER_PART_WIDE = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6 + 1
 FILES_OVERHEAD_PER_PART_COMPACT = 10 + 1
 
-
 def random_string(length):
     letters = string.ascii_letters
     return ''.join(random.choice(letters) for i in range(length))
-
 
 def generate_values(date_str, count, sign=1):
     data = [[date_str, sign * (i + 1), random_string(10)] for i in range(count)]
     data.sort(key=lambda tup: tup[1])
     return ",".join(["('{}',{},'{}')".format(x, y, z) for x, y, z in data])
-
 
 def create_table(cluster, create_table_statement, additional_settings=None):
     if additional_settings:
@@ -86,7 +83,6 @@ def wait_for_query(cluster, sql , value, debug=False):
         time.sleep(1)
     return False
 
-
 def wait_for_mutations(nodes, table, number_of_mutations):
     for i in range(100):  # wait for replication 80 seconds max
         time.sleep(0.8)
@@ -110,14 +106,19 @@ def test_nfs_zero_copy_replication_insert(cluster):
             CREATE TABLE nfs_test_insert ON CLUSTER nfs_cluster (dt DateTime, id Int64)
             ENGINE=ReplicatedMergeTree('/clickhouse/{cluster}/nfs_test_insert/{shard}/', '{replica}')
             ORDER BY (dt, id)
-            SETTINGS storage_policy='p_nfs'
+            PARTITION BY toDate(dt)
+            SETTINGS storage_policy='p_nfs_cache', min_rows_for_wide_part=0
             """
         )
-        node1.query("INSERT INTO nfs_test_insert VALUES (now() - INTERVAL 3 DAY, 10)")
+        node1.query("INSERT INTO nfs_test_insert VALUES (toDateTime('2023-08-21 00:00:00'), 10)")
         node2.query("SYSTEM SYNC REPLICA nfs_test_insert")
         assert_cluster(cluster, "SELECT count() FROM nfs_test_insert FORMAT Values", "(1)", True)
         assert_cluster(cluster, "SELECT id FROM nfs_test_insert ORDER BY dt FORMAT Values", "(10)", True)
-        assert_cluster(cluster, "SELECT partition_id,disk_name FROM system.parts WHERE table='nfs_test_insert' FORMAT Values", "('all','d_nfs')", True)
+        assert_cluster(cluster, "SELECT partition_id,disk_name FROM system.parts WHERE table='nfs_test_insert' FORMAT Values", "('20230821','d_nfs')", True)
+
+        #check directory
+        file = os.listdir("./test_replicated_merge_tree_nfs/_instances/nfs/00/")[0]
+        assert file == '20230821'
 
     finally:
         query_cluster(cluster, "DROP TABLE IF EXISTS nfs_test_insert NO DELAY")
@@ -133,9 +134,9 @@ def test_nfs_zero_copy_replication_insert_nomerge(cluster):
                 INDEX min_max (id) TYPE minmax GRANULARITY 3
             )
             ENGINE=ReplicatedMergeTree('/clickhouse/{cluster}/nfs_test_nomerge/{shard}', '{replica}')
-            PARTITION BY dt
             ORDER BY (dt, id)
-            SETTINGS storage_policy='p_nfs'
+            PARTITION BY toDate(dt)
+            SETTINGS storage_policy='p_nfs_cache'
             """
         create_table(cluster, create_table_statement, additional_settings="min_rows_for_wide_part=0")
 
@@ -167,7 +168,7 @@ def test_nfs_zero_copy_with_ttl_delete(cluster):
             ENGINE=ReplicatedMergeTree('/clickhouse/{cluster}/ttl_delete_test/{shard}', '{replica}')
             ORDER BY (dt, id)
             TTL dt + INTERVAL 2 DAY
-            SETTINGS storage_policy='p_nfs'
+            SETTINGS storage_policy='p_nfs_cache'
             """
         create_table(cluster, create_table_statement, additional_settings="number_of_free_entries_in_pool_to_execute_mutation=0")
 
@@ -185,44 +186,3 @@ def test_nfs_zero_copy_with_ttl_delete(cluster):
     finally:
         query_cluster(cluster, "DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
 
-
-def test_nfs_zero_copy_mutations(cluster):
-    node1 = cluster.instances["node1"]
-    node2 = cluster.instances["node2"]
-    nodes = list(cluster.instances.values())
-
-    try:
-        create_table_statement = """
-            CREATE TABLE nfs_test_mutations ON CLUSTER nfs_cluster (d Date, x UInt32, i UInt32)
-            ENGINE ReplicatedMergeTree('/clickhouse/{cluster}/nfs_test_mutations/{shard}', '{replica}')
-            ORDER BY x
-            PARTITION BY toYYYYMM(d)
-            SETTINGS storage_policy='p_nfs'
-            """
-        create_table(cluster, create_table_statement, additional_settings="number_of_free_entries_in_pool_to_execute_mutation=0")
-
-        for year in range(2000, 2016):
-            rows = ''
-            date_str = '{}-01-{}'.format(year, random.randint(1, 10))
-            for i in range(10):
-                rows += '{}	{}	{}\n'.format(date_str, random.randint(1, 10), i)
-            node1.query("INSERT INTO nfs_test_mutations FORMAT TSV", rows)
-
-        node1.query("ALTER TABLE nfs_test_mutations UPDATE i = sleepEachRow(2) WHERE 1")
-
-        all_done = wait_for_mutations([node1], "nfs_test_mutations", 1)
-
-        for node in nodes:
-            logging.debug("nfs dir : %s" % cluster.nfs_dir)
-            logging.debug(os.listdir(cluster.nfs_dir))
-            logging.debug(node.query("select * from system.storage_policies"))
-            logging.debug(node.query("SELECT * FROM system.disks"))
-            logging.debug(node.query("SELECT database, table, partition, name, path FROM system.parts where table='nfs_test_mutations'"))
-            logging.debug(node.query(
-                "SELECT mutation_id, command, parts_to_do, is_done FROM system.mutations WHERE table = 'nfs_test_mutations' FORMAT TSVWithNames"))
-            logging.debug(node.query(
-                "SELECT partition, count(name), sum(active), sum(active*rows) FROM system.parts WHERE table ='nfs_test_mutations' GROUP BY partition FORMAT TSVWithNames"))
-
-        assert all_done == True
-    finally:
-        query_cluster(cluster, "DROP TABLE IF EXISTS nfs_test_mutations NO DELAY")

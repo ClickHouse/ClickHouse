@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Common/config.h>
-
+#include "config.h"
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
-#include <IO/BufferWithOwnMemory.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <fcntl.h>
 #include <string>
@@ -13,10 +12,11 @@
 
 namespace DB
 {
-/** Accepts NFS path to file and opens it.
+/**
+ * Accepts NFS path to file and opens it.
  * Closes file by himself (thus "owns" a file descriptor).
  */
-class WriteBufferFromNFS final : public BufferWithOwnMemory<WriteBuffer>
+class WriteBufferFromNFS final :  public WriteBufferFromFileBase
 {
 
 public:
@@ -35,11 +35,12 @@ public:
 
     void sync() override;
 
+    std::string getFileName() const override { return file_name; }
 private:
     void finalizeImpl() override;
     struct WriteBufferFromNFSImpl;
     std::unique_ptr<WriteBufferFromNFSImpl> impl;
+    const std::string file_name;
 };
 
 }
-
