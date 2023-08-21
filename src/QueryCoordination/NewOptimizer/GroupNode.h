@@ -65,6 +65,21 @@ public:
 
     const std::vector<PhysicalProperties> & getChildrenProp(const PhysicalProperties & physical_properties);
 
+    void addRequiredChildrenProp(ChildrenProp & child_pro)
+    {
+        required_children_prop.emplace_back(child_pro);
+    }
+
+    AlternativeChildrenProp & getRequiredChildrenProp()
+    {
+        return required_children_prop;
+    }
+
+    bool hasRequiredChildrenProp() const
+    {
+        return !required_children_prop.empty();
+    }
+
     bool isEnforceNode() const
     {
         return is_enforce_node;
@@ -91,7 +106,10 @@ private:
 
     std::vector<Group *> children;
 
-    PropAndChildrenProp prop_to_best_child; /// output properties and input properties
+    /// output properties and input properties
+    PropAndChildrenProp prop_to_best_child;
+
+    AlternativeChildrenProp required_children_prop;
 };
 
 }

@@ -11,10 +11,15 @@ GroupNode & Group::addGroupNode(GroupNode & group_plan_node)
 
 Float64 Group::getSatisfyBestCost(const PhysicalProperties & required_properties) const
 {
-    return getSatisfyBestGroupNode(required_properties).second.cost;
+    auto best_node = getSatisfyBestGroupNode(required_properties);
+    if (best_node)
+    {
+        return best_node->second.cost;
+    }
+    return std::numeric_limits<Float64>::max();
 }
 
-std::pair<PhysicalProperties, Group::GroupNodeCost> Group::getSatisfyBestGroupNode(const PhysicalProperties & required_properties) const
+std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>> Group::getSatisfyBestGroupNode(const PhysicalProperties & required_properties) const
 {
     Float64 min_cost = std::numeric_limits<Float64>::max();
 
@@ -34,9 +39,9 @@ std::pair<PhysicalProperties, Group::GroupNodeCost> Group::getSatisfyBestGroupNo
     }
 
     if (!res.second.group_node)
-        throw;
+        return {};
 
-    return res;
+    return {res};
 }
 
 void Group::updatePropBestNode(const PhysicalProperties & properties, GroupNode * group_node, Float64 cost)

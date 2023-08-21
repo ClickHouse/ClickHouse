@@ -47,7 +47,7 @@ public:
 
     Float64 getCostByProp(const PhysicalProperties & properties);
 
-    std::pair<PhysicalProperties, GroupNodeCost> getSatisfyBestGroupNode(const PhysicalProperties & required_properties) const;
+    std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>> getSatisfyBestGroupNode(const PhysicalProperties & required_properties) const;
 
     Float64 getSatisfyBestCost(const PhysicalProperties & required_properties) const;
 
@@ -63,6 +63,7 @@ private:
 
     std::list<GroupNode> group_nodes;
 
+    /// optimize temp result
     std::unordered_map<PhysicalProperties, GroupNodeCost, PhysicalProperties::HashFunction> prop_to_best_node;
 };
 

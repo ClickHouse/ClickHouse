@@ -26,7 +26,7 @@ public:
 
     void enforce();
 
-    Float64 enforce(Group & group, const PhysicalProperties & required_properties);
+    std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>> enforce(Group & group, const PhysicalProperties & required_properties);
 
     void derivationProperties();
 
@@ -37,6 +37,12 @@ public:
     SubQueryPlan extractPlan(Group & group, const PhysicalProperties & required_properties);
 
 private:
+    void enforceGroupNode(
+        const PhysicalProperties & required_prop,
+        const PhysicalProperties & output_prop,
+        GroupNode & group_node,
+        std::vector<std::pair<GroupNode, PhysicalProperties>> & collection);
+
     UInt32 group_id_counter = 0;
 
     UInt32 group_node_id_counter = 0;

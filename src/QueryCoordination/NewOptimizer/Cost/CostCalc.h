@@ -93,7 +93,7 @@ Float64 calcCost(LimitStep & step)
     }
     else
     {
-        return 3;
+        return 2.5;
     }
 };
 
