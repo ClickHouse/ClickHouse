@@ -19,6 +19,19 @@ else ()
     message (FATAL_ERROR "Platform ${CMAKE_SYSTEM_NAME} is not supported")
 endif ()
 
+# Since we always use toolchain files to generate hermatic builds, cmake will
+# always think it's a cross compilation, See
+# https://cmake.org/cmake/help/latest/variable/CMAKE_CROSSCOMPILING.html
+#
+# This will slow down cmake configuration and compilation. For instance, LLVM
+# will try to configure NATIVE LLVM targets with all tests enabled (You'll see
+# Building native llvm-tblgen...).
+#
+# Here we set it manually by checking system name.
+if (${CMAKE_SYSTEM_NAME} STREQUAL ${CMAKE_HOST_SYSTEM_NAME})
+    set (CMAKE_CROSSCOMPILING 0)
+endif ()
+
 if (CMAKE_CROSSCOMPILING)
     if (OS_DARWIN)
         # FIXME: broken dependencies
