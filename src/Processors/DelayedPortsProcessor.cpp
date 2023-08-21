@@ -79,6 +79,9 @@ void DelayedPortsProcessor::finishPair(PortsPair & pair)
 
         if (pair.output_port)
             ++num_finished_outputs;
+
+        if (!pair.is_delayed)
+            ++num_finished_main_inputs;
     }
 }
 
@@ -115,7 +118,7 @@ bool DelayedPortsProcessor::processPair(PortsPair & pair)
 
 bool DelayedPortsProcessor::shouldSkipDelayed() const
 {
-    return (num_finished_inputs + num_delayed_ports) < (port_pairs.size() + num_finished_outputs);
+    return num_finished_main_inputs + num_delayed_ports < port_pairs.size();
 }
 
 IProcessor::Status DelayedPortsProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
