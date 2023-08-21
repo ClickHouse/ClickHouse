@@ -66,16 +66,9 @@ public:
 
     NamesAndTypesList readSchema() override;
 
-    std::optional<size_t> readNumberOrRows() override;
-
 private:
-    void initializeIfNeeded();
-
     bool stream;
     const FormatSettings format_settings;
-    std::shared_ptr<arrow::RecordBatchReader> stream_reader;
-    // The following fields are used only for Arrow format
-    std::shared_ptr<arrow::ipc::RecordBatchFileReader> file_reader;
 };
 
 }

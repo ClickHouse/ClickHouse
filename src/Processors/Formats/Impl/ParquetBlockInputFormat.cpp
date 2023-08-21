@@ -388,19 +388,12 @@ ParquetSchemaReader::ParquetSchemaReader(ReadBuffer & in_, const FormatSettings 
 {
 }
 
-void ParquetSchemaReader::initializeIfNeeded()
-{
-    if (arrow_file)
-        return;
-
-    std::atomic<int> is_stopped{0};
-    arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
-    metadata = parquet::ReadMetaData(arrow_file);
-}
-
 NamesAndTypesList ParquetSchemaReader::readSchema()
 {
-    initializeIfNeeded();
+    std::atomic<int> is_stopped{0};
+    auto file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
+
+    auto metadata = parquet::ReadMetaData(file);
 
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(parquet::arrow::FromParquetSchema(metadata->schema(), &schema));
@@ -410,12 +403,6 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
     if (format_settings.schema_inference_make_columns_nullable)
         return getNamesAndRecursivelyNullableTypes(header);
     return header.getNamesAndTypesList();
-}
-
-std::optional<size_t> ParquetSchemaReader::readNumberOrRows()
-{
-    initializeIfNeeded();
-    return metadata->num_rows();
 }
 
 void registerInputFormatParquet(FormatFactory & factory)

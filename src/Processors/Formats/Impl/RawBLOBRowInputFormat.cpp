@@ -41,10 +41,10 @@ bool RawBLOBRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
 
 size_t RawBLOBRowInputFormat::countRows(size_t)
 {
-    if (in->eof())
+    if (done_count_rows)
         return 0;
 
-    in->ignoreAll();
+    done_count_rows = true;
     return 1;
 }
 
