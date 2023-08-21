@@ -62,7 +62,8 @@ BlockIO InterpreterDropQuery::execute()
 
     if (drop.table)
         return executeToTable(drop);
-    else if (drop.database && !drop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext())) {
+    else if (drop.database && !drop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
+    {
             DDLQueryOnClusterParams params;
             params.access_to_check = getRequiredAccessForDDLOnCluster();
             return executeDDLQueryOnCluster(query_ptr, getContext(), params);
@@ -123,7 +124,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
     if (database && table)
     {
         const auto & settings = getContext()->getSettingsRef();
-        if (query.if_empty) {
+        if (query.if_empty)
+        {
             if (auto rows = table->totalRows(settings); rows > 0)
                 throw Exception(ErrorCodes::TABLE_NOT_EMPTY, "Table {} is not empty", backQuoteIfNeed(table_id.table_name));
         }
