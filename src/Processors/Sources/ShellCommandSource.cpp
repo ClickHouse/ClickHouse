@@ -439,11 +439,7 @@ namespace
                 }
 
                 if (!executor->pull(chunk))
-                {
-                    if (check_exit_code)
-                        command->wait();
                     return {};
-                }
 
                 current_read_rows += chunk.getNumRows();
             }
@@ -465,6 +461,9 @@ namespace
                 for (auto & thread : send_data_threads)
                     if (thread.joinable())
                         thread.join();
+
+                if (check_exit_code && !process_pool)
+                    command->wait();
 
                 rethrowExceptionDuringSendDataIfNeeded();
             }
