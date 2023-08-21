@@ -95,7 +95,7 @@ public:
 private:
     msgpack::object_handle readObject();
     DataTypePtr getDataType(const msgpack::object & object);
-    DataTypes readRowAndGetDataTypes() override;
+    std::optional<DataTypes> readRowAndGetDataTypes() override;
 
     PeekableReadBuffer buf;
     UInt64 number_of_columns;

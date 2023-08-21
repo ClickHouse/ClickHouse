@@ -77,7 +77,7 @@ void writeIPv6Text(const IPv6 & ip, WriteBuffer & buf)
 
 void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trace)
 {
-    writeBinary(e.code(), buf);
+    writeBinaryLittleEndian(e.code(), buf);
     writeBinary(String(e.name()), buf);
     writeBinary(e.displayText() + getExtraExceptionInfo(e), buf);
 

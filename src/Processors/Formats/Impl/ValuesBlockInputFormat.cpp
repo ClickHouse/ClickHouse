@@ -654,7 +654,7 @@ ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & 
 {
 }
 
-DataTypes ValuesSchemaReader::readRowAndGetDataTypes()
+std::optional<DataTypes> ValuesSchemaReader::readRowAndGetDataTypes()
 {
     if (first_row)
     {

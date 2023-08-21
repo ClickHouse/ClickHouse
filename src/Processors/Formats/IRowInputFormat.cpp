@@ -86,7 +86,21 @@ void IRowInputFormat::logError()
 Chunk IRowInputFormat::generate()
 {
     if (total_rows == 0)
-        readPrefix();
+    {
+        try
+        {
+            readPrefix();
+        }
+        catch (Exception & e)
+        {
+            auto file_name = getFileNameFromReadBuffer(getReadBuffer());
+            if (!file_name.empty())
+                e.addMessage(fmt::format("(in file/uri {})", file_name));
+
+            e.addMessage("(while reading header)");
+            throw;
+        }
+    }
 
     const Block & header = getPort().getHeader();
 
