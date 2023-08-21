@@ -5157,7 +5157,9 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
 {
     auto table_id = getStorageID();
 
-    auto parallel_replicas_cluster = local_context->getCluster(local_context->getSettingsRef().cluster_for_parallel_replicas);
+    auto scalars = local_context->hasQueryContext() ? local_context->getQueryContext()->getScalars() : Scalars{};
+    String cluster_for_parallel_replicas = local_context->getSettingsRef().cluster_for_parallel_replicas;
+    auto parallel_replicas_cluster = local_context->getCluster(cluster_for_parallel_replicas);
 
     ASTPtr modified_query_ast;
     Block header;
