@@ -37,12 +37,12 @@ public:
     explicit ICachePolicy(CachePolicyUserQuotaPtr user_quotas_) : user_quotas(std::move(user_quotas_)) {}
     virtual ~ICachePolicy() = default;
 
-    virtual size_t weight() const = 0;
+    virtual size_t sizeInBytes() const = 0;
     virtual size_t count() const = 0;
-    virtual size_t maxSize() const = 0;
+    virtual size_t maxSizeInBytes() const = 0;
 
     virtual void setMaxCount(size_t /*max_count*/) = 0;
-    virtual void setMaxSize(size_t /*max_size_in_bytes*/) = 0;
+    virtual void setMaxSizeInBytes(size_t /*max_size_in_bytes*/) = 0;
     virtual void setQuotaForUser(const String & user_name, size_t max_size_in_bytes, size_t max_entries) { user_quotas->setQuotaForUser(user_name, max_size_in_bytes, max_entries); }
 
     /// HashFunction usually hashes the entire key and the found key will be equal the provided key. In such cases, use get(). It is also

@@ -194,10 +194,10 @@ public:
         cache_policy->remove(key);
     }
 
-    size_t weight() const
+    size_t sizeInBytes() const
     {
         std::lock_guard lock(mutex);
-        return cache_policy->weight();
+        return cache_policy->sizeInBytes();
     }
 
     size_t count() const
@@ -206,10 +206,10 @@ public:
         return cache_policy->count();
     }
 
-    size_t maxSize() const
+    size_t maxSizeInBytes() const
     {
         std::lock_guard lock(mutex);
-        return cache_policy->maxSize();
+        return cache_policy->maxSizeInBytes();
     }
 
     void setMaxCount(size_t max_count)
@@ -218,10 +218,10 @@ public:
         cache_policy->setMaxCount(max_count);
     }
 
-    void setMaxSize(size_t max_size_in_bytes)
+    void setMaxSizeInBytes(size_t max_size_in_bytes)
     {
         std::lock_guard lock(mutex);
-        cache_policy->setMaxSize(max_size_in_bytes);
+        cache_policy->setMaxSizeInBytes(max_size_in_bytes);
     }
 
     void setQuotaForUser(const String & user_name, size_t max_size_in_bytes, size_t max_entries)

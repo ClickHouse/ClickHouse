@@ -34,7 +34,7 @@ public:
     {
     }
 
-    size_t weight() const override
+    size_t sizeInBytes() const override
     {
         return current_size_in_bytes;
     }
@@ -44,7 +44,7 @@ public:
         return cells.size();
     }
 
-    size_t maxSize() const override
+    size_t maxSizeInBytes() const override
     {
         return max_size_in_bytes;
     }
@@ -55,7 +55,7 @@ public:
         removeOverflow();
     }
 
-    void setMaxSize(size_t max_size_in_bytes_) override
+    void setMaxSizeInBytes(size_t max_size_in_bytes_) override
     {
         max_size_in_bytes = max_size_in_bytes_;
         removeOverflow();

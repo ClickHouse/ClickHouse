@@ -2286,7 +2286,7 @@ void Context::updateUncompressedCacheConfiguration(const Poco::Util::AbstractCon
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Uncompressed cache was not created yet.");
 
     size_t max_size_in_bytes = config.getUInt64("uncompressed_cache_size", DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE);
-    shared->uncompressed_cache->setMaxSize(max_size_in_bytes);
+    shared->uncompressed_cache->setMaxSizeInBytes(max_size_in_bytes);
 }
 
 UncompressedCachePtr Context::getUncompressedCache() const
@@ -2321,7 +2321,7 @@ void Context::updateMarkCacheConfiguration(const Poco::Util::AbstractConfigurati
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache was not created yet.");
 
     size_t max_size_in_bytes = config.getUInt64("mark_cache_size", DEFAULT_MARK_CACHE_MAX_SIZE);
-    shared->mark_cache->setMaxSize(max_size_in_bytes);
+    shared->mark_cache->setMaxSizeInBytes(max_size_in_bytes);
 }
 
 MarkCachePtr Context::getMarkCache() const
@@ -2371,7 +2371,7 @@ void Context::updateIndexUncompressedCacheConfiguration(const Poco::Util::Abstra
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache was not created yet.");
 
     size_t max_size_in_bytes = config.getUInt64("index_uncompressed_cache_size", DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE);
-    shared->index_uncompressed_cache->setMaxSize(max_size_in_bytes);
+    shared->index_uncompressed_cache->setMaxSizeInBytes(max_size_in_bytes);
 }
 
 UncompressedCachePtr Context::getIndexUncompressedCache() const
@@ -2406,7 +2406,7 @@ void Context::updateIndexMarkCacheConfiguration(const Poco::Util::AbstractConfig
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache was not created yet.");
 
     size_t max_size_in_bytes = config.getUInt64("index_mark_cache_size", DEFAULT_INDEX_MARK_CACHE_MAX_SIZE);
-    shared->index_mark_cache->setMaxSize(max_size_in_bytes);
+    shared->index_mark_cache->setMaxSizeInBytes(max_size_in_bytes);
 }
 
 MarkCachePtr Context::getIndexMarkCache() const
@@ -2441,7 +2441,7 @@ void Context::updateMMappedFileCacheConfiguration(const Poco::Util::AbstractConf
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped file cache was not created yet.");
 
     size_t max_size_in_bytes = config.getUInt64("mmap_cache_size", DEFAULT_MMAP_CACHE_MAX_SIZE);
-    shared->mmap_cache->setMaxSize(max_size_in_bytes);
+    shared->mmap_cache->setMaxSizeInBytes(max_size_in_bytes);
 }
 
 MMappedFileCachePtr Context::getMMappedFileCache() const
