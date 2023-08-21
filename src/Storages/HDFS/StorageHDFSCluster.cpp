@@ -21,6 +21,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <TableFunctions/TableFunctionHDFSCluster.h>
 #include <memory>

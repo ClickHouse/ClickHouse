@@ -912,6 +912,19 @@ bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &ext
     return false;
 }
 
+size_t AvroRowInputFormat::countRows(size_t max_block_size)
+{
+    size_t num_rows = 0;
+    while (file_reader_ptr->hasMore() && num_rows < max_block_size)
+    {
+        file_reader_ptr->decr();
+        file_reader_ptr->decoder().drain();
+        ++num_rows;
+    }
+
+    return num_rows;
+}
+
 class AvroConfluentRowInputFormat::SchemaRegistry
 {
 public:

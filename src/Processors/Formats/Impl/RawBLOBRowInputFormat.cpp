@@ -39,6 +39,15 @@ bool RawBLOBRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
     return false;
 }
 
+size_t RawBLOBRowInputFormat::countRows(size_t)
+{
+    if (in->eof())
+        return 0;
+
+    in->ignoreAll();
+    return 1;
+}
+
 void registerInputFormatRawBLOB(FormatFactory & factory)
 {
     factory.registerInputFormat("RawBLOB", [](

@@ -2371,6 +2371,17 @@ See also:
 
 - [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
 
+## optimize_count_from_files {#optimize_count_from_files}
+
+Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
+
+Possible values:
+
+- 0 — Optimization disabled.
+- 1 — Optimization enabled.
+
+Default value: `1`.
+
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 - Type: seconds

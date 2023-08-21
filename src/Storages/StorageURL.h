@@ -1,17 +1,17 @@
 #pragma once
 
-#include <Poco/URI.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/ISource.h>
 #include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
-#include <Storages/IStorage.h>
-#include <Storages/StorageFactory.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
+#include <Processors/ISource.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/IStorage.h>
 #include <Storages/StorageConfiguration.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Poco/URI.h>
 
 
 namespace DB
@@ -173,7 +173,8 @@ public:
         size_t download_threads,
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
-        bool glob_url = false);
+        bool glob_url = false,
+        bool need_only_count_ = false);
 
     String getName() const override { return name; }
 
@@ -205,6 +206,7 @@ private:
     Block block_for_format;
     std::shared_ptr<IteratorWrapper> uri_iterator;
     Poco::URI curr_uri;
+    bool need_only_count;
 
     std::unique_ptr<ReadBuffer> read_buf;
     std::shared_ptr<IInputFormat> input_format;

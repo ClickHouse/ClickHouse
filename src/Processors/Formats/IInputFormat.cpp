@@ -28,4 +28,10 @@ void IInputFormat::setReadBuffer(ReadBuffer & in_)
     in = &in_;
 }
 
+Chunk IInputFormat::getChunkForCount(size_t rows)
+{
+    const auto & header = getPort().getHeader();
+    return cloneConstWithDefault(Chunk{header.getColumns(), 0}, rows);
+}
+
 }

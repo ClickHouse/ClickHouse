@@ -248,7 +248,8 @@ public:
         String compression_hint_,
         AzureObjectStorage * object_storage_,
         const String & container_,
-        std::shared_ptr<IIterator> file_iterator_);
+        std::shared_ptr<IIterator> file_iterator_,
+        bool need_only_count_);
 
     ~StorageAzureBlobSource() override;
 
@@ -269,6 +270,7 @@ private:
     AzureObjectStorage * object_storage;
     String container;
     std::shared_ptr<IIterator> file_iterator;
+    bool need_only_count;
 
     struct ReaderHolder
     {

@@ -306,6 +306,12 @@ Chunk ParquetBlockInputFormat::generate()
 {
     initializeIfNeeded();
 
+    if (is_stopped || row_groups_completed == row_groups.size())
+        return {};
+
+    if (need_only_count)
+        return getChunkForCount(metadata->RowGroup(static_cast<int>(row_groups_completed++))->num_rows());
+
     std::unique_lock lock(mutex);
 
     while (true)
@@ -382,12 +388,19 @@ ParquetSchemaReader::ParquetSchemaReader(ReadBuffer & in_, const FormatSettings 
 {
 }
 
+void ParquetSchemaReader::initializeIfNeeded()
+{
+    if (arrow_file)
+        return;
+
+    std::atomic<int> is_stopped{0};
+    arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
+    metadata = parquet::ReadMetaData(arrow_file);
+}
+
 NamesAndTypesList ParquetSchemaReader::readSchema()
 {
-    std::atomic<int> is_stopped{0};
-    auto file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
-
-    auto metadata = parquet::ReadMetaData(file);
+    initializeIfNeeded();
 
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(parquet::arrow::FromParquetSchema(metadata->schema(), &schema));
@@ -397,6 +410,12 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
     if (format_settings.schema_inference_make_columns_nullable)
         return getNamesAndRecursivelyNullableTypes(header);
     return header.getNamesAndTypesList();
+}
+
+std::optional<size_t> ParquetSchemaReader::readNumberOrRows()
+{
+    initializeIfNeeded();
+    return metadata->num_rows();
 }
 
 void registerInputFormatParquet(FormatFactory & factory)

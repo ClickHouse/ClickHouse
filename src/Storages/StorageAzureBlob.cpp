@@ -694,6 +694,9 @@ Pipe StorageAzureBlob::read(
     }
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+        && local_context->getSettingsRef().optimize_count_from_files;
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageAzureBlobSource>(
@@ -706,7 +709,8 @@ Pipe StorageAzureBlob::read(
             configuration.compression_method,
             object_storage.get(),
             configuration.container,
-            iterator_wrapper));
+            iterator_wrapper,
+            need_only_count));
     }
 
     return Pipe::unitePipes(std::move(pipes));
@@ -1094,7 +1098,8 @@ StorageAzureBlobSource::StorageAzureBlobSource(
     String compression_hint_,
     AzureObjectStorage * object_storage_,
     const String & container_,
-    std::shared_ptr<IIterator> file_iterator_)
+    std::shared_ptr<IIterator> file_iterator_,
+    bool need_only_count_)
     :ISource(info.source_header, false)
     , WithContext(context_)
     , requested_columns(info.requested_columns)
@@ -1109,6 +1114,7 @@ StorageAzureBlobSource::StorageAzureBlobSource(
     , object_storage(std::move(object_storage_))
     , container(container_)
     , file_iterator(file_iterator_)
+    , need_only_count(need_only_count_)
     , create_reader_pool(CurrentMetrics::ObjectStorageAzureThreads, CurrentMetrics::ObjectStorageAzureThreadsActive, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "AzureReader"))
 {
@@ -1138,10 +1144,18 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
     auto compression_method = chooseCompressionMethod(current_key, compression_hint);
 
     auto read_buf = createAzureReadBuffer(current_key, object_size);
+
+    std::optional<size_t> max_parsing_threads;
+    if (need_only_count)
+        max_parsing_threads = 1;
+
     auto input_format = FormatFactory::instance().getInput(
             format, *read_buf, sample_block, getContext(), max_block_size,
-            format_settings, std::nullopt, std::nullopt,
+            format_settings, max_parsing_threads, std::nullopt,
             /* is_remote_fs */ true, compression_method);
+
+    if (need_only_count)
+        input_format->needOnlyCount();
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));

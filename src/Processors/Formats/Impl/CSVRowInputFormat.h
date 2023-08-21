@@ -28,6 +28,7 @@ public:
 
     void setReadBuffer(ReadBuffer & in_) override;
     void resetParser() override;
+//    size_t countRows(size_t max_block_size) override;
 
 protected:
     CSVRowInputFormat(const Block & header_, std::shared_ptr<PeekableReadBuffer> in_, const Params & params_,
@@ -39,6 +40,8 @@ protected:
 private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
+
+    bool supportsCountRows() const override { return true; }
 
 protected:
     std::shared_ptr<PeekableReadBuffer> buf;
@@ -58,6 +61,8 @@ public:
     }
 
     bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
+
+    void skipRow() override;
 
     void skipField(size_t /*file_column*/) override { skipField(); }
     void skipField();

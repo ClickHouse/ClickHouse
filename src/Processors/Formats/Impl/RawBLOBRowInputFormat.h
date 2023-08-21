@@ -21,6 +21,8 @@ public:
     String getName() const override { return "RawBLOBRowInputFormat"; }
 
 private:
+    bool supportsCountRows() const override { return true; }
+    size_t countRows(size_t max_block_size) override;
     bool readRow(MutableColumns & columns, RowReadExtension &) override;
 };
 
