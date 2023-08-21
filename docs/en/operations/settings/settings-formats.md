@@ -627,6 +627,13 @@ Column type should be String. If value is empty, default names `row_{i}`will be 
 
 Default value: ''.
 
+### input_format_json_compact_allow_variable_number_of_columns {#input_format_json_compact_allow_variable_number_of_columns}
+
+Allow variable number of columns in rows in JSONCompact/JSONCompactEachRow input formats.
+Ignore extra columns in rows with more columns than expected and treat missing columns as default values.
+
+Disabled by default.
+
 ## TSV format settings {#tsv-format-settings}
 
 ### input_format_tsv_empty_as_default {#input_format_tsv_empty_as_default}
@@ -761,6 +768,13 @@ My NULL
 ### input_format_tsv_skip_trailing_empty_lines {input_format_tsv_skip_trailing_empty_lines}
 
 When enabled, trailing empty lines at the end of TSV file will be skipped.
+
+Disabled by default.
+
+### input_format_tsv_allow_variable_number_of_columns {#input_format_tsv_allow_variable_number_of_columns}
+
+Allow variable number of columns in rows in TSV input format.
+Ignore extra columns in rows with more columns than expected and treat missing columns as default values.
 
 Disabled by default.
 
@@ -955,9 +969,11 @@ Result
 ```text
 "  string  "
 ```
+
 ### input_format_csv_allow_variable_number_of_columns {#input_format_csv_allow_variable_number_of_columns}
 
-ignore extra columns in CSV input (if file has more columns than expected) and treat missing fields in CSV input as default values.
+Allow variable number of columns in rows in CSV input format.
+Ignore extra columns in rows with more columns than expected and treat missing columns as default values.
 
 Disabled by default.
 
@@ -1222,6 +1238,12 @@ Disabled by default.
 Allow skipping columns with unsupported types while schema inference for format Parquet.
 
 Disabled by default.
+
+### input_format_parquet_local_file_min_bytes_for_seek {#input_format_parquet_local_file_min_bytes_for_seek}
+
+min bytes required for local read (file) to do seek, instead of read with ignore in Parquet input format.
+
+Default value - `8192`.
 
 ### output_format_parquet_string_as_string {#output_format_parquet_string_as_string}
 
@@ -1562,6 +1584,13 @@ Default value: `''`.
 ### input_format_custom_skip_trailing_empty_lines {input_format_custom_skip_trailing_empty_lines}
 
 When enabled, trailing empty lines at the end of file in CustomSeparated format will be skipped.
+
+Disabled by default.
+
+### input_format_custom_allow_variable_number_of_columns {#input_format_custom_allow_variable_number_of_columns}
+
+Allow variable number of columns in rows in CustomSeparated input format.
+Ignore extra columns in rows with more columns than expected and treat missing columns as default values.
 
 Disabled by default.
 
