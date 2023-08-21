@@ -29,68 +29,69 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 CONFIG_DIR = os.path.join(SCRIPT_DIR, "configs")
 
 
-def test_mark_cache_size_is_runtime_configurable(start_cluster):
-    # the initial config specifies the mark cache size as 496 bytes, just enough to hold two marks
-    node.query("SYSTEM DROP MARK CACHE")
-
-    node.query("CREATE TABLE test1 (val String) ENGINE=MergeTree ORDER BY val")
-    node.query("INSERT INTO test1 VALUES ('abc') ('def') ('ghi')")
-    node.query("SELECT * FROM test1 WHERE val = 'def'")  # cache 1st mark
-
-    node.query("CREATE TABLE test2 (val String) ENGINE=MergeTree ORDER BY val")
-    node.query("INSERT INTO test2 VALUES ('abc') ('def') ('ghi')")
-    node.query("SELECT * FROM test2 WHERE val = 'def'")  # cache 2nd mark
-
-    # Result checking is based on asynchronous metrics. These are calculated by default every 1.0 sec, and this is also the
-    # smallest possible value. Found no statement to force-recalculate them, therefore waaaaait...
-    time.sleep(2.0)
-    res = node.query(
-        "SELECT value FROM system.asynchronous_metrics WHERE metric LIKE 'MarkCacheFiles'"
-    )
-    assert res == "2\n"
-    res = node.query(
-        "SELECT value FROM system.asynchronous_metrics WHERE metric LIKE 'MarkCacheBytes'"
-    )
-    assert res == "496\n"
-
-    # switch to a config with a mark cache size of 248 bytes
-    node.copy_file_to_container(
-        os.path.join(CONFIG_DIR, "smaller_mark_cache.xml"),
-        "/etc/clickhouse-server/config.d/default.xml",
-    )
-
-    node.query("SYSTEM RELOAD CONFIG")
-
-    # check that eviction worked as expected
-    time.sleep(2.0)
-    res = node.query(
-        "SELECT value FROM system.asynchronous_metrics WHERE metric LIKE 'MarkCacheFiles'"
-    )
-    assert res == "1\n"
-    res = node.query(
-        "SELECT value FROM system.asynchronous_metrics WHERE metric LIKE 'MarkCacheBytes'"
-    )
-    assert res == "248\n"
-
-    # check that the new mark cache maximum size is respected when more marks are cached
-    node.query("CREATE TABLE test3 (val String) ENGINE=MergeTree ORDER BY val")
-    node.query("INSERT INTO test3 VALUES ('abc') ('def') ('ghi')")
-    node.query("SELECT * FROM test3 WHERE val = 'def'")
-    time.sleep(2.0)
-    res = node.query(
-        "SELECT value FROM system.asynchronous_metrics WHERE metric LIKE 'MarkCacheFiles'"
-    )
-    assert res == "1\n"
-    res = node.query(
-        "SELECT value FROM system.asynchronous_metrics WHERE metric LIKE 'MarkCacheBytes'"
-    )
-    assert res == "248\n"
-
-    # restore the original config
-    node.copy_file_to_container(
-        os.path.join(CONFIG_DIR, "default.xml"),
-        "/etc/clickhouse-server/config.d/default.xml",
-    )
+# temporarily disabled due to https://github.com/ClickHouse/ClickHouse/pull/51446#issuecomment-1687066351
+# def test_mark_cache_size_is_runtime_configurable(start_cluster):
+#     # the initial config specifies the mark cache size as 496 bytes, just enough to hold two marks
+#     node.query("SYSTEM DROP MARK CACHE")
+#
+#     node.query("CREATE TABLE test1 (val String) ENGINE=MergeTree ORDER BY val")
+#     node.query("INSERT INTO test1 VALUES ('abc') ('def') ('ghi')")
+#     node.query("SELECT * FROM test1 WHERE val = 'def'")  # cache 1st mark
+#
+#     node.query("CREATE TABLE test2 (val String) ENGINE=MergeTree ORDER BY val")
+#     node.query("INSERT INTO test2 VALUES ('abc') ('def') ('ghi')")
+#     node.query("SELECT * FROM test2 WHERE val = 'def'")  # cache 2nd mark
+#
+#     # Result checking is based on asynchronous metrics. These are calculated by default every 1.0 sec, and this is also the
+#     # smallest possible value. Found no statement to force-recalculate them, therefore waaaaait...
+#     time.sleep(2.0)
+#     res = node.query(
+#         "SELECT value FROM system.asynchronous_metrics WHERE metric LIKE 'MarkCacheFiles'"
+#     )
+#     assert res == "2\n"
+#     res = node.query(
+#         "SELECT value FROM system.asynchronous_metrics WHERE metric LIKE 'MarkCacheBytes'"
+#     )
+#     assert res == "496\n"
+#
+#     # switch to a config with a mark cache size of 248 bytes
+#     node.copy_file_to_container(
+#         os.path.join(CONFIG_DIR, "smaller_mark_cache.xml"),
+#         "/etc/clickhouse-server/config.d/default.xml",
+#     )
+#
+#     node.query("SYSTEM RELOAD CONFIG")
+#
+#     # check that eviction worked as expected
+#     time.sleep(2.0)
+#     res = node.query(
+#         "SELECT value FROM system.asynchronous_metrics WHERE metric LIKE 'MarkCacheFiles'"
+#     )
+#     assert res == "1\n"
+#     res = node.query(
+#         "SELECT value FROM system.asynchronous_metrics WHERE metric LIKE 'MarkCacheBytes'"
+#     )
+#     assert res == "248\n"
+#
+#     # check that the new mark cache maximum size is respected when more marks are cached
+#     node.query("CREATE TABLE test3 (val String) ENGINE=MergeTree ORDER BY val")
+#     node.query("INSERT INTO test3 VALUES ('abc') ('def') ('ghi')")
+#     node.query("SELECT * FROM test3 WHERE val = 'def'")
+#     time.sleep(2.0)
+#     res = node.query(
+#         "SELECT value FROM system.asynchronous_metrics WHERE metric LIKE 'MarkCacheFiles'"
+#     )
+#     assert res == "1\n"
+#     res = node.query(
+#         "SELECT value FROM system.asynchronous_metrics WHERE metric LIKE 'MarkCacheBytes'"
+#     )
+#     assert res == "248\n"
+#
+#     # restore the original config
+#     node.copy_file_to_container(
+#         os.path.join(CONFIG_DIR, "default.xml"),
+#         "/etc/clickhouse-server/config.d/default.xml",
+#     )
 
 
 def test_query_cache_size_is_runtime_configurable(start_cluster):
