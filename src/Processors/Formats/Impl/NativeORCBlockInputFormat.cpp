@@ -97,7 +97,7 @@ std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
     return std::make_unique<ORCInputStreamFromString>(std::move(file_data), file_size);
 }
 
-static DataTypePtr parseORCType(const orc::Type * orc_type)
+static DataTypePtr parseORCType(const orc::Type * orc_type, bool skip_columns_with_unsupported_types, bool & skipped)
 {
     assert(orc_type != nullptr);
 
@@ -143,15 +143,24 @@ static DataTypePtr parseORCType(const orc::Type * orc_type)
             if (subtype_count != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Orc List type {}", orc_type->toString());
 
-            DataTypePtr nested_type = parseORCType(orc_type->getSubtype(0));
+            DataTypePtr nested_type = parseORCType(orc_type->getSubtype(0), skip_columns_with_unsupported_types, skipped);
+            if (skipped)
+                return {};
+
             return std::make_shared<DataTypeArray>(nested_type);
         }
         case orc::TypeKind::MAP: {
             if (subtype_count != 2)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Orc Map type {}", orc_type->toString());
 
-            DataTypePtr key_type = parseORCType(orc_type->getSubtype(0));
-            DataTypePtr value_type = parseORCType(orc_type->getSubtype(1));
+            DataTypePtr key_type = parseORCType(orc_type->getSubtype(0), skip_columns_with_unsupported_types, skipped);
+            if (skipped)
+                return {};
+
+            DataTypePtr value_type = parseORCType(orc_type->getSubtype(1), skip_columns_with_unsupported_types, skipped);
+            if (skipped)
+                return {};
+
             return std::make_shared<DataTypeMap>(key_type, value_type);
         }
         case orc::TypeKind::STRUCT: {
@@ -162,13 +171,29 @@ static DataTypePtr parseORCType(const orc::Type * orc_type)
 
             for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
             {
-                nested_types.push_back(parseORCType(orc_type->getSubtype(i)));
+                auto parsed_type = parseORCType(orc_type->getSubtype(i), skip_columns_with_unsupported_types, skipped);
+                if (skipped)
+                    return {};
+
+                nested_types.push_back(parsed_type);
                 nested_names.push_back(orc_type->getFieldName(i));
             }
             return std::make_shared<DataTypeTuple>(nested_types, nested_names);
         }
-        default:
-            throw Exception(ErrorCodes::UNKNOWN_TYPE, "ORC type {} is not supported", orc_type->toString());
+        default: {
+            if (skip_columns_with_unsupported_types)
+            {
+                skipped = true;
+                return {};
+            }
+
+            throw Exception(
+                ErrorCodes::UNKNOWN_TYPE,
+                "Unsupported ORC type '{}'."
+                "If you want to skip columns with unsupported types, "
+                "you can enable setting input_format_orc_skip_columns_with_unsupported_types_in_schema_inference",
+                orc_type->toString());
+        }
     }
 }
 
@@ -192,8 +217,11 @@ static void getFileReaderAndSchema(
     {
         const std::string & name = schema.getFieldName(i);
         const orc::Type * orc_type = schema.getSubtype(i);
-        DataTypePtr type = parseORCType(orc_type);
-        header.insert(ColumnWithTypeAndName{type, name});
+
+        bool skipped = false;
+        DataTypePtr type = parseORCType(orc_type, format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference, skipped);
+        if (!skipped)
+            header.insert(ColumnWithTypeAndName{type, name});
     }
 }
 
@@ -668,10 +696,10 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
     const orc::Type * orc_type,
     const std::string & column_name,
     bool inside_nullable,
-    bool skip_columns_with_unsupported_types,
-    bool & skipped,
     DataTypePtr type_hint = nullptr)
 {
+    bool skipped = false;
+
     if (!inside_nullable && (orc_column->hasNulls || (type_hint && type_hint->isNullable()))
         && (orc_type->getKind() != orc::LIST && orc_type->getKind() != orc::MAP && orc_type->getKind() != orc::STRUCT))
     {
@@ -679,11 +707,7 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
         if (type_hint)
             nested_type_hint = removeNullable(type_hint);
 
-        auto nested_column = readColumnFromORCColumn(
-            orc_column, orc_type, column_name, true, skip_columns_with_unsupported_types, skipped, nested_type_hint);
-
-        if (skipped)
-            return {};
+        auto nested_column = readColumnFromORCColumn(orc_column, orc_type, column_name, true, nested_type_hint);
 
         auto nullmap_column = readByteMapFromORCColumn(orc_column);
         auto nullable_type = std::make_shared<DataTypeNullable>(std::move(nested_column.type));
@@ -762,7 +786,8 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
         case orc::TIMESTAMP:
             return readColumnWithTimestampData(orc_column, orc_type, column_name);
         case orc::DECIMAL: {
-            auto interal_type = parseORCType(orc_type);
+            auto interal_type = parseORCType(orc_type, false, skipped);
+
             auto precision = orc_type->getPrecision();
             if (precision == 0)
                 precision = 38;
@@ -800,11 +825,7 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
             const auto * orc_key_type = orc_type->getSubtype(0);
             const auto * orc_value_type = orc_type->getSubtype(1);
 
-            auto key_column = readColumnFromORCColumn(
-                orc_key_column, orc_key_type, "key", false, skip_columns_with_unsupported_types, skipped, key_type_hint);
-            if (skipped)
-                return {};
-
+            auto key_column = readColumnFromORCColumn(orc_key_column, orc_key_type, "key", false, key_type_hint);
             if (key_type_hint && !key_type_hint->equals(*key_column.type))
             {
                 /// Cast key column to target type, because it can happen
@@ -813,8 +834,7 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
                 key_column.type = key_type_hint;
             }
 
-            auto value_column = readColumnFromORCColumn(
-                orc_value_column, orc_value_type, "value", false, skip_columns_with_unsupported_types, skipped, value_type_hint);
+            auto value_column = readColumnFromORCColumn(orc_value_column, orc_value_type, "value", false, value_type_hint);
             if (skipped)
                 return {};
 
@@ -843,11 +863,7 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
             const auto * orc_list_column = dynamic_cast<const orc::ListVectorBatch *>(orc_column);
             const auto * orc_nested_column = getNestedORCColumn(orc_list_column);
             const auto * orc_nested_type = orc_type->getSubtype(0);
-            auto nested_column = readColumnFromORCColumn(
-                orc_nested_column, orc_nested_type, column_name, false, skip_columns_with_unsupported_types, skipped, nested_type_hint);
-
-            if (skipped)
-                return {};
+            auto nested_column = readColumnFromORCColumn(orc_nested_column, orc_nested_type, column_name, false, nested_type_hint);
 
             auto offsets_column = readOffsetsFromORCListColumn(orc_list_column);
             auto array_column = ColumnArray::create(nested_column.column, offsets_column);
@@ -880,11 +896,7 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
 
                 const auto * nested_orc_column = orc_struct_column->fields[i];
                 const auto * nested_orc_type = orc_type->getSubtype(i);
-                auto element = readColumnFromORCColumn(
-                    nested_orc_column, nested_orc_type, field_name, false, skip_columns_with_unsupported_types, skipped, nested_type_hint);
-
-                if (skipped)
-                    return {};
+                auto element = readColumnFromORCColumn(nested_orc_column, nested_orc_type, field_name, false, nested_type_hint);
 
                 tuple_elements.emplace_back(std::move(element.column));
                 tuple_types.emplace_back(std::move(element.type));
@@ -895,22 +907,9 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
             auto tuple_type = std::make_shared<DataTypeTuple>(std::move(tuple_types), std::move(tuple_names));
             return {std::move(tuple_column), std::move(tuple_type), column_name};
         }
-        default: {
-            if (skip_columns_with_unsupported_types)
-            {
-                skipped = true;
-                return {};
-            }
-
+        default:
             throw Exception(
-                ErrorCodes::UNKNOWN_TYPE,
-                "Unsupported ORC type '{}' of an input column '{}'. "
-                "If it happens during schema inference and you want to skip columns with "
-                "unsupported types, you can enable setting input_format_orc"
-                "_skip_columns_with_unsupported_types_in_schema_inference",
-                orc_type->toString(),
-                column_name);
-        }
+                ErrorCodes::UNKNOWN_TYPE, "Unsupported ORC type {} while reading column {}.", orc_type->toString(), column_name);
     }
 }
 
@@ -920,7 +919,6 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
     Columns columns_list;
     columns_list.reserve(header.columns());
     std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
-    bool skipped = false;
     for (size_t column_i = 0, columns = header.columns(); column_i < columns; ++column_i)
     {
         const ColumnWithTypeAndName & header_column = header.getByPosition(column_i);
@@ -953,13 +951,7 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
 
                     auto orc_column_with_type = name_to_column_ptr[search_nested_table_name];
                     ColumnsWithTypeAndName cols = {readColumnFromORCColumn(
-                        orc_column_with_type.first,
-                        orc_column_with_type.second,
-                        nested_table_name,
-                        false,
-                        false,
-                        skipped,
-                        nested_table_type)};
+                        orc_column_with_type.first, orc_column_with_type.second, nested_table_name, false, nested_table_type)};
                     BlockPtr block_ptr = std::make_shared<Block>(cols);
                     auto column_extractor = std::make_shared<NestedColumnExtractHelper>(*block_ptr, case_insensitive_matching);
                     nested_tables[search_nested_table_name] = {block_ptr, column_extractor};
@@ -995,7 +987,7 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
         {
             auto orc_column_with_type = name_to_column_ptr[search_column_name];
             column = readColumnFromORCColumn(
-                orc_column_with_type.first, orc_column_with_type.second, header_column.name, false, false, skipped, header_column.type);
+                orc_column_with_type.first, orc_column_with_type.second, header_column.name, false, header_column.type);
         }
 
         if (null_as_default)
