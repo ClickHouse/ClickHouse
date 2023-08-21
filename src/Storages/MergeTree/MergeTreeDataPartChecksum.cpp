@@ -312,18 +312,6 @@ MergeTreeDataPartChecksums::Checksum::uint128 MergeTreeDataPartChecksums::getTot
     return getSipHash128AsPair(hash_of_all_files);
 }
 
-String MergeTreeDataPartChecksums::getFileNameOrHash(const String & name) const
-{
-    if (files.contains(name + ".bin"))
-        return name;
-
-    auto hash = sipHash128String(name);
-    if (files.contains(hash + ".bin"))
-        return hash;
-
-    return name;
-}
-
 void MinimalisticDataPartChecksums::serialize(WriteBuffer & to) const
 {
     writeString("checksums format version: 5\n", to);
