@@ -348,6 +348,18 @@
             padding: 2rem;
         }
 
+        .result-value {
+            display: none;
+            z-index: 10;
+            position: absolute;
+            color: var(--title-color);
+            font-size: 5vw;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            padding: 2rem;
+        }
+
         textarea {
             padding: 0.5rem;
             outline: none;
@@ -751,6 +763,11 @@ function insertChart(i) {
     query_error.appendChild(document.createTextNode(''));
     chart.appendChild(query_error);
 
+    let result_value = document.createElement('div');
+    result_value.className = 'result-value';
+    result_value.appendChild(document.createTextNode(''));
+    chart.appendChild(result_value);
+
     let query_editor = document.createElement('div');
     query_editor.className = 'query-editor';
 
@@ -1125,9 +1142,9 @@ async function draw(idx, chart, url_params, query) {
             error = "Query should return an array.";
         } else if (data.length == 0) {
             error = "Query returned empty result.";
-        } else if (data.length != 2) {
+        } else if (data.length > 2) {
             error = "Query should return exactly two columns: unix timestamp and value.";
-        } else if (!Array.isArray(data[0]) || !Array.isArray(data[1]) || data[0].length != data[1].length) {
+        } else if (data.length == 2 && (!Array.isArray(data[0]) || !Array.isArray(data[1]) || data[0].length != data[1].length)) {
             error = "Wrong data format of the query.";
         }
     }
@@ -1145,36 +1162,47 @@ async function draw(idx, chart, url_params, query) {
         title_div.style.display = 'block';
     }
 
-    const [line_color, fill_color, grid_color, axes_color] = theme != 'dark'
-        ? ["#F88", "#FEE", "#EED", "#2c3235"]
-        : ["#864", "#045", "#2c3235", "#c7d0d9"];
+    const single_value = data.length == 1;
 
-    let sync = uPlot.sync("sync");
+    if (single_value) {
 
-    const max_value = Math.max(...data[1]);
+        let result_value = chart.querySelector('.result-value');
+        result_value.firstChild.data = data[0][0];
+        result_value.style.display = 'block';
 
-    const opts = {
-        width: chart.clientWidth,
-        height: chart.clientHeight,
-        axes: [ { stroke: axes_color,
-                  grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-                  ticks: { width: 1 / devicePixelRatio, stroke: grid_color } },
-                { stroke: axes_color,
-                  grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-                  ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
-        series: [ { label: "x" },
-                  { label: "y", stroke: line_color, fill: fill_color } ],
-        padding: [ null, null, null, (Math.round(max_value * 100) / 100).toString().length * 6 - 10 ],
-        plugins: [ legendAsTooltipPlugin() ],
-        cursor: {
-            sync: {
-                key: "sync",
+    } else {
+
+        const [line_color, fill_color, grid_color, axes_color] = theme != 'dark'
+            ? ["#F88", "#FEE", "#EED", "#2c3235"]
+            : ["#864", "#045", "#2c3235", "#c7d0d9"];
+
+        let sync = uPlot.sync("sync");
+
+        const max_value = Math.max(...data[1]);
+
+        const opts = {
+            width: chart.clientWidth,
+            height: chart.clientHeight,
+            axes: [ { stroke: axes_color,
+                    grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+                    ticks: { width: 1 / devicePixelRatio, stroke: grid_color } },
+                    { stroke: axes_color,
+                    grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+                    ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
+            series: [ { label: "x" },
+                    { label: "y", stroke: line_color, fill: fill_color } ],
+            padding: [ null, null, null, (Math.round(max_value * 100) / 100).toString().length * 6 - 10 ],
+            plugins: [ legendAsTooltipPlugin() ],
+            cursor: {
+                sync: {
+                    key: "sync",
+                }
             }
-        }
-    };
+        };
 
-    plots[idx] = new uPlot(opts, data, chart);
-    sync.sub(plots[idx]);
+        plots[idx] = new uPlot(opts, data, chart);
+        sync.sub(plots[idx]);
+    }
 
     /// Set title
     const title = queries[idx] && queries[idx].title ? queries[idx].title.replaceAll(/\{(\w+)\}/g, (_, name) => params[name] ) : '';
