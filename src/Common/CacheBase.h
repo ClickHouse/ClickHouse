@@ -40,14 +40,17 @@ public:
     using MappedPtr = typename CachePolicy::MappedPtr;
     using KeyMapped = typename CachePolicy::KeyMapped;
 
-    /// Use this ctor if you don't care about the internal cache policy.
-    explicit CacheBase(size_t max_size_in_bytes, size_t max_count = 0, double size_ratio = 0.5)
+    static constexpr auto NO_MAX_COUNT = 0uz;
+    static constexpr auto DEFAULT_SIZE_RATIO = 0.5l;
+
+    /// Use this ctor if you only care about the cache size but not internals like the cache policy.
+    explicit CacheBase(size_t max_size_in_bytes, size_t max_count = NO_MAX_COUNT, double size_ratio = DEFAULT_SIZE_RATIO)
         : CacheBase("SLRU", max_size_in_bytes, max_count, size_ratio)
     {
     }
 
-    /// Use this ctor if you want the user to configure the cache policy via some setting. Supports only general-purpose policies LRU and SLRU.
-    explicit CacheBase(std::string_view cache_policy_name, size_t max_size_in_bytes, size_t max_count = 0, double size_ratio = 0.5)
+    /// Use this ctor if the user should be able to configure the cache policy and cache sizes via settings. Supports only general-purpose policies LRU and SLRU.
+    explicit CacheBase(std::string_view cache_policy_name, size_t max_size_in_bytes, size_t max_count, double size_ratio)
     {
         auto on_weight_loss_function = [&](size_t weight_loss) { onRemoveOverflowWeightLoss(weight_loss); };
 

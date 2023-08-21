@@ -217,6 +217,14 @@ Type: UInt32
 Default: 1024
 
 
+## index_mark_cache_policy
+
+Index mark cache policy name.
+
+Type: String
+
+Default: SLRU
+
 ## index_mark_cache_size
 
 Size of cache for index marks. Zero means disabled.
@@ -229,6 +237,21 @@ Type: UInt64
 
 Default: 0
 
+## index_mark_cache_size_ratio
+
+The size of the protected queue in the index mark cache relative to the cache's total size.
+
+Type: Double
+
+Default: 0.5
+
+## index_uncompressed_cache_policy
+
+Index uncompressed cache policy name.
+
+Type: String
+
+Default: SLRU
 
 ## index_uncompressed_cache_size
 
@@ -242,6 +265,13 @@ Type: UInt64
 
 Default: 0
 
+## index_uncompressed_cache_size_ratio
+
+The size of the protected queue in the index uncompressed cache relative to the cache's total size.
+
+Type: Double
+
+Default: 0.5
 
 ## io_thread_pool_queue_size
 
@@ -270,6 +300,14 @@ This setting can be modified at runtime and will take effect immediately.
 Type: UInt64
 
 Default: 5368709120
+
+## mark_cache_size_ratio
+
+The size of the protected queue in the mark cache relative to the cache's total size.
+
+Type: Double
+
+Default: 0.5
 
 ## max_backup_bandwidth_for_server
 
@@ -628,6 +666,14 @@ This setting can be modified at runtime and will take effect immediately.
 Type: UInt64
 
 Default: 0
+
+## uncompressed_cache_size_ratio
+
+The size of the protected queue in the uncompressed cache relative to the cache's total size.
+
+Type: Double
+
+Default: 0.5
 
 ## builtin_dictionaries_reload_interval {#builtin-dictionaries-reload-interval}
 
