@@ -175,10 +175,10 @@ def test_subquery(started_cluster):
             FROM 
                 (select * FROM system.numbers WHERE number < 2) AS n
             FORMAT Values""",
-        query_id="test_simple_subquery",
+        query_id="test_subquery",
     )
     assert response == "(0),(1)"
-    check_read_rows("test_subquery_with_predicate", 2)
+    check_read_rows("test_subquery", 2)
 
 
 def test_multi_streams(started_cluster):

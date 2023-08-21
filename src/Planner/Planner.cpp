@@ -1223,10 +1223,9 @@ void Planner::buildPlanForQueryNode()
     }
 
     checkStoragesSupportTransactions(planner_context);
-    collectTableExpressionData(query_tree, planner_context);
-
     collectSets(query_tree, *planner_context);
     select_query_info.prepared_sets = planner_context->getPreparedSetsPtr();
+    collectTableExpressionData(query_tree, planner_context);
 
     const auto & settings = query_context->getSettingsRef();
 
