@@ -172,49 +172,23 @@ ArrowSchemaReader::ArrowSchemaReader(ReadBuffer & in_, bool stream_, const Forma
 {
 }
 
-void ArrowSchemaReader::initializeIfNeeded()
-{
-    if (file_reader || stream_reader)
-        return;
-
-    if (stream)
-        stream_reader = createStreamReader(in);
-    else
-    {
-        std::atomic<int> is_stopped = 0;
-        file_reader = createFileReader(in, format_settings, is_stopped);
-    }
-}
-
 NamesAndTypesList ArrowSchemaReader::readSchema()
 {
-    initializeIfNeeded();
-
     std::shared_ptr<arrow::Schema> schema;
 
     if (stream)
-        schema = stream_reader->schema();
+        schema = createStreamReader(in)->schema();
     else
-        schema = file_reader->schema();
+    {
+        std::atomic<int> is_stopped = 0;
+        schema = createFileReader(in, format_settings, is_stopped)->schema();
+    }
 
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema, stream ? "ArrowStream" : "Arrow", format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference);
     if (format_settings.schema_inference_make_columns_nullable)
         return getNamesAndRecursivelyNullableTypes(header);
-    return header.getNamesAndTypesList();
-}
-
-std::optional<size_t> ArrowSchemaReader::readNumberOrRows()
-{
-    if (stream)
-        return std::nullopt;
-
-    auto rows = file_reader->CountRows();
-    if (!rows.ok())
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data: {}", rows.status().ToString());
-
-    return *rows;
-}
+    return header.getNamesAndTypesList();}
 
 void registerInputFormatArrow(FormatFactory & factory)
 {

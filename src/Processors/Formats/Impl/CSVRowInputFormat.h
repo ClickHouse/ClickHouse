@@ -28,7 +28,6 @@ public:
 
     void setReadBuffer(ReadBuffer & in_) override;
     void resetParser() override;
-//    size_t countRows(size_t max_block_size) override;
 
 protected:
     CSVRowInputFormat(const Block & header_, std::shared_ptr<PeekableReadBuffer> in_, const Params & params_,
