@@ -17,7 +17,7 @@
 
 namespace DB
 {
-/** For functions that convert a string and an integer to another string
+/** For removeGarbageParametersFromURL function
   *
   * removeGarbageParametersFromURL(URL, length)
   */
@@ -30,11 +30,11 @@ namespace ErrorCodes
 
 
 template <typename Impl, typename Name>
-class FunctionsStringUIntToString : public IFunction
+class FunctionRemoveGarbageParametersFromURL : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsStringUIntToString>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRemoveGarbageParametersFromURL>(); }
 
     String getName() const override { return name; }
 
@@ -45,35 +45,34 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
+        FunctionArgumentDescriptors args{
+            {"string", &isString<IDataType>, nullptr, "String"},
+            {"uint", &isUnsignedInteger<IDataType>, nullptr, "Unsigned integer"}
+        };
 
-        if (!isUnsignedInteger(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[1]->getName(), getName());
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<DataTypeString>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const ColumnPtr column = arguments[0].column;
-        const ColumnPtr number_needle = arguments[1].column;
-
-        const ColumnConst * num_needle = typeid_cast<const ColumnConst *>(&*number_needle);
-        if (!num_needle)
+        const ColumnPtr URL = arguments[0].column;
+        const ColumnPtr max_len = arguments[1].column;
+        const ColumnConst * max_len_const = typeid_cast<const ColumnConst *>(&*max_len);
+        if (!max_len_const)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} must be constant unsigned integer", getName());
 
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
+        uint64_t max_len_value = max_len_const->getValue<UInt64>();
+        if (const ColumnString * URL_column = checkAndGetColumn<ColumnString>(URL.get()))
         {
             auto col_res = ColumnString::create();
 
-            ColumnString::Chars & vec_res = col_res->getChars();
+            ColumnString::Chars & URL_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
-            Impl::vector(col->getChars(), col->getOffsets(), num_needle->getValue<UInt64>(), vec_res, offsets_res);
+            Impl::vector(URL_column->getChars(), URL_column->getOffsets(), max_len_value, URL_res, offsets_res);
 
             return col_res;
         }
