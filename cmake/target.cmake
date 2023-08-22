@@ -27,8 +27,8 @@ endif ()
 # will try to configure NATIVE LLVM targets with all tests enabled (You'll see
 # Building native llvm-tblgen...).
 #
-# Here we set it manually by checking system name.
-if (${CMAKE_SYSTEM_NAME} STREQUAL ${CMAKE_HOST_SYSTEM_NAME})
+# Here we set it manually by checking system name and processor.
+if (${CMAKE_SYSTEM_NAME} STREQUAL ${CMAKE_HOST_SYSTEM_NAME} AND ${CMAKE_SYSTEM_PROCESSOR} STREQUAL ${CMAKE_HOST_SYSTEM_PROCESSOR})
     set (CMAKE_CROSSCOMPILING 0)
 endif ()
 
