@@ -1844,20 +1844,20 @@ public:
             mandatory_args.push_back({"scale", &isNativeInteger<IDataType>, &isColumnConst, "const Integer"});
         }
 
-        // toString(DateTime or DateTime64, [timezone: String])
+        // toString(DateTime or DateTime64, [timezone: String (const/non-const)])
         if ((std::is_same_v<Name, NameToString> && !arguments.empty() && (isDateTime64(arguments[0].type) || isDateTime(arguments[0].type)))
-            // toUnixTimestamp(value[, timezone : String])
+            // toUnixTimestamp(value[, timezone : String(const/non-const)])
             || std::is_same_v<Name, NameToUnixTimestamp>
-            // toDate(value[, timezone : String])
+            // toDate(value[, timezone : String(const/non-const)])
             || std::is_same_v<ToDataType, DataTypeDate> // TODO: shall we allow timestamp argument for toDate? DateTime knows nothing about timezones and this argument is ignored below.
-            // toDate32(value[, timezone : String])
+            // toDate32(value[, timezone : String(const/non-const)])
             || std::is_same_v<ToDataType, DataTypeDate32>
-            // toDateTime(value[, timezone: String])
+            // toDateTime(value[, timezone: String(const/non-const)])
             || std::is_same_v<ToDataType, DataTypeDateTime>
-            // toDateTime64(value, scale : Integer[, timezone: String])
+            // toDateTime64(value, scale : Integer[, timezone: String(const/non-const)])
             || std::is_same_v<ToDataType, DataTypeDateTime64>)
-        {
-            optional_args.push_back({"timezone", &isString<IDataType>, &isColumnConst, "const String"});
+        {            
+            optional_args.push_back({"timezone", &isString<IDataType>, nullptr, "const String/String"});
         }
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
@@ -1895,13 +1895,13 @@ public:
 
                 if (to_datetime64 || scale != 0) /// toDateTime('xxxx-xx-xx xx:xx:xx', 0) return DateTime
                     return std::make_shared<DataTypeDateTime64>(scale,
-                        extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
+                        extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, true));
 
-                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
+                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, true));
             }
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
-                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
+                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, true));
             else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected branch in code of conversion function: it is a bug.");
             else
@@ -1919,12 +1919,7 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
-    {
-        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-            return {2};
-        return {1};
-    }
+
     bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
