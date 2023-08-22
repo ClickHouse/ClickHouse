@@ -1105,6 +1105,69 @@ try
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
 
+    /// Set up caches.
+
+    const size_t max_cache_size = static_cast<size_t>(physical_server_memory * server_settings.cache_size_to_ram_max_ratio);
+
+    String uncompressed_cache_policy = server_settings.uncompressed_cache_policy;
+    size_t uncompressed_cache_size = server_settings.uncompressed_cache_size;
+    if (uncompressed_cache_size > max_cache_size)
+    {
+        uncompressed_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+    }
+    global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
+
+    String mark_cache_policy = server_settings.mark_cache_policy;
+    size_t mark_cache_size = server_settings.mark_cache_size;
+    if (mark_cache_size > max_cache_size)
+    {
+        mark_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
+    }
+    global_context->setMarkCache(mark_cache_policy, mark_cache_size);
+
+    size_t index_uncompressed_cache_size = server_settings.index_uncompressed_cache_size;
+    if (index_uncompressed_cache_size > max_cache_size)
+    {
+        index_uncompressed_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+    }
+    global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
+
+    size_t index_mark_cache_size = server_settings.index_mark_cache_size;
+    if (index_mark_cache_size > max_cache_size)
+    {
+        index_mark_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+    }
+    global_context->setIndexMarkCache(index_mark_cache_size);
+
+    size_t mmap_cache_size = server_settings.mmap_cache_size;
+    if (mmap_cache_size > max_cache_size)
+    {
+        mmap_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered mmap file cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+    }
+    global_context->setMMappedFileCache(mmap_cache_size);
+
+    size_t query_cache_max_size_in_bytes = config().getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_SIZE);
+    size_t query_cache_max_entries = config().getUInt64("query_cache.max_entries", DEFAULT_QUERY_CACHE_MAX_ENTRIES);
+    size_t query_cache_query_cache_max_entry_size_in_bytes = config().getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
+    size_t query_cache_max_entry_size_in_rows = config().getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
+    if (query_cache_max_size_in_bytes > max_cache_size)
+    {
+        query_cache_max_size_in_bytes = max_cache_size;
+        LOG_INFO(log, "Lowered query cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+    }
+    global_context->setQueryCache(query_cache_max_size_in_bytes, query_cache_max_entries, query_cache_query_cache_max_entry_size_in_bytes, query_cache_max_entry_size_in_rows);
+
+#if USE_EMBEDDED_COMPILER
+    size_t compiled_expression_cache_max_size_in_bytes = config().getUInt64("compiled_expression_cache_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE);
+    size_t compiled_expression_cache_max_elements = config().getUInt64("compiled_expression_cache_elements_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES);
+    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
+#endif
+
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
 
@@ -1324,7 +1387,14 @@ try
 
             global_context->updateStorageConfiguration(*config);
             global_context->updateInterserverCredentials(*config);
+
+            global_context->updateUncompressedCacheConfiguration(*config);
+            global_context->updateMarkCacheConfiguration(*config);
+            global_context->updateIndexUncompressedCacheConfiguration(*config);
+            global_context->updateIndexMarkCacheConfiguration(*config);
+            global_context->updateMMappedFileCacheConfiguration(*config);
             global_context->updateQueryCacheConfiguration(*config);
+
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
@@ -1484,19 +1554,6 @@ try
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(server_settings.max_concurrent_queries);
 
-    /// Set up caches.
-
-    const size_t max_cache_size = static_cast<size_t>(physical_server_memory * server_settings.cache_size_to_ram_max_ratio);
-
-    String uncompressed_cache_policy = server_settings.uncompressed_cache_policy;
-    size_t uncompressed_cache_size = server_settings.uncompressed_cache_size;
-    if (uncompressed_cache_size > max_cache_size)
-    {
-        uncompressed_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
-    }
-    global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
-
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
 
@@ -1511,61 +1568,6 @@ try
             server_settings.async_insert_threads,
             server_settings.async_insert_queue_flush_on_shutdown));
     }
-
-    String mark_cache_policy = server_settings.mark_cache_policy;
-    size_t mark_cache_size = server_settings.mark_cache_size;
-    if (!mark_cache_size)
-        LOG_ERROR(log, "Too low mark cache size will lead to severe performance degradation.");
-    if (mark_cache_size > max_cache_size)
-    {
-        mark_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
-    }
-    global_context->setMarkCache(mark_cache_policy, mark_cache_size);
-
-    size_t index_uncompressed_cache_size = server_settings.index_uncompressed_cache_size;
-    if (index_uncompressed_cache_size > max_cache_size)
-    {
-        index_uncompressed_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
-    }
-    if (index_uncompressed_cache_size)
-        global_context->setIndexUncompressedCache(server_settings.index_uncompressed_cache_size);
-
-    size_t index_mark_cache_size = server_settings.index_mark_cache_size;
-    if (index_mark_cache_size > max_cache_size)
-    {
-        index_mark_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
-    }
-    if (index_mark_cache_size)
-        global_context->setIndexMarkCache(server_settings.index_mark_cache_size);
-
-    size_t mmap_cache_size = server_settings.mmap_cache_size;
-    if (mmap_cache_size > max_cache_size)
-    {
-        mmap_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered mmap file cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
-    }
-    if (mmap_cache_size)
-        global_context->setMMappedFileCache(server_settings.mmap_cache_size);
-
-    size_t query_cache_max_size_in_bytes = config().getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_SIZE);
-    size_t query_cache_max_entries = config().getUInt64("query_cache.max_entries", DEFAULT_QUERY_CACHE_MAX_ENTRIES);
-    size_t query_cache_query_cache_max_entry_size_in_bytes = config().getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
-    size_t query_cache_max_entry_size_in_rows = config().getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
-    if (query_cache_max_size_in_bytes > max_cache_size)
-    {
-        query_cache_max_size_in_bytes = max_cache_size;
-        LOG_INFO(log, "Lowered query cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
-    }
-    global_context->setQueryCache(query_cache_max_size_in_bytes, query_cache_max_entries, query_cache_query_cache_max_entry_size_in_bytes, query_cache_max_entry_size_in_rows);
-
-#if USE_EMBEDDED_COMPILER
-    size_t compiled_expression_cache_max_size_in_bytes = config().getUInt64("compiled_expression_cache_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE);
-    size_t compiled_expression_cache_max_elements = config().getUInt64("compiled_expression_cache_elements_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES);
-    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
-#endif
 
     /// Set path for format schema files
     fs::path format_schema_path(config().getString("format_schema_path", path / "format_schemas/"));
@@ -2072,6 +2074,9 @@ void Server::createServers(
 
     for (const auto & protocol : protocols)
     {
+        if (!server_type.shouldStart(ServerType::Type::CUSTOM, protocol))
+            continue;
+
         std::string prefix = "protocols." + protocol + ".";
         std::string port_name = prefix + "port";
         std::string description {"<undefined> protocol"};
@@ -2079,9 +2084,6 @@ void Server::createServers(
             description = config.getString(prefix + "description");
 
         if (!config.has(prefix + "port"))
-            continue;
-
-        if (!server_type.shouldStart(ServerType::Type::CUSTOM, port_name))
             continue;
 
         std::vector<std::string> hosts;
