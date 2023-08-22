@@ -19,6 +19,7 @@ message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION} ${VERSI
 include (configure_config.cmake)
 configure_file (Common/config.h.in ${CONFIG_INCLUDE_PATH}/config.h)
 configure_file (Common/config_version.h.in ${CONFIG_INCLUDE_PATH}/config_version.h)
+configure_file (Common/config_version.cpp.in ${CONFIG_INCLUDE_PATH}/config_version.cpp)
 
 if (USE_DEBUG_HELPERS)
     get_target_property(MAGIC_ENUM_INCLUDE_DIR ch_contrib::magic_enum INTERFACE_INCLUDE_DIRECTORIES)
@@ -48,6 +49,8 @@ else()
     add_definitions(-DENABLE_MULTITARGET_CODE=0)
 endif()
 
+set(dbms_headers)
+set(dbms_sources)
 
 add_subdirectory (Access)
 add_subdirectory (Backups)
@@ -76,10 +79,6 @@ add_subdirectory (Bridge)
 add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
-
-
-set(dbms_headers)
-set(dbms_sources)
 
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
@@ -150,47 +149,7 @@ else()
     message(STATUS "StorageFileLog is only supported on Linux")
 endif ()
 
-list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
-
-list (APPEND dbms_sources Functions/IFunction.cpp Functions/FunctionFactory.cpp Functions/FunctionHelpers.cpp Functions/extractTimeZoneFromFunctionArguments.cpp Functions/FunctionsLogical.cpp Functions/indexHint.cpp)
-list (APPEND dbms_headers Functions/IFunction.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h Functions/FunctionsLogical.h Functions/indexHint.h)
-
-list (APPEND dbms_sources
-    AggregateFunctions/IAggregateFunction.cpp
-    AggregateFunctions/AggregateFunctionFactory.cpp
-    AggregateFunctions/AggregateFunctionCombinatorFactory.cpp
-    AggregateFunctions/AggregateFunctionState.cpp
-    AggregateFunctions/AggregateFunctionCount.cpp
-    AggregateFunctions/parseAggregateFunctionParameters.cpp)
-list (APPEND dbms_headers
-    AggregateFunctions/IAggregateFunction.h
-    AggregateFunctions/IAggregateFunctionCombinator.h
-    AggregateFunctions/AggregateFunctionFactory.h
-    AggregateFunctions/AggregateFunctionCombinatorFactory.h
-    AggregateFunctions/AggregateFunctionState.h
-    AggregateFunctions/AggregateFunctionCount.cpp
-    AggregateFunctions/FactoryHelpers.h
-    AggregateFunctions/parseAggregateFunctionParameters.h)
-
-list (APPEND dbms_sources
-    TableFunctions/ITableFunction.cpp
-    TableFunctions/TableFunctionView.cpp
-    TableFunctions/TableFunctionFactory.cpp)
-list (APPEND dbms_headers
-    TableFunctions/ITableFunction.h
-    TableFunctions/TableFunctionView.h
-    TableFunctions/TableFunctionFactory.h)
-
-list (APPEND dbms_sources
-    Dictionaries/DictionaryFactory.cpp
-    Dictionaries/DictionarySourceFactory.cpp
-    Dictionaries/DictionaryStructure.cpp
-    Dictionaries/getDictionaryConfigurationFromAST.cpp)
-list (APPEND dbms_headers
-    Dictionaries/DictionaryFactory.h
-    Dictionaries/DictionarySourceFactory.h
-    Dictionaries/DictionaryStructure.h
-    Dictionaries/getDictionaryConfigurationFromAST.h)
+list(APPEND clickhouse_common_io_sources ${CONFIG_INCLUDE_PATH}/config_version.cpp)
 
 if (NOT ENABLE_SSL)
     list (REMOVE_ITEM clickhouse_common_io_sources Common/OpenSSLHelpers.cpp)
@@ -387,7 +346,7 @@ target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tabl
 dbms_target_link_libraries(PUBLIC ch_contrib::roaring)
 
 if (TARGET ch_contrib::rdkafka)
-    dbms_target_link_libraries(PRIVATE ch_contrib::rdkafka ch_contrib::cppkafka)
+    dbms_target_link_libraries(PUBLIC ch_contrib::rdkafka ch_contrib::cppkafka)
 endif()
 
 if (TARGET ch_contrib::nats_io)
@@ -600,6 +559,10 @@ dbms_target_link_libraries(PUBLIC ch_contrib::consistent_hashing)
 
 if (TARGET ch_contrib::annoy)
     dbms_target_link_libraries(PUBLIC ch_contrib::annoy)
+endif()
+
+if (TARGET ch_contrib::usearch)
+    dbms_target_link_libraries(PUBLIC ch_contrib::usearch)
 endif()
 
 if (TARGET ch_rust::skim)

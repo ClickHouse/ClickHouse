@@ -13,6 +13,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -251,8 +252,8 @@ public:
         const String & container_,
         const String & connection_url_,
         std::shared_ptr<IIterator> file_iterator_,
-        bool need_only_count_);
-
+        bool need_only_count_,
+        const SelectQueryInfo & query_info_);
     ~StorageAzureBlobSource() override;
 
     Chunk generate() override;
@@ -278,6 +279,7 @@ private:
     std::shared_ptr<IIterator> file_iterator;
     bool need_only_count;
     size_t total_rows_in_file = 0;
+    SelectQueryInfo query_info;
 
     struct ReaderHolder
     {
