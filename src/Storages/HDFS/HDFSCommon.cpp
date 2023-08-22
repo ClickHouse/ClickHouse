@@ -145,10 +145,7 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         hdfsBuilderSetNameNodePort(builder.get(), port);
     }
 
-    if (config.has(std::string(CONFIG_PREFIX)))
-    {
-        builder.loadFromConfig(config, std::string(CONFIG_PREFIX));
-    }
+    builder.loadFromConfig(config, std::string(CONFIG_PREFIX));
 
     if (!user.empty())
     {
