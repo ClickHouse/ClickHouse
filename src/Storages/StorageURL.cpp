@@ -223,6 +223,7 @@ StorageURLSource::StorageURLSource(
     const ConnectionTimeouts & timeouts,
     CompressionMethod compression_method,
     size_t download_threads,
+    const SelectQueryInfo & query_info,
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
     bool glob_url,
@@ -307,6 +308,7 @@ StorageURLSource::StorageURLSource(
                 /*max_download_threads*/ std::nullopt,
                 /* is_remote_ fs */ true,
                 compression_method);
+            input_format->setQueryInfo(query_info, context);
 
             builder.init(Pipe(input_format));
 
@@ -869,6 +871,7 @@ Pipe IStorageURLBase::read(
             getHTTPTimeouts(local_context),
             compression_method,
             download_threads,
+            query_info,
             headers,
             params,
             is_url_with_globs,
@@ -913,6 +916,7 @@ Pipe StorageURLWithFailover::read(
         getHTTPTimeouts(local_context),
         compression_method,
         local_context->getSettingsRef().max_download_threads,
+        query_info,
         headers,
         params));
     std::shuffle(uri_options.begin(), uri_options.end(), thread_local_rng);

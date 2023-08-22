@@ -21,6 +21,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageConfiguration.h>
 #include <Storages/prepareReadingFromFormat.h>
 
@@ -132,7 +133,8 @@ public:
         const String & url_host_and_port,
         std::shared_ptr<IIterator> file_iterator_,
         size_t download_thread_num,
-        bool need_only_count_);
+        bool need_only_count_,
+        std::optional<SelectQueryInfo> query_info);
 
     ~StorageS3Source() override;
 
@@ -156,6 +158,7 @@ private:
     std::shared_ptr<const S3::Client> client;
     Block sample_block;
     std::optional<FormatSettings> format_settings;
+    std::optional<SelectQueryInfo> query_info;
 
     struct ReaderHolder
     {
