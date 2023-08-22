@@ -1,0 +1,9 @@
+<test>
+    <create_query>CREATE TABLE gcd_codec (n UInt64 CODEC(GCD, LZ4)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <query>INSERT INTO gcd_codec SELECT number FROM system.numbers LIMIT 20000000 SETTINGS max_threads=1</query>
+    <query>INSERT INTO gcd_codec SELECT number*1000 FROM system.numbers LIMIT 20000000 SETTINGS max_threads=1</query>
+    <query>INSERT INTO gcd_codec SELECT intHash64(number) FROM system.numbers LIMIT 20000000 SETTINGS max_threads=1</query>
+
+    <drop_query>DROP TABLE gcd_codec</drop_query>
+</test>
