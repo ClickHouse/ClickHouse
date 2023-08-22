@@ -50,7 +50,8 @@ CREATE TABLE system.clusters
     `estimated_recovery_time` UInt32,
     `database_shard_name` String,
     `database_replica_name` String,
-    `is_active` Nullable(UInt8)
+    `is_active` Nullable(UInt8),
+    `name` String
 )
 ENGINE = SystemClusters
 COMMENT 'SYSTEM TABLE is built on the fly.'
