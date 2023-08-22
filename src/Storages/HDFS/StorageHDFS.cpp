@@ -311,7 +311,11 @@ namespace
             const String & format_,
             const String & compression_method_,
             const ContextPtr & context_)
-        : WithContext(context_), paths_with_info(paths_with_info_), uri_without_path(uri_without_path_), format(format_), compression_method(compression_method_)
+        : WithContext(context_)
+        , paths_with_info(paths_with_info_)
+        , uri_without_path(uri_without_path_)
+        , format(format_)
+        , compression_method(compression_method_)
         {
         }
 
