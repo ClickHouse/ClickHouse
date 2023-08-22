@@ -547,10 +547,20 @@ bool HDFSSource::initialize()
             continue;
 
         current_path = path_with_info.path;
+        const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(current_path);
+
         std::optional<size_t> file_size;
+        if (!path_with_info.info)
+        {
+            auto builder = createHDFSBuilder(uri_without_path + "/", getContext()->getGlobalContext()->getConfigRef());
+            auto fs = createHDFSFS(builder.get());
+            auto * hdfs_info = hdfsGetPathInfo(fs.get(), path_from_uri.c_str());
+            if (hdfs_info)
+                path_with_info.info = StorageHDFS::PathInfo{hdfs_info->mLastMod, static_cast<size_t>(hdfs_info->mSize)};
+        }
+
         if (path_with_info.info)
             file_size = path_with_info.info->size;
-        const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(current_path);
 
         auto compression = chooseCompressionMethod(path_from_uri, storage->compression_method);
         auto impl = std::make_unique<ReadBufferFromHDFS>(
@@ -570,6 +580,11 @@ bool HDFSSource::initialize()
     std::optional<size_t> num_rows_from_cache = need_only_count && getContext()->getSettingsRef().use_cache_for_count_from_files ? tryGetNumRowsFromCache(path_with_info) : std::nullopt;
     if (num_rows_from_cache)
     {
+        /// We should not return single chunk with all number of rows,
+        /// because there is a chance that this chunk will be materialized later
+        /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
+        /// Instead, we use special ConstChunkGenerator that will generate chunks
+        /// with max_block_size rows until total number of rows is reached.
         auto source = std::make_shared<ConstChunkGenerator>(block_for_format, *num_rows_from_cache, max_block_size);
         builder.init(Pipe(source));
     }
