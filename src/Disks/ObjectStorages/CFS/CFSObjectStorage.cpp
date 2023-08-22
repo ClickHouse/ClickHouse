@@ -1,5 +1,5 @@
 #include "CFSObjectStorage.h"
-#include <aws/core/utils/DateTime.h>
+#include <Poco/DateTimeFormatter.h>
 #include <Common/getRandomASCIIString.h>
 #include <Interpreters/Context.h>
 #include <IO/copyData.h>
@@ -48,7 +48,7 @@ std::string CFSObjectStorage::generateBlobNameForPath(const std::string & /* pat
     /// First 3 characters are used as a prefix for
     constexpr size_t key_name_total_size = 32;
     constexpr size_t key_name_prefix_size = 3;
-    const String & date = Aws::Utils::DateTime::CalculateLocalTimestampAsString("%Y%m%d");
+    const String & date = Poco::DateTimeFormatter::format(Poco::DateTime(), "%Y%m%d");
 
     /// Path to store new CFS object.
     return fmt::format("{}/{}/{}",
