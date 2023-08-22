@@ -45,6 +45,7 @@ FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
 FILES_OVERHEAD_PER_PART_WIDE = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6 + 1
 FILES_OVERHEAD_PER_PART_COMPACT = 10 + 1
 
+
 def random_string(length):
     letters = string.ascii_letters
     return "".join(random.choice(letters) for i in range(length))
@@ -69,7 +70,7 @@ def debug_cluster(cluster, sql):
         logging.debug("%s:%s, result :\n%s" % (name, sql, result))
 
 
-def assert_cluster(cluster, sql , value, debug=False):
+def assert_cluster(cluster, sql, value, debug=False):
     for name, node in cluster.instances.items():
         result = node.query(sql)
         if debug:
@@ -77,15 +78,15 @@ def assert_cluster(cluster, sql , value, debug=False):
         assert result == value
 
 
-def query_cluster(cluster, sql,debug=False):
+def query_cluster(cluster, sql, debug=False):
     for name, node in cluster.instances.items():
         if debug:
             logging.debug(name + ":" + node.query(sql))
         node.query(sql)
 
 
-def wait_for_query(cluster, sql , value, debug=False):
-    for i in range(3): # wait for replication 3 seconds max
+def wait_for_query(cluster, sql, value, debug=False):
+    for i in range(3):  # wait for replication 3 seconds max
 
         def query_result(name, node, query):
             val = node.query(query).rstrip()
@@ -115,6 +116,7 @@ def wait_for_mutations(nodes, table, number_of_mutations):
                     % table
                 ).rstrip()
             )
+
         if all([get_done_mutations(n) == number_of_mutations for n in nodes]):
             return True
     return False

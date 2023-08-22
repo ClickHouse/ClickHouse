@@ -1294,6 +1294,54 @@ In this sample configuration:
 </clickhouse>
 ```
 
+## CFS storage {#cfs-storage}
+
+First mount the remote CFS path to the local host such as `/mnt/cfs`.
+In this sample configuration:
+- the disk is of type `cfs`
+- the disk path is `/mnt/cfs/`
+- a cache on local storage is used
+- set SETTINGS storage_policy='p_cfs_cache' when creating mergetree table
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <d_cfs>
+                <type>cfs</type>
+                <path>/mnt/cfs/</endpoint>
+                <skip_access_check>false</skip_access_check>
+            </d_cfs>
+            <d_cfs_cache>
+                <type>cache</type>
+                <disk>d_cfs</disk>
+                <path>./cfs_cache/</path>
+                <max_size>1000000</max_size>
+            </d_cfs_cache>
+        </disks>
+        <policies>
+            <p_cfs>
+                <volumes>
+                    <main>
+                        <disk>d_cfs</disk>
+                    </main>
+                </volumes>
+            </p_cfs>
+            <p_cfs_cache>
+                <volumes>
+                    <main>
+                        <disk>d_cfs_cache</disk>
+                    </main>
+                </volumes>
+            </p_cfs_cache>
+        </policies>
+    </storage_configuration>
+    <merge_tree>
+        <allow_remote_fs_zero_copy_replication>true</allow_remote_fs_zero_copy_replication>
+    </merge_tree>
+</clickhouse>
+```
+
 ## Web storage (read-only) {#web-storage}
 
 Web storage can be used for read-only purposes. An example use is for hosting sample

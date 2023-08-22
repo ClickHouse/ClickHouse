@@ -4,7 +4,6 @@
             <d_cfs>
                 <type>cfs</type>
                 <path>/cfs/00/</path>
-                <data_cache_enabled>true</data_cache_enabled>
             </d_cfs>
             <d_cfs_cache>
                 <type>cache</type>
@@ -32,7 +31,7 @@
     </storage_configuration>
 
     <merge_tree>
-        <allow_remote_fs_zero_copy_replication>1</allow_remote_fs_zero_copy_replication>
+        <allow_remote_fs_zero_copy_replication>true</allow_remote_fs_zero_copy_replication>
     </merge_tree>
 
     <remote_servers>
