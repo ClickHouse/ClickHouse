@@ -2367,8 +2367,8 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
 
 const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table
 {
-    {toStringRef(Keyword::NOT),           Operator("not",             5,  1)},
-    {"-",             Operator("negate",          13, 1)}
+    {toStringRef(Keyword::NOT), Operator("not", 5, 1)},
+    {"-", Operator("negate", 13, 1)}
 };
 
 const Operator ParserExpressionImpl::finish_between_operator("", 8, 0, OperatorType::FinishBetween);
