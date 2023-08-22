@@ -66,7 +66,7 @@ namespace
         auto & ssl_manager = Poco::Net::SSLManager::instance();
         const auto & ssl_ctx = contextType == SSLContext::Server ? ssl_manager.defaultServerContext() : ssl_manager.defaultClientContext();
 
-        auto raw_ssl_ctx = ssl_ctx->sslContext();
+        auto * raw_ssl_ctx = ssl_ctx->sslContext();
         assert(raw_ssl_ctx);
 
         // asio will SSL_CTX_free context in destructor,
