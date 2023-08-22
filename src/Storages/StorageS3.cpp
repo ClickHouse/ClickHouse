@@ -597,7 +597,7 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
                 format, *read_buf, sample_block, getContext(), max_block_size,
                 format_settings, std::nullopt, std::nullopt,
                 /* is_remote_fs */ true, compression_method);
-      
+
         if (query_info.has_value())
             input_format->setQueryInfo(query_info.value(), getContext());
 
