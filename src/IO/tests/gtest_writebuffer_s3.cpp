@@ -273,14 +273,12 @@ struct Client : DB::S3::Client
         size_t begin = 0;
         size_t end = data.size() - 1;
 
-        String range = request.GetRange();
+        const String & range = request.GetRange();
         const String prefix = "bytes=";
         if (range.starts_with(prefix))
         {
-            auto dash_pos = range.find('-');
-            range[dash_pos] = '\0';
-            begin = atol(range.c_str() + prefix.size());
-            end = atol(range.c_str() + dash_pos + 1);
+            int ret = sscanf(range.c_str(), "bytes=%zu-%zu", &begin, &end);
+            chassert(ret == 2);
         }
 
         auto factory = request.GetResponseStreamFactory();
@@ -1273,6 +1271,7 @@ TEST_F(WBS3Test, ReadBeyondLastOffset) {
     String res;
     readStringUntilEOF(res, *encrypted_read_buffer);
     ASSERT_EQ(res, data.substr(0, 50));
+    ASSERT_TRUE(encrypted_read_buffer->eof());
 }
 
 #endif
