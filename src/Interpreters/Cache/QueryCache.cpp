@@ -471,6 +471,21 @@ std::unique_ptr<SourceFromChunks> QueryCache::Reader::getSourceExtremes()
     return std::move(source_from_chunks_extremes);
 }
 
+QueryCache::QueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
+    : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryCacheEntryWeight, IsStale>>(std::make_unique<PerUserTTLCachePolicyUserQuota>()))
+{
+    updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_);
+}
+
+void QueryCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
+{
+    std::lock_guard lock(mutex);
+    cache.setMaxSize(max_size_in_bytes);
+    cache.setMaxCount(max_entries);
+    max_entry_size_in_bytes = max_entry_size_in_bytes_;
+    max_entry_size_in_rows = max_entry_size_in_rows_;
+}
+
 QueryCache::Reader QueryCache::createReader(const Key & key)
 {
     std::lock_guard lock(mutex);
@@ -488,9 +503,9 @@ QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::millis
     return Writer(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
 }
 
-void QueryCache::reset()
+void QueryCache::clear()
 {
-    cache.reset();
+    cache.clear();
     std::lock_guard lock(mutex);
     times_executed.clear();
 }
@@ -519,21 +534,6 @@ size_t QueryCache::recordQueryRun(const Key & key)
 std::vector<QueryCache::Cache::KeyMapped> QueryCache::dump() const
 {
     return cache.dump();
-}
-
-QueryCache::QueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
-    : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryCacheEntryWeight, IsStale>>(std::make_unique<PerUserTTLCachePolicyUserQuota>()))
-{
-    updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_);
-}
-
-void QueryCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
-{
-    std::lock_guard lock(mutex);
-    cache.setMaxSize(max_size_in_bytes);
-    cache.setMaxCount(max_entries);
-    max_entry_size_in_bytes = max_entry_size_in_bytes_;
-    max_entry_size_in_rows = max_entry_size_in_rows_;
 }
 
 }

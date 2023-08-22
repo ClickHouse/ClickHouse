@@ -121,7 +121,7 @@ public:
         max_size_in_bytes = max_size_in_bytes_;
     }
 
-    void reset(std::lock_guard<std::mutex> & /* cache_lock */) override
+    void clear(std::lock_guard<std::mutex> & /* cache_lock */) override
     {
         cache.clear();
     }
