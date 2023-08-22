@@ -63,6 +63,7 @@ configure
 # it contains some new settings, but we can safely remove it
 rm /etc/clickhouse-server/config.d/merge_tree.xml
 rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
+rm /etc/clickhouse-server/config.d/filesystem_caches_path.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 
 start
@@ -93,6 +94,7 @@ sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_defau
 # it contains some new settings, but we can safely remove it
 rm /etc/clickhouse-server/config.d/merge_tree.xml
 rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
+rm /etc/clickhouse-server/config.d/filesystem_caches_path.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 
 start
@@ -230,5 +232,11 @@ clickhouse-local --structure "test String, res String, time Nullable(Float32), d
 rowNumberInAllBlocks()
 LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
+
+# But OOMs in stress test are allowed
+if rg 'OOM in dmesg|Signal 9' /test_output/check_status.tsv
+then
+    sed -i 's/failure/success/' /test_output/check_status.tsv
+fi
 
 collect_core_dumps

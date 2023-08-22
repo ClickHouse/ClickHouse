@@ -104,6 +104,7 @@ Pipe StorageMySQL::read(
         column_names_,
         storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::BackticksMySQL,
+        LiteralEscapingStyle::Regular,
         remote_database_name,
         remote_table_name,
         context_);

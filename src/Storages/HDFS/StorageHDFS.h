@@ -7,6 +7,8 @@
 #include <Processors/ISource.h>
 #include <Storages/IStorage.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/prepareReadingFromFormat.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Poco/URI.h>
 
 namespace DB
@@ -76,6 +78,8 @@ public:
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
     bool supportsSubsetOfColumns() const override;
 
+    bool supportsSubcolumns() const override { return true; }
+
     static ColumnsDescription getTableStructureFromData(
         const String & format,
         const String & uri,
@@ -142,16 +146,13 @@ public:
     using IteratorWrapper = std::function<StorageHDFS::PathWithInfo()>;
     using StorageHDFSPtr = std::shared_ptr<StorageHDFS>;
 
-    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
-
     HDFSSource(
+        const ReadFromFormatInfo & info,
         StorageHDFSPtr storage_,
-        const Block & block_for_format_,
-        const std::vector<NameAndTypePair> & requested_virtual_columns_,
         ContextPtr context_,
         UInt64 max_block_size_,
         std::shared_ptr<IteratorWrapper> file_iterator_,
-        ColumnsDescription columns_description_);
+        const SelectQueryInfo & query_info_);
 
     String getName() const override;
 
@@ -160,10 +161,12 @@ public:
 private:
     StorageHDFSPtr storage;
     Block block_for_format;
-    std::vector<NameAndTypePair> requested_virtual_columns;
+    NamesAndTypesList requested_columns;
+    NamesAndTypesList requested_virtual_columns;
     UInt64 max_block_size;
     std::shared_ptr<IteratorWrapper> file_iterator;
     ColumnsDescription columns_description;
+    SelectQueryInfo query_info;
 
     std::unique_ptr<ReadBuffer> read_buf;
     std::shared_ptr<IInputFormat> input_format;

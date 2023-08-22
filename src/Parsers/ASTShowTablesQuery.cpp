@@ -1,4 +1,5 @@
 #include <iomanip>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
@@ -10,8 +11,18 @@ ASTPtr ASTShowTablesQuery::clone() const
 {
     auto res = std::make_shared<ASTShowTablesQuery>(*this);
     res->children.clear();
+    if (from)
+        res->set(res->from, from->clone());
+
     cloneOutputOptions(*res);
     return res;
+}
+
+String ASTShowTablesQuery::getFrom() const
+{
+    String name;
+    tryGetIdentifierNameInto(from, name);
+    return name;
 }
 
 void ASTShowTablesQuery::formatLike(const FormatSettings & settings) const
@@ -72,9 +83,11 @@ void ASTShowTablesQuery::formatQueryImpl(const FormatSettings & settings, Format
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW " << (temporary ? "TEMPORARY " : "") <<
              (dictionaries ? "DICTIONARIES" : "TABLES") << (settings.hilite ? hilite_none : "");
 
-        if (!from.empty())
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "")
-                << backQuoteIfNeed(from);
+        if (from)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "");
+            from->formatImpl(settings, state, frame);
+        }
 
         formatLike(settings);
 
