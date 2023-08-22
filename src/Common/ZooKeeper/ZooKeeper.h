@@ -674,7 +674,7 @@ public:
             else
             {
                 ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
-                LOG_INFO(&Poco::Logger::get("EphemeralNodeHolder"), "Cannot remove {} since session has been expired", path);
+                LOG_DEBUG(&Poco::Logger::get("EphemeralNodeHolder"), "Cannot remove {} since session has been expired", path);
             }
         }
         catch (...)
