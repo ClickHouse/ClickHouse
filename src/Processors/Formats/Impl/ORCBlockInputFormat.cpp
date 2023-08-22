@@ -144,17 +144,30 @@ ORCSchemaReader::ORCSchemaReader(ReadBuffer & in_, const FormatSettings & format
 {
 }
 
-NamesAndTypesList ORCSchemaReader::readSchema()
+void ORCSchemaReader::initializeIfNeeded()
 {
-    std::unique_ptr<arrow::adapters::orc::ORCFileReader> file_reader;
-    std::shared_ptr<arrow::Schema> schema;
+    if (file_reader)
+        return;
+
     std::atomic<int> is_stopped = 0;
     getFileReaderAndSchema(in, file_reader, schema, format_settings, is_stopped);
+}
+
+NamesAndTypesList ORCSchemaReader::readSchema()
+{
+    initializeIfNeeded();
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema, "ORC", format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference);
     if (format_settings.schema_inference_make_columns_nullable)
         return getNamesAndRecursivelyNullableTypes(header);
-    return header.getNamesAndTypesList();}
+    return header.getNamesAndTypesList();
+}
+
+std::optional<size_t> ORCSchemaReader::readNumberOrRows()
+{
+    initializeIfNeeded();
+    return file_reader->NumberOfRows();
+}
 
 void registerInputFormatORC(FormatFactory & factory)
 {

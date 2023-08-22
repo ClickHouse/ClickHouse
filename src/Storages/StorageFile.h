@@ -97,6 +97,8 @@ public:
 
     static void parseFileSource(String source, String & filename, String & path_to_archive);
 
+    bool supportsTrivialCountOptimization() const override { return true; }
+
 protected:
     friend class StorageFileSource;
     friend class StorageFileSink;
