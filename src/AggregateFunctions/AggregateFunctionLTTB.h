@@ -47,7 +47,7 @@ struct LTTBData : public StatisticalSample<Float64, Float64>
         std::vector<size_t> index(this->x.size());
 
         std::iota(index.begin(), index.end(), 0);
-        ::sort(index.begin(), index.end(), [&](size_t i1, size_t i2) { return this->x[i1] < this->x[i2]; });
+        std::sort(index.begin(), index.end(), [&](size_t i1, size_t i2) { return this->x[i1] < this->x[i2]; });
 
         SampleX temp_x{};
         SampleY temp_y{};
