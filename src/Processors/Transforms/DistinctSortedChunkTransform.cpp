@@ -60,7 +60,11 @@ void DistinctSortedChunkTransform::initChunkProcessing(const Columns & input_col
         other_columns.emplace_back(input_columns[pos].get());
 
     if (!other_columns.empty() && data.type == ClearableSetVariants::Type::EMPTY)
-        data.init(ClearableSetVariants::chooseMethod(other_columns, other_columns_sizes));
+    {
+        const auto method_type = ClearableSetVariants::chooseMethod(other_columns, other_columns_sizes);
+        data.init(method_type);
+        non_sorted_string_column_only = (method_type == ClearableSetVariants::Type::key_string);
+    }
 }
 
 template <bool clear_data>
@@ -94,6 +98,20 @@ size_t DistinctSortedChunkTransform::buildFilterForRange(
     size_t count = 0;
     for (size_t i = range_begin; i < range_end; ++i)
     {
+        if (non_sorted_string_column_only)
+        {
+            chassert(other_columns.size() == 1);
+            chassert(other_columns_pos.size() == 1);
+
+            const StringRef field_data = other_columns[0]->getDataAt(i);
+            if unlikely(field_data.size && !field_data.data)
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Invalid String: non-zero size string but data is null pointer. Column name: {}",
+                                input.getHeader().getByPosition(other_columns_pos[0]).name);
+            }
+        }
+
         const auto emplace_result = state.emplaceKey(method.data, i, data.string_pool);
 
         /// emit the record if there is no such key in the current set, skip otherwise

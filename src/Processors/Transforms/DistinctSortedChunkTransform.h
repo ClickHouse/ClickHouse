@@ -72,6 +72,9 @@ private:
 
     MutableColumns prev_chunk_latest_key;
     const bool sorted_stream = false;
+
+    /// Temporary hardening due to crashes
+    bool non_sorted_string_column_only = false;
 };
 
 }
