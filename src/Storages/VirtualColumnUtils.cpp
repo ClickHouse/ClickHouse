@@ -296,9 +296,12 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
     if (block.has("_file"))
     {
         auto pos = path.find_last_of('/');
-        assert(pos != std::string::npos);
+        String file;
+        if (pos != std::string::npos)
+            file = path.substr(pos + 1);
+        else
+            file = path;
 
-        auto file = path.substr(pos + 1);
         block.getByName("_file").column->assumeMutableRef().insert(file);
     }
 
