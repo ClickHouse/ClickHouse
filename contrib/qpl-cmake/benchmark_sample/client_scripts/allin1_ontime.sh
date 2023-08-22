@@ -5,7 +5,7 @@ WORKING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.."
 OUTPUT_DIR="${WORKING_DIR}/output"
 LOG_DIR="${OUTPUT_DIR}/log"
 RAWDATA_DIR="${WORKING_DIR}/rawdata_dir"
-DATAFILES_DIR="${WORKING_DIR}/datafiles_dir"
+DATABASE_DIR="${WORKING_DIR}/database_dir"
 CLIENT_SCRIPTS_DIR="${WORKING_DIR}/client_scripts"
 LOG_PACK_FILE="$(date +%Y-%m-%d-%H-%M-%S)"
 QUERY_FILE="queries_ontime.sql"
@@ -88,7 +88,7 @@ function check_table(){
                         echo "Instance_${i} Table data integrity check OK -> Rows:$var"
                 else
                         echo  "Instance_${i} Table data integrity check Failed -> Rows:$var"
-                        exit 1
+                        kill_instance_and_exit
                 fi
         done
         if [ $checknum -gt 0 ];then
@@ -122,10 +122,10 @@ function start_clickhouse_for_insertion(){
         echo "start_clickhouse_for_insertion"
         for i in $(seq 0 $[inst_num-1])
 	do                
-                echo "cd ${DATAFILES_DIR}/$1${dir_server[i]}"
+                echo "cd ${DATABASE_DIR}/$1${dir_server[i]}"
                 echo "${SERVER_BIND_CMD[i]} clickhouse server -C config_${1}${dir_server[i]}.xml >&${LOG_DIR}/${1}_${i}_server_log& > /dev/null"
                 
-	        cd ${DATAFILES_DIR}/$1${dir_server[i]}
+	        cd ${DATABASE_DIR}/$1${dir_server[i]}
 	        ${SERVER_BIND_CMD[i]} clickhouse server -C config_${1}${dir_server[i]}.xml >&${LOG_DIR}/${1}_${i}_server_log& > /dev/null
                 check_instance ${ckport[i]}
         done
@@ -135,10 +135,10 @@ function start_clickhouse_for_stressing(){
         echo "start_clickhouse_for_stressing"
         for i in $(seq 0 $[inst_num-1])
 	do
-                echo "cd ${DATAFILES_DIR}/$1${dir_server[i]}"
+                echo "cd ${DATABASE_DIR}/$1${dir_server[i]}"
                 echo "${SERVER_BIND_CMD[i]} clickhouse server -C config_${1}${dir_server[i]}.xml >&/dev/null&"
                 
-	        cd ${DATAFILES_DIR}/$1${dir_server[i]}
+	        cd ${DATABASE_DIR}/$1${dir_server[i]}
 	        ${SERVER_BIND_CMD[i]} clickhouse server -C config_${1}${dir_server[i]}.xml >&/dev/null&
                 check_instance ${ckport[i]}
         done
@@ -177,12 +177,13 @@ function run_test(){
 is_xml=0
 for i in $(seq 0 $[inst_num-1])
 do
-        if [ -f ${DATAFILES_DIR}/${1}${dir_server[i]}/config_${1}${dir_server[i]}.xml ]; then
+        if [ -f ${DATABASE_DIR}/${1}${dir_server[i]}/config_${1}${dir_server[i]}.xml ]; then
                 is_xml=$[is_xml+1]
         fi
 done
 if [ $is_xml -eq $inst_num ];then
         echo "Benchmark with $inst_num instance"
+        kill_instance
         start_clickhouse_for_insertion ${1}
 
         for i in $(seq 0 $[inst_num-1])
@@ -193,7 +194,6 @@ if [ $is_xml -eq $inst_num ];then
         if [ $? -eq 0 ];then
                 check_table
         fi
-        kill_instance
 
         if [ $1 == "deflate" ];then
 	        test -f ${LOG_DIR}/${1}_server_log && deflatemsg=`cat ${LOG_DIR}/${1}_server_log | grep DeflateJobHWPool`
@@ -205,6 +205,7 @@ if [ $is_xml -eq $inst_num ];then
 	fi
         echo "Check table data required in server_${1} -> Done! "
         
+        kill_instance
         start_clickhouse_for_stressing ${1}
         for i in $(seq 0 $[inst_num-1])
         do
@@ -218,24 +219,25 @@ if [ $is_xml -eq $inst_num ];then
                 echo "Completed client stressing, checking log... "
                 finish_log=`grep "Finished" ${LOG_DIR}/${1}.log | wc -l`
 	        if [ $finish_log -eq 1 ] ;then
-                        kill_instance
 	                test -f ${LOG_DIR}/${1}.log && echo  "${1}.log ===> ${LOG_DIR}/${1}.log"
+                        kill_instance
 	        else
-	                kill_instance
 	                echo "No find 'Finished' in client log -> Performance test may fail"
-	                exit 1
-
+                        kill_instance_and_exit
 	        fi
-
 	    else
                 echo "${1} clickhouse server start fail"
                 exit 1
         fi
 else
-        echo "clickhouse server start fail -> Please check xml files required in ${DATAFILES_DIR} for each instance"
+        echo "clickhouse server start fail -> Please check xml files required in ${DATABASE_DIR} for each instance"
         exit 1
 
 fi
+}
+function kill_instance_and_exit(){
+        kill_instance
+        exit 1
 }
 function clear_log(){
         if [ -d "$LOG_DIR" ]; then
@@ -262,7 +264,7 @@ function setup_check(){
                 iax_dev_num=`accel-config list | grep iax | wc -l`
                 if [ $iax_dev_num -eq 0 ] ;then
                         echo "No IAA devices available -> Please check IAA hardware setup manually!"
-                        exit 1
+                        #exit 1
                 else
 	                echo "IAA enabled devices number:$iax_dev_num"
                 fi

@@ -220,4 +220,5 @@ We focus on QPS(Query Per Second) to compare performance data for LZ4/Deflate/ZS
 
 ## Tips
 
-Each time before relaunch clickhouse server [INSTANCE], please make sure no same [INSTANCE] running on background, please check and kill old one.
+- Each time before relaunch clickhouse server [INSTANCE], please make sure no same [INSTANCE] running on background, please check and kill old one.
+- By comparing the query list in ./client_scripts/queries_ssb.sql with official [Star Schema Benchmark](https://clickhouse.com/docs/en/getting-started/example-datasets/star-schema), you will find three queries are not included: Q1.2/Q1.3/Q3.4 . This is because cpu utilization% is very low <10% for these queries which means cannot demonstrate performance differences.
