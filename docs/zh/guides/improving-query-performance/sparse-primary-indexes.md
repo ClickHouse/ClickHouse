@@ -1278,14 +1278,14 @@ WHERE URL != '';
 
 ### 在次关键字列上高效过滤
 
-当查询对至少一列进行过滤时，该列是复合关键字的一部分，并且是第一关键字列，[那么 ClickHouse 将在关键字列的索引标记上运行二分查找算法](#the-primary-index-is-used-for-selecting-granules)。
+当查询对至少一列进行过滤时，该列是复合关键字的一部分，并且是第一关键字列，[那么 ClickHouse 将在关键字列的索引标记上运行二分查找算法](#主索引被用来选择颗粒)。
 
 当查询（仅）过滤属于复合关键字的某一列，但不是第一关键字列时，[ClickHouse 将在关键字列的索引标记上使用通用排除搜索算法](#查询使用第二位主键的性能问题)。
 
 
 对于第二种情况，复合主键中关键列的排序对[通用排除搜索算法](https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444)的有效性很重要。
 
-这是一个对表中的 `UserID` 列进行过滤的查询，我们对该表的关键字列`（URL、UserID、IsRobot）`按基数进行了降序排序：
+这是一个对表中的 `UserID` 列进行过滤的查询，我们对该表的关键字列`(URL、UserID、IsRobot)`按基数进行了降序排序：
 ```sql
 SELECT count(*)
 FROM hits_URL_UserID_IsRobot
@@ -1352,7 +1352,7 @@ ORDER BY Ratio ASC
 ```
 我们可以看到，在按关键字列`(IsRobot、UserID、URL)` 按基数升序排列的表中，`UserID`  列的压缩率明显更高。
 
-虽然两个表中存储的数据完全相同（我们在两个表中插入了相同的 887 万行），但复合主键中关键字列的顺序对表的 [列数据文件](#data-is-stored-on-disk-ordered-by-primary-key-columns)中的 <a href="https://clickhouse.com/docs/en/introduction/distinctive-features/#data-compression" target="_blank">压缩</a>数据所需的磁盘空间有很大影响：
+虽然两个表中存储的数据完全相同（我们在两个表中插入了相同的 887 万行），但复合主键中关键字列的顺序对表的 [列数据文件](#数据按照主键排序存储在磁盘上)中的 <a href="https://clickhouse.com/docs/en/introduction/distinctive-features/#data-compression" target="_blank">压缩</a>数据所需的磁盘空间有很大影响：
 - 在具有复合主键`(URL, UserID, IsRobot)` 的表 `hits_URL_UserID_IsRobot` 中，我们按照键列的基数降序排列，此时 `UserID.bin` 数据文件占用**11.24MB**的磁盘空间。
 - 在具有复合主键`(IsRobot, UserID, URL)` 的表 `hits_IsRobot_UserID_URL` 中，我们按照键列的基数升序排列，`UserID.bin` 数据文件仅占用**877.47 KiB**的磁盘空间。
 
@@ -1363,7 +1363,7 @@ ORDER BY Ratio ASC
 下图描绘了主键的磁盘上行顺序，其中键列是按基数升序排列的：
 <img src={require('../../../en/guides/best-practices/images/sparse-primary-indexes-14a.png').default} class="image"/>
 
-我们讨论过 [表的行数据按主键列有序存储在磁盘上]（#data-is-stored-on-disk-ordered-by-primary-key-columns）。
+我们讨论过 [表的行数据按主键列有序存储在磁盘上](#数据按照主键排序存储在磁盘上)。
 
 在上图中，表格的行（它们在磁盘上的列值）首先按其 `cl` 值排序，具有相同 `cl` 值的行按其 `ch` 值排序。由于第一键列 `cl` 的基数较低，因此很可能存在具有相同 `cl` 值的行。因此，`ch`值也很可能是有序的（局部地--对于具有相同`cl`值的行而言）。
 
@@ -1396,9 +1396,9 @@ ORDER BY Ratio ASC
 
 一个直观的解决方案可能是使用[UUID](https://en.wikipedia.org/wiki/Universally_unique_identifier) 列，每一行的值都是唯一的，并且为了快速检索行，将该列用作主键列。
 
-为了实现最快的检索，UUID 列[需要成为主键列](#the-primary-index-is-used-for-selecting-granules)。
+为了实现最快的检索，UUID 列[需要成为主键列](#主索引被用来选择颗粒)。
 
-我们讨论过，由于[ClickHouse 表的行数据是按主键列顺序存储在磁盘上的](#data-is-stored-on-disk-ordered-by-primary-key-columns)，因此在主键或复合主键中，在基数较小的列之前设置基数非常大的列（如 UUID 列）[不利于其他表列的压缩率](#optimal-compression-ratio-of-data-files)。
+我们讨论过，由于[ClickHouse 表的行数据是按主键列顺序存储在磁盘上的](#数据按照主键排序存储在磁盘上)，因此在主键或复合主键中，在基数较小的列之前设置基数非常大的列（如 UUID 列）[不利于其他表列的压缩率](#数据文件的最佳压缩率)。
 
 在最快检索速度和最佳数据压缩之间的折中方法是使用某种复合主键，其中 UUID 是最后一列关键字，位于（更）小基数关键字列之后，这些关键字列用于确保表中某些列的良好压缩比。
 
@@ -1416,7 +1416,7 @@ ORDER BY Ratio ASC
 <img src={require('../../../en/guides/best-practices/images/sparse-primary-indexes-15a.png').default} class="image"/>
 
 由于 `hash` 列被用作主键列
-- 可以[非常快速](#the-primary-index-is-used-for-selecting-granules) 检索特定行，但
+- 可以[非常快速](#主索引被用来选择颗粒) 检索特定行，但
 - 表格的行（列数据）是按照（唯一和随机的）哈希值升序存储在磁盘上的。因此，内容列的值也是按随机顺序存储的，不具有数据局部性，导致**内容列数据文件的压缩率不理想**。
 
 
