@@ -140,6 +140,18 @@ bool DistinctSortedChunkTransform::isLatestKeyFromPrevChunk(const size_t row_pos
                 i,
                 sorted_column.getFamilyName());
 
+
+        if (unlikely(prev_chunk_latest_key[i]->getDataType() != sorted_column.getDataType()))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Type of sorted column from previous chunk doesn't match type of sorted column from current chunk: prev_type={} curr_type={} header_column_name={} header_column_type={} header_pos={} sorted_po{}",
+                prev_chunk_latest_key[i]->getFamilyName(),
+                sorted_column.getFamilyName(),
+                input.getHeader().getByPosition(sorted_columns_pos[i]).name,
+                input.getHeader().getByPosition(sorted_columns_pos[i]).type->getName(),
+                sorted_columns_pos[i],
+                i);
+
         const int res = prev_chunk_latest_key[i]->compareAt(0, row_pos, sorted_column, sorted_columns_descr[i].nulls_direction);
         if (res != 0)
             return false;
