@@ -684,7 +684,7 @@ struct PartVersionWithPartitionIdAndName
     String name;
 };
 
-bool comparator(const PartVersionWithPartitionIdAndName & f, const PartVersionWithPartitionIdAndName & s)
+bool lessVersion(const PartVersionWithPartitionIdAndName & f, const PartVersionWithPartitionIdAndName & s)
 {
     return f.version < s.version;
 }
@@ -798,7 +798,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
     part_versions.reserve(data_parts.size());
     for (const auto & part : data_parts)
         part_versions.emplace_back(PartVersionWithPartitionIdAndName{part->info.getDataVersion(), part->info.partition_id, part->name});
-    std::sort(part_versions.begin(), part_versions.end(), comparator);
+    std::sort(part_versions.begin(), part_versions.end(), lessVersion);
 
     std::vector<MergeTreeMutationStatus> result;
     for (const auto & kv : current_mutations_by_version)
@@ -807,7 +807,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
         const MergeTreeMutationEntry & entry = kv.second;
         const PartVersionWithPartitionIdAndName needle{mutation_version, "", ""};
         auto versions_it = std::lower_bound(
-            part_versions.begin(), part_versions.end(), needle, comparator);
+            part_versions.begin(), part_versions.end(), needle, lessVersion);
 
         size_t parts_to_do = versions_it - part_versions.begin();
         Names parts_to_do_names;
@@ -1053,8 +1053,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
 
         if (!mutationVersionsEquivalent(left, right, lock))
         {
-            disable_reason = PreformattedMessage::create("Some parts have different mutation versions");
-            LOG_TRACE(log, "can_merge - Some parts have different mutation versions - false");
+            disable_reason = PreformattedMessage::create("Some parts have different (not equivalent) mutation versions");
             return false;
         }
 
