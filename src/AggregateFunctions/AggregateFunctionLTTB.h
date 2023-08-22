@@ -33,111 +33,51 @@ namespace ErrorCodes
 }
 
 
-struct LTTBData final
+struct LTTBData: public StatisticalSample<Float64, Float64>
 {
-    using AllocatorSample = MixedAlignedArenaAllocator<alignof(Float64), 4096>;
-    using DataList = PODArray<Float64, 32, AllocatorSample>;
-
-    DataList data_list_x{};
-    DataList data_list_y{};
-
-    bool sorted = true;
-
-    void add(const Float64 x, const Float64 y, Arena * arena)
+    void add(const Float64 xval, const Float64 yval, Arena * arena)
     {
-        data_list_x.push_back(x, arena);
-        data_list_y.push_back(y, arena);
-        sorted = false;
+        this->addX(xval, arena);
+        this->addY(yval, arena);
     }
 
-    void merge(const LTTBData & other, Arena * arena)
+    void sort(Arena * arena)
     {
-        if (other.data_list_x.empty() || other.data_list_y.empty())
-            return;
+        // sort the this->x and this->y in ascending order of this->x using index
+        std::vector<size_t> index(this->x.size());
 
-        data_list_x.insert(std::begin(other.data_list_x), std::end(other.data_list_x), arena);
-        data_list_y.insert(std::begin(other.data_list_y), std::end(other.data_list_y), arena);
-        sorted = false;
-    }
-
-    void serialize(WriteBuffer & buf) const
-    {
-        writeBinary(sorted, buf);
-        writeBinary(data_list_x.size(), buf);
-
-        for (const auto & x : data_list_x)
-            writeBinary(x, buf);
-
-        for (const auto & y : data_list_y)
-            writeBinary(y, buf);
-    }
-
-    void deserialize(ReadBuffer & buf, Arena * arena)
-    {
-        readBinary(sorted, buf);
-        size_t size;
-        readBinary(size, buf);
-
-        data_list_x.clear();
-        data_list_y.clear();
-        data_list_x.reserve(size, arena);
-        data_list_y.reserve(size, arena);
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            Float64 x;
-            readBinary(x, buf);
-            data_list_x.push_back(x, arena);
-        }
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            Float64 y;
-            readBinary(y, buf);
-            data_list_y.push_back(y, arena);
-        }
-    }
-
-    void sort()
-    {
-        if (sorted)
-            return;
-
-        // sort the data_list_x and data_list_y in ascending order of data_list_x using index
-        std::vector<size_t> index(data_list_x.size());
         std::iota(index.begin(), index.end(), 0);
-        ::sort(index.begin(), index.end(), [&](size_t i1, size_t i2) { return data_list_x[i1] < data_list_x[i2]; });
+        ::sort(index.begin(), index.end(), [&](size_t i1, size_t i2) { return this->x[i1] < this->x[i2]; });
 
-        PODArray<Float64> data_list_x_temp;
-        PODArray<Float64> data_list_y_temp;
+        SampleX temp_x{};
+        SampleY temp_y{};
 
-        for (size_t i = 0; i < data_list_x.size(); ++i)
+        for (size_t i = 0; i < this->x.size(); ++i)
         {
-            data_list_x_temp.push_back(data_list_x[index[i]]);
-            data_list_y_temp.push_back(data_list_y[index[i]]);
+            temp_x.push_back(this->x[index[i]], arena);
+            temp_y.push_back(this->y[index[i]], arena);
         }
 
-        for (size_t i = 0; i < data_list_x.size(); ++i)
+        for (size_t i = 0; i < this->x.size(); ++i)
         {
-            data_list_x[i] = data_list_x_temp[i];
-            data_list_y[i] = data_list_y_temp[i];
+            this->x[i] = temp_x[i];
+            this->y[i] = temp_y[i];
         }
-
-        sorted = true;
     }
 
-    PODArray<std::pair<Float64, Float64>> getResult(unsigned long total_buckets)
+    PODArray<std::pair<Float64, Float64>> getResult(size_t total_buckets, Arena * arena) 
     {
-        sort();
+        // Sort the data
+        this->sort(arena);
 
         PODArray<std::pair<Float64, Float64>> result;
 
         // Handle special cases for small data list
-        if (data_list_x.size() <= total_buckets)
+        if (this->x.size() <= total_buckets)
         {
-            for (unsigned long i = 0; i < data_list_x.size(); ++i)
+            for (size_t i = 0; i < this->x.size(); ++i)
             {
-                result.emplace_back(std::make_pair(data_list_x[i], data_list_y[i]));
+                result.emplace_back(std::make_pair(this->x[i], this->y[i]));
             }
             return result;
         }
@@ -147,47 +87,47 @@ struct LTTBData final
             return result;
         if (total_buckets == 1)
         {
-            result.emplace_back(std::make_pair(data_list_x.front(), data_list_y.front()));
+            result.emplace_back(std::make_pair(this->x.front(), this->y.front()));
             return result;
         }
         if (total_buckets == 2)
         {
-            result.emplace_back(std::make_pair(data_list_x.front(), data_list_y.front()));
-            result.emplace_back(std::make_pair(data_list_x.back(), data_list_y.back()));
+            result.emplace_back(std::make_pair(this->x.front(), this->y.front()));
+            result.emplace_back(std::make_pair(this->x.back(), this->y.back()));
             return result;
         }
 
         // Find the size of each bucket
-        unsigned long single_bucket_size = data_list_x.size() / total_buckets;
+        size_t single_bucket_size = this->x.size() / total_buckets;
 
         // Include the first data point
-        result.emplace_back(std::make_pair(data_list_x[0], data_list_y[0]));
+        result.emplace_back(std::make_pair(this->x[0], this->y[0]));
 
-        for (unsigned long i = 1; i < total_buckets - 1; ++i) // Skip the first and last bucket
+        for (size_t i = 1; i < total_buckets - 1; ++i) // Skip the first and last bucket
         {
-            unsigned long start_index = i * single_bucket_size;
-            unsigned long end_index = (i + 1) * single_bucket_size;
+            size_t start_index = i * single_bucket_size;
+            size_t end_index = (i + 1) * single_bucket_size;
 
             // Compute the average point in the next bucket
             Float64 avg_x = 0;
             Float64 avg_y = 0;
-            for (unsigned long j = end_index; j < (i + 2) * single_bucket_size; ++j)
+            for (size_t j = end_index; j < (i + 2) * single_bucket_size; ++j)
             {
-                avg_x += data_list_x[j];
-                avg_y += data_list_y[j];
+                avg_x += this->x[j];
+                avg_y += this->y[j];
             }
             avg_x /= single_bucket_size;
             avg_y /= single_bucket_size;
 
             // Find the point in the current bucket that forms the largest triangle
-            unsigned long max_index = start_index;
+            size_t max_index = start_index;
             Float64 max_area = 0.0;
-            for (unsigned long j = start_index; j < end_index; ++j)
+            for (size_t j = start_index; j < end_index; ++j)
             {
                 Float64 area = std::abs(
                     0.5
-                    * (result.back().first * data_list_y[j] + data_list_x[j] * avg_y + avg_x * result.back().second
-                       - result.back().first * avg_y - data_list_x[j] * result.back().second - avg_x * data_list_y[j]));
+                    * (result.back().first * this->y[j] + this->x[j] * avg_y + avg_x * result.back().second
+                       - result.back().first * avg_y - this->x[j] * result.back().second - avg_x * this->y[j]));
                 if (area > max_area)
                 {
                     max_area = area;
@@ -196,11 +136,11 @@ struct LTTBData final
             }
 
             // Include the selected point
-            result.emplace_back(std::make_pair(data_list_x[max_index], data_list_y[max_index]));
+            result.emplace_back(std::make_pair(this->x[max_index], this->y[max_index]));
         }
 
         // Include the last data point
-        result.emplace_back(std::make_pair(data_list_x.back(), data_list_y.back()));
+        result.emplace_back(std::make_pair(this->x.back(), this->y.back()));
 
         return result;
     }
@@ -316,17 +256,17 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).serialize(buf);
+        this->data(place).write(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).deserialize(buf, arena);
+        this->data(place).read(buf, arena);
     }
-
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+ 
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
-        auto res = this->data(place).getResult(total_buckets);
+        auto res = this->data(place).getResult(total_buckets, arena);
 
         auto & col = assert_cast<ColumnArray &>(to);
         auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
