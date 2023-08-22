@@ -46,12 +46,13 @@ namespace
         {
             if (startsWith(key, "resolver"))
             {
-                auto proxy_scheme_config_string = config_prefix + "." + key + ".proxy_scheme";
+                auto prefix_with_key = config_prefix + "." + key;
+                auto proxy_scheme_config_string = prefix_with_key + ".proxy_scheme";
                 auto config_protocol = configuration.getString(proxy_scheme_config_string);
 
                 if (ProxyConfiguration::Protocol::ANY == protocol || config_protocol == ProxyConfiguration::protocolToString(protocol))
                 {
-                    return getRemoteResolver(config_prefix + "." + key, configuration);
+                    return getRemoteResolver(prefix_with_key, configuration);
                 }
             }
         }
