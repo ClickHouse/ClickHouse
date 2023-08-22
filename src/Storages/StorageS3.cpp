@@ -527,7 +527,8 @@ StorageS3Source::StorageS3Source(
     const String & bucket_,
     const String & version_id_,
     std::shared_ptr<IIterator> file_iterator_,
-    const size_t max_parsing_threads_)
+    const size_t max_parsing_threads_,
+    std::optional<SelectQueryInfo> query_info_)
     : ISource(info.source_header, false)
     , WithContext(context_)
     , name(std::move(name_))
@@ -542,6 +543,7 @@ StorageS3Source::StorageS3Source(
     , client(client_)
     , sample_block(info.format_header)
     , format_settings(format_settings_)
+    , query_info(std::move(query_info_))
     , requested_virtual_columns(info.requested_virtual_columns)
     , file_iterator(file_iterator_)
     , max_parsing_threads(max_parsing_threads_)
@@ -581,6 +583,9 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
         /* max_download_threads= */ std::nullopt,
         /* is_remote_fs */ true,
         compression_method);
+
+    if (query_info.has_value())
+        input_format->setQueryInfo(query_info.value(), getContext());
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
@@ -1056,7 +1061,8 @@ Pipe StorageS3::read(
             query_configuration.url.bucket,
             query_configuration.url.version_id,
             iterator_wrapper,
-            parsing_threads));
+            parsing_threads,
+            query_info));
     }
 
     return Pipe::unitePipes(std::move(pipes));
