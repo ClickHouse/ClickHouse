@@ -51,6 +51,7 @@
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
+#include <Analyzer/createUniqueTableAliases.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/SetUtils.h>
 #include <Analyzer/AggregationUtils.h>
@@ -7174,6 +7175,7 @@ void QueryAnalysisPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context
 {
     QueryAnalyzer analyzer;
     analyzer.resolve(query_tree_node, table_expression, context);
+    createUniqueTableAliases(query_tree_node, context);
 }
 
 }
