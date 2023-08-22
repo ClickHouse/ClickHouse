@@ -3,7 +3,7 @@
 
 DROP TABLE IF EXISTS 02863_delayed_source;
 
-CREATE TABLE 02863_delayed_source(a Int64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/' || currentDatabase() || '02863_delayed_source', 'r1') ORDER BY a;
+CREATE TABLE 02863_delayed_source(a Int64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/02863_delayed_source/{replica}', 'r1') ORDER BY a;
 INSERT INTO 02863_delayed_source VALUES (1), (2);
 
 SYSTEM ENABLE FAILPOINT use_delayed_remote_source;
