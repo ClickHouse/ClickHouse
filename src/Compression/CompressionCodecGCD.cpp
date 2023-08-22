@@ -260,8 +260,8 @@ void registerCodecGCD(CompressionCodecFactory & factory)
             gcd_bytes_size = getGCDBytesSize(column_type);
         }
 
-        if (arguments && arguments->children.size() > 1)
-            throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "GCD codec must have 1 parameter, given {}", arguments->children.size());
+        if (arguments && !arguments->children.empty())
+            throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "GCD codec must have 0 parameters, given {}", arguments->children.size());
         return std::make_shared<CompressionCodecGCD>(gcd_bytes_size);
     };
     factory.registerCompressionCodecWithType("GCD", method_code, codec_builder);
