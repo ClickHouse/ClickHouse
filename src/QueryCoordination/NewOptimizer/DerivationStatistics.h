@@ -55,7 +55,7 @@ public:
 
         if (step.isFinal())
         {
-            statistics.setOutputRowSize(input_row_size / 4);
+            statistics.setOutputRowSize(input_row_size / 4); /// fake agg
         }
         else
         {

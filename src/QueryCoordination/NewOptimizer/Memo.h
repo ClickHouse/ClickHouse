@@ -26,7 +26,7 @@ public:
 
     void deriveStat();
 
-    void deriveStat(Group & group);
+    Statistics deriveStat(Group & group);
 
     void enforce();
 

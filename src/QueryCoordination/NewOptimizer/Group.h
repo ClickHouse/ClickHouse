@@ -59,6 +59,16 @@ public:
 
     String toString() const;
 
+    void setStatistics(Statistics & statistics_)
+    {
+        statistics = statistics_;
+    }
+
+    const Statistics & getStatistics() const
+    {
+        return statistics;
+    }
+
 private:
     UInt32 id = 0;
 

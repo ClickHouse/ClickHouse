@@ -1,9 +1,9 @@
-#include <QueryCoordination/NewOptimizer/Task/OptimizeGroupNode.h>
+#include <QueryCoordination/NewOptimizer/Cost/CostCalculator.h>
+#include <QueryCoordination/NewOptimizer/DerivationOutputProp.h>
 #include <QueryCoordination/NewOptimizer/Group.h>
 #include <QueryCoordination/NewOptimizer/GroupNode.h>
+#include <QueryCoordination/NewOptimizer/Task/OptimizeGroupNode.h>
 #include <QueryCoordination/NewOptimizer/derivationRequiredChildProp.h>
-#include <QueryCoordination/NewOptimizer/DerivationOutputProp.h>
-#include <QueryCoordination/NewOptimizer/Cost/CostCalc.h>
 
 namespace DB
 {

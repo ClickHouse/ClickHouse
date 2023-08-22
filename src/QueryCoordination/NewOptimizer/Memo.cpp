@@ -1,10 +1,10 @@
 #include <stack>
-#include <QueryCoordination/NewOptimizer/Cost/CostCalc.h>
+#include <QueryCoordination/NewOptimizer/Cost/CostCalculator.h>
+#include <QueryCoordination/NewOptimizer/DerivationOutputProp.h>
+#include <QueryCoordination/NewOptimizer/DerivationStatistics.h>
 #include <QueryCoordination/NewOptimizer/Memo.h>
 #include <QueryCoordination/NewOptimizer/Transform/Transformation.h>
 #include <QueryCoordination/NewOptimizer/derivationRequiredChildProp.h>
-#include <QueryCoordination/NewOptimizer/DerivationOutputProp.h>
-#include <QueryCoordination/NewOptimizer/DerivationStatistics.h>
 #include <Common/typeid_cast.h>
 
 
@@ -124,37 +124,25 @@ void Memo::deriveStat()
     deriveStat(*root_group);
 }
 
-void Memo::deriveStat(Group & group)
+Statistics Memo::deriveStat(Group & group)
 {
     auto & group_nodes = group.getGroupNodes();
 
+    Statistics res;
     for (auto & group_node : group_nodes)
     {
-
+        std::vector<Statistics> child_statistics;
         for (auto * child_group : group_node.getChildren())
         {
-            deriveStat(*child_group);
+            Statistics stat = deriveStat(*child_group);
+            child_statistics.emplace_back(stat);
         }
 
-        DerivationStatistics(group_node,)
-
-        const auto & step = group_node.getStep();
-
-        const auto & transformations = NewOptimizer::getTransformations();
-
-        /// Apply all transformations.
-        for (const auto & transformation : transformations)
-        {
-            if (!transformation.apply)
-                continue;
-
-            auto sub_query_plans = transformation.apply(step, context);
-
-            if (!sub_query_plans.empty())
-                group_transformed_node.emplace(&group, std::move(sub_query_plans));
-        }
-
+        Statistics stat = DerivationStatistics(group_node, child_statistics).derivationStatistics();
+        group.setStatistics(stat);
+        res = stat;
     }
+    return res;
 }
 
 void Memo::transform()
@@ -229,6 +217,7 @@ std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>> Memo::enforce
         for (auto & required_child_props : alternative_prop)
         {
             std::vector<PhysicalProperties> actual_children_prop;
+            std::vector<Statistics> children_statistics;
 
             Float64 cost = 0;
             const auto & child_groups = group_node.getChildren();
@@ -242,13 +231,14 @@ std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>> Memo::enforce
                 }
                 cost += best_node->second.cost;
                 actual_children_prop.emplace_back(best_node->first);
+                children_statistics.emplace_back(child_groups[j]->getStatistics());
             }
 
             /// derivation output prop by required_prop and children_prop
             auto output_prop = DerivationOutputProp(group_node, required_prop, actual_children_prop).derivationOutputProp();
             group_node.updateBestChild(output_prop, actual_children_prop, cost);
 
-            Float64 total_cost = calcCost(group_node.getStep()) + (actual_children_prop.empty() ? 0 : cost);
+            Float64 total_cost = CostCalculator(group_node, output_prop, group.getStatistics(), children_statistics).calcCost() + (actual_children_prop.empty() ? 0 : cost);
             group.updatePropBestNode(output_prop, &group_node, total_cost); /// need keep lowest cost
 
             /// enforce
@@ -259,15 +249,15 @@ std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>> Memo::enforce
         }
     }
 
-    for (auto & [group_enforce_node, output_prop] : collection_enforced_nodes_child_prop)
+    for (auto & [group_enforce_node, child_prop] : collection_enforced_nodes_child_prop)
     {
         // GroupNode group_enforce_singleton_node(exchange_step);
         auto & added_node = group.addGroupNode(group_enforce_node);
 
-        auto child_cost = group.getCostByProp(output_prop);
+        auto child_cost = group.getCostByProp(child_prop);
 
-        Float64 total_cost = calcCost(added_node.getStep()) + child_cost;
-        added_node.updateBestChild(required_prop, {output_prop}, child_cost);
+        Float64 total_cost = CostCalculator(added_node, required_prop, group.getStatistics(), {}).calcCost() + child_cost;
+        added_node.updateBestChild(required_prop, {child_prop}, child_cost);
 
         group.updatePropBestNode(required_prop, &added_node, total_cost);
     }
