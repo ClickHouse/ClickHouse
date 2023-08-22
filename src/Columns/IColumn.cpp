@@ -78,6 +78,13 @@ void IColumn::forEachSubcolumnRecursively(RecursiveColumnCallback callback) cons
     });
 }
 
+void IColumn::deserializeAndInsertManyFromArena(PaddedPODArray<const char *> & positions,
+    const DeserializeFilter * filter,
+    const DeserializeOffsets * offsets)
+{
+    this->deserializeAndInsertManyFromArenaImpl<IColumn>(positions, filter, offsets);
+}
+
 bool isColumnNullable(const IColumn & column)
 {
     return checkColumn<ColumnNullable>(column);

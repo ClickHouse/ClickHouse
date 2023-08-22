@@ -237,6 +237,9 @@ struct AggregationMethodOneNumber
         else
             column->insertRawData<sizeof(FieldType)>(key_holder);
     }
+
+    /// Support batch keys insert
+    static const bool support_batch_keys_insert = false;
 };
 
 
@@ -270,6 +273,9 @@ struct AggregationMethodString
     {
         static_cast<ColumnString *>(key_columns[0])->insertData(key.data, key.size);
     }
+
+    /// Support batch keys insert
+    static const bool support_batch_keys_insert = false;
 };
 
 
@@ -312,6 +318,9 @@ struct AggregationMethodStringNoCache
             assert_cast<ColumnString &>(*key_columns[0]).insertData(key.data, key.size);
         }
     }
+
+    /// Support batch keys insert
+    static const bool support_batch_keys_insert = false;
 };
 
 
@@ -345,6 +354,9 @@ struct AggregationMethodFixedString
     {
         assert_cast<ColumnFixedString &>(*key_columns[0]).insertData(key.data, key.size);
     }
+
+    /// Support batch keys insert
+    static const bool support_batch_keys_insert = false;
 };
 
 /// Same as above but without cache
@@ -384,6 +396,9 @@ struct AggregationMethodFixedStringNoCache
             assert_cast<ColumnFixedString &>(*key_columns[0]).insertData(key.data, key.size);
         }
     }
+
+    /// Support batch keys insert
+    static const bool support_batch_keys_insert = false;
 };
 
 
@@ -425,6 +440,9 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
             col->insertData(reinterpret_cast<const char *>(&key), sizeof(key));
         }
     }
+
+    /// Support batch keys insert
+    static const bool support_batch_keys_insert = false;
 };
 
 
@@ -517,6 +535,9 @@ struct AggregationMethodKeysFixed
             }
         }
     }
+
+    /// Support batch keys insert
+    static const bool support_batch_keys_insert = false;
 };
 
 
@@ -555,6 +576,15 @@ struct AggregationMethodSerialized
         const auto * pos = key.data;
         for (auto & column : key_columns)
             pos = column->deserializeAndInsertFromArena(pos);
+    }
+
+    /// Support batch keys insert
+    static const bool support_batch_keys_insert = true;
+
+    static void insertKeysIntoColumns(PaddedPODArray<const char *> & keys, std::vector<IColumn *> & key_columns, const Sizes &)
+    {
+        for (auto & column : key_columns)
+            column->deserializeAndInsertManyFromArena(keys);
     }
 };
 

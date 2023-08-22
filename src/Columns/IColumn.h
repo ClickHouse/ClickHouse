@@ -224,6 +224,15 @@ public:
     /// Returns pointer to the position after the read data.
     virtual const char * deserializeAndInsertFromArena(const char * pos) = 0;
 
+    /// Deserializes a values that were serialized using IColumn::serializeValueIntoArena method.
+    /// Update pointers in positions array.
+    using DeserializeFilter = PaddedPODArray<UInt8>;
+    using DeserializeOffset = UInt64;
+    using DeserializeOffsets = PaddedPODArray<DeserializeOffset>;
+    virtual void deserializeAndInsertManyFromArena(PaddedPODArray<const char *> & positions,
+      const DeserializeFilter * filter = nullptr,
+      const DeserializeOffsets * offsets = nullptr);
+
     /// Skip previously serialized value that was serialized using IColumn::serializeValueIntoArena method.
     /// Returns a pointer to the position after the deserialized data.
     virtual const char * skipSerializedInArena(const char *) const = 0;
@@ -569,6 +578,11 @@ protected:
     /// In derived classes (that use final keyword), implement scatter method as call to scatterImpl.
     template <typename Derived>
     std::vector<MutablePtr> scatterImpl(ColumnIndex num_columns, const Selector & selector) const;
+
+    template <typename Derived>
+    void deserializeAndInsertManyFromArenaImpl(PaddedPODArray<const char *> & positions,
+        const DeserializeFilter * filter,
+        const DeserializeOffsets * offsets);
 
     template <typename Derived, bool reversed, bool use_indexes>
     void compareImpl(const Derived & rhs, size_t rhs_row_num,

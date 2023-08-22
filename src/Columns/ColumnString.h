@@ -173,6 +173,10 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
+    void deserializeAndInsertManyFromArena(PaddedPODArray<const char *> & positions,
+        const DeserializeFilter * filter,
+        const DeserializeOffsets * deserialize_offsets) override;
+
     const char * skipSerializedInArena(const char * pos) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override

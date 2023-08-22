@@ -227,6 +227,35 @@ const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
     return pos;
 }
 
+void ColumnNullable::deserializeAndInsertManyFromArena(PaddedPODArray<const char *> & positions,
+    const DeserializeFilter * filter,
+    const DeserializeOffsets * offsets)
+{
+    if (offsets)
+    {
+        this->deserializeAndInsertManyFromArenaImpl<ColumnNullable>(positions, filter, offsets);
+        return;
+    }
+
+    size_t positions_size = positions.size();
+
+    auto & null_map_data = getNullMapData();
+    size_t old_size = null_map_data.size();
+    null_map_data.resize(old_size + positions_size);
+
+    for (size_t i = 0; i < positions_size; ++i)
+    {
+        UInt8 val = unalignedLoad<UInt8>(positions[i]);
+        null_map_data[old_size + i] = val;
+        positions[i] += sizeof(val);
+
+        if (filter && (*filter)[i])
+            null_map_data[old_size + i] = 1;
+    }
+
+    getNestedColumn().deserializeAndInsertManyFromArena(positions, &null_map_data, offsets);
+}
+
 const char * ColumnNullable::skipSerializedInArena(const char * pos) const
 {
     UInt8 val = unalignedLoad<UInt8>(pos);

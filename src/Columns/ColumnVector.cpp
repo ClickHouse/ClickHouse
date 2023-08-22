@@ -81,6 +81,31 @@ const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
 }
 
 template <typename T>
+void ColumnVector<T>::deserializeAndInsertManyFromArena(PaddedPODArray<const char *> & positions,
+    const IColumn::DeserializeFilter * filter,
+    const IColumn::DeserializeOffsets * offsets)
+{
+    if (offsets)
+    {
+        this->deserializeAndInsertManyFromArena(positions, filter, offsets);
+        return;
+    }
+
+    size_t positions_size = positions.size();
+    size_t old_size = data.size();
+    data.resize(old_size + positions_size);
+
+    for (size_t i = 0; i < positions_size; ++i)
+    {
+        if (filter && (*filter)[i])
+            continue;
+
+        data[old_size + i] = unalignedLoad<T>(positions[i]);
+        positions[i] += sizeof(T);
+    }
+}
+
+template <typename T>
 const char * ColumnVector<T>::skipSerializedInArena(const char * pos) const
 {
     return pos + sizeof(T);

@@ -91,6 +91,32 @@ const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 }
 
 template <is_decimal T>
+void ColumnDecimal<T>::deserializeAndInsertManyFromArena(PaddedPODArray<const char *> & positions,
+    const IColumn::DeserializeFilter * filter,
+    const IColumn::DeserializeOffsets * offsets)
+{
+    if (offsets)
+    {
+        this->template deserializeAndInsertManyFromArenaImpl<ColumnDecimal<T>>(positions, filter, offsets);
+        return;
+    }
+
+    size_t positions_size = positions.size();
+    size_t old_size = data.size();
+    data.resize(old_size + positions_size);
+
+    for (size_t i = 0; i < positions_size; ++i)
+    {
+        if (filter && (*filter)[i])
+            continue;
+
+        data[old_size + i] = unalignedLoad<T>(positions[i]);
+        positions[i] += sizeof(T);
+    }
+}
+
+
+template <is_decimal T>
 const char * ColumnDecimal<T>::skipSerializedInArena(const char * pos) const
 {
     return pos + sizeof(T);

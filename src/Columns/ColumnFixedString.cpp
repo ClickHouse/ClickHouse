@@ -118,6 +118,31 @@ const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
     return pos + n;
 }
 
+void ColumnFixedString::deserializeAndInsertManyFromArena(PaddedPODArray<const char *> & positions,
+    const DeserializeFilter * filter,
+    const DeserializeOffsets * offsets)
+{
+    // if (offsets)
+    // {
+        this->deserializeAndInsertManyFromArenaImpl<ColumnFixedString>(positions, filter, offsets);
+    //     return;
+    // }
+
+    // size_t positions_size = positions.size();
+    // const size_t old_size = chars.size();
+    // chars.resize(old_size + n * positions_size);
+    // auto * data_pos = chars.data() + old_size;
+
+    // for (size_t i = 0; i < positions_size; ++i) {
+    //     if (filter && (*filter)[i]) {
+    //         continue;
+    //     }
+
+    //     memcpy(data_pos, positions[i], n);
+    //     positions[i] += n;
+    // }
+}
+
 const char * ColumnFixedString::skipSerializedInArena(const char * pos) const
 {
     return pos + n;

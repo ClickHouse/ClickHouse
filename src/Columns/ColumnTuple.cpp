@@ -192,6 +192,14 @@ const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
     return pos;
 }
 
+void ColumnTuple::deserializeAndInsertManyFromArena(PaddedPODArray<const char *> & positions,
+    const DeserializeFilter * filter,
+    const DeserializeOffsets * offsets)
+{
+    for (auto & column : columns)
+        column->deserializeAndInsertManyFromArena(positions, filter, offsets);
+}
+
 const char * ColumnTuple::skipSerializedInArena(const char * pos) const
 {
     for (const auto & column : columns)

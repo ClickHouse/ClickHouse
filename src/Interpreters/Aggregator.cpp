@@ -2027,6 +2027,7 @@ Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena
 
     std::optional<OutputBlockColumns> out_cols;
     std::optional<Sizes> shuffled_key_sizes;
+    PaddedPODArray<const char *> keys;
     PaddedPODArray<AggregateDataPtr> places;
     bool has_null_key_data = false;
 
@@ -2052,6 +2053,8 @@ Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena
         shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes);
 
         places.reserve(max_block_size);
+        if constexpr (Method::support_batch_keys_insert)
+            keys.reserve(max_block_size);
     };
 
     // should be invoked at least once, because null data might be the only content of the `data`
@@ -2064,7 +2067,12 @@ Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena
                 init_out_cols();
 
             const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
-            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
+
+            if constexpr (!Method::support_batch_keys_insert)
+                method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
+            else
+                keys.push_back(key.data);
+
             places.emplace_back(mapped);
 
             /// Mark the cell as destroyed so it will not be destroyed in destructor.
@@ -2074,13 +2082,27 @@ Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena
             {
                 if (places.size() >= max_block_size)
                 {
-                    res.emplace_back(insertResultsIntoColumns<use_compiled_functions>(places, std::move(out_cols.value()), arena, has_null_key_data));
+                    if constexpr (Method::support_batch_keys_insert)
+                    {
+                        method.insertKeysIntoColumns(keys, out_cols->raw_key_columns, key_sizes_ref);
+                        keys.clear();
+                    }
+
+                    res.emplace_back(
+                        insertResultsIntoColumns<use_compiled_functions>(places, std::move(out_cols.value()), arena, has_null_key_data));
                     places.clear();
                     out_cols.reset();
                     has_null_key_data = false;
                 }
             }
         });
+
+    if constexpr (Method::support_batch_keys_insert)
+    {
+        const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
+        method.insertKeysIntoColumns(keys, out_cols->raw_key_columns, key_sizes_ref);
+        keys.clear();
+    }
 
     if constexpr (return_single_block)
     {
@@ -2089,7 +2111,8 @@ Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena
     else
     {
         if (out_cols.has_value())
-            res.emplace_back(insertResultsIntoColumns<use_compiled_functions>(places, std::move(out_cols.value()), arena, has_null_key_data));
+            res.emplace_back(
+                insertResultsIntoColumns<use_compiled_functions>(places, std::move(out_cols.value()), arena, has_null_key_data));
         return res;
     }
 }

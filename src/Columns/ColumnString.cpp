@@ -255,6 +255,71 @@ const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
     return pos + string_size;
 }
 
+void ColumnString::deserializeAndInsertManyFromArena(PaddedPODArray<const char *> & positions,
+    const DeserializeFilter * filter,
+    const DeserializeOffsets * deserialize_offsets)
+{
+    if (deserialize_offsets)
+    {
+        this->deserializeAndInsertManyFromArenaImpl<ColumnString>(positions, filter, deserialize_offsets);
+        return;
+    }
+
+
+    // size_t positions_size = positions.size();
+    // for (size_t i = 0; i < positions_size; ++i) {
+    //     if (filter && (*filter)[i])
+    //         continue;
+
+    //     auto & position = positions[i];
+    //     if (deserialize_offsets)
+    //     {
+    //         size_t size = (*deserialize_offsets)[i] - (*deserialize_offsets)[i - 1];
+    //         for (size_t j = 0; j < size; ++j)
+    //             position = static_cast<ColumnString *>(this)->deserializeAndInsertFromArena(position);
+    //     }
+    //     else
+    //     {
+    //         position = static_cast<ColumnString *>(this)->deserializeAndInsertFromArena(position);
+    //     }
+    // }
+
+    size_t offsets_old_size = offsets.size();
+    size_t positions_size = positions.size();
+    offsets.resize(offsets_old_size + positions.size());
+
+    const size_t old_size = chars.size();
+    size_t new_size = chars.size();
+    for (size_t i = 0; i < positions_size; ++i)
+    {
+        if (filter && (*filter)[i])
+        {
+            offsets[offsets_old_size + i] = new_size;
+            continue;
+        }
+
+        const size_t string_size = unalignedLoad<size_t>(positions[i]);
+        positions[i] += sizeof(string_size);
+        new_size += string_size;
+        offsets[offsets_old_size + i] = new_size;
+    }
+
+    chars.resize(new_size);
+    auto * data_pos = chars.data() + old_size;
+
+    for (size_t i = 0; i < positions_size; ++i)
+    {
+        if (filter && (*filter)[i])
+            continue;
+
+        size_t copy_index = offsets_old_size + i;
+        size_t copy_size = offsets[copy_index] - offsets[copy_index - 1];
+        memcpy(data_pos, positions[i], copy_size);
+        data_pos += copy_size;
+        positions[i] += copy_size;
+    }
+}
+
 const char * ColumnString::skipSerializedInArena(const char * pos) const
 {
     const size_t string_size = unalignedLoad<size_t>(pos);

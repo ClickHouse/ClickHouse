@@ -66,6 +66,31 @@ std::vector<IColumn::MutablePtr> IColumn::scatterImpl(ColumnIndex num_columns,
     return columns;
 }
 
+template <typename Derived>
+void IColumn::deserializeAndInsertManyFromArenaImpl(PaddedPODArray<const char *> & positions,
+    const IColumn::DeserializeFilter * filter,
+    const IColumn::DeserializeOffsets * offsets)
+{
+    size_t positions_size = positions.size();
+    for (size_t i = 0; i < positions_size; ++i)
+    {
+        if (filter && (*filter)[i])
+            continue;
+
+        auto & position = positions[i];
+        if (offsets)
+        {
+            size_t size = (*offsets)[i] - (*offsets)[i - 1];
+            for (size_t j = 0; j < size; ++j)
+                position = static_cast<Derived *>(this)->deserializeAndInsertFromArena(position);
+        }
+        else
+        {
+            position = static_cast<Derived *>(this)->deserializeAndInsertFromArena(position);
+        }
+    }
+}
+
 template <typename Derived, bool reversed, bool use_indexes>
 void IColumn::compareImpl(const Derived & rhs, size_t rhs_row_num,
                           PaddedPODArray<UInt64> * row_indexes [[maybe_unused]],
