@@ -1,6 +1,7 @@
 
 #include <Storages/buildQueryTreeForShard.h>
 
+#include <Analyzer/createUniqueTableAliases.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -371,6 +372,8 @@ QueryTreeNodePtr buildQueryTreeForShard(SelectQueryInfo & query_info, QueryTreeN
         query_tree_to_modify = query_tree_to_modify->cloneAndReplace(replacement_map);
 
     removeGroupingFunctionSpecializations(query_tree_to_modify);
+
+    createUniqueTableAliases(query_tree_to_modify, planner_context->getQueryContext());
 
     return query_tree_to_modify;
 }

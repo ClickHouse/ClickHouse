@@ -25,9 +25,14 @@ public:
             case QueryTreeNodeType::QUERY:
                 [[fallthrough]];
             case QueryTreeNodeType::UNION:
+            {
                 if (getSubqueryDepth() == 1)
+                {
+                    node->removeAlias();
                     break;
+                }
                 [[fallthrough]];
+            }
             case QueryTreeNodeType::TABLE:
                 [[fallthrough]];
             case QueryTreeNodeType::TABLE_FUNCTION:
