@@ -922,33 +922,32 @@ public:
 
     /// --- Caches ------------------------------------------------------------------------------------------
 
-    /// Create a cache of uncompressed blocks of specified size. This can be done only once.
     void setUncompressedCache(const String & uncompressed_cache_policy, size_t max_size_in_bytes);
+    void updateUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<UncompressedCache> getUncompressedCache() const;
     void clearUncompressedCache() const;
 
-    /// Create a cache of marks of specified size. This can be done only once.
     void setMarkCache(const String & mark_cache_policy, size_t cache_size_in_bytes);
+    void updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<MarkCache> getMarkCache() const;
     void clearMarkCache() const;
     ThreadPool & getLoadMarksThreadpool() const;
 
-    /// Create a cache of index uncompressed blocks of specified size. This can be done only once.
     void setIndexUncompressedCache(size_t max_size_in_bytes);
+    void updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
     void clearIndexUncompressedCache() const;
 
-    /// Create a cache of index marks of specified size. This can be done only once.
     void setIndexMarkCache(size_t cache_size_in_bytes);
+    void updateIndexMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<MarkCache> getIndexMarkCache() const;
     void clearIndexMarkCache() const;
 
-    /// Create a cache of mapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     void setMMappedFileCache(size_t cache_size_in_num_entries);
+    void updateMMappedFileCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<MMappedFileCache> getMMappedFileCache() const;
     void clearMMappedFileCache() const;
 
-    /// Create a cache of query results for statements which run repeatedly.
     void setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows);
     void updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<QueryCache> getQueryCache() const;

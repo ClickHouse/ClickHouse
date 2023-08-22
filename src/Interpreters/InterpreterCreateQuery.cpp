@@ -704,6 +704,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 if (index_desc.type == "annoy" && !settings.allow_experimental_annoy_index)
                     throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index is disabled. Turn on allow_experimental_annoy_index");
 
+                if (index_desc.type == "usearch" && !settings.allow_experimental_usearch_index)
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "USearch index is disabled. Turn on allow_experimental_usearch_index");
+
                 properties.indices.push_back(index_desc);
             }
         if (create.columns_list->projections)

@@ -777,6 +777,7 @@ public:
         std::shared_ptr<StorageFile> storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         ContextPtr context_,
+        const SelectQueryInfo & query_info_,
         UInt64 max_block_size_,
         FilesIteratorPtr files_iterator_,
         std::unique_ptr<ReadBuffer> read_buf_)
@@ -790,6 +791,7 @@ public:
         , requested_virtual_columns(info.requested_virtual_columns)
         , block_for_format(info.format_header)
         , context(context_)
+        , query_info(query_info_)
         , max_block_size(max_block_size_)
     {
         if (!storage->use_table_fd)
@@ -965,6 +967,7 @@ public:
                 chassert(!storage->paths.empty());
                 const auto max_parsing_threads = std::max<size_t>(settings.max_threads/ storage->paths.size(), 1UL);
                 input_format = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, max_parsing_threads);
+                input_format->setQueryInfo(query_info, context);
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(input_format));
@@ -1056,6 +1059,7 @@ private:
     Block block_for_format;
 
     ContextPtr context;    /// TODO Untangle potential issues with context lifetime.
+    SelectQueryInfo query_info;
     UInt64 max_block_size;
 
     bool finished_generate = false;
@@ -1067,7 +1071,7 @@ private:
 Pipe StorageFile::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
@@ -1146,6 +1150,7 @@ Pipe StorageFile::read(
             this_ptr,
             storage_snapshot,
             context,
+            query_info,
             max_block_size,
             files_iterator,
             std::move(read_buffer)));
