@@ -33,7 +33,6 @@ static struct InitFiu
 
 #define APPLY_FOR_FAILPOINTS(ONCE, REGULAR, PAUSEABLE_ONCE, PAUSEABLE) \
     ONCE(replicated_merge_tree_commit_zk_fail_after_op) \
-    REGULAR(use_delayed_remote_source) \
     REGULAR(dummy_failpoint) \
     PAUSEABLE_ONCE(dummy_pausable_failpoint_once) \
     PAUSEABLE(dummy_pausable_failpoint)
