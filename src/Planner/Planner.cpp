@@ -189,7 +189,8 @@ void collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const Planne
 
     const auto & query_context = planner_context->getQueryContext();
 
-    Planner planner(updated_query_tree, {});
+    SelectQueryOptions select_query_options;
+    Planner planner(updated_query_tree, select_query_options);
     planner.buildQueryPlanIfNeeded();
 
     auto & result_query_plan = planner.getQueryPlan();
