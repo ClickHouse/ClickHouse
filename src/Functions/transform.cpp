@@ -490,7 +490,7 @@ namespace
                     else if (cache.default_column)
                         column_result.insertFrom(*cache.default_column, 0);
                     else if (default_non_const)
-                        column_result.insertFrom(*default_non_const, 0);
+                        column_result.insertFrom(*default_non_const, i);
                     else
                         column_result.insertFrom(in_casted, i);
                 }
