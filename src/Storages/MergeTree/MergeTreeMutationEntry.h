@@ -31,7 +31,7 @@ struct MergeTreeMutationEntry
     time_t latest_fail_time = 0;
     String latest_fail_reason;
 
-    /// If empty, applied to all partitions. Not serialized.
+    /// If empty, applied to all partitions. Not serialized. Sorted (to use binary_search).
     PartitionIds partition_ids;
 
     /// ID of transaction which has created mutation.

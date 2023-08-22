@@ -168,19 +168,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
 
     assertEOF(*buf);
 
-    for (const auto & command : commands)
-    {
-        if (!command.partition)
-        {
-            partition_ids.clear();
-            break;
-        }
-
-        auto partition_id = storage_->getPartitionIDFromQuery(command.partition, context_);
-        partition_ids.push_back(partition_id);
-    }
-
-    compactPartitionIds(partition_ids);
+    partition_ids = storage_->getPartitionIdsAffectedByCommands(commands, context_);
 }
 
 MergeTreeMutationEntry::~MergeTreeMutationEntry()
