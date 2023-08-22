@@ -142,13 +142,15 @@ was specified for ANN indexes, the default value is 100 million.
 
 - [Annoy](/docs/en/engines/table-engines/mergetree-family/annindexes.md#annoy-annoy)
 
+- [USearch](/docs/en/engines/table-engines/mergetree-family/annindexes.md#usearch-usearch)
+
 ## Annoy {#annoy}
 
 Annoy indexes are currently experimental, to use them you first need to `SET allow_experimental_annoy_index = 1`. They are also currently
 disabled on ARM due to memory safety problems with the algorithm.
 
-This type of ANN index implements [the Annoy algorithm](https://github.com/spotify/annoy) which is based on a recursive division of the
-space in random linear surfaces (lines in 2D, planes in 3D etc.).
+This type of ANN index is based on the [Annoy library](https://github.com/spotify/annoy) which recursively divides the space into random
+linear surfaces (lines in 2D, planes in 3D etc.).
 
 <div class='vimeo-container'>
   <iframe src="//www.youtube.com/embed/QkCCyLW0ehU"
@@ -216,3 +218,60 @@ ORDER BY L2Distance(vectors, Point)
 LIMIT N
 SETTINGS annoy_index_search_k_nodes=100;
 ```
+
+## USearch {#usearch}
+
+This type of ANN index is based on the [the USearch library](https://github.com/unum-cloud/usearch), which implements the [HNSW
+algorithm](https://arxiv.org/abs/1603.09320), i.e., builds a hierarchical graph where each point represents a vector and the edges represent
+similarity. Such hierarchical structures can be very efficient on large collections. They may often fetch 0.05% or less data from the
+overall dataset, while still providing 99% recall. This is especially useful when working with high-dimensional vectors,
+that are expensive to load and compare. The library also has several hardware-specific SIMD optimizations to accelerate further
+distance computations on modern Arm (NEON and SVE) and x86 (AVX2 and AVX-512) CPUs and OS-specific optimizations to allow efficient
+navigation around immutable persistent files, without loading them into RAM.
+
+<div class='vimeo-container'>
+  <iframe src="//www.youtube.com/embed/UMrhB3icP9w"
+    width="640"
+    height="360"
+    frameborder="0"
+    allow="autoplay;
+    fullscreen;
+    picture-in-picture"
+    allowfullscreen>
+  </iframe>
+</div>
+
+Syntax to create an USearch index over an [Array](../../../sql-reference/data-types/array.md) column:
+
+```sql
+CREATE TABLE table_with_usearch_index
+(
+  id Int64,
+  vectors Array(Float32),
+  INDEX [ann_index_name] vectors TYPE usearch([Distance]) [GRANULARITY N]
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+Syntax to create an ANN index over a [Tuple](../../../sql-reference/data-types/tuple.md) column:
+
+```sql
+CREATE TABLE table_with_usearch_index
+(
+  id Int64,
+  vectors Tuple(Float32[, Float32[, ...]]),
+  INDEX [ann_index_name] vectors TYPE usearch([Distance]) [GRANULARITY N]
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+USearch currently supports two distance functions:
+- `L2Distance`, also called Euclidean distance, is the length of a line segment between two points in Euclidean space
+  ([Wikipedia](https://en.wikipedia.org/wiki/Euclidean_distance)).
+- `cosineDistance`, also called cosine similarity, is the cosine of the angle between two (non-zero) vectors
+  ([Wikipedia](https://en.wikipedia.org/wiki/Cosine_similarity)).
+
+For normalized data, `L2Distance` is usually a better choice, otherwise `cosineDistance` is recommended to compensate for scale. If no
+distance function was specified during index creation, `L2Distance` is used as default.

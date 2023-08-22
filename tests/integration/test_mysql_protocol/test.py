@@ -371,6 +371,22 @@ def test_mysql_replacement_query(started_cluster):
         "database()\ndefault\n",
     ]
 
+    # SELECT SCHEMA().
+    code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
+        """
+        mysql --protocol tcp -h {host} -P {port} default -u default
+        --password=123 -e "select schema();"
+    """.format(
+            host=started_cluster.get_instance_ip("node"), port=server_port
+        ),
+        demux=True,
+    )
+    assert code == 0
+    assert stdout.decode().lower() in [
+        "currentdatabase()\ndefault\n",
+        "schema()\ndefault\n",
+    ]
+
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
         """
         mysql --protocol tcp -h {host} -P {port} default -u default

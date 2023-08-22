@@ -940,13 +940,8 @@ namespace MySQLReplication
         payload.readStrict(reinterpret_cast<char *>(&commit_flag), 1);
 
         // MySQL UUID is big-endian.
-        UInt64 high = 0UL;
-        UInt64 low = 0UL;
-        readBigEndianStrict(payload, reinterpret_cast<char *>(&low), 8);
-        gtid.uuid.toUnderType().items[0] = low;
-
-        readBigEndianStrict(payload, reinterpret_cast<char *>(&high), 8);
-        gtid.uuid.toUnderType().items[1] = high;
+        readBinaryBigEndian(UUIDHelpers::getHighBytes(gtid.uuid), payload);
+        readBinaryBigEndian(UUIDHelpers::getLowBytes(gtid.uuid), payload);
 
         payload.readStrict(reinterpret_cast<char *>(&gtid.seq_no), 8);
 

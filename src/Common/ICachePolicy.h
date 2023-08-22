@@ -10,11 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 template <typename T>
 struct EqualWeightFunction
 {
@@ -46,8 +41,8 @@ public:
     virtual size_t count(std::lock_guard<std::mutex> & /*cache_lock*/) const = 0;
     virtual size_t maxSize(std::lock_guard<std::mutex>& /*cache_lock*/) const = 0;
 
-    virtual void setMaxCount(size_t /*max_count*/, std::lock_guard<std::mutex> & /* cache_lock */) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for cache policy"); }
-    virtual void setMaxSize(size_t /*max_size_in_bytes*/, std::lock_guard<std::mutex> & /* cache_lock */) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for cache policy"); }
+    virtual void setMaxCount(size_t /*max_count*/, std::lock_guard<std::mutex> & /* cache_lock */) = 0;
+    virtual void setMaxSize(size_t /*max_size_in_bytes*/, std::lock_guard<std::mutex> & /* cache_lock */) = 0;
     virtual void setQuotaForUser(const String & user_name, size_t max_size_in_bytes, size_t max_entries, std::lock_guard<std::mutex> & /*cache_lock*/) { user_quotas->setQuotaForUser(user_name, max_size_in_bytes, max_entries); }
 
     /// HashFunction usually hashes the entire key and the found key will be equal the provided key. In such cases, use get(). It is also
@@ -60,7 +55,7 @@ public:
 
     virtual void remove(const Key & key, std::lock_guard<std::mutex> & /*cache_lock*/) = 0;
 
-    virtual void reset(std::lock_guard<std::mutex> & /*cache_lock*/) = 0;
+    virtual void clear(std::lock_guard<std::mutex> & /*cache_lock*/) = 0;
     virtual std::vector<KeyMapped> dump() const = 0;
 
 protected:

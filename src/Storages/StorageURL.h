@@ -171,6 +171,7 @@ public:
         const ConnectionTimeouts & timeouts,
         CompressionMethod compression_method,
         size_t download_threads,
+        const SelectQueryInfo & query_info,
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
         bool glob_url = false,

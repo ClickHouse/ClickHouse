@@ -468,7 +468,8 @@ HDFSSource::HDFSSource(
     ContextPtr context_,
     UInt64 max_block_size_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
-    bool need_only_count_)
+    bool need_only_count_,
+    const SelectQueryInfo & query_info_)
     : ISource(info.source_header, false)
     , WithContext(context_)
     , storage(std::move(storage_))
@@ -479,6 +480,7 @@ HDFSSource::HDFSSource(
     , file_iterator(file_iterator_)
     , columns_description(info.columns_description)
     , need_only_count(need_only_count_)
+    , query_info(query_info_)
 {
     initialize();
 }
@@ -521,6 +523,7 @@ bool HDFSSource::initialize()
         max_parsing_threads = 1;
 
     input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, std::nullopt, max_parsing_threads);
+    input_format->setQueryInfo(query_info, getContext());
 
     if (need_only_count)
         input_format->needOnlyCount();
@@ -782,7 +785,8 @@ Pipe StorageHDFS::read(
             context_,
             max_block_size,
             iterator_wrapper,
-            need_only_count));
+            need_only_count,
+            query_info));
     }
     return Pipe::unitePipes(std::move(pipes));
 }
