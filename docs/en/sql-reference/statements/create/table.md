@@ -407,7 +407,7 @@ These codecs are designed to make compression more effective by using specific f
 
 #### GCD
 
-`GCD()` - Calculates GCD of all numbers, then it divides them by it. This codec is for data preparation and is not suitable for use without an additional codec. GCD-codec can be used with Integers(from 8 up to 256 bytes), Decimals and DateTime. A good use case would be to store timestamps or monetary values with high precision.
+`GCD(bytes_size)` - Calculates GCD of all numbers, then it divides them by it. This codec is for data preparation and is not suitable for use without an additional codec. GCD-codec can be used with Integers, Decimals and DateTime. Possible `bytes_size` values: 1, 2, 4, 8, 16, 32 the default value is `sizeof(type)` if equal to 1, 2, 4, 8, 16, or 32. A good use case would be to store timestamps or monetary values with high precision.
 
 #### FPC
 
