@@ -1476,12 +1476,16 @@ def test_wrong_format_usage(started_cluster):
     assert "Not a Parquet file" in result
 
 
-def check_profile_event_for_query(instance, query, profile_event, amount):
+def check_profile_event_for_query(
+    instance, file, storage_name, started_cluster, bucket, profile_event, amount
+):
     instance.query("system flush logs")
-    query = query.replace("'", "\\'")
+    query_pattern = f"{storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}'".replace(
+        "'", "\\'"
+    )
     res = int(
         instance.query(
-            f"select ProfileEvents['{profile_event}'] from system.query_log where query='{query}' and type = 'QueryFinish' order by query_start_time_microseconds desc limit 1"
+            f"select ProfileEvents['{profile_event}'] from system.query_log where query like '%{query_pattern}%' and query not like '%ProfileEvents%' and type = 'QueryFinish' order by query_start_time_microseconds desc limit 1"
         )
     )
 
@@ -1489,36 +1493,79 @@ def check_profile_event_for_query(instance, query, profile_event, amount):
 
 
 def check_cache_misses(instance, file, storage_name, started_cluster, bucket, amount=1):
-    query = f"desc {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}')"
-    check_profile_event_for_query(instance, query, "SchemaInferenceCacheMisses", amount)
+    check_profile_event_for_query(
+        instance,
+        file,
+        storage_name,
+        started_cluster,
+        bucket,
+        "SchemaInferenceCacheMisses",
+        amount,
+    )
 
 
 def check_cache_hits(instance, file, storage_name, started_cluster, bucket, amount=1):
-    query = f"desc {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}')"
-    check_profile_event_for_query(instance, query, "SchemaInferenceCacheHits", amount)
+    check_profile_event_for_query(
+        instance,
+        file,
+        storage_name,
+        started_cluster,
+        bucket,
+        "SchemaInferenceCacheHits",
+        amount,
+    )
 
 
 def check_cache_invalidations(
     instance, file, storage_name, started_cluster, bucket, amount=1
 ):
-    query = f"desc {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}')"
     check_profile_event_for_query(
-        instance, query, "SchemaInferenceCacheInvalidations", amount
+        instance,
+        file,
+        storage_name,
+        started_cluster,
+        bucket,
+        "SchemaInferenceCacheInvalidations",
+        amount,
     )
 
 
 def check_cache_evictions(
     instance, file, storage_name, started_cluster, bucket, amount=1
 ):
-    query = f"desc {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}')"
     check_profile_event_for_query(
-        instance, query, "SchemaInferenceCacheEvictions", amount
+        instance,
+        file,
+        storage_name,
+        started_cluster,
+        bucket,
+        "SchemaInferenceCacheEvictions",
+        amount,
+    )
+
+
+def check_cahce_num_rows_hits(
+    instance, file, storage_name, started_cluster, bucket, amount=1
+):
+    check_profile_event_for_query(
+        instance,
+        file,
+        storage_name,
+        started_cluster,
+        bucket,
+        "SchemaInferenceCacheNumRowsHits",
+        amount,
     )
 
 
 def run_describe_query(instance, file, storage_name, started_cluster, bucket):
     query = f"desc {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}')"
     instance.query(query)
+
+
+def run_count_query(instance, file, storage_name, started_cluster, bucket):
+    query = f"select count() from {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}', auto, 'x UInt64')"
+    return instance.query(query)
 
 
 def check_cache(instance, expected_files):
@@ -1672,6 +1719,112 @@ def test_schema_inference_cache(started_cluster):
 
         run_describe_query(instance, files, storage_name, started_cluster, bucket)
         check_cache_misses(instance, files, storage_name, started_cluster, bucket, 4)
+
+        instance.query("system drop schema cache")
+
+        instance.query(
+            f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache0.csv') select * from numbers(100) settings s3_truncate_on_insert=1"
+        )
+        time.sleep(1)
+
+        res = run_count_query(
+            instance, "test_cache0.csv", storage_name, started_cluster, bucket
+        )
+
+        assert int(res) == 100
+
+        check_cache(instance, ["test_cache0.csv"])
+        check_cache_misses(
+            instance, "test_cache0.csv", storage_name, started_cluster, bucket
+        )
+
+        res = run_count_query(
+            instance, "test_cache0.csv", storage_name, started_cluster, bucket
+        )
+        assert int(res) == 100
+
+        check_cache_hits(
+            instance, "test_cache0.csv", storage_name, started_cluster, bucket
+        )
+
+        instance.query(
+            f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache0.csv') select * from numbers(200) settings s3_truncate_on_insert=1"
+        )
+        time.sleep(1)
+
+        res = run_count_query(
+            instance, "test_cache0.csv", storage_name, started_cluster, bucket
+        )
+
+        assert int(res) == 200
+
+        check_cache_invalidations(
+            instance, "test_cache0.csv", storage_name, started_cluster, bucket
+        )
+
+        instance.query(
+            f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache1.csv') select * from numbers(100) settings s3_truncate_on_insert=1"
+        )
+        time.sleep(1)
+
+        res = run_count_query(
+            instance, "test_cache1.csv", storage_name, started_cluster, bucket
+        )
+
+        assert int(res) == 100
+        check_cache(instance, ["test_cache0.csv", "test_cache1.csv"])
+        check_cache_misses(
+            instance, "test_cache1.csv", storage_name, started_cluster, bucket
+        )
+
+        res = run_count_query(
+            instance, "test_cache1.csv", storage_name, started_cluster, bucket
+        )
+        assert int(res) == 100
+        check_cache_hits(
+            instance, "test_cache1.csv", storage_name, started_cluster, bucket
+        )
+
+        res = run_count_query(
+            instance, "test_cache{0,1}.csv", storage_name, started_cluster, bucket
+        )
+        assert int(res) == 300
+        check_cache_hits(
+            instance, "test_cache{0,1}.csv", storage_name, started_cluster, bucket, 2
+        )
+
+        instance.query(f"system drop schema cache for {storage_name}")
+        check_cache(instance, [])
+
+        res = run_count_query(
+            instance, "test_cache{0,1}.csv", storage_name, started_cluster, bucket
+        )
+        assert int(res) == 300
+        check_cache_misses(
+            instance, "test_cache{0,1}.csv", storage_name, started_cluster, bucket, 2
+        )
+
+        instance.query(f"system drop schema cache for {storage_name}")
+        check_cache(instance, [])
+
+        instance.query(
+            f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache.parquet') select * from numbers(100) settings s3_truncate_on_insert=1"
+        )
+        time.sleep(1)
+
+        res = instance.query(
+            f"select count() from {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache.parquet')"
+        )
+        assert int(res) == 100
+        check_cache_misses(
+            instance, "test_cache.parquet", storage_name, started_cluster, bucket
+        )
+        check_cache_hits(
+            instance, "test_cache.parquet", storage_name, started_cluster, bucket
+        )
+        check_cahce_num_rows_hits(
+            instance, "test_cache.parquet", storage_name, started_cluster, bucket
+        )
 
     test("s3")
     test("url")

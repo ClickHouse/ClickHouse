@@ -2371,6 +2371,12 @@ See also:
 
 - [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
 
+## use_cache_for_count_from_files {#use_cache_for_count_from_files}
+
+Enables caching number of rows during count from files in table functions `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
+
+Enabled by default.
+
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 - Type: seconds

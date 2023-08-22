@@ -25,6 +25,10 @@ public:
 
     virtual NamesAndTypesList readSchema() = 0;
 
+    /// Some formats like Parquet contains number of rows in metadata
+    /// and we can read it once during schema inference and reuse it later for fast count;
+    virtual std::optional<size_t> readNumberOrRows() { return std::nullopt; }
+
     /// True if order of columns is important in format.
     /// Exceptions: JSON, TSKV.
     virtual bool hasStrictOrderOfColumns() const { return true; }

@@ -485,8 +485,12 @@ The server successfully detected this situation and will download merged part fr
     M(ScalarSubqueriesLocalCacheHit, "Number of times a read from a scalar subquery was done using the local cache") \
     M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely")                                                                                                                                                                                                 \
     \
-    M(SchemaInferenceCacheHits, "Number of times a schema from cache was used for schema inference") \
-    M(SchemaInferenceCacheMisses, "Number of times a schema is not in cache while schema inference") \
+    M(SchemaInferenceCacheHits, "Number of times the requested source is found in schema cache") \
+    M(SchemaInferenceCacheSchemaHits, "Number of times the schema is found in schema cache during schema inference") \
+    M(SchemaInferenceCacheNumRowsHits, "Number of times the number of rows is found in schema cache during count from files") \
+    M(SchemaInferenceCacheMisses, "Number of times the requested source is not in schema cache") \
+    M(SchemaInferenceCacheSchemaMisses, "Number of times the requested source is in cache but the schema is not in cache while schema inference") \
+    M(SchemaInferenceCacheNumRowsMisses, "Number of times the requested source is in cache but the number of rows is not in cache while count from files") \
     M(SchemaInferenceCacheEvictions, "Number of times a schema from cache was evicted due to overflow") \
     M(SchemaInferenceCacheInvalidations, "Number of times a schema in cache became invalid due to changes in data") \
     \

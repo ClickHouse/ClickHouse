@@ -3,8 +3,11 @@
 #include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
 #include <Storages/HDFS/StorageHDFS.h>
+#include <Storages/StorageAzureBlob.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -36,7 +39,8 @@ NamesAndTypesList StorageSystemSchemaInferenceCache::getNamesAndTypes()
         {"format", std::make_shared<DataTypeString>()},
         {"additional_format_info", std::make_shared<DataTypeString>()},
         {"registration_time", std::make_shared<DataTypeDateTime>()},
-        {"schema", std::make_shared<DataTypeString>()}
+        {"schema", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"number_of_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())}
     };
 }
 
@@ -52,7 +56,14 @@ static void fillDataImpl(MutableColumns & res_columns, SchemaCache & schema_cach
         res_columns[2]->insert(key.format);
         res_columns[3]->insert(key.additional_format_info);
         res_columns[4]->insert(schema_info.registration_time);
-        res_columns[5]->insert(getSchemaString(schema_info.columns));
+        if (schema_info.columns)
+            res_columns[5]->insert(getSchemaString(*schema_info.columns));
+        else
+            res_columns[5]->insertDefault();
+        if (schema_info.num_rows)
+            res_columns[6]->insert(*schema_info.num_rows);
+        else
+            res_columns[6]->insertDefault();
     }
 }
 
@@ -66,6 +77,9 @@ void StorageSystemSchemaInferenceCache::fillData(MutableColumns & res_columns, C
     fillDataImpl(res_columns, StorageHDFS::getSchemaCache(context), "HDFS");
 #endif
     fillDataImpl(res_columns, StorageURL::getSchemaCache(context), "URL");
+#if USE_AZURE_BLOB_STORAGE
+    fillDataImpl(res_columns, StorageAzureBlob::getSchemaCache(context), "Azure");
+#endif
 }
 
 }

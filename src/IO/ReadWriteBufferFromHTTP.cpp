@@ -781,7 +781,10 @@ const std::string & ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::getCompres
 template <typename UpdatableSessionPtr>
 std::optional<time_t> ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::getLastModificationTime()
 {
-    return getFileInfo().last_modified;
+    if (!file_info)
+        file_info = getFileInfo();
+
+    return file_info->last_modified;
 }
 
 template <typename UpdatableSessionPtr>
