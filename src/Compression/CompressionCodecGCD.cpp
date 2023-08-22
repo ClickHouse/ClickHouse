@@ -11,26 +11,13 @@
 #include "base/types.h"
 #include "config.h"
 
-#include <cstdint>
-#include <numeric>
-
+#include <boost/math/common_factor_rt.hpp>
 #include <libdivide-config.h>
 #include <libdivide.h>
 
+
 namespace DB
 {
-
-template <typename T>
-T gcd_func(T a, T b)
-{
-    while (b != 0)
-    {
-        T c = a % b;
-        a = b;
-        b = c;
-    }
-    return a;
-}
 
 class CompressionCodecGCD : public ICompressionCodec
 {
@@ -94,32 +81,32 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
 
     const char * const source_end = source + source_size;
 
-    T gcd{};
+    T gcd_divider{};
     const auto * cur_source = source;
     while (cur_source < source_end)
     {
         if (cur_source == source)
         {
-            gcd = unalignedLoad<T>(cur_source);
+            gcd_divider = unalignedLoad<T>(cur_source);
         }
         else
         {
-            gcd = gcd_func<T>(gcd, unalignedLoad<T>(cur_source));
+            gcd_divider = boost::math::gcd(gcd_divider, unalignedLoad<T>(cur_source));
         }
-        if (gcd == T(1))
+        if (gcd_divider == T(1))
         {
             break;
         }
     }
 
-    unalignedStore<T>(dest, gcd);
+    unalignedStore<T>(dest, gcd_divider);
     dest += sizeof(T);
 
     if (typeid(T) == typeid(UInt32) || typeid(T) == typeid(UInt64))
     {
         /// libdivide support only UInt32 and UInt64.
         using TUInt32Or64 = std::conditional_t<sizeof(T) <= 4, UInt32, UInt64>;
-        libdivide::divider<TUInt32Or64> divider(static_cast<TUInt32Or64>(gcd));
+        libdivide::divider<TUInt32Or64> divider(static_cast<TUInt32Or64>(gcd_divider));
         cur_source = source;
         while (cur_source < source_end)
         {
@@ -133,7 +120,7 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
         cur_source = source;
         while (cur_source < source_end)
         {
-            unalignedStore<T>(dest, unalignedLoad<T>(cur_source) / gcd);
+            unalignedStore<T>(dest, unalignedLoad<T>(cur_source) / gcd_divider);
             cur_source += sizeof(T);
             dest += sizeof(T);
         }
@@ -152,13 +139,13 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot GCD decompress, data size {} is less than {}", source_size, sizeof(T));
 
     const char * const source_end = source + source_size;
-    const T gcd = unalignedLoad<T>(source);
+    const T gcd_multiplier = unalignedLoad<T>(source);
     source += sizeof(T);
     while (source < source_end)
     {
         if (dest + sizeof(T) > output_end) [[unlikely]]
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress the data");
-        unalignedStore<T>(dest, unalignedLoad<T>(source) * gcd);
+        unalignedStore<T>(dest, unalignedLoad<T>(source) * gcd_multiplier);
 
         source += sizeof(T);
         dest += sizeof(T);
