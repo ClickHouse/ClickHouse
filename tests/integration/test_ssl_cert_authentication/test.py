@@ -160,6 +160,10 @@ def get_ssl_context(cert_name):
         )
         context.verify_mode = ssl.CERT_REQUIRED
     context.check_hostname = True
+    # Python 3.10 has removed many ciphers from the cipher suite.
+    # Hence based on https://github.com/urllib3/urllib3/issues/3100#issuecomment-1671106236
+    # we are expanding the list of cipher suites.
+    context.set_ciphers("DEFAULT")
     return context
 
 
