@@ -10,6 +10,7 @@ CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "900000"))
 CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
 CLIENT_NAME = "simple native protocol"
 
+
 def writeVarUInt(x, ba):
     for _ in range(0, 9):
         byte = x & 0x7F
