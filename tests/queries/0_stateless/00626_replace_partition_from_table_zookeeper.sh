@@ -57,6 +57,18 @@ $CLICKHOUSE_CLIENT --query="SYSTEM SYNC REPLICA dst_r2;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r1;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r2;"
 
+$CLICKHOUSE_CLIENT --query="SELECT 'REPLACE empty partition with duplicated parts';"
+$CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (3, '0', 1), (3, '0', 3);"
+$CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (3, '0', 1), (3, '0', 3);"
+query_with_retry "ALTER TABLE dst_r1 REPLACE PARTITION 3 FROM src;"
+
+$CLICKHOUSE_CLIENT --query="SYSTEM SYNC REPLICA dst_r2;"
+$CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r1;"
+$CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r2;"
+
+query_with_retry "ALTER TABLE src DROP PARTITION 3;"
+query_with_retry "ALTER TABLE dst_r1 REPLACE PARTITION 3 FROM src;"
+$CLICKHOUSE_CLIENT --query="SYSTEM SYNC REPLICA dst_r2;"
 
 $CLICKHOUSE_CLIENT --query="SELECT 'REPLACE recursive';"
 query_with_retry "ALTER TABLE dst_r1 DROP PARTITION 1;"

@@ -9,6 +9,9 @@ REPLACE simple
 REPLACE empty
 2	4
 2	4
+REPLACE empty partition with duplicated parts
+6	12
+6	12
 REPLACE recursive
 4	8
 4	8
