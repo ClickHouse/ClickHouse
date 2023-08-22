@@ -1278,9 +1278,9 @@ WHERE URL != '';
 
 ### 在次关键字列上高效过滤
 
-当查询对至少一列进行过滤时，该列是复合关键字的一部分，并且是第一关键字列，[那么 ClickHouse 将在关键字列的索引标记上运行二进制搜索算法]（#the-primary-index-is-used-for-selecting-granules）。
+当查询对至少一列进行过滤时，该列是复合关键字的一部分，并且是第一关键字列，[那么 ClickHouse 将在关键字列的索引标记上运行二分查找算法](#the-primary-index-is-used-for-selecting-granules)。
 
-当查询（仅）过滤属于复合关键字的某一列，但不是第一关键字列时，[ClickHouse 将在关键字列的索引标记上使用通用排除搜索算法]（#secondary-key-columns-can-not-be-inefficient）。
+当查询（仅）过滤属于复合关键字的某一列，但不是第一关键字列时，[ClickHouse 将在关键字列的索引标记上使用通用排除搜索算法](#查询使用第二位主键的性能问题)。
 
 
 对于第二种情况，复合主键中关键列的排序对[通用排除搜索算法](https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444)的有效性很重要。
