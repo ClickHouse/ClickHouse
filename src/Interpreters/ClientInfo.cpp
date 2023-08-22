@@ -9,6 +9,7 @@
 
 #include "config_version.h"
 
+#include <format>
 
 namespace DB
 {
@@ -17,7 +18,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
-
 
 void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 {
@@ -199,6 +199,20 @@ void ClientInfo::setInitialQuery()
         client_name = (VERSION_NAME " ") + client_name;
 }
 
+bool ClientInfo::clientVersionEquals(const ClientInfo & other, bool compare_patch) const
+{
+    bool patch_equals = compare_patch ? client_version_patch == other.client_version_patch : true;
+    return client_version_major == other.client_version_major &&
+           client_version_minor == other.client_version_minor &&
+           patch_equals &&
+           client_tcp_protocol_version == other.client_tcp_protocol_version;
+}
+
+String ClientInfo::getVersionStr() const
+{
+    return std::format("{}.{}.{} ({})", client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
+}
+
 
 void ClientInfo::fillOSUserHostNameAndVersionInfo()
 {
@@ -216,5 +230,27 @@ void ClientInfo::fillOSUserHostNameAndVersionInfo()
     client_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
 }
 
+String toString(ClientInfo::Interface interface)
+{
+    switch (interface)
+    {
+        case ClientInfo::Interface::TCP:
+            return "TCP";
+        case ClientInfo::Interface::HTTP:
+            return "HTTP";
+        case ClientInfo::Interface::GRPC:
+            return "GRPC";
+        case ClientInfo::Interface::MYSQL:
+            return "MYSQL";
+        case ClientInfo::Interface::POSTGRESQL:
+            return "POSTGRESQL";
+        case ClientInfo::Interface::LOCAL:
+            return "LOCAL";
+        case ClientInfo::Interface::TCP_INTERSERVER:
+            return "TCP_INTERSERVER";
+    }
+
+    return std::format("Unknown {}!\n", static_cast<int>(interface));
+}
 
 }
