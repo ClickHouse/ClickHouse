@@ -277,7 +277,7 @@ struct Client : DB::S3::Client
         const String prefix = "bytes=";
         if (range.starts_with(prefix))
         {
-            int ret = sscanf(range.c_str(), "bytes=%zu-%zu", &begin, &end);
+            int ret = sscanf(range.c_str(), "bytes=%zu-%zu", &begin, &end); /// NOLINT
             chassert(ret == 2);
         }
 
