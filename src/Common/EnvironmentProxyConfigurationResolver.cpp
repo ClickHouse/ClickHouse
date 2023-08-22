@@ -6,6 +6,10 @@
 namespace DB
 {
 
+/*
+ * Usually environment variables are upper-case, but it seems like proxy related variables are an exception.
+ * See https://unix.stackexchange.com/questions/212894/whats-the-right-format-for-the-http-proxy-environment-variable-caps-or-no-ca/212972#212972
+ * */
 static constexpr auto PROXY_HTTP_ENVIRONMENT_VARIABLE = "http_proxy";
 static constexpr auto PROXY_HTTPS_ENVIRONMENT_VARIABLE = "https_proxy";
 
@@ -53,7 +57,7 @@ ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve()
     auto scheme = uri.getScheme();
     auto port = uri.getPort();
 
-    LOG_DEBUG(&Poco::Logger::get("EnvironmentProxyConfigurationResolver"), "Use proxy from environment: {}://{}:{}", scheme, host, port);
+    LOG_TRACE(&Poco::Logger::get("EnvironmentProxyConfigurationResolver"), "Use proxy from environment: {}://{}:{}", scheme, host, port);
 
     return ProxyConfiguration {
         host,
