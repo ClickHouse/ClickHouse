@@ -147,6 +147,8 @@ insert into function file(compressed_02735.parquet) select concat('aaaaaaaaaaaaa
 select total_compressed_size < 10000, total_uncompressed_size > 15000 from file(compressed_02735.parquet, ParquetMetadata);
 insert into function file(compressed_02735.parquet) select concat('aaaaaaaaaaaaaaaa', toString(number)) as s from numbers(1000) settings output_format_parquet_row_group_size = 10000, output_format_parquet_compression_method='none';
 select total_compressed_size < 10000, total_uncompressed_size > 15000 from file(compressed_02735.parquet, ParquetMetadata);
+insert into function file(compressed_02735.parquet) select if(number%3==1, NULL, 42) as x from numbers(70) settings output_format_parquet_compression_method='zstd';
+select sum(cityHash64(*)) from file(compressed_02735.parquet);
 
 -- Single-threaded encoding and Arrow encoder.
 drop table if exists other_encoders_02735;
@@ -166,3 +168,15 @@ select columns.5, columns.6 from file(strings3_02735.parquet, ParquetMetadata) a
 select * from file(strings1_02735.parquet);
 select * from file(strings2_02735.parquet);
 select * from file(strings3_02735.parquet);
+
+-- DateTime64 with different units.
+insert into function file(datetime64_02735.parquet) select
+    toDateTime64(number / 1e3, 3) as ms,
+    toDateTime64(number / 1e6, 6) as us,
+    toDateTime64(number / 1e9, 9) as ns,
+    toDateTime64(number / 1e2, 2) as cs,
+    toDateTime64(number, 0) as s,
+    toDateTime64(number / 1e7, 7) as dus
+    from numbers(2000);
+desc file(datetime64_02735.parquet);
+select sum(cityHash64(*)) from file(datetime64_02735.parquet);

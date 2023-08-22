@@ -66,6 +66,8 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     {
         if (index->type && index->type->name == "annoy")
             index->granularity = ASTIndexDeclaration::DEFAULT_ANNOY_INDEX_GRANULARITY;
+        else if (index->type && index->type->name == "usearch")
+            index->granularity = ASTIndexDeclaration::DEFAULT_USEARCH_INDEX_GRANULARITY;
         else
             index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
     }
@@ -80,6 +82,7 @@ bool ParserCreateIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     node = query;
 
     ParserKeyword s_create("CREATE");
+    ParserKeyword s_unique("UNIQUE");
     ParserKeyword s_index("INDEX");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserKeyword s_on("ON");
@@ -91,9 +94,13 @@ bool ParserCreateIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
 
     String cluster_str;
     bool if_not_exists = false;
+    bool unique = false;
 
     if (!s_create.ignore(pos, expected))
         return false;
+
+    if (s_unique.ignore(pos, expected))
+        unique = true;
 
     if (!s_index.ignore(pos, expected))
         return false;
@@ -131,6 +138,7 @@ bool ParserCreateIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     query->children.push_back(index_decl);
 
     query->if_not_exists = if_not_exists;
+    query->unique = unique;
     query->cluster = cluster_str;
 
     if (query->database)

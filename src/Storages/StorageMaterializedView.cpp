@@ -228,10 +228,13 @@ void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_co
 {
     /// We will use `sync` argument wneh this function is called from a DROP query
     /// and will ignore database_atomic_wait_for_drop_and_detach_synchronously when it's called from drop task.
-    /// See the comment in StorageMaterializedView::drop
+    /// See the comment in StorageMaterializedView::drop.
+    /// DDL queries with StorageMaterializedView are fundamentally broken.
+    /// Best-effort to make them work: the inner table name is almost always less than the MV name (so it's safe to lock DDLGuard)
+    bool may_lock_ddl_guard = getStorageID().getQualifiedName() < target_table_id.getQualifiedName();
     if (has_inner_table && tryGetTargetTable())
         InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id,
-                                               sync, /* ignore_sync_setting */ true);
+                                               sync, /* ignore_sync_setting */ true, may_lock_ddl_guard);
 }
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)

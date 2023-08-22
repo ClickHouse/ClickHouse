@@ -105,6 +105,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_ALREADY_EXISTS;
+    extern const int USER_SESSION_LIMIT_EXCEEDED;
 }
 
 }
@@ -846,7 +847,9 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
         visitor.visit(parsed_query);
 
         /// Get new query after substitutions.
-        query = serializeAST(*parsed_query);
+        if (visitor.getNumberOfReplacedParameters())
+            query = serializeAST(*parsed_query);
+        chassert(!query.empty());
     }
 
     if (allow_merge_tree_settings && parsed_query->as<ASTCreateQuery>())
@@ -1331,7 +1334,9 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         visitor.visit(parsed_query);
 
         /// Get new query after substitutions.
-        query = serializeAST(*parsed_query);
+        if (visitor.getNumberOfReplacedParameters())
+            query = serializeAST(*parsed_query);
+        chassert(!query.empty());
     }
 
     /// Process the query that requires transferring data blocks to the server.
@@ -1436,6 +1441,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             ConstraintsDescription{},
             String{},
             {},
+            String{},
         };
         StoragePtr storage = std::make_shared<StorageFile>(in_file, global_context->getUserFilesPath(), args);
         storage->startup();
@@ -1809,7 +1815,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         }
         if (const auto * use_query = parsed_query->as<ASTUseQuery>())
         {
-            const String & new_database = use_query->database;
+            const String & new_database = use_query->getDatabase();
             /// If the client initiates the reconnection, it takes the settings from the config.
             config().setString("database", new_database);
             /// If the connection initiates the reconnection, it uses its variable.
@@ -2313,15 +2319,28 @@ void ClientBase::runInteractive()
 
     LineReader::Patterns query_extenders = {"\\"};
     LineReader::Patterns query_delimiters = {";", "\\G", "\\G;"};
+    char word_break_characters[] = " \t\v\f\a\b\r\n`~!@#$%^&*()-=+[{]}\\|;:'\",<.>/?";
 
 #if USE_REPLXX
     replxx::Replxx::highlighter_callback_t highlight_callback{};
     if (config().getBool("highlight", true))
         highlight_callback = highlight;
 
-    ReplxxLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters, highlight_callback);
+    ReplxxLineReader lr(
+        *suggest,
+        history_file,
+        config().has("multiline"),
+        query_extenders,
+        query_delimiters,
+        word_break_characters,
+        highlight_callback);
 #else
-    LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
+    LineReader lr(
+        history_file,
+        config().has("multiline"),
+        query_extenders,
+        query_delimiters,
+        word_break_characters);
 #endif
 
     static const std::initializer_list<std::pair<String, String>> backslash_aliases =
@@ -2392,6 +2411,13 @@ void ClientBase::runInteractive()
                 input  = last_input;
                 break;
             }
+        }
+
+        if (suggest && suggest->getLastError() == ErrorCodes::USER_SESSION_LIMIT_EXCEEDED)
+        {
+            // If a separate connection loading suggestions failed to open a new session,
+            // use the main session to receive them.
+            suggest->load(*connection, connection_parameters.timeouts, config().getInt("suggestion_limit"));
         }
 
         try
@@ -2491,7 +2517,7 @@ void ClientBase::clearTerminal()
 
 void ClientBase::showClientVersion()
 {
-    std::cout << DBMS_NAME << " " + getName() + " version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
+    std::cout << VERSION_NAME << " " + getName() + " version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
 }
 
 namespace
