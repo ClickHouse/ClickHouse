@@ -771,7 +771,27 @@ void StorageKafka::threadFunc(size_t idx)
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        // !!!
+        // std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/);
+
+        auto last_exception = std::current_exception();
+        tryLogException(last_exception, log, __PRETTY_FUNCTION__);
+
+        auto exception_str = getExceptionMessage(last_exception, true /* with_stacktrace */);
+
+        for (auto consumer_ptr_weak : all_consumers)
+        {
+            if (auto consumer_ptr = consumer_ptr_weak.lock())
+            {
+                consumer_ptr->setExceptionInfo(exception_str);
+            }
+        }
+
+
+
+        // tryLogCurrentException(__PRETTY_FUNCTION__);
+
+
     }
 
     mv_attached.store(false);
