@@ -38,6 +38,11 @@ public:
 
     bool memoryBoundMergingWillBeUsed() const;
 
+    bool isFinal() const
+    {
+        return final;
+    }
+
 private:
     void updateOutputStream() override;
 

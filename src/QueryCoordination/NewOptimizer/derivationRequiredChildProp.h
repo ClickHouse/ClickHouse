@@ -76,7 +76,7 @@ AlternativeChildrenProp derivationRequiredChildProp(MergingAggregatedStep & step
     AlternativeChildrenProp res;
     std::vector<PhysicalProperties> required_child_prop;
 
-    if (step.getParams().keys.empty()/* || step.withTotalsOrCubeOrRollup()*/)
+    if (step.getParams().keys.empty() || !step.isFinal()) /// is not final need Singleton
     {
         required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
     }

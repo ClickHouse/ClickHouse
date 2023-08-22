@@ -2,6 +2,7 @@
 
 #include <QueryCoordination/NewOptimizer/GroupNode.h>
 #include <QueryCoordination/NewOptimizer/PhysicalProperties.h>
+#include <QueryCoordination/NewOptimizer/Statistics/Statistics.h>
 
 namespace DB
 {
@@ -65,6 +66,8 @@ private:
 
     /// optimize temp result
     std::unordered_map<PhysicalProperties, GroupNodeCost, PhysicalProperties::HashFunction> prop_to_best_node;
+
+    Statistics statistics;
 };
 
 }

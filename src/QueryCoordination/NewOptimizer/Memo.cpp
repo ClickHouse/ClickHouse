@@ -1,9 +1,10 @@
 #include <stack>
 #include <QueryCoordination/NewOptimizer/Cost/CostCalc.h>
 #include <QueryCoordination/NewOptimizer/Memo.h>
-#include <QueryCoordination/NewOptimizer/Rule/Optimizations.h>
+#include <QueryCoordination/NewOptimizer/Transform/Transformation.h>
 #include <QueryCoordination/NewOptimizer/derivationRequiredChildProp.h>
 #include <QueryCoordination/NewOptimizer/DerivationOutputProp.h>
+#include <QueryCoordination/NewOptimizer/DerivationStatistics.h>
 #include <Common/typeid_cast.h>
 
 
@@ -118,6 +119,44 @@ void Memo::dump(Group & /*group*/)
     }
 }
 
+void Memo::deriveStat()
+{
+    deriveStat(*root_group);
+}
+
+void Memo::deriveStat(Group & group)
+{
+    auto & group_nodes = group.getGroupNodes();
+
+    for (auto & group_node : group_nodes)
+    {
+
+        for (auto * child_group : group_node.getChildren())
+        {
+            deriveStat(*child_group);
+        }
+
+        DerivationStatistics(group_node,)
+
+        const auto & step = group_node.getStep();
+
+        const auto & transformations = NewOptimizer::getTransformations();
+
+        /// Apply all transformations.
+        for (const auto & transformation : transformations)
+        {
+            if (!transformation.apply)
+                continue;
+
+            auto sub_query_plans = transformation.apply(step, context);
+
+            if (!sub_query_plans.empty())
+                group_transformed_node.emplace(&group, std::move(sub_query_plans));
+        }
+
+    }
+}
+
 void Memo::transform()
 {
     dump(*root_group);
@@ -144,15 +183,15 @@ void Memo::transform(Group & group, std::unordered_map<Group *, std::vector<SubQ
     {
         const auto & step = group_node.getStep();
 
-        const auto & optimizations = NewOptimizer::getOptimizations();
+        const auto & transformations = NewOptimizer::getTransformations();
 
-        /// Apply all optimizations.
-        for (const auto & optimization : optimizations)
+        /// Apply all transformations.
+        for (const auto & transformation : transformations)
         {
-            if (!optimization.apply)
+            if (!transformation.apply)
                 continue;
 
-            auto sub_query_plans = optimization.apply(step, context);
+            auto sub_query_plans = transformation.apply(step, context);
 
             if (!sub_query_plans.empty())
                 group_transformed_node.emplace(&group, std::move(sub_query_plans));

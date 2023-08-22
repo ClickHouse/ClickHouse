@@ -24,6 +24,10 @@ public:
 
     void transform(Group & group, std::unordered_map<Group *, std::vector<SubQueryPlan>> & group_transformed_node);
 
+    void deriveStat();
+
+    void deriveStat(Group & group);
+
     void enforce();
 
     std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>> enforce(Group & group, const PhysicalProperties & required_properties);

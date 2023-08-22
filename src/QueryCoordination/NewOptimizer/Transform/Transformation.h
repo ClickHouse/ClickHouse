@@ -10,12 +10,11 @@ namespace DB
 namespace NewOptimizer
 {
 
-struct Optimization
+struct Transformation
 {
     using Function = std::vector<SubQueryPlan> (*)(QueryPlanStepPtr step, ContextPtr context);
     const Function apply = nullptr;
     const char * name = "";
-    const bool QueryPlanOptimizationSettings::* const is_enabled{};
 };
 
 
@@ -23,24 +22,15 @@ std::vector<SubQueryPlan> trySplitAggregation(QueryPlanStepPtr step, ContextPtr 
 std::vector<SubQueryPlan> trySplitLimit(QueryPlanStepPtr step, ContextPtr context);
 
 
-inline const auto & getOptimizations()
+inline const auto & getTransformations()
 {
-    static const std::array<Optimization, 10> optimizations = {{
-        {trySplitAggregation, "splitAggregation", &QueryPlanOptimizationSettings::optimize_plan},
-        {trySplitLimit, "splitLimit", &QueryPlanOptimizationSettings::optimize_plan},
+    static const std::array<Transformation, 10> transformations = {{
+        {trySplitAggregation, "splitAggregation"},
+        {trySplitLimit, "splitLimit"},
     }};
 
-    return optimizations;
+    return transformations;
 }
-
-struct Frame
-{
-    QueryPlan::Node * node = nullptr;
-    size_t next_child = 0;
-};
-
-using Stack = std::vector<Frame>;
-
 
 }
 
