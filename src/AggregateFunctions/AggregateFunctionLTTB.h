@@ -33,7 +33,7 @@ namespace ErrorCodes
 }
 
 
-struct LTTBData: public StatisticalSample<Float64, Float64>
+struct LTTBData : public StatisticalSample<Float64, Float64>
 {
     void add(const Float64 xval, const Float64 yval, Arena * arena)
     {
@@ -65,7 +65,7 @@ struct LTTBData: public StatisticalSample<Float64, Float64>
         }
     }
 
-    PODArray<std::pair<Float64, Float64>> getResult(size_t total_buckets, Arena * arena) 
+    PODArray<std::pair<Float64, Float64>> getResult(size_t total_buckets, Arena * arena)
     {
         // Sort the data
         this->sort(arena);
@@ -126,8 +126,8 @@ struct LTTBData: public StatisticalSample<Float64, Float64>
             {
                 Float64 area = std::abs(
                     0.5
-                    * (result.back().first * this->y[j] + this->x[j] * avg_y + avg_x * result.back().second
-                       - result.back().first * avg_y - this->x[j] * result.back().second - avg_x * this->y[j]));
+                    * (result.back().first * this->y[j] + this->x[j] * avg_y + avg_x * result.back().second - result.back().first * avg_y
+                       - this->x[j] * result.back().second - avg_x * this->y[j]));
                 if (area > max_area)
                 {
                     max_area = area;
@@ -263,7 +263,7 @@ public:
     {
         this->data(place).read(buf, arena);
     }
- 
+
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         auto res = this->data(place).getResult(total_buckets, arena);
