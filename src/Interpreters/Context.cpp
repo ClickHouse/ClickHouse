@@ -215,6 +215,7 @@ struct ContextSharedPart : boost::noncopyable
     String user_files_path;                                 /// Path to the directory with user provided files, usable by 'file' table function.
     String dictionaries_lib_path;                           /// Path to the directory with user provided binaries and libraries for external dictionaries.
     String user_scripts_path;                               /// Path to the directory with user provided scripts.
+    String filesystem_caches_path;                          /// Path to the directory with filesystem caches.
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
@@ -245,27 +246,27 @@ struct ContextSharedPart : boost::noncopyable
 
     std::optional<BackupsWorker> backups_worker;
 
-    String default_profile_name;                            /// Default profile name used for default values.
-    String system_profile_name;                             /// Profile used by system processes
-    String buffer_profile_name;                             /// Profile used by Buffer engine for flushing to the underlying
+    String default_profile_name;                                /// Default profile name used for default values.
+    String system_profile_name;                                 /// Profile used by system processes
+    String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
     std::unique_ptr<AccessControl> access_control;
     mutable ResourceManagerPtr resource_manager;
-    mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
-    mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
-    mutable std::unique_ptr<ThreadPool> load_marks_threadpool; /// Threadpool for loading marks cache.
-    mutable std::unique_ptr<ThreadPool> prefetch_threadpool; /// Threadpool for loading marks cache.
-    mutable UncompressedCachePtr index_uncompressed_cache;  /// The cache of decompressed blocks for MergeTree indices.
-    mutable MarkCachePtr index_mark_cache;                  /// Cache of marks in compressed files of MergeTree indices.
-    mutable QueryCachePtr query_cache;         /// Cache of query results.
-    mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
-    ProcessList process_list;                               /// Executing queries at the moment.
+    mutable UncompressedCachePtr uncompressed_cache;            /// The cache of decompressed blocks.
+    mutable MarkCachePtr mark_cache;                            /// Cache of marks in compressed files.
+    mutable std::unique_ptr<ThreadPool> load_marks_threadpool;  /// Threadpool for loading marks cache.
+    mutable std::unique_ptr<ThreadPool> prefetch_threadpool;    /// Threadpool for loading marks cache.
+    mutable UncompressedCachePtr index_uncompressed_cache;      /// The cache of decompressed blocks for MergeTree indices.
+    mutable QueryCachePtr query_cache;                          /// Cache of query results.
+    mutable MarkCachePtr index_mark_cache;                      /// Cache of marks in compressed files of MergeTree indices.
+    mutable MMappedFileCachePtr mmap_cache;                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
+    ProcessList process_list;                                   /// Executing queries at the moment.
     SessionTracker session_tracker;
     GlobalOvercommitTracker global_overcommit_tracker;
-    MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
-    MovesList moves_list;                                   /// The list of executing moves (for (Replicated)?MergeTree)
+    MergeList merge_list;                                       /// The list of executable merge (for (Replicated)?MergeTree)
+    MovesList moves_list;                                       /// The list of executing moves (for (Replicated)?MergeTree)
     ReplicatedFetchList replicated_fetch_list;
-    ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
-    InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
+    ConfigurationPtr users_config;                              /// Config with the users, profiles and quotas sections.
+    InterserverIOHandler interserver_io_handler;                /// Handler for interserver communication.
 
     mutable std::unique_ptr<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
     mutable std::unique_ptr<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
@@ -547,7 +548,7 @@ struct ContextSharedPart : boost::noncopyable
               */
 #if USE_EMBEDDED_COMPILER
             if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
-                cache->reset();
+                cache->clear();
 #endif
 
             /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
@@ -771,6 +772,12 @@ String Context::getUserScriptsPath() const
     return shared->user_scripts_path;
 }
 
+String Context::getFilesystemCachesPath() const
+{
+    auto lock = getLock();
+    return shared->filesystem_caches_path;
+}
+
 Strings Context::getWarnings() const
 {
     Strings common_warnings;
@@ -860,6 +867,16 @@ void Context::setPath(const String & path)
 
     if (shared->user_scripts_path.empty())
         shared->user_scripts_path = shared->path + "user_scripts/";
+}
+
+void Context::setFilesystemCachesPath(const String & path)
+{
+    auto lock = getLock();
+
+    if (!fs::path(path).is_absolute())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filesystem caches path must be absolute: {}", path);
+
+    shared->filesystem_caches_path = path;
 }
 
 static void setupTmpPath(Poco::Logger * log, const std::string & path)
@@ -1561,7 +1578,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         }
     }
     auto hash = table_expression->getTreeHash();
-    String key = toString(hash.first) + '_' + toString(hash.second);
+    auto key = toString(hash);
     StoragePtr & res = table_function_results[key];
     if (!res)
     {
@@ -1712,7 +1729,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         auto new_hash = table_expression->getTreeHash();
         if (hash != new_hash)
         {
-            key = toString(new_hash.first) + '_' + toString(new_hash.second);
+            key = toString(new_hash);
             table_function_results[key] = res;
         }
     }
@@ -1721,8 +1738,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr)
 {
-    auto hash = table_expression->getTreeHash();
-    String key = toString(hash.first) + '_' + toString(hash.second);
+    const auto hash = table_expression->getTreeHash();
+    const auto key = toString(hash);
     StoragePtr & res = table_function_results[key];
 
     if (!res)
@@ -2261,6 +2278,16 @@ void Context::setUncompressedCache(const String & uncompressed_cache_policy, siz
     shared->uncompressed_cache = std::make_shared<UncompressedCache>(uncompressed_cache_policy, max_size_in_bytes);
 }
 
+void Context::updateUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+
+    if (!shared->uncompressed_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Uncompressed cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("uncompressed_cache_size", DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE);
+    shared->uncompressed_cache->setMaxSize(max_size_in_bytes);
+}
 
 UncompressedCachePtr Context::getUncompressedCache() const
 {
@@ -2268,14 +2295,13 @@ UncompressedCachePtr Context::getUncompressedCache() const
     return shared->uncompressed_cache;
 }
 
-
-void Context::dropUncompressedCache() const
+void Context::clearUncompressedCache() const
 {
     auto lock = getLock();
-    if (shared->uncompressed_cache)
-        shared->uncompressed_cache->reset();
-}
 
+    if (shared->uncompressed_cache)
+        shared->uncompressed_cache->clear();
+}
 
 void Context::setMarkCache(const String & mark_cache_policy, size_t cache_size_in_bytes)
 {
@@ -2287,17 +2313,29 @@ void Context::setMarkCache(const String & mark_cache_policy, size_t cache_size_i
     shared->mark_cache = std::make_shared<MarkCache>(mark_cache_policy, cache_size_in_bytes);
 }
 
+void Context::updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+
+    if (!shared->mark_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("mark_cache_size", DEFAULT_MARK_CACHE_MAX_SIZE);
+    shared->mark_cache->setMaxSize(max_size_in_bytes);
+}
+
 MarkCachePtr Context::getMarkCache() const
 {
     auto lock = getLock();
     return shared->mark_cache;
 }
 
-void Context::dropMarkCache() const
+void Context::clearMarkCache() const
 {
     auto lock = getLock();
+
     if (shared->mark_cache)
-        shared->mark_cache->reset();
+        shared->mark_cache->clear();
 }
 
 ThreadPool & Context::getLoadMarksThreadpool() const
@@ -2315,15 +2353,174 @@ ThreadPool & Context::getLoadMarksThreadpool() const
     return *shared->load_marks_threadpool;
 }
 
-static size_t getPrefetchThreadpoolSizeFromConfig(const Poco::Util::AbstractConfiguration & config)
+void Context::setIndexUncompressedCache(size_t max_size_in_bytes)
 {
-    return config.getUInt(".prefetch_threadpool_pool_size", 100);
+    auto lock = getLock();
+
+    if (shared->index_uncompressed_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache has been already created.");
+
+    shared->index_uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes);
 }
 
-size_t Context::getPrefetchThreadpoolSize() const
+void Context::updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
-    const auto & config = getConfigRef();
-    return getPrefetchThreadpoolSizeFromConfig(config);
+    auto lock = getLock();
+
+    if (!shared->index_uncompressed_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("index_uncompressed_cache_size", DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE);
+    shared->index_uncompressed_cache->setMaxSize(max_size_in_bytes);
+}
+
+UncompressedCachePtr Context::getIndexUncompressedCache() const
+{
+    auto lock = getLock();
+    return shared->index_uncompressed_cache;
+}
+
+void Context::clearIndexUncompressedCache() const
+{
+    auto lock = getLock();
+
+    if (shared->index_uncompressed_cache)
+        shared->index_uncompressed_cache->clear();
+}
+
+void Context::setIndexMarkCache(size_t cache_size_in_bytes)
+{
+    auto lock = getLock();
+
+    if (shared->index_mark_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache has been already created.");
+
+    shared->index_mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes);
+}
+
+void Context::updateIndexMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+
+    if (!shared->index_mark_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("index_mark_cache_size", DEFAULT_INDEX_MARK_CACHE_MAX_SIZE);
+    shared->index_mark_cache->setMaxSize(max_size_in_bytes);
+}
+
+MarkCachePtr Context::getIndexMarkCache() const
+{
+    auto lock = getLock();
+    return shared->index_mark_cache;
+}
+
+void Context::clearIndexMarkCache() const
+{
+    auto lock = getLock();
+
+    if (shared->index_mark_cache)
+        shared->index_mark_cache->clear();
+}
+
+void Context::setMMappedFileCache(size_t cache_size_in_num_entries)
+{
+    auto lock = getLock();
+
+    if (shared->mmap_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped file cache has been already created.");
+
+    shared->mmap_cache = std::make_shared<MMappedFileCache>(cache_size_in_num_entries);
+}
+
+void Context::updateMMappedFileCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+
+    if (!shared->mmap_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped file cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("mmap_cache_size", DEFAULT_MMAP_CACHE_MAX_SIZE);
+    shared->mmap_cache->setMaxSize(max_size_in_bytes);
+}
+
+MMappedFileCachePtr Context::getMMappedFileCache() const
+{
+    auto lock = getLock();
+    return shared->mmap_cache;
+}
+
+void Context::clearMMappedFileCache() const
+{
+    auto lock = getLock();
+
+    if (shared->mmap_cache)
+        shared->mmap_cache->clear();
+}
+
+void Context::setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
+{
+    auto lock = getLock();
+
+    if (shared->query_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache has been already created.");
+
+    shared->query_cache = std::make_shared<QueryCache>(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
+}
+
+void Context::updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+
+    if (!shared->query_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("query_cache.max_entries", DEFAULT_QUERY_CACHE_MAX_ENTRIES);
+    size_t max_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
+    size_t max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
+    shared->query_cache->updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
+}
+
+QueryCachePtr Context::getQueryCache() const
+{
+    auto lock = getLock();
+    return shared->query_cache;
+}
+
+void Context::clearQueryCache() const
+{
+    auto lock = getLock();
+
+    if (shared->query_cache)
+        shared->query_cache->clear();
+}
+
+void Context::clearCaches() const
+{
+    auto lock = getLock();
+
+    if (!shared->uncompressed_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Uncompressed cache was not created yet.");
+    shared->uncompressed_cache->clear();
+
+    if (!shared->mark_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache was not created yet.");
+    shared->mark_cache->clear();
+
+    if (!shared->index_uncompressed_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache was not created yet.");
+    shared->index_uncompressed_cache->clear();
+
+    if (!shared->index_mark_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache was not created yet.");
+    shared->index_mark_cache->clear();
+
+    if (!shared->mmap_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mmapped file cache was not created yet.");
+    shared->mmap_cache->clear();
+
+    /// Intentionally not clearing the query cache which is transactionally inconsistent by design.
 }
 
 ThreadPool & Context::getPrefetchThreadpool() const
@@ -2341,131 +2538,10 @@ ThreadPool & Context::getPrefetchThreadpool() const
     return *shared->prefetch_threadpool;
 }
 
-void Context::setIndexUncompressedCache(size_t max_size_in_bytes)
+size_t Context::getPrefetchThreadpoolSize() const
 {
-    auto lock = getLock();
-
-    if (shared->index_uncompressed_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache has been already created.");
-
-    shared->index_uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes);
-}
-
-
-UncompressedCachePtr Context::getIndexUncompressedCache() const
-{
-    auto lock = getLock();
-    return shared->index_uncompressed_cache;
-}
-
-
-void Context::dropIndexUncompressedCache() const
-{
-    auto lock = getLock();
-    if (shared->index_uncompressed_cache)
-        shared->index_uncompressed_cache->reset();
-}
-
-
-void Context::setIndexMarkCache(size_t cache_size_in_bytes)
-{
-    auto lock = getLock();
-
-    if (shared->index_mark_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache has been already created.");
-
-    shared->index_mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes);
-}
-
-MarkCachePtr Context::getIndexMarkCache() const
-{
-    auto lock = getLock();
-    return shared->index_mark_cache;
-}
-
-void Context::dropIndexMarkCache() const
-{
-    auto lock = getLock();
-    if (shared->index_mark_cache)
-        shared->index_mark_cache->reset();
-}
-
-void Context::setQueryCache(const Poco::Util::AbstractConfiguration & config)
-{
-    auto lock = getLock();
-
-    if (shared->query_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache has been already created.");
-
-    shared->query_cache = std::make_shared<QueryCache>();
-    shared->query_cache->updateConfiguration(config);
-}
-
-void Context::updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
-{
-    auto lock = getLock();
-    if (shared->query_cache)
-        shared->query_cache->updateConfiguration(config);
-}
-
-QueryCachePtr Context::getQueryCache() const
-{
-    auto lock = getLock();
-    return shared->query_cache;
-}
-
-void Context::dropQueryCache() const
-{
-    auto lock = getLock();
-    if (shared->query_cache)
-        shared->query_cache->reset();
-}
-
-void Context::setMMappedFileCache(size_t cache_size_in_num_entries)
-{
-    auto lock = getLock();
-
-    if (shared->mmap_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped file cache has been already created.");
-
-    shared->mmap_cache = std::make_shared<MMappedFileCache>(cache_size_in_num_entries);
-}
-
-MMappedFileCachePtr Context::getMMappedFileCache() const
-{
-    auto lock = getLock();
-    return shared->mmap_cache;
-}
-
-void Context::dropMMappedFileCache() const
-{
-    auto lock = getLock();
-    if (shared->mmap_cache)
-        shared->mmap_cache->reset();
-}
-
-
-void Context::dropCaches() const
-{
-    auto lock = getLock();
-
-    if (shared->uncompressed_cache)
-        shared->uncompressed_cache->reset();
-
-    if (shared->mark_cache)
-        shared->mark_cache->reset();
-
-    if (shared->index_uncompressed_cache)
-        shared->index_uncompressed_cache->reset();
-
-    if (shared->index_mark_cache)
-        shared->index_mark_cache->reset();
-
-    if (shared->query_cache)
-        shared->query_cache->reset();
-
-    if (shared->mmap_cache)
-        shared->mmap_cache->reset();
+    const auto & config = getConfigRef();
+    return config.getUInt(".prefetch_threadpool_pool_size", 100);
 }
 
 BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
@@ -4596,6 +4672,11 @@ UInt64 Context::getClientProtocolVersion() const
 void Context::setClientProtocolVersion(UInt64 version)
 {
     client_protocol_version = version;
+}
+
+const ServerSettings & Context::getServerSettings() const
+{
+    return shared->server_settings;
 }
 
 }

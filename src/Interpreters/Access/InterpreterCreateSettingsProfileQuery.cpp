@@ -1,11 +1,13 @@
 #include <Interpreters/Access/InterpreterCreateSettingsProfileQuery.h>
-#include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
-#include <Parsers/Access/ASTRolesOrUsersSet.h>
+
 #include <Access/AccessControl.h>
-#include <Access/SettingsProfile.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/SettingsProfile.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/removeOnClusterClauseIfNeeded.h>
+#include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
+#include <Parsers/Access/ASTRolesOrUsersSet.h>
 
 
 namespace DB
@@ -47,7 +49,9 @@ namespace
 
 BlockIO InterpreterCreateSettingsProfileQuery::execute()
 {
-    auto & query = query_ptr->as<ASTCreateSettingsProfileQuery &>();
+    const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
+    auto & query = updated_query_ptr->as<ASTCreateSettingsProfileQuery &>();
+
     auto & access_control = getContext()->getAccessControl();
     if (query.alter)
         getContext()->checkAccess(AccessType::ALTER_SETTINGS_PROFILE);
@@ -66,7 +70,7 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
     if (!query.cluster.empty())
     {
         query.replaceCurrentUserTag(getContext()->getUserName());
-        return executeDDLQueryOnCluster(query_ptr, getContext());
+        return executeDDLQueryOnCluster(updated_query_ptr, getContext());
     }
 
     std::optional<RolesOrUsersSet> roles_from_query;

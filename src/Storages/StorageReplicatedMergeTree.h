@@ -497,6 +497,7 @@ private:
     BackgroundSchedulePool::TaskHolder queue_updating_task;
 
     BackgroundSchedulePool::TaskHolder mutations_updating_task;
+    Coordination::WatchCallbackPtr mutations_watch_callback;
 
     /// A task that selects parts to merge.
     BackgroundSchedulePool::TaskHolder merge_selecting_task;
