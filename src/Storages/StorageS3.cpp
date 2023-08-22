@@ -528,7 +528,8 @@ StorageS3Source::StorageS3Source(
     const String & version_id_,
     std::shared_ptr<IIterator> file_iterator_,
     const size_t download_thread_num_,
-    bool need_only_count_)
+    bool need_only_count_,
+    std::optional<SelectQueryInfo> query_info_)
     : ISource(info.source_header, false)
     , WithContext(context_)
     , name(std::move(name_))
@@ -543,6 +544,7 @@ StorageS3Source::StorageS3Source(
     , client(client_)
     , sample_block(info.format_header)
     , format_settings(format_settings_)
+    , query_info(std::move(query_info_))
     , requested_virtual_columns(info.requested_virtual_columns)
     , file_iterator(file_iterator_)
     , download_thread_num(download_thread_num_)
@@ -580,6 +582,8 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
             format, *read_buf, sample_block, getContext(), max_block_size,
             format_settings, max_parsing_threads, std::nullopt,
             /* is_remote_fs */ true, compression_method);
+    if (query_info.has_value())
+        input_format->setQueryInfo(query_info.value(), getContext());
 
     if (need_only_count)
         input_format->needOnlyCount();
@@ -1059,7 +1063,8 @@ Pipe StorageS3::read(
             query_configuration.url.version_id,
             iterator_wrapper,
             max_download_threads,
-            need_only_count));
+            need_only_count,
+            query_info));
     }
 
     return Pipe::unitePipes(std::move(pipes));

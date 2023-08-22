@@ -710,7 +710,8 @@ Pipe StorageAzureBlob::read(
             object_storage.get(),
             configuration.container,
             iterator_wrapper,
-            need_only_count));
+            need_only_count,
+            query_info));
     }
 
     return Pipe::unitePipes(std::move(pipes));
@@ -1099,7 +1100,8 @@ StorageAzureBlobSource::StorageAzureBlobSource(
     AzureObjectStorage * object_storage_,
     const String & container_,
     std::shared_ptr<IIterator> file_iterator_,
-    bool need_only_count_)
+    bool need_only_count_,
+    const SelectQueryInfo & query_info_)
     :ISource(info.source_header, false)
     , WithContext(context_)
     , requested_columns(info.requested_columns)
@@ -1115,6 +1117,7 @@ StorageAzureBlobSource::StorageAzureBlobSource(
     , container(container_)
     , file_iterator(file_iterator_)
     , need_only_count(need_only_count_)
+    , query_info(query_info_)
     , create_reader_pool(CurrentMetrics::ObjectStorageAzureThreads, CurrentMetrics::ObjectStorageAzureThreadsActive, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "AzureReader"))
 {
@@ -1153,6 +1156,7 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
             format, *read_buf, sample_block, getContext(), max_block_size,
             format_settings, max_parsing_threads, std::nullopt,
             /* is_remote_fs */ true, compression_method);
+    input_format->setQueryInfo(query_info, getContext());
 
     if (need_only_count)
         input_format->needOnlyCount();

@@ -193,7 +193,8 @@ StorageS3QueueSource::StorageS3QueueSource(
         version_id_,
         file_iterator,
         download_thread_num_,
-        false);
+        false,
+        /* query_info */ std::nullopt);
     reader = std::move(internal_source->reader);
     if (reader)
         reader_future = std::move(internal_source->reader_future);
