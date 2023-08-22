@@ -308,7 +308,7 @@ StorageURLSource::StorageURLSource(
                 /*max_download_threads*/ std::nullopt,
                 /* is_remote_ fs */ true,
                 compression_method);
-            input_format->setQueryInfo(query_info, context);
+            input_format->setQueryInfo(query_info, getContext());
 
             builder.init(Pipe(input_format));
 
