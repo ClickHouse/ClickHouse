@@ -186,6 +186,7 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
 
 bool applyTrivialCountIfPossible(
     QueryPlan & query_plan,
+    SelectQueryInfo & select_query_info,
     const TableNode & table_node,
     const QueryTreeNodePtr & query_tree,
     ContextMutablePtr & query_context,
@@ -242,6 +243,11 @@ bool applyTrivialCountIfPossible(
     const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node.getAggregateFunction().get());
     if (!count_func)
         return false;
+
+    /// Some storages can optimize trivial count in read() method instead of totalRows() because it still can
+    /// require reading some data (but much faster than reading columns).
+    /// Set a special flag in query info so the storage will see it and optimize count in read() method.
+    select_query_info.optimize_trivial_count = true;
 
     /// Get number of rows
     std::optional<UInt64> num_rows = storage->totalRows(settings);
@@ -505,7 +511,7 @@ FilterDAGInfo buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
 }
 
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
-    const SelectQueryInfo & select_query_info,
+    SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
     PlannerContextPtr & planner_context,
     bool is_single_table_expression,
@@ -651,7 +657,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             is_single_table_expression &&
             table_node &&
             select_query_info.has_aggregates &&
-            applyTrivialCountIfPossible(query_plan, *table_node, select_query_info.query_tree, planner_context->getMutableQueryContext(), table_expression_data.getColumnNames());
+            applyTrivialCountIfPossible(query_plan, select_query_info, *table_node, select_query_info.query_tree, planner_context->getMutableQueryContext(), table_expression_data.getColumnNames());
 
         if (is_trivial_count_applied)
         {
@@ -1389,7 +1395,7 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
 }
 
 JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
-    const SelectQueryInfo & select_query_info,
+    SelectQueryInfo & select_query_info,
     SelectQueryOptions & select_query_options,
     const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context)
