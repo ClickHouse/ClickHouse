@@ -2303,14 +2303,14 @@ void Context::clearUncompressedCache() const
         shared->uncompressed_cache->clear();
 }
 
-void Context::setMarkCache(const String & cache_policy, size_t cache_size_in_bytes, double size_ratio)
+void Context::setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
 {
     auto lock = getLock();
 
     if (shared->mark_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache has been already created.");
 
-    shared->mark_cache = std::make_shared<MarkCache>(cache_policy, cache_size_in_bytes, size_ratio);
+    shared->mark_cache = std::make_shared<MarkCache>(cache_policy, max_cache_size_in_bytes, size_ratio);
 }
 
 void Context::updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
@@ -2388,14 +2388,14 @@ void Context::clearIndexUncompressedCache() const
         shared->index_uncompressed_cache->clear();
 }
 
-void Context::setIndexMarkCache(const String & cache_policy, size_t cache_size_in_bytes, double size_ratio)
+void Context::setIndexMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
 {
     auto lock = getLock();
 
     if (shared->index_mark_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache has been already created.");
 
-    shared->index_mark_cache = std::make_shared<MarkCache>(cache_policy, cache_size_in_bytes, size_ratio);
+    shared->index_mark_cache = std::make_shared<MarkCache>(cache_policy, max_cache_size_in_bytes, size_ratio);
 }
 
 void Context::updateIndexMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
@@ -2423,14 +2423,14 @@ void Context::clearIndexMarkCache() const
         shared->index_mark_cache->clear();
 }
 
-void Context::setMMappedFileCache(size_t cache_size_in_num_entries)
+void Context::setMMappedFileCache(size_t max_cache_size_in_num_entries)
 {
     auto lock = getLock();
 
     if (shared->mmap_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped file cache has been already created.");
 
-    shared->mmap_cache = std::make_shared<MMappedFileCache>(cache_size_in_num_entries);
+    shared->mmap_cache = std::make_shared<MMappedFileCache>(max_cache_size_in_num_entries);
 }
 
 void Context::updateMMappedFileCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
