@@ -2,6 +2,7 @@
 
 #include <Processors/IProcessor.h>
 
+#include <atomic>
 #include <mutex>
 
 
@@ -13,7 +14,7 @@ class ISource : public IProcessor
 private:
     std::mutex read_progress_mutex;
     ReadProgressCounters read_progress;
-    bool read_progress_was_set = false;
+    std::atomic_bool read_progress_was_set = false;
     bool auto_progress;
 
 protected:
