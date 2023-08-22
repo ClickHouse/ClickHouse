@@ -119,23 +119,4 @@ TEST_F(ProxyConfigurationResolverProviderTests, ListBoth)
     ASSERT_EQ(https_proxy_configuration.port, https_list_proxy_server.getPort());
 }
 
-TEST_F(ProxyConfigurationResolverProviderTests, Remote)
-{
-    ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
-    config->setString("proxy", "");
-    config->setString("proxy.resolver", "");
-    config->setString("proxy.resolver.proxy_scheme", "http");
-    config->setString("proxy.resolver.proxy_port", "80");
-    config->setString("proxy.resolver.proxy_cache_time", "10");
-
-    config->setString("proxy.resolver2", "");
-    config->setString("proxy.resolver2.proxy_scheme", "https");
-    config->setString("proxy.resolver2.proxy_port", "443");
-    config->setString("proxy.resolver2.proxy_cache_time", "10");
-
-    context->setConfig(config);
-    [[maybe_unused]] auto http_proxy_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTP)->resolve();
-
-}
-
 // remote resolver is tricky to be tested in unit tests
