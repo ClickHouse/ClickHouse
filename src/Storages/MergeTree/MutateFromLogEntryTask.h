@@ -31,7 +31,7 @@ public:
         {}
 
 
-    Priority getPriority() override { return priority; }
+    Priority getPriority() const override { return priority; }
 
 private:
 

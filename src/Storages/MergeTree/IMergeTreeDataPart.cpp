@@ -1,5 +1,6 @@
 #include "IMergeTreeDataPart.h"
-#include "Storages/MergeTree/IDataPartStorage.h"
+#include <Storages/MergeTree/IDataPartStorage.h>
+#include <base/types.h>
 
 #include <optional>
 #include <boost/algorithm/string/join.hpp>
@@ -312,15 +313,20 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     const IMergeTreeDataPart * parent_part_)
     : DataPartStorageHolder(data_part_storage_)
     , storage(storage_)
-    , name(name_)
+    , mutable_name(name_)
+    , name(mutable_name)
     , info(info_)
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
     , parent_part(parent_part_)
+    , parent_part_name(parent_part ? parent_part->name : "")
     , use_metadata_cache(storage.use_metadata_cache)
 {
     if (parent_part)
+    {
+        chassert(parent_part_name.starts_with(parent_part->info.partition_id));     /// Make sure there's no prefix
         state = MergeTreeDataPartState::Active;
+    }
 
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
@@ -337,6 +343,12 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
     decrementTypeMetric(part_type);
 }
 
+void IMergeTreeDataPart::setName(const String & new_name)
+{
+    mutable_name = new_name;
+    for (auto & proj_part : projection_parts)
+        proj_part.second->parent_part_name = new_name;
+}
 
 String IMergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) const
 {
@@ -502,8 +514,10 @@ void IMergeTreeDataPart::removeIfNeeded()
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "relative_path {} of part {} is invalid or not set",
                                 getDataPartStorage().getPartDirectory(), name);
 
-            const auto part_parent_directory = directoryPath(part_directory);
-            bool is_moving_part = part_parent_directory.ends_with("moving/");
+            fs::path part_directory_path = getDataPartStorage().getRelativePath();
+            if (part_directory_path.filename().empty())
+                part_directory_path = part_directory_path.parent_path();
+            bool is_moving_part = part_directory_path.parent_path().filename() == "moving";
             if (!startsWith(file_name, "tmp") && !endsWith(file_name, ".tmp_proj") && !is_moving_part)
             {
                 LOG_ERROR(
@@ -1660,8 +1674,8 @@ std::pair<bool, NameSet> IMergeTreeDataPart::canRemovePart() const
 void IMergeTreeDataPart::initializePartMetadataManager()
 {
 #if USE_ROCKSDB
-    if (use_metadata_cache)
-        metadata_manager = std::make_shared<PartMetadataManagerWithCache>(this, storage.getContext()->getMergeTreeMetadataCache());
+    if (auto metadata_cache = storage.getContext()->tryGetMergeTreeMetadataCache(); metadata_cache && use_metadata_cache)
+        metadata_manager = std::make_shared<PartMetadataManagerWithCache>(this, metadata_cache);
     else
         metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(this);
 #else
@@ -1766,7 +1780,8 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix)
     part_is_probably_removed_from_disk = true;
 }
 
-DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
+DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/,
+                                                           const DiskTransactionPtr & disk_transaction) const
 {
     /// Avoid unneeded duplicates of broken parts if we try to detach the same broken part multiple times.
     /// Otherwise it may pollute detached/ with dirs with _tryN suffix and we will fail to remove broken part after 10 attempts.
@@ -1781,7 +1796,8 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
     IDataPartStorage::ClonePartParams params
     {
         .copy_instead_of_hardlink = isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication() && storage_settings->allow_remote_fs_zero_copy_replication,
-        .make_source_readonly = true
+        .make_source_readonly = true,
+        .external_transaction = disk_transaction
     };
     return getDataPartStorage().freeze(
         storage.relative_data_path,
@@ -1801,6 +1817,22 @@ MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & di
 
     String path_to_clone = fs::path(storage.relative_data_path) / directory_name / "";
     return getDataPartStorage().clonePart(path_to_clone, getDataPartStorage().getPartDirectory(), disk, storage.log);
+}
+
+UInt64 IMergeTreeDataPart::getIndexSizeFromFile() const
+{
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    if (parent_part)
+        metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
+    const auto & pk = metadata_snapshot->getPrimaryKey();
+    if (!pk.column_names.empty())
+    {
+        String file = "primary" + getIndexExtension(false);
+        if (checksums.files.contains("primary" + getIndexExtension(true)))
+            file = "primary" + getIndexExtension(true);
+        return getFileSizeOrZero(file);
+    }
+    return 0;
 }
 
 void IMergeTreeDataPart::checkConsistencyBase() const
@@ -1953,6 +1985,12 @@ IndexSize IMergeTreeDataPart::getSecondaryIndexSize(const String & secondary_ind
     return ColumnSize{};
 }
 
+bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name) const
+{
+    auto file_name = INDEX_FILE_PREFIX + index_name;
+    return checksums.has(file_name + ".idx") || checksums.has(file_name + ".idx2");
+}
+
 void IMergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const
 {
     for (const auto & [column_name, size] : columns_sizes)
@@ -2022,14 +2060,8 @@ String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
         hash.update(token.data(), token.size());
     }
 
-    union
-    {
-        char bytes[16];
-        UInt64 words[2];
-    } hash_value;
-    hash.get128(hash_value.bytes);
-
-    return info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
+    const auto hash_value = hash.get128();
+    return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
 }
 
 IMergeTreeDataPart::uint128 IMergeTreeDataPart::getActualChecksumByFile(const String & file_name) const

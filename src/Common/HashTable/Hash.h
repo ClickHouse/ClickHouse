@@ -2,9 +2,10 @@
 
 #include <city.h>
 #include <Core/Types.h>
+#include <Core/UUID.h>
+#include <base/StringRef.h>
 #include <base/types.h>
 #include <base/unaligned.h>
-#include <base/StringRef.h>
 
 #include <type_traits>
 
@@ -57,28 +58,25 @@ inline DB::UInt64 intHash64(DB::UInt64 x)
 
 inline uint32_t s390x_crc32_u8(uint32_t crc, uint8_t v)
 {
-    return crc32_be(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
+    return crc32c_le_vx(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
 }
 
 inline uint32_t s390x_crc32_u16(uint32_t crc, uint16_t v)
 {
-    return crc32_be(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
+    v = std::byteswap(v);
+    return crc32c_le_vx(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
 }
 
 inline uint32_t s390x_crc32_u32(uint32_t crc, uint32_t v)
 {
-    return crc32_be(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
+    v = std::byteswap(v);
+    return crc32c_le_vx(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
 }
 
 inline uint64_t s390x_crc32(uint64_t crc, uint64_t v)
 {
-    uint64_t _crc = crc;
-    uint32_t value_h, value_l;
-    value_h = (v >> 32) & 0xffffffff;
-    value_l = v & 0xffffffff;
-    _crc = crc32_be(static_cast<uint32_t>(_crc), reinterpret_cast<unsigned char *>(&value_h), sizeof(uint32_t));
-    _crc = crc32_be(static_cast<uint32_t>(_crc), reinterpret_cast<unsigned char *>(&value_l), sizeof(uint32_t));
-    return _crc;
+    v = std::byteswap(v);
+    return crc32c_le_vx(static_cast<uint32_t>(crc), reinterpret_cast<unsigned char *>(&v), sizeof(uint64_t));
 }
 #endif
 
@@ -409,7 +407,7 @@ struct UInt128TrivialHash
 
 struct UUIDTrivialHash
 {
-    size_t operator()(DB::UUID x) const { return x.toUnderType().items[0]; }
+    size_t operator()(DB::UUID x) const { return DB::UUIDHelpers::getHighBytes(x); }
 };
 
 struct UInt256Hash

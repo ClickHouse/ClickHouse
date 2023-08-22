@@ -33,6 +33,12 @@ then
     elif [ "${ARCH}" = "powerpc64le" -o "${ARCH}" = "ppc64le" ]
     then
         DIR="powerpc64le"
+    elif [ "${ARCH}" = "riscv64" ]
+    then
+        DIR="riscv64"
+    elif [ "${ARCH}" = "s390x" ]
+    then
+        DIR="s390x"
     fi
 elif [ "${OS}" = "FreeBSD" ]
 then

@@ -96,7 +96,7 @@ private:
     Serializations serializations;
 
     BlockMissingValues block_missing_values;
-    size_t approx_bytes_read_for_chunk;
+    size_t approx_bytes_read_for_chunk = 0;
 };
 
 class ValuesSchemaReader : public IRowSchemaReader
@@ -105,7 +105,7 @@ public:
     ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);
 
 private:
-    DataTypes readRowAndGetDataTypes() override;
+    std::optional<DataTypes> readRowAndGetDataTypes() override;
 
     PeekableReadBuffer buf;
     ParserExpression parser;

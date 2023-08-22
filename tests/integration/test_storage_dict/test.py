@@ -10,7 +10,10 @@ def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
-            "node1", main_configs=["configs/conf.xml"], with_nginx=True
+            "node1",
+            main_configs=["configs/conf.xml"],
+            user_configs=["configs/users.xml"],
+            with_nginx=True,
         )
         cluster.start()
 

@@ -9,6 +9,7 @@
 #include <Common/Macros.h>
 #include <Common/randomSeed.h>
 #include <Common/atomicRename.h>
+#include <Common/logger_useful.h>
 #include <base/hex.h>
 
 #include <Core/Defines.h>
@@ -71,7 +72,6 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeFixedString.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -704,6 +704,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 if (index_desc.type == "annoy" && !settings.allow_experimental_annoy_index)
                     throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index is disabled. Turn on allow_experimental_annoy_index");
 
+                if (index_desc.type == "usearch" && !settings.allow_experimental_usearch_index)
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "USearch index is disabled. Turn on allow_experimental_usearch_index");
+
                 properties.indices.push_back(index_desc);
             }
         if (create.columns_list->projections)
@@ -764,7 +767,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// Table function without columns list.
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
-        properties.columns = table_function->getActualTableStructure(getContext());
+        properties.columns = table_function->getActualTableStructure(getContext(), /*is_insert_query*/ true);
     }
     else if (create.is_dictionary)
     {
@@ -881,46 +884,24 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
 }
 
-String InterpreterCreateQuery::getTableEngineName(DefaultTableEngine default_table_engine)
+namespace
 {
-    switch (default_table_engine)
+    void checkTemporaryTableEngineName(const String& name)
     {
-        case DefaultTableEngine::Log:
-            return "Log";
-
-        case DefaultTableEngine::StripeLog:
-            return "StripeLog";
-
-        case DefaultTableEngine::MergeTree:
-            return "MergeTree";
-
-        case DefaultTableEngine::ReplacingMergeTree:
-            return "ReplacingMergeTree";
-
-        case DefaultTableEngine::ReplicatedMergeTree:
-            return "ReplicatedMergeTree";
-
-        case DefaultTableEngine::ReplicatedReplacingMergeTree:
-            return "ReplicatedReplacingMergeTree";
-
-        case DefaultTableEngine::Memory:
-            return "Memory";
-
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "default_table_engine is set to unknown value");
+        if (name.starts_with("Replicated") || name == "KeeperMap")
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated or KeeperMap table engines");
     }
-}
 
-void InterpreterCreateQuery::setDefaultTableEngine(ASTStorage & storage, ContextPtr local_context)
-{
-    if (local_context->getSettingsRef().default_table_engine.value == DefaultTableEngine::None)
-        throw Exception(ErrorCodes::ENGINE_REQUIRED, "Table engine is not specified in CREATE query");
+    void setDefaultTableEngine(ASTStorage &storage, DefaultTableEngine engine)
+    {
+        if (engine == DefaultTableEngine::None)
+            throw Exception(ErrorCodes::ENGINE_REQUIRED, "Table engine is not specified in CREATE query");
 
-    auto engine_ast = std::make_shared<ASTFunction>();
-    auto default_table_engine = local_context->getSettingsRef().default_table_engine.value;
-    engine_ast->name = getTableEngineName(default_table_engine);
-    engine_ast->no_empty_args = true;
-    storage.set(storage.engine, engine_ast);
+        auto engine_ast = std::make_shared<ASTFunction>();
+        engine_ast->name = SettingFieldDefaultTableEngine(engine).toString();
+        engine_ast->no_empty_args = true;
+        storage.set(storage.engine, engine_ast);
+    }
 }
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
@@ -936,32 +917,23 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
     if (create.temporary)
     {
-        /// It's possible if some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not.
-        /// It makes sense when default_table_engine setting is used, but not for temporary tables.
-        /// For temporary tables we ignore this setting to allow CREATE TEMPORARY TABLE query without specifying ENGINE
+        /// Some part of storage definition is specified, but ENGINE is not: just set the one from default_temporary_table_engine setting.
 
         if (!create.cluster.empty())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with ON CLUSTER clause");
 
-        if (create.storage)
+        if (!create.storage)
         {
-            if (create.storage->engine)
-            {
-                if (create.storage->engine->name.starts_with("Replicated") || create.storage->engine->name == "KeeperMap")
-                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated or KeeperMap table engines");
-            }
-            else
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Invalid storage definition for temporary table");
-        }
-        else
-        {
-            auto engine_ast = std::make_shared<ASTFunction>();
-            engine_ast->name = "Memory";
-            engine_ast->no_empty_args = true;
             auto storage_ast = std::make_shared<ASTStorage>();
-            storage_ast->set(storage_ast->engine, engine_ast);
             create.set(create.storage, storage_ast);
         }
+
+        if (!create.storage->engine)
+        {
+            setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_temporary_table_engine.value);
+        }
+
+        checkTemporaryTableEngineName(create.storage->engine->name);
         return;
     }
 
@@ -969,7 +941,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     {
         /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
         if (!create.storage->engine)
-            setDefaultTableEngine(*create.storage, getContext());
+            setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_table_engine.value);
         return;
     }
 
@@ -1008,7 +980,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     }
 
     create.set(create.storage, std::make_shared<ASTStorage>());
-    setDefaultTableEngine(*create.storage, getContext());
+    setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_table_engine.value);
 }
 
 static void generateUUIDForTable(ASTCreateQuery & create)
@@ -1110,6 +1082,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         // Table SQL definition is available even if the table is detached (even permanently)
         auto query = database->getCreateTableQuery(create.getTable(), getContext());
+        FunctionNameNormalizer().visit(query.get());
         auto create_query = query->as<ASTCreateQuery &>();
 
         if (!create.is_dictionary && create_query.is_dictionary)
@@ -1359,10 +1332,32 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     data_path = database->getTableDataPath(create);
+    auto full_data_path = fs::path{getContext()->getPath()} / data_path;
 
-    if (!create.attach && !data_path.empty() && fs::exists(fs::path{getContext()->getPath()} / data_path))
-        throw Exception(storage_already_exists_error_code,
-            "Directory for {} data {} already exists", Poco::toLower(storage_name), String(data_path));
+    if (!create.attach && !data_path.empty() && fs::exists(full_data_path))
+    {
+        if (getContext()->getZooKeeperMetadataTransaction() &&
+            !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery() &&
+            !DatabaseCatalog::instance().hasUUIDMapping(create.uuid) &&
+            Context::getGlobalContextInstance()->isServerCompletelyStarted() &&
+            Context::getGlobalContextInstance()->getConfigRef().getBool("allow_moving_table_directory_to_trash", false))
+        {
+            /// This is a secondary query from a Replicated database. It cannot be retried with another UUID, we must execute it as is.
+            /// We don't have a table with this UUID (and all metadata is loaded),
+            /// so the existing directory probably contains some leftovers from previous unsuccessful attempts to create the table
+
+            fs::path trash_path = fs::path{getContext()->getPath()} / "trash" / data_path / getHexUIntLowercase(thread_local_rng());
+            LOG_WARNING(&Poco::Logger::get("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
+                        Poco::toLower(storage_name), String(data_path), trash_path);
+            fs::create_directories(trash_path.parent_path());
+            renameNoReplace(full_data_path, trash_path);
+        }
+        else
+        {
+            throw Exception(storage_already_exists_error_code,
+                "Directory for {} data {} already exists", Poco::toLower(storage_name), String(data_path));
+        }
+    }
 
     bool from_path = create.attach_from_path.has_value();
     String actual_data_path = data_path;

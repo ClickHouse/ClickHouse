@@ -33,7 +33,8 @@ public:
 
     ~ReplicatedMergeMutateTaskBase() override = default;
     void onCompleted() override;
-    StorageID getStorageID() override;
+    StorageID getStorageID() const override;
+    String getQueryId() const override { return getStorageID().getShortName() + "::" + selected_entry->log_entry->new_part_name; }
     bool executeStep() override;
 
 protected:

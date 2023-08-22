@@ -11,6 +11,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/StorageConfiguration.h>
+#include <Storages/prepareReadingFromFormat.h>
 
 
 namespace DB
@@ -158,20 +159,19 @@ public:
     using IteratorWrapper = std::function<FailoverOptions()>;
 
     StorageURLSource(
-        const std::vector<NameAndTypePair> & requested_virtual_columns_,
+        const ReadFromFormatInfo & info,
         std::shared_ptr<IteratorWrapper> uri_iterator_,
         const std::string & http_method,
         std::function<void(std::ostream &)> callback,
         const String & format,
         const std::optional<FormatSettings> & format_settings,
         String name_,
-        const Block & sample_block,
         ContextPtr context,
-        const ColumnsDescription & columns,
         UInt64 max_block_size,
         const ConnectionTimeouts & timeouts,
         CompressionMethod compression_method,
         size_t download_threads,
+        const SelectQueryInfo & query_info,
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
         bool glob_url = false);
@@ -181,8 +181,6 @@ public:
     Chunk generate() override;
 
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
-
-    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
     static std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> getFirstAvailableURIAndReadBuffer(
         std::vector<String>::const_iterator & option,
@@ -202,7 +200,10 @@ private:
     InitializeFunc initialize;
 
     String name;
-    std::vector<NameAndTypePair> requested_virtual_columns;
+    ColumnsDescription columns_description;
+    NamesAndTypesList requested_columns;
+    NamesAndTypesList requested_virtual_columns;
+    Block block_for_format;
     std::shared_ptr<IteratorWrapper> uri_iterator;
     Poco::URI curr_uri;
 
@@ -212,11 +213,6 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
 
     Poco::Net::HTTPBasicCredentials credentials;
-
-    size_t total_size = 0;
-    UInt64 total_rows_approx_max = 0;
-    size_t total_rows_count_times = 0;
-    UInt64 total_rows_approx_accumulated = 0;
 };
 
 class StorageURLSink : public SinkToStorage
@@ -275,6 +271,8 @@ public:
     {
         return storage_snapshot->metadata->getSampleBlock();
     }
+
+    bool supportsSubcolumns() const override { return true; }
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 

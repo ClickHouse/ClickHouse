@@ -482,7 +482,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
-    QueryPlanOptimizations::optimizeTreeThirdPass(*root, nodes);
+    QueryPlanOptimizations::optimizeTreeThirdPass(*this, *root, nodes);
 
     updateDataStreams(*root);
 }
@@ -542,9 +542,9 @@ void QueryPlan::explainEstimate(MutableColumns & columns)
     }
 }
 
-QueryPlan::Nodes QueryPlan::detachNodes(QueryPlan && plan)
+std::pair<QueryPlan::Nodes, QueryPlanResourceHolder> QueryPlan::detachNodesAndResources(QueryPlan && plan)
 {
-    return std::move(plan.nodes);
+    return {std::move(plan.nodes), std::move(plan.resources)};
 }
 
 }
