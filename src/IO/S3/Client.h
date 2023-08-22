@@ -32,7 +32,6 @@ struct ServerSideEncryptionKMSConfig
 #include <IO/S3/PocoHTTPClient.h>
 #include <IO/S3/Credentials.h>
 #include <IO/S3/ProviderType.h>
-#include <IO/S3/ProxyConfiguration.h>
 
 #include <aws/core/Aws.h>
 #include <aws/core/client/DefaultRetryStrategy.h>

@@ -10,7 +10,6 @@
 
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
-#include <IO/S3/ProxyConfigurationProvider.h>
 #include <IO/ParallelReadBuffer.h>
 #include <IO/SharedThreadPools.h>
 

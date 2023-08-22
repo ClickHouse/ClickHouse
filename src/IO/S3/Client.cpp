@@ -24,8 +24,8 @@
 #include <Common/assert_cast.h>
 
 #include <Common/logger_useful.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
 
-#include <IO/S3/ProxyConfigurationProvider.h>
 
 namespace ProfileEvents
 {
@@ -866,10 +866,10 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     const ThrottlerPtr & put_request_throttler,
     const String & protocol)
 {
-    auto proxy_configuration_resolver = S3::ProxyConfigurationProvider::get(protocol);
+    auto proxy_configuration_resolver = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::protocolFromString(protocol));
 
-    auto per_request_configuration = [=] (const Aws::Http::HttpRequest & req) { return proxy_configuration_resolver->getConfiguration(req); };
-    auto error_report = [=] (const ClientConfigurationPerRequest & req) { proxy_configuration_resolver->errorReport(req); };
+    auto per_request_configuration = [=] () { return proxy_configuration_resolver->resolve(); };
+    auto error_report = [=] (const DB::ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
 
     auto config = PocoHTTPClientConfiguration(
         per_request_configuration,

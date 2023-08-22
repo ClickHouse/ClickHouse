@@ -5,6 +5,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -14,7 +15,6 @@
 #include <base/getFQDNOrHostName.h>
 #include <IO/S3Common.h>
 #include <IO/S3/Credentials.h>
-#include <IO/S3/ProxyConfigurationProvider.h>
 
 #include <Storages/StorageS3Settings.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
@@ -75,11 +75,11 @@ std::unique_ptr<S3::Client> getClient(
     /*
      * Override proxy configuration for backwards compatibility with old configuration format.
      * */
-    auto proxy_config = S3::ProxyConfigurationProvider::get(config_prefix, config);
+    auto proxy_config = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(config_prefix, config);
     if (proxy_config)
     {
         client_configuration.per_request_configuration
-            = [proxy_config](const auto & request) { return proxy_config->getConfiguration(request); };
+            = [proxy_config]() { return proxy_config->resolve(); };
         client_configuration.error_report
             = [proxy_config](const auto & request_config) { proxy_config->errorReport(request_config); };
     }
