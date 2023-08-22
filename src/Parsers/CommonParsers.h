@@ -203,6 +203,7 @@ namespace DB
     MR_MACROS(UNFREEZE, "UNFREEZE") \
     MR_MACROS(UNION, "UNION") \
     MR_MACROS(UPDATE, "UPDATE") \
+    MR_MACROS(UNIQUE, "UNIQUE") \
     MR_MACROS(UUID, "UUID") \
     MR_MACROS(WEEK, "WEEK") \
     MR_MACROS(WHEN, "WHEN") \
@@ -446,12 +447,6 @@ namespace DB
     MR_MACROS(ENABLED_ROLES, "ENABLED ROLES") \
     MR_MACROS(CURRENT_QUOTA, "CURRENT QUOTA") \
     MR_MACROS(QUOTA, "QUOTA") \
-
-
-
-
-
-
 
 
 enum class Keyword : size_t

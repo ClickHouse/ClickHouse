@@ -14,7 +14,7 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
     ParserKeyword s_alter(Keyword::ALTER);
     ParserKeyword s_collection(Keyword::NAMED_COLLECTION);
     ParserKeyword s_if_exists(Keyword::IF_EXISTS);
-    ParserKeyword s_on(Keyword::ON)
+    ParserKeyword s_on(Keyword::ON);
     ParserKeyword s_delete(Keyword::DELETE);
 
     ParserIdentifier name_p;
