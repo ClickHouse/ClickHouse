@@ -1819,6 +1819,72 @@ Result:
 └────────────────────────────────────┘
 ```
 
+## toUTCTimestamp
+
+Convert DateTime/DateTime64 type value from other time zone to UTC timezone timestamp
+
+**Syntax**
+
+``` sql
+toUTCTimestamp(time_val, time_zone)
+```
+
+**Arguments**
+
+- `time_val` — A DateTime/DateTime64 type const value or a expression . [DateTime/DateTime64 types](../../sql-reference/data-types/datetime.md)
+- `time_zone` — A String type const value or a expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
+
+**Returned value**
+
+- DateTime/DateTime64 in text form
+
+**Example**
+
+``` sql
+SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai');
+```
+
+Result:
+
+``` text
+┌─toUTCTimestamp(toDateTime('2023-03-16'),'Asia/Shanghai')┐
+│                                     2023-03-15 16:00:00 │
+└─────────────────────────────────────────────────────────┘
+```
+
+## fromUTCTimestamp
+
+Convert DateTime/DateTime64 type value from UTC timezone to other time zone timestamp
+
+**Syntax**
+
+``` sql
+fromUTCTimestamp(time_val, time_zone)
+```
+
+**Arguments**
+
+- `time_val` — A DateTime/DateTime64 type const value or a expression . [DateTime/DateTime64 types](../../sql-reference/data-types/datetime.md)
+- `time_zone` — A String type const value or a expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
+
+**Returned value**
+
+- DateTime/DateTime64 in text form
+
+**Example**
+
+``` sql
+SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai');
+```
+
+Result:
+
+``` text
+┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3),'Asia/Shanghai')─┐
+│                                                 2023-03-16 18:00:00.000 │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
 ## Related content
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

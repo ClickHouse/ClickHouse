@@ -11,6 +11,7 @@
             --background: linear-gradient(to bottom, #00CCFF, #00D0D0);
             --chart-background: white;
             --shadow-color: rgba(0, 0, 0, 0.25);
+            --moving-shadow-color: rgba(0, 0, 0, 0.5);
             --input-shadow-color: rgba(0, 255, 0, 1);
             --error-color: red;
             --auth-error-color: white;
@@ -34,6 +35,7 @@
             --background: #151C2C;
             --chart-background: #1b2834;
             --shadow-color: rgba(0, 0, 0, 0);
+            --moving-shadow-color: rgba(255, 255, 255, 0.25);
             --input-shadow-color: rgba(255, 128, 0, 0.25);
             --error-color: #F66;
             --legend-background: rgba(255, 255, 255, 0.25);
@@ -89,6 +91,21 @@
             box-shadow: 0 0 1rem var(--shadow-color);
             overflow: hidden;
             position: relative;
+        }
+
+        .chart-maximized {
+            flex: 1 100%;
+            height: 75vh
+        }
+
+        .chart-moving {
+            z-index: 11;
+            box-shadow: 0 0 2rem var(--moving-shadow-color);
+        }
+
+        .chart-displaced {
+            opacity: 75%;
+            filter: blur(1px);
         }
 
         .chart div { position: absolute; }
@@ -303,6 +320,7 @@
         }
         .chart-buttons a {
             margin-right: 0.25rem;
+            user-select: none;
         }
         .chart-buttons a:hover {
             color: var(--chart-button-hover-color);
@@ -454,11 +472,13 @@
 let host = 'https://play.clickhouse.com/';
 let user = 'explorer';
 let password = '';
+let add_http_cors_header = true;
 
 /// If it is hosted on server, assume that it is the address of ClickHouse.
 if (location.protocol != 'file:') {
     host = location.origin;
     user = 'default';
+    add_http_cors_header = false;
 }
 
 const errorCodeMessageMap = {
@@ -793,6 +813,92 @@ function insertChart(i) {
     let edit_buttons = document.createElement('div');
     edit_buttons.className = 'chart-buttons';
 
+    let move = document.createElement('a');
+    let move_text = document.createTextNode('✥');
+    move.appendChild(move_text);
+
+    let is_dragging = false;
+    move.addEventListener('mousedown', e => {
+        const idx = getCurrentIndex();
+        is_dragging = true;
+        chart.className = 'chart chart-moving';
+
+        let offset_x = e.clientX;
+        let offset_y = e.clientY;
+
+        let displace_idx = null;
+        let displace_chart = null;
+
+        function mouseup(e) {
+            is_dragging = false;
+            chart.className = 'chart';
+            chart.style.left = null;
+            chart.style.top = null;
+
+            if (displace_idx !== null) {
+                const elem = queries[idx];
+                queries.splice(idx, 1);
+                queries.splice(displace_idx, 0, elem);
+
+                displace_chart.className = 'chart';
+                drawAll();
+            }
+        }
+
+        function mousemove(e) {
+            if (!is_dragging) {
+                document.body.removeEventListener('mousemove', mousemove);
+                document.body.removeEventListener('mouseup', mouseup);
+                return;
+            }
+
+            let x = e.clientX - offset_x;
+            let y = e.clientY - offset_y;
+
+            chart.style.left = `${x}px`;
+            chart.style.top = `${y}px`;
+
+            displace_idx = null;
+            displace_chart = null;
+            let current_idx = -1;
+            for (const elem of charts.querySelectorAll('.chart')) {
+                ++current_idx;
+                if (current_idx == idx) {
+                    continue;
+                }
+
+                const this_rect = chart.getBoundingClientRect();
+                const this_center_x = this_rect.left + this_rect.width / 2;
+                const this_center_y = this_rect.top + this_rect.height / 2;
+
+                const elem_rect = elem.getBoundingClientRect();
+
+                if (this_center_x >= elem_rect.left && this_center_x <= elem_rect.right
+                    && this_center_y >= elem_rect.top && this_center_y <= elem_rect.bottom) {
+
+                    elem.className = 'chart chart-displaced';
+                    displace_idx = current_idx;
+                    displace_chart = elem;
+                } else {
+                    elem.className = 'chart';
+                }
+            }
+        }
+
+        document.body.addEventListener('mouseup', mouseup);
+        document.body.addEventListener('mousemove', mousemove);
+    });
+
+    let maximize = document.createElement('a');
+    let maximize_text = document.createTextNode('🗖');
+    maximize.appendChild(maximize_text);
+
+    maximize.addEventListener('click', e => {
+        const idx = getCurrentIndex();
+        chart.className = (chart.className == 'chart' ? 'chart chart-maximized' : 'chart');
+        resize();
+    });
+
     let edit = document.createElement('a');
     let edit_text = document.createTextNode('✎');
     edit.appendChild(edit_text);
@@ -825,6 +931,8 @@ function insertChart(i) {
         saveState();
     });
 
+    edit_buttons.appendChild(move);
+    edit_buttons.appendChild(maximize);
     edit_buttons.appendChild(edit);
     edit_buttons.appendChild(trash);
 
@@ -961,8 +1069,6 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
         }
     };
 }
-
-let add_http_cors_header = false;
 
 async function draw(idx, chart, url_params, query) {
     if (plots[idx]) {

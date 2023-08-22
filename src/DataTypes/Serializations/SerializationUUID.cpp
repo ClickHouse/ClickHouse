@@ -111,25 +111,25 @@ void SerializationUUID::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
 void SerializationUUID::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
     UUID x = field.get<UUID>();
-    writeBinary(x, ostr);
+    writeBinaryLittleEndian(x, ostr);
 }
 
 void SerializationUUID::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID x;
-    readBinary(x, istr);
+    readBinaryLittleEndian(x, istr);
     field = NearestFieldType<UUID>(x);
 }
 
 void SerializationUUID::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeBinary(assert_cast<const ColumnVector<UUID> &>(column).getData()[row_num], ostr);
+    writeBinaryLittleEndian(assert_cast<const ColumnVector<UUID> &>(column).getData()[row_num], ostr);
 }
 
 void SerializationUUID::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID x;
-    readBinary(x, istr);
+    readBinaryLittleEndian(x, istr);
     assert_cast<ColumnVector<UUID> &>(column).getData().push_back(x);
 }
 

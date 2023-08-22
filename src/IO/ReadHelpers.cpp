@@ -12,6 +12,8 @@
 #include <cstdlib>
 #include <bit>
 
+#include <base/simd.h>
+
 #ifdef __SSE2__
     #include <emmintrin.h>
 #endif
@@ -51,36 +53,25 @@ UUID parseUUID(std::span<const UInt8> src)
 {
     UUID uuid;
     const auto * src_ptr = src.data();
-    auto * dst = reinterpret_cast<UInt8 *>(&uuid);
     const auto size = src.size();
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    const std::reverse_iterator dst_it(dst + sizeof(UUID));
+    const std::reverse_iterator dst(reinterpret_cast<UInt8 *>(&uuid) + sizeof(UUID));
+#else
+    auto * dst = reinterpret_cast<UInt8 *>(&uuid);
 #endif
     if (size == 36)
     {
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        parseHex<4>(src_ptr, dst_it + 8);
-        parseHex<2>(src_ptr + 9, dst_it + 12);
-        parseHex<2>(src_ptr + 14, dst_it + 14);
-        parseHex<2>(src_ptr + 19, dst_it);
-        parseHex<6>(src_ptr + 24, dst_it + 2);
-#else
-        parseHex<4>(src_ptr, dst);
-        parseHex<2>(src_ptr + 9, dst + 4);
-        parseHex<2>(src_ptr + 14, dst + 6);
-        parseHex<2>(src_ptr + 19, dst + 8);
-        parseHex<6>(src_ptr + 24, dst + 10);
-#endif
+        parseHex<4>(src_ptr, dst + 8);
+        parseHex<2>(src_ptr + 9, dst + 12);
+        parseHex<2>(src_ptr + 14, dst + 14);
+        parseHex<2>(src_ptr + 19, dst);
+        parseHex<6>(src_ptr + 24, dst + 2);
     }
     else if (size == 32)
     {
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        parseHex<8>(src_ptr, dst_it + 8);
-        parseHex<8>(src_ptr + 16, dst_it);
-#else
-        parseHex<16>(src_ptr, dst);
-#endif
+        parseHex<8>(src_ptr, dst + 8);
+        parseHex<8>(src_ptr + 16, dst);
     }
     else
         throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Unexpected length when trying to parse UUID ({})", size);
@@ -819,14 +810,11 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
                 auto rc = vdupq_n_u8('\r');
                 auto nc = vdupq_n_u8('\n');
                 auto dc = vdupq_n_u8(delimiter);
-                /// Returns a 64 bit mask of nibbles (4 bits for each byte).
-                auto get_nibble_mask = [](uint8x16_t input) -> uint64_t
-                { return vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(input), 4)), 0); };
                 for (; next_pos + 15 < buf.buffer().end(); next_pos += 16)
                 {
                     uint8x16_t bytes = vld1q_u8(reinterpret_cast<const uint8_t *>(next_pos));
                     auto eq = vorrq_u8(vorrq_u8(vceqq_u8(bytes, rc), vceqq_u8(bytes, nc)), vceqq_u8(bytes, dc));
-                    uint64_t bit_mask = get_nibble_mask(eq);
+                    uint64_t bit_mask = getNibbleMask(eq);
                     if (bit_mask)
                     {
                         next_pos += std::countr_zero(bit_mask) >> 2;
