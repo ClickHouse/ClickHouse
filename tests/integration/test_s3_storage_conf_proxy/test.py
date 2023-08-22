@@ -18,7 +18,7 @@ def cluster():
         cluster.start()
         logging.info("Cluster started")
 
-        proxy_util.run_resolver(cluster)
+        proxy_util.run_resolver(cluster, os.path.dirname(__file__))
         logging.info("Proxy resolver started")
 
         yield cluster
