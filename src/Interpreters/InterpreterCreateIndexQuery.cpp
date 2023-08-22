@@ -16,6 +16,7 @@ namespace ErrorCodes
 {
     extern const int TABLE_IS_READ_ONLY;
     extern const int INCORRECT_QUERY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -24,6 +25,15 @@ BlockIO InterpreterCreateIndexQuery::execute()
     auto current_context = getContext();
     const auto & create_index = query_ptr->as<ASTCreateIndexQuery &>();
 
+    if (create_index.unique)
+    {
+        if (!current_context->getSettingsRef().create_index_ignore_unique)
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CREATE UNIQUE INDEX is not supported."
+                " SET create_index_ignore_unique=1 to ignore this UNIQUE keyword.");
+        }
+
+    }
     // Noop if allow_create_index_without_type = true. throw otherwise
     if (!create_index.index_decl->as<ASTIndexDeclaration>()->type)
     {

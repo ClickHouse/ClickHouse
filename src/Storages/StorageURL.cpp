@@ -1,5 +1,4 @@
 #include <Storages/StorageURL.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -22,6 +21,8 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Transforms/ExtractColumnsTransform.h>
 
 #include <Common/ThreadStatus.h>
 #include <Common/parseRemoteDescription.h>
@@ -208,33 +209,30 @@ void StorageURLSource::setCredentials(Poco::Net::HTTPBasicCredentials & credenti
     }
 }
 
-Block StorageURLSource::getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns)
-{
-    for (const auto & virtual_column : requested_virtual_columns)
-        sample_block.insert({virtual_column.type->createColumn(), virtual_column.type, virtual_column.name});
-
-    return sample_block;
-}
-
 StorageURLSource::StorageURLSource(
-    const std::vector<NameAndTypePair> & requested_virtual_columns_,
+    const ReadFromFormatInfo & info,
     std::shared_ptr<IteratorWrapper> uri_iterator_,
     const std::string & http_method,
     std::function<void(std::ostream &)> callback,
     const String & format,
     const std::optional<FormatSettings> & format_settings,
     String name_,
-    const Block & sample_block,
     ContextPtr context,
-    const ColumnsDescription & columns,
     UInt64 max_block_size,
     const ConnectionTimeouts & timeouts,
     CompressionMethod compression_method,
     size_t download_threads,
+    const SelectQueryInfo & query_info,
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
     bool glob_url)
-    : ISource(getHeader(sample_block, requested_virtual_columns_), false), name(std::move(name_)), requested_virtual_columns(requested_virtual_columns_), uri_iterator(uri_iterator_)
+    : ISource(info.source_header, false)
+    , name(std::move(name_))
+    , columns_description(info.columns_description)
+    , requested_columns(info.requested_columns)
+    , requested_virtual_columns(info.requested_virtual_columns)
+    , block_for_format(info.format_header)
+    , uri_iterator(uri_iterator_)
 {
     auto headers = getHeaders(headers_);
 
@@ -281,7 +279,7 @@ StorageURLSource::StorageURLSource(
         input_format = FormatFactory::instance().getInput(
             format,
             *read_buf,
-            sample_block,
+            block_for_format,
             context,
             max_block_size,
             format_settings,
@@ -289,12 +287,25 @@ StorageURLSource::StorageURLSource(
             /*max_download_threads*/ std::nullopt,
             /* is_remote_fs */ true,
             compression_method);
+        input_format->setQueryInfo(query_info, context);
 
         QueryPipelineBuilder builder;
         builder.init(Pipe(input_format));
 
-        builder.addSimpleTransform([&](const Block & cur_header)
-                                   { return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *input_format, context); });
+        if (columns_description.hasDefaults())
+        {
+            builder.addSimpleTransform([&](const Block & cur_header)
+            {
+                return std::make_shared<AddingDefaultsTransform>(cur_header, columns_description, *input_format, context);
+            });
+        }
+
+        /// Add ExtractColumnsTransform to extract requested columns/subcolumns
+        /// from chunk read by IInputFormat.
+        builder.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
+        });
 
         pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
         reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
@@ -371,7 +382,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     for (; option != end; ++option)
     {
         bool skip_url_not_found_error = glob_url && read_settings.http_skip_not_found_url_for_globs && option == std::prev(end);
-        auto request_uri = Poco::URI(*option, context->getSettingsRef().disable_url_encoding);
+        auto request_uri = Poco::URI(*option, context->getSettingsRef().enable_url_encoding);
 
         for (const auto & [param, value] : params)
             request_uri.addQueryParameter(param, value);
@@ -695,27 +706,6 @@ Pipe IStorageURLBase::read(
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
 
-    ColumnsDescription columns_description;
-    Block block_for_format;
-    if (supportsSubsetOfColumns())
-    {
-        columns_description = storage_snapshot->getDescriptionForColumns(column_names);
-        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-    }
-    else
-    {
-        columns_description = storage_snapshot->metadata->getColumns();
-        block_for_format = storage_snapshot->metadata->getSampleBlock();
-    }
-
-    std::unordered_set<String> column_names_set(column_names.begin(), column_names.end());
-    std::vector<NameAndTypePair> requested_virtual_columns;
-    for (const auto & virtual_column : getVirtuals())
-    {
-        if (column_names_set.contains(virtual_column.name))
-            requested_virtual_columns.push_back(virtual_column);
-    }
-
     size_t max_download_threads = local_context->getSettingsRef().max_download_threads;
 
     std::shared_ptr<StorageURLSource::IteratorWrapper> iterator_wrapper{nullptr};
@@ -759,6 +749,8 @@ Pipe IStorageURLBase::read(
         num_streams = 1;
     }
 
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+
     Pipes pipes;
     pipes.reserve(num_streams);
 
@@ -766,20 +758,25 @@ Pipe IStorageURLBase::read(
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageURLSource>(
-            requested_virtual_columns,
+            read_from_format_info,
             iterator_wrapper,
             getReadMethod(),
-            getReadPOSTDataCallback(column_names, columns_description, query_info, local_context, processed_stage, max_block_size),
+            getReadPOSTDataCallback(
+                read_from_format_info.columns_description.getNamesOfPhysical(),
+                read_from_format_info.columns_description,
+                query_info,
+                local_context,
+                processed_stage,
+                max_block_size),
             format_name,
             format_settings,
             getName(),
-            block_for_format,
             local_context,
-            columns_description,
             max_block_size,
             getHTTPTimeouts(local_context),
             compression_method,
             download_threads,
+            query_info,
             headers,
             params,
             is_url_with_globs));
@@ -798,19 +795,6 @@ Pipe StorageURLWithFailover::read(
     size_t max_block_size,
     size_t /*num_streams*/)
 {
-    ColumnsDescription columns_description;
-    Block block_for_format;
-    if (supportsSubsetOfColumns())
-    {
-        columns_description = storage_snapshot->getDescriptionForColumns(column_names);
-        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-    }
-    else
-    {
-        columns_description = storage_snapshot->metadata->getColumns();
-        block_for_format = storage_snapshot->metadata->getSampleBlock();
-    }
-
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
 
     auto iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>([&, done = false]() mutable
@@ -821,21 +805,22 @@ Pipe StorageURLWithFailover::read(
         return uri_options;
     });
 
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+
     auto pipe = Pipe(std::make_shared<StorageURLSource>(
-        std::vector<NameAndTypePair>{},
+        read_from_format_info,
         iterator_wrapper,
         getReadMethod(),
-        getReadPOSTDataCallback(column_names, columns_description, query_info, local_context, processed_stage, max_block_size),
+        getReadPOSTDataCallback(read_from_format_info.columns_description.getNamesOfPhysical(), read_from_format_info.columns_description, query_info, local_context, processed_stage, max_block_size),
         format_name,
         format_settings,
         getName(),
-        block_for_format,
         local_context,
-        columns_description,
         max_block_size,
         getHTTPTimeouts(local_context),
         compression_method,
         local_context->getSettingsRef().max_download_threads,
+        query_info,
         headers,
         params));
     std::shuffle(uri_options.begin(), uri_options.end(), thread_local_rng);

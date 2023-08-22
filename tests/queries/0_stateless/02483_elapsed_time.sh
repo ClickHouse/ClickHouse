@@ -32,7 +32,7 @@ OK_QUERY_JSON="
 WITH (
         SELECT sleepEachRow(1.0)
     ) AS sub
-SELECT *
+SELECT *, sub
 FROM
 (
     SELECT *
@@ -50,7 +50,7 @@ WITH (
 SELECT *
 FROM
 (
-   SELECT *
+   SELECT *, sub
    FROM system.one
 )
 FORMAT XML

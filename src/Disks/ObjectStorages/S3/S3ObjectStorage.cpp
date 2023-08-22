@@ -135,7 +135,7 @@ private:
             return result;
         }
 
-        throw Exception(ErrorCodes::S3_ERROR, "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
+        throw S3Exception(outcome.GetError().GetErrorType(), "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
                 quoteString(request.GetBucket()), quoteString(request.GetPrefix()),
                 backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
     }
@@ -431,11 +431,11 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     /// Shortcut for S3
     if (auto * dest_s3 = dynamic_cast<S3ObjectStorage * >(&object_storage_to); dest_s3 != nullptr)
     {
-        auto client_ptr = clients.get()->client;
+        auto clients_ = clients.get();
         auto settings_ptr = s3_settings.get();
-        auto size = S3::getObjectSize(*client_ptr, bucket, object_from.remote_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
+        auto size = S3::getObjectSize(*clients_->client, bucket, object_from.remote_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
         auto scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "S3ObjStor_copy");
-        copyS3File(client_ptr, bucket, object_from.remote_path, 0, size, dest_s3->bucket, object_to.remote_path,
+        copyS3File(clients_->client, clients_->client_with_long_timeout, bucket, object_from.remote_path, 0, size, dest_s3->bucket, object_to.remote_path,
                    settings_ptr->request_settings, object_to_attributes, scheduler, /* for_disk_s3= */ true);
     }
     else
@@ -447,11 +447,11 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
 void S3ObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from, const StoredObject & object_to, std::optional<ObjectAttributes> object_to_attributes)
 {
-    auto client_ptr = clients.get()->client;
+    auto clients_ = clients.get();
     auto settings_ptr = s3_settings.get();
-    auto size = S3::getObjectSize(*client_ptr, bucket, object_from.remote_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
+    auto size = S3::getObjectSize(*clients_->client, bucket, object_from.remote_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
     auto scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "S3ObjStor_copy");
-    copyS3File(client_ptr, bucket, object_from.remote_path, 0, size, bucket, object_to.remote_path,
+    copyS3File(clients_->client, clients_->client_with_long_timeout, bucket, object_from.remote_path, 0, size, bucket, object_to.remote_path,
                settings_ptr->request_settings, object_to_attributes, scheduler, /* for_disk_s3= */ true);
 }
 
