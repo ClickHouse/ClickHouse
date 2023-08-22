@@ -221,7 +221,7 @@ StorageURLSource::StorageURLSource(
     UInt64 max_block_size,
     const ConnectionTimeouts & timeouts,
     CompressionMethod compression_method,
-    size_t download_threads,
+    size_t max_parsing_threads,
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
     bool glob_url)
@@ -274,7 +274,6 @@ StorageURLSource::StorageURLSource(
             file_progress_callback(FileProgress(0, file_size));
         }
 
-        // TODO: Pass max_parsing_threads and max_download_threads adjusted for num_streams.
         input_format = FormatFactory::instance().getInput(
             format,
             *read_buf,
@@ -282,9 +281,9 @@ StorageURLSource::StorageURLSource(
             context,
             max_block_size,
             format_settings,
-            download_threads,
-            /*max_download_threads*/ std::nullopt,
-            /* is_remote_fs */ true,
+            max_parsing_threads,
+            /* max_download_threads= */ std::nullopt,
+            /* is_remote_fs= */ true,
             compression_method);
 
         QueryPipelineBuilder builder;
@@ -704,8 +703,6 @@ Pipe IStorageURLBase::read(
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
 
-    size_t max_download_threads = local_context->getSettingsRef().max_download_threads;
-
     std::shared_ptr<StorageURLSource::IteratorWrapper> iterator_wrapper{nullptr};
     bool is_url_with_globs = urlWithGlobs(uri);
     size_t max_addresses = local_context->getSettingsRef().glob_expansion_max_elements;
@@ -752,7 +749,9 @@ Pipe IStorageURLBase::read(
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    size_t download_threads = num_streams >= max_download_threads ? 1 : (max_download_threads / num_streams);
+    const size_t max_parsing_threads = local_context->getSettingsRef().max_threads;
+    const size_t parsing_threads = num_streams >= max_parsing_threads ? 1 : (max_parsing_threads / num_streams);
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageURLSource>(
@@ -773,7 +772,7 @@ Pipe IStorageURLBase::read(
             max_block_size,
             getHTTPTimeouts(local_context),
             compression_method,
-            download_threads,
+            parsing_threads,
             headers,
             params,
             is_url_with_globs));
@@ -790,7 +789,7 @@ Pipe StorageURLWithFailover::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    size_t /*num_streams*/)
+    size_t num_streams)
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
 
@@ -804,6 +803,9 @@ Pipe StorageURLWithFailover::read(
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
 
+    const size_t max_parsing_threads = local_context->getSettingsRef().max_threads;
+    const size_t parsing_threads = num_streams >= max_parsing_threads ? 1 : (max_parsing_threads / num_streams);
+
     auto pipe = Pipe(std::make_shared<StorageURLSource>(
         read_from_format_info,
         iterator_wrapper,
@@ -816,7 +818,7 @@ Pipe StorageURLWithFailover::read(
         max_block_size,
         getHTTPTimeouts(local_context),
         compression_method,
-        local_context->getSettingsRef().max_download_threads,
+        parsing_threads,
         headers,
         params));
     std::shuffle(uri_options.begin(), uri_options.end(), thread_local_rng);
