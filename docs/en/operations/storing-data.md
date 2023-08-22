@@ -114,7 +114,11 @@ Example of disk configuration:
 
 ## Using local cache {#using-local-cache}
 
-It is possible to configure local cache over disks in storage configuration starting from version 22.3. For versions 22.3 - 22.7 cache is supported only for `s3` disk type. For versions >= 22.8 cache is supported for any disk type: S3, Azure, Local, Encrypted, etc. Cache uses `LRU` cache policy.
+It is possible to configure local cache over disks in storage configuration starting from version 22.3. 
+For versions 22.3 - 22.7 cache is supported only for `s3` disk type. For versions >= 22.8 cache is supported for any disk type: S3, Azure, Local, Encrypted, etc.
+For versions >= 23.5 cache is supported only for remote disk types: S3, Azure, HDFS.
+Cache uses `LRU` cache policy.
+
 
 Example of configuration for versions later or equal to 22.8:
 
