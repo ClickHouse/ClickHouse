@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- It won't work in case there are misssing subcolumns in different shards
+
 DROP TABLE IF EXISTS t_mutations_subcolumns;
 
 SET allow_experimental_object_type = 1;
@@ -18,11 +21,11 @@ SELECT count(), min(id) FROM t_mutations_subcolumns;
 
 SET mutations_sync = 2;
 
-DELETE FROM t_mutations_subcolumns WHERE obj.k1.k2 = 'fee';
-SELECT count(), min(id) FROM t_mutations_subcolumns;
-
 ALTER TABLE t_mutations_subcolumns DELETE WHERE obj.k3 = 5;
 SELECT count(), min(id) FROM t_mutations_subcolumns;  
+
+DELETE FROM t_mutations_subcolumns WHERE obj.k1.k2 = 'fee';
+SELECT count(), min(id) FROM t_mutations_subcolumns;
 
 ALTER TABLE t_mutations_subcolumns DELETE WHERE obj.k1 = ('foo', 'baz');
 SELECT count(), min(id) FROM t_mutations_subcolumns;
