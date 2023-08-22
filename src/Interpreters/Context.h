@@ -927,7 +927,7 @@ public:
     std::shared_ptr<UncompressedCache> getUncompressedCache() const;
     void clearUncompressedCache() const;
 
-    void setMarkCache(const String & cache_policy, size_t cache_size_in_bytes, double size_ratio);
+    void setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<MarkCache> getMarkCache() const;
     void clearMarkCache() const;
@@ -938,7 +938,7 @@ public:
     std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
     void clearIndexUncompressedCache() const;
 
-    void setIndexMarkCache(const String & cache_policy, size_t cache_size_in_bytes, double size_ratio);
+    void setIndexMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updateIndexMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<MarkCache> getIndexMarkCache() const;
     void clearIndexMarkCache() const;
