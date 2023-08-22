@@ -45,8 +45,9 @@ namespace ErrorCodes
 {
     extern const int CANNOT_COMPRESS;
     extern const int CANNOT_DECOMPRESS;
-    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
+    extern const int ILLEGAL_CODEC_PARAMETER;
+    extern const int BAD_ARGUMENTS;
 }
 
 UInt32 CompressionCodecGCD::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -255,13 +256,27 @@ void registerCodecGCD(CompressionCodecFactory & factory)
     {
         /// Default bytes size is 1.
         UInt8 gcd_bytes_size = 1;
-        if (column_type)
+
+        if (arguments && !arguments->children.empty())
+        {
+            if (arguments->children.size() > 1)
+                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "GCD codec must have 1 parameter, given {}", arguments->children.size());
+
+            const auto children = arguments->children;
+            const auto * literal = children[0]->as<ASTLiteral>();
+            if (!literal || literal->value.getType() != Field::Types::Which::UInt64)
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "GCD codec argument must be unsigned integer");
+
+            size_t user_bytes_size = literal->value.safeGet<UInt64>();
+            if (user_bytes_size != 1 && user_bytes_size != 2 && user_bytes_size != 4 && user_bytes_size != 8 && user_bytes_size != 16 && user_bytes_size != 32)
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "GCD value for gcd codec can be 1, 2, 4, 8, 16 or 32, given {}", user_bytes_size);
+            gcd_bytes_size = static_cast<UInt8>(user_bytes_size);
+        }
+        else if (column_type)
         {
             gcd_bytes_size = getGCDBytesSize(column_type);
         }
 
-        if (arguments && !arguments->children.empty())
-            throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "GCD codec must have 0 parameters, given {}", arguments->children.size());
         return std::make_shared<CompressionCodecGCD>(gcd_bytes_size);
     };
     factory.registerCompressionCodecWithType("GCD", method_code, codec_builder);
