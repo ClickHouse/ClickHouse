@@ -6,6 +6,8 @@
 namespace DB
 {
 
+/// Source that generates chunks with constant columns and
+/// size up to max_block_size with total rows total_num_rows.
 class ConstChunkGenerator : public ISource
 {
 public:

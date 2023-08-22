@@ -1183,9 +1183,13 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
     std::shared_ptr<ISource> source;
     std::unique_ptr<ReadBuffer> read_buf;
     std::optional<size_t> num_rows_from_cache = need_only_count && getContext()->getSettingsRef().use_cache_for_count_from_files ? tryGetNumRowsFromCache(path_with_metadata) : std::nullopt;
-    LOG_DEBUG(&Poco::Logger::get("StorageAzureBlobSource"), "need_only_count: {}", need_only_count);
     if (num_rows_from_cache)
     {
+        /// We should not return single chunk with all number of rows,
+        /// because there is a chance that this chunk will be materialized later
+        /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
+        /// Instead, we use special ConstChunkGenerator that will generate chunks
+        /// with max_block_size rows until total number of rows is reached.
         source = std::make_shared<ConstChunkGenerator>(sample_block, *num_rows_from_cache, max_block_size);
         builder.init(Pipe(source));
     }
@@ -1386,13 +1390,15 @@ std::optional<ColumnsDescription> StorageAzureBlob::tryGetColumnsFromCache(
     auto & schema_cache = getSchemaCache(ctx);
     for (auto it = begin; it < end; ++it)
     {
-        auto get_last_mod_time = [&] -> time_t
+        auto get_last_mod_time = [&] -> std::optional<time_t>
         {
-            return it->metadata.last_modified->epochTime();
+            if (it->metadata.last_modified)
+                return it->metadata.last_modified->epochTime();
+            return std::nullopt;
         };
 
-        auto host_and_bucket = fs::path(configuration.connection_url) / configuration.container;
-        String source = host_and_bucket / it->relative_path;
+        auto host_and_bucket = configuration.connection_url + '/' + configuration.container;
+        String source = host_and_bucket + '/' + it->relative_path;
         auto cache_key = getKeyForSchemaCache(source, configuration.format, format_settings, ctx);
         auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
         if (columns)
@@ -1411,10 +1417,10 @@ void StorageAzureBlob::addColumnsToCache(
     const String & format_name,
     const ContextPtr & ctx)
 {
-    auto host_and_bucket = fs::path(configuration.connection_url) / configuration.container;
+    auto host_and_bucket = configuration.connection_url + '/' + configuration.container;
     Strings sources;
     sources.reserve(keys.size());
-    std::transform(keys.begin(), keys.end(), std::back_inserter(sources), [&](const auto & elem){ return fs::path(host_and_bucket) / elem.relative_path; });
+    std::transform(keys.begin(), keys.end(), std::back_inserter(sources), [&](const auto & elem){ return host_and_bucket + '/' + elem.relative_path; });
     auto cache_keys = getKeysForSchemaCache(sources, format_name, format_settings, ctx);
     auto & schema_cache = getSchemaCache(ctx);
     schema_cache.addManyColumns(cache_keys, columns);

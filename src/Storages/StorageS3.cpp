@@ -580,6 +580,11 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
     std::optional<size_t> num_rows_from_cache = need_only_count && getContext()->getSettingsRef().use_cache_for_count_from_files ? tryGetNumRowsFromCache(key_with_info) : std::nullopt;
     if (num_rows_from_cache)
     {
+        /// We should not return single chunk with all number of rows,
+        /// because there is a chance that this chunk will be materialized later
+        /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
+        /// Instead, we use special ConstChunkGenerator that will generate chunks
+        /// with max_block_size rows until total number of rows is reached.
         source = std::make_shared<ConstChunkGenerator>(sample_block, *num_rows_from_cache, max_block_size);
         builder.init(Pipe(source));
     }
