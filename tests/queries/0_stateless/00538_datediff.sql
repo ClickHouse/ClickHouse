@@ -74,3 +74,14 @@ SELECT dateDiff('second', toDateTime('2014-10-26 00:00:00', 'UTC'), toDateTime('
 SELECT 'Additional test';
 
 SELECT number = dateDiff('month', now() - INTERVAL number MONTH, now()) FROM system.numbers LIMIT 10;
+
+SELECT dateDiff('years', toDate('2014-10-26'), toDate('2016-01-01'));
+SELECT dateDiff('quarters', toDate('2014-10-26'), toDate('2016-01-01'));
+SELECT dateDiff('months', toDateTime('2014-10-26'), toDateTime('2016-01-01'));
+SELECT dateDiff('weeks', toDateTime('2014-10-26'), toDateTime('2016-01-01'));
+SELECT dateDiff('days', toDateTime('2014-10-26'), toDateTime('2016-01-01'));
+SELECT dateDiff('hours', toDateTime('2014-10-26'), toDateTime('2016-01-01'));
+SELECT dateDiff('minutes', toDateTime('2014-10-26'), toDateTime('2016-01-01'));
+SELECT dateDiff('seconds', toDateTime('2014-10-26'), toDateTime('2016-01-01'));
+SELECT dateDiff('milliseconds', toDateTime('2014-10-26'), toDateTime('2016-01-01'));
+SELECT dateDiff('microseconds', toDateTime('2014-10-26'), toDateTime('2016-01-01'));
