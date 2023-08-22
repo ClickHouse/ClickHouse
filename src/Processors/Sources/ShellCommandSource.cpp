@@ -462,8 +462,20 @@ namespace
                     if (thread.joinable())
                         thread.join();
 
-                if (check_exit_code && !process_pool)
-                    command->wait();
+                if (check_exit_code)
+                {
+                    if (process_pool)
+                    {
+                        bool valid_command
+                            = configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read;
+
+                        // We can only wait for pooled commands when they are invalid.
+                        if (!valid_command)
+                            command->wait();
+                    }
+                    else
+                        command->wait();
+                }
 
                 rethrowExceptionDuringSendDataIfNeeded();
             }
