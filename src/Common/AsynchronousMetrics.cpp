@@ -272,7 +272,7 @@ void AsynchronousMetrics::start()
 {
     /// Update once right now, to make metrics available just after server start
     /// (without waiting for asynchronous_metrics_update_period_s).
-    update(std::chrono::system_clock::now());
+    update(std::chrono::system_clock::now(), false);
     thread = std::make_unique<ThreadFromGlobalPool>([this] { run(); });
 }
 
@@ -557,7 +557,7 @@ AsynchronousMetrics::NetworkInterfaceStatValues::operator-(const AsynchronousMet
 #endif
 
 
-void AsynchronousMetrics::update(TimePoint update_time)
+void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 {
     Stopwatch watch;
 
@@ -1584,7 +1584,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
 
     /// Add more metrics as you wish.
 
-    updateImpl(update_time, current_time, first_run, new_values);
+    updateImpl(update_time, current_time, force_update, first_run, new_values);
 
     new_values["AsynchronousMetricsCalculationTimeSpent"] = { watch.elapsedSeconds(), "Time in seconds spent for calculation of asynchronous metrics (this is the overhead of asynchronous metrics)." };
 

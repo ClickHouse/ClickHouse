@@ -290,6 +290,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable QueryCachePtr query_cache TSA_GUARDED_BY(mutex);                          /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
+    AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     ProcessList process_list;                                   /// Executing queries at the moment.
     SessionTracker session_tracker;
     GlobalOvercommitTracker global_overcommit_tracker;
@@ -2858,6 +2859,18 @@ void Context::clearCaches() const
     shared->mmap_cache->clear();
 
     /// Intentionally not clearing the query cache which is transactionally inconsistent by design.
+}
+
+void Context::setAsynchronousMetrics(AsynchronousMetrics * asynchronous_metrics_)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->asynchronous_metrics = asynchronous_metrics_;
+}
+
+AsynchronousMetrics * Context::getAsynchronousMetrics() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->asynchronous_metrics;
 }
 
 ThreadPool & Context::getPrefetchThreadpool() const

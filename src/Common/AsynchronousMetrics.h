@@ -56,8 +56,13 @@ struct ProtocolServerMetrics
   */
 class AsynchronousMetrics
 {
+protected:
+    using Duration = std::chrono::seconds;
+    using TimePoint = std::chrono::system_clock::time_point;
+
 public:
     using ProtocolServerMetricsFunc = std::function<std::vector<ProtocolServerMetrics>()>;
+
     AsynchronousMetrics(
         int update_period_seconds,
         const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
@@ -69,18 +74,17 @@ public:
 
     void stop();
 
+    void update(TimePoint update_time, bool force_update = false);
+
     /// Returns copy of all values.
     AsynchronousMetricValues getValues() const;
 
 protected:
-    using Duration = std::chrono::seconds;
-    using TimePoint = std::chrono::system_clock::time_point;
-
     const Duration update_period;
 
     Poco::Logger * log;
 private:
-    virtual void updateImpl(TimePoint update_time, TimePoint current_time, bool first_run, AsynchronousMetricValues & new_values) = 0;
+    virtual void updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values) = 0;
     virtual void logImpl(AsynchronousMetricValues &) {}
 
     ProtocolServerMetricsFunc protocol_server_metrics_func;
@@ -213,7 +217,6 @@ private:
 #endif
 
     void run();
-    void update(TimePoint update_time);
 };
 
 }
