@@ -291,6 +291,18 @@ Chunk NativeORCBlockInputFormat::generate()
     if (!file_reader)
         prepareFileReader();
 
+    if (need_only_count)
+    {
+        ++current_stripe;
+        for (; current_stripe < total_stripes && skip_stripes.contains(current_stripe); ++current_stripe)
+            ;
+
+        if (current_stripe >= total_stripes)
+            return {};
+
+        return getChunkForCount(file_reader->getStripe(current_stripe)->getNumberOfRows());
+    }
+
     if (!stripe_reader)
     {
         if (!prepareStripeReader())

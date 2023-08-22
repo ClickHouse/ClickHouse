@@ -224,16 +224,31 @@ std::vector<String> CustomSeparatedFormatReader::readRowImpl()
 void CustomSeparatedFormatReader::skipRow()
 {
     skipRowStartDelimiter();
-    bool first = true;
-    do
-    {
-        if (!first)
-            skipFieldDelimiter();
-        first = false;
 
-        skipField();
+    /// If the number of columns in row is unknown,
+    /// we should check for end of row after each field.
+    if (columns == 0 || allowVariableNumberOfColumns())
+    {
+        bool first = true;
+        do
+        {
+            if (!first)
+                skipFieldDelimiter();
+            first = false;
+
+            skipField();
+        }
+        while (!checkForEndOfRow());
     }
-    while (!checkForEndOfRow());
+    else
+    {
+        for (size_t i = 0; i != columns; ++i)
+        {
+            if (i != 0)
+                skipFieldDelimiter();
+            skipField();
+        }
+    }
 
     skipRowEndDelimiter();
 }
