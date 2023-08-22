@@ -751,8 +751,8 @@ Pipe IStorageURLBase::read(
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    const size_t max_parsing_threads = local_context->getSettingsRef().max_threads;
-    const size_t parsing_threads = num_streams >= max_parsing_threads ? 1 : (max_parsing_threads / num_streams);
+    const size_t max_threads = local_context->getSettingsRef().max_threads;
+    const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / num_streams);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -774,7 +774,7 @@ Pipe IStorageURLBase::read(
             max_block_size,
             getHTTPTimeouts(local_context),
             compression_method,
-            parsing_threads,
+            max_parsing_threads,
             query_info,
             headers,
             params,
@@ -806,8 +806,8 @@ Pipe StorageURLWithFailover::read(
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
 
-    const size_t max_parsing_threads = local_context->getSettingsRef().max_threads;
-    const size_t parsing_threads = num_streams >= max_parsing_threads ? 1 : (max_parsing_threads / num_streams);
+    const size_t max_threads = local_context->getSettingsRef().max_threads;
+    const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / num_streams);
 
     auto pipe = Pipe(std::make_shared<StorageURLSource>(
         read_from_format_info,
@@ -821,7 +821,7 @@ Pipe StorageURLWithFailover::read(
         max_block_size,
         getHTTPTimeouts(local_context),
         compression_method,
-        parsing_threads,
+        max_parsing_threads,
         query_info,
         headers,
         params));

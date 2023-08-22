@@ -1043,8 +1043,8 @@ Pipe StorageS3::read(
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
 
-    const size_t max_parsing_threads = local_context->getSettingsRef().max_threads;
-    const size_t parsing_threads = num_streams >= max_parsing_threads ? 1 : (max_parsing_threads / num_streams);
+    const size_t max_threads = local_context->getSettingsRef().max_threads;
+    const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / num_streams);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -1061,7 +1061,7 @@ Pipe StorageS3::read(
             query_configuration.url.bucket,
             query_configuration.url.version_id,
             iterator_wrapper,
-            parsing_threads,
+            max_parsing_threads,
             query_info));
     }
 
