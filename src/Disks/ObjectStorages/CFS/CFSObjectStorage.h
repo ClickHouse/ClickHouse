@@ -14,46 +14,46 @@ namespace DB
 
 class DiskLocalReservation;
 
-struct NFSObjectStorageSettings
+struct CFSObjectStorageSettings
 {
     size_t min_bytes_for_seek;
     int objects_chunk_size_to_delete;
-    size_t nfs_max_single_read_retries;
+    size_t cfs_max_single_read_retries;
 
-    NFSObjectStorageSettings(
+    CFSObjectStorageSettings(
             size_t min_bytes_for_seek_,
             int objects_chunk_size_to_delete_,
-            size_t nfs_max_single_read_retries_)
+            size_t cfs_max_single_read_retries_)
         : min_bytes_for_seek(min_bytes_for_seek_)
         , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
-        , nfs_max_single_read_retries(nfs_max_single_read_retries_)
+        , cfs_max_single_read_retries(cfs_max_single_read_retries_)
     {
     }
 };
 
 /**
- * Storage for persisting data in NFS and metadata on the local disk.
+ * Storage for persisting data in CFS and metadata on the local disk.
  * Files are represented by file in local filesystem (clickhouse_root/disks/disk_name/path/to/file)
- * that contains NFS object key with actual data.
- * NFS path example : /root_dir/volume/shard/shard_number/
+ * that contains CFS object key with actual data.
+ * CFS path example : /root_dir/volume/shard/shard_number/
  */
-class NFSObjectStorage final : public IObjectStorage
+class CFSObjectStorage final : public IObjectStorage
 {
 public:
-    using SettingsPtr = std::unique_ptr<NFSObjectStorageSettings>;
+    using SettingsPtr = std::unique_ptr<CFSObjectStorageSettings>;
     using GetDiskSettings = std::function<SettingsPtr(const Poco::Util::AbstractConfiguration &, const String, ContextPtr)>;
 
-    NFSObjectStorage(const String & name_, const String & path_);
-    NFSObjectStorage(
+    CFSObjectStorage(const String & name_, const String & path_);
+    CFSObjectStorage(
         const String & name_,
         const String & root_path_,
         ContextPtr context_,
         SettingsPtr settings_,
         const Poco::Util::AbstractConfiguration & config_)
     : name(name_), context(context_), settings(std::move(settings_)), config(config_),
-    log(&Poco::Logger::get("NFSObjectStorage"))
+    log(&Poco::Logger::get("CFSObjectStorage"))
     {
-        data_source_description.type = DataSourceType::NFS;
+        data_source_description.type = DataSourceType::CFS;
         data_source_description.description = root_path_;
         data_source_description.is_cached = false;
         data_source_description.is_encrypted = false;
@@ -61,7 +61,7 @@ public:
 
     bool isRemote() const override { return true; }
 
-    std::string getName() const override { return "NFSObjectStorage"; }
+    std::string getName() const override { return "CFSObjectStorage"; }
 
     String getObjectsNamespace() const override { return ""; }
 

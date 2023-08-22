@@ -1,4 +1,4 @@
-#include <IO/NFS/ReadBufferFromNFS.h>
+#include <IO/CFS/ReadBufferFromCFS.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -28,9 +28,9 @@ namespace ErrorCodes
 
 #define POINT_TO_STRING(p) getHexUIntLowercase(reinterpret_cast<uint64_t>(static_cast<void*>(p)))
 
-struct ReadBufferFromNFS::ReadBufferFromNFSImpl : public BufferWithOwnMemory<SeekableReadBuffer>
+struct ReadBufferFromCFS::ReadBufferFromCFSImpl : public BufferWithOwnMemory<SeekableReadBuffer>
 {
-    String nfs_file_path;
+    String cfs_file_path;
     ReadSettings read_settings;
     UInt64 max_single_read_retries;
     std::atomic<off_t> file_offset_of_init = 0;
@@ -40,17 +40,17 @@ struct ReadBufferFromNFS::ReadBufferFromNFSImpl : public BufferWithOwnMemory<See
     bool use_pread = false;
     String uuid;
 
-    Poco::Logger* log = &Poco::Logger::get("ReadBufferFromNFSImpl");
+    Poco::Logger* log = &Poco::Logger::get("ReadBufferFromCFSImpl");
 
-    explicit ReadBufferFromNFSImpl(
-        const String & nfs_file_path_,
+    explicit ReadBufferFromCFSImpl(
+        const String & cfs_file_path_,
         const ReadSettings & settings_,
         UInt64 max_single_read_retries_,
         size_t offset_,
         size_t read_until_position_,
         bool use_external_buffer_)
         : BufferWithOwnMemory<SeekableReadBuffer>(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size)
-        , nfs_file_path(nfs_file_path_)
+        , cfs_file_path(cfs_file_path_)
         , read_settings(settings_)
         , max_single_read_retries(max_single_read_retries_)
         , file_offset_of_init(offset_)
@@ -63,25 +63,27 @@ struct ReadBufferFromNFS::ReadBufferFromNFSImpl : public BufferWithOwnMemory<See
             flags = flags & ~O_DIRECT;
 #endif
         int flags = O_RDONLY | O_CLOEXEC;
-        fd = ::open(nfs_file_path.c_str(), flags);
+        fd = ::open(cfs_file_path.c_str(), flags);
         if (-1 == fd)
-            throwFromErrnoWithPath("Cannot open file " + nfs_file_path, nfs_file_path,
+            throwFromErrnoWithPath("Cannot open file " + cfs_file_path, cfs_file_path,
                                     errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 
 #ifdef __APPLE__
         if (o_direct)
         {
             if (fcntl(fd, F_NOCACHE, 1) == -1)
-                throwFromErrnoWithPath("Cannot set F_NOCACHE on file " + nfs_file_path, nfs_file_path, ErrorCodes::CANNOT_OPEN_FILE);
+                throwFromErrnoWithPath("Cannot set F_NOCACHE on file " + cfs_file_path, cfs_file_path, ErrorCodes::CANNOT_OPEN_FILE);
         }
 #endif
     }
 
-    ~ReadBufferFromNFSImpl() override
+    ~ReadBufferFromCFSImpl() override
     {
         if (fd < 0)
             return;
-        ::close(fd);
+        int err = ::close(fd);
+        chassert(!err || errno == EINTR);
+        fd = -1;
     }
 
     bool nextImpl() override
@@ -111,10 +113,10 @@ struct ReadBufferFromNFS::ReadBufferFromNFSImpl : public BufferWithOwnMemory<See
         if (bytes_read < 0 && errno != EINTR)
         {
             throw Exception(ErrorCodes::NETWORK_ERROR,
-                "Fail to read from NFS file path {}, fd {}, bytes_read {}."
+                "Fail to read from CFS file path {}, fd {}, bytes_read {}."
                 " offset {}, internal_buffer size {}, num_bytes_to_read {}, file size {}."
                 " Error: {}",
-                nfs_file_path, fd, bytes_read,
+                cfs_file_path, fd, bytes_read,
                 file_offset_of_buffer_end, internal_buffer.size(), num_bytes_to_read, getFileSize(),
                 errnoToString(errno));
         }
@@ -142,7 +144,7 @@ struct ReadBufferFromNFS::ReadBufferFromNFSImpl : public BufferWithOwnMemory<See
         {
             off_t res = ::lseek(fd, offset_, SEEK_SET);
             if (res == -1)
-                throwFromErrnoWithPath("Cannot seek through file " + nfs_file_path, nfs_file_path,
+                throwFromErrnoWithPath("Cannot seek through file " + cfs_file_path, cfs_file_path,
                     ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
             /// Also note that seeking past the file size is not allowed.
@@ -158,13 +160,13 @@ struct ReadBufferFromNFS::ReadBufferFromNFSImpl : public BufferWithOwnMemory<See
     size_t getFileSize()
     {
         struct stat statbuff;
-        if(::stat(nfs_file_path.c_str(), &statbuff) >= 0)
+        if (::stat(cfs_file_path.c_str(), &statbuff) >= 0)
             return statbuff.st_size;
         else
         {
             if (errno != EINTR)
                 throw Exception(ErrorCodes::CANNOT_GET_SIZE_OF_FIELD,
-                    "Cant get file size by path {}, error {}:{}", nfs_file_path, errno, errnoToString(errno));
+                    "Can't get file size by path {}, error {}:{}", cfs_file_path, errno, errnoToString(errno));
             return 0;
         }
     }
@@ -195,7 +197,7 @@ struct ReadBufferFromNFS::ReadBufferFromNFSImpl : public BufferWithOwnMemory<See
 
     String getInfoForLog() override
     {
-        auto info = String("NFSImplBufferInfo path ") + nfs_file_path
+        auto info = String("CFSImplBufferInfo path ") + cfs_file_path
             + ", class address " + POINT_TO_STRING(this)
             + ", file size " + toString(getFileSize())
             + ", file offset " + toString(file_offset_of_init.load())
@@ -209,8 +211,8 @@ struct ReadBufferFromNFS::ReadBufferFromNFSImpl : public BufferWithOwnMemory<See
     }
 };
 
-ReadBufferFromNFS::ReadBufferFromNFS(
-    const String & nfs_file_path_,
+ReadBufferFromCFS::ReadBufferFromCFS(
+    const String & cfs_file_path_,
     const ReadSettings & settings_,
     UInt64 max_single_read_retries_,
     size_t offset_,
@@ -218,17 +220,17 @@ ReadBufferFromNFS::ReadBufferFromNFS(
     bool use_external_buffer_)
     : ReadBufferFromFileBase(use_external_buffer_ ? settings_.remote_fs_buffer_size : 0, nullptr, 0)
     , use_external_buffer(use_external_buffer_)
-    , impl(std::make_unique<ReadBufferFromNFSImpl>(nfs_file_path_, settings_, max_single_read_retries_,
+    , impl(std::make_unique<ReadBufferFromCFSImpl>(cfs_file_path_, settings_, max_single_read_retries_,
         offset_, read_until_position_, use_external_buffer_))
-    , log(&Poco::Logger::get("ReadBufferFromNFS"))
+    , log(&Poco::Logger::get("ReadBufferFromCFS"))
 {
 }
 
-ReadBufferFromNFS::~ReadBufferFromNFS()
+ReadBufferFromCFS::~ReadBufferFromCFS()
 {
 };
 
-bool ReadBufferFromNFS::nextImpl()
+bool ReadBufferFromCFS::nextImpl()
 {
     if (use_external_buffer)
     {
@@ -253,7 +255,7 @@ bool ReadBufferFromNFS::nextImpl()
 
 /// If 'offset_' is small enough to stay in buffer after seek, then true seek in file does not happen.
 /// The 'offset_' is the position of remote file, if not the position(offset) of buffer end.
-off_t ReadBufferFromNFS::seek(off_t offset_, int whence)
+off_t ReadBufferFromCFS::seek(off_t offset_, int whence)
 {
     if (whence != SEEK_SET)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
@@ -279,12 +281,12 @@ off_t ReadBufferFromNFS::seek(off_t offset_, int whence)
 }
 
 /// [left, right) range
-void ReadBufferFromNFS::setReadUntilPosition(size_t position)
+void ReadBufferFromCFS::setReadUntilPosition(size_t position)
 {
     impl->setReadUntilPosition(position);
 }
 
-size_t ReadBufferFromNFS::getFileSize()
+size_t ReadBufferFromCFS::getFileSize()
 {
     if (!file_size)
     {
@@ -294,26 +296,26 @@ size_t ReadBufferFromNFS::getFileSize()
     return file_size.value();
 }
 
-size_t ReadBufferFromNFS::getFileOffsetOfBufferEnd() const
+size_t ReadBufferFromCFS::getFileOffsetOfBufferEnd() const
 {
     return impl->getFileOffsetOfBufferEnd();
 }
 
-off_t ReadBufferFromNFS::getPosition()
+off_t ReadBufferFromCFS::getPosition()
 {
     auto position = impl->getPosition() - available();
     LOG_TEST(log, "getPosition {}. {}", position, getInfoForLog());
     return position;
 }
 
-String ReadBufferFromNFS::getFileName() const
+String ReadBufferFromCFS::getFileName() const
 {
-    return impl->nfs_file_path;
+    return impl->cfs_file_path;
 }
 
-String ReadBufferFromNFS::getInfoForLog()
+String ReadBufferFromCFS::getInfoForLog()
 {
-    auto info = String("NFSBufferInfo path ") + impl->nfs_file_path
+    auto info = String("CFSBufferInfo path ") + impl->cfs_file_path
         + ", class address " + POINT_TO_STRING(this);
     if (impl != nullptr)
     {

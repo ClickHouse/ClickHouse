@@ -13,23 +13,23 @@
 namespace DB
 {
 /**
- * Accepts NFS path to file and opens it.
+ * Accepts CFS path to file and opens it.
  * Closes file by himself (thus "owns" a file descriptor).
  */
-class WriteBufferFromNFS final :  public WriteBufferFromFileBase
+class WriteBufferFromCFS final :  public WriteBufferFromFileBase
 {
 
 public:
-    WriteBufferFromNFS(
-        const String & nfs_file_path_,
+    WriteBufferFromCFS(
+        const String & cfs_file_path_,
         const Poco::Util::AbstractConfiguration & config_,
         const WriteSettings write_settings_ = {},
         size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         int flags = O_WRONLY);
 
-    WriteBufferFromNFS(WriteBufferFromNFS &&) = default;
+    WriteBufferFromCFS(WriteBufferFromCFS &&) = default;
 
-    ~WriteBufferFromNFS() override;
+    ~WriteBufferFromCFS() override;
 
     void nextImpl() override;
 
@@ -38,8 +38,8 @@ public:
     std::string getFileName() const override { return file_name; }
 private:
     void finalizeImpl() override;
-    struct WriteBufferFromNFSImpl;
-    std::unique_ptr<WriteBufferFromNFSImpl> impl;
+    struct WriteBufferFromCFSImpl;
+    std::unique_ptr<WriteBufferFromCFSImpl> impl;
     const std::string file_name;
 };
 

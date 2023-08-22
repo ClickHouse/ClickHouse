@@ -1,4 +1,4 @@
-#include <Disks/ObjectStorages/NFS/NFSObjectStorage.h>
+#include <Disks/ObjectStorages/CFS/CFSObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
@@ -11,11 +11,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-    extern const int CANNOT_UNLINK;
+    extern const int BAD_ARGUMENTS;
 }
 
-void loadDiskNFSConfig(const String & name,
+void loadDiskCFSConfig(const String & name,
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
                       String & path)
@@ -27,15 +26,15 @@ void loadDiskNFSConfig(const String & name,
         throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Disk path must end with /. Disk {}", name);
 }
 
-std::unique_ptr<NFSObjectStorageSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+std::unique_ptr<CFSObjectStorageSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    return std::make_unique<NFSObjectStorageSettings>(
+    return std::make_unique<CFSObjectStorageSettings>(
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000),
-        config.getUInt64(config_prefix + ".nfs_max_single_read_retries", 1));
+        config.getUInt64(config_prefix + ".cfs_max_single_read_retries", 1));
 }
 
-void registerDiskNFS(DiskFactory & factory, bool global_skip_access_check)
+void registerDiskCFS(DiskFactory & factory, bool global_skip_access_check)
 {
     auto creator = [global_skip_access_check](
         const String & name,
@@ -44,11 +43,11 @@ void registerDiskNFS(DiskFactory & factory, bool global_skip_access_check)
         ContextPtr context,
         const DisksMap & map) -> DiskPtr
     {
-        Poco::Logger * log = &Poco::Logger::get("DiskNFS");
+        Poco::Logger * log = &Poco::Logger::get("DiskCFS");
 
         //The path to the real remote disk
         String root_path;
-        loadDiskNFSConfig(name, config, config_prefix, root_path);
+        loadDiskCFSConfig(name, config, config_prefix, root_path);
 
         for (const auto & [disk_name, disk_ptr] : map)
             if (root_path == disk_ptr->getPath())
@@ -56,7 +55,7 @@ void registerDiskNFS(DiskFactory & factory, bool global_skip_access_check)
 
         auto settings = getSettings(config, config_prefix);
 
-        auto nfs_storage = std::make_shared<NFSObjectStorage>(name, root_path, context, std::move(settings), config);
+        auto cfs_storage = std::make_shared<CFSObjectStorage>(name, root_path, context, std::move(settings), config);
 
         auto [_, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
         auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, root_path);
@@ -67,9 +66,9 @@ void registerDiskNFS(DiskFactory & factory, bool global_skip_access_check)
         auto disk = std::make_shared<DiskObjectStorage>(
             name,
             root_path,
-            "DiskNFS",
+            "DiskCFS",
             std::move(metadata_storage),
-            std::move(nfs_storage),
+            std::move(cfs_storage),
             config,
             config_prefix);
 
@@ -77,7 +76,7 @@ void registerDiskNFS(DiskFactory & factory, bool global_skip_access_check)
 
         return disk;
     };
-    factory.registerDiskType("nfs", creator);
+    factory.registerDiskType("cfs", creator);
 }
 
 }

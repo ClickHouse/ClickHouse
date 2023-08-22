@@ -14,23 +14,23 @@ namespace DB
 {
 
 /**
- * Accepts NFS path to file and opens it.
+ * Accepts CFS path to file and opens it.
  * Closes file by himself (thus "owns" a file descriptor).
  */
-class ReadBufferFromNFS : public ReadBufferFromFileBase
+class ReadBufferFromCFS : public ReadBufferFromFileBase
 {
-struct ReadBufferFromNFSImpl;
+struct ReadBufferFromCFSImpl;
 
 public:
-    ReadBufferFromNFS(
-        const String & nfs_file_path_,
+    ReadBufferFromCFS(
+        const String & cfs_file_path_,
         const ReadSettings & settings_,
         UInt64 max_single_read_retries_ = 2,
         size_t offset_ = 0,
         size_t read_until_position_ = 0,
         bool use_external_buffer_ = false);
 
-    ~ReadBufferFromNFS() override;
+    ~ReadBufferFromCFS() override;
 
     bool nextImpl() override;
 
@@ -53,7 +53,7 @@ public:
     bool supportsRightBoundedReads() const override { return true; }
 private:
     bool use_external_buffer;
-    std::unique_ptr<ReadBufferFromNFSImpl> impl;
+    std::unique_ptr<ReadBufferFromCFSImpl> impl;
     Poco::Logger* log;
 };
 

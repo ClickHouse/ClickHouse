@@ -1,6 +1,6 @@
 #include "config.h"
 #include <IO/WriteHelpers.h>
-#include <IO/NFS/WriteBufferFromNFS.h>
+#include <IO/CFS/WriteBufferFromCFS.h>
 #include <sys/uio.h>
 
 
@@ -15,19 +15,19 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-struct WriteBufferFromNFS::WriteBufferFromNFSImpl
+struct WriteBufferFromCFS::WriteBufferFromCFSImpl
 {
-    std::string nfs_file_path;
+    std::string cfs_file_path;
     const Poco::Util::AbstractConfiguration & config;
     WriteSettings write_settings;
     int fd;
 
-    WriteBufferFromNFSImpl(
-            const std::string & nfs_file_path_,
-            const Poco::Util::AbstractConfiguration & config_, 
+    WriteBufferFromCFSImpl(
+            const std::string & cfs_file_path_,
+            const Poco::Util::AbstractConfiguration & config_,
             const WriteSettings write_settings_,
             int flags)
-        : nfs_file_path(nfs_file_path_), config(config_), write_settings(write_settings_)
+        : cfs_file_path(cfs_file_path_), config(config_), write_settings(write_settings_)
     {
 #ifdef __APPLE__
         bool o_direct = (flags != -1) && (flags & O_DIRECT);
@@ -36,9 +36,9 @@ struct WriteBufferFromNFS::WriteBufferFromNFSImpl
 #endif
 
         mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
-        fd = ::open(nfs_file_path.c_str(), flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT | O_CLOEXEC : flags | O_CLOEXEC, mode);
+        fd = ::open(cfs_file_path.c_str(), flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT | O_CLOEXEC : flags | O_CLOEXEC, mode);
         if (-1 == fd)
-            throwFromErrnoWithPath("Cannot open file " + nfs_file_path, nfs_file_path,
+            throwFromErrnoWithPath("Cannot open file " + cfs_file_path, cfs_file_path,
                                 errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 
 #ifdef __APPLE__
@@ -50,11 +50,13 @@ struct WriteBufferFromNFS::WriteBufferFromNFSImpl
 #endif
     }
 
-    ~WriteBufferFromNFSImpl()
+    ~WriteBufferFromCFSImpl()
     {
         if (fd < 0)
             return;
-        ::close(fd);
+        int err = ::close(fd);
+        chassert(!err || errno == EINTR);
+        fd = -1;
     }
 
     size_t write(const char * start, size_t size) const
@@ -69,10 +71,10 @@ struct WriteBufferFromNFS::WriteBufferFromNFSImpl
         }
         if ((-1 == res || 0 == res) && errno != EINTR)
         {
-            String error_file_name = nfs_file_path;
+            String error_file_name = cfs_file_path;
             if (error_file_name.empty())
                 error_file_name = "(fd = " + toString(fd) + ")";
-            throwFromErrnoWithPath("Cannot write to NFS file " + error_file_name, error_file_name,
+            throwFromErrnoWithPath("Cannot write to CFS file " + error_file_name, error_file_name,
                                    ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
         }
         if (res > 0)
@@ -89,24 +91,24 @@ struct WriteBufferFromNFS::WriteBufferFromNFSImpl
         int res = ::fdatasync(fd);
 #endif
         if (-1 == res)
-            throwFromErrnoWithPath("Cannot NFS fsync " + nfs_file_path, nfs_file_path, ErrorCodes::CANNOT_FSYNC);
+            throwFromErrnoWithPath("Cannot CFS fsync " + cfs_file_path, cfs_file_path, ErrorCodes::CANNOT_FSYNC);
     }
 };
 
 
-WriteBufferFromNFS::WriteBufferFromNFS(
-        const std::string & nfs_file_path_,
+WriteBufferFromCFS::WriteBufferFromCFS(
+        const std::string & cfs_file_path_,
         const Poco::Util::AbstractConfiguration & config_,
         const WriteSettings write_settings_,
         size_t buf_size_,
         int flags)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
-    , impl(std::make_unique<WriteBufferFromNFSImpl>(nfs_file_path_, config_, write_settings_, flags))
-    , file_name(nfs_file_path_)
+    , impl(std::make_unique<WriteBufferFromCFSImpl>(cfs_file_path_, config_, write_settings_, flags))
+    , file_name(cfs_file_path_)
 {
 }
 
-void WriteBufferFromNFS::nextImpl()
+void WriteBufferFromCFS::nextImpl()
 {
     if (!offset())
         return;
@@ -115,12 +117,12 @@ void WriteBufferFromNFS::nextImpl()
         bytes_written += impl->write(working_buffer.begin() + bytes_written, offset() - bytes_written);
 }
 
-void WriteBufferFromNFS::sync()
+void WriteBufferFromCFS::sync()
 {
     impl->sync();
 }
 
-void WriteBufferFromNFS::finalizeImpl()
+void WriteBufferFromCFS::finalizeImpl()
 {
     try
     {
@@ -132,7 +134,7 @@ void WriteBufferFromNFS::finalizeImpl()
     }
 }
 
-WriteBufferFromNFS::~WriteBufferFromNFS()
+WriteBufferFromCFS::~WriteBufferFromCFS()
 {
     finalize();
 }
