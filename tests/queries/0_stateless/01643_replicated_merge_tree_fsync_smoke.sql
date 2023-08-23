@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-s3-storage
 -- no-parallel -- for flaky check and to avoid "Removing leftovers from table" (for other tables)
 
 -- Temporarily skip warning 'table was created by another server at the same moment, will retry'
@@ -55,17 +55,6 @@ drop table rep_fsync_r2;
 select 'wide fsync_after_insert,fsync_part_directory';
 create table rep_fsync_r1 (key Int) engine=ReplicatedMergeTree('/clickhouse/tables/{database}/rep_fsync', 'r1') order by key settings min_bytes_for_wide_part=0, fsync_after_insert=1, fsync_part_directory=1;
 create table rep_fsync_r2 (key Int) engine=ReplicatedMergeTree('/clickhouse/tables/{database}/rep_fsync', 'r2') order by key settings min_bytes_for_wide_part=0, fsync_after_insert=1, fsync_part_directory=1;
-insert into rep_fsync_r1 values (1);
-system sync replica rep_fsync_r2;
-select * from rep_fsync_r2;
-optimize table rep_fsync_r1 final;
-system sync replica rep_fsync_r2;
-drop table rep_fsync_r1;
-drop table rep_fsync_r2;
-
-select 'memory in_memory_parts_insert_sync';
-create table rep_fsync_r1 (key Int) engine=ReplicatedMergeTree('/clickhouse/tables/{database}/rep_fsync', 'r1') order by key settings min_rows_for_compact_part=2, in_memory_parts_insert_sync=1, fsync_after_insert=1, fsync_part_directory=1;
-create table rep_fsync_r2 (key Int) engine=ReplicatedMergeTree('/clickhouse/tables/{database}/rep_fsync', 'r2') order by key settings min_rows_for_compact_part=2, in_memory_parts_insert_sync=1, fsync_after_insert=1, fsync_part_directory=1;
 insert into rep_fsync_r1 values (1);
 system sync replica rep_fsync_r2;
 select * from rep_fsync_r2;

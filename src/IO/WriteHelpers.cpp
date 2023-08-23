@@ -1,6 +1,8 @@
 #include <IO/WriteHelpers.h>
 #include <cinttypes>
-#include <Common/hex.h>
+#include <utility>
+#include <Common/formatIPv6.h>
+#include <base/hex.h>
 
 
 namespace DB
@@ -18,39 +20,57 @@ void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes)
     }
 }
 
-void formatUUID(const UInt8 * src16, UInt8 * dst36)
+std::array<char, 36> formatUUID(const UUID & uuid)
 {
-    formatHex(&src16[0], &dst36[0], 4);
-    dst36[8] = '-';
-    formatHex(&src16[4], &dst36[9], 2);
-    dst36[13] = '-';
-    formatHex(&src16[6], &dst36[14], 2);
-    dst36[18] = '-';
-    formatHex(&src16[8], &dst36[19], 2);
-    dst36[23] = '-';
-    formatHex(&src16[10], &dst36[24], 6);
+    std::array<char, 36> dst;
+    auto * dst_ptr = dst.data();
+
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    const auto * src_ptr = reinterpret_cast<const UInt8 *>(&uuid);
+    const std::reverse_iterator src(src_ptr + 16);
+#else
+    const auto * src = reinterpret_cast<const UInt8 *>(&uuid);
+#endif
+    formatHex(src + 8, dst_ptr, 4);
+    dst[8] = '-';
+    formatHex(src + 12, dst_ptr + 9, 2);
+    dst[13] = '-';
+    formatHex(src + 14, dst_ptr + 14, 2);
+    dst[18] = '-';
+    formatHex(src, dst_ptr + 19, 2);
+    dst[23] = '-';
+    formatHex(src + 2, dst_ptr + 24, 6);
+
+    return dst;
 }
 
-/** Function used when byte ordering is important when parsing uuid
- *  ex: When we create an UUID type
- */
-void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36)
+void writeIPv4Text(const IPv4 & ip, WriteBuffer & buf)
 {
-    formatHex(src16 + 8, &dst36[0], 4);
-    dst36[8] = '-';
-    formatHex(src16 + 12, &dst36[9], 2);
-    dst36[13] = '-';
-    formatHex(src16 + 14, &dst36[14], 2);
-    dst36[18] = '-';
-    formatHex(src16, &dst36[19], 2);
-    dst36[23] = '-';
-    formatHex(src16 + 2, &dst36[24], 6);
+    size_t idx = (ip >> 24);
+    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    buf.write('.');
+    idx = (ip >> 16) & 0xFF;
+    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    buf.write('.');
+    idx = (ip >> 8) & 0xFF;
+    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    buf.write('.');
+    idx = ip & 0xFF;
+    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
 }
 
+void writeIPv6Text(const IPv6 & ip, WriteBuffer & buf)
+{
+    char addr[IPV6_MAX_TEXT_LENGTH + 1] {};
+    char * paddr = addr;
+
+    formatIPv6(reinterpret_cast<const unsigned char *>(&ip), paddr);
+    buf.write(addr, paddr - addr - 1);
+}
 
 void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trace)
 {
-    writeBinary(e.code(), buf);
+    writeBinaryLittleEndian(e.code(), buf);
     writeBinary(String(e.name()), buf);
     writeBinary(e.displayText() + getExtraExceptionInfo(e), buf);
 

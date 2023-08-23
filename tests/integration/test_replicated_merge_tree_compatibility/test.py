@@ -9,6 +9,7 @@ node1 = cluster.add_instance(
     tag="20.12.4.5",
     stay_alive=True,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
 node2 = cluster.add_instance(
     "node2",
@@ -17,6 +18,7 @@ node2 = cluster.add_instance(
     tag="20.12.4.5",
     stay_alive=True,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
 
 
@@ -73,4 +75,4 @@ def test_replicated_merge_tree_defaults_compatibility(started_cluster):
     node2.restart_with_latest_version()
 
     node1.query(create_query.format(replica=1))
-    node1.query("EXISTS TABLE test.table") == "1\n"
+    assert node1.query("EXISTS TABLE test.table") == "1\n"

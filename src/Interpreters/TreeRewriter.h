@@ -40,11 +40,10 @@ struct TreeRewriterResult
     NameSet expanded_aliases;
 
     Aliases aliases;
-    std::vector<const ASTFunction *> aggregates;
 
-    std::vector<const ASTFunction *> window_function_asts;
-
-    std::vector<const ASTFunction *> expressions_with_window_function;
+    ASTs aggregates;
+    ASTs window_function_asts;
+    ASTs expressions_with_window_function;
 
     /// Which column is needed to be ARRAY-JOIN'ed to get the specified.
     /// For example, for `SELECT s.v ... ARRAY JOIN a AS s` will get "s.v" -> "a.v".
@@ -119,7 +118,8 @@ public:
         const StorageSnapshotPtr & storage_snapshot = {},
         bool allow_aggregations = false,
         bool allow_self_aliases = true,
-        bool execute_scalar_subqueries = true) const;
+        bool execute_scalar_subqueries = true,
+        bool is_create_parameterized_view = false) const;
 
     /// Analyze and rewrite select query
     TreeRewriterResultPtr analyzeSelect(
@@ -131,7 +131,7 @@ public:
         std::shared_ptr<TableJoin> table_join = {}) const;
 
 private:
-    static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_);
+    static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_, bool is_create_parameterized_view = false);
 };
 
 }

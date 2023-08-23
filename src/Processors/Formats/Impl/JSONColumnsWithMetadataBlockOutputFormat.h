@@ -53,6 +53,7 @@ protected:
     void writePrefix() override;
     void writeSuffix() override;
     void finalizeImpl() override;
+    void resetFormatterImpl() override;
 
     void writeChunkStart() override;
     void writeChunkEnd() override;
@@ -60,7 +61,6 @@ protected:
     void writeExtremesElement(const char * title, const Columns & columns, size_t row_num);
 
     DataTypes types;
-    Statistics statistics;
     size_t rows;
 };
 

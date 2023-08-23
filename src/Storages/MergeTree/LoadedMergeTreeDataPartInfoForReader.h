@@ -1,4 +1,5 @@
 #pragma once
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -9,10 +10,13 @@ namespace DB
 class LoadedMergeTreeDataPartInfoForReader final : public IMergeTreeDataPartInfoForReader
 {
 public:
-    explicit LoadedMergeTreeDataPartInfoForReader(MergeTreeData::DataPartPtr data_part_)
+    LoadedMergeTreeDataPartInfoForReader(
+        MergeTreeData::DataPartPtr data_part_, AlterConversionsPtr alter_conversions_)
         : IMergeTreeDataPartInfoForReader(data_part_->storage.getContext())
-        , data_part(data_part_)
-    {}
+        , data_part(std::move(data_part_))
+        , alter_conversions(std::move(alter_conversions_))
+    {
+    }
 
     bool isCompactPart() const override { return DB::isCompactPart(data_part); }
 
@@ -22,13 +26,17 @@ public:
 
     bool isProjectionPart() const override { return data_part->isProjectionPart(); }
 
-    const DataPartStoragePtr & getDataPartStorage() const override { return data_part->data_part_storage; }
+    DataPartStoragePtr getDataPartStorage() const override { return data_part->getDataPartStoragePtr(); }
 
     const NamesAndTypesList & getColumns() const override { return data_part->getColumns(); }
 
+    const ColumnsDescription & getColumnsDescription() const override { return data_part->getColumnsDescription(); }
+
+    const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const override { return data_part->getColumnsDescriptionWithCollectedNested(); }
+
     std::optional<size_t> getColumnPosition(const String & column_name) const override { return data_part->getColumnPosition(column_name); }
 
-    AlterConversions getAlterConversions() const override { return data_part->storage.getAlterConversionsForPart(data_part); }
+    AlterConversionsPtr getAlterConversions() const override { return alter_conversions; }
 
     String getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const override { return data_part->getColumnNameWithMinimumCompressedSize(with_subcolumns); }
 
@@ -48,8 +56,13 @@ public:
 
     SerializationPtr getSerialization(const NameAndTypePair & column) const override { return data_part->getSerialization(column.name); }
 
+    String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
+
+    MergeTreeData::DataPartPtr getDataPart() const { return data_part; }
+
 private:
     MergeTreeData::DataPartPtr data_part;
+    AlterConversionsPtr alter_conversions;
 };
 
 }

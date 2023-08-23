@@ -209,7 +209,10 @@ public:
     /// alter. If alter can be performed as pure metadata update, than result is
     /// empty. If some TTL changes happened than, depending on materialize_ttl
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
-    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context) const;
+    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false) const;
+
+    /// Check if commands have any inverted index
+    static bool hasInvertedIndex(const StorageInMemoryMetadata & metadata);
 };
 
 }

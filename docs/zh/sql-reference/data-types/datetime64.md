@@ -6,7 +6,7 @@ sidebar_position: 49
 sidebar_label: DateTime64
 ---
 
-# Datetime64 {#data_type-datetime64}
+# DateTime64 {#data_type-datetime64}
 
 此类型允许以日期（date）加时间（time）的形式来存储一个时刻的时间值，具有定义的亚秒精度
 

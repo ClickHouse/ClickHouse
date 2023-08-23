@@ -65,4 +65,3 @@ ClickHouse поддерживает свойство [hierarchical](external-dic
     </structure>
 </dictionary>
 ```
-

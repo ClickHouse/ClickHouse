@@ -4,6 +4,8 @@
 #include <Core/Joins.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Formats/FormatSettings.h>
+#include <IO/ReadSettings.h>
+#include <Common/ShellCommandSettings.h>
 
 
 namespace DB
@@ -71,6 +73,10 @@ DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, FormatSettings::DateTimeIn
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, FormatSettings::DateTimeOutputFormat)
 
+DECLARE_SETTING_ENUM_WITH_RENAME(IntervalOutputFormat, FormatSettings::IntervalOutputFormat)
+
+DECLARE_SETTING_ENUM_WITH_RENAME(ParquetVersion, FormatSettings::ParquetVersion)
+
 enum class LogsLevel
 {
     none = 0,    /// Disable
@@ -119,6 +125,14 @@ enum class DefaultTableEngine
 };
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
+
+enum class CleanDeletedRows
+{
+    Never = 0, /// Disable.
+    Always,
+};
+
+DECLARE_SETTING_ENUM(CleanDeletedRows)
 
 enum class MySQLDataTypesSupport
 {
@@ -177,18 +191,54 @@ enum class TransactionsWaitCSNMode
 
 DECLARE_SETTING_ENUM(TransactionsWaitCSNMode)
 
-DECLARE_SETTING_ENUM_WITH_RENAME(EnumComparingMode, FormatSettings::EnumComparingMode)
+DECLARE_SETTING_ENUM_WITH_RENAME(CapnProtoEnumComparingMode, FormatSettings::CapnProtoEnumComparingMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(EscapingRule, FormatSettings::EscapingRule)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(MsgPackUUIDRepresentation, FormatSettings::MsgPackUUIDRepresentation)
+
+DECLARE_SETTING_ENUM_WITH_RENAME(ParquetCompression, FormatSettings::ParquetCompression)
+
+DECLARE_SETTING_ENUM_WITH_RENAME(ArrowCompression, FormatSettings::ArrowCompression)
+
+DECLARE_SETTING_ENUM_WITH_RENAME(ORCCompression, FormatSettings::ORCCompression)
 
 enum class Dialect
 {
     clickhouse,
     kusto,
     kusto_auto,
+    prql,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
+
+enum class ParallelReplicasCustomKeyFilterType : uint8_t
+{
+    DEFAULT,
+    RANGE,
+};
+
+DECLARE_SETTING_ENUM(ParallelReplicasCustomKeyFilterType)
+
+DECLARE_SETTING_ENUM(LocalFSReadMethod)
+
+enum class S3QueueMode
+{
+    ORDERED,
+    UNORDERED,
+};
+
+DECLARE_SETTING_ENUM(S3QueueMode)
+
+enum class S3QueueAction
+{
+    KEEP,
+    DELETE,
+};
+
+DECLARE_SETTING_ENUM(S3QueueAction)
+
+DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
+
 }

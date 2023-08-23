@@ -11,6 +11,7 @@
 #include <Common/assert_cast.h>
 
 #include <Core/NamesAndTypes.h>
+#include <Columns/ColumnConst.h>
 
 
 namespace DB
@@ -20,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
+using FieldType = Array;
 
 
 DataTypeArray::DataTypeArray(const DataTypePtr & nested_)
@@ -32,7 +34,6 @@ MutableColumnPtr DataTypeArray::createColumn() const
 {
     return ColumnArray::create(nested->createColumn(), ColumnArray::ColumnOffsets::create());
 }
-
 
 Field DataTypeArray::getDefault() const
 {
@@ -62,7 +63,7 @@ size_t DataTypeArray::getNumberOfDimensions() const
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
-        throw Exception("Array data type family must have exactly one argument - type of elements", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Array data type family must have exactly one argument - type of elements");
 
     return std::make_shared<DataTypeArray>(DataTypeFactory::instance().get(arguments->children[0]));
 }

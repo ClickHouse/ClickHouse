@@ -108,7 +108,14 @@ private:
     inline size_t buf_size() const           { return 1ULL << size_degree; } /// NOLINT
     inline size_t max_fill() const           { return 1ULL << (size_degree - 1); } /// NOLINT
     inline size_t mask() const               { return buf_size() - 1; }
-    inline size_t place(HashValue x) const { return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask(); }
+
+    inline size_t place(HashValue x) const
+    {
+        if constexpr (std::endian::native == std::endian::little)
+            return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask();
+        else
+            return (std::byteswap(x) >> UNIQUES_HASH_BITS_FOR_SKIP) & mask();
+    }
 
     /// The value is divided by 2 ^ skip_degree
     inline bool good(HashValue hash) const
@@ -118,7 +125,7 @@ private:
 
     HashValue hash(Value key) const
     {
-        return Hash()(key);
+        return static_cast<HashValue>(Hash()(key));
     }
 
     /// Delete all values whose hashes do not divide by 2 ^ skip_degree
@@ -329,9 +336,13 @@ public:
         free();
     }
 
-    void insert(Value x)
+    void ALWAYS_INLINE insert(Value x)
     {
-        HashValue hash_value = hash(x);
+        HashValue hash_value;
+        if constexpr (std::endian::native == std::endian::little)
+            hash_value = hash(x);
+        else
+            hash_value = std::byteswap(hash(x));
         if (!good(hash_value))
             return;
 

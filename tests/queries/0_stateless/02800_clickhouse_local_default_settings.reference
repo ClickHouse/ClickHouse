@@ -1,0 +1,2 @@
+allow_introspection_functions	1
+storage_file_read_method	mmap

@@ -36,7 +36,7 @@ private:
     bool ssl_enabled = false;
 #endif
 
-    std::atomic<size_t> last_connection_id = 0;
+    std::atomic<unsigned> last_connection_id = 0;
 public:
     explicit MySQLHandlerFactory(IServer & server_);
 

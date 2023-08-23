@@ -16,7 +16,7 @@ While working through this guide you will:
 
 The dataset used in this guide comes from the NYC Open Data team, and contains data about "all valid felony, misdemeanor, and violation crimes reported to the New York City Police Department (NYPD)". At the time of writing, the data file is 166MB, but it is updated regularly.
 
-**Source**: [data.cityofnewyork.us](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)  
+**Source**: [data.cityofnewyork.us](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)
 **Terms of use**: https://www1.nyc.gov/home/terms-of-use.page
 
 ## Prerequisites
@@ -35,7 +35,7 @@ The examples in this guide assume that you have saved the TSV file to `${HOME}/N
 
 ## Familiarize yourself with the TSV file
 
-Before starting to work with the ClickHouse database familiarize yourself with the data. 
+Before starting to work with the ClickHouse database familiarize yourself with the data.
 
 ### Look at the fields in the source TSV file
 
@@ -47,15 +47,15 @@ clickhouse-local --query \
 
 Sample response
 ```response
-CMPLNT_NUM                  Nullable(Float64)					
-ADDR_PCT_CD                 Nullable(Float64)					
-BORO_NM                     Nullable(String)					
-CMPLNT_FR_DT                Nullable(String)					
-CMPLNT_FR_TM                Nullable(String)					
+CMPLNT_NUM                  Nullable(Float64)
+ADDR_PCT_CD                 Nullable(Float64)
+BORO_NM                     Nullable(String)
+CMPLNT_FR_DT                Nullable(String)
+CMPLNT_FR_TM                Nullable(String)
 ```
 
 :::tip
-Most of the time the above command will let you know which fields in the input data are numeric, and which are strings, and which are tuples.  This is not always the case.  Because ClickHouse is routineley used with datasets containing billions of records there is a default number (100) of rows examined to [infer the schema](../../guides/developer/working-with-json/json-semi-structured.md/#relying-on-schema-inference) in order to avoid parsing billions of rows to infer the schema. The response below may not match what you see, as the dataset is updated several times each year. Looking at the Data Dictionary you can see that CMPLNT_NUM is specified as text, and not numeric.  By overriding the default of 100 rows for inference with the setting `SETTINGS input_format_max_rows_to_read_for_schema_inference=2000`
+Most of the time the above command will let you know which fields in the input data are numeric, and which are strings, and which are tuples.  This is not always the case.  Because ClickHouse is routineley used with datasets containing billions of records there is a default number (100) of rows examined to [infer the schema](/docs/en/integrations/data-ingestion/data-formats/json.md#relying-on-schema-inference) in order to avoid parsing billions of rows to infer the schema. The response below may not match what you see, as the dataset is updated several times each year. Looking at the Data Dictionary you can see that CMPLNT_NUM is specified as text, and not numeric.  By overriding the default of 100 rows for inference with the setting `SETTINGS input_format_max_rows_to_read_for_schema_inference=2000`
 you can get a better idea of the content.
 
 Note: as of version 22.5 the default is now 25,000 rows for inferring the schema, so only change the setting if you are on an older version or if you need more than 25,000 rows to be sampled.
@@ -65,46 +65,46 @@ Run this command at your command prompt.  You will be using `clickhouse-local` t
 ```sh
 clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
 --query \
-"describe file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')" 
+"describe file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')"
 ```
 
 Result:
 ```response
-CMPLNT_NUM        Nullable(String)					
-ADDR_PCT_CD       Nullable(Float64)					
-BORO_NM           Nullable(String)					
-CMPLNT_FR_DT      Nullable(String)					
-CMPLNT_FR_TM      Nullable(String)					
-CMPLNT_TO_DT      Nullable(String)					
-CMPLNT_TO_TM      Nullable(String)					
-CRM_ATPT_CPTD_CD  Nullable(String)					
-HADEVELOPT        Nullable(String)					
-HOUSING_PSA       Nullable(Float64)					
-JURISDICTION_CODE Nullable(Float64)					
-JURIS_DESC        Nullable(String)					
-KY_CD             Nullable(Float64)					
-LAW_CAT_CD        Nullable(String)					
-LOC_OF_OCCUR_DESC Nullable(String)					
-OFNS_DESC         Nullable(String)					
-PARKS_NM          Nullable(String)					
-PATROL_BORO       Nullable(String)					
-PD_CD             Nullable(Float64)					
-PD_DESC           Nullable(String)					
-PREM_TYP_DESC     Nullable(String)					
-RPT_DT            Nullable(String)					
-STATION_NAME      Nullable(String)					
-SUSP_AGE_GROUP    Nullable(String)					
-SUSP_RACE         Nullable(String)					
-SUSP_SEX          Nullable(String)					
-TRANSIT_DISTRICT  Nullable(Float64)					
-VIC_AGE_GROUP     Nullable(String)					
-VIC_RACE          Nullable(String)					
-VIC_SEX           Nullable(String)					
-X_COORD_CD        Nullable(Float64)					
-Y_COORD_CD        Nullable(Float64)					
-Latitude          Nullable(Float64)					
-Longitude         Nullable(Float64)					
-Lat_Lon           Tuple(Nullable(Float64), Nullable(Float64))					
+CMPLNT_NUM        Nullable(String)
+ADDR_PCT_CD       Nullable(Float64)
+BORO_NM           Nullable(String)
+CMPLNT_FR_DT      Nullable(String)
+CMPLNT_FR_TM      Nullable(String)
+CMPLNT_TO_DT      Nullable(String)
+CMPLNT_TO_TM      Nullable(String)
+CRM_ATPT_CPTD_CD  Nullable(String)
+HADEVELOPT        Nullable(String)
+HOUSING_PSA       Nullable(Float64)
+JURISDICTION_CODE Nullable(Float64)
+JURIS_DESC        Nullable(String)
+KY_CD             Nullable(Float64)
+LAW_CAT_CD        Nullable(String)
+LOC_OF_OCCUR_DESC Nullable(String)
+OFNS_DESC         Nullable(String)
+PARKS_NM          Nullable(String)
+PATROL_BORO       Nullable(String)
+PD_CD             Nullable(Float64)
+PD_DESC           Nullable(String)
+PREM_TYP_DESC     Nullable(String)
+RPT_DT            Nullable(String)
+STATION_NAME      Nullable(String)
+SUSP_AGE_GROUP    Nullable(String)
+SUSP_RACE         Nullable(String)
+SUSP_SEX          Nullable(String)
+TRANSIT_DISTRICT  Nullable(Float64)
+VIC_AGE_GROUP     Nullable(String)
+VIC_RACE          Nullable(String)
+VIC_SEX           Nullable(String)
+X_COORD_CD        Nullable(Float64)
+Y_COORD_CD        Nullable(Float64)
+Latitude          Nullable(Float64)
+Longitude         Nullable(Float64)
+Lat_Lon           Tuple(Nullable(Float64), Nullable(Float64))
 New Georeferenced Column Nullable(String)
 ```
 
@@ -362,7 +362,7 @@ The dates shown as `1925` above are from errors in the data.  There are several 
 
 The decisions made above on the data types used for the columns are reflected in the table schema
 below. We also need to decide on the `ORDER BY` and `PRIMARY KEY` used for the table.  At least one
-of `ORDER BY` or `PRIMARY KEY` must be specified.  Here are some guidelines on deciding on the 
+of `ORDER BY` or `PRIMARY KEY` must be specified.  Here are some guidelines on deciding on the
 columns to includes in `ORDER BY`, and more information is in the *Next Steps* section at the end
 of this document.
 
@@ -380,7 +380,7 @@ decide that we would look at the types of crimes reported over time in the five 
 New York City.  These fields might be then included in the `ORDER BY`:
 
 | Column      | Description (from the data dictionary)                 |
-| ----------- | ---------------------------------------------------    |
+| ----------- | --------------------------------------------------- |
 | OFNS_DESC   | Description of offense corresponding with key code     |
 | RPT_DT      | Date event was reported to police                      |
 | BORO_NM     | The name of the borough in which the incident occurred |
@@ -420,7 +420,7 @@ ORDER BY ( borough, offense_description, date_reported )
 Putting together the changes to data types and the `ORDER BY` tuple gives this table structure:
 
 ```sql
-CREATE TABLE NYPD_Complaint ( 
+CREATE TABLE NYPD_Complaint (
     complaint_number     String,
     precinct             UInt8,
     borough              LowCardinality(String),
@@ -429,7 +429,7 @@ CREATE TABLE NYPD_Complaint (
     was_crime_completed  String,
     housing_authority    String,
     housing_level_code   UInt32,
-    jurisdiction_code    UInt8, 
+    jurisdiction_code    UInt8,
     jurisdiction         LowCardinality(String),
     offense_code         UInt8,
     offense_level        LowCardinality(String),
@@ -478,7 +478,7 @@ Query id: 6a5b10bf-9333-4090-b36e-c7f08b1d9e01
 
 Row 1:
 ──────
-partition_key: 
+partition_key:
 sorting_key:   borough, offense_description, date_reported
 primary_key:   borough, offense_description, date_reported
 table:         NYPD_Complaint
@@ -495,7 +495,7 @@ We will use `clickhouse-local` tool for data preprocessing and `clickhouse-clien
 :::tip
 `table='input'` appears in the arguments to clickhouse-local below.  clickhouse-local takes the provided input (`cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv`) and inserts the input into a table.  By default the table is named `table`.  In this guide the name of the table is set to `input` to make the data flow clearer. The final argument to clickhouse-local is a query that selects from the table (`FROM input`) which is then piped to `clickhouse-client` to populate the table `NYPD_Complaint`.
 :::
-  
+
 ```sql
 cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv \
   | clickhouse-local --table='input' --input-format='TSVWithNames' \
@@ -512,12 +512,12 @@ cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv \
       CRM_ATPT_CPTD_CD                            AS was_crime_completed,
       HADEVELOPT                                  AS housing_authority_development,
       HOUSING_PSA                                 AS housing_level_code,
-      JURISDICTION_CODE                           AS jurisdiction_code, 
+      JURISDICTION_CODE                           AS jurisdiction_code,
       JURIS_DESC                                  AS jurisdiction,
       KY_CD                                       AS offense_code,
       LAW_CAT_CD                                  AS offense_level,
       LOC_OF_OCCUR_DESC                           AS location_descriptor,
-      OFNS_DESC                                   AS offense_description, 
+      OFNS_DESC                                   AS offense_description,
       PARKS_NM                                    AS park_name,
       PATROL_BORO                                 AS patrol_borough,
       PD_CD,
@@ -529,7 +529,7 @@ cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv \
       SUSP_RACE                                   AS suspect_race,
       SUSP_SEX                                    AS suspect_sex,
       TRANSIT_DISTRICT                            AS transit_district,
-      VIC_AGE_GROUP                               AS victim_age_group,   
+      VIC_AGE_GROUP                               AS victim_age_group,
       VIC_RACE                                    AS victim_race,
       VIC_SEX                                     AS victim_sex,
       X_COORD_CD                                  AS NY_x_coordinate,
@@ -538,7 +538,7 @@ cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv \
       Longitude
     FROM input" \
   | clickhouse-client --query='INSERT INTO NYPD_Complaint FORMAT TSV'
-```  
+```
 
 ## Validate the Data {#validate-data}
 
@@ -560,7 +560,7 @@ Result:
 │  208993 │
 └─────────┘
 
-1 row in set. Elapsed: 0.001 sec. 
+1 row in set. Elapsed: 0.001 sec.
 ```
 
 The size of the dataset in ClickHouse is just 12% of the original TSV file, compare the size of the original TSV file with the size of the table:
@@ -651,4 +651,4 @@ Query id: 8cdcdfd4-908f-4be0-99e3-265722a2ab8d
 
 ## Next Steps
 
-[A Practical Introduction to Sparse Primary Indexes in ClickHouse](../../guides/improving-query-performance/sparse-primary-indexes/sparse-primary-indexes-intro.md) discusses the differences in ClickHouse indexing compared to traditional relational databases, how ClickHouse builds and uses a sparse primary index, and indexing best practices.
+[A Practical Introduction to Sparse Primary Indexes in ClickHouse](/docs/en/guides/best-practices/sparse-primary-indexes.md) discusses the differences in ClickHouse indexing compared to traditional relational databases, how ClickHouse builds and uses a sparse primary index, and indexing best practices.

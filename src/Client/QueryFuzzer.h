@@ -7,9 +7,11 @@
 
 #include <pcg-random/pcg_random.hpp>
 
-#include <Common/randomSeed.h>
 #include <Core/Field.h>
+#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/IAST.h>
+#include <Common/randomSeed.h>
+#include "Parsers/IAST_fwd.h"
 
 
 namespace DB
@@ -21,6 +23,7 @@ class ASTCreateQuery;
 class ASTInsertQuery;
 class ASTColumnDeclaration;
 class ASTDropQuery;
+class ASTSetQuery;
 struct ASTTableExpression;
 struct ASTWindowDefinition;
 
@@ -72,6 +75,7 @@ struct QueryFuzzer
     Field getRandomField(int type);
     Field fuzzField(Field field);
     ASTPtr getRandomColumnLike();
+    ASTPtr getRandomExpressionList();
     DataTypePtr fuzzDataType(DataTypePtr type);
     DataTypePtr getRandomType();
     ASTs getInsertQueriesForFuzzedTables(const String & full_query);
@@ -84,6 +88,9 @@ struct QueryFuzzer
     void fuzzColumnLikeExpressionList(IAST * ast);
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
+    void fuzzExplainQuery(ASTExplainQuery & explain);
+    ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
+    void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
     void fuzzTableName(ASTTableExpression & table);
     void fuzz(ASTs & asts);

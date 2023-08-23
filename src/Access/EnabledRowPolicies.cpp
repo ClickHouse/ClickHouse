@@ -6,11 +6,17 @@
 
 namespace DB
 {
+
+bool RowPolicyFilter::empty() const
+{
+    bool value;
+    return !expression || (tryGetLiteralBool(expression.get(), value) && value);
+}
+
 size_t EnabledRowPolicies::Hash::operator()(const MixedFiltersKey & key) const
 {
     return std::hash<std::string_view>{}(key.database) - std::hash<std::string_view>{}(key.table_name) + static_cast<size_t>(key.filter_type);
 }
-
 
 EnabledRowPolicies::EnabledRowPolicies() : params()
 {
@@ -23,34 +29,50 @@ EnabledRowPolicies::EnabledRowPolicies(const Params & params_) : params(params_)
 EnabledRowPolicies::~EnabledRowPolicies() = default;
 
 
-ASTPtr EnabledRowPolicies::getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
+RowPolicyFilterPtr EnabledRowPolicies::getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {
     /// We don't lock `mutex` here.
     auto loaded = mixed_filters.load();
     auto it = loaded->find({database, table_name, filter_type});
     if (it == loaded->end())
-        return {};
+    {   /// Look for a policy for database if a table policy not found
+        it = loaded->find({database, RowPolicyName::ANY_TABLE_MARK, filter_type});
+        if (it == loaded->end())
+        {
+            return {};
+        }
+    }
 
-    auto filter = it->second.ast;
-
-    bool value;
-    if (tryGetLiteralBool(filter.get(), value) && value)
-        return nullptr; /// The condition is always true, no need to check it.
-
-    return filter;
+    return it->second;
 }
 
-ASTPtr EnabledRowPolicies::getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, const ASTPtr & combine_with_expr) const
+RowPolicyFilterPtr EnabledRowPolicies::getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, RowPolicyFilterPtr combine_with_filter) const
 {
-    ASTPtr filter = getFilter(database, table_name, filter_type);
-    if (filter && combine_with_expr)
-        filter = makeASTForLogicalAnd({filter, combine_with_expr});
-    else if (!filter)
-        filter = combine_with_expr;
+    RowPolicyFilterPtr filter = getFilter(database, table_name, filter_type);
+    if (filter && combine_with_filter)
+    {
+        auto new_filter = std::make_shared<RowPolicyFilter>(*filter);
 
-    bool value;
-    if (tryGetLiteralBool(filter.get(), value) && value)
-        return nullptr;  /// The condition is always true, no need to check it.
+        if (filter->empty())
+        {
+            new_filter->expression = combine_with_filter->expression;
+        }
+        else if (combine_with_filter->empty())
+        {
+            new_filter->expression = filter->expression;
+        }
+        else
+        {
+            new_filter->expression = makeASTForLogicalAnd({filter->expression, combine_with_filter->expression});
+        }
+
+        std::copy(combine_with_filter->policies.begin(), combine_with_filter->policies.end(), std::back_inserter(new_filter->policies));
+        filter = new_filter;
+    }
+    else if (!filter)
+    {
+        filter = combine_with_filter;
+    }
 
     return filter;
 }

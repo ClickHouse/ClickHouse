@@ -106,7 +106,9 @@ void TableOverrideAnalyzer::analyze(const StorageInMemoryMetadata & metadata, Re
                 if (auto col_default = metadata.columns.getDefault(found->name))
                     existing_default_kind = col_default->kind;
                 if (existing_default_kind != override_default_kind)
-                    throw Exception(ErrorCodes::INVALID_TABLE_OVERRIDE, "column {}: modifying default specifier is not allowed", backQuote(override_column->name));
+                    throw Exception(ErrorCodes::INVALID_TABLE_OVERRIDE,
+                                    "column {}: modifying default specifier is not allowed",
+                                    backQuote(override_column->name));
                 result.modified_columns.push_back({found->name, override_type});
                 /// TODO: validate that the original type can be converted to the overridden type
             }

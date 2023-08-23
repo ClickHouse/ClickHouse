@@ -16,6 +16,7 @@ slug: /ru/operations/system-tables/settings
 -   `readonly` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Показывает, может ли пользователь изменять настройку:
     -   `0` — Текущий пользователь может изменять настройку.
     -   `1` — Текущий пользователь не может изменять настройку.
+-   `default` ([String](../../sql-reference/data-types/string.md)) — значению настройки по умолчанию.
 
 **Пример**
 
@@ -52,4 +53,3 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 -   [Разрешения для запросов](../settings/permissions-for-queries.md#settings_readonly)
 -   [Ограничения для значений настроек](../settings/constraints-on-settings.md)
 -   Выражение [SHOW SETTINGS](../../sql-reference/statements/show.md#show-settings)
-

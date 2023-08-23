@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/logger_useful.h>
 
 #include <Poco/Net/StreamSocket.h>
 
@@ -11,6 +10,7 @@
 
 
 #include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromPocoSocket.h>
 
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/Context_fwd.h>
@@ -95,6 +95,8 @@ public:
 
     Protocol::Compression getCompression() const { return compression; }
 
+    std::vector<std::pair<String, String>> getPasswordComplexityRules() const override { return password_complexity_rules; }
+
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
@@ -110,7 +112,7 @@ public:
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
 
-    void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) override;
+    void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 
     void sendExternalTablesData(ExternalTablesData & data) override;
 
@@ -154,8 +156,13 @@ public:
     {
         async_callback = std::move(async_callback_);
         if (in)
-            in->setAsyncCallback(std::move(async_callback));
+            in->setAsyncCallback(async_callback);
+        if (out)
+            out->setAsyncCallback(async_callback);
     }
+
+    bool haveMoreAddressesToConnect() const { return have_more_addresses_to_connect; }
+
 private:
     String host;
     UInt16 port;
@@ -168,7 +175,10 @@ private:
     /// For inter-server authorization
     String cluster;
     String cluster_secret;
+    /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET
     String salt;
+    /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
+    std::optional<UInt64> nonce;
 
     /// Address is resolved during the first connection (or the following reconnects)
     /// Use it only for logging purposes
@@ -195,7 +205,7 @@ private:
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::shared_ptr<ReadBufferFromPocoSocket> in;
-    std::shared_ptr<WriteBuffer> out;
+    std::shared_ptr<WriteBufferFromPocoSocket> out;
     std::optional<UInt64> last_input_packet_type;
 
     String query_id;
@@ -210,6 +220,8 @@ private:
       */
     ThrottlerPtr throttler;
 
+    std::vector<std::pair<String, String>> password_complexity_rules;
+
     /// From where to read query execution result.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
     std::unique_ptr<NativeReader> block_in;
@@ -219,6 +231,8 @@ private:
     /// Where to write data for INSERT.
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
     std::unique_ptr<NativeWriter> block_out;
+
+    bool have_more_addresses_to_connect = false;
 
     /// Logger is created lazily, for avoid to run DNS request in constructor.
     class LoggerWrapper
@@ -250,7 +264,7 @@ private:
     void sendHello();
     String packStringForSshSign(String challenge);
     void sendAddendum();
-    void receiveHello();
+    void receiveHello(const Poco::Timespan & handshake_timeout);
 
 #if USE_SSL
     void sendClusterNameAndSalt();
@@ -265,7 +279,8 @@ private:
     std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
-    PartitionReadRequest receivePartitionReadRequest() const;
+    ParallelReadRequest receiveParallelReadRequest() const;
+    InitialAllRangesAnnouncement receiveInitialParallelReadAnnounecement() const;
     ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();
@@ -276,10 +291,11 @@ private:
     [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
 };
 
+template <typename Conn>
 class AsyncCallbackSetter
 {
 public:
-    AsyncCallbackSetter(Connection * connection_, AsyncCallback async_callback) : connection(connection_)
+    AsyncCallbackSetter(Conn * connection_, AsyncCallback async_callback) : connection(connection_)
     {
         connection->setAsyncCallback(std::move(async_callback));
     }
@@ -289,7 +305,7 @@ public:
         connection->setAsyncCallback({});
     }
 private:
-    Connection * connection;
+    Conn * connection;
 };
 
 }

@@ -18,13 +18,13 @@ geohashEncode(longitude, latitude, [precision])
 
 **Input values**
 
--   longitude - longitude part of the coordinate you want to encode. Floating in range`[-180°, 180°]`
--   latitude - latitude part of the coordinate you want to encode. Floating in range `[-90°, 90°]`
--   precision - Optional, length of the resulting encoded string, defaults to `12`. Integer in range `[1, 12]`. Any value less than `1` or greater than `12` is silently converted to `12`.
+- longitude - longitude part of the coordinate you want to encode. Floating in range`[-180°, 180°]`
+- latitude - latitude part of the coordinate you want to encode. Floating in range `[-90°, 90°]`
+- precision - Optional, length of the resulting encoded string, defaults to `12`. Integer in range `[1, 12]`. Any value less than `1` or greater than `12` is silently converted to `12`.
 
 **Returned values**
 
--   alphanumeric `String` of encoded coordinate (modified version of the base32-encoding alphabet is used).
+- alphanumeric `String` of encoded coordinate (modified version of the base32-encoding alphabet is used).
 
 **Example**
 
@@ -44,11 +44,11 @@ Decodes any [geohash](#geohash)-encoded string into longitude and latitude.
 
 **Input values**
 
--   encoded string - geohash-encoded string.
+- encoded string - geohash-encoded string.
 
 **Returned values**
 
--   (longitude, latitude) - 2-tuple of `Float64` values of longitude and latitude.
+- (longitude, latitude) - 2-tuple of `Float64` values of longitude and latitude.
 
 **Example**
 
@@ -74,11 +74,11 @@ geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precisi
 
 **Arguments**
 
--   `longitude_min` — Minimum longitude. Range: `[-180°, 180°]`. Type: [Float](../../../sql-reference/data-types/float.md).
--   `latitude_min` — Minimum latitude. Range: `[-90°, 90°]`. Type: [Float](../../../sql-reference/data-types/float.md).
--   `longitude_max` — Maximum longitude. Range: `[-180°, 180°]`. Type: [Float](../../../sql-reference/data-types/float.md).
--   `latitude_max` — Maximum latitude. Range: `[-90°, 90°]`. Type: [Float](../../../sql-reference/data-types/float.md).
--   `precision` — Geohash precision. Range: `[1, 12]`. Type: [UInt8](../../../sql-reference/data-types/int-uint.md).
+- `longitude_min` — Minimum longitude. Range: `[-180°, 180°]`. Type: [Float](../../../sql-reference/data-types/float.md).
+- `latitude_min` — Minimum latitude. Range: `[-90°, 90°]`. Type: [Float](../../../sql-reference/data-types/float.md).
+- `longitude_max` — Maximum longitude. Range: `[-180°, 180°]`. Type: [Float](../../../sql-reference/data-types/float.md).
+- `latitude_max` — Maximum latitude. Range: `[-90°, 90°]`. Type: [Float](../../../sql-reference/data-types/float.md).
+- `precision` — Geohash precision. Range: `[1, 12]`. Type: [UInt8](../../../sql-reference/data-types/int-uint.md).
 
 :::note    
 All coordinate parameters must be of the same type: either `Float32` or `Float64`.
@@ -86,8 +86,8 @@ All coordinate parameters must be of the same type: either `Float32` or `Float64
 
 **Returned values**
 
--   Array of precision-long strings of geohash-boxes covering provided area, you should not rely on order of items.
--   `[]` - Empty array if minimum latitude and longitude values aren’t less than corresponding maximum values.
+- Array of precision-long strings of geohash-boxes covering provided area, you should not rely on order of items.
+- `[]` - Empty array if minimum latitude and longitude values aren’t less than corresponding maximum values.
 
 Type: [Array](../../../sql-reference/data-types/array.md)([String](../../../sql-reference/data-types/string.md)).
 
@@ -110,5 +110,3 @@ Result:
 │ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
 └─────────────────────────────────────────────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/functions/geo/geohash) <!--hide-->

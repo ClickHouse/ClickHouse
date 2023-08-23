@@ -3,6 +3,7 @@
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ProfileEvents.h>
+#include <base/defines.h>
 #include <cerrno>
 
 
@@ -25,7 +26,7 @@ namespace ErrorCodes
 
 AsynchronousReadBufferFromFile::AsynchronousReadBufferFromFile(
     IAsynchronousReader & reader_,
-    Int32 priority_,
+    Priority priority_,
     const std::string & file_name_,
     size_t buf_size,
     int flags,
@@ -59,7 +60,7 @@ AsynchronousReadBufferFromFile::AsynchronousReadBufferFromFile(
 
 AsynchronousReadBufferFromFile::AsynchronousReadBufferFromFile(
     IAsynchronousReader & reader_,
-    Int32 priority_,
+    Priority priority_,
     int & fd_,
     const std::string & original_file_name,
     size_t buf_size,
@@ -81,7 +82,8 @@ AsynchronousReadBufferFromFile::~AsynchronousReadBufferFromFile()
     if (fd < 0)
         return;
 
-    ::close(fd);
+    int err = ::close(fd);
+    chassert(!err || errno == EINTR);
 }
 
 
@@ -91,7 +93,7 @@ void AsynchronousReadBufferFromFile::close()
         return;
 
     if (0 != ::close(fd))
-        throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
+        throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");
 
     fd = -1;
 }

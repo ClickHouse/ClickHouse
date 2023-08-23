@@ -86,7 +86,7 @@
 	[
 		{
 			"name": "k",
-			"type": "DateTime"
+			"type": "DateTime('UTC')"
 		},
 		{
 			"name": "count()",

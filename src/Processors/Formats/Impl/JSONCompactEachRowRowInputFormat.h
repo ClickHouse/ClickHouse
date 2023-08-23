@@ -4,6 +4,7 @@
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <Common/HashTable/HashMap.h>
 
 namespace DB
@@ -67,6 +68,9 @@ public:
     std::vector<String> readNames() override { return readHeaderRow(); }
     std::vector<String> readTypes() override { return readHeaderRow(); }
 
+    bool checkForEndOfRow() override;
+    bool allowVariableNumberOfColumns() const override { return format_settings.json.compact_allow_variable_number_of_columns; }
+
     bool yieldStrings() const { return yield_strings; }
 private:
     bool yield_strings;
@@ -78,12 +82,16 @@ public:
     JSONCompactEachRowRowSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool yield_strings_, const FormatSettings & format_settings_);
 
 private:
-    DataTypes readRowAndGetDataTypes() override;
+    bool allowVariableNumberOfColumns() const override { return format_settings.json.compact_allow_variable_number_of_columns; }
 
-    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t) override;
+    std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
+
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+    void transformFinalTypeIfNeeded(DataTypePtr & type) override;
 
     JSONCompactEachRowFormatReader reader;
     bool first_row = true;
+    JSONInferenceInfo inference_info;
 };
 
 }

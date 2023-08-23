@@ -1,7 +1,9 @@
-#pragma once
-
 #include "ICommand.h"
 #include <Interpreters/Context.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/copyData.h>
+#include <Common/TerminalSize.h>
 
 namespace DB
 {
@@ -11,7 +13,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class CommandRead : public ICommand
+class CommandRead final : public ICommand
 {
 public:
     CommandRead()
@@ -41,32 +43,30 @@ public:
         if (command_arguments.size() != 1)
         {
             printHelpMessage();
-            throw DB::Exception("Bad Arguments", DB::ErrorCodes::BAD_ARGUMENTS);
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
         }
 
         String disk_name = config.getString("disk", "default");
 
-        String path = command_arguments[0];
-
         DiskPtr disk = global_context->getDisk(disk_name);
 
-        String full_path = fullPathWithValidate(disk, path);
+        String relative_path = validatePathAndGetAsRelative(command_arguments[0]);
 
         String path_output = config.getString("output", "");
 
         if (!path_output.empty())
         {
-            String full_path_output = fullPathWithValidate(disk, path_output);
+            String relative_path_output = validatePathAndGetAsRelative(path_output);
 
-            auto in = disk->readFile(full_path);
-            auto out = disk->writeFile(full_path_output);
+            auto in = disk->readFile(relative_path);
+            auto out = disk->writeFile(relative_path_output);
             copyData(*in, *out);
             out->finalize();
             return;
         }
         else
         {
-            auto in = disk->readFile(full_path);
+            auto in = disk->readFile(relative_path);
             std::unique_ptr<WriteBufferFromFileBase> out = std::make_unique<WriteBufferFromFileDescriptor>(STDOUT_FILENO);
             copyData(*in, *out);
         }

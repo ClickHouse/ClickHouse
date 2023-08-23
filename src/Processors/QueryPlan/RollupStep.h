@@ -19,6 +19,8 @@ public:
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
+    const Aggregator::Params & getParams() const { return params; }
+
 private:
     void updateOutputStream() override;
 

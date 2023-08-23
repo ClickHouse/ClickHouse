@@ -4,6 +4,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/IAST.h>
 
+
 namespace DB
 {
 
@@ -37,6 +38,13 @@ public:
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "EXTERNAL DDL FROM " << (settings.hilite ? hilite_none : "");
         from->formatImpl(settings, state, stacked);
         external_ddl->formatImpl(settings, state, stacked);
+    }
+
+    QueryKind getQueryKind() const override { return QueryKind::ExternalDDL; }
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&from));
     }
 };
 

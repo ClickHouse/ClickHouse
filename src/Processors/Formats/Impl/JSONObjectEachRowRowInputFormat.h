@@ -4,6 +4,7 @@
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <Common/HashTable/HashMap.h>
 
 
@@ -27,8 +28,10 @@ public:
 private:
     void readPrefix() override;
     void readSuffix() override {}
-    void readRowStart() override;
+    void readRowStart(MutableColumns & columns) override;
     bool checkEndOfData(bool is_first_row) override;
+
+    std::optional<size_t> field_index_for_object_name;
 };
 
 
@@ -39,9 +42,14 @@ public:
 
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
+    NamesAndTypesList getStaticNamesAndTypes() override;
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+    void transformFinalTypeIfNeeded(DataTypePtr & type) override;
 
     bool first_row = true;
+    JSONInferenceInfo inference_info;
 };
+
+std::optional<size_t> getColumnIndexForJSONObjectEachRowObjectName(const Block & header, const FormatSettings & settings);
 
 }

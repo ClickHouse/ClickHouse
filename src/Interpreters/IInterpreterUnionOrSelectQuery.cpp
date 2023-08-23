@@ -6,27 +6,24 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Processors/QueryPlan/FilterStep.h>
+
 
 namespace DB
 {
 
-void IInterpreterUnionOrSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const
-{
-    elem.query_kind = "Select";
-}
-
-
 QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline()
 {
     QueryPlan query_plan;
+    return buildQueryPipeline(query_plan);
+}
 
+QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline(QueryPlan & query_plan)
+{
     buildQueryPlan(query_plan);
-
     return std::move(*query_plan.buildQueryPipeline(
         QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
 }

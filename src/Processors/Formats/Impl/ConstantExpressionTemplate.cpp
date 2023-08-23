@@ -130,8 +130,8 @@ static void fillLiteralInfo(DataTypes & nested_types, LiteralInfo & info)
             field_type = Field::Types::Map;
         }
         else
-            throw Exception("Unexpected literal type inside Array: " + nested_type->getName() + ". It's a bug",
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected literal type inside Array: {}. It's a bug",
+                            nested_type->getName());
 
         if (is_nullable)
             nested_type = std::make_shared<DataTypeNullable>(nested_type);
@@ -159,9 +159,9 @@ public:
         else if (ast->as<ASTQueryParameter>())
             return;
         else if (ast->as<ASTIdentifier>())
-            throw DB::Exception("Identifier in constant expression", ErrorCodes::SYNTAX_ERROR);
+            throw DB::Exception(ErrorCodes::SYNTAX_ERROR, "Identifier in constant expression");
         else
-            throw DB::Exception("Syntax error in constant expression", ErrorCodes::SYNTAX_ERROR);
+            throw DB::Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error in constant expression");
     }
 
 private:
@@ -175,6 +175,14 @@ private:
     void visit(ASTFunction & function, bool force_nullable)
     {
         if (function.name == "lambda")
+            return;
+
+        /// Parsing of INTERVALs is quite hacky. Expressions are rewritten during parsing like this:
+        /// "now() + interval 1 day" -> "now() + toIntervalDay(1)"
+        /// "select now() + INTERVAL '1 day 1 hour 1 minute'" -> "now() + (toIntervalDay(1), toIntervalHour(1), toIntervalMinute(1))"
+        /// so the AST is completely different from the original expression .
+        /// Avoid extracting these literals and simply compare tokens. It makes the template less flexible but much simpler.
+        if (function.name.starts_with("toInterval"))
             return;
 
         FunctionOverloadResolverPtr builder = FunctionFactory::instance().get(function.name, context);
@@ -315,7 +323,7 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
     {
         const LiteralInfo & info = replaced_literals[i];
         if (info.literal->begin.value() < prev_end)
-            throw Exception("Cannot replace literals", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot replace literals");
 
         while (prev_end < info.literal->begin.value())
         {
@@ -350,6 +358,31 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
 
 }
 
+String ConstantExpressionTemplate::TemplateStructure::dumpTemplate() const
+{
+    WriteBufferFromOwnString res;
+
+    size_t cur_column = 0;
+    size_t cur_token = 0;
+    size_t num_columns = literals.columns();
+    while (cur_column < num_columns)
+    {
+        size_t skip_tokens_until = token_after_literal_idx[cur_column];
+        while (cur_token < skip_tokens_until)
+            res << quote << tokens[cur_token++] << ", ";
+
+        const DataTypePtr & type = literals.getByPosition(cur_column).type;
+        res << type->getName() << ", ";
+        ++cur_column;
+    }
+
+    while (cur_token < tokens.size())
+        res << quote << tokens[cur_token++] << ", ";
+
+    res << "eof";
+    return res.str();
+}
+
 size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTPtr & expression,
                                                                       const LiteralsInfo & replaced_literals,
                                                                       const DataTypePtr & result_column_type,
@@ -369,11 +402,10 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
     /// Allows distinguish expression in the last column in Values format
     hash_state.update(salt);
 
-    IAST::Hash res128;
-    hash_state.get128(res128);
+    const auto res128 = getSipHash128AsPair(hash_state);
     size_t res = 0;
-    boost::hash_combine(res, res128.first);
-    boost::hash_combine(res, res128.second);
+    boost::hash_combine(res, res128.low64);
+    boost::hash_combine(res, res128.high64);
     return res;
 }
 
@@ -418,12 +450,13 @@ ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & r
     return res;
 }
 
-bool ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const FormatSettings & format_settings, const Settings & settings)
+bool ConstantExpressionTemplate::parseExpression(
+    ReadBuffer & istr, const TokenIterator & token_iterator, const FormatSettings & format_settings, const Settings & settings)
 {
     size_t cur_column = 0;
     try
     {
-        if (tryParseExpression(istr, format_settings, cur_column, settings))
+        if (tryParseExpression(istr, token_iterator, format_settings, cur_column, settings))
         {
             ++rows_count;
             return true;
@@ -445,7 +478,12 @@ bool ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const Format
     return false;
 }
 
-bool ConstantExpressionTemplate::tryParseExpression(ReadBuffer & istr, const FormatSettings & format_settings, size_t & cur_column, const Settings & settings)
+bool ConstantExpressionTemplate::tryParseExpression(
+    ReadBuffer & istr,
+    const TokenIterator & token_iterator,
+    const FormatSettings & format_settings,
+    size_t & cur_column,
+    const Settings & settings)
 {
     size_t cur_token = 0;
     size_t num_columns = structure->literals.columns();
@@ -464,7 +502,7 @@ bool ConstantExpressionTemplate::tryParseExpression(ReadBuffer & istr, const For
         const DataTypePtr & type = structure->literals.getByPosition(cur_column).type;
         if (format_settings.values.accurate_types_of_literals && !structure->special_parser[cur_column].useDefaultParser())
         {
-            if (!parseLiteralAndAssertType(istr, type.get(), cur_column, settings))
+            if (!parseLiteralAndAssertType(istr, token_iterator, type.get(), cur_column, settings))
                 return false;
         }
         else
@@ -482,7 +520,8 @@ bool ConstantExpressionTemplate::tryParseExpression(ReadBuffer & istr, const For
     return true;
 }
 
-bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, const IDataType * complex_type, size_t column_idx, const Settings & settings)
+bool ConstantExpressionTemplate::parseLiteralAndAssertType(
+    ReadBuffer & istr, const TokenIterator & token_iterator, const IDataType * complex_type, size_t column_idx, const Settings & settings)
 {
     using Type = Field::Types::Which;
 
@@ -497,12 +536,12 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
 
     if (type_info.is_array || type_info.is_tuple || type_info.is_map)
     {
-        /// TODO faster way to check types without using Parsers
         ParserArrayOfLiterals parser_array;
         ParserTupleOfLiterals parser_tuple;
 
-        Tokens tokens_number(istr.position(), istr.buffer().end());
-        IParser::Pos iterator(tokens_number, settings.max_parser_depth);
+        IParser::Pos iterator(token_iterator, static_cast<unsigned>(settings.max_parser_depth));
+        while (iterator->begin < istr.position())
+            ++iterator;
         Expected expected;
         ASTPtr ast;
         if (!parser_array.parse(iterator, ast, expected) && !parser_tuple.parse(iterator, ast, expected))
@@ -546,7 +585,9 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
     {
         Field number;
         if (type_info.is_nullable && 4 <= istr.available() && 0 == strncasecmp(istr.position(), "NULL", 4))
+        {
             istr.position() += 4;
+        }
         else
         {
             /// ParserNumber::parse(...) is about 20x slower than strtod(...)
@@ -607,13 +648,12 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, si
     structure->actions_on_literals->execute(evaluated);
 
     if (!evaluated || evaluated.rows() != rows_count)
-        throw Exception("Number of rows mismatch after evaluation of batch of constant expressions: got " +
-                        std::to_string(evaluated.rows()) + " rows for " + std::to_string(rows_count) + " expressions",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of rows mismatch after evaluation of batch of constant expressions: "
+                        "got {} rows for {} expressions", evaluated.rows(), rows_count);
 
     if (!evaluated.has(structure->result_column_name))
-        throw Exception("Cannot evaluate template " + structure->result_column_name + ", block structure:\n" + evaluated.dumpStructure(),
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot evaluate template {}, block structure:\n{}",
+                        structure->result_column_name, evaluated.dumpStructure());
 
     rows_count = 0;
     auto res = evaluated.getByName(structure->result_column_name);
@@ -624,7 +664,7 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, si
     /// Extract column with evaluated expression and mask for NULLs
     const auto & tuple = assert_cast<const ColumnTuple &>(*res.column);
     if (tuple.tupleSize() != 2)
-        throw Exception("Invalid tuple size, it'a a bug", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid tuple size, it'a a bug");
     const auto & is_null = assert_cast<const ColumnUInt8 &>(tuple.getColumn(1));
 
     for (size_t i = 0; i < is_null.size(); ++i)

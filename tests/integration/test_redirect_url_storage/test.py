@@ -9,6 +9,7 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/named_collections.xml"],
+    user_configs=["configs/users.xml"],
     with_zookeeper=False,
     with_hdfs=True,
 )
@@ -151,7 +152,7 @@ def test_url_reconnect(started_cluster):
             result = node1.query(
                 "select sum(cityHash64(id)) from url('http://hdfs1:50075/webhdfs/v1/storage_big?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'id Int32') settings http_max_tries = 10, http_retry_max_backoff_ms=1000"
             )
-            assert (int(result), 6581218782194912115)
+            assert int(result) == 6581218782194912115
 
         thread = threading.Thread(target=select)
         thread.start()
@@ -161,5 +162,5 @@ def test_url_reconnect(started_cluster):
 
         thread.join()
 
-        assert (int(result), 6581218782194912115)
+        assert int(result) == 6581218782194912115
         assert node1.contains_in_log("Timeout: connect timed out")

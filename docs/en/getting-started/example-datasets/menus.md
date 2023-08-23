@@ -119,9 +119,9 @@ We use [CSVWithNames](../../interfaces/formats.md#csvwithnames) format as the da
 
 We disable `format_csv_allow_single_quotes` as only double quotes are used for data fields and single quotes can be inside the values and should not confuse the CSV parser.
 
-We disable [input_format_null_as_default](../../operations/settings/settings.md#settings-input-format-null-as-default) as our data does not have [NULL](../../sql-reference/syntax.md#null-literal). Otherwise ClickHouse will try to parse `\N` sequences and can be confused with `\` in data.
+We disable [input_format_null_as_default](../../operations/settings/settings-formats.md#settings-input-format-null-as-default) as our data does not have [NULL](../../sql-reference/syntax.md#null-literal). Otherwise ClickHouse will try to parse `\N` sequences and can be confused with `\` in data.
 
-The setting [date_time_input_format best_effort](../../operations/settings/settings.md#settings-date_time_input_format) allows to parse [DateTime](../../sql-reference/data-types/datetime.md)  fields in wide variety of formats. For example, ISO-8601 without seconds like '2000-01-01 01:02' will be recognized. Without this setting only fixed DateTime format is allowed.
+The setting [date_time_input_format best_effort](../../operations/settings/settings-formats.md#settings-date_time_input_format) allows to parse [DateTime](../../sql-reference/data-types/datetime.md)  fields in wide variety of formats. For example, ISO-8601 without seconds like '2000-01-01 01:02' will be recognized. Without this setting only fixed DateTime format is allowed.
 
 ## Denormalize the Data {#denormalize-data}
 

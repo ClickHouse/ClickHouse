@@ -16,11 +16,12 @@ private:
     static constexpr uint32_t VERSION_ABSOLUTE_PATHS = 1;
     static constexpr uint32_t VERSION_RELATIVE_PATHS = 2;
     static constexpr uint32_t VERSION_READ_ONLY_FLAG = 3;
+    static constexpr uint32_t VERSION_INLINE_DATA = 4;
 
     const std::string & common_metadata_path;
 
     /// Relative paths of blobs.
-    RelativePathsWithSize storage_objects;
+    RelativePathsWithMetadata storage_objects;
 
     const std::string object_storage_root_path;
 
@@ -39,6 +40,9 @@ private:
     /// Flag indicates that file is read only.
     bool read_only = false;
 
+    /// This data will be stored inline
+    std::string inline_data;
+
 public:
 
     DiskObjectStorageMetadata(
@@ -50,7 +54,6 @@ public:
 
     void deserialize(ReadBuffer & buf);
     void deserializeFromString(const std::string & data);
-    void createFromSingleObject(const std::string & relative_path, size_t bytes_size, size_t ref_count_, bool is_read_only_);
 
     void serialize(WriteBuffer & buf, bool sync) const;
     std::string serializeToString() const;
@@ -60,7 +63,7 @@ public:
         return object_storage_root_path;
     }
 
-    RelativePathsWithSize getBlobsRelativePaths() const
+    RelativePathsWithMetadata getBlobsRelativePaths() const
     {
         return storage_objects;
     }
@@ -100,6 +103,15 @@ public:
         read_only = true;
     }
 
+    void setInlineData(const std::string & data)
+    {
+        inline_data = data;
+    }
+
+    const std::string & getInlineData() const
+    {
+        return inline_data;
+    }
 };
 
 using DiskObjectStorageMetadataPtr = std::unique_ptr<DiskObjectStorageMetadata>;

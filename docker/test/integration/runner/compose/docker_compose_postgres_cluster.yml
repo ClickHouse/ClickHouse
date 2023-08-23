@@ -9,7 +9,7 @@ services:
             POSTGRES_PASSWORD: mysecretpassword
             PGDATA: /postgres/data
         expose:
-            - ${POSTGRES_PORT}
+            - ${POSTGRES_PORT:-5432}
         volumes:
             - type: ${POSTGRES_LOGS_FS:-tmpfs}
               source: ${POSTGRES2_DIR:-}
@@ -23,7 +23,7 @@ services:
             POSTGRES_PASSWORD: mysecretpassword
             PGDATA: /postgres/data
         expose:
-            - ${POSTGRES_PORT}
+            - ${POSTGRES_PORT:-5432}
         volumes:
             - type: ${POSTGRES_LOGS_FS:-tmpfs}
               source: ${POSTGRES3_DIR:-}
@@ -37,7 +37,7 @@ services:
             POSTGRES_PASSWORD: mysecretpassword
             PGDATA: /postgres/data
         expose:
-            - ${POSTGRES_PORT}
+            - ${POSTGRES_PORT:-5432}
         volumes:
             - type: ${POSTGRES_LOGS_FS:-tmpfs}
               source: ${POSTGRES4_DIR:-}

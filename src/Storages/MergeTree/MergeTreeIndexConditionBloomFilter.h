@@ -53,7 +53,7 @@ public:
         if (const auto & bf_granule = typeid_cast<const MergeTreeIndexGranuleBloomFilter *>(granule.get()))
             return mayBeTrueOnGranule(bf_granule);
 
-        throw Exception("LOGICAL ERROR: require bloom filter index granule.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: require bloom filter index granule.");
     }
 
 private:
@@ -62,35 +62,27 @@ private:
     const size_t hash_functions;
     std::vector<RPNElement> rpn;
 
-    SetPtr getPreparedSet(const ASTPtr & node);
-
     bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule) const;
 
-    bool traverseAtomAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
+    bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
 
-    bool traverseFunction(const ASTPtr & node, Block & block_with_constants, RPNElement & out, const ASTPtr & parent);
+    bool traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent);
 
-    bool traverseASTIn(
+    bool traverseTreeIn(
         const String & function_name,
-        const ASTPtr & key_ast,
-        const SetPtr & prepared_set,
-        RPNElement & out);
-
-    bool traverseASTIn(
-        const String & function_name,
-        const ASTPtr & key_ast,
-        const SetPtr & prepared_set,
+        const RPNBuilderTreeNode & key_node,
+        const ConstSetPtr & prepared_set,
         const DataTypePtr & type,
         const ColumnPtr & column,
         RPNElement & out);
 
-    bool traverseASTEquals(
+    bool traverseTreeEquals(
         const String & function_name,
-        const ASTPtr & key_ast,
+        const RPNBuilderTreeNode & key_node,
         const DataTypePtr & value_type,
         const Field & value_field,
         RPNElement & out,
-        const ASTPtr & parent);
+        const RPNBuilderTreeNode * parent);
 };
 
 }

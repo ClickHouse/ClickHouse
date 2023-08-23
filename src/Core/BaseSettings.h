@@ -2,13 +2,22 @@
 
 #include <Core/SettingsFields.h>
 #include <Common/SettingsChanges.h>
+#include <Common/FieldVisitorToString.h>
+#include <IO/Operators.h>
 #include <base/range.h>
 #include <boost/blank.hpp>
 #include <unordered_map>
+#include <boost/program_options/options_description.hpp>
 
+
+namespace boost::program_options
+{
+    class options_description;
+}
 
 namespace DB
 {
+
 class ReadBuffer;
 class WriteBuffer;
 
@@ -18,7 +27,6 @@ enum class SettingsWriteFormat
     STRINGS_WITH_FLAGS, /// All settings are serialized as strings. Before each value the flag `is_important` is serialized.
     DEFAULT = STRINGS_WITH_FLAGS,
 };
-
 
 /** Template class to define collections of settings.
   * Example of usage:
@@ -101,7 +109,9 @@ public:
     public:
         const String & getName() const;
         Field getValue() const;
+        Field getDefaultValue() const;
         String getValueString() const;
+        String getDefaultValueString() const;
         bool isValueChanged() const;
         const char * getTypeName() const;
         const char * getDescription() const;
@@ -118,6 +128,18 @@ public:
         size_t index;
         std::conditional_t<Traits::allow_custom_settings, const CustomSettingMap::mapped_type*, boost::blank> custom_setting;
     };
+
+    /// Adds program options to set the settings from a command line.
+    /// (Don't forget to call notify() on the `variables_map` after parsing it!)
+    void addProgramOptions(boost::program_options::options_description & options);
+
+    /// Adds program options as to set the settings from a command line.
+    /// Allows to set one setting multiple times, the last value will be used.
+    /// (Don't forget to call notify() on the `variables_map` after parsing it!)
+    void addProgramOptionsAsMultitokens(boost::program_options::options_description & options);
+
+    void addProgramOption(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field);
+    void addProgramOptionAsMultitoken(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field);
 
     enum SkipFlags
     {
@@ -201,6 +223,7 @@ struct BaseSettingsHelpers
 template <typename TTraits>
 void BaseSettings<TTraits>::set(std::string_view name, const Field & value)
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         accessor.setValue(*this, index, value);
@@ -211,6 +234,7 @@ void BaseSettings<TTraits>::set(std::string_view name, const Field & value)
 template <typename TTraits>
 Field BaseSettings<TTraits>::get(std::string_view name) const
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getValue(*this, index);
@@ -221,6 +245,7 @@ Field BaseSettings<TTraits>::get(std::string_view name) const
 template <typename TTraits>
 void BaseSettings<TTraits>::setString(std::string_view name, const String & value)
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         accessor.setValueString(*this, index, value);
@@ -231,6 +256,7 @@ void BaseSettings<TTraits>::setString(std::string_view name, const String & valu
 template <typename TTraits>
 String BaseSettings<TTraits>::getString(std::string_view name) const
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getValueString(*this, index);
@@ -241,6 +267,7 @@ String BaseSettings<TTraits>::getString(std::string_view name) const
 template <typename TTraits>
 bool BaseSettings<TTraits>::tryGet(std::string_view name, Field & value) const
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
     {
@@ -258,6 +285,7 @@ bool BaseSettings<TTraits>::tryGet(std::string_view name, Field & value) const
 template <typename TTraits>
 bool BaseSettings<TTraits>::tryGetString(std::string_view name, String & value) const
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
     {
@@ -275,6 +303,7 @@ bool BaseSettings<TTraits>::tryGetString(std::string_view name, String & value) 
 template <typename TTraits>
 bool BaseSettings<TTraits>::isChanged(std::string_view name) const
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.isValueChanged(*this, index);
@@ -327,6 +356,7 @@ void BaseSettings<TTraits>::resetToDefault()
 template <typename TTraits>
 void BaseSettings<TTraits>::resetToDefault(std::string_view name)
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         accessor.resetValueToDefault(*this, index);
@@ -335,6 +365,7 @@ void BaseSettings<TTraits>::resetToDefault(std::string_view name)
 template <typename TTraits>
 bool BaseSettings<TTraits>::hasBuiltin(std::string_view name)
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     return (accessor.find(name) != static_cast<size_t>(-1));
 }
@@ -342,12 +373,14 @@ bool BaseSettings<TTraits>::hasBuiltin(std::string_view name)
 template <typename TTraits>
 bool BaseSettings<TTraits>::hasCustom(std::string_view name) const
 {
+    name = TTraits::resolveName(name);
     return tryGetCustomSetting(name);
 }
 
 template <typename TTraits>
 const char * BaseSettings<TTraits>::getTypeName(std::string_view name) const
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getTypeName(index);
@@ -360,6 +393,7 @@ const char * BaseSettings<TTraits>::getTypeName(std::string_view name) const
 template <typename TTraits>
 const char * BaseSettings<TTraits>::getDescription(std::string_view name) const
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getDescription(index);
@@ -372,18 +406,21 @@ const char * BaseSettings<TTraits>::getDescription(std::string_view name) const
 template <typename TTraits>
 void BaseSettings<TTraits>::checkCanSet(std::string_view name, const Field & value)
 {
+    name = TTraits::resolveName(name);
     castValueUtil(name, value);
 }
 
 template <typename TTraits>
 void BaseSettings<TTraits>::checkCanSetString(std::string_view name, const String & str)
 {
+    name = TTraits::resolveName(name);
     stringToValueUtil(name, str);
 }
 
 template <typename TTraits>
 Field BaseSettings<TTraits>::castValueUtil(std::string_view name, const Field & value)
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.castValueUtil(index, value);
@@ -396,6 +433,7 @@ Field BaseSettings<TTraits>::castValueUtil(std::string_view name, const Field & 
 template <typename TTraits>
 String BaseSettings<TTraits>::valueToStringUtil(std::string_view name, const Field & value)
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.valueToStringUtil(index, value);
@@ -408,6 +446,7 @@ String BaseSettings<TTraits>::valueToStringUtil(std::string_view name, const Fie
 template <typename TTraits>
 Field BaseSettings<TTraits>::stringToValueUtil(std::string_view name, const String & str)
 {
+    name = TTraits::resolveName(name);
     try
     {
         const auto & accessor = Traits::Accessor::instance();
@@ -464,9 +503,11 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
     const auto & accessor = Traits::Accessor::instance();
     while (true)
     {
-        String name = BaseSettingsHelpers::readString(in);
-        if (name.empty() /* empty string is a marker of the end of settings */)
+        String read_name = BaseSettingsHelpers::readString(in);
+        if (read_name.empty() /* empty string is a marker of the end of settings */)
             break;
+
+        std::string_view name = TTraits::resolveName(read_name);
         size_t index = accessor.find(name);
 
         using Flags = BaseSettingsHelpers::Flags;
@@ -508,14 +549,67 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
 template <typename TTraits>
 String BaseSettings<TTraits>::toString() const
 {
-    String res;
-    for (const auto & field : *this)
+    WriteBufferFromOwnString out;
+    bool first = true;
+    for (const auto & setting : *this)
     {
-        if (!res.empty())
-            res += ", ";
-        res += field.getName() + " = " + field.getValueString();
+        if (!first)
+            out << ", ";
+        out << setting.getName() << " = " << applyVisitor(FieldVisitorToString(), setting.getValue());
+        first = false;
     }
-    return res;
+    return out.str();
+}
+
+template <typename TTraits>
+void BaseSettings<TTraits>::addProgramOptions(boost::program_options::options_description & options)
+{
+    const auto & settings_to_aliases = TTraits::settingsToAliases();
+    for (const auto & field : all())
+    {
+        std::string_view name = field.getName();
+        addProgramOption(options, name, field);
+
+        if (auto it = settings_to_aliases.find(name); it != settings_to_aliases.end())
+        {
+            for (const auto alias : it->second)
+                addProgramOption(options, alias, field);
+        }
+    }
+}
+
+template <typename TTraits>
+void BaseSettings<TTraits>::addProgramOptionsAsMultitokens(boost::program_options::options_description & options)
+{
+    const auto & settings_to_aliases = TTraits::settingsToAliases();
+    for (const auto & field : all())
+    {
+        std::string_view name = field.getName();
+        addProgramOptionAsMultitoken(options, name, field);
+
+        if (auto it = settings_to_aliases.find(name); it != settings_to_aliases.end())
+        {
+            for (const auto alias : it->second)
+                addProgramOptionAsMultitoken(options, alias, field);
+        }
+    }
+}
+
+
+template <typename TTraits>
+void BaseSettings<TTraits>::addProgramOption(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field)
+{
+    auto on_program_option = boost::function1<void, const std::string &>([this, name](const std::string & value) { set(name, value); });
+    options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
+        name.data(), boost::program_options::value<std::string>()->composing()->notifier(on_program_option), field.getDescription())));
+}
+
+template <typename TTraits>
+void BaseSettings<TTraits>::addProgramOptionAsMultitoken(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field)
+{
+    auto on_program_option = boost::function1<void, const Strings &>([this, name](const Strings & values) { set(name, values.back()); });
+    options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
+        name.data(), boost::program_options::value<Strings>()->multitoken()->composing()->notifier(on_program_option), field.getDescription())));
 }
 
 template <typename TTraits>
@@ -712,6 +806,17 @@ Field BaseSettings<TTraits>::SettingFieldRef::getValue() const
 }
 
 template <typename TTraits>
+Field BaseSettings<TTraits>::SettingFieldRef::getDefaultValue() const
+{
+    if constexpr (Traits::allow_custom_settings)
+    {
+        if (custom_setting)
+            return static_cast<Field>(custom_setting->second);
+    }
+    return accessor->getDefaultValue(index);
+}
+
+template <typename TTraits>
 String BaseSettings<TTraits>::SettingFieldRef::getValueString() const
 {
     if constexpr (Traits::allow_custom_settings)
@@ -720,6 +825,17 @@ String BaseSettings<TTraits>::SettingFieldRef::getValueString() const
             return custom_setting->second.toString();
     }
     return accessor->getValueString(*settings, index);
+}
+
+template <typename TTraits>
+String BaseSettings<TTraits>::SettingFieldRef::getDefaultValueString() const
+{
+    if constexpr (Traits::allow_custom_settings)
+    {
+        if (custom_setting)
+            return custom_setting->second.toString();
+    }
+    return accessor->getDefaultValueString(index);
 }
 
 template <typename TTraits>
@@ -775,6 +891,8 @@ bool BaseSettings<TTraits>::SettingFieldRef::isObsolete() const
     return accessor->isObsolete(index);
 }
 
+using AliasMap = std::unordered_map<std::string_view, std::string_view>;
+
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO) \
     DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, 0)
@@ -789,7 +907,7 @@ bool BaseSettings<TTraits>::SettingFieldRef::isObsolete() const
     { \
         struct Data \
         { \
-            LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_TRAITS_) \
+            LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_TRAITS_, SKIP_ALIAS) \
         }; \
         \
         class Accessor \
@@ -814,7 +932,8 @@ bool BaseSettings<TTraits>::SettingFieldRef::isObsolete() const
             void resetValueToDefault(Data & data, size_t index) const { return field_infos[index].reset_value_to_default_function(data); } \
             void writeBinary(const Data & data, size_t index, WriteBuffer & out) const { return field_infos[index].write_binary_function(data, out); } \
             void readBinary(Data & data, size_t index, ReadBuffer & in) const { return field_infos[index].read_binary_function(data, in); } \
-        \
+            Field getDefaultValue(size_t index) const { return field_infos[index].get_default_value_function(); } \
+            String getDefaultValueString(size_t index) const { return field_infos[index].get_default_value_string_function(); } \
         private: \
             Accessor(); \
             struct FieldInfo \
@@ -835,12 +954,66 @@ bool BaseSettings<TTraits>::SettingFieldRef::isObsolete() const
                 void (*reset_value_to_default_function)(Data &) ; \
                 void (*write_binary_function)(const Data &, WriteBuffer &) ; \
                 void (*read_binary_function)(Data &, ReadBuffer &) ; \
+                Field (*get_default_value_function)() ; \
+                String (*get_default_value_string_function)() ; \
             }; \
             std::vector<FieldInfo> field_infos; \
             std::unordered_map<std::string_view, size_t> name_to_index_map; \
         }; \
         static constexpr bool allow_custom_settings = ALLOW_CUSTOM_SETTINGS; \
+        \
+        static inline const AliasMap aliases_to_settings = \
+            DefineAliases() LIST_OF_SETTINGS_MACRO(ALIAS_TO, ALIAS_FROM); \
+        \
+        using SettingsToAliasesMap = std::unordered_map<std::string_view, std::vector<std::string_view>>; \
+        static inline const SettingsToAliasesMap & settingsToAliases() \
+        { \
+            static SettingsToAliasesMap setting_to_aliases_mapping = [] \
+            { \
+                std::unordered_map<std::string_view, std::vector<std::string_view>> map; \
+                for (const auto & [alias, destination] : aliases_to_settings) \
+                    map[destination].push_back(alias); \
+                return map; \
+            }(); \
+            return setting_to_aliases_mapping; \
+        } \
+        \
+        static std::string_view resolveName(std::string_view name) \
+        { \
+            if (auto it = aliases_to_settings.find(name); it != aliases_to_settings.end()) \
+                return it->second; \
+            return name; \
+        } \
     };
+
+
+/// NOLINTNEXTLINE
+#define SKIP_ALIAS(ALIAS_NAME)
+/// NOLINTNEXTLINE
+#define ALIAS_TO(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) .setName(#NAME)
+/// NOLINTNEXTLINE
+#define ALIAS_FROM(ALIAS) .addAlias(#ALIAS)
+
+struct DefineAliases
+{
+    std::string_view name;
+    AliasMap map;
+
+    DefineAliases & setName(std::string_view value)
+    {
+        name = value;
+        return *this;
+    }
+
+    DefineAliases & addAlias(std::string_view value)
+    {
+        map.emplace(value, name);
+        return *this;
+    }
+
+    /// NOLINTNEXTLINE(google-explicit-constructor)
+    operator AliasMap() { return std::move(map); }
+};
 
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
@@ -855,7 +1028,7 @@ bool BaseSettings<TTraits>::SettingFieldRef::isObsolete() const
             Accessor res; \
             constexpr int IMPORTANT = 0x01; \
             UNUSED(IMPORTANT); \
-            LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_TRAITS_) \
+            LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_TRAITS_, SKIP_ALIAS) \
             for (size_t i : collections::range(res.field_infos.size())) \
             { \
                 const auto & info = res.field_infos[i]; \
@@ -878,7 +1051,6 @@ bool BaseSettings<TTraits>::SettingFieldRef::isObsolete() const
     \
     template class BaseSettings<SETTINGS_TRAITS_NAME>;
 
-//-V:IMPLEMENT_SETTINGS:501
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
     res.field_infos.emplace_back( \
@@ -894,6 +1066,8 @@ bool BaseSettings<TTraits>::SettingFieldRef::isObsolete() const
             [](const Data & data) -> bool { return data.NAME.changed; }, \
             [](Data & data) { data.NAME = SettingField##TYPE{DEFAULT}; }, \
             [](const Data & data, WriteBuffer & out) { data.NAME.writeBinary(out); }, \
-            [](Data & data, ReadBuffer & in) { data.NAME.readBinary(in); } \
+            [](Data & data, ReadBuffer & in) { data.NAME.readBinary(in); }, \
+            []() -> Field { return static_cast<Field>(SettingField##TYPE{DEFAULT}); }, \
+            []() -> String { return SettingField##TYPE{DEFAULT}.toString(); } \
         });
 }

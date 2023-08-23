@@ -19,31 +19,6 @@
     <opentelemetry_span_log remove="remove"/>
     <session_log remove="remove"/>
 
-    <!-- performance tests does not uses real block devices,
-         instead they stores everything in memory.
-
-         And so, to avoid extra memory reference switch *_log to Memory engine. -->
-    <query_log>
-         <engine>ENGINE = Memory</engine>
-         <partition_by remove="remove"/>
-    </query_log>
-    <query_thread_log>
-         <engine>ENGINE = Memory</engine>
-         <partition_by remove="remove"/>
-    </query_thread_log>
-    <trace_log>
-         <engine>ENGINE = Memory</engine>
-         <partition_by remove="remove"/>
-    </trace_log>
-    <metric_log>
-         <engine>ENGINE = Memory</engine>
-         <partition_by remove="remove"/>
-    </metric_log>
-    <asynchronous_metric_log>
-         <engine>ENGINE = Memory</engine>
-         <partition_by remove="remove"/>
-    </asynchronous_metric_log>
-
     <uncompressed_cache_size>1000000000</uncompressed_cache_size>
 
     <asynchronous_metrics_update_period_s>10</asynchronous_metrics_update_period_s>

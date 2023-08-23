@@ -1,113 +1,87 @@
 #!/usr/bin/env bash
 # Tags: long, no-parallel
+# shellcheck disable=SC2015
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-request() {
-    local url="$1"
-    local select="$2"
-    ${CLICKHOUSE_CURL} --silent "$url" --data "$select"
-}
 
+echo "Using non-existent session with the 'session_check' flag will throw exception:"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=nonexistent&session_check=1" --data-binary "SELECT 1" | grep -c -F 'SESSION_NOT_FOUND'
 
-create_temporary_table() {
-    local url="$1"
-    request "$url" "CREATE TEMPORARY TABLE temp (x String)"
-    request "$url" "INSERT INTO temp VALUES ('Hello'), ('World')"
-}
+echo "Using non-existent session without the 'session_check' flag will create a new session:"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_1" --data-binary "SELECT 1"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_1&session_check=0" --data-binary "SELECT 1"
 
+echo "The 'session_timeout' parameter is checked for validity and for the maximum value:"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_2&session_timeout=string" --data-binary "SELECT 1" | grep -c -F 'Invalid session timeout'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_2&session_timeout=3601" --data-binary "SELECT 1" | grep -c -F 'Maximum session timeout'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_2&session_timeout=-1" --data-binary "SELECT 1" | grep -c -F 'Invalid session timeout'
 
-check() {
-    local url="$1"
-    local select="$2"
-    local output="$3"
-    local expected_result="$4"
-    local message="$5"
-    result=$(request "$url" "$select" | grep --count "$output")
-    if [ "$result" -ne "$expected_result" ]; then
-        echo "FAILED: $message"
-        exit 1
-    fi
-}
+echo "Valid cases are accepted:"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_3&session_timeout=0" --data-binary "SELECT 1"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_4&session_timeout=3600" --data-binary "SELECT 1"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_5&session_timeout=60" --data-binary "SELECT 1"
 
+echo "Sessions are local per user:"
+${CLICKHOUSE_CLIENT} --multiquery --query "DROP USER IF EXISTS test_00463; CREATE USER test_00463; GRANT ALL ON *.* TO test_00463;"
 
-address=${CLICKHOUSE_HOST}
-port=${CLICKHOUSE_PORT_HTTP}
-url="${CLICKHOUSE_PORT_HTTP_PROTO}://$address:$port/"
-session="?session_id=test_$$"  # use PID for session ID
-select="SELECT * FROM system.settings WHERE name = 'max_rows_to_read'"
-select_from_temporary_table="SELECT * FROM temp ORDER BY x"
-select_from_non_existent_table="SELECT * FROM no_such_table ORDER BY x"
+${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_6&session_timeout=600" --data-binary "CREATE TEMPORARY TABLE t (s String)"
+${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_6" --data-binary "INSERT INTO t VALUES ('Hello')"
 
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=test_00463&session_id=${CLICKHOUSE_DATABASE}_6&session_check=1" --data-binary "SELECT 1" | grep -c -F 'SESSION_NOT_FOUND'
+${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&user=test_00463&session_id=${CLICKHOUSE_DATABASE}_6&session_timeout=600" --data-binary "CREATE TEMPORARY TABLE t (s String)"
+${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&user=test_00463&session_id=${CLICKHOUSE_DATABASE}_6" --data-binary "INSERT INTO t VALUES ('World')"
 
-check "$url?session_id=no_such_session_$$&session_check=1" "$select" "Exception.*Session not found" 1 "session_check=1 does not work."
-check "$url$session&session_check=0" "$select" "Exception" 0 "session_check=0 does not work."
+${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_6" --data-binary "SELECT * FROM t"
+${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&user=test_00463&session_id=${CLICKHOUSE_DATABASE}_6" --data-binary "SELECT * FROM t"
 
-request "$url""$session" "SET max_rows_to_read=7777777"
+${CLICKHOUSE_CLIENT} --multiquery --query "DROP USER test_00463";
 
-check "$url$session&session_timeout=string" "$select" "Exception.*Invalid session timeout" 1 "Non-numeric value accepted as a timeout."
-check "$url$session&session_timeout=3601" "$select" "Exception.*Maximum session timeout*" 1 "More then 3600 seconds accepted as a timeout."
-check "$url$session&session_timeout=-1" "$select" "Exception.*Invalid session timeout" 1 "Negative timeout accepted."
-check "$url$session&session_timeout=0" "$select" "Exception" 0 "Zero timeout not accepted."
-check "$url$session&session_timeout=3600" "$select" "Exception" 0 "3600 second timeout not accepted."
-check "$url$session&session_timeout=60" "$select" "Exception" 0 "60 second timeout not accepted."
+echo "And cannot be accessed for a non-existent user:"
+${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&user=test_00463&session_id=${CLICKHOUSE_DATABASE}_6" --data-binary "SELECT * FROM t" | grep -c -F 'Exception'
 
-check "$url""$session" "$select" "7777777" 1 "Failed to reuse session."
-# Workaround here
-# TODO: move the test to integration test or add readonly user to test environment
-if [[ -z $(request "$url?user=readonly" "SELECT ''") ]]; then
-    # We have readonly user
-    check "$url$session&user=readonly&session_check=1" "$select" "Exception.*Session not found" 1 "Session is accessable for another user."
-else
-    check "$url$session&user=readonly&session_check=1" "$select" "Exception.*Unknown user*" 1 "Session is accessable for unknown user."
-fi
+echo "The temporary tables created in a session are not accessible without entering this session:"
+${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}" --data-binary "SELECT * FROM t" | grep -c -F 'Exception'
 
-create_temporary_table "$url""$session"
-check "$url""$session" "$select_from_temporary_table" "Hello" 1 "Failed to reuse a temporary table for session."
-
-check "$url?session_id=another_session_$$" "$select_from_temporary_table" "Exception.*Table .* doesn't exist." 1 "Temporary table is visible for another table."
-
-
-( (
-cat <<EOF
-POST /$session HTTP/1.1
-Host: $address:$port
-Accept: */*
-Content-Length: 62
-Content-Type: application/x-www-form-urlencoded
-
-EOF
-sleep 4
-) | telnet "$address" "$port" >/dev/null 2>/dev/null) &
-sleep 1
-check "$url""$session" "$select" "Exception.*Session is locked" 1 "Double access to the same session."
-
-
-session="?session_id=test_timeout_$$"
-
-create_temporary_table "$url$session&session_timeout=1"
-check "$url$session&session_timeout=1" "$select_from_temporary_table" "Hello" 1 "Failed to reuse a temporary table for session."
-sleep 3
-check "$url$session&session_check=1" "$select" "Exception.*Session not found" 1 "Session did not expire on time."
-
-create_temporary_table "$url$session&session_timeout=2"
-for _ in $(seq 1 3); do
-    check "$url$session&session_timeout=2" "$select_from_temporary_table" "Hello" 1 "Session expired too early."
-    sleep 1
+echo "A session successfully expire after a timeout:"
+# An infinite loop is required to make the test reliable. We will check that the timeout corresponds to the observed time at least once
+while true
+do
+    (
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_7&session_timeout=1" --data-binary "SELECT 1"
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_7&session_check=1" --data-binary "SELECT 1"
+        sleep 3
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_7&session_check=1" --data-binary "SELECT 1" | grep -c -F 'SESSION_NOT_FOUND'
+    ) | tr -d '\n' | grep -F '111' && break || sleep 1
 done
-sleep 3
-check "$url$session&session_check=1" "$select" "Exception.*Session not found" 1 "Session did not expire on time."
 
-create_temporary_table "$url$session&session_timeout=2"
-for _ in $(seq 1 5); do
-    check "$url$session&session_timeout=2" "$select_from_non_existent_table" "Exception.*Table .* doesn't exist." 1 "Session expired too early."
-    sleep 1
+echo "A session successfully expire after a timeout and the session's temporary table shadows the permanent table:"
+# An infinite loop is required to make the test reliable. We will check that the timeout corresponds to the observed time at least once
+${CLICKHOUSE_CLIENT} --multiquery --query "DROP TABLE IF EXISTS t; CREATE TABLE t (s String) ENGINE = Memory; INSERT INTO t VALUES ('World');"
+while true
+do
+    (
+        ${CLICKHOUSE_CURL} -X POST -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_8&session_timeout=1" --data-binary "CREATE TEMPORARY TABLE t (s String)"
+        ${CLICKHOUSE_CURL} -X POST -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_8" --data-binary "INSERT INTO t VALUES ('Hello')"
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_8" --data-binary "SELECT * FROM t"
+        sleep 3
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_8" --data-binary "SELECT * FROM t"
+    ) | tr -d '\n' | grep -F 'HelloWorld' && break || sleep 1
 done
-check "$url$session&session_timeout=2" "$select_from_temporary_table" "Hello" 1 "Session expired too early. Failed to update timeout in case of exceptions."
-sleep 4
-check "$url$session&session_check=1" "$select" "Exception.*Session not found" 1 "Session did not expire on time."
+${CLICKHOUSE_CLIENT} --multiquery --query "DROP TABLE t"
 
+echo "A session cannot be used by concurrent connections:"
 
-echo "PASSED"
+${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_9&query_id=${CLICKHOUSE_DATABASE}_9" --data-binary "SELECT count() FROM system.numbers" >/dev/null &
+
+# An infinite loop is required to make the test reliable. We will ensure that at least once the query on the line above has started before this check
+while true
+do
+    ${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM system.processes WHERE query_id = '${CLICKHOUSE_DATABASE}_9'" | grep -F '1' && break || sleep 1
+done
+
+${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_9" --data-binary "SELECT 1" | grep -c -F 'SESSION_IS_LOCKED'
+${CLICKHOUSE_CLIENT} --multiquery --query "KILL QUERY WHERE query_id = '${CLICKHOUSE_DATABASE}_9' SYNC FORMAT Null";
+wait

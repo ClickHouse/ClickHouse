@@ -40,9 +40,9 @@ namespace MySQLReplication
 
     void EventHeader::dump(WriteBuffer & out) const
     {
-        out << "\n=== " << to_string(this->type) << " ===" << '\n';
+        out << "\n=== " << magic_enum::enum_name(this->type) << " ===" << '\n';
         out << "Timestamp: " << this->timestamp << '\n';
-        out << "Event Type: " << to_string(this->type) << '\n';
+        out << "Event Type: " << magic_enum::enum_name(this->type) << '\n';
         out << "Server ID: " << this->server_id << '\n';
         out << "Event Size: " << this->event_size << '\n';
         out << "Log Pos: " << this->log_pos << '\n';
@@ -111,14 +111,26 @@ namespace MySQLReplication
         else if (query.starts_with("XA"))
         {
             if (query.starts_with("XA ROLLBACK"))
-                throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::LOGICAL_ERROR);
+                throw ReplicationError(ErrorCodes::LOGICAL_ERROR, "ParseQueryEvent: Unsupported query event: {}", query);
             typ = QUERY_EVENT_XA;
             if (!query.starts_with("XA COMMIT"))
                 transaction_complete = false;
         }
-        else if (query.starts_with("SAVEPOINT"))
+        else if (query.starts_with("SAVEPOINT") || query.starts_with("ROLLBACK")
+                 || query.starts_with("RELEASE SAVEPOINT"))
         {
-            throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::LOGICAL_ERROR);
+            typ = QUERY_SAVEPOINT;
+        }
+
+        // https://dev.mysql.com/worklog/task/?id=13355
+        // When doing query "CREATE TABLE xx AS SELECT", the binlog will be
+        // "CREATE TABLE ... START TRANSACTION", the DDL will be failed
+        // so, just ignore the "START TRANSACTION" suffix
+        if (query.ends_with("START TRANSACTION"))
+        {
+            auto pos = query.rfind("START TRANSACTION");
+            if (pos > 0)
+                query.resize(pos);
         }
     }
 
@@ -161,7 +173,7 @@ namespace MySQLReplication
     /// https://dev.mysql.com/doc/internals/en/table-map-event.html
     void TableMapEvent::parseImpl(ReadBuffer & payload)
     {
-        column_count = readLengthEncodedNumber(payload);
+        column_count = static_cast<UInt32>(readLengthEncodedNumber(payload));
         for (auto i = 0U; i < column_count; ++i)
         {
             UInt8 v = 0x00;
@@ -175,9 +187,9 @@ namespace MySQLReplication
         size_t null_bitmap_size = (column_count + 7) / 8;
         readBitmap(payload, null_bitmap, null_bitmap_size);
 
-        /// Ignore MySQL 8.0 optional metadata fields.
+        /// Parse MySQL 8.0 optional metadata fields.
         /// https://mysqlhighavailability.com/more-metadata-is-written-into-binary-log/
-        payload.ignoreAll();
+        parseOptionalMetaField(payload);
     }
 
     /// Types that do not used in the binlog event:
@@ -246,9 +258,121 @@ namespace MySQLReplication
                     break;
                 }
                 default:
-                    throw ReplicationError("ParseMetaData: Unhandled data type:" + std::to_string(typ), ErrorCodes::UNKNOWN_EXCEPTION);
+                    throw ReplicationError(ErrorCodes::UNKNOWN_EXCEPTION, "ParseMetaData: Unhandled data type: {}", std::to_string(typ));
             }
         }
+    }
+
+    void TableMapEvent::parseOptionalMetaField(ReadBuffer & payload)
+    {
+        char type = 0;
+        while (payload.read(type))
+        {
+            UInt64 len = readLengthEncodedNumber(payload);
+            if (len == 0)
+            {
+                payload.ignoreAll();
+                return;
+            }
+            switch (type)
+            {
+                /// It may be useful, parse later
+                case SIGNEDNESS:
+                    payload.ignore(len);
+                    break;
+                case DEFAULT_CHARSET:
+                {
+                    UInt32 total_read = 0;
+                    UInt16 once_read = 0;
+                    default_charset = static_cast<UInt32>(readLengthEncodedNumber(payload, once_read));
+                    total_read += once_read;
+                    while (total_read < len)
+                    {
+                        UInt32 col_index = static_cast<UInt32>(readLengthEncodedNumber(payload, once_read));
+                        total_read += once_read;
+                        UInt32 col_charset = static_cast<UInt32>(readLengthEncodedNumber(payload, once_read));
+                        total_read += once_read;
+                        default_charset_pairs.emplace(col_index, col_charset);
+                    }
+                    break;
+                }
+                case COLUMN_CHARSET:
+                {
+                    UInt32 total_read = 0;
+                    UInt16 once_read = 0;
+                    while (total_read < len)
+                    {
+                        UInt32 collation_id = static_cast<UInt32>(readLengthEncodedNumber(payload, once_read));
+                        column_charset.emplace_back(collation_id);
+                        total_read += once_read;
+                    }
+                    break;
+                }
+                case COLUMN_NAME:
+                    payload.ignore(len);
+                    break;
+                case SET_STR_VALUE:
+                case GEOMETRY_TYPE:
+                case SIMPLE_PRIMARY_KEY:
+                case PRIMARY_KEY_WITH_PREFIX:
+                case ENUM_AND_SET_DEFAULT_CHARSET:
+                case COLUMN_VISIBILITY:
+                default:
+                    payload.ignore(len);
+                    break;
+            }
+        }
+    }
+
+    UInt32 TableMapEvent::getColumnCharsetId(UInt32 column_index)
+    {
+        if (!column_charset.empty())
+        {
+            UInt32 str_index = 0xFFFFFFFF;
+            /// Calc the index in the column_charset
+            for (UInt32 i = 0; i <= column_index; ++i)
+            {
+                switch (column_type[i])
+                {
+                    case MYSQL_TYPE_STRING:
+                    case MYSQL_TYPE_VAR_STRING:
+                    case MYSQL_TYPE_VARCHAR:
+                    case MYSQL_TYPE_BLOB:
+                        ++str_index;
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            if (str_index != 0xFFFFFFFF && str_index < column_charset.size())
+            {
+                return column_charset[str_index];
+            }
+        }
+        else if (!default_charset_pairs.empty())
+        {
+            UInt32 str_index = 0xFFFFFFFF;
+            for (UInt32 i = 0; i <= column_index; ++i)
+            {
+                switch (column_type[i])
+                {
+                    case MYSQL_TYPE_STRING:
+                    case MYSQL_TYPE_VAR_STRING:
+                    case MYSQL_TYPE_VARCHAR:
+                    case MYSQL_TYPE_BLOB:
+                        ++str_index;
+                        break;
+                    default:
+                        break;
+                }
+            }
+            if (default_charset_pairs.contains(str_index))
+            {
+                return default_charset_pairs[str_index];
+            }
+        }
+        return default_charset;
     }
 
     void TableMapEvent::dump(WriteBuffer & out) const
@@ -283,7 +407,7 @@ namespace MySQLReplication
 
     void RowsEvent::parseImpl(ReadBuffer & payload)
     {
-        number_columns = readLengthEncodedNumber(payload);
+        number_columns = static_cast<UInt32>(readLengthEncodedNumber(payload));
         size_t columns_bitmap_size = (number_columns + 7) / 8;
         switch (header.type)
         {
@@ -305,6 +429,22 @@ namespace MySQLReplication
                 parseRow(payload, columns_present_bitmap2);
             }
         }
+    }
+
+    static inline String convertCharsetIfNeeded(
+        const std::shared_ptr<TableMapEvent> & table_map,
+        UInt32 i,
+        const String & val)
+    {
+        const auto collation_id = table_map->getColumnCharsetId(i);
+        if (table_map->charset_ptr->needConvert(collation_id))
+        {
+            String target;
+            auto err = table_map->charset_ptr->convertFromId(collation_id, target, val);
+            if (err == 0)
+                return target;
+        }
+        return val;
     }
 
     /// Types that do not used in the binlog event:
@@ -494,7 +634,7 @@ namespace MySQLReplication
                                 readBigEndianStrict(payload, reinterpret_cast<char *>(&uintpart), 6);
                                 intpart = uintpart - 0x800000000000L;
                                 ltime = intpart;
-                                frac = std::abs(intpart % (1L << 24));
+                                frac = static_cast<Int32>(std::abs(intpart % (1L << 24)));
                                 break;
                             }
                             default:
@@ -536,7 +676,7 @@ namespace MySQLReplication
                         readBigEndianStrict(payload, reinterpret_cast<char *>(&val), 5);
                         readTimeFractionalPart(payload, fsp, meta);
 
-                        UInt32 year_month = readBits(val, 1, 17, 40);
+                        UInt32 year_month = static_cast<UInt32>(readBits(val, 1, 17, 40));
                         time_t date_time = DateLUT::instance().makeDateTime(
                             year_month / 13, year_month % 13, readBits(val, 18, 5, 40)
                             , readBits(val, 23, 5, 40), readBits(val, 28, 6, 40), readBits(val, 34, 6, 40)
@@ -580,9 +720,9 @@ namespace MySQLReplication
                         {
                             if (precision <= DecimalUtils::max_precision<Decimal32>)
                                 return Field(function(precision, scale, Decimal32()));
-                            else if (precision <= DecimalUtils::max_precision<Decimal64>) //-V547
+                            else if (precision <= DecimalUtils::max_precision<Decimal64>)
                                 return Field(function(precision, scale, Decimal64()));
-                            else if (precision <= DecimalUtils::max_precision<Decimal128>) //-V547
+                            else if (precision <= DecimalUtils::max_precision<Decimal128>)
                                 return Field(function(precision, scale, Decimal128()));
 
                             return Field(function(precision, scale, Decimal256()));
@@ -600,7 +740,7 @@ namespace MySQLReplication
                             DecimalType res(0);
 
                             if (payload.eof())
-                                throw Exception("Attempt to read after EOF.", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+                                throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after EOF.");
 
                             if ((*payload.position() & 0x80) == 0)
                                 mask = static_cast<UInt32>(-1);
@@ -625,7 +765,7 @@ namespace MySQLReplication
                                 {
                                     UInt32 val = 0;
                                     readBigEndianStrict(payload, reinterpret_cast<char *>(&val), 4);
-                                    res *= intExp10OfSize<DecimalType>(digits_per_integer);
+                                    res *= intExp10OfSize<typename DecimalType::NativeType>(static_cast<int>(digits_per_integer));
                                     res += (val ^ mask);
                                 }
                             }
@@ -638,7 +778,7 @@ namespace MySQLReplication
                                 {
                                     UInt32 val = 0;
                                     readBigEndianStrict(payload, reinterpret_cast<char *>(&val), 4);
-                                    res *= intExp10OfSize<DecimalType>(digits_per_integer);
+                                    res *= intExp10OfSize<typename DecimalType::NativeType>(static_cast<int>(digits_per_integer));
                                     res += (val ^ mask);
                                 }
 
@@ -648,10 +788,10 @@ namespace MySQLReplication
                                     UInt32 val = 0;
                                     size_t to_read = compressed_bytes_map[compressed_decimals];
 
-                                    if (to_read) //-V547
+                                    if (to_read)
                                     {
                                         readBigEndianStrict(payload, reinterpret_cast<char *>(&val), to_read);
-                                        res *= intExp10OfSize<DecimalType>(compressed_decimals);
+                                        res *= intExp10OfSize<typename DecimalType::NativeType>(static_cast<int>(compressed_decimals));
                                         res += (val ^ (mask & compressed_integer_align_numbers[compressed_decimals]));
                                     }
                                 }
@@ -715,7 +855,7 @@ namespace MySQLReplication
                         String val;
                         val.resize(size);
                         payload.readStrict(reinterpret_cast<char *>(val.data()), size);
-                        row.push_back(Field{String{val}});
+                        row.emplace_back(Field{convertCharsetIfNeeded(table_map, i, val)});
                         break;
                     }
                     case MYSQL_TYPE_STRING:
@@ -733,7 +873,7 @@ namespace MySQLReplication
                         String val;
                         val.resize(size);
                         payload.readStrict(reinterpret_cast<char *>(val.data()), size);
-                        row.push_back(Field{String{val}});
+                        row.emplace_back(Field{convertCharsetIfNeeded(table_map, i, val)});
                         break;
                     }
                     case MYSQL_TYPE_GEOMETRY:
@@ -765,12 +905,15 @@ namespace MySQLReplication
                         String val;
                         val.resize(size);
                         payload.readStrict(reinterpret_cast<char *>(val.data()), size);
-                        row.push_back(Field{String{val}});
+                        row.emplace_back(Field{
+                            field_type == MYSQL_TYPE_BLOB
+                            ? convertCharsetIfNeeded(table_map, i, val)
+                            : val});
                         break;
                     }
                     default:
-                        throw ReplicationError(
-                            "ParseRow: Unhandled MySQL field type:" + std::to_string(field_type), ErrorCodes::UNKNOWN_EXCEPTION);
+                        throw ReplicationError(ErrorCodes::UNKNOWN_EXCEPTION,
+                            "ParseRow: Unhandled MySQL field type: {}", std::to_string(field_type));
                 }
             }
             null_index++;
@@ -797,13 +940,8 @@ namespace MySQLReplication
         payload.readStrict(reinterpret_cast<char *>(&commit_flag), 1);
 
         // MySQL UUID is big-endian.
-        UInt64 high = 0UL;
-        UInt64 low = 0UL;
-        readBigEndianStrict(payload, reinterpret_cast<char *>(&low), 8);
-        gtid.uuid.toUnderType().items[0] = low;
-
-        readBigEndianStrict(payload, reinterpret_cast<char *>(&high), 8);
-        gtid.uuid.toUnderType().items[1] = high;
+        readBinaryBigEndian(UUIDHelpers::getHighBytes(gtid.uuid), payload);
+        readBinaryBigEndian(UUIDHelpers::getLowBytes(gtid.uuid), payload);
 
         payload.readStrict(reinterpret_cast<char *>(&gtid.seq_no), 8);
 
@@ -872,7 +1010,7 @@ namespace MySQLReplication
                 break;
             }
             default:
-                throw ReplicationError("Position update with unsupported event", ErrorCodes::LOGICAL_ERROR);
+                throw ReplicationError(ErrorCodes::LOGICAL_ERROR, "Position update with unsupported event");
         }
     }
 
@@ -894,17 +1032,17 @@ namespace MySQLReplication
     void MySQLFlavor::readPayloadImpl(ReadBuffer & payload)
     {
         if (payload.eof())
-            throw Exception("Attempt to read after EOF.", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+            throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after EOF.");
 
         UInt16 header = static_cast<unsigned char>(*payload.position());
         switch (header)
         {
             case PACKET_EOF:
-                throw ReplicationError("Master maybe lost", ErrorCodes::CANNOT_READ_ALL_DATA);
+                throw ReplicationError(ErrorCodes::CANNOT_READ_ALL_DATA, "Master maybe lost");
             case PACKET_ERR:
                 ERRPacket err;
                 err.readPayloadWithUnpacked(payload);
-                throw ReplicationError(err.error_message, ErrorCodes::UNKNOWN_EXCEPTION);
+                throw ReplicationError::createDeprecated(err.error_message, ErrorCodes::UNKNOWN_EXCEPTION);
         }
         // skip the generic response packets header flag.
         payload.ignore(1);
@@ -941,6 +1079,8 @@ namespace MySQLReplication
                 {
                     case QUERY_EVENT_MULTI_TXN_FLAG:
                     case QUERY_EVENT_XA:
+                    /// Ignore queries that have no impact on the data.
+                    case QUERY_SAVEPOINT:
                     {
                         event = std::make_shared<DryRunEvent>(std::move(query->header));
                         break;
@@ -963,7 +1103,7 @@ namespace MySQLReplication
                 map_event_header.parse(event_payload);
                 if (doReplicate(map_event_header.schema, map_event_header.table))
                 {
-                    event = std::make_shared<TableMapEvent>(std::move(event_header), map_event_header);
+                    event = std::make_shared<TableMapEvent>(std::move(event_header), map_event_header, flavor_charset);
                     event->parseEvent(event_payload);
                     auto table_map = std::static_pointer_cast<TableMapEvent>(event);
                     table_maps[table_map->table_id] = table_map;

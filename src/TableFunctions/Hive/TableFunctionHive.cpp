@@ -32,13 +32,10 @@ namespace DB
 
         ASTs & args = args_func.at(0)->children;
 
-        const auto message = fmt::format(
-            "The signature of function {} is:\n"
-            " - hive_url, hive_database, hive_table, structure, partition_by_keys",
-            getName());
-
         if (args.size() != 5)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, message);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "The signature of function {} is:\n - hive_url, hive_database, hive_table, structure, partition_by_keys",
+                            getName());
 
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context_);
@@ -52,13 +49,14 @@ namespace DB
         actual_columns = parseColumnsListFromString(table_structure, context_);
     }
 
-    ColumnsDescription TableFunctionHive::getActualTableStructure(ContextPtr /*context_*/) const { return actual_columns; }
+    ColumnsDescription TableFunctionHive::getActualTableStructure(ContextPtr /*context_*/, bool /*is_insert_query*/) const { return actual_columns; }
 
     StoragePtr TableFunctionHive::executeImpl(
         const ASTPtr & /*ast_function_*/,
         ContextPtr context_,
         const std::string & table_name_,
-        ColumnsDescription /*cached_columns_*/) const
+        ColumnsDescription /*cached_columns_*/,
+        bool /*is_insert_query*/) const
     {
         const Settings & settings = context_->getSettings();
         ParserExpression partition_by_parser;

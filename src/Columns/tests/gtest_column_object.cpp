@@ -8,6 +8,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/FieldVisitorToString.h>
 
+#include <Common/assert_cast.h>
 #include <Common/randomSeed.h>
 #include <fmt/core.h>
 #include <pcg_random.hpp>

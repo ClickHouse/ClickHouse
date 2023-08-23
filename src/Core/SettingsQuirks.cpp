@@ -1,10 +1,11 @@
+#include <base/defines.h>
 #include <Core/SettingsQuirks.h>
 #include <Core/Settings.h>
 #include <Poco/Environment.h>
 #include <Poco/Platform.h>
 #include <Common/VersionNumber.h>
 #include <Common/logger_useful.h>
-#include <cstdlib>
+
 
 namespace
 {
@@ -56,6 +57,12 @@ void applySettingsQuirks(Settings & settings, Poco::Logger * log)
             settings.async_socket_for_remote = false;
             if (log)
                 LOG_WARNING(log, "async_socket_for_remote has been disabled (you can explicitly enable it still)");
+        }
+        if (!settings.async_query_sending_for_remote.changed && settings.async_query_sending_for_remote)
+        {
+            settings.async_query_sending_for_remote = false;
+            if (log)
+                LOG_WARNING(log, "async_query_sending_for_remote has been disabled (you can explicitly enable it still)");
         }
         if (!settings.use_hedged_requests.changed && settings.use_hedged_requests)
         {

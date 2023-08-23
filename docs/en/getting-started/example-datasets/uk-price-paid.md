@@ -1,17 +1,17 @@
 ---
 slug: /en/getting-started/example-datasets/uk-price-paid
-sidebar_label: UK Property Price Paid
+sidebar_label: UK Property Prices
 sidebar_position: 1
-title: "UK Property Price Paid"
 ---
 
-The dataset contains data about prices paid for real-estate property in England and Wales. The data is available since year 1995.
-The size of the dataset in uncompressed form is about 4 GiB and it will take about 278 MiB in ClickHouse.
+# The UK property prices dataset
 
-Source: https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads
-Description of the fields: https://www.gov.uk/guidance/about-the-price-paid-data
+Projections are a great way to improve the performance of queries that you run frequently. We will demonstrate the power of projections
+using the UK property dataset, which contains data about prices paid for real-estate property in England and Wales. The data is available since 1995, and the size of the dataset in uncompressed form is about 4 GiB (which will only take about 278 MiB in ClickHouse).
 
-Contains HM Land Registry data © Crown copyright and database right 2021. This data is licensed under the Open Government Licence v3.0.
+- Source: https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads
+- Description of the fields: https://www.gov.uk/guidance/about-the-price-paid-data
+- Contains HM Land Registry data © Crown copyright and database right 2021. This data is licensed under the Open Government Licence v3.0.
 
 ## Create the Table {#create-table}
 
@@ -101,7 +101,7 @@ SELECT count()
 FROM uk_price_paid
 ```
 
-At the time this query was executed, the dataset had 27,450,499 rows. Let's see what the storage size is of the table in ClickHouse:
+At the time this query was run, the dataset had 27,450,499 rows. Let's see what the storage size is of the table in ClickHouse:
 
 ```sql
 SELECT formatReadableSize(total_bytes)
@@ -342,7 +342,7 @@ The result looks like:
 
 ## Let's Speed Up Queries Using Projections {#speedup-with-projections}
 
-[Projections](../../sql-reference/statements/alter/projection.md) allow you to improve query speeds by storing pre-aggregated data in whatever format you want. In this example, we create a projection that keeps track of the average price, total price, and count of properties grouped by the year, district and town. At execution time, ClickHouse will use your projection if it thinks the projection can improve the performance fo the query (you don't have to do anything special to use the projection - ClickHouse decides for you when the projection will be useful).
+[Projections](../../sql-reference/statements/alter/projection.md) allow you to improve query speeds by storing pre-aggregated data in whatever format you want. In this example, we create a projection that keeps track of the average price, total price, and count of properties grouped by the year, district and town. At query time, ClickHouse will use your projection if it thinks the projection can improve the performance of the query (you don't have to do anything special to use the projection - ClickHouse decides for you when the projection will be useful).
 
 ### Build a Projection {#build-projection}
 

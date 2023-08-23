@@ -26,12 +26,13 @@ CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
     SortDescription description_,
     const String & sign_column,
     bool only_positive_sign_,
-    size_t max_block_size,
+    size_t max_block_size_rows_,
+    size_t max_block_size_bytes_,
     Poco::Logger * log_,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
     : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
-    , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
+    , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size_rows_, max_block_size_bytes_)
     , sign_column_number(header_.getPositionByName(sign_column))
     , only_positive_sign(only_positive_sign_)
     , log(log_)
@@ -194,8 +195,7 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             last_is_positive = false;
         }
         else
-            throw Exception("Incorrect data: Sign = " + toString(sign) + " (must be 1 or -1).",
-                            ErrorCodes::INCORRECT_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect data: Sign = {} (must be 1 or -1).", toString(sign));
 
         ++current_pos;
 

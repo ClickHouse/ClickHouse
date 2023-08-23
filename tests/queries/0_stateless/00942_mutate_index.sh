@@ -15,7 +15,7 @@ CREATE TABLE minmax_idx
     INDEX idx (i64, u64 * i64) TYPE minmax GRANULARITY 1
 ) ENGINE = MergeTree()
 ORDER BY u64
-SETTINGS index_granularity = 2;"
+SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';"
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO minmax_idx VALUES
 (0, 1, 1),

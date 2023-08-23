@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/PoolBase.h>
+#include <Common/Priority.h>
 #include <Client/Connection.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Core/Settings.h>
@@ -34,7 +35,7 @@ public:
                       const Settings * settings = nullptr,
                       bool force_connected = true) = 0;
 
-    virtual Int64 getPriority() const { return 1; }
+    virtual Priority getPriority() const { return Priority{1}; }
 };
 
 using ConnectionPoolPtr = std::shared_ptr<IConnectionPool>;
@@ -60,7 +61,7 @@ public:
             const String & client_name_,
             Protocol::Compression compression_,
             Protocol::Secure secure_,
-            Int64 priority_ = 1)
+            Priority priority_ = Priority{1})
        : Base(max_connections_,
         &Poco::Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
         host(host_),
@@ -103,7 +104,7 @@ public:
         return host + ":" + toString(port);
     }
 
-    Int64 getPriority() const override
+    Priority getPriority() const override
     {
         return priority;
     }
@@ -134,8 +135,7 @@ private:
     String client_name;
     Protocol::Compression compression; /// Whether to compress data when interacting with the server.
     Protocol::Secure secure;           /// Whether to encrypt data when interacting with the server.
-    Int64 priority;                    /// priority from <remote_servers>
-
+    Priority priority;                 /// priority from <remote_servers>
 };
 
 /**
@@ -158,7 +158,7 @@ public:
         String client_name;
         Protocol::Compression compression;
         Protocol::Secure secure;
-        Int64 priority;
+        Priority priority;
     };
 
     struct KeyHash
@@ -181,7 +181,7 @@ public:
         String client_name,
         Protocol::Compression compression,
         Protocol::Secure secure,
-        Int64 priority);
+        Priority priority);
 private:
     mutable std::mutex mutex;
     using ConnectionPoolWeakPtr = std::weak_ptr<IConnectionPool>;
@@ -192,6 +192,7 @@ inline bool operator==(const ConnectionPoolFactory::Key & lhs, const ConnectionP
 {
     return lhs.max_connections == rhs.max_connections && lhs.host == rhs.host && lhs.port == rhs.port
         && lhs.default_database == rhs.default_database && lhs.user == rhs.user && lhs.password == rhs.password
+        && lhs.quota_key == rhs.quota_key
         && lhs.cluster == rhs.cluster && lhs.cluster_secret == rhs.cluster_secret && lhs.client_name == rhs.client_name
         && lhs.compression == rhs.compression && lhs.secure == rhs.secure && lhs.priority == rhs.priority;
 }

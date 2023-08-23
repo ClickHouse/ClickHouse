@@ -81,9 +81,10 @@ namespace Protocol
                                             /// This is such an inverted logic, where server sends requests
                                             /// And client returns back response
             ProfileEvents = 14,             /// Packet with profile events from server.
-            MergeTreeReadTaskRequest = 15,  /// Request from a MergeTree replica to a coordinator
-
-            SshChallenge = 16,              /// Return challenge for ssh signature signing
+            MergeTreeAllRangesAnnounecement = 15,
+            MergeTreeReadTaskRequest = 16,  /// Request from a MergeTree replica to a coordinator
+            TimezoneUpdate = 17,            /// Receive server's (session-wide) default timezone
+            SshChallenge = 18,              /// Return challenge for ssh signature signing
             MAX = SshChallenge,
 
         };
@@ -110,7 +111,9 @@ namespace Protocol
                 "PartUUIDs",
                 "ReadTaskRequest",
                 "ProfileEvents",
+                "MergeTreeAllRangesAnnounecement",
                 "MergeTreeReadTaskRequest",
+                "TimezoneUpdate",
                 "SshChallenge",
             };
             return packet <= MAX
