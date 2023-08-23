@@ -557,7 +557,7 @@ void KafkaConsumer::setExceptionInfo(const std::string & text, bool with_stacktr
         {
             throw Exception();
         }
-        catch(std::exception & ex)
+        catch (const std::exception & ex)
         {
             exceptionWithTrace = text + getExceptionStackTraceString(ex);
         }

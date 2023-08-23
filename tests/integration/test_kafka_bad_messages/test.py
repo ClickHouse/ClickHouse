@@ -344,11 +344,11 @@ Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': while parsing Kaf
     ]:
         kafka_delete_topic(admin_client, f"{format_name}_err")
 
+
 def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
-
 
     kafka_create_topic(admin_client, "tomv")
 
@@ -375,9 +375,7 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
     """
     )
 
-    kafka_produce(
-        kafka_cluster, "tomv", ['{"key":10, "value":"aaa"}']
-    )
+    kafka_produce(kafka_cluster, "tomv", ['{"key":10, "value":"aaa"}'])
 
     expected_result = """Code: 6. DB::Exception: Cannot parse string \\'aaa\\' as UInt64: syntax error at begin of string. Note: there are toUInt64OrZero and to|1|1|1|default|kafka
 """
