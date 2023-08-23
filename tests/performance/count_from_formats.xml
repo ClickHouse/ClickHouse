@@ -38,7 +38,6 @@
             <value>CapnProto</value>
             <value>ORC</value>
             <value>Parquet</value>
-            <value>Arrow</value>
         </values>
     </substitution>
 </substitutions>
