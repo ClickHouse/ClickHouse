@@ -3,6 +3,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Common/FileRenamer.h>
+#include <IO/Archives/IArchiveReader.h>
 
 #include <atomic>
 #include <shared_mutex>
@@ -83,6 +84,13 @@ public:
 
     bool supportsPartitionBy() const override { return true; }
 
+    struct ArchiveInfo
+    {
+        std::vector<std::string> paths_to_archive;
+        std::string path_in_archive; // used when reading a single file from archive
+        IArchiveReader::NameFilter filter; // used when files inside archive are defined with a glob
+    };
+
     ColumnsDescription getTableStructureFromFileDescriptor(ContextPtr context);
 
     static ColumnsDescription getTableStructureFromFile(
@@ -91,11 +99,18 @@ public:
         const String & compression_method,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context,
-        const std::vector<String> & paths_to_archive = {"auto"});
+        const std::optional<ArchiveInfo> & archive_info = std::nullopt);
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
     static void parseFileSource(String source, String & filename, String & path_to_archive);
+
+    static ArchiveInfo getArchiveInfo(
+        const std::string & path_to_archive,
+        const std::string & file_in_archive,
+        const std::string & user_files_path,
+        ContextPtr context,
+        size_t & total_bytes_to_read);
 
 protected:
     friend class StorageFileSource;
@@ -126,7 +141,8 @@ private:
 
     std::string base_path;
     std::vector<std::string> paths;
-    std::vector<std::string> paths_to_archive;
+
+    std::optional<ArchiveInfo> archive_info;
 
     bool is_db_table = true;        /// Table is stored in real database, not user's file
     bool use_table_fd = false;      /// Use table_fd instead of path
