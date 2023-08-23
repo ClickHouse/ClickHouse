@@ -12,6 +12,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -248,7 +249,8 @@ public:
         String compression_hint_,
         AzureObjectStorage * object_storage_,
         const String & container_,
-        std::shared_ptr<IIterator> file_iterator_);
+        std::shared_ptr<IIterator> file_iterator_,
+        const SelectQueryInfo & query_info_);
 
     ~StorageAzureBlobSource() override;
 
@@ -269,6 +271,7 @@ private:
     AzureObjectStorage * object_storage;
     String container;
     std::shared_ptr<IIterator> file_iterator;
+    SelectQueryInfo query_info;
 
     struct ReaderHolder
     {
