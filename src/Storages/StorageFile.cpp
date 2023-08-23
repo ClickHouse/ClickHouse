@@ -6,6 +6,7 @@
 #include <Storages/Distributed/DistributedAsyncInsertSource.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -66,6 +67,7 @@ namespace ProfileEvents
     extern const Event CreatedReadBufferOrdinary;
     extern const Event CreatedReadBufferMMap;
     extern const Event CreatedReadBufferMMapFailed;
+    extern const Event EngineFileLikeReadFiles;
 }
 
 namespace fs = std::filesystem;
@@ -716,6 +718,8 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     storage_metadata.setConstraints(args.constraints);
     storage_metadata.setComment(args.comment);
     setInMemoryMetadata(storage_metadata);
+
+    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 
@@ -738,9 +742,20 @@ public:
     {
     public:
         explicit FilesIterator(
-            const Strings & files_, std::vector<std::string> archives_, const IArchiveReader::NameFilter & name_filter_)
+            const Strings & files_,
+            std::vector<std::string> archives_,
+            const IArchiveReader::NameFilter & name_filter_,
+            ASTPtr query,
+            const NamesAndTypesList & virtual_columns,
+            ContextPtr context_)
             : files(files_), archives(std::move(archives_)), name_filter(name_filter_)
         {
+            ASTPtr filter_ast;
+            if (archives.empty() && !files.empty() && !files[0].empty())
+                filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, files[0], context_);
+
+            if (filter_ast)
+                VirtualColumnUtils::filterByPathOrFile(files, files, query, virtual_columns, context_, filter_ast);
         }
 
         String next()
@@ -1030,8 +1045,9 @@ public:
                 });
 
                 pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
-
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
+
+                ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
             }
 
             Chunk chunk;
@@ -1045,21 +1061,7 @@ public:
                 progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
                 /// Enrich with virtual columns.
-
-                for (const auto & virtual_column : requested_virtual_columns)
-                {
-                    if (virtual_column.name == "_path")
-                    {
-                        chunk.addColumn(virtual_column.type->createColumnConst(num_rows, current_path));
-                    }
-                    else if (virtual_column.name == "_file")
-                    {
-                        size_t last_slash_pos = current_path.find_last_of('/');
-                        auto file_name = current_path.substr(last_slash_pos + 1);
-                        chunk.addColumn(virtual_column.type->createColumnConst(num_rows, file_name));
-                    }
-                }
-
+                VirtualColumnUtils::addRequestedPathAndFileVirtualsToChunk(chunk, requested_virtual_columns, current_path);
                 return chunk;
             }
 
@@ -1183,7 +1185,7 @@ Pipe StorageFile::read(
         }
     }
 
-    auto files_iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, paths_to_archive, std::move(filter));
+    auto files_iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, paths_to_archive, std::move(filter), query_info.query, virtual_columns, context);
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
     size_t num_streams = max_num_streams;
@@ -1740,14 +1742,6 @@ void registerStorageFile(StorageFactory & factory)
                 return std::make_shared<StorageFile>(source_path, factory_args.getContext()->getUserFilesPath(), storage_args);
         },
         storage_features);
-}
-
-
-NamesAndTypesList StorageFile::getVirtuals() const
-{
-    return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
 SchemaCache & StorageFile::getSchemaCache(const ContextPtr & context)

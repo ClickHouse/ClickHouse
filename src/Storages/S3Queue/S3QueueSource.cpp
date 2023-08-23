@@ -25,7 +25,6 @@
 #    include <Storages/StorageS3.h>
 #    include <Storages/StorageS3Settings.h>
 #    include <Storages/VirtualColumnUtils.h>
-#    include <Storages/getVirtualsForStorage.h>
 
 #    include <Formats/FormatFactory.h>
 
@@ -70,13 +69,13 @@ StorageS3QueueSource::QueueGlobIterator::QueueGlobIterator(
     const S3::Client & client_,
     const S3::URI & globbed_uri_,
     ASTPtr query,
-    const Block & virtual_header,
+    const NamesAndTypesList & virtual_columns,
     ContextPtr context,
     UInt64 & max_poll_size_,
     const S3Settings::RequestSettings & request_settings_)
     : max_poll_size(max_poll_size_)
     , glob_iterator(std::make_unique<StorageS3QueueSource::DisclosedGlobIterator>(
-          client_, globbed_uri_, query, virtual_header, context, nullptr, request_settings_))
+          client_, globbed_uri_, query, virtual_columns, context, nullptr, request_settings_))
 {
     /// todo(kssenii): remove this loop, it should not be here
     while (true)

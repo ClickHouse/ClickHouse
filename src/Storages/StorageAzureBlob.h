@@ -136,7 +136,6 @@ private:
     Configuration configuration;
     std::unique_ptr<AzureObjectStorage> object_storage;
     NamesAndTypesList virtual_columns;
-    Block virtual_block;
 
     const bool distributed_processing;
     std::optional<FormatSettings> format_settings;
@@ -164,7 +163,7 @@ public:
             const std::string & container_,
             String blob_path_with_globs_,
             ASTPtr query_,
-            const Block & virtual_header_,
+            const NamesAndTypesList & virtual_columns_,
             ContextPtr context_,
             RelativePathsWithMetadata * outer_blobs_,
             std::function<void(FileProgress)> file_progress_callback_ = {});
@@ -178,7 +177,7 @@ public:
         String blob_path_with_globs;
         ASTPtr query;
         ASTPtr filter_ast;
-        Block virtual_header;
+        NamesAndTypesList virtual_columns;
 
         size_t index = 0;
 
@@ -220,7 +219,7 @@ public:
             const std::string & container_,
             const Strings & keys_,
             ASTPtr query_,
-            const Block & virtual_header_,
+            const NamesAndTypesList & virtual_columns_,
             ContextPtr context_,
             RelativePathsWithMetadata * outer_blobs,
             std::function<void(FileProgress)> file_progress_callback = {});
@@ -234,8 +233,7 @@ public:
         RelativePathsWithMetadata keys;
 
         ASTPtr query;
-        ASTPtr filter_ast;
-        Block virtual_header;
+        NamesAndTypesList virtual_columns;
 
         std::atomic<size_t> index = 0;
     };
