@@ -170,7 +170,8 @@ public:
         UInt64 max_block_size,
         const ConnectionTimeouts & timeouts,
         CompressionMethod compression_method,
-        size_t download_threads,
+        size_t max_parsing_threads,
+        const SelectQueryInfo & query_info,
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
         bool glob_url = false);

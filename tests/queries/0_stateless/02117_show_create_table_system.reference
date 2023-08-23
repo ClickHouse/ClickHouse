@@ -50,7 +50,8 @@ CREATE TABLE system.clusters
     `estimated_recovery_time` UInt32,
     `database_shard_name` String,
     `database_replica_name` String,
-    `is_active` Nullable(UInt8)
+    `is_active` Nullable(UInt8),
+    `name` String
 )
 ENGINE = SystemClusters
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -364,6 +365,7 @@ CREATE TABLE system.merges
     `source_part_paths` Array(String),
     `result_part_path` String,
     `partition_id` String,
+    `partition` String,
     `is_mutation` UInt8,
     `total_size_bytes_compressed` UInt64,
     `total_size_bytes_uncompressed` UInt64,
