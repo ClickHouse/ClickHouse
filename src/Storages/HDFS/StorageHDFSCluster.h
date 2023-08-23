@@ -45,6 +45,7 @@ private:
     String uri;
     String format_name;
     String compression_method;
+    NamesAndTypesList virtual_columns;
 };
 
 

@@ -88,6 +88,8 @@ protected:
     ASTPtr partition_by;
     bool distributed_processing;
 
+    NamesAndTypesList virtual_columns;
+
     virtual std::string getReadMethod() const;
 
     virtual std::vector<std::pair<std::string, std::string>> getReadURIParams(
@@ -146,7 +148,8 @@ public:
     class DisclosedGlobIterator
     {
     public:
-        DisclosedGlobIterator(const String & uri_, size_t max_addresses);
+        DisclosedGlobIterator(const String & uri_, size_t max_addresses, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
+
         String next();
         size_t size();
     private:
