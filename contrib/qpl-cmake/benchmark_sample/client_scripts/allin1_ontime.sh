@@ -164,48 +164,40 @@ CREATE TABLE default.ontime
 ) ENGINE = MergeTree
   ORDER BY (Year, Quarter, Month, DayofMonth, FlightDate, IATA_CODE_Reporting_Airline);
 "
- 
-function insert_data(){
-        echo "insert_data:$1"
-        check_and_generate_rawdata
-        clickhouse client --host ${ckhost} --port $2 --multiquery -q"$ckreadSql" && {
-        clickhouse client --query "insert into default.ontime FORMAT CSV" < ${RAWDATA_DIR}/ontime.csv --port=$2
-        }
-}
-
-function check_sql(){
-        select_sql="select * from "$1" limit 1"
-        clickhouse client --host ${ckhost} --port $2 --multiquery -q"${select_sql}"
-}
 
 function check_table(){
         checknum=0
-        source_tables="ontime"
-        test_tables=${1:-${source_tables}}
+        sql_check_table_exist="SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'default' AND table_name = '${TABLE_NAME}');"
         echo "Checking table data required in server..."
         for i in $(seq 0 $[inst_num-1])
         do
-                for j in `echo ${test_tables}`
-                do
-                        check_sql $j ${ckport[i]} &> /dev/null || {
-                                let checknum+=1 && insert_data "$j" ${ckport[i]}
+                var=$(clickhouse client --host ${ckhost} --port ${ckport[i]} -m -q"${sql_check_table_exist}")
+                if [ $var -eq 0 ];then
+                        echo "table not exist,create table and insert data..."
+                        let checknum+=1 && {
+                                clickhouse client --host ${ckhost} --port ${ckport[i]} --multiquery -q"$ckreadSql"
+                                clickhouse client --query "insert into default.ontime FORMAT CSV" < ${RAWDATA_DIR}/ontime.csv --port=${ckport[i]}
                         }
-                done
-        done
-
-        for i in $(seq 0 $[inst_num-1])
-        do
-                echo "clickhouse client --host ${ckhost} --port ${ckport[i]} -m -q\"select count() from ${TABLE_NAME};\""
-                var=$(clickhouse client --host ${ckhost} --port ${ckport[i]} -m -q"select count() from ${TABLE_NAME};")
-                if [ $var -eq $TALBE_ROWS ];then
-                        echo "Instance_${i} Table data integrity check OK -> Rows:$var"
                 else
-                        echo  "Instance_${i} Table data integrity check Failed -> Rows:$var"
-                        kill_instance_and_exit
+                        var=$(clickhouse client --host ${ckhost} --port ${ckport[i]} -m -q"select count() from ${TABLE_NAME};")
+                        if [ $var -eq 0 ];then
+                                echo "table exist,but 0 row! insert data..."
+                                let checknum+=1 && {
+                                        clickhouse client --query "insert into default.ontime FORMAT CSV" < ${RAWDATA_DIR}/ontime.csv --port=${ckport[i]}
+                                }
+                        else
+                                if [ $var -eq $TALBE_ROWS ];then
+                                        echo "Instance_${i} Table data integrity check OK -> Rows:$var"
+                                else
+                                        echo  "Instance_${i} Table data integrity check Failed -> Rows:$var"
+                                        kill_instance_and_exit
+                                fi
+                        fi
                 fi
         done
+
         if [ $checknum -gt 0 ];then
-                echo "Need sleep 10s after first table data insertion...$checknum"
+                echo "check_table Done! Need sleep 10s after first table data insertion...$checknum"
                 sleep 10
         fi
 }
@@ -260,16 +252,26 @@ yum -y install git make gcc sudo net-tools &> /dev/null
 pip3 install clickhouse_driver numpy &> /dev/null
 
 function check_and_generate_rawdata(){
-echo "check_rawdata: ontime.csv..."
-if [ ! -f "${RAWDATA_DIR}/ontime.csv" ]; then
-        test -d ${RAWDATA_DIR} && cd ${RAWDATA_DIR} && curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
-        test -f ${RAWDATA_DIR}/ontime.tar && tar -xvf ontime.tar
-        cd ${RAWDATA_DIR} && clickhouse server >&/dev/null&
-        clickhouse client --query="select * from datasets.ontime FORMAT CSV" > ontime.csv
-        test ! -f ${RAWDATA_DIR}/ontime.csv && echo "generate ontime.csv faild!" && exit 1
-        echo "ontime.csv generate ok!"
-else
-        echo "ontime.csv already exist!"
+echo "check if need generate rawdata: ontime.csv..."
+
+folder_size_mb=$(echo "scale=0; $(du -sk "$DATABASE_DIR" | awk '{print $1}') / 1024" | bc)
+if [ $folder_size_mb -lt 1 ]; then
+        echo "Size of $DATABASE_DIR: $folder_size_mb MB too small, conclude this is first time to run benchmark, hence need generate rawdata..."
+        if [ ! -f "${RAWDATA_DIR}/ontime.csv" ]; then
+                test -d ${RAWDATA_DIR} && cd ${RAWDATA_DIR} && curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
+                test -f ${RAWDATA_DIR}/ontime.tar && tar -xvf ontime.tar
+                kill_instance
+                cd ${RAWDATA_DIR} && clickhouse server >&/dev/null&
+                echo "Need sleep 10s for partitions data warming..."
+                sleep 10
+                echo "Export partitions data into CSV..."
+                clickhouse client --query="select * from datasets.ontime FORMAT CSV" > ${RAWDATA_DIR}/ontime.csv
+                test ! -f ${RAWDATA_DIR}/ontime.csv && echo "generate ontime.csv faild!" && exit 1
+                echo "ontime.csv generate ok!"
+                kill_instance
+        else
+                echo "ontime.csv already exist!"
+        fi
 fi
 }
 
@@ -406,6 +408,7 @@ function setup_check(){
 }
 
 setup_check
+check_and_generate_rawdata
 export CLICKHOUSE_WATCHDOG_ENABLE=0
 for i in  ${CODEC_CONFIG[@]}
 do
