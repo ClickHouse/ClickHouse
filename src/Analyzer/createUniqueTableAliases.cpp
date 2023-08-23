@@ -36,8 +36,6 @@ public:
             case QueryTreeNodeType::TABLE:
                 [[fallthrough]];
             case QueryTreeNodeType::TABLE_FUNCTION:
-                [[fallthrough]];
-            case QueryTreeNodeType::ARRAY_JOIN:
             {
                 auto & alias = table_expression_to_alias[node];
                 if (alias.empty())
