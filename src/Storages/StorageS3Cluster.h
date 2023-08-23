@@ -50,7 +50,6 @@ private:
 
     StorageS3::Configuration s3_configuration;
     NamesAndTypesList virtual_columns;
-    Block virtual_block;
 };
 
 
