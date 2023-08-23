@@ -165,6 +165,7 @@ void FileSegmentRangeWriter::appendFilesystemCacheLog(const FileSegment & file_s
         .file_segment_range = { file_segment_range.left, file_segment_right_bound },
         .requested_range = {},
         .cache_type = FilesystemCacheLogElement::CacheType::WRITE_THROUGH_CACHE,
+        .file_segment_key = {},
         .file_segment_size = file_segment_range.size(),
         .read_from_cache_attempted = false,
         .read_buffer_id = {},
