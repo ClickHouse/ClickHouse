@@ -17,6 +17,9 @@ class S3QueueFilesMetadata
 public:
     struct TrackedCollectionItem
     {
+        TrackedCollectionItem() = default;
+        TrackedCollectionItem(const String & file_path_, UInt64 timestamp_, UInt64 retries_count_, const String & last_exception_)
+            : file_path(file_path_), timestamp(timestamp_), retries_count(retries_count_), last_exception(last_exception_) {}
         String file_path;
         UInt64 timestamp = 0;
         UInt64 retries_count = 0;

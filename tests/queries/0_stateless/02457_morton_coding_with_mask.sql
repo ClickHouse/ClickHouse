@@ -20,7 +20,7 @@ create table morton_numbers_mask_02457(
     n4 UInt8
 )
     Engine=MergeTree()
-    ORDER BY n1;
+    ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 insert into morton_numbers_mask_02457
 select n1.number, n2.number, n3.number, n4.number
@@ -37,7 +37,7 @@ create table morton_numbers_mask_1_02457(
     n4 UInt64
 )
     Engine=MergeTree()
-    ORDER BY n1;
+    ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 insert into morton_numbers_mask_1_02457
 select untuple(mortonDecode((1,2,1,2), mortonEncode((1,2,1,2), n1, n2, n3, n4)))
@@ -64,7 +64,7 @@ create table morton_numbers_mask_02457(
     n2 UInt8
 )
     Engine=MergeTree()
-    ORDER BY n1;
+    ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 insert into morton_numbers_mask_02457
 select n1.number, n2.number
@@ -77,7 +77,7 @@ create table morton_numbers_mask_2_02457(
     n2 UInt64
 )
     Engine=MergeTree()
-    ORDER BY n1;
+    ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 insert into morton_numbers_mask_2_02457
 select untuple(mortonDecode((1,4), mortonEncode((1,4), n1, n2)))
@@ -105,7 +105,7 @@ create table morton_numbers_mask_02457(
     n3 UInt8,
 )
     Engine=MergeTree()
-    ORDER BY n1;
+    ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 insert into morton_numbers_mask_02457
 select n1.number, n2.number, n3.number
@@ -120,7 +120,7 @@ create table morton_numbers_mask_3_02457(
     n3 UInt64
 )
     Engine=MergeTree()
-    ORDER BY n1;
+    ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 insert into morton_numbers_mask_3_02457
 select untuple(mortonDecode((1,1,2), mortonEncode((1,1,2), n1, n2, n3)))
