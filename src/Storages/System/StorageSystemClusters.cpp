@@ -32,6 +32,12 @@ NamesAndTypesList StorageSystemClusters::getNamesAndTypes()
     };
 }
 
+NamesAndAliases StorageSystemClusters::getNamesAndAliases()
+{
+    return {
+        {"name", std::make_shared<DataTypeString>(), "cluster"},
+    };
+}
 
 void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {

@@ -1140,7 +1140,9 @@ KeyCondition::KeyCondition(
         ++key_index;
     }
 
-    auto filter_node = buildFilterNode(query, additional_filter_asts);
+    ASTPtr filter_node;
+    if (query)
+        filter_node = buildFilterNode(query, additional_filter_asts);
 
     if (!filter_node)
     {
