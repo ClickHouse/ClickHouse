@@ -542,15 +542,33 @@ void KafkaConsumer::storeLastReadMessageOffset()
     }
 }
 
-void KafkaConsumer::setExceptionInfo(const cppkafka::Error & err)
+void KafkaConsumer::setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace)
 {
-    setExceptionInfo(err.to_string());
+    setExceptionInfo(err.to_string(), with_stacktrace);
 }
 
-void KafkaConsumer::setExceptionInfo(const String & text)
+void KafkaConsumer::setExceptionInfo(const std::string & text, bool with_stacktrace)
 {
+    std::string exceptionWithTrace;
+
+    if (with_stacktrace)
+    {
+        try
+        {
+            throw Exception();
+        }
+        catch(std::exception & ex)
+        {
+            exceptionWithTrace = text + getExceptionStackTraceString(ex);
+        }
+    }
+    else
+    {
+        exceptionWithTrace = text;
+    }
+
     std::lock_guard<std::mutex> lock(exception_mutex);
-    exceptions_buffer.push_back({text, static_cast<UInt64>(Poco::Timestamp().epochTime())});
+    exceptions_buffer.push_back({exceptionWithTrace, static_cast<UInt64>(Poco::Timestamp().epochTime())});
 }
 
 /*
