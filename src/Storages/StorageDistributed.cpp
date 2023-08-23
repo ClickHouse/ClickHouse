@@ -409,63 +409,6 @@ StorageDistributed::StorageDistributed(
 {
 }
 
-// QueryProcessingStage::Enum
-// StorageDistributed::getQueryProcessingStageAnalyzer(
-//     [[maybe_unused]] ContextPtr local_context,
-//     [[maybe_unused]] QueryProcessingStage::Enum to_stage,
-//     [[maybe_unused]] const StorageSnapshotPtr & storage_snapshot,
-//     [[maybe_unused]] SelectQueryInfo & query_info) const
-// {
-//     if (query_info.query_tree)
-//         LOG_INFO(log, "getQueryProcessingStageAnalyzer tree {}", query_info.query_tree->dumpTree());
-
-//     if (query_info.table_expression)
-//         LOG_INFO(log, "getQueryProcessingStageAnalyzer table_expression {}", query_info.table_expression->dumpTree());
-
-//     if (query_info.filter_actions_dag)
-//         LOG_INFO(log, "getQueryProcessingStageAnalyzer dag {}", query_info.filter_actions_dag->dumpDAG());
-
-//     const auto & settings = local_context->getSettingsRef();
-//     ClusterPtr cluster = getCluster();
-//     size_t nodes = getClusterQueriedNodes(settings, cluster);
-
-//     if (query_info.use_custom_key)
-//     {
-//         LOG_INFO(log, "Single shard cluster used with custom_key, transforming replicas into virtual shards");
-//         query_info.cluster = cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
-//     }
-//     else
-//     {
-//         query_info.cluster = cluster;
-
-//         if (nodes > 1 && settings.optimize_skip_unused_shards)
-//         {
-//             /// Always calculate optimized cluster here, to avoid conditions during read()
-//             /// (Anyway it will be calculated in the read())
-//             ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info);
-//             if (optimized_cluster)
-//             {
-//                 LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
-//                         makeFormattedListOfShards(optimized_cluster));
-
-//                 cluster = optimized_cluster;
-//                 query_info.optimized_cluster = cluster;
-
-//                 nodes = getClusterQueriedNodes(settings, cluster);
-//             }
-//             else
-//             {
-//                 LOG_DEBUG(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}",
-//                         has_sharding_key ? "" : " (no sharding key)");
-//             }
-//         }
-//     }
-
-
-//     query_info.cluster = cluster;
-//     return QueryProcessingStage::WithMergeableState;
-// }
-
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
@@ -473,10 +416,6 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     SelectQueryInfo & query_info) const
 {
     const auto & settings = local_context->getSettingsRef();
-
-    // if (settings.allow_experimental_analyzer)
-    //     return getQueryProcessingStageAnalyzer(local_context, to_stage, storage_snapshot, query_info);
-
     ClusterPtr cluster = getCluster();
 
     size_t nodes = getClusterQueriedNodes(settings, cluster);
