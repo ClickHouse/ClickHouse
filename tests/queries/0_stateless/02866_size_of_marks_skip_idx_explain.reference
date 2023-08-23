@@ -1,3 +1,5 @@
+Expression ((Projection + Before ORDER BY))
+  Filter (WHERE)
     ReadFromMergeTree (default.test_skip_idx)
     Indexes:
       Skip
@@ -10,7 +12,8 @@
         Description: minmax GRANULARITY 1
         Parts: 1/1
         Granules: 1/2
------------------
+Expression ((Projection + Before ORDER BY))
+  Filter (WHERE)
     ReadFromMergeTree (default.test_skip_idx)
     Indexes:
       Skip
