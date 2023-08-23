@@ -20,6 +20,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageConfiguration.h>
 #include <Storages/prepareReadingFromFormat.h>
 
@@ -129,7 +130,8 @@ public:
         const String & bucket,
         const String & version_id,
         std::shared_ptr<IIterator> file_iterator_,
-        size_t download_thread_num);
+        size_t max_parsing_threads,
+        std::optional<SelectQueryInfo> query_info);
 
     ~StorageS3Source() override;
 
@@ -152,6 +154,7 @@ private:
     std::shared_ptr<const S3::Client> client;
     Block sample_block;
     std::optional<FormatSettings> format_settings;
+    std::optional<SelectQueryInfo> query_info;
 
     struct ReaderHolder
     {
@@ -215,7 +218,7 @@ private:
 
     NamesAndTypesList requested_virtual_columns;
     std::shared_ptr<IIterator> file_iterator;
-    size_t download_thread_num = 1;
+    size_t max_parsing_threads = 1;
 
     Poco::Logger * log = &Poco::Logger::get("StorageS3Source");
 

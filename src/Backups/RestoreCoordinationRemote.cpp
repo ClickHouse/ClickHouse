@@ -46,7 +46,7 @@ RestoreCoordinationRemote::RestoreCoordinationRemote(
                 if (code == Coordination::Error::ZNODEEXISTS)
                     zk->handleEphemeralNodeExistenceNoFailureInjection(alive_node_path, "");
                 else if (code != Coordination::Error::ZOK)
-                    throw zkutil::KeeperException(code, alive_node_path);
+                    throw zkutil::KeeperException::fromPath(code, alive_node_path);
             }
         })
 {
@@ -129,7 +129,7 @@ bool RestoreCoordinationRemote::acquireCreatingTableInReplicatedDatabase(const S
             path += "/" + escapeForFileName(table_name);
             auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
             if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
-                throw zkutil::KeeperException(code, path);
+                throw zkutil::KeeperException::fromPath(code, path);
 
             if (code == Coordination::Error::ZOK)
             {
@@ -155,7 +155,7 @@ bool RestoreCoordinationRemote::acquireInsertingDataIntoReplicatedTable(const St
             String path = zookeeper_path + "/repl_tables_data_acquired/" + escapeForFileName(table_zk_path);
             auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
             if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
-                throw zkutil::KeeperException(code, path);
+                throw zkutil::KeeperException::fromPath(code, path);
 
             if (code == Coordination::Error::ZOK)
             {
@@ -181,7 +181,7 @@ bool RestoreCoordinationRemote::acquireReplicatedAccessStorage(const String & ac
             String path = zookeeper_path + "/repl_access_storages_acquired/" + escapeForFileName(access_storage_zk_path);
             auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
             if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
-                throw zkutil::KeeperException(code, path);
+                throw zkutil::KeeperException::fromPath(code, path);
 
             if (code == Coordination::Error::ZOK)
             {
@@ -217,7 +217,7 @@ bool RestoreCoordinationRemote::acquireReplicatedSQLObjects(const String & loade
 
             auto code = zk->tryCreate(path, "", zkutil::CreateMode::Persistent);
             if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
-                throw zkutil::KeeperException(code, path);
+                throw zkutil::KeeperException::fromPath(code, path);
 
             if (code == Coordination::Error::ZOK)
             {
@@ -302,7 +302,7 @@ bool RestoreCoordinationRemote::hasConcurrentRestores(const std::atomic<size_t> 
                     break;
                 bool is_last_attempt = (attempt == MAX_ZOOKEEPER_ATTEMPTS - 1);
                 if ((code != Coordination::Error::ZBADVERSION) || is_last_attempt)
-                    throw zkutil::KeeperException(code, path);
+                    throw zkutil::KeeperException::fromPath(code, path);
             }
         });
 

@@ -86,6 +86,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.custom.row_between_delimiter = settings.format_custom_row_between_delimiter;
     format_settings.custom.try_detect_header = settings.input_format_custom_detect_header;
     format_settings.custom.skip_trailing_empty_lines = settings.input_format_custom_skip_trailing_empty_lines;
+    format_settings.custom.allow_variable_number_of_columns = settings.input_format_custom_allow_variable_number_of_columns;
     format_settings.date_time_input_format = settings.date_time_input_format;
     format_settings.date_time_output_format = settings.date_time_output_format;
     format_settings.interval.output_format = settings.interval_output_format;
@@ -115,6 +116,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.validate_utf8 = settings.output_format_json_validate_utf8;
     format_settings.json_object_each_row.column_for_object_name = settings.format_json_object_each_row_column_for_object_name;
     format_settings.json.allow_object_type = context->getSettingsRef().allow_experimental_object_type;
+    format_settings.json.compact_allow_variable_number_of_columns = settings.input_format_json_compact_allow_variable_number_of_columns;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_rows = settings.output_format_parquet_row_group_size;
@@ -122,6 +124,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.parquet.output_version = settings.output_format_parquet_version;
     format_settings.parquet.case_insensitive_column_matching = settings.input_format_parquet_case_insensitive_column_matching;
     format_settings.parquet.preserve_order = settings.input_format_parquet_preserve_order;
+    format_settings.parquet.filter_push_down = settings.input_format_parquet_filter_push_down;
     format_settings.parquet.allow_missing_columns = settings.input_format_parquet_allow_missing_columns;
     format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference;
     format_settings.parquet.output_string_as_string = settings.output_format_parquet_string_as_string;
@@ -133,6 +136,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.parquet.parallel_encoding = settings.output_format_parquet_parallel_encoding;
     format_settings.parquet.data_page_size = settings.output_format_parquet_data_page_size;
     format_settings.parquet.write_batch_size = settings.output_format_parquet_batch_size;
+    format_settings.parquet.local_read_min_bytes_for_seek = settings.input_format_parquet_local_file_min_bytes_for_seek;
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
@@ -162,6 +166,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.tsv.skip_first_lines = settings.input_format_tsv_skip_first_lines;
     format_settings.tsv.try_detect_header = settings.input_format_tsv_detect_header;
     format_settings.tsv.skip_trailing_empty_lines = settings.input_format_tsv_skip_trailing_empty_lines;
+    format_settings.tsv.allow_variable_number_of_columns = settings.input_format_tsv_allow_variable_number_of_columns;
     format_settings.values.accurate_types_of_literals = settings.input_format_values_accurate_types_of_literals;
     format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
@@ -185,6 +190,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.orc.case_insensitive_column_matching = settings.input_format_orc_case_insensitive_column_matching;
     format_settings.orc.output_string_as_string = settings.output_format_orc_string_as_string;
     format_settings.orc.output_compression_method = settings.output_format_orc_compression_method;
+    format_settings.orc.use_fast_decoder = settings.input_format_orc_use_fast_decoder;
     format_settings.defaults_for_omitted_fields = settings.input_format_defaults_for_omitted_fields;
     format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
     format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference;
