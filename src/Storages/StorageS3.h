@@ -70,7 +70,7 @@ public:
             const S3::Client & client_,
             const S3::URI & globbed_uri_,
             ASTPtr query,
-            const Block & virtual_header,
+            const NamesAndTypesList & virtual_columns,
             ContextPtr context,
             KeysWithInfo * read_keys_ = nullptr,
             const S3Settings::RequestSettings & request_settings_ = {},
@@ -94,7 +94,7 @@ public:
             const String & bucket_,
             const S3Settings::RequestSettings & request_settings_,
             ASTPtr query,
-            const Block & virtual_header,
+            const NamesAndTypesList & virtual_columns,
             ContextPtr context,
             KeysWithInfo * read_keys = nullptr,
             std::function<void(FileProgress)> progress_callback_ = {});
@@ -132,7 +132,7 @@ public:
         const String & version_id,
         const String & url_host_and_port,
         std::shared_ptr<IIterator> file_iterator_,
-        size_t download_thread_num,
+        size_t max_parsing_threads,
         bool need_only_count_,
         std::optional<SelectQueryInfo> query_info);
 
@@ -223,7 +223,7 @@ private:
 
     NamesAndTypesList requested_virtual_columns;
     std::shared_ptr<IIterator> file_iterator;
-    size_t download_thread_num = 1;
+    size_t max_parsing_threads = 1;
     bool need_only_count;
 
     Poco::Logger * log = &Poco::Logger::get("StorageS3Source");
@@ -366,7 +366,6 @@ private:
     Configuration configuration;
     std::mutex configuration_update_mutex;
     NamesAndTypesList virtual_columns;
-    Block virtual_block;
 
     String name;
     const bool distributed_processing;
@@ -378,7 +377,7 @@ private:
         bool distributed_processing,
         ContextPtr local_context,
         ASTPtr query,
-        const Block & virtual_block,
+        const NamesAndTypesList & virtual_columns,
         KeysWithInfo * read_keys = nullptr,
         std::function<void(FileProgress)> progress_callback = {});
 
