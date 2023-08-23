@@ -154,12 +154,12 @@ public:
     void exists(
         const String & path,
         ExistsCallback callback,
-        WatchCallback watch) override;
+        WatchCallbackPtr watch) override;
 
     void get(
         const String & path,
         GetCallback callback,
-        WatchCallback watch) override;
+        WatchCallbackPtr watch) override;
 
     void set(
         const String & path,
@@ -171,7 +171,7 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallback watch) override;
+        WatchCallbackPtr watch) override;
 
     void check(
         const String & path,
@@ -252,7 +252,7 @@ private:
     {
         ZooKeeperRequestPtr request;
         ResponseCallback callback;
-        WatchCallback watch;
+        WatchCallbackPtr watch;
         clock::time_point time;
     };
 
@@ -267,7 +267,7 @@ private:
     Operations operations TSA_GUARDED_BY(operations_mutex);
     std::mutex operations_mutex;
 
-    using WatchCallbacks = std::vector<WatchCallback>;
+    using WatchCallbacks = std::unordered_set<WatchCallbackPtr>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
     Watches watches TSA_GUARDED_BY(watches_mutex);

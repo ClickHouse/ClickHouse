@@ -589,10 +589,10 @@ def test_function_current_profiles():
 
 
 def test_allow_ddl():
-    assert "it's necessary to have grant" in instance.query_and_get_error(
+    assert "it's necessary to have the grant" in instance.query_and_get_error(
         "CREATE TABLE tbl(a Int32) ENGINE=Log", user="robin"
     )
-    assert "it's necessary to have grant" in instance.query_and_get_error(
+    assert "it's necessary to have the grant" in instance.query_and_get_error(
         "GRANT CREATE ON tbl TO robin", user="robin"
     )
     assert "DDL queries are prohibited" in instance.query_and_get_error(
@@ -615,10 +615,10 @@ def test_allow_introspection():
     assert "Introspection functions are disabled" in instance.query_and_get_error(
         "SELECT demangle('a')"
     )
-    assert "it's necessary to have grant" in instance.query_and_get_error(
+    assert "it's necessary to have the grant" in instance.query_and_get_error(
         "SELECT demangle('a')", user="robin"
     )
-    assert "it's necessary to have grant" in instance.query_and_get_error(
+    assert "it's necessary to have the grant" in instance.query_and_get_error(
         "SELECT demangle('a')",
         user="robin",
         settings={"allow_introspection_functions": 1},
@@ -659,7 +659,7 @@ def test_allow_introspection():
         "REVOKE demangle ON *.* FROM robin",
         settings={"allow_introspection_functions": 1},
     )
-    assert "it's necessary to have grant" in instance.query_and_get_error(
+    assert "it's necessary to have the grant" in instance.query_and_get_error(
         "SELECT demangle('a')", user="robin"
     )
 

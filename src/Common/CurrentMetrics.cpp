@@ -194,6 +194,7 @@
     M(FilesystemCacheSizeLimit, "Filesystem cache size limit in bytes") \
     M(FilesystemCacheElements, "Filesystem cache elements (file segments)") \
     M(FilesystemCacheDownloadQueueElements, "Filesystem cache elements in download queue") \
+    M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(S3Requests, "S3 requests") \
     M(KeeperAliveConnections, "Number of alive connections") \

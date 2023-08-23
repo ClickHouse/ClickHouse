@@ -103,7 +103,8 @@ ReadFromRemote::ReadFromRemote(
     Tables external_tables_,
     Poco::Logger * log_,
     UInt32 shard_count_,
-    std::shared_ptr<const StorageLimitsList> storage_limits_)
+    std::shared_ptr<const StorageLimitsList> storage_limits_,
+    const String & cluster_name_)
     : ISourceStep(DataStream{.header = std::move(header_)})
     , shards(std::move(shards_))
     , stage(stage_)
@@ -116,6 +117,7 @@ ReadFromRemote::ReadFromRemote(
     , storage_limits(std::move(storage_limits_))
     , log(log_)
     , shard_count(shard_count_)
+    , cluster_name(cluster_name_)
 {
 }
 
@@ -234,13 +236,37 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     scalars["_shard_num"]
         = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
 
+    if (context->getParallelReplicasMode() == Context::ParallelReplicasMode::READ_TASKS)
+    {
+        if (context->getSettingsRef().cluster_for_parallel_replicas.changed)
+        {
+            const String cluster_for_parallel_replicas = context->getSettingsRef().cluster_for_parallel_replicas;
+            if (cluster_for_parallel_replicas != cluster_name)
+                LOG_INFO(log, "cluster_for_parallel_replicas has been set for the query but has no effect: {}. Distributed table cluster is used: {}",
+                         cluster_for_parallel_replicas, cluster_name);
+        }
+        context->setSetting("cluster_for_parallel_replicas", cluster_name);
+    }
+
     std::shared_ptr<RemoteQueryExecutor> remote_query_executor;
 
     remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             shard.shard_info.pool, query_string, output_stream->header, context, throttler, scalars, external_tables, stage);
 
     remote_query_executor->setLogger(log);
-    remote_query_executor->setPoolMode(PoolMode::GET_MANY);
+
+    if (context->getParallelReplicasMode() == Context::ParallelReplicasMode::READ_TASKS)
+    {
+        // when doing parallel reading from replicas (ParallelReplicasMode::READ_TASKS) on a shard:
+        // establish a connection to a replica on the shard, the replica will instantiate coordinator to manage parallel reading from replicas on the shard.
+        // The coordinator will return query result from the shard.
+        // Only one coordinator per shard is necessary. Therefore using PoolMode::GET_ONE to establish only one connection per shard.
+        // Using PoolMode::GET_MANY for this mode will(can) lead to instantiation of several coordinators (depends on max_parallel_replicas setting)
+        // each will execute parallel reading from replicas, so the query result will be multiplied by the number of created coordinators
+        remote_query_executor->setPoolMode(PoolMode::GET_ONE);
+    }
+    else
+        remote_query_executor->setPoolMode(PoolMode::GET_MANY);
 
     if (!table_func_ptr)
         remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);

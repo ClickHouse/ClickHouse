@@ -166,7 +166,7 @@ public:
             case QueryTreeNodeType::LAMBDA:
             {
                 auto lambda_hash = node->getTreeHash();
-                result = "__lambda_" + toString(lambda_hash.first) + '_' + toString(lambda_hash.second);
+                result = "__lambda_" + toString(lambda_hash);
                 break;
             }
             default:
