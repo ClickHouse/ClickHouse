@@ -145,12 +145,13 @@ namespace
 
 std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(Protocol protocol)
 {
-    if (auto context = Context::getGlobalContextInstance())
+    auto context = Context::getGlobalContextInstance();
+
+    chassert(context);
+
+    if (auto resolver = getFromSettings(protocol, "", context->getConfigRef()))
     {
-        if (auto resolver = getFromSettings(protocol, "", context->getConfigRef()))
-        {
-            return resolver;
-        }
+        return resolver;
     }
 
     return std::make_shared<EnvironmentProxyConfigurationResolver>(protocol);
