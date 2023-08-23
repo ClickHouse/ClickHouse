@@ -27,11 +27,10 @@ The folders `benchmark_sample` under [qpl-cmake](https://github.com/ClickHouse/C
 ## Run benchmark automatically:
 
 ``` bash
-$ cd ./benchmark_sample/client_scripts
-$ sh run_ssb.sh
+$ cd ./benchmark_sample/client_scripts && sh run_ssb.sh
 ```
 
-After complete, please check all the results in this folder:`./output/`
+Once complete, please check all the results in this folder:`./benchmark_sample/output/`
 In case you run into failure, please manually run benchmark as below sections.
 
 ## Definition
