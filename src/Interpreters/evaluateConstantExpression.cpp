@@ -2,17 +2,20 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
-#include <Columns/ColumnSet.h>
+#include <Common/typeid_cast.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -21,11 +24,6 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Common/typeid_cast.h>
-#include <Interpreters/FunctionNameNormalizer.h>
-#include <Interpreters/ReplaceQueryParameterVisitor.h>
-#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
-#include <Functions/IFunction.h>
 #include <unordered_map>
 
 
@@ -396,7 +394,7 @@ namespace
     {
         DisjunctionList res;
         for (const auto & lhs_map : lhs)
-            for(const auto & rhs_map : rhs)
+            for (const auto & rhs_map : rhs)
                 if (auto conj = andConjunctions(lhs_map, rhs_map))
                     res.emplace_back(std::move(*conj));
 
@@ -557,24 +555,6 @@ namespace
 
         return res;
     }
-
-    // bool isIndependentSubtree(const ActionsDAG::Node * node, const MatchedTrees::Matches & matches)
-    // {
-    //     std::stack<const ActionsDAG::Node *> stack;
-    //     stack.push(node);
-    //     while (!stack.empty())
-    //     {
-    //         const auto * cur = stack.top();
-    //         stack.pop();
-    //         if (findMatch(cur, matches))
-    //             return false;
-
-    //         for (const auto * child : node->children)
-    //             stack.push(child);
-    //     }
-
-    //     return true;
-    // }
 
     std::optional<DisjunctionList> analyze(const ActionsDAG::Node * node, const MatchedTrees::Matches & matches, const ContextPtr & context, size_t max_elements)
     {
