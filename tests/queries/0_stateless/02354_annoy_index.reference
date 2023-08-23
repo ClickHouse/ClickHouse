@@ -141,4 +141,3 @@ Expression (Projection)
             Name: annoy_index
             Description: annoy GRANULARITY 4
             Parts: 1/1
-            Granules: 1/4
