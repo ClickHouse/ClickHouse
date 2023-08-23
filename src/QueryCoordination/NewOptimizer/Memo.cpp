@@ -1,10 +1,13 @@
 #include <stack>
 #include <QueryCoordination/NewOptimizer/Cost/CostCalculator.h>
 #include <QueryCoordination/NewOptimizer/DerivationOutputProp.h>
+#include <QueryCoordination/NewOptimizer/DeriveOutputPropVisitor.h>
 #include <QueryCoordination/NewOptimizer/DerivationStatistics.h>
 #include <QueryCoordination/NewOptimizer/Memo.h>
 #include <QueryCoordination/NewOptimizer/Transform/Transformation.h>
 #include <QueryCoordination/NewOptimizer/derivationRequiredChildProp.h>
+#include <QueryCoordination/NewOptimizer/DeriveRequiredChildPropVisitor.h>
+#include <QueryCoordination/NewOptimizer/DeriveStatVisitor.h>
 #include <Common/typeid_cast.h>
 
 
@@ -138,10 +141,12 @@ Statistics Memo::deriveStat(Group & group)
             child_statistics.emplace_back(stat);
         }
 
-        Statistics stat = DerivationStatistics(group_node, child_statistics).derivationStatistics();
+        DeriveStatVisitor visitor(child_statistics);
+        Statistics stat = group_node.accept(visitor);
         group.setStatistics(stat);
         res = stat;
     }
+    LOG_DEBUG(log, "Group {} statistics output row size {}", group.getId(), group.getStatistics().getOutputRowSize());
     return res;
 }
 
@@ -211,7 +216,8 @@ std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>> Memo::enforce
             continue;
 
         /// get required prop to child
-        AlternativeChildrenProp alternative_prop = derivationRequiredChildProp(group_node);
+        DeriveRequiredChildPropVisitor visitor(group_node);
+        AlternativeChildrenProp alternative_prop = group_node.accept(visitor);
 
         /// every alternative prop, required to child
         for (auto & required_child_props : alternative_prop)
@@ -235,10 +241,15 @@ std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>> Memo::enforce
             }
 
             /// derivation output prop by required_prop and children_prop
-            auto output_prop = DerivationOutputProp(group_node, required_prop, actual_children_prop).derivationOutputProp();
+            DeriveOutputPropVisitor output_prop_visitor(required_prop, actual_children_prop);
+            auto output_prop = group_node.accept(output_prop_visitor);
+
             group_node.updateBestChild(output_prop, actual_children_prop, cost);
 
-            Float64 total_cost = CostCalculator(group_node, output_prop, group.getStatistics(), children_statistics).calcCost() + (actual_children_prop.empty() ? 0 : cost);
+            CostCalculator cost_calc(output_prop, group.getStatistics(), children_statistics);
+            Float64 total_cost = group_node.accept(cost_calc) + (actual_children_prop.empty() ? 0 : cost);
+
+            LOG_DEBUG(log, "Try update prop {} best node total cost {}, group {} group node {}", output_prop.toString(), total_cost, group.getId(), group_node.toString());
             group.updatePropBestNode(output_prop, &group_node, total_cost); /// need keep lowest cost
 
             /// enforce
@@ -256,9 +267,11 @@ std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>> Memo::enforce
 
         auto child_cost = group.getCostByProp(child_prop);
 
-        Float64 total_cost = CostCalculator(added_node, required_prop, group.getStatistics(), {}).calcCost() + child_cost;
+        CostCalculator cost_calc(required_prop, group.getStatistics(), {});
+        Float64 total_cost = added_node.accept(cost_calc) + child_cost;
         added_node.updateBestChild(required_prop, {child_prop}, child_cost);
 
+        LOG_DEBUG(log, "Try update prop {} best node total cost {}, group {} group node {}", required_prop.toString(), total_cost, group.getId(), added_node.toString());
         group.updatePropBestNode(required_prop, &added_node, total_cost);
     }
 

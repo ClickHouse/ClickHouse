@@ -43,7 +43,7 @@ public:
     Statistics derivationStatistics(ReadFromMergeTree & step)
     {
         Statistics statistics;
-        statistics.setOutputRowSize(step.getSelectedRows());
+        statistics.setOutputRowSize(step.getAnalysisResult().selected_rows);
         return statistics;
     }
 
@@ -55,11 +55,11 @@ public:
 
         if (step.isFinal())
         {
-            statistics.setOutputRowSize(input_row_size / 4); /// fake agg
+            statistics.setOutputRowSize(std::max(size_t(1), input_row_size / 4)); /// fake agg
         }
         else
         {
-            statistics.setOutputRowSize(input_row_size / 2);
+            statistics.setOutputRowSize(std::max(size_t(1), input_row_size / 2));
         }
         return statistics;
     }
@@ -89,7 +89,7 @@ public:
         Statistics statistics;
         if (step.getLimit())
         {
-            statistics.setOutputRowSize(step.getLimit());
+            statistics.setOutputRowSize(std::min(input_row_size, size_t(step.getLimit())));
         }
         else
         {
@@ -106,7 +106,7 @@ public:
         Statistics statistics;
         if (step.getLimit())
         {
-            statistics.setOutputRowSize(step.getLimit());
+            statistics.setOutputRowSize(std::min(input_row_size, size_t(step.getLimit())));
         }
         else
         {
@@ -128,7 +128,7 @@ public:
     Statistics derivationStatistics(UnionStep & /*step*/)
     {
         size_t input_row_size = 0;
-        for (auto & input_statistic : input_statistics)
+        for (const auto & input_statistic : input_statistics)
         {
             input_row_size += input_statistic.getOutputRowSize();
         }

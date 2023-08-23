@@ -2,6 +2,7 @@
 
 #include <QueryCoordination/NewOptimizer/PhysicalProperties.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <QueryCoordination/NewOptimizer/PlanStepVisitor.h>
 
 namespace DB
 {
@@ -95,6 +96,12 @@ public:
     void setId(UInt32 id_)
     {
         id = id_;
+    }
+
+    template <class Visitor>
+    typename Visitor::ResultType accept(Visitor & visitor)
+    {
+        return visitor.visit(step);
     }
 
 private:

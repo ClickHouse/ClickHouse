@@ -14,6 +14,8 @@ QueryPlan Optimizer::optimize(QueryPlan && plan, ContextPtr context)
     /// logical equivalent transform
     memo.transform();
 
+    memo.deriveStat();
+
     /// enforce properties
     memo.enforce();
 

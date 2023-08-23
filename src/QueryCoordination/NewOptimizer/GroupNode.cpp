@@ -21,7 +21,7 @@ String GroupNode::toString() const
 {
     String res;
     res += "node id: " + std::to_string(getId()) + ", ";
-    res += step->getName() + step->getStepDescription() + ", ";
+    res += step->getName() + " (" + step->getStepDescription() + "), ";
     res += "is_enforce_node: " + std::to_string(is_enforce_node) + ", ";
 
     String child_ids;

@@ -177,6 +177,8 @@ public:
     size_t getNumStreams() const { return requested_num_streams; }
     bool isParallelReadingEnabled() const { return read_task_callback != std::nullopt; }
 
+    ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
+
 private:
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToReadImpl(
         MergeTreeData::DataPartsVector parts,
@@ -258,7 +260,6 @@ private:
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts, size_t num_streams, const Names & column_names, ActionsDAGPtr & out_projection);
 
-    ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
     MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr;
 
     bool is_parallel_reading_from_replicas;
