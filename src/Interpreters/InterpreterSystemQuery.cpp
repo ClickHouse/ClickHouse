@@ -346,7 +346,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
             if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
-                cache->reset();
+                cache->clear();
             break;
 #endif
 #if USE_AWS_S3

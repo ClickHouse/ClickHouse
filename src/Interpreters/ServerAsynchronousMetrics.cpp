@@ -6,6 +6,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 
 #include <Databases/IDatabase.h>

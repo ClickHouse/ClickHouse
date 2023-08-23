@@ -830,6 +830,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("allow_experimental_hash_functions", 1);
         query_context->setSetting("allow_experimental_object_type", 1);
         query_context->setSetting("allow_experimental_annoy_index", 1);
+        query_context->setSetting("allow_experimental_usearch_index", 1);
         query_context->setSetting("allow_experimental_bigint_types", 1);
         query_context->setSetting("allow_experimental_window_functions", 1);
         query_context->setSetting("allow_experimental_geo_types", 1);
