@@ -1,0 +1,2 @@
+#./packager --package-type binary --build-type debug --compiler=clang-16  --cache=ccache --clickhouse-repo-path=/var/clickhouse/ClickHouse --output-dir=/var/clickhouse/ClickHouse/docker/packager/my_house  --ccache-dir=/var/clickhouse/ClickHouse/docker/packager/.ccache
+CMAKE_FLAGS='-DENABLE_THINLTO='  ./docker/packager/packager --package-type binary  --compiler=clang-16  --cache=ccache --clickhouse-repo-path=/var/clickhouse/ClickHouse2 --output-dir=/var/clickhouse/ClickHouse2/my_house  --ccache-dir=/var/clickhouse/ClickHouse2/docker/packager/.ccache
