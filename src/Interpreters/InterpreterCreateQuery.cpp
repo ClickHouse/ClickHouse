@@ -219,10 +219,12 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else
     {
         bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-        if (create.uuid != UUIDHelpers::Nil && !is_on_cluster)
+        if (create.uuid != UUIDHelpers::Nil && !is_on_cluster && !internal)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Ordinary database engine does not support UUID");
 
-        /// Ignore UUID if it's ON CLUSTER query
+        /// The database doesn't support UUID so we'll ignore it. The UUID could be set here because of either
+        /// a) the initiator of `ON CLUSTER` query generated it to ensure the same UUIDs are used on different hosts; or
+        /// b) `RESTORE from backup` query generated it to ensure the same UUIDs are used on different hosts.
         create.uuid = UUIDHelpers::Nil;
         metadata_path = metadata_path / "metadata" / database_name_escaped;
     }
@@ -983,19 +985,6 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_table_engine.value);
 }
 
-static void generateUUIDForTable(ASTCreateQuery & create)
-{
-    if (create.uuid == UUIDHelpers::Nil)
-        create.uuid = UUIDHelpers::generateV4();
-
-    /// If destination table (to_table_id) is not specified for materialized view,
-    /// then MV will create inner table. We should generate UUID of inner table here,
-    /// so it will be the same on all hosts if query in ON CLUSTER or database engine is Replicated.
-    bool need_uuid_for_inner_table = !create.attach && create.is_materialized_view && !create.to_table_id;
-    if (need_uuid_for_inner_table && create.to_inner_uuid == UUIDHelpers::Nil)
-        create.to_inner_uuid = UUIDHelpers::generateV4();
-}
-
 void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const
 {
     const auto * kind = create.is_dictionary ? "Dictionary" : "Table";
@@ -1028,17 +1017,19 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
                             kind_upper, create.table);
         }
 
-        generateUUIDForTable(create);
+        create.generateRandomUUID();
     }
     else
     {
         bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
         bool has_uuid = create.uuid != UUIDHelpers::Nil || create.to_inner_uuid != UUIDHelpers::Nil;
-        if (has_uuid && !is_on_cluster)
+        if (has_uuid && !is_on_cluster && !internal)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "{} UUID specified, but engine of database {} is not Atomic", kind, create.getDatabase());
 
-        /// Ignore UUID if it's ON CLUSTER query
+        /// The database doesn't support UUID so we'll ignore it. The UUID could be set here because of either
+        /// a) the initiator of `ON CLUSTER` query generated it to ensure the same UUIDs are used on different hosts; or
+        /// b) `RESTORE from backup` query generated it to ensure the same UUIDs are used on different hosts.
         create.uuid = UUIDHelpers::Nil;
         create.to_inner_uuid = UUIDHelpers::Nil;
     }
@@ -1619,7 +1610,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
     /// For CREATE query generate UUID on initiator, so it will be the same on all hosts.
     /// It will be ignored if database does not support UUIDs.
-    generateUUIDForTable(create);
+    create.generateRandomUUID();
 
     /// For cross-replication cluster we cannot use UUID in replica path.
     String cluster_name_expanded = local_context->getMacros()->expand(cluster_name);
