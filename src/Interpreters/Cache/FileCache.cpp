@@ -1047,7 +1047,6 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
                                                                       cache_it);
 
                     inserted = key_metadata->emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment))).second;
-                    LOG_TEST(log, "Added file segment {}:{} (size: {}) with path: {}", key, offset, size, offset_it->path().string());
                 }
                 catch (...)
                 {
@@ -1055,7 +1054,11 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
                     chassert(false);
                 }
 
-                if (!inserted)
+                if (inserted)
+                {
+                    LOG_TEST(log, "Added file segment {}:{} (size: {}) with path: {}", key, offset, size, offset_it->path().string());
+                }
+                else
                 {
                     cache_it->remove(lockCache());
                     fs::remove(offset_it->path());
@@ -1066,13 +1069,16 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
             {
                 LOG_WARNING(
                     log,
-                    "Cache capacity changed (max size: {}, used: {}), "
+                    "Cache capacity changed (max size: {}), "
                     "cached file `{}` does not fit in cache anymore (size: {})",
-                    main_priority->getSizeLimit(), main_priority->getSize(lock), offset_it->path().string(), size);
+                    main_priority->getSizeLimit(), offset_it->path().string(), size);
 
                 fs::remove(offset_it->path());
             }
         }
+
+        if (key_metadata->empty())
+            metadata.removeKey(key, false, false);
     }
 }
 

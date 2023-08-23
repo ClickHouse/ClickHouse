@@ -116,12 +116,12 @@ public:
         RETURN_NULL,
     };
 
-    LockedKeyPtr lockKeyMetadata(
+    KeyMetadataPtr getKeyMetadata(
         const Key & key,
         KeyNotFoundPolicy key_not_found_policy,
         bool is_initial_load = false);
 
-    KeyMetadataPtr getKeyMetadata(
+    LockedKeyPtr lockKeyMetadata(
         const Key & key,
         KeyNotFoundPolicy key_not_found_policy,
         bool is_initial_load = false);
