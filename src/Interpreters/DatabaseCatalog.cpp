@@ -341,14 +341,10 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             {
                 TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), getContext());
                 std::vector<String> names = hints.getHints(table_id.getTableName());
-                if (!names.empty())
-                {
-                    /// There is two options: first is to print just the name of the table
-                    /// and the second is to print the result in format: db_name.table_name. I'll comment out the second option below
-                    /// I also leave possibility to print several suggestions
+                if (names.empty())
+                    exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs()));
+                else
                     exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist. Maybe you meant {}?", table_id.getNameForLogs(), backQuoteIfNeed(names[0])));
-                }
-                else exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs()));
             }
             return {};
         }

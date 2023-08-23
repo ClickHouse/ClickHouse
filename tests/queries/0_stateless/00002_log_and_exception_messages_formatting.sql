@@ -22,7 +22,7 @@ select 'unknown runtime exceptions', max2(coalesce(sum(length(message_format_str
 
 -- FIXME some of the following messages are not informative and it has to be fixed
 create temporary table known_short_messages (s String) as select * from (select
-['', '({}) Keys: {}', '({}) {}', 'Aggregating', 'Became leader', 'Cleaning queue',
+['', '{} ({})', '({}) Keys: {}', '({}) {}', 'Aggregating', 'Became leader', 'Cleaning queue',
 'Creating set.', 'Cyclic aliases', 'Detaching {}', 'Executing {}', 'Fire events: {}',
 'Found part {}', 'Loaded queue', 'No sharding key', 'No tables', 'Query: {}', 'Removed',
 'Removed part {}', 'Removing parts.', 'Request URI: {}', 'Sending part {}',

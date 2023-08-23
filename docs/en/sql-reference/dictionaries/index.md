@@ -1092,7 +1092,7 @@ Types of sources (`source_type`):
 - [Local file](#local_file)
 - [Executable File](#executable)
 - [Executable Pool](#executable_pool)
-- [HTTP(s)](#http)
+- [HTTP(S)](#http)
 - DBMS
     - [ODBC](#odbc)
     - [MySQL](#mysql)
@@ -1102,7 +1102,7 @@ Types of sources (`source_type`):
     - [Cassandra](#cassandra)
     - [PostgreSQL](#postgresql)
 
-## Local File {#local_file}
+### Local File {#local_file}
 
 Example of settings:
 
@@ -1132,7 +1132,7 @@ When a dictionary with source `FILE` is created via DDL command (`CREATE DICTION
 
 - [Dictionary function](../../sql-reference/table-functions/dictionary.md#dictionary-function)
 
-## Executable File {#executable}
+### Executable File {#executable}
 
 Working with executable files depends on [how the dictionary is stored in memory](#storig-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts the executable file and treats its output as dictionary data.
 
@@ -1161,7 +1161,7 @@ Setting fields:
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled; otherwise, the DB user would be able to execute arbitrary binaries on the ClickHouse node.
 
-## Executable Pool {#executable_pool}
+### Executable Pool {#executable_pool}
 
 Executable pool allows loading data from pool of processes. This source does not work with dictionary layouts that need to load all data from source. Executable pool works if the dictionary [is stored](#ways-to-store-dictionaries-in-memory) using `cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`, `direct`, or `complex_key_direct` layouts.
 
@@ -1196,9 +1196,9 @@ Setting fields:
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
 
-## Http(s) {#https}
+### HTTP(S) {#https}
 
-Working with an HTTP(s) server depends on [how the dictionary is stored in memory](#storig-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
+Working with an HTTP(S) server depends on [how the dictionary is stored in memory](#storig-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
 
 Example of settings:
 
@@ -1248,7 +1248,55 @@ Setting fields:
 
 When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries are checked against the contents of `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server.
 
-### Known Vulnerability of the ODBC Dictionary Functionality
+### DBMS
+
+#### ODBC
+
+You can use this method to connect any database that has an ODBC driver.
+
+Example of settings:
+
+``` xml
+<source>
+    <odbc>
+        <db>DatabaseName</db>
+        <table>ShemaName.TableName</table>
+        <connection_string>DSN=some_parameters</connection_string>
+        <invalidate_query>SQL_QUERY</invalidate_query>
+        <query>SELECT id, value_1, value_2 FROM ShemaName.TableName</query>
+    </odbc>
+</source>
+```
+
+or
+
+``` sql
+SOURCE(ODBC(
+    db 'DatabaseName'
+    table 'SchemaName.TableName'
+    connection_string 'DSN=some_parameters'
+    invalidate_query 'SQL_QUERY'
+    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
+))
+```
+
+Setting fields:
+
+- `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
+- `table` – Name of the table and schema if exists.
+- `connection_string` – Connection string.
+- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](#dictionary-updates).
+- `query` – The custom query. Optional parameter.
+
+:::note
+The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
+:::
+
+ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
+
+If you have a problems with encodings when using Oracle, see the corresponding [FAQ](/knowledgebase/oracle-odbc) item.
+
+##### Known Vulnerability of the ODBC Dictionary Functionality
 
 :::note
 When connecting to the database through the ODBC driver connection parameter `Servername` can be substituted. In this case values of `USERNAME` and `PASSWORD` from `odbc.ini` are sent to the remote server and can be compromised.
@@ -1277,7 +1325,7 @@ SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 
 ODBC driver will send values of `USERNAME` and `PASSWORD` from `odbc.ini` to `some-server.com`.
 
-### Example of Connecting Postgresql
+##### Example of Connecting Postgresql
 
 Ubuntu OS.
 
@@ -1358,7 +1406,7 @@ LIFETIME(MIN 300 MAX 360)
 
 You may need to edit `odbc.ini` to specify the full path to the library with the driver `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
-### Example of Connecting MS SQL Server
+##### Example of Connecting MS SQL Server
 
 Ubuntu OS.
 
@@ -1462,55 +1510,7 @@ LAYOUT(FLAT())
 LIFETIME(MIN 300 MAX 360)
 ```
 
-## DBMS
-
-### ODBC
-
-You can use this method to connect any database that has an ODBC driver.
-
-Example of settings:
-
-``` xml
-<source>
-    <odbc>
-        <db>DatabaseName</db>
-        <table>ShemaName.TableName</table>
-        <connection_string>DSN=some_parameters</connection_string>
-        <invalidate_query>SQL_QUERY</invalidate_query>
-        <query>SELECT id, value_1, value_2 FROM ShemaName.TableName</query>
-    </odbc>
-</source>
-```
-
-or
-
-``` sql
-SOURCE(ODBC(
-    db 'DatabaseName'
-    table 'SchemaName.TableName'
-    connection_string 'DSN=some_parameters'
-    invalidate_query 'SQL_QUERY'
-    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
-))
-```
-
-Setting fields:
-
-- `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
-- `table` – Name of the table and schema if exists.
-- `connection_string` – Connection string.
-- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](#dictionary-updates).
-- `query` – The custom query. Optional parameter.
-
-:::note
-The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
-:::
-
-ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
-
-If you have a problems with encodings when using Oracle, see the corresponding [FAQ](/knowledgebase/oracle-odbc) item.
-
-### Mysql
+#### Mysql
 
 Example of settings:
 
@@ -1627,7 +1627,7 @@ SOURCE(MYSQL(
 ))
 ```
 
-### ClickHouse
+#### ClickHouse
 
 Example of settings:
 
@@ -1680,7 +1680,7 @@ Setting fields:
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 :::
 
-### Mongodb
+#### Mongodb
 
 Example of settings:
 
@@ -1723,7 +1723,7 @@ Setting fields:
 - `options` -  MongoDB connection string options (optional parameter).
 
 
-### Redis
+#### Redis
 
 Example of settings:
 
@@ -1756,7 +1756,7 @@ Setting fields:
 - `storage_type` – The structure of internal Redis storage using for work with keys. `simple` is for simple sources and for hashed single key sources, `hash_map` is for hashed sources with two keys. Ranged sources and cache sources with complex key are unsupported. May be omitted, default value is `simple`.
 - `db_index` – The specific numeric index of Redis logical database. May be omitted, default value is 0.
 
-### Cassandra
+#### Cassandra
 
 Example of settings:
 
@@ -1798,7 +1798,7 @@ Setting fields:
 The `column_family` or `where` fields cannot be used together with the `query` field. And either one of the `column_family` or `query` fields must be declared.
 :::
 
-### PostgreSQL
+#### PostgreSQL
 
 Example of settings:
 
@@ -1855,7 +1855,7 @@ Setting fields:
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 :::
 
-## Null
+### Null
 
 A special source that can be used to create dummy (empty) dictionaries. Such dictionaries can useful for tests or with setups with separated data and query nodes at nodes with Distributed tables.
 

@@ -143,3 +143,73 @@ def test_all_protocols(started_cluster):
     backup_node.query("SYSTEM START LISTEN ON CLUSTER default QUERIES ALL")
 
     assert_everything_works()
+
+
+def test_except(started_cluster):
+    custom_client = Client(main_node.ip_address, 9001, command=cluster.client_bin_path)
+    assert_everything_works()
+
+    # STOP LISTEN QUERIES ALL EXCEPT
+    main_node.query("SYSTEM STOP LISTEN QUERIES ALL EXCEPT MYSQL, CUSTOM 'tcp'")
+    assert "Connection refused" in main_node.query_and_get_error(QUERY)
+    custom_client.query(MYSQL_QUERY)
+    assert http_works() == False
+    assert http_works(8124) == False
+
+    # START LISTEN QUERIES ALL EXCEPT
+    backup_node.query("SYSTEM START LISTEN ON CLUSTER default QUERIES ALL EXCEPT TCP")
+    assert "Connection refused" in main_node.query_and_get_error(QUERY)
+    custom_client.query(MYSQL_QUERY)
+    assert http_works() == True
+    assert http_works(8124) == True
+    backup_node.query("SYSTEM START LISTEN ON CLUSTER default QUERIES ALL")
+
+    assert_everything_works()
+
+    # STOP LISTEN QUERIES DEFAULT EXCEPT
+    main_node.query("SYSTEM STOP LISTEN QUERIES DEFAULT EXCEPT TCP")
+    main_node.query(QUERY)
+    assert "Connections to mysql failed" in custom_client.query_and_get_error(
+        MYSQL_QUERY
+    )
+    custom_client.query(QUERY)
+    assert http_works() == False
+    assert http_works(8124) == True
+
+    # START LISTEN QUERIES DEFAULT EXCEPT
+    backup_node.query(
+        "SYSTEM START LISTEN ON CLUSTER default QUERIES DEFAULT EXCEPT HTTP"
+    )
+    main_node.query(QUERY)
+    main_node.query(MYSQL_QUERY)
+    custom_client.query(QUERY)
+    assert http_works() == False
+    assert http_works(8124) == True
+
+    backup_node.query("SYSTEM START LISTEN ON CLUSTER default QUERIES ALL")
+
+    assert_everything_works()
+
+    # STOP LISTEN QUERIES CUSTOM EXCEPT
+    main_node.query("SYSTEM STOP LISTEN QUERIES CUSTOM EXCEPT CUSTOM 'tcp'")
+    main_node.query(QUERY)
+    custom_client.query(MYSQL_QUERY)
+    custom_client.query(QUERY)
+    assert http_works() == True
+    assert http_works(8124) == False
+
+    main_node.query("SYSTEM STOP LISTEN QUERIES CUSTOM")
+
+    # START LISTEN QUERIES DEFAULT EXCEPT
+    backup_node.query(
+        "SYSTEM START LISTEN ON CLUSTER default QUERIES CUSTOM EXCEPT CUSTOM 'tcp'"
+    )
+    main_node.query(QUERY)
+    main_node.query(MYSQL_QUERY)
+    assert "Connection refused" in custom_client.query_and_get_error(QUERY)
+    assert http_works() == True
+    assert http_works(8124) == True
+
+    backup_node.query("SYSTEM START LISTEN ON CLUSTER default QUERIES ALL")
+
+    assert_everything_works()
