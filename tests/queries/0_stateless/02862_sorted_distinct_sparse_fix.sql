@@ -21,3 +21,5 @@ set max_threads=1;
 
 select trimLeft(explain) from (explain pipeline SELECT DISTINCT id, v FROM t_sparse_distinct) where explain ilike '%DistinctSortedChunkTransform%';
 SELECT DISTINCT id, v FROM t_sparse_distinct format Null;
+
+DROP TABLE t_sparse_distinct;
