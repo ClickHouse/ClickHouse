@@ -553,6 +553,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
     ContextPtr context,
     const ShellCommandSourceConfiguration & source_configuration)
 {
+    std::cout << "Creating pipe " << std::endl;
     ShellCommand::Config command_config(command);
     command_config.arguments = arguments;
     for (size_t i = 1; i < input_pipes.size(); ++i)
