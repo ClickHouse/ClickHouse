@@ -1,0 +1,3 @@
+<clickhouse>
+    <max_table_size_to_drop hidden="true">60000000000</max_table_size_to_drop>
+</clickhouse>
