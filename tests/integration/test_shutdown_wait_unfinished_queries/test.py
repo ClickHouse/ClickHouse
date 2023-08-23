@@ -46,10 +46,20 @@ def test_shutdown_wait_unfinished_queries(start_cluster):
     global result
 
     query_id = uuid.uuid4().hex
-    long_query = threading.Thread(target=do_long_query, args=(node_wait_queries, query_id,))
+    long_query = threading.Thread(
+        target=do_long_query,
+        args=(
+            node_wait_queries,
+            query_id,
+        ),
+    )
     long_query.start()
 
-    assert_eq_with_retry(node_wait_queries, f"SELECT query_id FROM system.processes WHERE query_id = '{query_id}'", query_id)
+    assert_eq_with_retry(
+        node_wait_queries,
+        f"SELECT query_id FROM system.processes WHERE query_id = '{query_id}'",
+        query_id,
+    )
     node_wait_queries.stop_clickhouse(kill=False)
 
     long_query.join()
@@ -57,10 +67,20 @@ def test_shutdown_wait_unfinished_queries(start_cluster):
     assert result[0].count("0") == 10
 
     query_id = uuid.uuid4().hex
-    long_query = threading.Thread(target=do_long_query, args=(node_kill_queries, query_id,))
+    long_query = threading.Thread(
+        target=do_long_query,
+        args=(
+            node_kill_queries,
+            query_id,
+        ),
+    )
     long_query.start()
 
-    assert_eq_with_retry(node_kill_queries, f"SELECT query_id FROM system.processes WHERE query_id = '{query_id}'", query_id)
+    assert_eq_with_retry(
+        node_kill_queries,
+        f"SELECT query_id FROM system.processes WHERE query_id = '{query_id}'",
+        query_id,
+    )
     node_kill_queries.stop_clickhouse(kill=False)
 
     long_query.join()
