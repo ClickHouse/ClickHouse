@@ -415,7 +415,6 @@ struct GroupArrayNodeGeneral : public GroupArrayNodeBase<GroupArrayNodeGeneral>
 {
     using Node = GroupArrayNodeGeneral;
     // field of data in node (method data() doesn't allow to compare Nodes)
-    Field field;
 
     static Node * allocate(const IColumn & column, size_t row_num, Arena * arena)
     {
@@ -424,7 +423,6 @@ struct GroupArrayNodeGeneral : public GroupArrayNodeBase<GroupArrayNodeGeneral>
 
         Node * node = reinterpret_cast<Node *>(const_cast<char *>(begin));
         node->size = value.size;
-        node->field = column[row_num];
 
         return node;
     }

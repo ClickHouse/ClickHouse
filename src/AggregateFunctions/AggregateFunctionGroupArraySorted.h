@@ -19,6 +19,8 @@
 #include <Common/Exception.h>
 #include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
+#include <Columns/ColumnConst.h>
+#include <DataTypes/IDataType.h>
 #include <base/sort.h>
 #include <Columns/IColumn.h>
 
@@ -188,13 +190,33 @@ public:
 };
 
 
+template <typename Node, bool has_sampler>
+struct GroupArraySortedGeneralData;
+
+template <typename Node>
+struct GroupArraySortedGeneralData<Node, false>
+{
+    // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
+    using Allocator = MixedAlignedArenaAllocator<alignof(Node *), 4096>;
+    using Array = PODArray<Field, 32, Allocator>;
+
+    // For groupArrayLast()
+    size_t total_values = 0;
+    Array value;
+};
+
+template <typename Node>
+struct GroupArraySortedGeneralData<Node, true> : public GroupArraySamplerData<Node *>
+{
+};
+
 /// Implementation of groupArraySorted for Generic data via Array
 template <typename Node, typename Trait>
 class GroupArraySortedGeneralImpl final
-    : public IAggregateFunctionDataHelper<GroupArrayGeneralData<Node, false>, GroupArraySortedGeneralImpl<Node, Trait>>
+    : public IAggregateFunctionDataHelper<GroupArraySortedGeneralData<Node, false>, GroupArraySortedGeneralImpl<Node, Trait>>
 {
     static constexpr bool limit_num_elems = Trait::has_limit;
-    using Data = GroupArrayGeneralData<Node, false>;
+    using Data = GroupArraySortedGeneralData<Node, false>;
     static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
     static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
 
@@ -204,7 +226,7 @@ class GroupArraySortedGeneralImpl final
 
 public:
     GroupArraySortedGeneralImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max(), UInt64 seed_ = 123456)
-        : IAggregateFunctionDataHelper<GroupArrayGeneralData<Node, false>, GroupArraySortedGeneralImpl<Node, Trait>>(
+        : IAggregateFunctionDataHelper<GroupArraySortedGeneralData<Node, false>, GroupArraySortedGeneralImpl<Node, Trait>>(
             {data_type_}, parameters_, std::make_shared<DataTypeArray>(data_type_))
         , data_type(this->argument_types[0])
         , max_elems(max_elems_)
@@ -227,14 +249,10 @@ public:
         auto & cur_elems = data(place);
 
         ++cur_elems.total_values;
-        Node * node = Node::allocate(*columns[0], row_num, arena);
-        cur_elems.value.push_back(node, arena);
+        cur_elems.value.push_back(columns[0][0][row_num], arena);
 
         if (!limit_num_elems && columns[0]->size() == cur_elems.value.size())
-            std::sort(cur_elems.value.begin(), cur_elems.value.end(), [](const Node *a, const Node *b)
-            {
-                return a->field < b->field;
-            });
+            std::sort(cur_elems.value.begin(), cur_elems.value.end());
         else if (columns[0]->size() == cur_elems.value.size())
         {
             /// To optimize, we sort (2 * max_size) elements of input array over and over again and
@@ -244,19 +262,13 @@ public:
             {
                 if (cur_elems.value.size() >= max_elems * 2)
                 {
-                    std::sort(cur_elems.value.begin(), cur_elems.value.begin() + (max_elems * 2), [](const Node *a, const Node *b)
-                    {
-                        return a->field < b->field;
-                    });
+                    std::sort(cur_elems.value.begin(), cur_elems.value.begin() + (max_elems * 2));
                     cur_elems.value.erase(cur_elems.value.begin() + max_elems, cur_elems.value.begin() + (max_elems * 2));
                     part_sorted = true;
                 }
                 else if (cur_elems.value.size() > max_elems)
                 {
-                    std::sort(cur_elems.value.begin(), cur_elems.value.end(), [](const Node *a, const Node *b)
-                    {
-                        return a->field < b->field;
-                    });
+                    std::sort(cur_elems.value.begin(), cur_elems.value.end());
                     cur_elems.value.resize(max_elems, arena);
                     sorted = true;
                 }
@@ -266,10 +278,7 @@ public:
                         sorted = true;
                     else
                     {
-                        std::sort(cur_elems.value.begin(), cur_elems.value.end(), [](const Node *a, const Node *b)
-                        {
-                            return a->field < b->field;
-                        });
+                        std::sort(cur_elems.value.begin(), cur_elems.value.end());
                         sorted = true;
                     }
                 }
@@ -300,16 +309,24 @@ public:
             new_elems = rhs_elems.value.size();
 
         for (UInt64 i = 0; i < new_elems; ++i)
-            cur_elems.value.push_back(rhs_elems.value[i]->clone(arena), arena);
+            cur_elems.value.push_back(rhs_elems.value[i], arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         writeVarUInt(data(place).value.size(), buf);
+        Arena * arena = new Arena;
+        const char * begin = arena->alignedAlloc(sizeof(Node), alignof(Node));
+        ColumnConst * column = nullptr;
 
         auto & value = data(place).value;
-        for (auto & node : value)
+        for (size_t row_num = 0; row_num < value.size(); ++row_num)
+        {
+            column->insert(value[row_num]);
+            column->serializeValueIntoArena(row_num, *arena, begin, nullptr);
+            Node * node = Node::allocate(*column, row_num, arena);
             node->write(buf);
+        }
 
         if constexpr (Trait::last)
             writeBinaryLittleEndian(data(place).total_values, buf);
@@ -361,8 +378,8 @@ public:
         }
 
         auto & value = data(place).value;
-        for (auto & node : value)
-            node->insertInto(column_data);
+        for (const Field& field : value)
+            column_data.insert(field);
     }
 
     bool allocatesMemoryInArena() const override { return true; }
