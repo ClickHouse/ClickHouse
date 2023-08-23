@@ -59,7 +59,7 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
-    static std::optional<time_t> getLastModificationTime(
+    static std::optional<time_t> tryGetLastModificationTime(
         const String & url,
         const HTTPHeaderEntries & headers,
         const Poco::Net::HTTPBasicCredentials & credentials,
