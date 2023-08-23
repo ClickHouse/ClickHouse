@@ -35,10 +35,13 @@ def cluster():
         cluster.shutdown()
 
 
-def azure_query(node, query, try_num=10, settings={}):
+def azure_query(node, query, expect_error="false", try_num=10, settings={}):
     for i in range(try_num):
         try:
-            return node.query(query, settings=settings)
+            if expect_error == "true":
+                return node.query_and_get_error(query, settings=settings)
+            else:
+                return node.query(query, settings=settings)
         except Exception as ex:
             retriable_errors = [
                 "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response",
@@ -656,7 +659,7 @@ def test_read_from_not_existing_container(cluster):
     node = cluster.instances["node"]
     query = f"select * from azureBlobStorage('http://azurite1:10000/devstoreaccount1',  'cont_not_exists', 'test_table.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto')"
     expected_err_msg = "container does not exist"
-    assert expected_err_msg in node.query_and_get_error(query)
+    assert expected_err_msg in azure_query(node, query, expect_error="true")
 
 
 def test_function_signatures(cluster):
@@ -709,3 +712,33 @@ def test_function_signatures(cluster):
     # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure\n"
     query_10 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'column1 UInt32')"
     assert azure_query(node, query_10) == "1\n2\n3\n"
+
+
+def test_filtering_by_file_or_path(cluster):
+    node = cluster.instances["node"]
+    azure_query(
+        node,
+        "INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:10000/devstoreaccount1', 'cont', 'test_filter1.tsv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 1",
+    )
+
+    azure_query(
+        node,
+        "INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:10000/devstoreaccount1', 'cont', 'test_filter2.tsv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 2",
+    )
+
+    azure_query(
+        node,
+        "INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:10000/devstoreaccount1', 'cont', 'test_filter3.tsv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 3",
+    )
+
+    node.query(
+        f"select count() from azureBlobStorage('http://azurite1:10000/devstoreaccount1', 'cont', 'test_filter*.tsv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') where _file = 'test_filter1.tsv'"
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    result = node.query(
+        f"SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query like '%select%azure%test_filter%' AND type='QueryFinish'"
+    )
+
+    assert int(result) == 1

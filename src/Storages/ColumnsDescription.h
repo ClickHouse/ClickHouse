@@ -102,6 +102,11 @@ class ColumnsDescription : public IHints<1, ColumnsDescription>
 {
 public:
     ColumnsDescription() = default;
+
+    ColumnsDescription(std::initializer_list<NameAndTypePair> ordinary);
+
+    explicit ColumnsDescription(NamesAndTypes ordinary);
+
     explicit ColumnsDescription(NamesAndTypesList ordinary);
 
     explicit ColumnsDescription(NamesAndTypesList ordinary, NamesAndAliases aliases);
@@ -160,9 +165,8 @@ public:
         auto it = columns.get<1>().find(column_name);
         if (it == columns.get<1>().end())
         {
-            String exception_message = fmt::format("Cannot find column {} in ColumnsDescription", column_name);
-            appendHintsMessage(exception_message, column_name);
-            throw Exception::createDeprecated(exception_message, ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find column {} in ColumnsDescription{}",
+                            column_name, getHintsMessage(column_name));
         }
 
         removeSubcolumns(it->name);

@@ -2,9 +2,10 @@
 
 #include <city.h>
 #include <Core/Types.h>
+#include <Core/UUID.h>
+#include <base/StringRef.h>
 #include <base/types.h>
 #include <base/unaligned.h>
-#include <base/StringRef.h>
 
 #include <type_traits>
 
@@ -406,7 +407,7 @@ struct UInt128TrivialHash
 
 struct UUIDTrivialHash
 {
-    size_t operator()(DB::UUID x) const { return x.toUnderType().items[0]; }
+    size_t operator()(DB::UUID x) const { return DB::UUIDHelpers::getHighBytes(x); }
 };
 
 struct UInt256Hash

@@ -176,7 +176,7 @@ public:
 private:
     CachePtr getHashTableStatsCache(const Params & params, const std::lock_guard<std::mutex> &)
     {
-        if (!hash_table_stats || hash_table_stats->maxSize() != params.max_entries_for_hash_table_stats)
+        if (!hash_table_stats || hash_table_stats->maxSizeInBytes() != params.max_entries_for_hash_table_stats)
             hash_table_stats = std::make_shared<Cache>(params.max_entries_for_hash_table_stats);
         return hash_table_stats;
     }
@@ -695,8 +695,7 @@ void Aggregator::compileAggregateFunctionsIfNeeded()
     SipHash aggregate_functions_description_hash;
     aggregate_functions_description_hash.update(functions_description);
 
-    UInt128 aggregate_functions_description_hash_key;
-    aggregate_functions_description_hash.get128(aggregate_functions_description_hash_key);
+    const auto aggregate_functions_description_hash_key = aggregate_functions_description_hash.get128();
 
     {
         std::lock_guard<std::mutex> lock(mutex);

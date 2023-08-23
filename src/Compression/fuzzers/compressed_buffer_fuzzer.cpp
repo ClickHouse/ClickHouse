@@ -1,4 +1,3 @@
-#include <iostream>
 #include <IO/ReadBufferFromMemory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Common/Exception.h>
