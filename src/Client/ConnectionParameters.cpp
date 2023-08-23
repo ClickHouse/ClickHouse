@@ -43,7 +43,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
         if (config.getBool("ask-password", false))
         {
             if (config.has("password"))
-                throw Exception("Specified both --password and --ask-password. Remove one of them", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specified both --password and --ask-password. Remove one of them");
             password_prompt = true;
         }
         else
@@ -83,7 +83,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
            ssh_private_key = std::move(key);
         }
         else
-            throw Exception("Found public key in file: " + filename + " but expected private", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found public key in file: {} but expected private", filename);
 #else
         throw Exception("SSH is disabled, because ClickHouse is built without OpenSSL", ErrorCodes::SUPPORT_IS_DISABLED);
 #endif

@@ -260,9 +260,6 @@ void Connection::disconnect()
 String Connection::packStringForSshSign(String challenge)
 {
     String message;
-    message.append((DBMS_NAME " ") + client_name);
-    message.append(std::to_string(DBMS_VERSION_MAJOR));
-    message.append(std::to_string(DBMS_VERSION_MINOR));
     message.append(std::to_string(DBMS_TCP_PROTOCOL_VERSION));
     message.append(default_database);
     message.append(user);

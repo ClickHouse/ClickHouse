@@ -125,6 +125,7 @@ void AuthenticationData::setPassword(const String & password_)
         case AuthenticationType::LDAP:
         case AuthenticationType::KERBEROS:
         case AuthenticationType::SSL_CERTIFICATE:
+        case AuthenticationType::SSH_KEY:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify password for authentication type {}", toString(type));
 
         case AuthenticationType::MAX:
@@ -228,6 +229,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
         case AuthenticationType::LDAP:
         case AuthenticationType::KERBEROS:
         case AuthenticationType::SSL_CERTIFICATE:
+        case AuthenticationType::SSH_KEY:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify password binary hash for authentication type {}", toString(type));
 
         case AuthenticationType::MAX:
@@ -310,6 +312,10 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
                 node->children.push_back(std::make_shared<ASTLiteral>(name));
 
             break;
+        }
+        case AuthenticationType::SSH_KEY:
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented.");
         }
 
         case AuthenticationType::NO_PASSWORD: [[fallthrough]];

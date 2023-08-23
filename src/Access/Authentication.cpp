@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Poco/SHA1Engine.h>
 #include <Common/typeid_cast.h>
+#include <Common/SSH/Wrappers.h>
 
 
 namespace DB
@@ -219,6 +220,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::PLAINTEXT_PASSWORD:
             case AuthenticationType::SHA256_PASSWORD:
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
+            case AuthenticationType::BCRYPT_PASSWORD:
             case AuthenticationType::LDAP:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
 

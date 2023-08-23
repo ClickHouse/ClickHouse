@@ -222,13 +222,13 @@ namespace
                         algorithm = config.getString(conf_pref + "algorithm");
                     }
                     else
-                        throw Exception("Expected algorithm field in " + entry + " entry", ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected algorithm field in {} entry", entry);
                     if (config.has(conf_pref + "base64_key"))
                     {
                         base64_key = config.getString(conf_pref + "base64_key");
                     }
                     else
-                        throw Exception("Expected base64_key field in " + entry + " entry", ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected base64_key field in {} entry", entry);
 
 
                     try
@@ -237,11 +237,11 @@ namespace
                     }
                     catch (const std::invalid_argument&)
                     {
-                        throw Exception("Bad ssh key in entry: " + entry, ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad ssh key in entry: {}", entry);
                     }
                 }
                 else
-                    throw Exception("Unknown ssh_key entry pattern type: " + entry, ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ssh_key entry pattern type: {}", entry);
             }
             user->auth_data.setSshKeys(std::move(keys));
 #else

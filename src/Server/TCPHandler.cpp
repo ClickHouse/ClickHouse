@@ -1210,9 +1210,6 @@ std::unique_ptr<Session> TCPHandler::makeSession()
 String TCPHandler::prepareStringForSshValidation(String user, String challenge)
 {
     String output;
-    output.append(client_name);
-    output.append(std::to_string(client_version_major));
-    output.append(std::to_string(client_version_minor));
     output.append(std::to_string(client_tcp_protocol_version));
     output.append(default_database);
     output.append(user);
