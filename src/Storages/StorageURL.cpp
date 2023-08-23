@@ -2,6 +2,7 @@
 #include <Storages/PartitionedSink.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
@@ -27,6 +28,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/ProfileEvents.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 
@@ -38,6 +40,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
+namespace ProfileEvents
+{
+    extern const Event EngineFileLikeReadFiles;
+}
 
 namespace DB
 {
@@ -125,6 +131,8 @@ IStorageURLBase::IStorageURLBase(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
+
+    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 
@@ -158,9 +166,23 @@ namespace
 class StorageURLSource::DisclosedGlobIterator::Impl
 {
 public:
-    Impl(const String & uri, size_t max_addresses)
+    Impl(const String & uri_, size_t max_addresses, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
     {
-        uris = parseRemoteDescription(uri, 0, uri.size(), ',', max_addresses);
+        uris = parseRemoteDescription(uri_, 0, uri_.size(), ',', max_addresses);
+
+        ASTPtr filter_ast;
+        if (!uris.empty())
+            filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, Poco::URI(uris[0]).getPath(), context);
+
+        if (filter_ast)
+        {
+            std::vector<String> paths;
+            paths.reserve(uris.size());
+            for (const auto & uri : uris)
+                paths.push_back(Poco::URI(uri).getPath());
+
+            VirtualColumnUtils::filterByPathOrFile(uris, paths, query, virtual_columns, context, filter_ast);
+        }
     }
 
     String next()
@@ -182,8 +204,8 @@ private:
     std::atomic_size_t index = 0;
 };
 
-StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, size_t max_addresses)
-    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, max_addresses)) {}
+StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, size_t max_addresses, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
+    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, max_addresses, query, virtual_columns, context)) {}
 
 String StorageURLSource::DisclosedGlobIterator::next()
 {
@@ -221,7 +243,7 @@ StorageURLSource::StorageURLSource(
     UInt64 max_block_size,
     const ConnectionTimeouts & timeouts,
     CompressionMethod compression_method,
-    size_t download_threads,
+    size_t max_parsing_threads,
     const SelectQueryInfo & query_info,
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
@@ -271,11 +293,9 @@ StorageURLSource::StorageURLSource(
         if (auto file_progress_callback = context->getFileProgressCallback())
         {
             size_t file_size = tryGetFileSizeFromReadBuffer(*read_buf).value_or(0);
-            LOG_DEBUG(&Poco::Logger::get("URL"), "Send file size {}", file_size);
             file_progress_callback(FileProgress(0, file_size));
         }
 
-        // TODO: Pass max_parsing_threads and max_download_threads adjusted for num_streams.
         input_format = FormatFactory::instance().getInput(
             format,
             *read_buf,
@@ -283,9 +303,9 @@ StorageURLSource::StorageURLSource(
             context,
             max_block_size,
             format_settings,
-            download_threads,
-            /*max_download_threads*/ std::nullopt,
-            /* is_remote_fs */ true,
+            max_parsing_threads,
+            /* max_download_threads= */ std::nullopt,
+            /* is_remote_fs= */ true,
             compression_method);
         input_format->setQueryInfo(query_info, context);
 
@@ -309,6 +329,8 @@ StorageURLSource::StorageURLSource(
 
         pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
         reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
+
+        ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
         return true;
     };
 }
@@ -333,23 +355,7 @@ Chunk StorageURLSource::generate()
             UInt64 num_rows = chunk.getNumRows();
             size_t chunk_size = input_format->getApproxBytesReadForChunk();
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
-
-            const String & path{curr_uri.getPath()};
-
-            for (const auto & virtual_column : requested_virtual_columns)
-            {
-                if (virtual_column.name == "_path")
-                {
-                    chunk.addColumn(virtual_column.type->createColumnConst(num_rows, path)->convertToFullColumnIfConst());
-                }
-                else if (virtual_column.name == "_file")
-                {
-                    size_t last_slash_pos = path.find_last_of('/');
-                    auto column = virtual_column.type->createColumnConst(num_rows, path.substr(last_slash_pos + 1));
-                    chunk.addColumn(column->convertToFullColumnIfConst());
-                }
-            }
-
+            VirtualColumnUtils::addRequestedPathAndFileVirtualsToChunk(chunk, requested_virtual_columns, curr_uri.getPath());
             return chunk;
         }
 
@@ -706,8 +712,6 @@ Pipe IStorageURLBase::read(
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
 
-    size_t max_download_threads = local_context->getSettingsRef().max_download_threads;
-
     std::shared_ptr<StorageURLSource::IteratorWrapper> iterator_wrapper{nullptr};
     bool is_url_with_globs = urlWithGlobs(uri);
     size_t max_addresses = local_context->getSettingsRef().glob_expansion_max_elements;
@@ -725,7 +729,7 @@ Pipe IStorageURLBase::read(
     else if (is_url_with_globs)
     {
         /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(uri, max_addresses);
+        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(uri, max_addresses, query_info.query, virtual_columns, local_context);
         iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>([glob_iterator, max_addresses]()
         {
             String next_uri = glob_iterator->next();
@@ -754,7 +758,9 @@ Pipe IStorageURLBase::read(
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    size_t download_threads = num_streams >= max_download_threads ? 1 : (max_download_threads / num_streams);
+    const size_t max_threads = local_context->getSettingsRef().max_threads;
+    const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / num_streams);
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageURLSource>(
@@ -775,7 +781,7 @@ Pipe IStorageURLBase::read(
             max_block_size,
             getHTTPTimeouts(local_context),
             compression_method,
-            download_threads,
+            max_parsing_threads,
             query_info,
             headers,
             params,
@@ -793,7 +799,7 @@ Pipe StorageURLWithFailover::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    size_t /*num_streams*/)
+    size_t num_streams)
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
 
@@ -807,6 +813,9 @@ Pipe StorageURLWithFailover::read(
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
 
+    const size_t max_threads = local_context->getSettingsRef().max_threads;
+    const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / num_streams);
+
     auto pipe = Pipe(std::make_shared<StorageURLSource>(
         read_from_format_info,
         iterator_wrapper,
@@ -819,7 +828,7 @@ Pipe StorageURLWithFailover::read(
         max_block_size,
         getHTTPTimeouts(local_context),
         compression_method,
-        local_context->getSettingsRef().max_download_threads,
+        max_parsing_threads,
         query_info,
         headers,
         params));
@@ -869,9 +878,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
 
 NamesAndTypesList IStorageURLBase::getVirtuals() const
 {
-    return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
+    return virtual_columns;
 }
 
 SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)
