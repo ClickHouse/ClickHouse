@@ -20,6 +20,8 @@ services:
     depends_on:
       - hdfskerberos
     entrypoint: /etc/bootstrap.sh -d
+    sysctls:
+      net.ipv4.ip_local_port_range: '55000 65535'
 
   hdfskerberos:
     image: clickhouse/kerberos-kdc:${DOCKER_KERBEROS_KDC_TAG:-latest}
@@ -29,3 +31,5 @@ services:
       - ${KERBERIZED_HDFS_DIR}/../../kerberos_image_config.sh:/config.sh
       - /dev/urandom:/dev/random
     expose: [88, 749]
+    sysctls:
+      net.ipv4.ip_local_port_range: '55000 65535'

@@ -8,13 +8,13 @@
 namespace DB
 {
 StoragePtr TableFunctionMeiliSearch::executeImpl(
-    const ASTPtr & /* ast_function */, ContextPtr /*context*/, const String & table_name, ColumnsDescription /*cached_columns*/) const
+    const ASTPtr & /* ast_function */, ContextPtr /*context*/, const String & table_name, ColumnsDescription /*cached_columns*/, bool /*is_insert_query*/) const
 {
     return std::make_shared<StorageMeiliSearch>(
         StorageID(getDatabaseName(), table_name), configuration.value(), ColumnsDescription{}, ConstraintsDescription{}, String{});
 }
 
-ColumnsDescription TableFunctionMeiliSearch::getActualTableStructure(ContextPtr /* context */) const
+ColumnsDescription TableFunctionMeiliSearch::getActualTableStructure(ContextPtr /* context */, bool /*is_insert_query*/) const
 {
     return StorageMeiliSearch::getTableStructureFromData(configuration.value());
 }

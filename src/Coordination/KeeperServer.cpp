@@ -794,8 +794,14 @@ bool KeeperServer::applyConfigUpdate(const ClusterUpdateAction & action)
     std::lock_guard _{server_write_mutex};
 
     if (const auto * add = std::get_if<AddRaftServer>(&action))
-        return raft_instance->get_srv_config(add->id) != nullptr
-            || raft_instance->add_srv(static_cast<nuraft::srv_config>(*add))->get_accepted();
+    {
+        if (raft_instance->get_srv_config(add->id) != nullptr)
+            return true;
+
+        auto resp = raft_instance->add_srv(static_cast<nuraft::srv_config>(*add));
+        resp->get();
+        return resp->get_accepted();
+    }
     else if (const auto * remove = std::get_if<RemoveRaftServer>(&action))
     {
         if (remove->id == raft_instance->get_leader())
@@ -807,8 +813,12 @@ bool KeeperServer::applyConfigUpdate(const ClusterUpdateAction & action)
             return false;
         }
 
-        return raft_instance->get_srv_config(remove->id) == nullptr
-            || raft_instance->remove_srv(remove->id)->get_accepted();
+        if (raft_instance->get_srv_config(remove->id) == nullptr)
+            return true;
+
+        auto resp = raft_instance->remove_srv(remove->id);
+        resp->get();
+        return resp->get_accepted();
     }
     else if (const auto * update = std::get_if<UpdateRaftServerPriority>(&action))
     {

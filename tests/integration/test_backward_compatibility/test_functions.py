@@ -143,6 +143,7 @@ def test_string_functions(start_cluster):
         "position",
         "substring",
         "CAST",
+        "getTypeSerializationStreams",
         # NOTE: no need to ignore now()/now64() since they will fail because they don't accept any argument
         # 22.8 Backward Incompatible Change: Extended range of Date32
         "toDate32OrZero",

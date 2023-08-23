@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <shared_mutex>
 
 namespace Poco
 {
@@ -93,9 +94,8 @@ public:
     bool isReadOnly() const override { return true; }
 
 protected:
-    void initialize(const String & uri_path) const;
-
     [[noreturn]] static void throwNotAllowed();
+    bool exists(const std::string & path) const;
 
     enum class FileType
     {
@@ -111,12 +111,13 @@ protected:
 
     using Files = std::map<String, FileData>; /// file path -> file data
     mutable Files files;
-
-    String url;
+    mutable std::shared_mutex metadata_mutex;
 
 private:
-    Poco::Logger * log;
+    void initialize(const String & path, const std::unique_lock<std::shared_mutex> &) const;
 
+    const String url;
+    Poco::Logger * log;
     size_t min_bytes_for_seek;
 };
 

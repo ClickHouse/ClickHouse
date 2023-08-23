@@ -250,15 +250,16 @@ StorageKafka::StorageKafka(
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , kafka_settings(std::move(kafka_settings_))
-    , topics(parseTopics(getContext()->getMacros()->expand(kafka_settings->kafka_topic_list.value)))
-    , brokers(getContext()->getMacros()->expand(kafka_settings->kafka_broker_list.value))
-    , group(getContext()->getMacros()->expand(kafka_settings->kafka_group_name.value))
+    , macros_info{.table_id = table_id_}
+    , topics(parseTopics(getContext()->getMacros()->expand(kafka_settings->kafka_topic_list.value, macros_info)))
+    , brokers(getContext()->getMacros()->expand(kafka_settings->kafka_broker_list.value, macros_info))
+    , group(getContext()->getMacros()->expand(kafka_settings->kafka_group_name.value, macros_info))
     , client_id(
           kafka_settings->kafka_client_id.value.empty() ? getDefaultClientId(table_id_)
-                                                        : getContext()->getMacros()->expand(kafka_settings->kafka_client_id.value))
+                                                        : getContext()->getMacros()->expand(kafka_settings->kafka_client_id.value, macros_info))
     , format_name(getContext()->getMacros()->expand(kafka_settings->kafka_format.value))
     , max_rows_per_message(kafka_settings->kafka_max_rows_per_message.value)
-    , schema_name(getContext()->getMacros()->expand(kafka_settings->kafka_schema.value))
+    , schema_name(getContext()->getMacros()->expand(kafka_settings->kafka_schema.value, macros_info))
     , num_consumers(kafka_settings->kafka_num_consumers.value)
     , log(&Poco::Logger::get("StorageKafka (" + table_id_.table_name + ")"))
     , semaphore(0, static_cast<int>(num_consumers))
@@ -415,7 +416,9 @@ void StorageKafka::startup()
     {
         try
         {
-            pushConsumer(createConsumer(i));
+            auto consumer = createConsumer(i);
+            pushConsumer(consumer);
+            all_consumers.push_back(consumer);
             ++num_created_consumers;
         }
         catch (const cppkafka::Exception &)
@@ -455,6 +458,7 @@ void StorageKafka::shutdown()
 void StorageKafka::pushConsumer(KafkaConsumerPtr consumer)
 {
     std::lock_guard lock(mutex);
+    consumer->notInUse();
     consumers.push_back(consumer);
     semaphore.set();
     CurrentMetrics::sub(CurrentMetrics::KafkaConsumersInUse, 1);
@@ -483,6 +487,7 @@ KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout)
     auto consumer = consumers.back();
     consumers.pop_back();
     CurrentMetrics::add(CurrentMetrics::KafkaConsumersInUse, 1);
+    consumer->inUse();
     return consumer;
 }
 
@@ -511,7 +516,11 @@ KafkaConsumerPtr StorageKafka::createConsumer(size_t consumer_number)
     size_t default_queued_min_messages = 100000; // we don't want to decrease the default
     conf.set("queued.min.messages", std::max(getMaxBlockSize(),default_queued_min_messages));
 
-    updateConfiguration(conf);
+    /// a reference to the consumer is needed in statistic callback
+    /// although the consumer does not exist when callback is being registered
+    /// shared_ptr<weak_ptr<KafkaConsumer>> comes to the rescue
+    auto consumer_weak_ptr_ptr = std::make_shared<KafkaConsumerWeakPtr>();
+    updateConfiguration(conf, consumer_weak_ptr_ptr);
 
     // those settings should not be changed by users.
     conf.set("enable.auto.commit", "false");       // We manually commit offsets after a stream successfully finished
@@ -522,13 +531,20 @@ KafkaConsumerPtr StorageKafka::createConsumer(size_t consumer_number)
     auto consumer_impl = std::make_shared<cppkafka::Consumer>(conf);
     consumer_impl->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
 
+    KafkaConsumerPtr kafka_consumer_ptr;
+
     /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
     if (thread_per_consumer)
     {
         auto& stream_cancelled = tasks[consumer_number]->stream_cancelled;
-        return std::make_shared<KafkaConsumer>(consumer_impl, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, stream_cancelled, topics);
+        kafka_consumer_ptr = std::make_shared<KafkaConsumer>(consumer_impl, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, stream_cancelled, topics);
     }
-    return std::make_shared<KafkaConsumer>(consumer_impl, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, tasks.back()->stream_cancelled, topics);
+    else
+    {
+        kafka_consumer_ptr = std::make_shared<KafkaConsumer>(consumer_impl, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, tasks.back()->stream_cancelled, topics);
+    }
+    *consumer_weak_ptr_ptr = kafka_consumer_ptr;
+    return kafka_consumer_ptr;
 }
 
 size_t StorageKafka::getMaxBlockSize() const
@@ -561,7 +577,8 @@ String StorageKafka::getConfigPrefix() const
     return CONFIG_KAFKA_TAG;
 }
 
-void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config)
+void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config,
+    std::shared_ptr<KafkaConsumerWeakPtr>  kafka_consumer_weak_ptr_ptr)
 {
     // Update consumer configuration from the configuration. Example:
     //     <kafka>
@@ -640,6 +657,26 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config)
         auto [poco_level, client_logs_level] = parseSyslogLevel(level);
         LOG_IMPL(log, client_logs_level, poco_level, "[rdk:{}] {}", facility, message);
     });
+
+    if (kafka_consumer_weak_ptr_ptr)
+    {
+        if (!config.has(config_prefix + "." + "statistics_interval_ms"))
+        {
+            kafka_config.set("statistics.interval.ms", "3000"); // every 3 seconds by default. set to 0 to disable.
+        }
+
+        if (kafka_config.get("statistics.interval.ms") != "0")
+        {
+            kafka_config.set_stats_callback([kafka_consumer_weak_ptr_ptr](cppkafka::KafkaHandleBase &, const std::string & stat_json_string)
+            {
+                auto kafka_consumer_ptr = kafka_consumer_weak_ptr_ptr->lock();
+                if (kafka_consumer_ptr)
+                {
+                    kafka_consumer_ptr->setRDKafkaStat(stat_json_string);
+                }
+            });
+        }
+    }
 
     // Configure interceptor to change thread name
     //
@@ -951,7 +988,7 @@ void registerStorageKafka(StorageFactory & factory)
                             "of getting data from Kafka, consider using a setting kafka_thread_per_consumer=1, "
                             "and ensure you have enough threads "
                             "in MessageBrokerSchedulePool (background_message_broker_schedule_pool_size). "
-                            "See also https://clickhouse.com/docs/integrations/kafka/kafka-table-engine#tuning-performance", max_consumers);
+                            "See also https://clickhouse.com/docs/en/integrations/kafka#tuning-performance", max_consumers);
         }
         else if (num_consumers < 1)
         {

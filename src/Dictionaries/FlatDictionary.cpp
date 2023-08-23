@@ -683,7 +683,7 @@ void registerDictionaryFlat(DictionaryFactory & factory)
         return std::make_unique<FlatDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
-    factory.registerLayout("flat", create_layout, false);
+    factory.registerLayout("flat", create_layout, false, false);
 }
 
 

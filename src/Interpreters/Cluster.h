@@ -145,12 +145,6 @@ public:
             UInt32 replica_index_ = 0);
 
         Address(
-            const String & host_port_,
-            const ClusterConnectionParameters & params,
-            UInt32 shard_index_,
-            UInt32 replica_index_);
-
-        Address(
             const DatabaseReplicaInfo & info,
             const ClusterConnectionParameters & params,
             UInt32 shard_index_,
@@ -278,6 +272,8 @@ public:
 
     /// Are distributed DDL Queries (ON CLUSTER Clause) allowed for this cluster
     bool areDistributedDDLQueriesAllowed() const { return allow_distributed_ddl_queries; }
+
+    const String & getName() const { return name; }
 
 private:
     SlotToShard slot_to_shard;

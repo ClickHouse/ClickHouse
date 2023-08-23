@@ -2,9 +2,11 @@
 
 #include <atomic>
 #include <chrono>
+#include <optional>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
+#include <Common/AllocationTrace.h>
 
 #if !defined(NDEBUG)
 #define MEMORY_TRACKER_DEBUG_CHECKS
@@ -65,7 +67,7 @@ private:
     double fault_probability = 0;
 
     /// To randomly sample allocations and deallocations in trace_log.
-    double sample_probability = 0;
+    double sample_probability = -1;
 
     /// Randomly sample allocations only larger or equal to this size
     UInt64 min_allocation_size_bytes = 0;
@@ -98,11 +100,12 @@ private:
 
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
-    void allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr);
-    void free(Int64 size);
+    [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr, double _sample_probability = -1.0);
+    [[nodiscard]] AllocationTrace free(Int64 size, double _sample_probability = -1.0);
 public:
 
     static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
+    static constexpr auto PEAK_USAGE_EVENT_NAME = "MemoryTrackerPeakUsage";
 
     explicit MemoryTracker(VariableContext level_ = VariableContext::Thread);
     explicit MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
@@ -172,6 +175,8 @@ public:
     {
         sample_probability = value;
     }
+
+    double getSampleProbability(UInt64 size);
 
     void setSampleMinAllocationSize(UInt64 value)
     {

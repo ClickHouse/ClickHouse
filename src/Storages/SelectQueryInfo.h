@@ -258,10 +258,12 @@ struct SelectQueryInfo
     bool parallel_replicas_disabled = false;
 
     bool is_parameterized_view = false;
-    NameToNameMap parameterized_view_values;
 
     // If limit is not 0, that means it's a trivial limit query.
     UInt64 limit = 0;
+
+    /// For IStorageSystemOneBlock
+    std::vector<UInt8> columns_mask;
 
     InputOrderInfoPtr getInputOrderInfo() const
     {

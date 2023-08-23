@@ -238,10 +238,6 @@ defaultValueOfArgumentType
 defaultValueOfTypeName
 degrees
 demangle
-detectCharset
-detectLanguageUnknown
-detectProgrammingLanguage
-detectTonality
 divide
 dotProduct
 dumpColumnStructure
@@ -306,6 +302,7 @@ formatRowNoNewline
 fragment
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
+fromUTCTimestamp
 fromUnixTimestamp
 fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
@@ -344,6 +341,10 @@ has
 hasAll
 hasAny
 hasColumnInTable
+hasSubsequence
+hasSubsequenceCaseInsensitive
+hasSubsequenceCaseInsensitiveUTF8
+hasSubsequenceUTF8
 hasSubstr
 hasThreadFuzzer
 hex
@@ -667,6 +668,8 @@ sqrt
 startsWith
 subBitmap
 substring
+substringIndex
+substringIndexUTF8
 substringUTF8
 subtractDays
 subtractHours
@@ -847,6 +850,7 @@ toUInt8
 toUInt8OrDefault
 toUInt8OrNull
 toUInt8OrZero
+toUTCTimestamp
 toUUID
 toUUIDOrDefault
 toUUIDOrNull
@@ -879,11 +883,18 @@ tumble
 tumbleEnd
 tumbleStart
 tuple
+tupleConcat
 tupleDivide
 tupleDivideByNumber
 tupleElement
 tupleHammingDistance
+tupleIntDiv
+tupleIntDivByNumber
+tupleIntDivOrZero
+tupleIntDivOrZeroByNumber
 tupleMinus
+tupleModulo
+tupleModuloByNumber
 tupleMultiply
 tupleMultiplyByNumber
 tupleNegate

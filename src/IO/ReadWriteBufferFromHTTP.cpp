@@ -40,7 +40,12 @@ void UpdatableSession<TSessionFactory>::updateSession(const Poco::URI & uri)
     if (redirects <= max_redirects)
         session = session_factory->buildNewSession(uri);
     else
-        throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects while trying to access {}", initial_uri.toString());
+        throw Exception(ErrorCodes::TOO_MANY_REDIRECTS,
+            "Too many redirects while trying to access {}."
+            " You can {} redirects by changing the setting 'max_http_get_redirects'."
+            " Example: `SET max_http_get_redirects = 10`."
+            " Redirects are restricted to prevent possible attack when a malicious server redirects to an internal resource, bypassing the authentication or firewall.",
+            initial_uri.toString(), max_redirects ? "increase the allowed maximum number of" : "allow");
 }
 
 template <typename TSessionFactory>
@@ -305,12 +310,12 @@ void ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::callWithRedirects(Poco::N
         current_session = session;
 
     call(current_session, response, method_, throw_on_all_errors, for_object_info);
-    Poco::URI prev_uri = uri;
+    saved_uri_redirect = uri;
 
     while (isRedirect(response.getStatus()))
     {
-        Poco::URI uri_redirect = getUriAfterRedirect(prev_uri, response);
-        prev_uri = uri_redirect;
+        Poco::URI uri_redirect = getUriAfterRedirect(*saved_uri_redirect, response);
+        saved_uri_redirect = uri_redirect;
         if (remote_host_filter)
             remote_host_filter->checkURL(uri_redirect);
 

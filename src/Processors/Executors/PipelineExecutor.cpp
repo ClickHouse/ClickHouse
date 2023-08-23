@@ -272,7 +272,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 
                 /// Prepare processor after execution.
                 if (!graph->updateNode(context.getProcessorID(), queue, async_queue))
-                    finish();
+                    cancel();
 
                 /// Push other tasks to global queue.
                 tasks.pushTasks(queue, async_queue, context);

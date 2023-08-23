@@ -101,7 +101,7 @@ void checkAccessRights(const TableNode & table_node, const Names & column_names,
         }
 
         throw Exception(ErrorCodes::ACCESS_DENIED,
-            "{}: Not enough privileges. To execute this query it's necessary to have grant SELECT for at least one column on {}",
+            "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
             query_context->getUserName(),
             storage_id.getFullTableName());
     }
@@ -111,6 +111,20 @@ void checkAccessRights(const TableNode & table_node, const Names & column_names,
     // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
     if (storage_id.hasDatabase())
         query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
+}
+
+bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
+{
+    const auto & storage_id = table_node.getStorageID();
+    if (!storage_id.hasDatabase())
+        return false;
+    if (storage_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
+    {
+        static const boost::container::flat_set<String> tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
+        if (tables_ignoring_quota.count(storage_id.table_name))
+            return true;
+    }
+    return false;
 }
 
 NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot)
@@ -182,6 +196,9 @@ bool applyTrivialCountIfPossible(
         return false;
 
     const auto & storage = table_node.getStorage();
+    if (!storage->supportsTrivialCountOptimization())
+        return false;
+
     auto storage_id = storage->getStorageID();
     auto row_policy_filter = query_context->getRowPolicyFilter(storage_id.getDatabaseName(),
         storage_id.getTableName(),
@@ -825,8 +842,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     }
     else
     {
+        SelectQueryOptions analyze_query_options = SelectQueryOptions(from_stage).analyze();
         Planner planner(select_query_info.query_tree,
-            SelectQueryOptions(from_stage).analyze(),
+            analyze_query_options,
             select_query_info.planner_context);
         planner.buildQueryPlanIfNeeded();
 
@@ -1372,7 +1390,7 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
 
 JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     const SelectQueryInfo & select_query_info,
-    const SelectQueryOptions & select_query_options,
+    SelectQueryOptions & select_query_options,
     const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context)
 {
@@ -1382,6 +1400,16 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
     std::vector<ColumnIdentifierSet> table_expressions_outer_scope_columns(table_expressions_stack_size);
     ColumnIdentifierSet current_outer_scope_columns = outer_scope_columns;
+
+    if (is_single_table_expression)
+    {
+        auto * table_node = table_expressions_stack[0]->as<TableNode>();
+        if (table_node && shouldIgnoreQuotaAndLimits(*table_node))
+        {
+            select_query_options.ignore_quota = true;
+            select_query_options.ignore_limits = true;
+        }
+    }
 
     /// For each table, table function, query, union table expressions prepare before query plan build
     for (size_t i = 0; i < table_expressions_stack_size; ++i)

@@ -36,6 +36,8 @@ public:
 
     RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const override;
 
+    bool supportsSubcolumns() const override { return true; }
+
 private:
     void addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context) override;
 

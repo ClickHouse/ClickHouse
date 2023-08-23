@@ -73,8 +73,10 @@ MergeTreeReadPool::MergeTreeReadPool(
         size_t total_marks = 0;
         for (const auto & part : parts_ranges)
         {
-            total_compressed_bytes += getApproxSizeOfPart(
-                *part.data_part, prewhere_info ? prewhere_info->prewhere_actions->getRequiredColumnsNames() : column_names_);
+            const auto & columns = settings.merge_tree_determine_task_size_by_prewhere_columns && prewhere_info
+                ? prewhere_info->prewhere_actions->getRequiredColumnsNames()
+                : column_names_;
+            total_compressed_bytes += getApproxSizeOfPart(*part.data_part, columns);
             total_marks += part.getMarksCount();
         }
 

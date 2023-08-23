@@ -331,18 +331,8 @@ if __name__ == "__main__":
     if args.docker_compose_images_tags is not None:
         for img_tag in args.docker_compose_images_tags:
             [image, tag] = img_tag.split(":")
-            if image == "clickhouse/mysql-golang-client":
-                env_tags += "-e {}={} ".format("DOCKER_MYSQL_GOLANG_CLIENT_TAG", tag)
-            elif image == "clickhouse/dotnet-client":
+            if image == "clickhouse/dotnet-client":
                 env_tags += "-e {}={} ".format("DOCKER_DOTNET_CLIENT_TAG", tag)
-            elif image == "clickhouse/mysql-java-client":
-                env_tags += "-e {}={} ".format("DOCKER_MYSQL_JAVA_CLIENT_TAG", tag)
-            elif image == "clickhouse/mysql-js-client":
-                env_tags += "-e {}={} ".format("DOCKER_MYSQL_JS_CLIENT_TAG", tag)
-            elif image == "clickhouse/mysql-php-client":
-                env_tags += "-e {}={} ".format("DOCKER_MYSQL_PHP_CLIENT_TAG", tag)
-            elif image == "clickhouse/postgresql-java-client":
-                env_tags += "-e {}={} ".format("DOCKER_POSTGRESQL_JAVA_CLIENT_TAG", tag)
             elif image == "clickhouse/integration-helper":
                 env_tags += "-e {}={} ".format("DOCKER_HELPER_TAG", tag)
             elif image == "clickhouse/integration-test":
@@ -351,6 +341,18 @@ if __name__ == "__main__":
                 env_tags += "-e {}={} ".format("DOCKER_KERBERIZED_HADOOP_TAG", tag)
             elif image == "clickhouse/kerberos-kdc":
                 env_tags += "-e {}={} ".format("DOCKER_KERBEROS_KDC_TAG", tag)
+            elif image == "clickhouse/mysql-golang-client":
+                env_tags += "-e {}={} ".format("DOCKER_MYSQL_GOLANG_CLIENT_TAG", tag)
+            elif image == "clickhouse/mysql-java-client":
+                env_tags += "-e {}={} ".format("DOCKER_MYSQL_JAVA_CLIENT_TAG", tag)
+            elif image == "clickhouse/mysql-js-client":
+                env_tags += "-e {}={} ".format("DOCKER_MYSQL_JS_CLIENT_TAG", tag)
+            elif image == "clickhouse/mysql-php-client":
+                env_tags += "-e {}={} ".format("DOCKER_MYSQL_PHP_CLIENT_TAG", tag)
+            elif image == "clickhouse/nginx-dav":
+                env_tags += "-e {}={} ".format("DOCKER_NGINX_DAV_TAG", tag)
+            elif image == "clickhouse/postgresql-java-client":
+                env_tags += "-e {}={} ".format("DOCKER_POSTGRESQL_JAVA_CLIENT_TAG", tag)
             else:
                 logging.info("Unknown image %s" % (image))
 

@@ -134,8 +134,7 @@ public:
     /// You can call only once, right after the object is created.
     virtual void loadStoredObjects( /// NOLINT
         ContextMutablePtr /*context*/,
-        LoadingStrictnessLevel /*mode*/,
-        bool /* skip_startup_tables */)
+        LoadingStrictnessLevel /*mode*/)
     {
     }
 
@@ -373,6 +372,7 @@ protected:
 };
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
+using ConstDatabasePtr = std::shared_ptr<const IDatabase>;
 using Databases = std::map<String, DatabasePtr>;
 
 }

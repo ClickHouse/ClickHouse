@@ -186,9 +186,7 @@ bool FileSegment::isDownloaded() const
 
 String FileSegment::getCallerId()
 {
-    if (!CurrentThread::isInitialized()
-        || !CurrentThread::get().getQueryContext()
-        || CurrentThread::getQueryId().empty())
+    if (!CurrentThread::isInitialized() || CurrentThread::getQueryId().empty())
         return "None:" + toString(getThreadId());
 
     return std::string(CurrentThread::getQueryId()) + ":" + toString(getThreadId());
@@ -258,6 +256,9 @@ void FileSegment::resetDownloader()
 
 void FileSegment::resetDownloaderUnlocked(const FileSegmentGuard::Lock &)
 {
+    if (downloader_id.empty())
+        return;
+
     LOG_TEST(log, "Resetting downloader from {}", downloader_id);
     downloader_id.clear();
 }
@@ -266,7 +267,6 @@ void FileSegment::assertIsDownloaderUnlocked(const std::string & operation, cons
 {
     auto caller = getCallerId();
     auto current_downloader = getDownloaderUnlocked(lock);
-    LOG_TEST(log, "Downloader id: {}, caller id: {}, operation: {}", current_downloader, caller, operation);
 
     if (caller != current_downloader)
     {
@@ -476,7 +476,7 @@ LockedKeyPtr FileSegment::lockKeyMetadata(bool assert_exists) const
     return metadata->tryLock();
 }
 
-bool FileSegment::reserve(size_t size_to_reserve)
+bool FileSegment::reserve(size_t size_to_reserve, FileCacheReserveStat * reserve_stat)
 {
     if (!size_to_reserve)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero space reservation is not allowed");
@@ -512,9 +512,8 @@ bool FileSegment::reserve(size_t size_to_reserve)
 
     size_t already_reserved_size = reserved_size - expected_downloaded_size;
 
-    bool reserved = already_reserved_size >= size_to_reserve;
-    if (reserved)
-        return reserved;
+    if (already_reserved_size >= size_to_reserve)
+        return true;
 
     size_to_reserve = size_to_reserve - already_reserved_size;
 
@@ -523,7 +522,12 @@ bool FileSegment::reserve(size_t size_to_reserve)
     if (is_unbound && is_file_segment_size_exceeded)
         segment_range.right = range().left + expected_downloaded_size + size_to_reserve;
 
-    reserved = cache->tryReserve(*this, size_to_reserve);
+    /// if reserve_stat is not passed then use dummy stat and discard the result.
+    FileCacheReserveStat dummy_stat;
+    if (!reserve_stat)
+        reserve_stat = &dummy_stat;
+
+    bool reserved = cache->tryReserve(*this, size_to_reserve, *reserve_stat);
 
     if (!reserved)
         setDownloadFailedUnlocked(lockFileSegment());

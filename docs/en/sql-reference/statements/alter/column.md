@@ -213,7 +213,7 @@ Removes one of the column properties: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC
 Syntax:
 
 ```sql
-ALTER TABLE table_name MODIFY column_name REMOVE property;
+ALTER TABLE table_name MODIFY COLUMN column_name REMOVE property;
 ```
 
 **Example**

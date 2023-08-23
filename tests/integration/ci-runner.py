@@ -190,7 +190,7 @@ def clear_ip_tables_and_restart_daemons():
     try:
         logging.info("Killing all alive docker containers")
         subprocess.check_output(
-            "timeout -s 9 10m docker ps --quiet | xargs --no-run-if-empty docker kill",
+            "timeout --signal=KILL 10m docker ps --quiet | xargs --no-run-if-empty docker kill",
             shell=True,
         )
     except subprocess.CalledProcessError as err:
@@ -199,7 +199,7 @@ def clear_ip_tables_and_restart_daemons():
     try:
         logging.info("Removing all docker containers")
         subprocess.check_output(
-            "timeout -s 9 10m docker ps --all --quiet | xargs --no-run-if-empty docker rm --force",
+            "timeout --signal=KILL 10m docker ps --all --quiet | xargs --no-run-if-empty docker rm --force",
             shell=True,
         )
     except subprocess.CalledProcessError as err:
@@ -313,6 +313,7 @@ class ClickhouseIntegrationTestsRunner:
             "clickhouse/mysql-java-client",
             "clickhouse/mysql-js-client",
             "clickhouse/mysql-php-client",
+            "clickhouse/nginx-dav",
             "clickhouse/postgresql-java-client",
         ]
 
@@ -321,7 +322,7 @@ class ClickhouseIntegrationTestsRunner:
 
         cmd = (
             "cd {repo_path}/tests/integration && "
-            "timeout -s 9 1h ./runner {runner_opts} {image_cmd} --pre-pull --command '{command}' ".format(
+            "timeout --signal=KILL 1h ./runner {runner_opts} {image_cmd} --pre-pull --command '{command}' ".format(
                 repo_path=repo_path,
                 runner_opts=self._get_runner_opts(),
                 image_cmd=image_cmd,
@@ -433,9 +434,9 @@ class ClickhouseIntegrationTestsRunner:
         out_file_full = os.path.join(self.result_path, "runner_get_all_tests.log")
         cmd = (
             "cd {repo_path}/tests/integration && "
-            "timeout -s 9 1h ./runner {runner_opts} {image_cmd} -- --setup-plan "
-            "| tee {out_file_full} | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' | sed 's/ *$//g' "
-            "| grep -v 'SKIPPED' | sort -u  > {out_file}".format(
+            "timeout --signal=KILL 1h ./runner {runner_opts} {image_cmd} -- --setup-plan "
+            "| tee '{out_file_full}' | grep -F '::' | sed -r 's/ \(fixtures used:.*//g; s/^ *//g; s/ *$//g' "
+            "| grep -v -F 'SKIPPED' | sort --unique > {out_file}".format(
                 repo_path=repo_path,
                 runner_opts=self._get_runner_opts(),
                 image_cmd=image_cmd,
@@ -677,7 +678,7 @@ class ClickhouseIntegrationTestsRunner:
             # -E -- (E)rror
             # -p -- (p)assed
             # -s -- (s)kipped
-            cmd = "cd {}/tests/integration && timeout -s 9 1h ./runner {} {} -t {} {} -- -rfEps --run-id={} --color=no --durations=0 {} | tee {}".format(
+            cmd = "cd {}/tests/integration && timeout --signal=KILL 1h ./runner {} {} -t {} {} -- -rfEps --run-id={} --color=no --durations=0 {} | tee {}".format(
                 repo_path,
                 self._get_runner_opts(),
                 image_cmd,

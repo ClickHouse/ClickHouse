@@ -108,7 +108,7 @@ public:
     using Nodes = std::list<Node>;
 
     Node * getRootNode() const { return root; }
-    static Nodes detachNodes(QueryPlan && plan);
+    static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
 
 private:
     QueryPlanResourceHolder resources;

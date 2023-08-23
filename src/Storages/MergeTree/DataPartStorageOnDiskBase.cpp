@@ -331,6 +331,7 @@ void DataPartStorageOnDiskBase::backup(
     const NameSet & files_without_checksums,
     const String & path_in_backup,
     const BackupSettings & backup_settings,
+    const ReadSettings & read_settings,
     bool make_temporary_hard_links,
     BackupEntries & backup_entries,
     TemporaryFilesOnDisks * temp_dirs) const
@@ -350,7 +351,7 @@ void DataPartStorageOnDiskBase::backup(
             temp_dir_it = temp_dirs->emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/")).first;
 
         temp_dir_owner = temp_dir_it->second;
-        fs::path temp_dir = temp_dir_owner->getPath();
+        fs::path temp_dir = temp_dir_owner->getRelativePath();
         temp_part_dir = temp_dir / part_path_in_backup.relative_path();
         disk->createDirectories(temp_part_dir);
     }
@@ -382,7 +383,7 @@ void DataPartStorageOnDiskBase::backup(
 
         if (files_without_checksums.contains(filepath))
         {
-            backup_entries.emplace_back(filepath_in_backup, std::make_unique<BackupEntryFromSmallFile>(disk, filepath_on_disk, copy_encrypted));
+            backup_entries.emplace_back(filepath_in_backup, std::make_unique<BackupEntryFromSmallFile>(disk, filepath_on_disk, read_settings, copy_encrypted));
             continue;
         }
 

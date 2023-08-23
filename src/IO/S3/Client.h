@@ -250,6 +250,10 @@ private:
     std::invoke_result_t<RequestFn, RequestType>
     doRequest(const RequestType & request, RequestFn request_fn) const;
 
+    template <bool IsReadMethod, typename RequestType, typename RequestFn>
+    std::invoke_result_t<RequestFn, RequestType>
+    doRequestWithRetryNetworkErrors(const RequestType & request, RequestFn request_fn) const;
+
     void updateURIForBucket(const std::string & bucket, S3::URI new_uri) const;
     std::optional<S3::URI> getURIFromError(const Aws::S3::S3Error & error) const;
     std::optional<Aws::S3::S3Error> updateURIForBucketForHead(const std::string & bucket) const;
