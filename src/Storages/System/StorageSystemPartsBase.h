@@ -73,7 +73,7 @@ private:
     static bool hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot);
 
 protected:
-    const FormatSettings format_settings;
+    const FormatSettings format_settings = {};
 
     StorageSystemPartsBase(const StorageID & table_id_, NamesAndTypesList && columns_);
 

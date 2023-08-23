@@ -1,4 +1,5 @@
-#include "MySQLDumpRowInputFormat.h"
+#include <Processors/Formats/Impl/MySQLDumpRowInputFormat.h>
+#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <IO/ReadHelpers.h>
 #include <IO/PeekableReadBuffer.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -35,9 +36,9 @@ MySQLDumpRowInputFormat::MySQLDumpRowInputFormat(ReadBuffer & in_, const Block &
     : IRowInputFormat(header_, in_, params_)
     , table_name(format_settings_.mysql_dump.table_name)
     , types(header_.getDataTypes())
-    , column_indexes_by_names(header_.getNamesToIndexesMap())
     , format_settings(format_settings_)
 {
+    column_indexes_by_names = getPort().getHeader().getNamesToIndexesMap();
 }
 
 
@@ -303,15 +304,8 @@ static void skipFieldDelimiter(ReadBuffer & in)
     skipWhitespaceIfAny(in);
 }
 
-static void skipEndOfRow(ReadBuffer & in, String & table_name)
+static void skipEndOfInsertQueryIfNeeded(ReadBuffer & in, String & table_name)
 {
-    skipWhitespaceIfAny(in);
-    assertChar(')', in);
-
-    skipWhitespaceIfAny(in);
-    if (!in.eof() && *in.position() == ',')
-        ++in.position();
-
     skipWhitespaceIfAny(in);
     if (!in.eof() && *in.position() == ';')
     {
@@ -321,6 +315,18 @@ static void skipEndOfRow(ReadBuffer & in, String & table_name)
         if (skipToInsertQuery(table_name, in))
             skipToDataInInsertQuery(in);
     }
+}
+
+static void skipEndOfRow(ReadBuffer & in, String & table_name)
+{
+    skipWhitespaceIfAny(in);
+    assertChar(')', in);
+
+    skipWhitespaceIfAny(in);
+    if (!in.eof() && *in.position() == ',')
+        ++in.position();
+
+    skipEndOfInsertQueryIfNeeded(in, table_name);
 }
 
 static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name, NamesAndTypesList & structure_from_create, Names & column_names)
@@ -337,7 +343,8 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name
     }
 
     if (!insert_query_present)
-        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There is no INSERT queries{} in MySQL dump file", table_name.empty() ? "" : " for table " + table_name);
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There is no INSERT queries{} in MySQL dump file",
+                        table_name.empty() ? "" : " for table " + table_name);
 
     skipToDataInInsertQuery(in, column_names.empty() ? &column_names : nullptr);
 }
@@ -384,11 +391,24 @@ bool MySQLDumpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
     return true;
 }
 
+size_t MySQLDumpRowInputFormat::countRows(size_t max_block_size)
+{
+    size_t num_rows = 0;
+    while (!in->eof() && num_rows < max_block_size)
+    {
+        ValuesBlockInputFormat::skipToNextRow(in, 1, 0);
+        skipEndOfInsertQueryIfNeeded(*in, table_name);
+        ++num_rows;
+    }
+
+    return num_rows;
+}
+
 bool MySQLDumpRowInputFormat::readField(IColumn & column, size_t column_idx)
 {
     const auto & type = types[column_idx];
     const auto & serialization = serializations[column_idx];
-    if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
+    if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
         return SerializationNullable::deserializeTextQuotedImpl(column, *in, format_settings, serialization);
 
     serialization->deserializeTextQuoted(column, *in, format_settings);
@@ -421,7 +441,7 @@ NamesAndTypesList MySQLDumpSchemaReader::readSchema()
     return IRowSchemaReader::readSchema();
 }
 
-DataTypes MySQLDumpSchemaReader::readRowAndGetDataTypes()
+std::optional<DataTypes> MySQLDumpSchemaReader::readRowAndGetDataTypes()
 {
     if (in.eof())
         return {};
@@ -435,7 +455,7 @@ DataTypes MySQLDumpSchemaReader::readRowAndGetDataTypes()
             skipFieldDelimiter(in);
 
         readQuotedField(value, in);
-        auto type = determineDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
+        auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
         data_types.push_back(std::move(type));
     }
     skipEndOfRow(in, table_name);

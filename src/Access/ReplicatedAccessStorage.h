@@ -2,7 +2,7 @@
 
 #include <atomic>
 
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/Common.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ConcurrentBoundedQueue.h>
@@ -21,7 +21,7 @@ public:
     static constexpr char STORAGE_TYPE[] = "replicated";
 
     ReplicatedAccessStorage(const String & storage_name, const String & zookeeper_path, zkutil::GetZooKeeper get_zookeeper, AccessChangesNotifier & changes_notifier_, bool allow_backup);
-    virtual ~ReplicatedAccessStorage() override;
+    ~ReplicatedAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
 
@@ -43,14 +43,13 @@ private:
     std::mutex cached_zookeeper_mutex;
 
     std::atomic<bool> watching = false;
-    ThreadFromGlobalPool watching_thread;
+    std::unique_ptr<ThreadFromGlobalPool> watching_thread;
     std::shared_ptr<ConcurrentBoundedQueue<UUID>> watched_queue;
 
-    std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
+    bool insertImpl(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 
-    bool insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists);
     bool insertZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
     bool removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, bool throw_if_not_exists);
     bool updateZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);

@@ -28,6 +28,7 @@ public:
 
     Strings names;
     String new_name;
+    String storage_name;
 
     std::shared_ptr<ASTSettingsProfileElements> settings;
 
@@ -35,5 +36,7 @@ public:
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateRoleQuery>(clone()); }
+
+    QueryKind getQueryKind() const override { return QueryKind::Create; }
 };
 }

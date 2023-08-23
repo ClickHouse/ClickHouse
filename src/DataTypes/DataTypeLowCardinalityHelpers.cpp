@@ -3,6 +3,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnFunction.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
@@ -95,13 +96,24 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
         return ColumnMap::create(nested_no_lc);
     }
 
+    /// Special case when column is a lazy argument of short circuit function.
+    /// We should call recursiveRemoveLowCardinality on the result column
+    /// when function will be executed.
+    if (const auto * column_function = typeid_cast<const ColumnFunction *>(column.get()))
+    {
+        if (!column_function->isShortCircuitArgument())
+            return column;
+
+        return column_function->recursivelyConvertResultToFullColumnIfLowCardinality();
+    }
+
     if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
         return column_low_cardinality->convertToFullColumn();
 
     return column;
 }
 
-ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type)
+ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
     if (!column)
         return column;
@@ -116,7 +128,7 @@ ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & 
     if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
     {
         const auto & nested = column_const->getDataColumnPtr();
-        auto nested_no_lc = recursiveTypeConversion(nested, from_type, to_type);
+        auto nested_no_lc = recursiveLowCardinalityTypeConversion(nested, from_type, to_type);
         if (nested.get() == nested_no_lc.get())
             return column;
 
@@ -145,14 +157,14 @@ ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & 
         {
             const auto * column_array = typeid_cast<const ColumnArray *>(column.get());
             if (!column_array)
-                throw Exception("Unexpected column " + column->getName() + " for type " + from_type->getName(),
-                                ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} for type {}",
+                                column->getName(), from_type->getName());
 
             const auto & nested_from = from_array_type->getNestedType();
             const auto & nested_to = to_array_type->getNestedType();
 
             return ColumnArray::create(
-                    recursiveTypeConversion(column_array->getDataPtr(), nested_from, nested_to),
+                    recursiveLowCardinalityTypeConversion(column_array->getDataPtr(), nested_from, nested_to),
                     column_array->getOffsetsPtr());
         }
     }
@@ -163,8 +175,8 @@ ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & 
         {
             const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get());
             if (!column_tuple)
-                throw Exception("Unexpected column " + column->getName() + " for type " + from_type->getName(),
-                                ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} for type {}",
+                                column->getName(), from_type->getName());
 
             auto columns = column_tuple->getColumns();
             const auto & from_elements = from_tuple_type->getElements();
@@ -175,7 +187,7 @@ ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & 
             for (size_t i = 0; i < columns.size(); ++i)
             {
                 auto & element = columns[i];
-                auto element_no_lc = recursiveTypeConversion(element, from_elements.at(i), to_elements.at(i));
+                auto element_no_lc = recursiveLowCardinalityTypeConversion(element, from_elements.at(i), to_elements.at(i));
                 if (element.get() != element_no_lc.get())
                 {
                     element = element_no_lc;
@@ -190,7 +202,7 @@ ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & 
         }
     }
 
-    throw Exception("Cannot convert: " + from_type->getName() + " to " + to_type->getName(), ErrorCodes::TYPE_MISMATCH);
+    throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert: {} to {}", from_type->getName(), to_type->getName());
 }
 
 }

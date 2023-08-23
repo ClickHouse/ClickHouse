@@ -35,6 +35,7 @@ public:
     bool if_exists = false;
     bool if_not_exists = false;
     bool or_replace = false;
+    String storage_name;
 
     std::shared_ptr<ASTRowPolicyNames> names;
     String new_short_name;
@@ -51,5 +52,7 @@ public:
 
     void replaceCurrentUserTag(const String & current_user_name) const;
     void replaceEmptyDatabase(const String & current_database) const;
+
+    QueryKind getQueryKind() const override { return QueryKind::Create; }
 };
 }

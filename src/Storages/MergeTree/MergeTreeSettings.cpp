@@ -1,9 +1,14 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Disks/getOrCreateDiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/FieldFromAST.h>
+#include <Parsers/isDiskFunction.h>
+#include <Core/Field.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 
 
@@ -39,13 +44,50 @@ void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::U
     }
 }
 
-void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def)
+void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context)
 {
     if (storage_def.settings)
     {
         try
         {
-            applyChanges(storage_def.settings->changes);
+            bool found_disk_setting = false;
+            bool found_storage_policy_setting = false;
+
+            auto changes = storage_def.settings->changes;
+            for (auto & [name, value] : changes)
+            {
+                CustomType custom;
+                if (name == "disk")
+                {
+                    if (value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
+                    {
+                        auto ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
+                        if (ast && isDiskFunction(ast))
+                        {
+                            auto disk_name = getOrCreateDiskFromDiskAST(ast, context);
+                            LOG_TRACE(&Poco::Logger::get("MergeTreeSettings"), "Created custom disk {}", disk_name);
+                            value = disk_name;
+                        }
+                    }
+
+                    if (has("storage_policy"))
+                        resetToDefault("storage_policy");
+
+                    found_disk_setting = true;
+                }
+                else if (name == "storage_policy")
+                    found_storage_policy_setting = true;
+
+                if (found_disk_setting && found_storage_policy_setting)
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time");
+                }
+
+            }
+
+            applyChanges(changes);
         }
         catch (Exception & e)
         {
@@ -99,6 +141,15 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
             background_pool_tasks);
     }
 
+    // Zero index_granularity is nonsensical.
+    if (index_granularity < 1)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "index_granularity: value {} makes no sense",
+            index_granularity);
+    }
+
     // The min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default.
     // If index_granularity_bytes is not disabled i.e > 0 b, then always ensure that it's greater than
     // min_index_granularity_bytes. This is mainly a safeguard against accidents whereby a really low
@@ -123,6 +174,30 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
             "min_bytes_to_rebalance_partition_over_jbod: {} is lower than specified max_bytes_to_merge_at_max_space_in_pool / 1024: {}",
             min_bytes_to_rebalance_partition_over_jbod,
             max_bytes_to_merge_at_max_space_in_pool / 1024);
+    }
+
+    if (max_cleanup_delay_period < cleanup_delay_period)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The value of max_cleanup_delay_period setting ({}) must be greater than the value of cleanup_delay_period setting ({})",
+            max_cleanup_delay_period, cleanup_delay_period);
+    }
+
+    if (max_merge_selecting_sleep_ms < merge_selecting_sleep_ms)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The value of max_merge_selecting_sleep_ms setting ({}) must be greater than the value of merge_selecting_sleep_ms setting ({})",
+            max_merge_selecting_sleep_ms, merge_selecting_sleep_ms);
+    }
+
+    if (merge_selecting_sleep_slowdown_factor < 1.f)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The value of merge_selecting_sleep_slowdown_factor setting ({}) cannot be less than 1.0",
+            merge_selecting_sleep_slowdown_factor);
     }
 }
 }

@@ -73,7 +73,7 @@ CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]na
     Чтобы использовать `LIVE VIEW` и запросы `WATCH`, включите настройку [allow_experimental_live_view](../../../operations/settings/settings.md#allow-experimental-live-view).
     :::
 ```sql
-CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH [TIMEOUT [value_in_sec] [AND]] [REFRESH [value_in_sec]]] AS SELECT ...
+CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH REFRESH [value_in_sec]] AS SELECT ...
 ```
 `LIVE VIEW` хранит результат запроса [SELECT](../../../sql-reference/statements/select/index.md), указанного при создании, и обновляется сразу же при изменении этого результата. Конечный результат запроса и промежуточные данные, из которых формируется результат, хранятся в оперативной памяти, и это обеспечивает высокую скорость обработки для повторяющихся запросов. LIVE-представления могут отправлять push-уведомления при изменении результата исходного запроса `SELECT`. Для этого используйте запрос [WATCH](../../../sql-reference/statements/watch.md).
 
@@ -201,5 +201,3 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
 - Кеширование результатов часто используемых запросов для получения их без задержки.
 - Отслеживание изменений таблицы для запуска других запросов `SELECT`.
 - Отслеживание показателей из системных таблиц с помощью периодических обновлений.
-
-[Оригинальная статья](https://clickhouse.com/docs/ru/sql-reference/statements/create/view) <!--hide-->

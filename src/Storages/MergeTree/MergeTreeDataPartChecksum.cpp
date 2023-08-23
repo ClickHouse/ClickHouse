@@ -1,12 +1,13 @@
 #include "MergeTreeDataPartChecksum.h"
 #include <Common/SipHash.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
 
 
 namespace DB
@@ -30,30 +31,37 @@ void MergeTreeDataPartChecksum::checkEqual(const MergeTreeDataPartChecksum & rhs
     if (is_compressed && have_uncompressed)
     {
         if (!rhs.is_compressed)
-            throw Exception("No uncompressed checksum for file " + name, ErrorCodes::CHECKSUM_DOESNT_MATCH);
+            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "No uncompressed checksum for file {}", name);
         if (rhs.uncompressed_size != uncompressed_size)
-            throw Exception("Unexpected uncompressed size of file " + name + " in data part", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+            throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART, "Unexpected uncompressed size of file {} in data part", name);
         if (rhs.uncompressed_hash != uncompressed_hash)
-            throw Exception("Checksum mismatch for uncompressed file " + name + " in data part", ErrorCodes::CHECKSUM_DOESNT_MATCH);
+            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Checksum mismatch for uncompressed file {} in data part", name);
         return;
     }
     if (rhs.file_size != file_size)
-        throw Exception("Unexpected size of file " + name + " in data part", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+        throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART, "Unexpected size of file {} in data part", name);
     if (rhs.file_hash != file_hash)
-        throw Exception("Checksum mismatch for file " + name + " in data part", ErrorCodes::CHECKSUM_DOESNT_MATCH);
+        throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Checksum mismatch for file {} in data part", name);
 }
 
-void MergeTreeDataPartChecksum::checkSize(const DiskPtr & disk, const String & path) const
+void MergeTreeDataPartChecksum::checkSize(const IDataPartStorage & storage, const String & name) const
 {
-    if (!disk->exists(path))
-        throw Exception(fullPath(disk, path) + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
-    if (disk->isDirectory(path))
-        // This is a projection, no need to check its size.
+    /// Skip inverted index files, these have a default MergeTreeDataPartChecksum with file_size == 0
+    if (name.ends_with(".gin_dict") || name.ends_with(".gin_post") || name.ends_with(".gin_seg") || name.ends_with(".gin_sid"))
         return;
-    UInt64 size = disk->getFileSize(path);
+
+    if (!storage.exists(name))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "{} doesn't exist", fs::path(storage.getRelativePath()) / name);
+
+    // This is a projection, no need to check its size.
+    if (storage.isDirectory(name))
+        return;
+
+    UInt64 size = storage.getFileSize(name);
     if (size != file_size)
-        throw Exception(fullPath(disk, path) + " has unexpected size: " + toString(size) + " instead of " + toString(file_size),
-            ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+        throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
+            "{} has unexpected size: {} instead of {}",
+            fs::path(storage.getRelativePath()) / name, size, file_size);
 }
 
 
@@ -64,27 +72,31 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
         const String & name = it.first;
 
         if (!files.contains(name))
-            throw Exception("Unexpected file " + name + " in data part", ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART);
+            throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART, "Unexpected file {} in data part", name);
     }
 
     for (const auto & it : files)
     {
         const String & name = it.first;
 
+        /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
+        if (name.ends_with(".gin_dict") || name.ends_with(".gin_post") || name.ends_with(".gin_seg") || name.ends_with(".gin_sid"))
+            continue;
+
         auto jt = rhs.files.find(name);
         if (jt == rhs.files.end())
-            throw Exception("No file " + name + " in data part", ErrorCodes::NO_FILE_IN_DATA_PART);
+            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No file {} in data part", name);
 
         it.second.checkEqual(jt->second, have_uncompressed, name);
     }
 }
 
-void MergeTreeDataPartChecksums::checkSizes(const DiskPtr & disk, const String & path) const
+void MergeTreeDataPartChecksums::checkSizes(const IDataPartStorage & storage) const
 {
     for (const auto & it : files)
     {
         const String & name = it.first;
-        it.second.checkSize(disk, path + name);
+        it.second.checkSize(storage, name);
     }
 }
 
@@ -109,7 +121,7 @@ bool MergeTreeDataPartChecksums::read(ReadBuffer & in, size_t format_version)
         case 4:
             return readV4(in);
         default:
-            throw Exception("Bad checksums format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT);
+            throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Bad checksums format version: {}", DB::toString(format_version));
     }
 }
 
@@ -142,9 +154,9 @@ bool MergeTreeDataPartChecksums::readV2(ReadBuffer & in)
         assertString("\n\tsize: ", in);
         readText(sum.file_size, in);
         assertString("\n\thash: ", in);
-        readText(sum.file_hash.first, in);
+        readText(sum.file_hash.low64, in);
         assertString(" ", in);
-        readText(sum.file_hash.second, in);
+        readText(sum.file_hash.high64, in);
         assertString("\n\tcompressed: ", in);
         readText(sum.is_compressed, in);
         if (sum.is_compressed)
@@ -152,9 +164,9 @@ bool MergeTreeDataPartChecksums::readV2(ReadBuffer & in)
             assertString("\n\tuncompressed size: ", in);
             readText(sum.uncompressed_size, in);
             assertString("\n\tuncompressed hash: ", in);
-            readText(sum.uncompressed_hash.first, in);
+            readText(sum.uncompressed_hash.low64, in);
             assertString(" ", in);
-            readText(sum.uncompressed_hash.second, in);
+            readText(sum.uncompressed_hash.high64, in);
         }
         assertChar('\n', in);
 
@@ -175,15 +187,15 @@ bool MergeTreeDataPartChecksums::readV3(ReadBuffer & in)
         String name;
         Checksum sum;
 
-        readBinary(name, in);
+        readStringBinary(name, in);
         readVarUInt(sum.file_size, in);
-        readPODBinary(sum.file_hash, in);
-        readBinary(sum.is_compressed, in);
+        readBinaryLittleEndian(sum.file_hash, in);
+        readBinaryLittleEndian(sum.is_compressed, in);
 
         if (sum.is_compressed)
         {
             readVarUInt(sum.uncompressed_size, in);
-            readPODBinary(sum.uncompressed_hash, in);
+            readBinaryLittleEndian(sum.uncompressed_hash, in);
         }
 
         files.emplace(std::move(name), sum);
@@ -211,15 +223,15 @@ void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
         const String & name = it.first;
         const Checksum & sum = it.second;
 
-        writeBinary(name, out);
+        writeStringBinary(name, out);
         writeVarUInt(sum.file_size, out);
-        writePODBinary(sum.file_hash, out);
-        writeBinary(sum.is_compressed, out);
+        writeBinaryLittleEndian(sum.file_hash, out);
+        writeBinaryLittleEndian(sum.is_compressed, out);
 
         if (sum.is_compressed)
         {
             writeVarUInt(sum.uncompressed_size, out);
-            writePODBinary(sum.uncompressed_hash, out);
+            writeBinaryLittleEndian(sum.uncompressed_hash, out);
         }
     }
 }
@@ -271,7 +283,7 @@ MergeTreeDataPartChecksums MergeTreeDataPartChecksums::deserializeFrom(const Str
     ReadBufferFromString in(s);
     MergeTreeDataPartChecksums res;
     if (!res.read(in))
-        throw Exception("Checksums format is too old", ErrorCodes::FORMAT_VERSION_TOO_OLD);
+        throw Exception(ErrorCodes::FORMAT_VERSION_TOO_OLD, "Checksums format is too old");
     assertEOF(in);
     return res;
 }
@@ -295,19 +307,7 @@ static void updateHash(SipHash & hash, const std::string & data)
 /// Hash is the same as MinimalisticDataPartChecksums::hash_of_all_files
 String MergeTreeDataPartChecksums::getTotalChecksumHex() const
 {
-    SipHash hash_of_all_files;
-
-    for (const auto & [name, checksum] : files)
-    {
-        updateHash(hash_of_all_files, name);
-        hash_of_all_files.update(checksum.file_hash);
-    }
-
-    UInt64 lo;
-    UInt64 hi;
-    hash_of_all_files.get128(lo, hi);
-
-    return getHexUIntUppercase(hi) + getHexUIntUppercase(lo);
+    return getHexUIntUppercase(getTotalChecksumUInt128());
 }
 
 MergeTreeDataPartChecksums::Checksum::uint128 MergeTreeDataPartChecksums::getTotalChecksumUInt128() const
@@ -323,9 +323,7 @@ MergeTreeDataPartChecksums::Checksum::uint128 MergeTreeDataPartChecksums::getTot
         hash_of_all_files.update(checksum.file_hash);
     }
 
-    MergeTreeDataPartChecksums::Checksum::uint128 ret;
-    hash_of_all_files.get128(reinterpret_cast<char *>(&ret));
-    return ret;
+    return getSipHash128AsPair(hash_of_all_files);
 }
 
 void MinimalisticDataPartChecksums::serialize(WriteBuffer & to) const
@@ -339,9 +337,9 @@ void MinimalisticDataPartChecksums::serializeWithoutHeader(WriteBuffer & to) con
     writeVarUInt(num_compressed_files, to);
     writeVarUInt(num_uncompressed_files, to);
 
-    writePODBinary(hash_of_all_files, to);
-    writePODBinary(hash_of_uncompressed_files, to);
-    writePODBinary(uncompressed_hash_of_compressed_files, to);
+    writeBinaryLittleEndian(hash_of_all_files, to);
+    writeBinaryLittleEndian(hash_of_uncompressed_files, to);
+    writeBinaryLittleEndian(uncompressed_hash_of_compressed_files, to);
 }
 
 String MinimalisticDataPartChecksums::getSerializedString() const
@@ -370,7 +368,7 @@ bool MinimalisticDataPartChecksums::deserialize(ReadBuffer & in)
     }
 
     if (format_version > MINIMAL_VERSION_WITH_MINIMALISTIC_CHECKSUMS)
-        throw Exception("Unknown checksums format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT);
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown checksums format version: {}", DB::toString(format_version));
 
     deserializeWithoutHeader(in);
 
@@ -382,9 +380,9 @@ void MinimalisticDataPartChecksums::deserializeWithoutHeader(ReadBuffer & in)
     readVarUInt(num_compressed_files, in);
     readVarUInt(num_uncompressed_files, in);
 
-    readPODBinary(hash_of_all_files, in);
-    readPODBinary(hash_of_uncompressed_files, in);
-    readPODBinary(uncompressed_hash_of_compressed_files, in);
+    readBinaryLittleEndian(hash_of_all_files, in);
+    readBinaryLittleEndian(hash_of_uncompressed_files, in);
+    readBinaryLittleEndian(uncompressed_hash_of_compressed_files, in);
 }
 
 void MinimalisticDataPartChecksums::computeTotalChecksums(const MergeTreeDataPartChecksums & full_checksums_)
@@ -415,14 +413,9 @@ void MinimalisticDataPartChecksums::computeTotalChecksums(const MergeTreeDataPar
         }
     }
 
-    auto get_hash = [] (SipHash & hash, uint128 & data)
-    {
-        hash.get128(data);
-    };
-
-    get_hash(hash_of_all_files_state, hash_of_all_files);
-    get_hash(hash_of_uncompressed_files_state, hash_of_uncompressed_files);
-    get_hash(uncompressed_hash_of_compressed_files_state, uncompressed_hash_of_compressed_files);
+    hash_of_all_files = getSipHash128AsPair(hash_of_all_files_state);
+    hash_of_uncompressed_files = getSipHash128AsPair(hash_of_uncompressed_files_state);
+    uncompressed_hash_of_compressed_files = getSipHash128AsPair(uncompressed_hash_of_compressed_files_state);
 }
 
 String MinimalisticDataPartChecksums::getSerializedString(const MergeTreeDataPartChecksums & full_checksums, bool minimalistic)
@@ -482,11 +475,7 @@ void MinimalisticDataPartChecksums::checkEqualImpl(const MinimalisticDataPartChe
 
     if (!errors.empty())
     {
-        String error_msg = "Checksums of parts don't match: " + errors.front();
-        for (size_t i = 1; i < errors.size(); ++i)
-            error_msg += ", " + errors[i];
-
-        throw Exception(error_msg, ErrorCodes::CHECKSUM_DOESNT_MATCH);
+        throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Checksums of parts don't match: {}", fmt::join(errors, ", "));
     }
 }
 

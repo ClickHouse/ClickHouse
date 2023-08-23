@@ -1,0 +1,3 @@
+SELECT range(toIPv4('172.31.0.0'), toIPv4('172.31.0.10'));
+SELECT range(2887712768, toIPv4('172.31.0.10'));
+SELECT range(toIPv4('172.31.0.0'), 2887712778);

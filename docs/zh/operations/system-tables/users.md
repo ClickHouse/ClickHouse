@@ -33,5 +33,3 @@ slug: /zh/operations/system-tables/users
 ## 另请参阅 {#see-also}
 
 -   [查看用户信息](../../sql-reference/statements/show.md#show-users-statement)
-
-[原始文章](https://clickhouse.com/docs/en/operations/system-tables/users) <!--hide-->

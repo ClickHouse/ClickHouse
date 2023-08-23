@@ -7,23 +7,23 @@ This system table is used for implementing the `SHOW PROCESSLIST` query.
 
 Columns:
 
--   `user` (String) – The user who made the query. Keep in mind that for distributed processing, queries are sent to remote servers under the `default` user. The field contains the username for a specific query, not for a query that this query initiated.
--   `address` (String) – The IP address the request was made from. The same for distributed processing. To track where a distributed query was originally made from, look at `system.processes` on the query requestor server.
--   `elapsed` (Float64) – The time in seconds since request execution started.
--   `rows_read` (UInt64) – The number of rows read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
--   `bytes_read` (UInt64) – The number of uncompressed bytes read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
--   `total_rows_approx` (UInt64) – The approximation of the total number of rows that should be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known.
--   `memory_usage` (UInt64) – Amount of RAM the request uses. It might not include some types of dedicated memory. See the [max_memory_usage](../../operations/settings/query-complexity.md#settings_max_memory_usage) setting.
--   `query` (String) – The query text. For `INSERT`, it does not include the data to insert.
--   `query_id` (String) – Query ID, if defined.
--   `is_cancelled` (Int8) – Was query cancelled.
--   `is_all_data_sent` (Int8) – Was all data sent to the client (in other words query had been finished on the server).
+- `user` (String) – The user who made the query. Keep in mind that for distributed processing, queries are sent to remote servers under the `default` user. The field contains the username for a specific query, not for a query that this query initiated.
+- `address` (String) – The IP address the request was made from. The same for distributed processing. To track where a distributed query was originally made from, look at `system.processes` on the query requestor server.
+- `elapsed` (Float64) – The time in seconds since request execution started.
+- `read_rows` (UInt64) – The number of rows read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
+- `read_bytes` (UInt64) – The number of uncompressed bytes read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
+- `total_rows_approx` (UInt64) – The approximation of the total number of rows that should be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known.
+- `memory_usage` (Int64) – Amount of RAM the request uses. It might not include some types of dedicated memory. See the [max_memory_usage](../../operations/settings/query-complexity.md#settings_max_memory_usage) setting.
+- `query` (String) – The query text. For `INSERT`, it does not include the data to insert.
+- `query_id` (String) – Query ID, if defined.
+- `is_cancelled` (UInt8) – Was query cancelled.
+- `is_all_data_sent` (UInt8) – Was all data sent to the client (in other words query had been finished on the server).
 
 ```sql
-:) SELECT * FROM system.processes LIMIT 10 FORMAT Vertical;
+SELECT * FROM system.processes LIMIT 10 FORMAT Vertical;
 ```
 
-```text
+```response
 Row 1:
 ──────
 is_initial_query:     1
@@ -63,5 +63,3 @@ Settings:             {'background_pool_size':'32','load_balancing':'random','al
 
 1 rows in set. Elapsed: 0.002 sec.
 ```
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/processes) <!--hide-->

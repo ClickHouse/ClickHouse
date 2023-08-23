@@ -191,7 +191,10 @@ namespace
         explicit StreamFromWriteBuffer(std::unique_ptr<WriteBuffer> write_buffer_)
             : write_buffer(std::move(write_buffer_)), start_offset(write_buffer->count()) {}
 
-        ~StreamFromWriteBuffer() { write_buffer->finalize(); }
+        ~StreamFromWriteBuffer()
+        {
+            write_buffer->finalize();
+        }
 
         static int closeFileFunc(void *, void * stream)
         {
@@ -343,7 +346,7 @@ void ZipArchiveWriter::checkCompressionMethodIsEnabled(int compression_method_)
 #if USE_BZIP2
             return;
 #else
-            throw Exception("bzip2 compression method is disabled", ErrorCodes::SUPPORT_IS_DISABLED);
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "bzip2 compression method is disabled");
 #endif
         }
     }
@@ -354,7 +357,7 @@ void ZipArchiveWriter::checkCompressionMethodIsEnabled(int compression_method_)
 void ZipArchiveWriter::checkEncryptionIsEnabled()
 {
 #if !USE_SSL
-    throw Exception("Encryption in zip archive is disabled", ErrorCodes::SUPPORT_IS_DISABLED);
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Encryption in zip archive is disabled");
 #endif
 }
 

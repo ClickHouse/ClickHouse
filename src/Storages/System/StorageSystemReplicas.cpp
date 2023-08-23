@@ -7,10 +7,19 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
-#include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Common/typeid_cast.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ThreadPool.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric SystemReplicasThreads;
+    extern const Metric SystemReplicasThreadsActive;
+}
 
 namespace DB
 {
@@ -30,6 +39,7 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
         { "is_session_expired",                   std::make_shared<DataTypeUInt8>()    },
         { "future_parts",                         std::make_shared<DataTypeUInt32>()   },
         { "parts_to_check",                       std::make_shared<DataTypeUInt32>()   },
+        { "zookeeper_name",                       std::make_shared<DataTypeString>()   },
         { "zookeeper_path",                       std::make_shared<DataTypeString>()   },
         { "replica_name",                         std::make_shared<DataTypeString>()   },
         { "replica_path",                         std::make_shared<DataTypeString>()   },
@@ -51,6 +61,7 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
         { "absolute_delay",                       std::make_shared<DataTypeUInt64>()   },
         { "total_replicas",                       std::make_shared<DataTypeUInt8>()    },
         { "active_replicas",                      std::make_shared<DataTypeUInt8>()    },
+        { "lost_part_count",                      std::make_shared<DataTypeUInt64>()   },
         { "last_queue_update_exception",          std::make_shared<DataTypeString>()   },
         { "zookeeper_exception",                  std::make_shared<DataTypeString>()   },
         { "replica_is_active",                    std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt8>()) }
@@ -104,6 +115,7 @@ Pipe StorageSystemReplicas::read(
             || column_name == "log_pointer"
             || column_name == "total_replicas"
             || column_name == "active_replicas"
+            || column_name == "lost_part_count"
             || column_name == "zookeeper_exception"
             || column_name == "replica_is_active")
         {
@@ -151,14 +163,31 @@ Pipe StorageSystemReplicas::read(
 
     MutableColumns res_columns = storage_snapshot->metadata->getSampleBlock().cloneEmptyColumns();
 
-    for (size_t i = 0, size = col_database->size(); i < size; ++i)
-    {
-        StorageReplicatedMergeTree::Status status;
-        dynamic_cast<StorageReplicatedMergeTree &>(
-            *replicated_tables
-                [(*col_database)[i].safeGet<const String &>()]
-                [(*col_table)[i].safeGet<const String &>()]).getStatus(status, with_zk_fields);
+    size_t tables_size = col_database->size();
+    std::vector<ReplicatedTableStatus> statuses(tables_size);
 
+    size_t thread_pool_size = std::min(tables_size, static_cast<size_t>(getNumberOfPhysicalCPUCores()));
+    auto settings = context->getSettingsRef();
+    if (settings.max_threads != 0)
+        thread_pool_size = std::min(thread_pool_size, static_cast<size_t>(settings.max_threads));
+
+    ThreadPool thread_pool(CurrentMetrics::SystemReplicasThreads, CurrentMetrics::SystemReplicasThreadsActive, thread_pool_size);
+
+    for (size_t i = 0; i < tables_size; ++i)
+    {
+        thread_pool.scheduleOrThrowOnError([&, my_i = i]
+        {
+            dynamic_cast<StorageReplicatedMergeTree &>(
+            *replicated_tables
+                [(*col_database)[my_i].safeGet<const String &>()]
+                [(*col_table)[my_i].safeGet<const String &>()]).getStatus(statuses[my_i], with_zk_fields);
+        });
+    }
+
+    thread_pool.wait();
+
+    for (const auto & status: statuses)
+    {
         size_t col_num = 3;
         res_columns[col_num++]->insert(status.is_leader);
         res_columns[col_num++]->insert(status.can_become_leader);
@@ -166,6 +195,7 @@ Pipe StorageSystemReplicas::read(
         res_columns[col_num++]->insert(status.is_session_expired);
         res_columns[col_num++]->insert(status.queue.future_parts);
         res_columns[col_num++]->insert(status.parts_to_check);
+        res_columns[col_num++]->insert(status.zookeeper_name);
         res_columns[col_num++]->insert(status.zookeeper_path);
         res_columns[col_num++]->insert(status.replica_name);
         res_columns[col_num++]->insert(status.replica_path);
@@ -187,6 +217,7 @@ Pipe StorageSystemReplicas::read(
         res_columns[col_num++]->insert(status.absolute_delay);
         res_columns[col_num++]->insert(status.total_replicas);
         res_columns[col_num++]->insert(status.active_replicas);
+        res_columns[col_num++]->insert(status.lost_part_count);
         res_columns[col_num++]->insert(status.last_queue_update_exception);
         res_columns[col_num++]->insert(status.zookeeper_exception);
 

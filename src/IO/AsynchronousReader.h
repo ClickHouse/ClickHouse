@@ -5,6 +5,8 @@
 #include <memory>
 #include <future>
 #include <boost/noncopyable.hpp>
+#include <Common/Stopwatch.h>
+#include <Common/Priority.h>
 
 
 namespace DB
@@ -46,7 +48,7 @@ public:
         size_t offset = 0;
         size_t size = 0;
         char * buf = nullptr;
-        int64_t priority = 0;
+        Priority priority;
         size_t ignore = 0;
     };
 
@@ -61,6 +63,10 @@ public:
         /// offset
         /// Optional. Useful when implementation needs to do ignore().
         size_t offset = 0;
+
+        std::unique_ptr<Stopwatch> execution_watch;
+
+        operator std::tuple<size_t &, size_t &>() { return {size, offset}; }
     };
 
     /// Submit request and obtain a handle. This method don't perform any waits.

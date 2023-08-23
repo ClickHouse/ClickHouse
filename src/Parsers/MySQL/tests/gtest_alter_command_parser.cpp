@@ -9,7 +9,7 @@
 using namespace DB;
 using namespace DB::MySQLParser;
 
-static inline ASTPtr tryParserQuery(IParser & parser, const String & query)  // -V1071
+static inline ASTPtr tryParserQuery(IParser & parser, const String & query)
 {
     return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, 0);
 }
@@ -261,4 +261,3 @@ TEST(ParserAlterCommand, AlterOptionsCommand)
     EXPECT_THROW(tryParserQuery(alter_p, "FORCE ALGORITHM DEFAULT"), Exception);
     EXPECT_THROW(tryParserQuery(alter_p, "ALGORITHM DEFAULT AUTO_INCREMENT 1"), Exception);
 }
-

@@ -99,7 +99,7 @@ public:
         IAggregateFunctionDataHelper<
             AggregateFunctionSimpleLinearRegressionData<Ret>,
             AggregateFunctionSimpleLinearRegression<X, Y, Ret>
-        > {arguments, params}
+        > {arguments, params, createResultType()}
     {
         // notice: arguments has been checked before
     }
@@ -140,7 +140,7 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         DataTypes types
         {

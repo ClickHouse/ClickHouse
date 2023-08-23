@@ -46,9 +46,7 @@ private:
 class RandomAccessFileFromSeekableReadBuffer : public arrow::io::RandomAccessFile
 {
 public:
-    RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_, off_t file_size_);
-
-    explicit RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_);
+    RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_, std::optional<off_t> file_size_, bool avoid_buffering_);
 
     arrow::Result<int64_t> GetSize() override;
 
@@ -62,6 +60,11 @@ public:
 
     arrow::Result<std::shared_ptr<arrow::Buffer>> Read(int64_t nbytes) override;
 
+    /// Override async reading to avoid using internal arrow thread pool.
+    /// In our code we don't use async reading, so implementation is sync,
+    /// we just call ReadAt and return future with ready value.
+    arrow::Future<std::shared_ptr<arrow::Buffer>> ReadAsync(const arrow::io::IOContext&, int64_t position, int64_t nbytes) override;
+
     arrow::Status Seek(int64_t position) override;
 
 private:
@@ -69,8 +72,38 @@ private:
     SeekableReadBuffer & seekable_in;
     std::optional<off_t> file_size;
     bool is_open = false;
+    bool avoid_buffering = false;
 
     ARROW_DISALLOW_COPY_AND_ASSIGN(RandomAccessFileFromSeekableReadBuffer);
+};
+
+class RandomAccessFileFromRandomAccessReadBuffer : public arrow::io::RandomAccessFile
+{
+public:
+    explicit RandomAccessFileFromRandomAccessReadBuffer(SeekableReadBuffer & in_, size_t file_size_);
+
+    // These are thread safe.
+    arrow::Result<int64_t> GetSize() override;
+    arrow::Result<int64_t> ReadAt(int64_t position, int64_t nbytes, void* out) override;
+    arrow::Result<std::shared_ptr<arrow::Buffer>> ReadAt(int64_t position, int64_t nbytes) override;
+    arrow::Future<std::shared_ptr<arrow::Buffer>> ReadAsync(
+        const arrow::io::IOContext&, int64_t position, int64_t nbytes) override;
+
+    // These are not thread safe, and arrow shouldn't call them. Return NotImplemented error.
+    arrow::Status Seek(int64_t) override;
+    arrow::Result<int64_t> Tell() const override;
+    arrow::Result<int64_t> Read(int64_t, void*) override;
+    arrow::Result<std::shared_ptr<arrow::Buffer>> Read(int64_t) override;
+
+    arrow::Status Close() override;
+    bool closed() const override { return !is_open; }
+
+private:
+    SeekableReadBuffer & in;
+    size_t file_size;
+    bool is_open = true;
+
+    ARROW_DISALLOW_COPY_AND_ASSIGN(RandomAccessFileFromRandomAccessReadBuffer);
 };
 
 class ArrowInputStreamFromReadBuffer : public arrow::io::InputStream
@@ -94,6 +127,19 @@ private:
 std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
     ReadBuffer & in,
     const FormatSettings & settings,
+    std::atomic<int> & is_cancelled,
+    const std::string & format_name,
+    const std::string & magic_bytes,
+    // If true, we'll use ReadBuffer::setReadUntilPosition() to avoid buffering and readahead as
+    // much as possible. For HTTP or S3 ReadBuffer, this means that each RandomAccessFile
+    // read call will do a new HTTP request. Used in parquet pre-buffered reading mode, which makes
+    // arrow do its own buffering and coalescing of reads.
+    // (ReadBuffer is not a good abstraction in this case, but it works.)
+    bool avoid_buffering = false);
+
+// Reads the whole file into a memory buffer, owned by the returned RandomAccessFile.
+std::shared_ptr<arrow::io::RandomAccessFile> asArrowFileLoadIntoMemory(
+    ReadBuffer & in,
     std::atomic<int> & is_cancelled,
     const std::string & format_name,
     const std::string & magic_bytes);

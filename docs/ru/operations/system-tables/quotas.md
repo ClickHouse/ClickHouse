@@ -27,5 +27,3 @@ slug: /ru/operations/system-tables/quotas
 ## Смотрите также {#see-also}
 
 -   [SHOW QUOTAS](../../sql-reference/statements/show.md#show-quotas-statement)
-
-

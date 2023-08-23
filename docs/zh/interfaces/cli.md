@@ -147,5 +147,3 @@ $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM 
     <secure>False</secure>
 </config>
 ```
-
-[来源文章](https://clickhouse.com/docs/zh/interfaces/cli/) <!--hide-->

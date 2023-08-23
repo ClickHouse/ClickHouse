@@ -8,19 +8,15 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class ReadBuffer;
 
 /** A stream for inputting data in a binary line-by-line format.
   */
+template <bool with_defaults = false>
 class BinaryRowInputFormat final : public RowInputFormatWithNamesAndTypes
 {
 public:
-    BinaryRowInputFormat(ReadBuffer & in_, Block header, Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);
+    BinaryRowInputFormat(ReadBuffer & in_, const Block & header, Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
     String getName() const override { return "BinaryRowInputFormat"; }
 
@@ -30,6 +26,7 @@ public:
     std::string getDiagnosticInfo() override { return {}; }
 };
 
+template <bool with_defaults = false>
 class BinaryFormatReader final : public FormatWithNamesAndTypesReader
 {
 public:
@@ -59,12 +56,7 @@ public:
     BinaryWithNamesAndTypesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
 private:
-    DataTypes readRowAndGetDataTypes() override
-    {
-        throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetDataTypes is not implemented"};
-    }
-
-    BinaryFormatReader reader;
+    BinaryFormatReader<false> reader;
 };
 
 }

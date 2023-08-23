@@ -1,34 +1,36 @@
-{% for join_algorithm in ['partial_merge', 'full_sorting_merge'] -%}
+SET allow_experimental_analyzer = 1;
 
-set join_algorithm = '{{ join_algorithm }}';
+{% for join_algorithm in ['partial_merge', 'full_sorting_merge', 'grace_hash'] -%}
 
-select * from (select dummy as val from system.one) s1 any left join (select dummy as val from system.one) s2 using val;
-select * from (select toLowCardinality(dummy) as val from system.one) s1 any left join (select dummy as val from system.one) s2 using val;
-select * from (select dummy as val from system.one) s1 any left join (select toLowCardinality(dummy) as val from system.one) s2 using val;
-select * from (select toLowCardinality(dummy) as val from system.one) s1 any left join (select toLowCardinality(dummy) as val from system.one) s2 using val;
-select * from (select toLowCardinality(toNullable(dummy)) as val from system.one) s1 any left join (select dummy as val from system.one) s2 using val;
-select * from (select dummy as val from system.one) s1 any left join (select toLowCardinality(toNullable(dummy)) as val from system.one) s2 using val;
-select * from (select toLowCardinality(toNullable(dummy)) as val from system.one) s1 any left join (select toLowCardinality(dummy) as val from system.one) s2 using val;
-select * from (select toLowCardinality(dummy) as val from system.one) s1 any left join (select toLowCardinality(toNullable(dummy)) as val from system.one) s2 using val;
-select * from (select toLowCardinality(toNullable(dummy)) as val from system.one) s1 any left join (select toLowCardinality(toNullable(dummy)) as val from system.one) s2 using val;
-select '-';
-select * from (select dummy as val from system.one) s1 any left join (select dummy as val from system.one) s2 on val + 0 = val * 1; -- { serverError 352 }
-select * from (select dummy as val from system.one) s1 any left join (select dummy as rval from system.one) s2 on val + 0 = rval * 1;
-select * from (select toLowCardinality(dummy) as val from system.one) s1 any left join (select dummy as rval from system.one) s2 on val + 0 = rval * 1;
-select * from (select dummy as val from system.one) s1 any left join (select toLowCardinality(dummy) as rval from system.one) s2 on val + 0 = rval * 1;
-select * from (select toLowCardinality(dummy) as val from system.one) s1 any left join (select toLowCardinality(dummy) as rval from system.one) s2 on val + 0 = rval * 1;
-select * from (select toLowCardinality(toNullable(dummy)) as val from system.one) s1 any left join (select dummy as rval from system.one) s2 on val + 0 = rval * 1;
-select * from (select dummy as val from system.one) s1 any left join (select toLowCardinality(toNullable(dummy)) as rval from system.one) s2 on val + 0 = rval * 1;
-select * from (select toLowCardinality(toNullable(dummy)) as val from system.one) s1 any left join (select toLowCardinality(dummy) as rval from system.one) s2 on val + 0 = rval * 1;
-select * from (select toLowCardinality(dummy) as val from system.one) s1 any left join (select toLowCardinality(toNullable(dummy)) as rval from system.one) s2 on val + 0 = rval * 1;
-select * from (select toLowCardinality(toNullable(dummy)) as val from system.one) s1 any left join (select toLowCardinality(toNullable(dummy)) as rval from system.one) s2 on val + 0 = rval * 1;
-select '-';
-select * from (select number as l from system.numbers limit 3) s1 any left join (select number as r from system.numbers limit 3) s2 on l + 1 = r * 1;
-select * from (select toLowCardinality(number) as l from system.numbers limit 3) s1 any left join (select number as r from system.numbers limit 3) s2 on l + 1 = r * 1;
-select * from (select number as l from system.numbers limit 3) s1 any left join (select toLowCardinality(number) as r from system.numbers limit 3) s2 on l + 1 = r * 1;
-select * from (select toLowCardinality(number) as l from system.numbers limit 3) s1 any left join (select toLowCardinality(number) as r from system.numbers limit 3) s2 on l + 1 = r * 1;
-select * from (select toLowCardinality(toNullable(number)) as l from system.numbers limit 3) s1 any left join (select toLowCardinality(number) as r from system.numbers limit 3) s2 on l + 1 = r * 1;
-select * from (select toLowCardinality(number) as l from system.numbers limit 3) s1 any left join (select toLowCardinality(toNullable(number)) as r from system.numbers limit 3) s2 on l + 1 = r * 1;
-select * from (select toLowCardinality(toNullable(number)) as l from system.numbers limit 3) s1 any left join (select toLowCardinality(toNullable(number)) as r from system.numbers limit 3) s2 on l + 1 = r * 1;
+SET join_algorithm = '{{ join_algorithm }}';
+
+SELECT * FROM (SELECT dummy AS val FROM system.one) s1 ANY LEFT JOIN (SELECT dummy AS val FROM system.one) s2 USING val ORDER BY val;
+SELECT * FROM (SELECT toLowCardinality(dummy) AS val FROM system.one) s1 ANY LEFT JOIN (SELECT dummy AS val FROM system.one) s2 USING val ORDER BY val;
+SELECT * FROM (SELECT dummy AS val FROM system.one) s1 ANY LEFT JOIN (SELECT toLowCardinality(dummy) AS val FROM system.one) s2 USING val ORDER BY val;
+SELECT * FROM (SELECT toLowCardinality(dummy) AS val FROM system.one) s1 ANY LEFT JOIN (SELECT toLowCardinality(dummy) AS val FROM system.one) s2 USING val ORDER BY val;
+SELECT * FROM (SELECT toLowCardinality(toNullable(dummy)) AS val FROM system.one) s1 ANY LEFT JOIN (SELECT dummy AS val FROM system.one) s2 USING val ORDER BY val;
+SELECT * FROM (SELECT dummy AS val FROM system.one) s1 ANY LEFT JOIN (SELECT toLowCardinality(toNullable(dummy)) AS val FROM system.one) s2 USING val ORDER BY val;
+SELECT * FROM (SELECT toLowCardinality(toNullable(dummy)) AS val FROM system.one) s1 ANY LEFT JOIN (SELECT toLowCardinality(dummy) AS val FROM system.one) s2 USING val ORDER BY val;
+SELECT * FROM (SELECT toLowCardinality(dummy) AS val FROM system.one) s1 ANY LEFT JOIN (SELECT toLowCardinality(toNullable(dummy)) AS val FROM system.one) s2 USING val ORDER BY val;
+SELECT * FROM (SELECT toLowCardinality(toNullable(dummy)) AS val FROM system.one) s1 ANY LEFT JOIN (SELECT toLowCardinality(toNullable(dummy)) AS val FROM system.one) s2 USING val ORDER BY val;
+SELECT '-';
+SELECT * FROM (SELECT dummy AS val FROM system.one) s1 ANY LEFT JOIN (SELECT dummy AS val FROM system.one) s2 ON val + 0 = val * 1 ORDER BY val; -- { serverError 403 }
+SELECT * FROM (SELECT dummy AS val FROM system.one) s1 ANY LEFT JOIN (SELECT dummy AS rval FROM system.one) s2 ON val + 0 = rval * 1 ORDER BY val;
+SELECT * FROM (SELECT toLowCardinality(dummy) AS val FROM system.one) s1 ANY LEFT JOIN (SELECT dummy AS rval FROM system.one) s2 ON val + 0 = rval * 1 ORDER BY val;
+SELECT * FROM (SELECT dummy AS val FROM system.one) s1 ANY LEFT JOIN (SELECT toLowCardinality(dummy) AS rval FROM system.one) s2 ON val + 0 = rval * 1 ORDER BY val;
+SELECT * FROM (SELECT toLowCardinality(dummy) AS val FROM system.one) s1 ANY LEFT JOIN (SELECT toLowCardinality(dummy) AS rval FROM system.one) s2 ON val + 0 = rval * 1 ORDER BY val;
+SELECT * FROM (SELECT toLowCardinality(toNullable(dummy)) AS val FROM system.one) s1 ANY LEFT JOIN (SELECT dummy AS rval FROM system.one) s2 ON val + 0 = rval * 1 ORDER BY val;
+SELECT * FROM (SELECT dummy AS val FROM system.one) s1 ANY LEFT JOIN (SELECT toLowCardinality(toNullable(dummy)) AS rval FROM system.one) s2 ON val + 0 = rval * 1 ORDER BY val;
+SELECT * FROM (SELECT toLowCardinality(toNullable(dummy)) AS val FROM system.one) s1 ANY LEFT JOIN (SELECT toLowCardinality(dummy) AS rval FROM system.one) s2 ON val + 0 = rval * 1 ORDER BY val;
+SELECT * FROM (SELECT toLowCardinality(dummy) AS val FROM system.one) s1 ANY LEFT JOIN (SELECT toLowCardinality(toNullable(dummy)) AS rval FROM system.one) s2 ON val + 0 = rval * 1 ORDER BY val;
+SELECT * FROM (SELECT toLowCardinality(toNullable(dummy)) AS val FROM system.one) s1 ANY LEFT JOIN (SELECT toLowCardinality(toNullable(dummy)) AS rval FROM system.one) s2 ON val + 0 = rval * 1 ORDER BY val;
+SELECT '-';
+SELECT * FROM (SELECT number AS l FROM system.numbers LIMIT 3) s1 ANY LEFT JOIN (SELECT number AS r FROM system.numbers LIMIT 3) s2 ON l + 1 = r * 1 ORDER BY l;
+SELECT * FROM (SELECT toLowCardinality(number) AS l FROM system.numbers LIMIT 3) s1 ANY LEFT JOIN (SELECT number AS r FROM system.numbers LIMIT 3) s2 ON l + 1 = r * 1 ORDER BY l;
+SELECT * FROM (SELECT number AS l FROM system.numbers LIMIT 3) s1 ANY LEFT JOIN (SELECT toLowCardinality(number) AS r FROM system.numbers LIMIT 3) s2 ON l + 1 = r * 1 ORDER BY l;
+SELECT * FROM (SELECT toLowCardinality(number) AS l FROM system.numbers LIMIT 3) s1 ANY LEFT JOIN (SELECT toLowCardinality(number) AS r FROM system.numbers LIMIT 3) s2 ON l + 1 = r * 1 ORDER BY l;
+SELECT * FROM (SELECT toLowCardinality(toNullable(number)) AS l FROM system.numbers LIMIT 3) s1 ANY LEFT JOIN (SELECT toLowCardinality(number) AS r FROM system.numbers LIMIT 3) s2 ON l + 1 = r * 1 ORDER BY l;
+SELECT * FROM (SELECT toLowCardinality(number) AS l FROM system.numbers LIMIT 3) s1 ANY LEFT JOIN (SELECT toLowCardinality(toNullable(number)) AS r FROM system.numbers LIMIT 3) s2 ON l + 1 = r * 1 ORDER BY l;
+SELECT * FROM (SELECT toLowCardinality(toNullable(number)) AS l FROM system.numbers LIMIT 3) s1 ANY LEFT JOIN (SELECT toLowCardinality(toNullable(number)) AS r FROM system.numbers LIMIT 3) s2 ON l + 1 = r * 1 ORDER BY l;
 
 {% endfor -%}

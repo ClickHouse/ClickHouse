@@ -39,8 +39,9 @@ ClickHouse中提供的其他联接类型:
 
 ## 严格 {#join-settings}
 
-!!! note "注"
-    可以使用以下方式复盖默认的严格性值 [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) 设置。
+:::note
+可以使用以下方式复盖默认的严格性值 [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) 设置。
+:::
 
     Also the behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys) setting.
 
@@ -91,8 +92,9 @@ USING (equi_column1, ... equi_columnN, asof_column)
 
 `ASOF JOIN`会从 `table_2` 中的用户事件时间戳找出和 `table_1` 中用户事件时间戳中最近的一个时间戳，来满足最接近匹配的条件。如果有得话，则相等的时间戳值是最接近的值。在此例中，`user_id` 列可用于条件匹配，`ev_time` 列可用于最接近匹配。在此例中，`event_1_1` 可以 JOIN `event_2_1`，`event_1_2` 可以JOIN `event_2_3`，但是 `event_2_2` 不能被JOIN。
 
-!!! note "注"
-    `ASOF JOIN`在 [JOIN](../../../engines/table-engines/special/join.md) 表引擎中 **不受** 支持。
+:::note
+`ASOF JOIN`在 [JOIN](../../../engines/table-engines/special/join.md) 表引擎中 **不受** 支持。
+:::
 
 ## 分布式联接 {#global-join}
 

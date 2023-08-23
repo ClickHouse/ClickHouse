@@ -61,4 +61,3 @@ LIMIT 2
 **Смотрите также**
 
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
-

@@ -95,6 +95,33 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
         [nodes["node0"], nodes["node2"], nodes["node_observer"]], total_shards
     )
 
+    # test ON CLUSTER query
+    nodes["node0"].query(
+        "CREATE TABLE tbl ON CLUSTER 'test_auto_cluster' (x UInt64) ENGINE = MergeTree ORDER BY x"
+    )
+    nodes["node0"].query("INSERT INTO tbl VALUES (1)")
+    nodes["node1"].query("INSERT INTO tbl VALUES (2)")
+
+    assert (
+        int(
+            nodes["node_observer"]
+            .query(
+                "SELECT sum(x) FROM clusterAllReplicas(test_auto_cluster, default.tbl)"
+            )
+            .strip()
+        )
+        == 3
+    )
+
+    # Query SYSTEM DROP DNS CACHE may reload cluster configuration
+    # check that it does not affect cluster discovery
+    nodes["node1"].query("SYSTEM DROP DNS CACHE")
+    nodes["node0"].query("SYSTEM DROP DNS CACHE")
+
+    check_shard_num(
+        [nodes["node0"], nodes["node2"], nodes["node_observer"]], total_shards
+    )
+
     nodes["node1"].stop_clickhouse(kill=True)
     check_nodes_count(
         [nodes["node0"], nodes["node2"], nodes["node_observer"]], total_nodes - 1

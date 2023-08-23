@@ -74,9 +74,8 @@ class SortedLookupVector : public SortedLookupVectorBase
 
 
 public:
-    using Keys = std::vector<TKey>;
-    using Entries = PaddedPODArray<Entry>;
-    using RowRefs = PaddedPODArray<RowRef>;
+    using Entries = PODArrayWithStackMemory<Entry, sizeof(Entry)>;
+    using RowRefs = PODArrayWithStackMemory<RowRef, sizeof(RowRef)>;
 
     static constexpr bool is_descending = (inequality == ASOFJoinInequality::Greater || inequality == ASOFJoinInequality::GreaterOrEquals);
     static constexpr bool is_strict = (inequality == ASOFJoinInequality::Less) || (inequality == ASOFJoinInequality::Greater);
@@ -238,7 +237,7 @@ AsofRowRefs createAsofRowRef(TypeIndex type, ASOFJoinInequality inequality)
                 result = std::make_unique<SortedLookupVector<T, ASOFJoinInequality::Greater>>();
                 break;
             default:
-                throw Exception("Invalid ASOF Join order", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid ASOF Join order");
         }
     };
 
@@ -265,7 +264,7 @@ std::optional<TypeIndex> SortedLookupVectorBase::getTypeSize(const IColumn & aso
     DISPATCH(DateTime64)
 #undef DISPATCH
 
-    throw Exception("ASOF join not supported for type: " + std::string(asof_column.getFamilyName()), ErrorCodes::BAD_TYPE_OF_FIELD);
+    throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "ASOF join not supported for type: {}", std::string(asof_column.getFamilyName()));
 }
 
 }

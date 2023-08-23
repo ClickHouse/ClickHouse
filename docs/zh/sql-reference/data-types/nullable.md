@@ -40,5 +40,3 @@ SELECT x + y FROM t_null
 │          5 │
 └────────────┘
 ```
-
-[来源文章](https://clickhouse.com/docs/en/data_types/nullable/) <!--hide-->

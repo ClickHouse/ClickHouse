@@ -18,6 +18,7 @@
 #include <Common/Exception.h>
 #include <Common/WeakHash.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -48,7 +49,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<Tabl
     }
 }
 
-bool ConcurrentHashJoin::addJoinedBlock(const Block & right_block, bool check_limits)
+bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block, bool check_limits)
 {
     Blocks dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, right_block);
 
@@ -76,7 +77,7 @@ bool ConcurrentHashJoin::addJoinedBlock(const Block & right_block, bool check_li
                 if (!lock.owns_lock())
                     continue;
 
-                bool limit_exceeded = !hash_join->data->addJoinedBlock(dispatched_block, check_limits);
+                bool limit_exceeded = !hash_join->data->addBlockToJoin(dispatched_block, check_limits);
 
                 dispatched_block = {};
                 blocks_left--;
@@ -161,16 +162,14 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
     return true;
 }
 
-std::shared_ptr<NotJoinedBlocks> ConcurrentHashJoin::getNonJoinedBlocks(
+IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         const Block & /*left_sample_block*/, const Block & /*result_sample_block*/, UInt64 /*max_block_size*/) const
 {
-    if (table_join->strictness() == JoinStrictness::Asof ||
-        table_join->strictness() == JoinStrictness::Semi ||
-        !isRightOrFull(table_join->kind()))
-    {
+    if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}", table_join->kind(), table_join->strictness());
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}",
+                    table_join->kind(), table_join->strictness());
 }
 
 static ALWAYS_INLINE IColumn::Selector hashToSelector(const WeakHash32 & hash, size_t num_shards)
@@ -204,6 +203,7 @@ IColumn::Selector ConcurrentHashJoin::selectDispatchBlock(const Strings & key_co
 
 Blocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, const Block & from_block)
 {
+    /// TODO: use JoinCommon::scatterBlockByHash
     size_t num_shards = hash_joins.size();
     size_t num_cols = from_block.columns();
 

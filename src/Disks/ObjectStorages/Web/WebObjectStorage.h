@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <shared_mutex>
 
 namespace Poco
 {
@@ -51,11 +52,8 @@ public:
         const StoredObject & object,
         WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
-        FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
-
-    void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
 
     void removeObject(const StoredObject & object) override;
 
@@ -89,8 +87,6 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    bool supportsAppend() const override { return false; }
-
     std::string generateBlobNameForPath(const std::string & path) override { return path; }
 
     bool isRemote() const override { return true; }
@@ -98,9 +94,8 @@ public:
     bool isReadOnly() const override { return true; }
 
 protected:
-    void initialize(const String & uri_path) const;
-
     [[noreturn]] static void throwNotAllowed();
+    bool exists(const std::string & path) const;
 
     enum class FileType
     {
@@ -116,12 +111,13 @@ protected:
 
     using Files = std::map<String, FileData>; /// file path -> file data
     mutable Files files;
-
-    String url;
+    mutable std::shared_mutex metadata_mutex;
 
 private:
-    Poco::Logger * log;
+    void initialize(const String & path, const std::unique_lock<std::shared_mutex> &) const;
 
+    const String url;
+    Poco::Logger * log;
     size_t min_bytes_for_seek;
 };
 

@@ -7,11 +7,9 @@ import pytest
 def started_cluster():
     global cluster
     try:
-
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
-            "disks_app_test",
-            main_configs=["config.xml"],
+            "disks_app_test", main_configs=["config.xml"], with_minio=True
         )
 
         cluster.start()
@@ -31,6 +29,18 @@ def init_data(source):
     )
 
     source.query("INSERT INTO test_table(*) VALUES ('test1', 2)")
+
+
+def init_data_s3(source):
+    source.query("DROP TABLE IF EXISTS test_table_s3")
+
+    source.query(
+        "CREATE TABLE test_table_s3(word String, value UInt64) "
+        "ENGINE=MergeTree() "
+        "ORDER BY word SETTINGS storage_policy = 'test3'"
+    )
+
+    source.query("INSERT INTO test_table_s3(*) VALUES ('test1', 2)")
 
 
 def test_disks_app_func_ld(started_cluster):
@@ -302,3 +312,32 @@ def test_disks_app_func_read_write(started_cluster):
     files = out.split("\n")
 
     assert files[0] == "tester"
+
+
+def test_remote_disk_list(started_cluster):
+    source = cluster.instances["disks_app_test"]
+    init_data_s3(source)
+
+    out = source.exec_in_container(
+        ["/usr/bin/clickhouse", "disks", "--save-logs", "--disk", "test3", "list", "."]
+    )
+
+    files = out.split("\n")
+
+    assert files[0] == "store"
+
+    out = source.exec_in_container(
+        [
+            "/usr/bin/clickhouse",
+            "disks",
+            "--save-logs",
+            "--disk",
+            "test3",
+            "list",
+            ".",
+            "--recursive",
+        ]
+    )
+
+    assert ".:\nstore\n" in out
+    assert "\n./store:\n" in out

@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/numbers
-sidebar_position: 39
+sidebar_position: 145
 sidebar_label: numbers
 ---
 
@@ -25,4 +25,3 @@ Examples:
 -- Generate a sequence of dates from 2010-01-01 to 2010-12-31
 select toDate('2010-01-01') + number as d FROM numbers(365);
 ```
-

@@ -59,14 +59,22 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 time_t absolute_delay = 0;
                 time_t relative_delay = 0;
 
-                table_replicated->getReplicaDelays(absolute_delay, relative_delay);
+                if (!table_replicated->isTableReadOnly())
+                {
+                    table_replicated->getReplicaDelays(absolute_delay, relative_delay);
 
-                if ((settings.min_absolute_delay_to_close && absolute_delay >= static_cast<time_t>(settings.min_absolute_delay_to_close))
-                    || (settings.min_relative_delay_to_close && relative_delay >= static_cast<time_t>(settings.min_relative_delay_to_close)))
-                    ok = false;
+                    if ((settings.min_absolute_delay_to_close && absolute_delay >= static_cast<time_t>(settings.min_absolute_delay_to_close))
+                        || (settings.min_relative_delay_to_close && relative_delay >= static_cast<time_t>(settings.min_relative_delay_to_close)))
+                        ok = false;
 
-                message << backQuoteIfNeed(db.first) << "." << backQuoteIfNeed(iterator->name())
-                    << ":\tAbsolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".\n";
+                    message << backQuoteIfNeed(db.first) << "." << backQuoteIfNeed(iterator->name())
+                        << ":\tAbsolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".\n";
+                }
+                else
+                {
+                    message << backQuoteIfNeed(db.first) << "." << backQuoteIfNeed(iterator->name())
+                        << ":\tis readonly. \n";
+                }
             }
         }
 

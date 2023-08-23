@@ -8,7 +8,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 
 
 namespace DB
@@ -79,7 +79,7 @@ UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 sour
 void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 decompressed_size) const
 {
     if (source_size < 1 || !source[0])
-        throw Exception("Wrong compression methods list", ErrorCodes::CORRUPTED_DATA);
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Wrong compression methods list");
 
     UInt8 compression_methods_size = source[0];
 
@@ -98,8 +98,8 @@ void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 sour
         UInt32 uncompressed_size = ICompressionCodec::readDecompressedBlockSize(compressed_buf.data());
 
         if (idx == 0 && uncompressed_size != decompressed_size)
-            throw Exception("Wrong final decompressed size in codec Multiple, got " + toString(uncompressed_size) +
-                ", expected " + toString(decompressed_size), ErrorCodes::CORRUPTED_DATA);
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Wrong final decompressed size in codec Multiple, got {}, expected {}",
+                uncompressed_size, decompressed_size);
 
         uncompressed_buf.resize(uncompressed_size + additional_size_at_the_end_of_buffer);
         codec->decompress(compressed_buf.data(), source_size, uncompressed_buf.data());

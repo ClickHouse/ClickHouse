@@ -18,7 +18,7 @@ class Context;
 class VerticalRowOutputFormat final : public IRowOutputFormat
 {
 public:
-    VerticalRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_);
+    VerticalRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "VerticalRowOutputFormat"; }
 
@@ -44,6 +44,11 @@ private:
 
     /// For totals and extremes.
     void writeSpecialRow(const Columns & columns, size_t row_num, const char * title);
+
+    void resetFormatterImpl() override
+    {
+        row_number = 0;
+    }
 
     const FormatSettings format_settings;
     size_t field_number = 0;
