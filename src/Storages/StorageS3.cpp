@@ -544,13 +544,16 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
             getContext(),
             max_block_size,
             format_settings,
-            max_parsing_threads,
+            need_only_count ? 1 : max_parsing_threads,
             /* max_download_threads= */ std::nullopt,
             /* is_remote_fs */ true,
             compression_method);
 
         if (query_info.has_value())
             input_format->setQueryInfo(query_info.value(), getContext());
+
+        if (need_only_count)
+            input_format->needOnlyCount();
 
         builder.init(Pipe(input_format));
 

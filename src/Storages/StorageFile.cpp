@@ -1023,8 +1023,10 @@ public:
                 const Settings & settings = context->getSettingsRef();
                 chassert(!storage->paths.empty());
                 const auto max_parsing_threads = std::max<size_t>(settings.max_threads/ storage->paths.size(), 1UL);
-                input_format = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, max_parsing_threads);
+                input_format = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, need_only_count ? 1 : max_parsing_threads);
                 input_format->setQueryInfo(query_info, context);
+                if (need_only_count)
+                    input_format->needOnlyCount();
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(input_format));

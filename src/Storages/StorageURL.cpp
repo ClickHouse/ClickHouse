@@ -326,13 +326,16 @@ StorageURLSource::StorageURLSource(
                 getContext(),
                 max_block_size,
                 format_settings,
-                max_parsing_threads,
+                need_only_count ? 1 : max_parsing_threads,
                 /*max_download_threads*/ std::nullopt,
                 /* is_remote_ fs */ true,
                 compression_method);
             input_format->setQueryInfo(query_info, getContext());
 
-            builder.init(Pipe(input_format));
+            if (need_only_count)
+                input_format->needOnlyCount();
+
+          builder.init(Pipe(input_format));
 
             if (columns_description.hasDefaults())
             {
