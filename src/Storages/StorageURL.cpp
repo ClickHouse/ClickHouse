@@ -292,7 +292,7 @@ StorageURLSource::StorageURLSource(
         while (getContext()->getSettingsRef().engine_url_skip_empty_files && uri_and_buf.second->eof());
 
         curr_uri = uri_and_buf.first;
-        auto last_mod_time = uri_and_buf.second->getLastModificationTime();
+        auto last_mod_time = uri_and_buf.second->tryGetLastModificationTime();
         read_buf = std::move(uri_and_buf.second);
 
         if (auto file_progress_callback = getContext()->getFileProgressCallback())
@@ -998,7 +998,7 @@ std::optional<ColumnsDescription> IStorageURLBase::tryGetColumnsFromCache(
     {
         auto get_last_mod_time = [&]() -> std::optional<time_t>
         {
-            auto last_mod_time = getLastModificationTime(url, headers, credentials, context);
+            auto last_mod_time = tryGetLastModificationTime(url, headers, credentials, context);
             /// Some URLs could not have Last-Modified header, in this case we cannot be sure that
             /// data wasn't changed after adding it's schema to cache. Use schema from cache only if
             /// special setting for this case is enabled.
@@ -1028,7 +1028,7 @@ void IStorageURLBase::addColumnsToCache(
     schema_cache.addManyColumns(cache_keys, columns);
 }
 
-std::optional<time_t> IStorageURLBase::getLastModificationTime(
+std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
     const String & url,
     const HTTPHeaderEntries & headers,
     const Poco::Net::HTTPBasicCredentials & credentials,
@@ -1036,29 +1036,22 @@ std::optional<time_t> IStorageURLBase::getLastModificationTime(
 {
     auto settings = context->getSettingsRef();
 
-    try
-    {
-        ReadWriteBufferFromHTTP buf(
-            Poco::URI(url),
-            Poco::Net::HTTPRequest::HTTP_GET,
-            {},
-            getHTTPTimeouts(context),
-            credentials,
-            settings.max_http_get_redirects,
-            settings.max_read_buffer_size,
-            context->getReadSettings(),
-            headers,
-            &context->getRemoteHostFilter(),
-            true,
-            false,
-            false);
+    ReadWriteBufferFromHTTP buf(
+        Poco::URI(url),
+        Poco::Net::HTTPRequest::HTTP_GET,
+        {},
+        getHTTPTimeouts(context),
+        credentials,
+        settings.max_http_get_redirects,
+        settings.max_read_buffer_size,
+        context->getReadSettings(),
+        headers,
+        &context->getRemoteHostFilter(),
+        true,
+        false,
+        false);
 
-        return buf.getLastModificationTime();
-    }
-    catch (...)
-    {
-        return std::nullopt;
-    }
+    return buf.tryGetLastModificationTime();
 }
 
 StorageURL::StorageURL(

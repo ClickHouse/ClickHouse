@@ -208,7 +208,7 @@ namespace
             throw Exception(ErrorCodes::LOGICAL_ERROR, "file_info shouldn't be null");
         for (int i = 0; i < ls.length; ++i)
         {
-            const String full_path = String(ls.file_info[i].mName);
+            const String full_path = fs::path(ls.file_info[i].mName).lexically_normal();
             const size_t last_slash = full_path.rfind('/');
             const String file_name = full_path.substr(last_slash);
             const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
@@ -218,7 +218,7 @@ namespace
             {
                 if (re2::RE2::FullMatch(file_name, matcher))
                     result.push_back(StorageHDFS::PathWithInfo{
-                        String(file_name),
+                        String(full_path),
                         StorageHDFS::PathInfo{ls.file_info[i].mLastMod, static_cast<size_t>(ls.file_info[i].mSize)}});
             }
             else if (is_directory && looking_for_directory)
@@ -253,7 +253,8 @@ namespace
         HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context->getGlobalContext()->getConfigRef());
         HDFSFSPtr fs = createHDFSFS(builder.get());
 
-        return LSWithRegexpMatching("/", fs, path_from_uri);
+        auto res = LSWithRegexpMatching("/", fs, path_from_uri);
+        return res;
     }
 }
 

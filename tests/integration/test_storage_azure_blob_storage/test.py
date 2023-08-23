@@ -44,10 +44,10 @@ def azure_query(node, query, expect_error="false", try_num=10, settings={}):
                 return node.query(query, settings=settings)
         except Exception as ex:
             retriable_errors = [
-                "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response",
-                "DB::Exception: Azure::Core::Http::TransportException: Connection closed before getting full response or response is less than expected",
-                "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response",
-                "DB::Exception: Azure::Core::Http::TransportException: Error while polling for socket ready read",
+                "Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response",
+                "Azure::Core::Http::TransportException: Connection closed before getting full response or response is less than expected",
+                "Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response",
+                "Azure::Core::Http::TransportException: Error while polling for socket ready read",
             ]
             retry = False
             for error in retriable_errors:

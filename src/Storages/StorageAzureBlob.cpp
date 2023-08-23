@@ -992,7 +992,7 @@ Chunk StorageAzureBlobSource::generate()
             if (const auto * input_format = reader.getInputFormat())
                 chunk_size = input_format->getApproxBytesReadForChunk();
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
-            VirtualColumnUtils::addRequestedPathAndFileVirtualsToChunk(chunk, requested_virtual_columns, reader.getPath());
+            VirtualColumnUtils::addRequestedPathAndFileVirtualsToChunk(chunk, requested_virtual_columns, reader.getRelativePath());
             return chunk;
         }
 
