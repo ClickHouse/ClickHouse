@@ -418,7 +418,7 @@ def test_rename(test_cluster):
     for i in range(10):
         instance.query("insert into rename (id) values ({})".format(i))
 
-    # FIXME ddl_check_query doesnt work for replicated DDDL if replace_hostnames_with_ips=True
+    # FIXME ddl_check_query doesn't work for replicated DDDL if replace_hostnames_with_ips=True
     # because replicas use wrong host name of leader (and wrong path in zk) to check if it has executed query
     # so ddl query will always fail on some replicas even if query was actually executed by leader
     # Also such inconsistency in cluster configuration may lead to query duplication if leader suddenly changed
@@ -583,6 +583,17 @@ def test_replicated_without_arguments(test_cluster):
         instance, "DROP DATABASE test_ordinary ON CLUSTER cluster SYNC"
     )
     test_cluster.pm_random_drops.push_rules(rules)
+
+
+def test_disabled_distributed_ddl(test_cluster):
+    instance = test_cluster.instances["ch1"]
+
+    assert (
+        "Distributed DDL queries are prohibited for the cluster"
+        in instance.query_and_get_error(
+            "CREATE DATABASE IF NOT EXISTS test ON CLUSTER 'cluster_disabled_ddl'"
+        )
+    )
 
 
 if __name__ == "__main__":

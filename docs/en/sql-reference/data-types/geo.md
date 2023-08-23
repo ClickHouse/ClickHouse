@@ -26,9 +26,9 @@ SELECT p, toTypeName(p) FROM geo_point;
 Result:
 
 ``` text
-┌─p─────┬─toTypeName(p)─┐
+┌─p───────┬─toTypeName(p)─┐
 │ (10,10) │ Point         │
-└───────┴───────────────┘
+└─────────┴───────────────┘
 ```
 
 ## Ring
@@ -95,3 +95,6 @@ Result:
 └─────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┘
 ```
 
+## Related Content
+
+- [Exploring massive, real-world data sets: 100+ Years of Weather Records in ClickHouse](https://clickhouse.com/blog/real-world-data-noaa-climate-data)

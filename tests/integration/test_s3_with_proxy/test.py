@@ -5,6 +5,7 @@ import time
 import pytest
 from helpers.cluster import ClickHouseCluster
 
+
 # Runs simple proxy resolver in python env container.
 def run_resolver(cluster):
     container_id = cluster.get_container_id("resolver")
@@ -71,7 +72,7 @@ def test_s3_with_proxy_list(cluster, policy):
         == "(0,'data'),(1,'data')"
     )
 
-    node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
+    node.query("DROP TABLE IF EXISTS s3_test SYNC")
 
     for proxy in ["proxy1", "proxy2"]:
         check_proxy_logs(cluster, proxy, ["PUT", "GET"])

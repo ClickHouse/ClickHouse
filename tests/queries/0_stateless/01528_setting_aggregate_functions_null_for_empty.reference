@@ -14,3 +14,6 @@
 45
 10
 10
+SELECT sumOrNullIf(1, number > 0)
+FROM numbers(10)
+WHERE 0

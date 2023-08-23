@@ -17,18 +17,18 @@ namespace Format
 {
     using IndexPositions = PODArrayWithStackMemory<UInt64, 64>;
 
-    static inline void parseNumber(const String & description, UInt64 l, UInt64 r, UInt64 & res, UInt64 argument_number)
+    static inline UInt64 parseNumber(const String & description, UInt64 l, UInt64 r, UInt64 argument_number)
     {
-        res = 0;
+        UInt64 res = 0;
         for (UInt64 pos = l; pos < r; ++pos)
         {
             if (!isNumericASCII(description[pos]))
-                throw Exception("Not a number in curly braces at position " + std::to_string(pos), ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not a number in curly braces at position {}", pos);
             res = res * 10 + description[pos] - '0';
             if (res >= argument_number)
-                throw Exception(
-                    "Too big number for arguments, must be at most " + std::to_string(argument_number - 1), ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too big number for arguments, must be at most {}", argument_number - 1);
         }
+        return res;
     }
 
     static inline void init(
@@ -90,7 +90,7 @@ namespace Format
                 }
 
                 if (is_open_curly)
-                    throw Exception("Two open curly braces without close one at position " + std::to_string(i), ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two open curly braces without close one at position {}", i);
 
                 String to_add = String(pattern.data() + start_pos, i - start_pos);
                 double_brace_removal(to_add);
@@ -113,33 +113,29 @@ namespace Format
                 }
 
                 if (!is_open_curly)
-                    throw Exception("Closed curly brace without open one at position " + std::to_string(i), ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Closed curly brace without open one at position {}", i);
 
                 is_open_curly = false;
 
                 if (last_open == i)
                 {
                     if (is_plain_numbering && !*is_plain_numbering)
-                        throw Exception(
-                            "Cannot switch from automatic field numbering to manual field specification", ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot switch from automatic field numbering to manual field specification");
                     is_plain_numbering = true;
                     if (index_if_plain >= argument_number)
-                        throw Exception("Argument is too big for formatting", ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument is too big for formatting");
                     index_positions.back() = index_if_plain++;
                 }
                 else
                 {
                     if (is_plain_numbering && *is_plain_numbering)
-                        throw Exception(
-                            "Cannot switch from automatic field numbering to manual field specification", ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot switch from automatic field numbering to manual field specification");
                     is_plain_numbering = false;
 
-                    UInt64 arg;
-                    parseNumber(pattern, last_open, i, arg, argument_number);
+                    UInt64 arg = parseNumber(pattern, last_open, i, argument_number);
 
                     if (arg >= argument_number)
-                        throw Exception(
-                            "Argument is too big for formatting. Note that indexing starts from zero", ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument is too big for formatting. Note that indexing starts from zero");
 
                     index_positions.back() = arg;
                 }
@@ -158,7 +154,7 @@ namespace Format
         }
 
         if (is_open_curly)
-            throw Exception("Last open curly brace is not closed", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Last open curly brace is not closed");
 
         String to_add = String(pattern.data() + start_pos, pattern.size() - start_pos);
         double_brace_removal(to_add);

@@ -21,8 +21,8 @@ AggregateFunctionPtr createAggregateFunctionEntropy(
 {
     assertNoParameters(name, parameters);
     if (argument_types.empty())
-        throw Exception("Incorrect number of arguments for aggregate function " + name,
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Incorrect number of arguments for aggregate function {}", name);
 
     size_t num_args = argument_types.size();
     if (num_args == 1)

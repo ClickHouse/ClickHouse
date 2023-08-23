@@ -9,9 +9,33 @@ struct Settings;
 class OpenTelemetrySpanLog;
 class WriteBuffer;
 class ReadBuffer;
+struct ExecutionStatus;
 
 namespace OpenTelemetry
 {
+
+/// See https://opentelemetry.io/docs/reference/specification/trace/api/#spankind
+enum SpanKind
+{
+    /// Default value. Indicates that the span represents an internal operation within an application,
+    /// as opposed to an operations with remote parents or children.
+    INTERNAL = 0,
+
+    /// Indicates that the span covers server-side handling of a synchronous RPC or other remote request.
+    /// This span is often the child of a remote CLIENT span that was expected to wait for a response.
+    SERVER   = 1,
+
+    /// Indicates that the span describes a request to some remote service.
+    /// This span is usually the parent of a remote SERVER span and does not end until the response is received.
+    CLIENT   = 2,
+
+    /// Indicates that the span describes the initiators of an asynchronous request. This parent span will often end before the corresponding child CONSUMER span, possibly even before the child span starts.
+    /// In messaging scenarios with batching, tracing individual messages requires a new PRODUCER span per message to be created.
+    PRODUCER = 3,
+
+    /// Indicates that the span describes a child of an asynchronous PRODUCER request
+    CONSUMER = 4
+};
 
 struct Span
 {
@@ -21,23 +45,28 @@ struct Span
     String operation_name;
     UInt64 start_time_us = 0;
     UInt64 finish_time_us = 0;
+    SpanKind kind = INTERNAL;
     Map attributes;
 
-    void addAttribute(std::string_view name, UInt64 value);
-    void addAttributeIfNotZero(std::string_view name, UInt64 value);
-    void addAttribute(std::string_view name, std::string_view value);
-    void addAttributeIfNotEmpty(std::string_view name, std::string_view value);
-    void addAttribute(std::string_view name, std::function<String()> value_supplier);
-
-    /// Following two methods are declared as noexcept to make sure they're exception safe
-    /// This is because they're usually called in exception handler
-    void addAttribute(const Exception & e) noexcept;
-    void addAttribute(std::exception_ptr e) noexcept;
+    /// Following methods are declared as noexcept to make sure they're exception safe.
+    /// This is because sometimes they will be called in exception handlers/dtor.
+    /// Returns true if attribute is successfully added and false otherwise.
+    bool addAttribute(std::string_view name, UInt64 value) noexcept;
+    bool addAttributeIfNotZero(std::string_view name, UInt64 value) noexcept;
+    bool addAttribute(std::string_view name, std::string_view value) noexcept;
+    bool addAttributeIfNotEmpty(std::string_view name, std::string_view value) noexcept;
+    bool addAttribute(std::string_view name, std::function<String()> value_supplier) noexcept;
+    bool addAttribute(const Exception & e) noexcept;
+    bool addAttribute(std::exception_ptr e) noexcept;
+    bool addAttribute(const ExecutionStatus & e) noexcept;
 
     bool isTraceEnabled() const
     {
         return trace_id != UUID();
     }
+
+private:
+    bool addAttributeImpl(std::string_view name, std::string_view value) noexcept;
 };
 
 /// See https://www.w3.org/TR/trace-context/ for trace_flags definition
@@ -152,7 +181,7 @@ using TracingContextHolderPtr = std::unique_ptr<TracingContextHolder>;
 /// Once it's created or destructed, it automatically maitains the tracing context on the thread that it lives.
 struct SpanHolder : public Span
 {
-    SpanHolder(std::string_view);
+    SpanHolder(std::string_view, SpanKind _kind = INTERNAL);
     ~SpanHolder();
 
     /// Finish a span explicitly if needed.

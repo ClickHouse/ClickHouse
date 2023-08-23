@@ -48,7 +48,7 @@ def get_large_objects_count(cluster, size=100, folder="data"):
     return counter
 
 
-def check_objects_exisis(cluster, object_list, folder="data"):
+def check_objects_exist(cluster, object_list, folder="data"):
     minio = cluster.minio_client
     for obj in object_list:
         if obj:
@@ -149,98 +149,8 @@ def test_s3_zero_copy_replication(started_cluster, policy):
     # Based on version 21.x - after cleanup - only one merged part
     wait_for_large_objects_count(cluster, 1, timeout=60)
 
-    node1.query("DROP TABLE IF EXISTS s3_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS s3_test NO DELAY")
-
-
-@pytest.mark.skip(reason="Test is flaky (and never was stable)")
-def test_s3_zero_copy_on_hybrid_storage(started_cluster):
-    node1 = cluster.instances["node1"]
-    node2 = cluster.instances["node2"]
-
-    node1.query(
-        """
-        CREATE TABLE hybrid_test ON CLUSTER test_cluster (id UInt32, value String)
-        ENGINE=ReplicatedMergeTree('/clickhouse/tables/hybrid_test', '{}')
-        ORDER BY id
-        SETTINGS storage_policy='hybrid'
-        """.format(
-            "{replica}"
-        )
-    )
-
-    node1.query("INSERT INTO hybrid_test VALUES (0,'data'),(1,'data')")
-    node2.query("SYSTEM SYNC REPLICA hybrid_test", timeout=30)
-
-    assert (
-        node1.query("SELECT * FROM hybrid_test ORDER BY id FORMAT Values")
-        == "(0,'data'),(1,'data')"
-    )
-    assert (
-        node2.query("SELECT * FROM hybrid_test ORDER BY id FORMAT Values")
-        == "(0,'data'),(1,'data')"
-    )
-
-    assert (
-        node1.query(
-            "SELECT partition_id,disk_name FROM system.parts WHERE table='hybrid_test' FORMAT Values"
-        )
-        == "('all','default')"
-    )
-    assert (
-        node2.query(
-            "SELECT partition_id,disk_name FROM system.parts WHERE table='hybrid_test' FORMAT Values"
-        )
-        == "('all','default')"
-    )
-
-    node1.query("ALTER TABLE hybrid_test MOVE PARTITION ID 'all' TO DISK 's31'")
-
-    assert (
-        node1.query(
-            "SELECT partition_id,disk_name FROM system.parts WHERE table='hybrid_test' FORMAT Values"
-        )
-        == "('all','s31')"
-    )
-    assert (
-        node2.query(
-            "SELECT partition_id,disk_name FROM system.parts WHERE table='hybrid_test' FORMAT Values"
-        )
-        == "('all','default')"
-    )
-
-    # Total objects in S3
-    s3_objects = get_large_objects_count(cluster, size=0)
-
-    node2.query("ALTER TABLE hybrid_test MOVE PARTITION ID 'all' TO DISK 's31'")
-
-    assert (
-        node1.query(
-            "SELECT partition_id,disk_name FROM system.parts WHERE table='hybrid_test' FORMAT Values"
-        )
-        == "('all','s31')"
-    )
-    assert (
-        node2.query(
-            "SELECT partition_id,disk_name FROM system.parts WHERE table='hybrid_test' FORMAT Values"
-        )
-        == "('all','s31')"
-    )
-
-    # Check that after moving partition on node2 no new obects on s3
-    wait_for_large_objects_count(cluster, s3_objects, size=0)
-
-    assert (
-        node1.query("SELECT * FROM hybrid_test ORDER BY id FORMAT Values")
-        == "(0,'data'),(1,'data')"
-    )
-    assert (
-        node2.query("SELECT * FROM hybrid_test ORDER BY id FORMAT Values")
-        == "(0,'data'),(1,'data')"
-    )
-
-    node1.query("DROP TABLE IF EXISTS hybrid_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS hybrid_test NO DELAY")
+    node1.query("DROP TABLE IF EXISTS s3_test SYNC")
+    node2.query("DROP TABLE IF EXISTS s3_test SYNC")
 
 
 def insert_data_time(node, table, number_of_mb, time, start=0):
@@ -275,8 +185,8 @@ def test_s3_zero_copy_with_ttl_move(
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    node1.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
+    node1.query("DROP TABLE IF EXISTS ttl_move_test SYNC")
+    node2.query("DROP TABLE IF EXISTS ttl_move_test SYNC")
 
     for i in range(iterations):
         node1.query(
@@ -325,8 +235,8 @@ def test_s3_zero_copy_with_ttl_move(
                 == "(10),(11)"
             )
 
-        node1.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
-        node2.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
+        node1.query("DROP TABLE IF EXISTS ttl_move_test SYNC")
+        node2.query("DROP TABLE IF EXISTS ttl_move_test SYNC")
 
 
 @pytest.mark.parametrize(
@@ -340,8 +250,8 @@ def test_s3_zero_copy_with_ttl_delete(started_cluster, large_data, iterations):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    node1.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
+    node1.query("DROP TABLE IF EXISTS ttl_delete_test SYNC")
+    node2.query("DROP TABLE IF EXISTS ttl_delete_test SYNC")
 
     for i in range(iterations):
         node1.query(
@@ -398,8 +308,8 @@ def test_s3_zero_copy_with_ttl_delete(started_cluster, large_data, iterations):
                 == "(11)"
             )
 
-        node1.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
-        node2.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
+        node1.query("DROP TABLE IF EXISTS ttl_delete_test SYNC")
+        node2.query("DROP TABLE IF EXISTS ttl_delete_test SYNC")
 
 
 def wait_mutations(node, table, seconds):
@@ -438,8 +348,8 @@ def s3_zero_copy_unfreeze_base(cluster, unfreeze_query_template):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    node1.query("DROP TABLE IF EXISTS unfreeze_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS unfreeze_test NO DELAY")
+    node1.query("DROP TABLE IF EXISTS unfreeze_test SYNC")
+    node2.query("DROP TABLE IF EXISTS unfreeze_test SYNC")
 
     node1.query(
         """
@@ -466,7 +376,7 @@ def s3_zero_copy_unfreeze_base(cluster, unfreeze_query_template):
 
     assert objects01 == objects02
 
-    check_objects_exisis(cluster, objects01)
+    check_objects_exist(cluster, objects01)
 
     node1.query("TRUNCATE TABLE unfreeze_test")
     node2.query("SYSTEM SYNC REPLICA unfreeze_test", timeout=30)
@@ -477,20 +387,20 @@ def s3_zero_copy_unfreeze_base(cluster, unfreeze_query_template):
     assert objects01 == objects11
     assert objects01 == objects12
 
-    check_objects_exisis(cluster, objects11)
+    check_objects_exist(cluster, objects11)
 
     node1.query(f"{unfreeze_query_template} 'freeze_backup1'")
     wait_mutations(node1, "unfreeze_test", 10)
 
-    check_objects_exisis(cluster, objects12)
+    check_objects_exist(cluster, objects12)
 
     node2.query(f"{unfreeze_query_template} 'freeze_backup2'")
     wait_mutations(node2, "unfreeze_test", 10)
 
     check_objects_not_exisis(cluster, objects12)
 
-    node1.query("DROP TABLE IF EXISTS unfreeze_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS unfreeze_test NO DELAY")
+    node1.query("DROP TABLE IF EXISTS unfreeze_test SYNC")
+    node2.query("DROP TABLE IF EXISTS unfreeze_test SYNC")
 
 
 def test_s3_zero_copy_unfreeze_alter(started_cluster):
@@ -505,8 +415,8 @@ def s3_zero_copy_drop_detached(cluster, unfreeze_query_template):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    node1.query("DROP TABLE IF EXISTS drop_detached_test NO DELAY")
-    node2.query("DROP TABLE IF EXISTS drop_detached_test NO DELAY")
+    node1.query("DROP TABLE IF EXISTS drop_detached_test SYNC")
+    node2.query("DROP TABLE IF EXISTS drop_detached_test SYNC")
 
     node1.query(
         """
@@ -540,8 +450,8 @@ def s3_zero_copy_drop_detached(cluster, unfreeze_query_template):
     wait_mutations(node1, "drop_detached_test", 10)
     wait_mutations(node2, "drop_detached_test", 10)
 
-    check_objects_exisis(cluster, objects1)
-    check_objects_exisis(cluster, objects2)
+    check_objects_exist(cluster, objects1)
+    check_objects_exist(cluster, objects2)
 
     node2.query(
         "ALTER TABLE drop_detached_test DROP DETACHED PARTITION '1'",
@@ -551,8 +461,8 @@ def s3_zero_copy_drop_detached(cluster, unfreeze_query_template):
     wait_mutations(node1, "drop_detached_test", 10)
     wait_mutations(node2, "drop_detached_test", 10)
 
-    check_objects_exisis(cluster, objects1)
-    check_objects_exisis(cluster, objects2)
+    check_objects_exist(cluster, objects1)
+    check_objects_exist(cluster, objects2)
 
     node1.query(
         "ALTER TABLE drop_detached_test DROP DETACHED PARTITION '1'",
@@ -562,7 +472,7 @@ def s3_zero_copy_drop_detached(cluster, unfreeze_query_template):
     wait_mutations(node1, "drop_detached_test", 10)
     wait_mutations(node2, "drop_detached_test", 10)
 
-    check_objects_exisis(cluster, objects1)
+    check_objects_exist(cluster, objects1)
     check_objects_not_exisis(cluster, objects_diff)
 
     node1.query(
@@ -573,7 +483,7 @@ def s3_zero_copy_drop_detached(cluster, unfreeze_query_template):
     wait_mutations(node1, "drop_detached_test", 10)
     wait_mutations(node2, "drop_detached_test", 10)
 
-    check_objects_exisis(cluster, objects1)
+    check_objects_exist(cluster, objects1)
 
     node2.query(
         "ALTER TABLE drop_detached_test DROP DETACHED PARTITION '0'",
@@ -600,8 +510,8 @@ def test_s3_zero_copy_concurrent_merge(started_cluster):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    node1.query("DROP TABLE IF EXISTS concurrent_merge NO DELAY")
-    node2.query("DROP TABLE IF EXISTS concurrent_merge NO DELAY")
+    node1.query("DROP TABLE IF EXISTS concurrent_merge SYNC")
+    node2.query("DROP TABLE IF EXISTS concurrent_merge SYNC")
 
     for node in (node1, node2):
         node.query(
@@ -647,8 +557,8 @@ def test_s3_zero_copy_keeps_data_after_mutation(started_cluster):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    node1.query("DROP TABLE IF EXISTS zero_copy_mutation NO DELAY")
-    node2.query("DROP TABLE IF EXISTS zero_copy_mutation NO DELAY")
+    node1.query("DROP TABLE IF EXISTS zero_copy_mutation SYNC")
+    node2.query("DROP TABLE IF EXISTS zero_copy_mutation SYNC")
 
     node1.query(
         """
@@ -682,7 +592,7 @@ def test_s3_zero_copy_keeps_data_after_mutation(started_cluster):
     wait_for_active_parts(node2, 4, "zero_copy_mutation")
 
     objects1 = node1.get_table_objects("zero_copy_mutation")
-    check_objects_exisis(cluster, objects1)
+    check_objects_exist(cluster, objects1)
 
     node1.query(
         """
@@ -710,7 +620,7 @@ def test_s3_zero_copy_keeps_data_after_mutation(started_cluster):
     nodeY = node2
 
     objectsY = nodeY.get_table_objects("zero_copy_mutation")
-    check_objects_exisis(cluster, objectsY)
+    check_objects_exist(cluster, objectsY)
 
     nodeX.query(
         """
@@ -745,7 +655,7 @@ def test_s3_zero_copy_keeps_data_after_mutation(started_cluster):
         """
     )
 
-    check_objects_exisis(cluster, objectsY)
+    check_objects_exist(cluster, objectsY)
 
     nodeY.query(
         """

@@ -5,77 +5,85 @@
 #include <list>
 #include <unordered_map>
 
-#include <Common/logger_useful.h>
-
 namespace DB
 {
-/// Cache policy LRU evicts entries which are not used for a long time.
-/// WeightFunction is a functor that takes Mapped as a parameter and returns "weight" (approximate size)
-/// of that value.
-/// Cache starts to evict entries when their total weight exceeds max_size.
+/// Cache policy LRU evicts entries which are not used for a long time. Also see cache policy SLRU for reference.
+/// WeightFunction is a functor that takes Mapped as a parameter and returns "weight" (approximate size) of that value.
+/// Cache starts to evict entries when their total weight exceeds max_size_in_bytes.
 /// Value weight should not change after insertion.
 /// To work with the thread-safe implementation of this class use a class "CacheBase" with first parameter "LRU"
 /// and next parameters in the same order as in the constructor of the current class.
-template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = TrivialWeightFunction<TMapped>>
-class LRUCachePolicy : public ICachePolicy<TKey, TMapped, HashFunction, WeightFunction>
+template <typename Key, typename Mapped, typename HashFunction = std::hash<Key>, typename WeightFunction = EqualWeightFunction<Mapped>>
+class LRUCachePolicy : public ICachePolicy<Key, Mapped, HashFunction, WeightFunction>
 {
 public:
-    using Key = TKey;
-    using Mapped = TMapped;
-    using MappedPtr = std::shared_ptr<Mapped>;
-
-    using Base = ICachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
+    using Base = ICachePolicy<Key, Mapped, HashFunction, WeightFunction>;
+    using typename Base::MappedPtr;
+    using typename Base::KeyMapped;
     using typename Base::OnWeightLossFunction;
 
-    /** Initialize LRUCachePolicy with max_size and max_elements_size.
-      * max_elements_size == 0 means no elements size restrictions.
+    /** Initialize LRUCachePolicy with max_size_in_bytes and max_count.
+     *  max_size_in_bytes == 0 means the cache accepts no entries.
+      * max_count == 0 means no elements size restrictions.
       */
-    explicit LRUCachePolicy(size_t max_size_, size_t max_elements_size_ = 0, OnWeightLossFunction on_weight_loss_function_ = {})
-        : max_size(std::max(static_cast<size_t>(1), max_size_)), max_elements_size(max_elements_size_)
+    LRUCachePolicy(size_t max_size_in_bytes_, size_t max_count_, OnWeightLossFunction on_weight_loss_function_)
+        : Base(std::make_unique<NoCachePolicyUserQuota>())
+        , max_size_in_bytes(max_size_in_bytes_)
+        , max_count(max_count_)
+        , on_weight_loss_function(on_weight_loss_function_)
     {
-        Base::on_weight_loss_function = on_weight_loss_function_;
     }
 
-    size_t weight(std::lock_guard<std::mutex> & /* cache_lock */) const override
+    size_t sizeInBytes() const override
     {
-        return current_size;
+        return current_size_in_bytes;
     }
 
-    size_t count(std::lock_guard<std::mutex> & /* cache_lock */) const override
+    size_t count() const override
     {
         return cells.size();
     }
 
-    size_t maxSize() const override
+    size_t maxSizeInBytes() const override
     {
-        return max_size;
+        return max_size_in_bytes;
     }
 
-    void reset(std::lock_guard<std::mutex> & /* cache_lock */) override
+    void setMaxCount(size_t max_count_) override
+    {
+        max_count = max_count_;
+        removeOverflow();
+    }
+
+    void setMaxSizeInBytes(size_t max_size_in_bytes_) override
+    {
+        max_size_in_bytes = max_size_in_bytes_;
+        removeOverflow();
+    }
+
+    void clear() override
     {
         queue.clear();
         cells.clear();
-        current_size = 0;
+        current_size_in_bytes = 0;
     }
 
-    void remove(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) override
+    void remove(const Key & key) override
     {
         auto it = cells.find(key);
         if (it == cells.end())
             return;
         auto & cell = it->second;
-        current_size -= cell.size;
+        current_size_in_bytes -= cell.size;
         queue.erase(cell.queue_iterator);
         cells.erase(it);
     }
 
-    MappedPtr get(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) override
+    MappedPtr get(const Key & key) override
     {
         auto it = cells.find(key);
         if (it == cells.end())
-        {
-            return MappedPtr();
-        }
+            return {};
 
         Cell & cell = it->second;
 
@@ -85,7 +93,21 @@ public:
         return cell.value;
     }
 
-    void set(const Key & key, const MappedPtr & mapped, std::lock_guard<std::mutex> & /* cache_lock */) override
+    std::optional<KeyMapped> getWithKey(const Key & key) override
+    {
+        auto it = cells.find(key);
+        if (it == cells.end())
+            return std::nullopt;
+
+        Cell & cell = it->second;
+
+        /// Move the key to the end of the queue. The iterator remains valid.
+        queue.splice(queue.end(), queue, cell.queue_iterator);
+
+        return std::make_optional<KeyMapped>({it->first, cell.value});
+    }
+
+    void set(const Key & key, const MappedPtr & mapped) override
     {
         auto [it, inserted] = cells.emplace(std::piecewise_construct,
             std::forward_as_tuple(key),
@@ -107,18 +129,26 @@ public:
         }
         else
         {
-            current_size -= cell.size;
+            current_size_in_bytes -= cell.size;
             queue.splice(queue.end(), queue, cell.queue_iterator);
         }
 
         cell.value = mapped;
         cell.size = cell.value ? weight_function(*cell.value) : 0;
-        current_size += cell.size;
+        current_size_in_bytes += cell.size;
 
         removeOverflow();
     }
 
-protected:
+    std::vector<KeyMapped> dump() const override
+    {
+        std::vector<KeyMapped> res;
+        for (const auto & [key, cell] : cells)
+            res.push_back({key, cell.value});
+        return res;
+    }
+
+private:
     using LRUQueue = std::list<Key>;
     using LRUQueueIterator = typename LRUQueue::iterator;
 
@@ -136,31 +166,29 @@ protected:
     Cells cells;
 
     /// Total weight of values.
-    size_t current_size = 0;
-    const size_t max_size;
-    const size_t max_elements_size;
+    size_t current_size_in_bytes = 0;
+    size_t max_size_in_bytes;
+    size_t max_count;
 
     WeightFunction weight_function;
+    OnWeightLossFunction on_weight_loss_function;
 
     void removeOverflow()
     {
         size_t current_weight_lost = 0;
         size_t queue_size = cells.size();
 
-        while ((current_size > max_size || (max_elements_size != 0 && queue_size > max_elements_size)) && (queue_size > 0))
+        while ((current_size_in_bytes > max_size_in_bytes || (max_count != 0 && queue_size > max_count)) && (queue_size > 0))
         {
             const Key & key = queue.front();
 
             auto it = cells.find(key);
             if (it == cells.end())
-            {
-                LOG_ERROR(&Poco::Logger::get("LRUCache"), "LRUCache became inconsistent. There must be a bug in it.");
-                abort();
-            }
+                std::terminate(); // Queue became inconsistent
 
             const auto & cell = it->second;
 
-            current_size -= cell.size;
+            current_size_in_bytes -= cell.size;
             current_weight_lost += cell.size;
 
             cells.erase(it);
@@ -168,13 +196,10 @@ protected:
             --queue_size;
         }
 
-        Base::on_weight_loss_function(current_weight_lost);
+        on_weight_loss_function(current_weight_lost);
 
-        if (current_size > (1ull << 63))
-        {
-            LOG_ERROR(&Poco::Logger::get("LRUCache"), "LRUCache became inconsistent. There must be a bug in it.");
-            abort();
-        }
+        if (current_size_in_bytes > (1ull << 63))
+            std::terminate(); // Queue became inconsistent
     }
 };
 

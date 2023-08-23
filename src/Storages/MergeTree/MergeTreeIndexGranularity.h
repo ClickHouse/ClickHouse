@@ -34,7 +34,7 @@ public:
     /// |-----|---------------------------|----|----|
     ///       ^------------------------^-----------^
     ////  from_mark  offset_in_rows    number_of_rows
-    size_t countMarksForRows(size_t from_mark, size_t number_of_rows, size_t offset_in_rows=0) const;
+    size_t countMarksForRows(size_t from_mark, size_t number_of_rows, size_t offset_in_rows, size_t min_marks_to_read) const;
 
     /// Total marks
     size_t getMarksCount() const;

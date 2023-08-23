@@ -74,10 +74,10 @@ protected:
             size_decompressed = unalignedLoad<UInt32>(&own_compressed_buffer[5]);
         }
         else
-            throw Exception("Unknown compression method: " + toString(method), ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
+            throw Exception(ErrorCodes::UNKNOWN_COMPRESSION_METHOD, "Unknown compression method: {}", toString(method));
 
         if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
-            throw Exception("Too large size_compressed. Most likely corrupted data.", ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
+            throw Exception(ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_compressed. Most likely corrupted data.");
 
         /// Is whole compressed block located in 'compressed_in' buffer?
         if (compressed_in->offset() >= COMPRESSED_BLOCK_HEADER_SIZE &&
@@ -111,14 +111,14 @@ protected:
                     compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to,
                     static_cast<int>(size_decompressed)) < 0)
                 {
-                    throw Exception("Cannot LZ4_decompress_fast", ErrorCodes::CANNOT_DECOMPRESS);
+                    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot LZ4_decompress_fast");
                 }
             }
             else
                 LZ4::decompress(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_compressed_without_checksum, size_decompressed, perf_stat);
         }
         else
-            throw Exception("Unknown compression method: " + toString(method), ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
+            throw Exception(ErrorCodes::UNKNOWN_COMPRESSION_METHOD, "Unknown compression method: {}", toString(method));
     }
 
 public:

@@ -19,7 +19,9 @@ fi
 
 function run_with_cpu()
 {
-    qemu-x86_64-static -cpu "$@" "$command" --query "SELECT 1" 2>&1 | grep -v -F "warning: TCG doesn't support requested feature" ||:
+    qemu-x86_64-static -cpu "$@" "$command" --query "SELECT 1" 2>&1 | \
+      grep -v -F "warning: TCG doesn't support requested feature" | \
+      grep -v -F 'Unknown host IFA type' ||:
 }
 
 run_with_cpu qemu64

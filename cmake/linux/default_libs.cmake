@@ -11,8 +11,6 @@ if (COMPILER_CLANG)
     if (NOT EXISTS "${BUILTINS_LIBRARY}")
         set (BUILTINS_LIBRARY "-lgcc")
     endif ()
-else ()
-    set (BUILTINS_LIBRARY "-lgcc")
 endif ()
 
 if (OS_ANDROID)
@@ -34,6 +32,13 @@ set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
+include (cmake/unwind.cmake)
+include (cmake/cxx.cmake)
+
+# Delay the call to link the global interface after the libc++ libraries are included to avoid circular dependencies
+# which are ok with static libraries but not with dynamic ones
+link_libraries(global-group)
+
 if (NOT OS_ANDROID)
     if (NOT USE_MUSL)
         # Our compatibility layer doesn't build under Android, many errors in musl.
@@ -41,9 +46,6 @@ if (NOT OS_ANDROID)
     endif ()
     add_subdirectory(base/harmful)
 endif ()
-
-include (cmake/unwind.cmake)
-include (cmake/cxx.cmake)
 
 target_link_libraries(global-group INTERFACE
     -Wl,--start-group

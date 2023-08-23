@@ -17,13 +17,12 @@ template <typename A>
 struct IntExp10Impl
 {
     using ResultType = UInt64;
-    static constexpr const bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = false;
+    static constexpr const bool allow_string_or_fixed_string = false;
 
     static inline ResultType apply([[maybe_unused]] A a)
     {
         if constexpr (is_big_int_v<A> || std::is_same_v<A, Decimal256>)
-            throw DB::Exception("IntExp10 is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "IntExp10 is not implemented for big integers");
         else
             return intExp10(static_cast<int>(a));
     }

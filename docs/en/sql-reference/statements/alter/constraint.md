@@ -17,7 +17,7 @@ See more on [constraints](../../../sql-reference/statements/create/table.md#cons
 
 Queries will add or remove metadata about constraints from table so they are processed immediately.
 
-:::warning
+:::tip
 Constraint check **will not be executed** on existing data if it was added.
 :::
 

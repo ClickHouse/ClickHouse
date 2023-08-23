@@ -16,8 +16,8 @@ template <typename A, typename B>
 struct BitAndImpl
 {
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
-    static constexpr const bool allow_fixed_string = true;
-    static const constexpr bool allow_string_integer = false;
+    static constexpr bool allow_fixed_string = true;
+    static constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
@@ -31,7 +31,7 @@ struct BitAndImpl
     static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
     {
         if (!left->getType()->isIntegerTy())
-            throw Exception("BitAndImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "BitAndImpl expected an integral type");
         return b.CreateAnd(left, right);
     }
 #endif

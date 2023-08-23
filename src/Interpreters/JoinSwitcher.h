@@ -18,12 +18,13 @@ class JoinSwitcher : public IJoin
 public:
     JoinSwitcher(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_);
 
+    std::string getName() const override { return "JoinSwitcher"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     /// Add block of data from right hand of JOIN into current join object.
     /// If join-in-memory memory limit exceeded switches to join-on-disk and continue with it.
     /// @returns false, if join-on-disk disk limit exceeded
-    bool addJoinedBlock(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, bool check_limits) override;
 
     void checkTypesOfKeys(const Block & block) const override
     {
@@ -60,10 +61,20 @@ public:
         return join->alwaysReturnsEmptySet();
     }
 
-    std::shared_ptr<NotJoinedBlocks>
+    IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override
     {
         return join->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
+    }
+
+    IBlocksStreamPtr getDelayedBlocks() override
+    {
+        return join->getDelayedBlocks();
+    }
+
+    bool hasDelayedBlocks() const override
+    {
+        return join->hasDelayedBlocks();
     }
 
 private:
@@ -76,7 +87,7 @@ private:
 
     /// Change join-in-memory to join-on-disk moving right hand JOIN data from one to another.
     /// Throws an error if join-on-disk do not support JOIN kind or strictness.
-    void switchJoin();
+    bool switchJoin();
 };
 
 }

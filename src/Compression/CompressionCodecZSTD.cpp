@@ -82,7 +82,7 @@ UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_s
     ZSTD_freeCCtx(cctx);
 
     if (ZSTD_isError(compressed_size))
-        throw Exception("Cannot compress block with ZSTD: " + std::string(ZSTD_getErrorName(compressed_size)), ErrorCodes::CANNOT_COMPRESS);
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress block with ZSTD: {}", std::string(ZSTD_getErrorName(compressed_size)));
 
     return static_cast<UInt32>(compressed_size);
 }
@@ -93,7 +93,7 @@ void CompressionCodecZSTD::doDecompressData(const char * source, UInt32 source_s
     size_t res = ZSTD_decompress(dest, uncompressed_size, source, source_size);
 
     if (ZSTD_isError(res))
-        throw Exception("Cannot ZSTD_decompress: " + std::string(ZSTD_getErrorName(res)), ErrorCodes::CANNOT_DECOMPRESS);
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot ZSTD_decompress: {}", std::string(ZSTD_getErrorName(res)));
 }
 
 CompressionCodecZSTD::CompressionCodecZSTD(int level_, int window_log_) : level(level_), enable_long_range(true), window_log(window_log_)
@@ -115,14 +115,13 @@ void registerCodecZSTD(CompressionCodecFactory & factory)
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() > 2)
-                throw Exception(
-                    "ZSTD codec must have 1 or 2 parameters, given " + std::to_string(arguments->children.size()),
-                    ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
+                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "ZSTD codec must have 1 or 2 parameters, given {}",
+                    arguments->children.size());
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
             if (!literal)
-                throw Exception("ZSTD codec argument must be integer", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "ZSTD codec argument must be integer");
 
             level = static_cast<int>(literal->value.safeGet<UInt64>());
             if (level > ZSTD_maxCLevel())
@@ -135,21 +134,20 @@ void registerCodecZSTD(CompressionCodecFactory & factory)
             {
                 const auto * window_literal = children[1]->as<ASTLiteral>();
                 if (!window_literal)
-                    throw Exception("ZSTD codec second argument must be integer", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+                    throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "ZSTD codec second argument must be integer");
 
                 const int window_log = static_cast<int>(window_literal->value.safeGet<UInt64>());
 
                 ZSTD_bounds window_log_bounds = ZSTD_cParam_getBounds(ZSTD_c_windowLog);
                 if (ZSTD_isError(window_log_bounds.error))
-                    throw Exception(
-                        "ZSTD windowLog parameter is not supported " + std::string(ZSTD_getErrorName(window_log_bounds.error)),
-                        ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+                    throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "ZSTD windowLog parameter is not supported {}",
+                        std::string(ZSTD_getErrorName(window_log_bounds.error)));
                 // 0 means "use default" for libzstd
                 if (window_log != 0 && (window_log > window_log_bounds.upperBound || window_log < window_log_bounds.lowerBound))
-                    throw Exception(
-                        "ZSTD codec can't have window log more than " + toString(window_log_bounds.upperBound) + " and lower than "
-                            + toString(window_log_bounds.lowerBound) + ", given " + toString(window_log),
-                        ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+                    throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER,
+                                    "ZSTD codec can't have window log more than {} and lower than {}, given {}",
+                                    toString(window_log_bounds.upperBound),
+                                    toString(window_log_bounds.lowerBound), toString(window_log));
 
                 return std::make_shared<CompressionCodecZSTD>(level, window_log);
             }

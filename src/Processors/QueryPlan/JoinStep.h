@@ -27,6 +27,9 @@ public:
 
     void describePipeline(FormatSettings & settings) const override;
 
+    void describeActions(JSONBuilder::JSONMap & map) const override;
+    void describeActions(FormatSettings & settings) const override;
+
     const JoinPtr & getJoin() const { return join; }
     bool allowPushDownToRight() const;
 
@@ -37,7 +40,6 @@ private:
     size_t max_block_size;
     size_t max_streams;
     bool keep_left_read_in_order;
-    Processors processors;
 };
 
 /// Special step for the case when Join is already filled.
@@ -49,6 +51,8 @@ public:
 
     String getName() const override { return "FilledJoin"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+
+    const JoinPtr & getJoin() const { return join; }
 
 private:
     void updateOutputStream() override;

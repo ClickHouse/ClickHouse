@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 
@@ -20,7 +21,7 @@ struct OpenTelemetrySpanLogElement : public OpenTelemetry::Span
     static const char * getCustomColumnList() { return nullptr; }
 };
 
-// OpenTelemetry standartizes some Log data as well, so it's not just
+// OpenTelemetry standardizes some Log data as well, so it's not just
 // OpenTelemetryLog to avoid confusion.
 class OpenTelemetrySpanLog : public SystemLog<OpenTelemetrySpanLogElement>
 {

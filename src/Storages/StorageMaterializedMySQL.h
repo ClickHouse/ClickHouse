@@ -32,7 +32,7 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size, size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr) override { throwNotAllowed(); }
+    SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, bool) override { throwNotAllowed(); }
 
     NamesAndTypesList getVirtuals() const override;
     ColumnSizeByName getColumnSizes() const override;
@@ -41,10 +41,17 @@ public:
 
     void drop() override { nested_storage->drop(); }
 
+    bool supportsTrivialCountOptimization() const override { return false; }
+
+    IndexSizeByName getSecondaryIndexSizes() const override
+    {
+        return nested_storage->getSecondaryIndexSizes();
+    }
+
 private:
     [[noreturn]] static void throwNotAllowed()
     {
-        throw Exception("This method is not allowed for MaterializedMySQL", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This method is not allowed for MaterializedMySQL");
     }
 
     StoragePtr nested_storage;

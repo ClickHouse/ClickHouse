@@ -10,7 +10,7 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/config.d/storage_configuration.xml"],
+    main_configs=["configs/config.d/overrides.xml"],
     tmpfs=["/disk1:size=100M", "/disk2:size=100M"],
 )
 

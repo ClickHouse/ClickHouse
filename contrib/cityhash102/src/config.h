@@ -68,7 +68,7 @@
 
 /* Define WORDS_BIGENDIAN to 1 if your processor stores words with the most
    significant byte first (like Motorola and SPARC, unlike Intel). */
-#if defined AC_APPLE_UNIVERSAL_BUILD
+#if defined AC_APPLE_UNIVERSAL_BUILD || defined(__s390x__)
 # if defined __BIG_ENDIAN__
 #  define WORDS_BIGENDIAN 1
 # endif

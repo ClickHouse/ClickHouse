@@ -18,6 +18,7 @@ using ReadingInOrderStepGetter = std::function<Pipe(RangesInDataParts)>;
 /// Will try to produce exactly max_layer pipes but may return less if data is distributed in not a very parallelizable way.
 Pipes buildPipesForReadingByPKRanges(
     const KeyDescription & primary_key,
+    ExpressionActionsPtr sorting_expr,
     RangesInDataParts parts,
     size_t max_layers,
     ContextPtr context,

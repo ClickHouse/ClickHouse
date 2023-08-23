@@ -21,5 +21,13 @@
                 <content_type>application/generic+one</content_type>
             </handler>
         </rule>
+        <rule>
+            <methods>POST</methods>
+            <url>/test_predefined_handler_post_body</url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>INSERT INTO test_table(id, data) SELECT {id:UInt32}, {_request_body:String}</query>
+            </handler>
+        </rule>
     </http_handlers>
 </clickhouse>
