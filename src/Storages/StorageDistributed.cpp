@@ -556,7 +556,11 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         return QueryProcessingStage::FetchColumns;
     }
 
-    auto optimized_stage = getOptimizedQueryProcessingStage(query_info, settings);
+    std::optional<QueryProcessingStage::Enum> optimized_stage;
+    if (settings.allow_experimental_analyzer)
+        optimized_stage = getOptimizedQueryProcessingStageAnalyzer(query_info, settings);
+    else
+        optimized_stage = getOptimizedQueryProcessingStage(query_info, settings);
     if (optimized_stage)
     {
         if (*optimized_stage == QueryProcessingStage::Complete)
@@ -565,6 +569,100 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     }
 
     return QueryProcessingStage::WithMergeableState;
+}
+
+std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const
+{
+    bool optimize_sharding_key_aggregation =
+        settings.optimize_skip_unused_shards &&
+        settings.optimize_distributed_group_by_sharding_key &&
+        has_sharding_key &&
+        (settings.allow_nondeterministic_optimize_skip_unused_shards || sharding_key_is_deterministic);
+
+    QueryProcessingStage::Enum default_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
+    if (settings.distributed_push_down_limit)
+        default_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+
+    const auto & query_node = query_info.query_tree->as<const QueryNode &>();
+
+    // std::cerr << query_node.dumpTree() << std::endl;
+    // std::cerr << query_info.table_expression->dumpTree() << std::endl;
+
+    auto expr_contains_sharding_key = [&](const ListNode & exprs) -> bool
+    {
+        std::unordered_set<std::string> expr_columns;
+        for (auto & expr : exprs)
+        {
+            const auto * id = expr->as<const ColumnNode>();
+            if (!id)
+                continue;
+            auto source = id->getColumnSourceOrNull();
+            if (!source)
+                continue;
+
+            if (source.get() != query_info.table_expression.get())
+                continue;
+
+            expr_columns.emplace(id->getColumnName());
+        }
+        for (const auto & column : sharding_key_expr->getRequiredColumns())
+        {
+            if (!expr_columns.contains(column))
+                return false;
+        }
+
+        return true;
+    };
+
+    // GROUP BY qualifiers
+    // - TODO: WITH TOTALS can be implemented
+    // - TODO: WITH ROLLUP can be implemented (I guess)
+    if (query_node.isGroupByWithTotals() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube())
+        return {};
+
+    // Window functions are not supported.
+    if (query_node.hasWindow())
+        return {};
+    // TODO: extremes support can be implemented
+    if (settings.extremes)
+        return {};
+
+    // DISTINCT
+    if (query_node.isDistinct())
+    {
+        if (!optimize_sharding_key_aggregation || !expr_contains_sharding_key(query_node.getProjection()))
+            return {};
+    }
+
+    // GROUP BY
+    bool has_aggregates = query_info.has_aggregates;
+    if (query_info.syntax_analyzer_result)
+        has_aggregates = !query_info.syntax_analyzer_result->aggregates.empty();
+
+    if (has_aggregates || query_node.hasGroupBy())
+    {
+        if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || !expr_contains_sharding_key(query_node.getGroupBy()))
+            return {};
+    }
+
+    // LIMIT BY
+    if (query_node.hasLimitBy())
+    {
+        if (!optimize_sharding_key_aggregation || !expr_contains_sharding_key(query_node.getLimitBy()))
+            return {};
+    }
+
+    // ORDER BY
+    if (query_node.hasOrderBy())
+        return default_stage;
+
+    // LIMIT
+    // OFFSET
+    if (query_node.hasLimit() || query_node.hasOffset())
+        return default_stage;
+
+    // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
+    return QueryProcessingStage::Complete;
 }
 
 std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const
@@ -1428,8 +1526,31 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
     [[maybe_unused]] const StorageSnapshotPtr & storage_snapshot,
     ContextPtr local_context) const
 {
-    if (!query_info.filter_actions_dag)
+
+    ActionsDAG::NodeRawConstPtrs nodes;
+
+    const auto & prewhere_info = query_info.prewhere_info;
+    if (prewhere_info)
+    {
+        {
+            const auto & node = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
+            nodes.push_back(&node);
+        }
+
+        if (prewhere_info->row_level_filter)
+        {
+            const auto & node = prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name);
+            nodes.push_back(&node);
+        }
+    }
+
+    if (query_info.filter_actions_dag)
+        nodes.push_back(query_info.filter_actions_dag->getOutputs().at(0));
+
+    if (nodes.empty())
         return nullptr;
+
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(nodes, {}, local_context);
 
     size_t limit = local_context->getSettingsRef().optimize_skip_unused_shards_limit;
     if (!limit || limit > SSIZE_MAX)
@@ -1446,7 +1567,7 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
 
     // std::cerr << "--- expr\n";
     // std::cerr << sharding_key_dag.dumpDAG() << std::endl;
-    const auto * predicate = query_info.filter_actions_dag->getOutputs().at(0);
+    const auto * predicate = filter_actions_dag->getOutputs().at(0);
     const auto variants = evaluateExpressionOverConstantCondition(predicate, {expr_node}, local_context, limit);
 
     // Can't get a definite answer if we can skip any shards
