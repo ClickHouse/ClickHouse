@@ -38,6 +38,8 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
+    bool supportsTrivialCountOptimization() const override { return true; }
+
 private:
     void addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context) override;
 
