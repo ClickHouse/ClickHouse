@@ -7,6 +7,9 @@
             <caConfig>/etc/clickhouse-server/config.d/rootCA.pem</caConfig>
             <loadDefaultCAFile>true</loadDefaultCAFile>
             <verificationMode>none</verificationMode>
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>
+            </invalidCertificateHandler>
             <cacheSessions>true</cacheSessions>
             <disableProtocols>sslv2,sslv3</disableProtocols>
             <preferServerCiphers>true</preferServerCiphers>
@@ -14,6 +17,9 @@
         <client>
             <!-- certificate is outdated and outgoing connection would fail otherwise -->
             <verificationMode>none</verificationMode>
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>
+            </invalidCertificateHandler>
         </client>
     </openSSL>
 </clickhouse>
