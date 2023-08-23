@@ -61,7 +61,9 @@ def test_adjust_log_level(start_cluster):
         ]
     )
     time.sleep(3)
-    node.query("SELECT * FROM system.zookeeper SETTINGS allow_unrestricted_reads_from_keeper = 'true'")
+    node.query(
+        "SELECT * FROM system.zookeeper SETTINGS allow_unrestricted_reads_from_keeper = 'true'"
+    )
     node.exec_in_container(
         [
             "bash",
