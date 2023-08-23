@@ -972,7 +972,7 @@ def test_schema_inference_cache(cluster):
     check_cache_hits(node, "test_cache.parquet")
     check_cache_num_rows_hots(node, "test_cache.parquet")
 
-    
+
 def test_filtering_by_file_or_path(cluster):
     node = cluster.instances["node"]
     azure_query(
