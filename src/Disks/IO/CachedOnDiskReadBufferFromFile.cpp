@@ -712,7 +712,7 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
         ///                     ^
         ///                     file_offset_of_buffer_end
 
-        if (file_segment.getCurrentWriteOffset() == file_offset_of_buffer_end)
+        if (file_offset_of_buffer_end >= file_segment.getCurrentWriteOffset())
         {
             implementation_buffer = getImplementationBuffer(file_segment);
             return true;
