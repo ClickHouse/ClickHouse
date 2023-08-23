@@ -5,6 +5,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
+#include <Storages/MergeTree/KeyCondition.h>
 
 namespace parquet { class FileMetaData; }
 namespace parquet::arrow { class FileReader; }
@@ -54,6 +55,8 @@ public:
         size_t min_bytes_for_seek);
 
     ~ParquetBlockInputFormat() override;
+
+    void setQueryInfo(const SelectQueryInfo & query_info, ContextPtr context) override;
 
     void resetParser() override;
 
@@ -246,12 +249,15 @@ private:
     size_t min_bytes_for_seek;
     const size_t max_pending_chunks_per_row_group_batch = 2;
 
-    // RandomAccessFile is thread safe, so we share it among threads.
-    // FileReader is not, so each thread creates its own.
+    /// RandomAccessFile is thread safe, so we share it among threads.
+    /// FileReader is not, so each thread creates its own.
     std::shared_ptr<arrow::io::RandomAccessFile> arrow_file;
     std::shared_ptr<parquet::FileMetaData> metadata;
-    // indices of columns to read from Parquet file
+    /// Indices of columns to read from Parquet file.
     std::vector<int> column_indices;
+    /// Pushed-down filter that we'll use to skip row groups.
+    std::optional<KeyCondition> key_condition;
+
 
     // Window of active row groups:
     //

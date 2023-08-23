@@ -668,8 +668,7 @@ void LocalServer::processConfig()
         uncompressed_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    if (uncompressed_cache_size)
-        global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
+    global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
 
     String mark_cache_policy = config().getString("mark_cache_policy", DEFAULT_MARK_CACHE_POLICY);
     size_t mark_cache_size = config().getUInt64("mark_cache_size", DEFAULT_MARK_CACHE_MAX_SIZE);
@@ -680,8 +679,7 @@ void LocalServer::processConfig()
         mark_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
-    if (mark_cache_size)
-        global_context->setMarkCache(mark_cache_policy, mark_cache_size);
+    global_context->setMarkCache(mark_cache_policy, mark_cache_size);
 
     size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE);
     if (index_uncompressed_cache_size > max_cache_size)
@@ -689,8 +687,7 @@ void LocalServer::processConfig()
         index_uncompressed_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    if (index_uncompressed_cache_size)
-        global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
+    global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
 
     size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", DEFAULT_INDEX_MARK_CACHE_MAX_SIZE);
     if (index_mark_cache_size > max_cache_size)
@@ -698,8 +695,7 @@ void LocalServer::processConfig()
         index_mark_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    if (index_mark_cache_size)
-        global_context->setIndexMarkCache(index_mark_cache_size);
+    global_context->setIndexMarkCache(index_mark_cache_size);
 
     size_t mmap_cache_size = config().getUInt64("mmap_cache_size", DEFAULT_MMAP_CACHE_MAX_SIZE);
     if (mmap_cache_size > max_cache_size)
@@ -707,11 +703,10 @@ void LocalServer::processConfig()
         mmap_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered mmap file cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    if (mmap_cache_size)
-        global_context->setMMappedFileCache(mmap_cache_size);
+    global_context->setMMappedFileCache(mmap_cache_size);
 
-    /// In Server.cpp (./clickhouse-server), we would initialize the query cache here.
-    /// Intentionally not doing this in clickhouse-local as it doesn't make sense.
+    /// Initialize a dummy query cache.
+    global_context->setQueryCache(0, 0, 0, 0);
 
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_max_size_in_bytes = config().getUInt64("compiled_expression_cache_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE);
