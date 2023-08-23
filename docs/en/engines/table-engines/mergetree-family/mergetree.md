@@ -1300,7 +1300,7 @@ In this sample configuration:
 There is a possibility of future refactoring of the CFS zero copy. This feature is not recommended for production use.
 :::
 
-[Cluster file system](https://en.wikipedia.org/wiki/Clustered_file_system)(CFS) needs to be compatible with posix file protocol, such as NFS, CephFS, Lustre, etc., the data is shared, CFS can also be used to store cold data.
+[Cluster file system](https://en.wikipedia.org/wiki/Clustered_file_system)(CFS) needs to be compatible with file POSIX, such as NFS, CephFS, Lustre, etc., the data is shared, CFS can also be used to store cold data.
 
 First mount the remote CFS path to the local host such as `/mnt/cfs`.
 In this sample configuration:

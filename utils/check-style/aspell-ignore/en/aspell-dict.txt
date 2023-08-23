@@ -142,6 +142,7 @@ CellAreaM
 CellAreaRads
 CellsIntersect
 CentOS
+CephFS
 CertificateHandler
 Chadmin
 ChannelID
@@ -636,6 +637,7 @@ OrZero
 OvercommitTracker
 PAAMAYIM
 PCRE
+POSIX
 PREWHERE
 PROCESSLIST
 PagerDuty
