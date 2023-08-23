@@ -1304,6 +1304,10 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
 
     selectColumnNames(column_names_to_return, data, real_column_names, virt_column_names, sample_factor_column_queried);
 
+    /// Do not keep data parts in snapshot.
+    /// They are stored separately, and some could be released after PK analysis.
+    auto storage_snapshot_copy = storage_snapshot->clone(std::make_unique<MergeTreeData::SnapshotData>());
+
     return std::make_unique<ReadFromMergeTree>(
         std::move(parts),
         std::move(alter_conversions),
@@ -1311,7 +1315,7 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         virt_column_names,
         data,
         query_info,
-        storage_snapshot,
+        storage_snapshot_copy,
         context,
         max_block_size,
         num_streams,
