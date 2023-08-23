@@ -15,7 +15,7 @@ def cluster():
                 "configs/config.d/storage_conf.xml",
                 "configs/config.d/proxy_list.xml",
             ],
-            with_minio=True
+            with_minio=True,
         )
         logging.info("Starting cluster...")
         cluster.start()
