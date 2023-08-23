@@ -36,8 +36,8 @@ In case you run into failure, please manually run benchmark as below sections.
 
 ## Definition
 
-[CLICKHOUSE_EXE] means the executable binary of clickhouse.
-[INSTANCE] means a individual server instance connected with respective client by specifying port.
+- [CLICKHOUSE_EXE] means the executable binary of clickhouse.
+- [INSTANCE] means a individual server instance connected with respective client by specifying port.
 
 ## Environment
 

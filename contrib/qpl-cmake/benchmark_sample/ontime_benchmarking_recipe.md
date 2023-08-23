@@ -25,8 +25,8 @@ The folders `benchmark_sample` under [qpl-cmake](https://github.com/ClickHouse/C
 
 ## Definition
 
-[CLICKHOUSE_EXE] means the executable binary of clickhouse.
-[INSTANCE] means a individual server instance connected with respective client by specifying port.
+- [CLICKHOUSE_EXE] means the executable binary of clickhouse.
+- [INSTANCE] means a individual server instance connected with respective client by specifying port.
 
 ## Environment
 
