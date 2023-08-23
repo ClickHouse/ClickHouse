@@ -168,7 +168,7 @@ namespace
                 if (in->size() > default_non_const->size())
                 {
                     throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
+                        ErrorCodes::LOGICAL_ERROR,
                         "Fourth argument of function {} must be a constant or a column at least as big as the second and third arguments",
                         getName());
                 }
