@@ -796,7 +796,8 @@ public:
         const SelectQueryInfo & query_info_,
         UInt64 max_block_size_,
         FilesIteratorPtr files_iterator_,
-        std::unique_ptr<ReadBuffer> read_buf_)
+        std::unique_ptr<ReadBuffer> read_buf_,
+        bool need_only_count_)
         : ISource(info.source_header, false)
         , storage(std::move(storage_))
         , storage_snapshot(storage_snapshot_)
@@ -809,6 +810,7 @@ public:
         , context(context_)
         , query_info(query_info_)
         , max_block_size(max_block_size_)
+        , need_only_count(need_only_count_)
     {
         if (!storage->use_table_fd)
         {
@@ -982,8 +984,10 @@ public:
                 const Settings & settings = context->getSettingsRef();
                 chassert(!storage->paths.empty());
                 const auto max_parsing_threads = std::max<size_t>(settings.max_threads/ storage->paths.size(), 1UL);
-                input_format = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, max_parsing_threads);
+                input_format = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, need_only_count ? 1 : max_parsing_threads);
                 input_format->setQueryInfo(query_info, context);
+                if (need_only_count)
+                    input_format->needOnlyCount();
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(input_format));
@@ -1066,6 +1070,7 @@ private:
     UInt64 max_block_size;
 
     bool finished_generate = false;
+    bool need_only_count = false;
 
     std::shared_lock<std::shared_timed_mutex> shared_lock;
 };
@@ -1137,6 +1142,8 @@ Pipe StorageFile::read(
         progress_callback(FileProgress(0, total_bytes_to_read));
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+        && context->getSettingsRef().optimize_count_from_files;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -1156,7 +1163,8 @@ Pipe StorageFile::read(
             query_info,
             max_block_size,
             files_iterator,
-            std::move(read_buffer)));
+            std::move(read_buffer),
+            need_only_count));
     }
 
     return Pipe::unitePipes(std::move(pipes));

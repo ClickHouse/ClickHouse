@@ -472,6 +472,7 @@ StorageS3Source::StorageS3Source(
     const String & version_id_,
     std::shared_ptr<IIterator> file_iterator_,
     const size_t max_parsing_threads_,
+    bool need_only_count_,
     std::optional<SelectQueryInfo> query_info_)
     : ISource(info.source_header, false)
     , WithContext(context_)
@@ -491,6 +492,7 @@ StorageS3Source::StorageS3Source(
     , requested_virtual_columns(info.requested_virtual_columns)
     , file_iterator(file_iterator_)
     , max_parsing_threads(max_parsing_threads_)
+    , need_only_count(need_only_count_)
     , create_reader_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "CreateS3Reader"))
 {
@@ -516,6 +518,9 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
     auto compression_method = chooseCompressionMethod(key_with_info.key, compression_hint);
 
     auto read_buf = createS3ReadBuffer(key_with_info.key, object_size);
+    if (need_only_count)
+        max_parsing_threads = 1;
+
     auto input_format = FormatFactory::instance().getInput(
         format,
         *read_buf,
@@ -530,6 +535,9 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
 
     if (query_info.has_value())
         input_format->setQueryInfo(query_info.value(), getContext());
+
+    if (need_only_count)
+        input_format->needOnlyCount();
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
@@ -966,6 +974,8 @@ Pipe StorageS3::read(
         query_configuration, distributed_processing, local_context, query_info.query, virtual_columns, nullptr, local_context->getFileProgressCallback());
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+        && local_context->getSettingsRef().optimize_count_from_files;
 
     const size_t max_threads = local_context->getSettingsRef().max_threads;
     const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / num_streams);
@@ -986,6 +996,7 @@ Pipe StorageS3::read(
             query_configuration.url.version_id,
             iterator_wrapper,
             max_parsing_threads,
+            need_only_count,
             query_info));
     }
 

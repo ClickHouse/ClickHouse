@@ -496,6 +496,7 @@ HDFSSource::HDFSSource(
     ContextPtr context_,
     UInt64 max_block_size_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
+    bool need_only_count_,
     const SelectQueryInfo & query_info_)
     : ISource(info.source_header, false)
     , WithContext(context_)
@@ -506,6 +507,7 @@ HDFSSource::HDFSSource(
     , max_block_size(max_block_size_)
     , file_iterator(file_iterator_)
     , columns_description(info.columns_description)
+    , need_only_count(need_only_count_)
     , query_info(query_info_)
 {
     initialize();
@@ -544,8 +546,15 @@ bool HDFSSource::initialize()
 
     current_path = path_with_info.path;
 
-    input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
+    std::optional<size_t> max_parsing_threads;
+    if (need_only_count)
+        max_parsing_threads = 1;
+
+    input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, std::nullopt, max_parsing_threads);
     input_format->setQueryInfo(query_info, getContext());
+
+    if (need_only_count)
+        input_format->needOnlyCount();
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
@@ -775,6 +784,9 @@ Pipe StorageHDFS::read(
     }
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+        && context_->getSettingsRef().optimize_count_from_files;
+
     Pipes pipes;
     auto this_ptr = std::static_pointer_cast<StorageHDFS>(shared_from_this());
     for (size_t i = 0; i < num_streams; ++i)
@@ -785,6 +797,7 @@ Pipe StorageHDFS::read(
             context_,
             max_block_size,
             iterator_wrapper,
+            need_only_count,
             query_info));
     }
     return Pipe::unitePipes(std::move(pipes));
