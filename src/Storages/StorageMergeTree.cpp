@@ -1115,6 +1115,7 @@ bool StorageMergeTree::merge(
             table_lock_holder,
             common_assignee_trigger);
         task->setCurrentTransaction(MergeTreeTransactionHolder{}, MergeTreeTransactionPtr{txn});
+        task->setQueryThreadGroup(CurrentThread::getGroup());
         bool scheduled = background_operations_assignee.scheduleMergeMutateTask(task);
         /// The problem that we already booked a slot for TTL merge, but a merge list entry will be created only in a prepare method
         /// in MergePlainMergeTreeTask. So, this slot will never be freed.

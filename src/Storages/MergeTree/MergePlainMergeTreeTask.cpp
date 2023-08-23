@@ -108,7 +108,10 @@ void MergePlainMergeTreeTask::prepare()
             std::move(profile_counters_snapshot));
     };
 
-    transfer_profile_counters_to_initial_query = [this, query_thread_group = CurrentThread::getGroup()] ()
+    if (!query_thread_group)
+        query_thread_group = CurrentThread::getGroup();
+
+    transfer_profile_counters_to_initial_query = [this]()
     {
         if (query_thread_group)
         {
