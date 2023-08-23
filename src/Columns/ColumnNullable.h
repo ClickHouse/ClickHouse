@@ -6,6 +6,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
+#include "Core/TypeId.h"
 #include "config.h"
 
 
@@ -62,7 +63,7 @@ public:
     StringRef getDataAt(size_t) const override;
     /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -212,6 +213,8 @@ public:
 private:
     WrappedPtr nested_column;
     WrappedPtr null_map;
+    // optimize serializeValueIntoArena
+    TypeIndex nested_type;
 
     template <bool negative>
     void applyNullMapImpl(const NullMap & map);

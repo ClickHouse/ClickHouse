@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
-import time
+import argparse
 import logging
 import os
 import sys
+import time
 
-import argparse
+from pathlib import Path
 
 import boto3  # type: ignore
 import requests  # type: ignore
@@ -268,8 +269,8 @@ if __name__ == "__main__":
             description = "Found invalid analysis (ﾉಥ益ಥ）ﾉ ┻━┻"
 
         compress_fast(
-            os.path.join(result_path, "store"),
-            os.path.join(result_path, "jepsen_store.tar.zst"),
+            Path(result_path) / "store",
+            Path(result_path) / "jepsen_store.tar.zst",
         )
         additional_data.append(os.path.join(result_path, "jepsen_store.tar.zst"))
     except Exception as ex:

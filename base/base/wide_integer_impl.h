@@ -12,7 +12,6 @@
 #include <tuple>
 #include <limits>
 
-#include <boost/multiprecision/cpp_bin_float.hpp>
 #include <boost/math/special_functions/fpclassify.hpp>
 
 // NOLINTBEGIN(*)
@@ -22,6 +21,7 @@
 #define CONSTEXPR_FROM_DOUBLE constexpr
 using FromDoubleIntermediateType = long double;
 #else
+#include <boost/multiprecision/cpp_bin_float.hpp>
 /// `wide_integer_from_builtin` can't be constexpr with non-literal `cpp_bin_float_double_extended`
 #define CONSTEXPR_FROM_DOUBLE
 using FromDoubleIntermediateType = boost::multiprecision::cpp_bin_float_double_extended;
