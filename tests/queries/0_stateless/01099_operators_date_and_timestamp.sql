@@ -13,6 +13,23 @@ select (date '2001-10-01' - date '2001-09-28') x, toTypeName(x);
 select timestamp '2001-09-28 01:00:00' + interval 23 hour;
 select timestamp '2001-09-28 23:00:00' - interval 23 hour;
 
+select (date '2001-09-29' + interval 12345 second) x, toTypeName(x);
+select (date '2001-09-29' + interval 12345 millisecond) x, toTypeName(x); -- { serverError 43 }
+select (date '2001-09-29' + interval 12345 microsecond) x, toTypeName(x); -- { serverError 43 }
+select (date '2001-09-29' + interval 12345 nanosecond) x, toTypeName(x); -- { serverError 43 }
+select (date '2001-09-29' - interval 12345 second) x, toTypeName(x);
+select (date '2001-09-29' - interval 12345 millisecond) x, toTypeName(x); -- { serverError 43 }
+select (date '2001-09-29' - interval 12345 microsecond) x, toTypeName(x); -- { serverError 43 }
+select (date '2001-09-29' - interval 12345 nanosecond) x, toTypeName(x); -- { serverError 43 }
+select (toDate32('2001-09-29') + interval 12345 second) x, toTypeName(x);
+select (toDate32('2001-09-29') + interval 12345 millisecond) x, toTypeName(x); -- { serverError 43 }
+select (toDate32('2001-09-29') + interval 12345 microsecond) x, toTypeName(x); -- { serverError 43 }
+select (toDate32('2001-09-29') + interval 12345 nanosecond) x, toTypeName(x); -- { serverError 43 }
+select (toDate32('2001-09-29') - interval 12345 second) x, toTypeName(x);
+select (toDate32('2001-09-29') - interval 12345 millisecond) x, toTypeName(x); -- { serverError 43 }
+select (toDate32('2001-09-29') - interval 12345 microsecond) x, toTypeName(x); -- { serverError 43 }
+select (toDate32('2001-09-29') - interval 12345 nanosecond) x, toTypeName(x); -- { serverError 43 }
+
 -- TODO: return interval
 select (timestamp '2001-12-29 03:00:00' - timestamp '2001-12-27 12:00:00') x, toTypeName(x); -- interval '1 day 15:00:00'
 

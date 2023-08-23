@@ -113,11 +113,11 @@ TEST_P(ArchiveReaderAndWriterTest, EmptyArchive)
 
     EXPECT_FALSE(reader->fileExists("nofile.txt"));
 
-    expectException(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "File 'nofile.txt' not found",
+    expectException(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "File 'nofile.txt' was not found in archive",
                     [&]{ reader->getFileInfo("nofile.txt"); });
 
-    expectException(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "File 'nofile.txt' not found",
-                    [&]{ reader->readFile("nofile.txt"); });
+    expectException(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "File 'nofile.txt' was not found in archive",
+                    [&]{ reader->readFile("nofile.txt", /*throw_on_not_found=*/true); });
 
     EXPECT_EQ(reader->firstFile(), nullptr);
 }
@@ -145,7 +145,7 @@ TEST_P(ArchiveReaderAndWriterTest, SingleFileInArchive)
     EXPECT_GT(file_info.compressed_size, 0);
 
     {
-        auto in = reader->readFile("a.txt");
+        auto in = reader->readFile("a.txt", /*throw_on_not_found=*/true);
         String str;
         readStringUntilEOF(str, *in);
         EXPECT_EQ(str, contents);
@@ -215,14 +215,14 @@ TEST_P(ArchiveReaderAndWriterTest, TwoFilesInArchive)
     EXPECT_EQ(reader->getFileInfo("b/c.txt").uncompressed_size, c_contents.size());
 
     {
-        auto in = reader->readFile("a.txt");
+        auto in = reader->readFile("a.txt", /*throw_on_not_found=*/true);
         String str;
         readStringUntilEOF(str, *in);
         EXPECT_EQ(str, a_contents);
     }
 
     {
-        auto in = reader->readFile("b/c.txt");
+        auto in = reader->readFile("b/c.txt", /*throw_on_not_found=*/true);
         String str;
         readStringUntilEOF(str, *in);
         EXPECT_EQ(str, c_contents);
@@ -230,7 +230,7 @@ TEST_P(ArchiveReaderAndWriterTest, TwoFilesInArchive)
 
     {
         /// Read a.txt again.
-        auto in = reader->readFile("a.txt");
+        auto in = reader->readFile("a.txt", /*throw_on_not_found=*/true);
         String str;
         readStringUntilEOF(str, *in);
         EXPECT_EQ(str, a_contents);
@@ -302,14 +302,14 @@ TEST_P(ArchiveReaderAndWriterTest, InMemory)
     EXPECT_EQ(reader->getFileInfo("b.txt").uncompressed_size, b_contents.size());
 
     {
-        auto in = reader->readFile("a.txt");
+        auto in = reader->readFile("a.txt", /*throw_on_not_found=*/true);
         String str;
         readStringUntilEOF(str, *in);
         EXPECT_EQ(str, a_contents);
     }
 
     {
-        auto in = reader->readFile("b.txt");
+        auto in = reader->readFile("b.txt", /*throw_on_not_found=*/true);
         String str;
         readStringUntilEOF(str, *in);
         EXPECT_EQ(str, b_contents);
@@ -317,7 +317,7 @@ TEST_P(ArchiveReaderAndWriterTest, InMemory)
 
     {
         /// Read a.txt again.
-        auto in = reader->readFile("a.txt");
+        auto in = reader->readFile("a.txt", /*throw_on_not_found=*/true);
         String str;
         readStringUntilEOF(str, *in);
         EXPECT_EQ(str, a_contents);
@@ -343,19 +343,19 @@ TEST_P(ArchiveReaderAndWriterTest, Password)
 
     /// Try to read without a password.
     expectException(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Password is required",
-                    [&]{ reader->readFile("a.txt"); });
+                    [&]{ reader->readFile("a.txt", /*throw_on_not_found=*/true); });
 
     {
         /// Try to read with a wrong password.
         reader->setPassword("123Qwe");
         expectException(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Wrong password",
-                        [&]{ reader->readFile("a.txt"); });
+                        [&]{ reader->readFile("a.txt", /*throw_on_not_found=*/true); });
     }
 
     {
         /// Reading with the right password is successful.
         reader->setPassword("Qwe123");
-        auto in = reader->readFile("a.txt");
+        auto in = reader->readFile("a.txt", /*throw_on_not_found=*/true);
         String str;
         readStringUntilEOF(str, *in);
         EXPECT_EQ(str, contents);
@@ -387,7 +387,7 @@ TEST(TarArchiveReaderTest, ReadFile) {
     bool created = createArchiveWithFiles<ArchiveType::Tar>(archive_path, {{filename, contents}});
     EXPECT_EQ(created, true);
     auto reader = createArchiveReader(archive_path);
-    auto in = reader->readFile(filename);
+    auto in = reader->readFile(filename, /*throw_on_not_found=*/true);
     String str;
     readStringUntilEOF(str, *in);
     EXPECT_EQ(str, contents);
@@ -405,11 +405,11 @@ TEST(TarArchiveReaderTest, ReadTwoFiles) {
     auto reader = createArchiveReader(archive_path);
     EXPECT_EQ(reader->fileExists(file1), true);
     EXPECT_EQ(reader->fileExists(file2), true);
-    auto in = reader->readFile(file1);
+    auto in = reader->readFile(file1, /*throw_on_not_found=*/true);
     String str;
     readStringUntilEOF(str, *in);
     EXPECT_EQ(str, contents1);
-    in = reader->readFile(file2);
+    in = reader->readFile(file2, /*throw_on_not_found=*/true);
     
     readStringUntilEOF(str, *in);
     EXPECT_EQ(str, contents2);
@@ -448,7 +448,7 @@ TEST(SevenZipArchiveReaderTest, ReadFile) {
     bool created = createArchiveWithFiles<ArchiveType::SevenZip>(archive_path, {{filename, contents}});
     EXPECT_EQ(created, true);
     auto reader = createArchiveReader(archive_path);
-    auto in = reader->readFile(filename);
+    auto in = reader->readFile(filename, /*throw_on_not_found=*/true);
     String str;
     readStringUntilEOF(str, *in);
     EXPECT_EQ(str, contents);
@@ -479,11 +479,11 @@ TEST(SevenZipArchiveReaderTest, ReadTwoFiles) {
     auto reader = createArchiveReader(archive_path);
     EXPECT_EQ(reader->fileExists(file1), true);
     EXPECT_EQ(reader->fileExists(file2), true);
-    auto in = reader->readFile(file1);
+    auto in = reader->readFile(file1, /*throw_on_not_found=*/true);
     String str;
     readStringUntilEOF(str, *in);
     EXPECT_EQ(str, contents1);
-    in = reader->readFile(file2);
+    in = reader->readFile(file2, /*throw_on_not_found=*/true);
     
     readStringUntilEOF(str, *in);
     EXPECT_EQ(str, contents2);

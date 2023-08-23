@@ -467,7 +467,8 @@ HDFSSource::HDFSSource(
     StorageHDFSPtr storage_,
     ContextPtr context_,
     UInt64 max_block_size_,
-    std::shared_ptr<IteratorWrapper> file_iterator_)
+    std::shared_ptr<IteratorWrapper> file_iterator_,
+    const SelectQueryInfo & query_info_)
     : ISource(info.source_header, false)
     , WithContext(context_)
     , storage(std::move(storage_))
@@ -477,6 +478,7 @@ HDFSSource::HDFSSource(
     , max_block_size(max_block_size_)
     , file_iterator(file_iterator_)
     , columns_description(info.columns_description)
+    , query_info(query_info_)
 {
     initialize();
 }
@@ -515,6 +517,7 @@ bool HDFSSource::initialize()
     current_path = path_with_info.path;
 
     input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
+    input_format->setQueryInfo(query_info, getContext());
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
@@ -727,7 +730,7 @@ bool StorageHDFS::supportsSubsetOfColumns() const
 Pipe StorageHDFS::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
@@ -769,7 +772,8 @@ Pipe StorageHDFS::read(
             this_ptr,
             context_,
             max_block_size,
-            iterator_wrapper));
+            iterator_wrapper,
+            query_info));
     }
     return Pipe::unitePipes(std::move(pipes));
 }

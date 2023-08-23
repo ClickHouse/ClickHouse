@@ -882,7 +882,7 @@ def test_required_privileges():
     instance.query("CREATE USER u1")
 
     backup_name = new_backup_name()
-    expected_error = "necessary to have grant BACKUP ON test.table"
+    expected_error = "necessary to have the grant BACKUP ON test.table"
     assert expected_error in instance.query_and_get_error(
         f"BACKUP TABLE test.table TO {backup_name}", user="u1"
     )
@@ -890,12 +890,12 @@ def test_required_privileges():
     instance.query("GRANT BACKUP ON test.table TO u1")
     instance.query(f"BACKUP TABLE test.table TO {backup_name}", user="u1")
 
-    expected_error = "necessary to have grant INSERT, CREATE TABLE ON test.table"
+    expected_error = "necessary to have the grant INSERT, CREATE TABLE ON test.table"
     assert expected_error in instance.query_and_get_error(
         f"RESTORE TABLE test.table FROM {backup_name}", user="u1"
     )
 
-    expected_error = "necessary to have grant INSERT, CREATE TABLE ON test.table2"
+    expected_error = "necessary to have the grant INSERT, CREATE TABLE ON test.table2"
     assert expected_error in instance.query_and_get_error(
         f"RESTORE TABLE test.table AS test.table2 FROM {backup_name}", user="u1"
     )
@@ -907,7 +907,7 @@ def test_required_privileges():
 
     instance.query("DROP TABLE test.table")
 
-    expected_error = "necessary to have grant INSERT, CREATE TABLE ON test.table"
+    expected_error = "necessary to have the grant INSERT, CREATE TABLE ON test.table"
     assert expected_error in instance.query_and_get_error(
         f"RESTORE ALL FROM {backup_name}", user="u1"
     )
@@ -1014,14 +1014,14 @@ def test_system_users_required_privileges():
 
     backup_name = new_backup_name()
 
-    expected_error = "necessary to have grant BACKUP ON system.users"
+    expected_error = "necessary to have the grant BACKUP ON system.users"
     assert expected_error in instance.query_and_get_error(
         f"BACKUP TABLE system.users, TABLE system.roles TO {backup_name}", user="u2"
     )
 
     instance.query("GRANT BACKUP ON system.users TO u2")
 
-    expected_error = "necessary to have grant BACKUP ON system.roles"
+    expected_error = "necessary to have the grant BACKUP ON system.roles"
     assert expected_error in instance.query_and_get_error(
         f"BACKUP TABLE system.users, TABLE system.roles TO {backup_name}", user="u2"
     )
@@ -1035,7 +1035,7 @@ def test_system_users_required_privileges():
     instance.query("DROP ROLE r1")
 
     expected_error = (
-        "necessary to have grant CREATE USER, CREATE ROLE, ROLE ADMIN ON *.*"
+        "necessary to have the grant CREATE USER, CREATE ROLE, ROLE ADMIN ON *.*"
     )
     assert expected_error in instance.query_and_get_error(
         f"RESTORE ALL FROM {backup_name}", user="u2"
@@ -1043,7 +1043,7 @@ def test_system_users_required_privileges():
 
     instance.query("GRANT CREATE USER, CREATE ROLE, ROLE ADMIN ON *.* TO u2")
 
-    expected_error = "necessary to have grant SELECT ON test.* WITH GRANT OPTION"
+    expected_error = "necessary to have the grant SELECT ON test.* WITH GRANT OPTION"
     assert expected_error in instance.query_and_get_error(
         f"RESTORE ALL FROM {backup_name}", user="u2"
     )
