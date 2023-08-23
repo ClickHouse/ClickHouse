@@ -392,7 +392,6 @@ BlockIO InterpreterSystemQuery::execute()
                 {"cache_name", std::make_shared<DataTypeString>()},
                 {"path", std::make_shared<DataTypeString>()},
                 {"size", std::make_shared<DataTypeUInt64>()},
-                {"actual_size", std::make_shared<DataTypeUInt64>()}
             }};
             Block sample_block;
             for (const auto & column : columns)
@@ -409,17 +408,6 @@ BlockIO InterpreterSystemQuery::execute()
                     res_columns[i++]->insert(cache_name);
                     res_columns[i++]->insert(path);
                     res_columns[i++]->insert(file_segment->getDownloadedSize(false));
-                    try
-                    {
-                        if (fs::exists(path))
-                            res_columns[i++]->insert(fs::file_size(path));
-                        else
-                            res_columns[i++]->insertDefault();
-                    }
-                    catch (...)
-                    {
-                        res_columns[i++]->insertDefault();
-                    }
                 }
             };
 
