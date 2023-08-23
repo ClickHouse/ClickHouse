@@ -35,8 +35,10 @@ quorum
 replicas
 shared
 shared
+shared
 table_shared_id
 temp
+zero_copy_cfs
 zero_copy_hdfs
 zero_copy_s3
 -------------------------
@@ -77,7 +79,9 @@ quorum
 replicas
 shared
 shared
+shared
 table_shared_id
 temp
+zero_copy_cfs
 zero_copy_hdfs
 zero_copy_s3

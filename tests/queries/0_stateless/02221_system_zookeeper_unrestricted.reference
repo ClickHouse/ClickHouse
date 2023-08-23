@@ -72,10 +72,14 @@ shared
 shared
 shared
 shared
+shared
+shared
 table_shared_id
 table_shared_id
 temp
 temp
+zero_copy_cfs
+zero_copy_cfs
 zero_copy_hdfs
 zero_copy_hdfs
 zero_copy_s3
