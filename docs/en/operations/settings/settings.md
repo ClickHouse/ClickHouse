@@ -2383,6 +2383,17 @@ See also:
 
 - [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
 
+## optimize_count_from_files {#optimize_count_from_files}
+
+Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
+
+Possible values:
+
+- 0 — Optimization disabled.
+- 1 — Optimization enabled.
+
+Default value: `1`.
+
 ## use_cache_for_count_from_files {#use_cache_for_count_from_files}
 
 Enables caching of rows number during count from files in table functions `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.

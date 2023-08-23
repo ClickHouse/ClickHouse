@@ -623,8 +623,15 @@ bool HDFSSource::initialize()
     }
     else
     {
-        input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, std::nullopt, std::nullopt);
+        std::optional<size_t> max_parsing_threads;
+        if (need_only_count)
+            max_parsing_threads = 1;
+
+        input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, std::nullopt, max_parsing_threads);
         input_format->setQueryInfo(query_info, getContext());
+
+        if (need_only_count)
+            input_format->needOnlyCount();
 
         builder.init(Pipe(input_format));
         if (columns_description.hasDefaults())

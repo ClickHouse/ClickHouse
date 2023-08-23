@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Storages/IStorage.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/IStorage.h>
 #include <Common/FileRenamer.h>
 
 #include <atomic>

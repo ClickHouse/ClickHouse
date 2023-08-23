@@ -1096,7 +1096,6 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
 
     if (path_with_metadata.metadata.size_bytes == 0)
         path_with_metadata.metadata = object_storage->getObjectMetadata(path_with_metadata.relative_path);
-    size_t object_size = path_with_metadata.metadata.size_bytes;
 
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
@@ -1114,13 +1113,20 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
     }
     else
     {
+        std::optional<size_t> max_parsing_threads;
+        if (need_only_count)
+            max_parsing_threads = 1;
+
         auto compression_method = chooseCompressionMethod(path_with_metadata.relative_path, compression_hint);
-        read_buf = createAzureReadBuffer(path_with_metadata.relative_path, object_size);
+        read_buf = createAzureReadBuffer(path_with_metadata.relative_path, path_with_metadata.metadata.size_bytes);
         auto input_format = FormatFactory::instance().getInput(
                 format, *read_buf, sample_block, getContext(), max_block_size,
-                format_settings, std::nullopt, std::nullopt,
+                format_settings, max_parsing_threads, std::nullopt,
                 /* is_remote_fs */ true, compression_method);
         input_format->setQueryInfo(query_info, getContext());
+      
+        if (need_only_count)
+            input_format->needOnlyCount();
 
         builder.init(Pipe(input_format));
 
