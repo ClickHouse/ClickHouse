@@ -169,14 +169,9 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
         std::vector<String> config_keys;
         configuration.keys(proxy_prefix, config_keys);
 
-        if (auto resolver_configs = std::count_if(config_keys.begin(), config_keys.end(), [](const std::string & k) { return startsWith(k, "resolver"); }))
+        if (auto remote_resolver = getRemoteResolver(protocol, proxy_prefix, configuration))
         {
-            if (resolver_configs > 2)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only two remote proxy resolvers are allowed, one for HTTP and one for HTTPs");
-            }
-
-            return getRemoteResolver(protocol, proxy_prefix, configuration);
+            return remote_resolver;
         }
 
         if (auto list_resolver = getListResolver(protocol, proxy_prefix, configuration))
