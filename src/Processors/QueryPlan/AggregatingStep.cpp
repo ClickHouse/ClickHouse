@@ -231,6 +231,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     transform_params->params.enable_prefetch,
                     /* only_merge */ false,
                     transform_params->params.optimize_group_by_constant_keys,
+                    transform_params->params.enable_adaptive_aggregation_method,
                     transform_params->params.min_hit_rate_to_use_consecutive_keys_optimization,
                     transform_params->params.stats_collecting_params,
                 };

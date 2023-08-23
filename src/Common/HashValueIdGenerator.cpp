@@ -1,9 +1,11 @@
+#include <memory>
 #include <Columns/ColumnsDateTime.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashValueIdGenerator.h>
 #include <Common/typeid_cast.h>
+#include "typeid_cast.h"
 #include <DataTypes/IDataType.h>
 
 namespace DB
@@ -13,166 +15,202 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void HashValueIdGenerator::initialize(const IColumn * col)
+/// Check whether we could use range mode to generate value id by sampling.
+void StringHashValueIdGenerator::tryInitialize(const IColumn *col)
 {
     is_nullable = col->isNullable();
-    current_assigned_value_id += is_nullable;
-
-#if defined(__AVX512F__) && defined(__AVX512BW__)
-    const IColumn * nested_col = col;
-    if (col->isNullable())
-        nested_col = typeid_cast<const ColumnNullable *>(col);
-    DB::WhichDataType which_type(nested_col->getDataType());
-
-    if (which_type.isString())
+    const auto * nested_col = col;
+    if (is_nullable)
     {
-        const auto * str_col = typeid_cast<const ColumnString *>(nested_col);
-        const auto & offsets = str_col->getOffsets();
-        if (!str_col->empty() && offsets.back() / str_col->size() <= 9)
+        const auto * null_col = typeid_cast<const ColumnNullable *>(col);
+        if (!null_col)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is nullable but not ColumnNullable", col->getName());
+        nested_col = &(null_col->getNestedColumn());
+    }
+    const auto * str_col = typeid_cast<const ColumnString *>(nested_col);
+    const auto & offsets = str_col->getOffsets();
+    IColumn::Offset prev_offset = 0;
+    const auto & chars = str_col->getChars();
+    const UInt8 * char_pos = chars.data();
+
+    enable_range_mode = true;
+    size_t i = 0;
+    size_t n = std::min(max_sample_rows, str_col->size());
+    alignas(64) UInt64 str_lens[8] = {0};
+    for (i = 1; i + 8 < n; i += 8)
+    {
+        bool is_all_short_string = false;
+        computeOneBatchStringLength(i, offsets, str_lens, is_all_short_string);
+        for (UInt64 str_len : str_lens)
         {
-            could_fitinto_cache = true;
+            if (str_len > 9)
+            {
+                enable_range_mode = false;
+                break;
+            }
+            auto val = str2Int64(char_pos, str_len - 1);
+            if (val > range_max)
+                range_max = val;
+            if (val < range_min)
+                range_min = val;
+            if (range_max - range_min + 1 + is_nullable > max_distinct_values)
+            {
+                enable_range_mode = false;
+                break;
+            }
+            char_pos += str_len;
+        }
+        if (!enable_range_mode)
+            break;
+        prev_offset = offsets[i + 7];
+    }
+    if (enable_range_mode)
+    {
+        for (; i < n; i++)
+        {
+            auto str_len = offsets[i] - prev_offset;
+            if (str_len > 9)
+            {
+                enable_range_mode = false;
+                break;
+            }
+            auto val = str2Int64(char_pos, str_len - 1);
+            if (val > range_max)
+                range_max = val;
+            if (val < range_min)
+                range_min = val;
+            if (range_max - range_min + 1 + is_nullable > max_distinct_values)
+            {
+                enable_range_mode = false;
+                break;
+            }
+            prev_offset = offsets[i];
+            char_pos += str_len;
         }
     }
-    else if (which_type.isFixedString())
+    if (enable_range_mode)
     {
-        const auto * fixed_str_col = typeid_cast<const ColumnFixedString *>(nested_col);
-        if (fixed_str_col->getN() <= 8)
-        {
-            could_fitinto_cache = true;
-        }
+        allocated_value_id = range_max - range_min + 2 + is_nullable;
     }
-    else if (which_type.isNativeInt() || which_type.isNativeUInt() || which_type.isFloat() || which_type.isLowCardinality())
+    else
     {
-        could_fitinto_cache = true;
+        allocated_value_id = 1 + is_nullable;
     }
-#endif
-
-    has_initialized = true;
 }
 
-#define APPLY_FOR_NUMBER_COLUMN(Type, col, null_map) \
-    else if (const auto * col##Type = typeid_cast<const Column##Type *>(nested_col)) \
-    { \
-        if (null_map) \
-            computeValueIdForNumber<true, Type, Column##Type>(null_map, col##Type, value_ids); \
-        else \
-            computeValueIdForNumber<false, Type, Column##Type>(null_map, col##Type, value_ids); \
+void FixedStringHashValueIdGenerator::tryInitialize(const IColumn *col)
+{
+    is_nullable = col->isNullable();
+    const auto * nested_col = col;
+    if (is_nullable)
+    {
+        const auto * null_col = typeid_cast<const ColumnNullable *>(col);
+        if (!null_col)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is nullable but not ColumnNullable", col->getName());
+        nested_col = &(null_col->getNestedColumn());
+    }
+    const auto * str_col = typeid_cast<const ColumnFixedString *>(nested_col);
+    const auto & chars = str_col->getChars();
+    const UInt8 * char_pos = chars.data();
+
+    enable_range_mode = true;
+    auto str_len = str_col->getN();
+    if (str_len > 8)
+    {
+        enable_range_mode = false;
+    }
+    else
+    {
+        size_t i = 0;
+        size_t n = std::min(max_sample_rows, str_col->size());
+        for (i = 0; i < n ; i++)
+        {
+            auto val = str2Int64(char_pos, str_len);
+            if (val > range_max)
+                range_max = val;
+            if (val < range_min)
+                range_min = val;
+            if (range_max - range_min + 1 + is_nullable > max_distinct_values)
+            {
+                enable_range_mode = false;
+                break;
+            }
+            char_pos += str_len;
+        }
     }
 
-void HashValueIdGenerator::computeValueId(const IColumn * col, std::vector<UInt64> & value_ids)
-{
-    if (!has_initialized) [[unlikely]]
+    if (enable_range_mode)
     {
-        initialize(col);
+        allocated_value_id = range_max - range_min + 2 + is_nullable;
+    }
+    else
+    {
+        allocated_value_id = 1 + is_nullable;
+    }
+
+}
+
+HashValueIdGeneratorFactory & HashValueIdGeneratorFactory::instance()
+{
+    static HashValueIdGeneratorFactory instance;
+    return instance;
+}
+
+std::unique_ptr<IHashValueIdGenerator> HashValueIdGeneratorFactory::getGenerator(AdaptiveKeysHolder::State * state_, size_t max_distinct_values_, const IColumn * col)
+{
+    const auto * nested_col = col;
+    if (col->isNullable())
+    {
+        const auto * null_col = typeid_cast<const ColumnNullable *>(col);
+        if (!null_col)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is nullable but not ColumnNullable", col->getName());
+        nested_col = &(null_col->getNestedColumn());
     }
 
     using Date = UInt16;
     using Date32 = UInt32;
     using DateTime = UInt32;
-    const ColumnUInt8 * null_map = nullptr;
-    const IColumn * nested_col = col;
-    if (col->isNullable())
-    {
-        const auto * nullable_col = typeid_cast<const ColumnNullable *>(col);
-        null_map = &nullable_col->getNullMapColumn();
-        nested_col = nullable_col->getNestedColumnPtr().get();
+#define APPLY_ON_NUMBER_COLUMN(type, nested_col, col) \
+    else if (const auto * col##type = typeid_cast<const Column##type *>(nested_col)) \
+    { \
+        return std::make_unique<NumericHashValueIdGenerator<type, Column##type>>(col, state_, max_distinct_values_); \
     }
-    if (const auto * str_col = typeid_cast<const ColumnString *>(nested_col))
-    {
-#if defined(__AVX512F__) && defined(__AVX512BW__)
-        if (could_fitinto_cache)
-        {
-            if (null_map)
-                computeValueIdForShortString<true>(null_map, str_col, value_ids);
-            else
-                computeValueIdForShortString<false>(null_map, str_col, value_ids);
 
-        }
-        else
-#endif
-        {
-            if (null_map)
-                computeValueIdForString<true>(null_map, str_col, value_ids);
-            else
-                computeValueIdForString<false>(null_map, str_col, value_ids);
-        }
-    }
-    else if (const auto * fixed_str_col = typeid_cast<const ColumnFixedString *>(nested_col))
+    WhichDataType which_type(nested_col->getDataType());
+    if (which_type.isString())
     {
-        if (null_map)
-            computeValueIdForFixedString<true>(null_map, fixed_str_col, value_ids);
-        else
-            computeValueIdForFixedString<false>(null_map, fixed_str_col, value_ids);
+        return std::make_unique<StringHashValueIdGenerator>(col, state_, max_distinct_values_);
+    }
+    else if (which_type.isFixedString())
+    {
+        return std::make_unique<FixedStringHashValueIdGenerator>(col, state_, max_distinct_values_);
     }
     else if (const auto * low_card_col = typeid_cast<const ColumnLowCardinality *>(col))
     {
-        computeValueIdForLowCardinality(low_card_col, value_ids);
+        return std::make_unique<LowCardinalityHashValueIdGenerator>(col, state_, max_distinct_values_);
     }
-    APPLY_FOR_NUMBER_COLUMN(UInt8, nested_col, null_map)
-    APPLY_FOR_NUMBER_COLUMN(UInt16, nested_col, null_map)
-    APPLY_FOR_NUMBER_COLUMN(UInt32, nested_col, null_map)
-    APPLY_FOR_NUMBER_COLUMN(UInt64, nested_col, null_map)
-    APPLY_FOR_NUMBER_COLUMN(UInt128, nested_col, null_map)
-    APPLY_FOR_NUMBER_COLUMN(UInt256, nested_col, null_map)
-    APPLY_FOR_NUMBER_COLUMN(Int8, nested_col, null_map)
-    APPLY_FOR_NUMBER_COLUMN(Int16, nested_col, null_map)
-    APPLY_FOR_NUMBER_COLUMN(Int32, nested_col, null_map)
-    APPLY_FOR_NUMBER_COLUMN(Int64, nested_col, null_map)
-    APPLY_FOR_NUMBER_COLUMN(Int128, nested_col, null_map)
-    APPLY_FOR_NUMBER_COLUMN(Int256, nested_col, null_map)
-    APPLY_FOR_NUMBER_COLUMN(Float32, nested_col, null_map)
-    APPLY_FOR_NUMBER_COLUMN(Float64, nested_col, null_map)
-    APPLY_FOR_NUMBER_COLUMN(UUID, nested_col, null_map)
-    APPLY_FOR_NUMBER_COLUMN(IPv4, nested_col, null_map)
-    APPLY_FOR_NUMBER_COLUMN(IPv6, nested_col, null_map)
-    APPLY_FOR_NUMBER_COLUMN(Date, nested_col, null_map)
-    APPLY_FOR_NUMBER_COLUMN(Date32, nested_col, null_map)
-    APPLY_FOR_NUMBER_COLUMN(DateTime, nested_col, null_map)
-    APPLY_FOR_NUMBER_COLUMN(DateTime64, nested_col, null_map)
-    else
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported column type: {}", col->getName());
-    }
-}
-
-void HashValueIdGenerator::computeValueIdForLowCardinality(const ColumnLowCardinality * col, std::vector<UInt64> & value_ids)
-{
-    const auto & indexes_col = col->getIndexes();
-    size_t str_len = col->getSizeOfIndexType();
-    const UInt8 * pos = nullptr;
-    UInt64 * value_id = value_ids.data();
-    switch (str_len)
-    {
-        case sizeof(UInt8):
-            pos = reinterpret_cast<const UInt8 *>(assert_cast<const ColumnUInt8 *>(&indexes_col)->getData().data());
-            break;
-        case sizeof(UInt16):
-            pos = reinterpret_cast<const UInt8 *>(assert_cast<const ColumnUInt16 *>(&indexes_col)->getData().data());
-            break;
-        case sizeof(UInt32):
-            pos = reinterpret_cast<const UInt8 *>(assert_cast<const ColumnUInt32 *>(&indexes_col)->getData().data());
-            break;
-        case sizeof(UInt64):
-            pos = reinterpret_cast<const UInt8 *>(assert_cast<const ColumnUInt64 *>(&indexes_col)->getData().data());
-            break;
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
-    }
-    if (state->hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
-    {
-        for (size_t i = 0, n = col->size(); i < n; ++i)
-        {
-            UInt64 current_col_value_id = 0;
-            assignValueIdDynamically(pos, str_len, current_col_value_id);
-            *value_id = *value_id * max_distinct_values + current_col_value_id;
-            value_id++;
-            pos += str_len;
-        }
-    }
-    if (current_assigned_value_id > max_distinct_values)
-    {
-        state->hash_mode = AdaptiveKeysHolder::State::HASH;
-    }
+    APPLY_ON_NUMBER_COLUMN(UInt8, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(UInt16, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(UInt32, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(UInt64, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(UInt128, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(UInt256, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(Int8, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(Int16, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(Int32, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(Int64, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(Int128, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(Int256, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(Float32, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(Float64, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(UUID, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(IPv4, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(IPv6, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(Date, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(Date32, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(DateTime, nested_col, col)
+    APPLY_ON_NUMBER_COLUMN(DateTime64, nested_col, col)
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column type: {}", col->getName());
 }
 
 }

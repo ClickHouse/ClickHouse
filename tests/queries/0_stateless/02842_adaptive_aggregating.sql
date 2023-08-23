@@ -14,6 +14,8 @@ Engine=Memory;
 
 insert into adaptive_aggregate_table values (1, 1, 'abc', 'abc', 'abc', '61f0c404-5cb3-11e7-907b-a6006ad3dba0', '116.253.40.133', '2001:44c8:129:2632:33:0:252:2'), (2, 3, 'abe', 'abe', 'abe', '61g0c404-5cb3-11e7-907b-a6006ad3dba0', '116.253.40.103', '2001:44c8:129:2632:33:0:252:2'), (1, 1,'abc', 'abc', 'abc', '61f0c404-5cb3-11e7-907b-a6006ad3dba0', '116.253.40.133', '2001:44c8:129:2632:33:0:252:2');
 
+set enable_adaptive_aggregation_method = 1;
+
 select ik, sk, count(1) from adaptive_aggregate_table group by ik, sk order by ik, sk;
 
 select sk, nik, count(1) from adaptive_aggregate_table group by sk, nik order by sk, nik;

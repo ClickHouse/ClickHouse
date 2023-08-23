@@ -6,6 +6,9 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/Exception.h>
 
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
+
 /**
   * In some aggregation scenarios, when adding a key to the hash table, we
   * start with a temporary key object, and if it turns out to be a new key,
@@ -162,6 +165,7 @@ struct AdaptiveKeysHolder
     UInt64 value_id = 0;
     StringRef serialized_keys;
     State * state = nullptr;
+    UInt64 hash = 0;
 };
 }
 
@@ -201,6 +205,6 @@ struct DefaultHash<DB::AdaptiveKeysHolder>
 {
     inline size_t operator()(const DB::AdaptiveKeysHolder & key) const
     {
-        return ::DefaultHash<StringRef>()(key.serialized_keys);
+        return key.hash;
     }
 };

@@ -43,6 +43,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         settings.enable_software_prefetch_in_aggregation,
         /*only_merge=*/ false,
         settings.optimize_group_by_constant_keys,
+        settings.enable_adaptive_aggregation_method,
         settings.min_chunk_bytes_for_parallel_parsing,
         /*stats_collecting_params=*/ {});
 

@@ -857,6 +857,7 @@ class IColumn;
     M(Int64, ignore_cold_parts_seconds, 0, "Only available in ClickHouse Cloud", 0) \
     M(Int64, prefer_warmed_unmerged_parts_seconds, 0, "Only available in ClickHouse Cloud", 0) \
     M(Bool, enable_order_by_all, true, "Enable sorting expression ORDER BY ALL.", 0)\
+    M(Bool, enable_adaptive_aggregation_method, true, "Enable adaptive aggregation method. It could speed up aggregation with low cardinality aggregation keys.", 0) \
 
 // End of COMMON_SETTINGS
 // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.

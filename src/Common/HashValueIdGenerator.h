@@ -1,4 +1,5 @@
 #pragma once
+#include <type_traits>
 #include <vector>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -13,381 +14,793 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/StringHashMap.h>
-
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
+#include "Exception.h"
+#include "logger_useful.h"
+#include "typeid_cast.h"
 
 #if defined(__AVX512F__) && defined(__AVX512BW__)
 #include <immintrin.h>
 #endif
+
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int LOGICAL_ERROR;
 }
 namespace ColumnsHashing
 {
 class HashMethodContext;
 }
 
-class HashValueIdGenerator
+class IHashValueIdGenerator
 {
 public:
-    explicit HashValueIdGenerator(AdaptiveKeysHolder::State * state_, size_t max_distinct_values_ = 256)
+    explicit IHashValueIdGenerator(const IColumn * /*col_*/, AdaptiveKeysHolder::State *state_, size_t max_distinct_values_)
         : state(state_), max_distinct_values(max_distinct_values_)
     {
     }
-    void computeValueId(const IColumn * col, std::vector<UInt64> & value_ids);
-private:
-    AdaptiveKeysHolder::State * state;
-    const size_t max_distinct_values;
-    bool has_initialized = false;
+    virtual ~IHashValueIdGenerator() = default;
+
+    void computeValueId(const IColumn * col, UInt64 * value_ids)
+    {
+        if (state->hash_mode != AdaptiveKeysHolder::State::VALUE_ID)
+            return;
+
+        if (enable_range_mode && (state->hash_mode != AdaptiveKeysHolder::State::VALUE_ID || m_value_ids.size() > range_max - range_min + 1))
+        {
+            for (UInt64 i = 0, n = range_max - range_min + 1; i < n; ++i)
+            {
+                StringRef raw_value(reinterpret_cast<const UInt8 *>(&i), sizeof(UInt64));
+                emplaceValueId(raw_value, i);
+            }
+            enable_range_mode = false;
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+            enable_cache_line = false;
+#endif
+        }
+
+        computeValueIdImpl(col, value_ids);
+
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+        if (!enable_range_mode && enable_cache_line && m_value_ids.size() > cache_line_num * 16)
+        {
+            enable_cache_line = false;
+        }
+#endif
+        if (allocated_value_id > max_distinct_values)
+        {
+            state->hash_mode = AdaptiveKeysHolder::State::HASH;
+        }
+    }
+
+protected:
+    AdaptiveKeysHolder::State *state;
+    size_t max_distinct_values;
+
+    UInt64 range_min = -1UL;
+    UInt64 range_max = 0;
+    bool enable_range_mode = false;
     bool is_nullable = false;
+
+    const size_t max_sample_rows = 10000;
+
+
+    struct ValueIdCacheLine
+    {
+        size_t allocated_num = 0;
+        alignas(64) UInt64 values[8] = {0};
+        alignas(64) UInt64 value_ids[8] = {0};
+    };
+    using MAP= StringHashMap<UInt64>;
+    MAP m_value_ids;
+    UInt64 allocated_value_id = 0;
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+    static constexpr size_t cache_line_num = 1;
+    static constexpr size_t cache_line_num_mask = cache_line_num - 1;
+    ValueIdCacheLine value_ids_cache_line[cache_line_num];
+    bool enable_cache_line = true;
+#endif
+
+    virtual void computeValueIdImpl(const IColumn * col, UInt64 * value_ids) = 0;
+
     /// To use StringHashMap, need to make the memory address padded.
     static constexpr size_t pad_right = integerRoundUp(PADDING_FOR_SIMD - 1, 1);
     static constexpr size_t pad_left = integerRoundUp(PADDING_FOR_SIMD, 1);
     Arena pool;
 
-    using MAP= StringHashMap<UInt64>;
-    MAP m_value_ids;
-
-    UInt64 current_assigned_value_id = 1;
-    #if defined(__AVX512F__) && defined(__AVX512BW__)
-    bool could_fitinto_cache = false;
-    static constexpr size_t low_cardinality_cache_size = 8;
-    size_t low_cardinality_cache_index = 0;
-    alignas(64) UInt64 low_cardinality_cache_values[low_cardinality_cache_size] = {0};
-    #endif
-
-    void initialize(const IColumn * col);
-
-    ALWAYS_INLINE void assignValueIdDynamically(const UInt8 * pos, size_t len, UInt64 & current_col_value_id)
+    ALWAYS_INLINE UInt64 str2Int64(const UInt8 * pos, size_t len)
     {
-        auto it = m_value_ids.find(StringRef(pos, len));
-        if (it) [[likely]]
-        {
-            current_col_value_id = it->getMapped();
-        }
-        else
-        {
-            current_col_value_id = current_assigned_value_id++;
-            emplaceValueId(pos, len, current_col_value_id);
-        }
+        assert(len <= 8);
+        UInt64 val = *reinterpret_cast<const UInt64 *>(pos);
+        return val & (-1UL) >> ((sizeof(UInt64) - len) << 3);
     }
 
-    ALWAYS_INLINE void emplaceValueId(const UInt8 * pos, size_t len, const UInt64 & value_id)
+    ALWAYS_INLINE void emplaceValueId(const StringRef & raw_value, UInt64 value_id)
     {
         MAP::LookupResult m_it;
         bool inserted = false;
 
         size_t alloc_size = 0;
-        if (__builtin_add_overflow(len, pad_left + pad_right, &alloc_size))
+        if (__builtin_add_overflow(raw_value.size, pad_left + pad_right, &alloc_size))
             throw DB::Exception(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Amount of memory requested to allocate is more than allowed");
         /// need to pad the address.
         auto * new_str = pool.alloc(alloc_size) + pad_left;
-        memcpy(new_str, pos, len);
+        memcpy(new_str, raw_value.data, raw_value.size);
 
-        m_value_ids.emplace(StringRef(new_str, len), m_it, inserted);
+        m_value_ids.emplace(StringRef(new_str, raw_value.size), m_it, inserted);
         m_it->getMapped() = value_id;
     }
 
-    ALWAYS_INLINE bool tryAssignValueIdInLowCardinalityCache(const UInt64 & value [[maybe_unused]], UInt64 & value_id [[maybe_unused]], const UInt8 * pos [[maybe_unused]], size_t len [[maybe_unused]])
+    ALWAYS_INLINE bool getValueIdByCache(UInt64 value [[maybe_unused]], UInt64 & value_id [[maybe_unused]], const StringRef & raw_value [[maybe_unused]])
     {
-    #if defined(__AVX512F__) && defined(__AVX512BW__)
-        if (low_cardinality_cache_index < low_cardinality_cache_size)
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+        if (!enable_cache_line)
+            return false;
+        auto & cache_line = value_ids_cache_line[value & cache_line_num_mask];
+        // If the value id set is too large, give up to check in cache
+        if (cache_line.allocated_num > 8)
+            return false;
+        auto value_v = _mm512_set1_epi64(value);
+        auto cached_values = _mm512_loadu_epi64(reinterpret_cast<const UInt8*>(cache_line.values));
+        auto cmp_mask = _mm512_cmpeq_epi64_mask(cached_values, value_v);
+        auto hit_pos = _tzcnt_u32(cmp_mask);
+        if (hit_pos >= 8) [[unlikely]]
         {
-            auto value_v = _mm512_set1_epi64(value);
-            auto value_line = _mm512_load_epi64(reinterpret_cast<const UInt8 *>(low_cardinality_cache_values));
-            // cmp_mask is 8 bits
-            auto cmp_mask = _mm512_cmpeq_epi64_mask(value_line, value_v);
-            auto cache_pos = _tzcnt_u32(cmp_mask);
-            if (cache_pos >= 8) [[unlikely]]
+            if (cache_line.allocated_num >= 8)
             {
-                /// check next cache line
-                value_id = low_cardinality_cache_index + 1 + is_nullable;
-                low_cardinality_cache_values[low_cardinality_cache_index] = value;
-                low_cardinality_cache_index += 1;
-
-                // Also put this value id into the hash map.
-                emplaceValueId(pos, len, value_id);
-
-                return true;
+                cache_line.allocated_num += 1;
+                return false;
             }
-            else
-            {
-                value_id = cache_pos + 1 + is_nullable;
-                return true;
-            }
+            value_id = allocated_value_id++;
+            cache_line.value_ids[cache_line.allocated_num] = value_id;
+            cache_line.values[cache_line.allocated_num++] = value;
+
+            emplaceValueId(raw_value, value_id);
+            return true;
         }
-    #endif
+        else
+        {
+            value_id = cache_line.value_ids[hit_pos];
+            return true;
+        }
+#endif
         return false;
     }
 
-
-    template<bool is_nullable>
-    void computeValueIdForShortString(const ColumnUInt8 * null_map, const ColumnString * col, std::vector<UInt64> & value_ids)
+    ALWAYS_INLINE void getValueIdByMap(const StringRef & raw_value, UInt64 & value_id)
     {
-        if (state->hash_mode != AdaptiveKeysHolder::State::VALUE_ID)
-            return;
-
-        const auto & offsets = col->getOffsets();
-        const auto & chars = col->getChars();
-        IColumn::Offset prev_offset = 0;
-        UInt64 * value_id = value_ids.data();
-        const UInt8 * pos = chars.data();
-        size_t offset_index = 0;
-
-        for (size_t n = offsets.size(); offset_index < n; ++offset_index)
+        auto it = m_value_ids.find(raw_value);
+        if (it) [[likely]]
         {
-            auto str_len = offsets[offset_index] - prev_offset;
-            UInt64 current_col_value_id = 0;
-            if constexpr (is_nullable)
+            value_id = it->getMapped();
+        }
+        else
+        {
+            value_id = allocated_value_id++;
+            emplaceValueId(raw_value, value_id);
+        }
+    }
+
+    ALWAYS_INLINE void getValueId(const StringRef &raw_value, UInt64 serialized_value, UInt64 & value_id)
+    {
+        if (!getValueIdByCache(serialized_value, value_id, raw_value))
+            getValueIdByMap(raw_value, value_id);
+    }
+
+    ALWAYS_INLINE void computeLocalValueIdsForOneBatch(UInt64 * value_ids, size_t n, const UInt8 * data_pos, size_t element_bytes)
+    {
+        if (element_bytes > 8 && enable_range_mode)
+        {
+            computeLocalValueIdsForOneBatchImpl<true, true>(value_ids, n, data_pos, element_bytes);
+        }
+        else if (element_bytes > 8 && !enable_range_mode)
+        {
+            computeLocalValueIdsForOneBatchImpl<false, true>(value_ids, n, data_pos, element_bytes);
+        }
+        else if (element_bytes <= 8 && enable_range_mode)
+        {
+            computeLocalValueIdsForOneBatchImpl<true, false>(value_ids, n, data_pos, element_bytes);
+        }
+        else
+        {
+            computeLocalValueIdsForOneBatchImpl<false, false>(value_ids, n, data_pos, element_bytes);
+        }
+    }
+
+    template <bool enable_range_mode, bool is_long_value>
+    ALWAYS_INLINE void computeLocalValueIdsForOneBatchImpl(UInt64 * value_ids, size_t n, const UInt8 * data_pos, size_t element_bytes)
+    {
+        UInt64 range_delta = range_min - 1 - is_nullable;
+        for (size_t i = 0; i < n; ++i)
+        {
+            if constexpr (is_long_value)
             {
-                if ((*null_map).getData()[offset_index])
+                getValueIdByMap(StringRef(data_pos, element_bytes), value_ids[i]);
+            }
+            else
+            {
+                StringRef raw_value(data_pos, element_bytes);
+                auto val = str2Int64(data_pos, element_bytes);
+                if constexpr (enable_range_mode)
                 {
-                    current_col_value_id = 1;
-                }
-                else
-                {
-                    if (str_len - 1 <= sizeof(UInt64))
+                    if (val > range_max || val < range_min)
                     {
-                        UInt64 value = *reinterpret_cast<const UInt64 *>(pos);
-                        value &= (-1UL) >> ((sizeof(UInt64) - str_len + 1) << 3);
-                        if (!tryAssignValueIdInLowCardinalityCache(value, current_col_value_id, pos, str_len - 1))
-                            assignValueIdDynamically(pos, str_len - 1, current_col_value_id);
+                        getValueId(raw_value, val, value_ids[i]);
                     }
                     else
                     {
-                        assignValueIdDynamically(pos, str_len - 1, current_col_value_id);
+                        value_ids[i] = val - range_delta;
                     }
                 }
-            }
-            else
-            {
-                if (str_len - 1 <= sizeof(UInt64))
-                {
-                    UInt64 value = *reinterpret_cast<const UInt64 *>(pos);
-                    value &= (-1UL) >> ((sizeof(UInt64) - str_len + 1) << 3);
-                    if (!tryAssignValueIdInLowCardinalityCache(value, current_col_value_id, pos, str_len - 1))
-                        assignValueIdDynamically(pos, str_len - 1, current_col_value_id);
-                }
                 else
                 {
-                    assignValueIdDynamically(pos, str_len - 1, current_col_value_id);
+                    getValueId(raw_value, val, value_ids[i]);
                 }
             }
-            *value_id = *value_id * max_distinct_values + current_col_value_id;
-            value_id++;
-            pos += str_len;
-            prev_offset = offsets[offset_index];
-        }
-        if (current_assigned_value_id >= max_distinct_values)
-        {
-            state->hash_mode = AdaptiveKeysHolder::State::HASH;
+            data_pos += element_bytes;
         }
     }
 
-    template<bool is_nullable>
-    void computeValueIdForString(const ColumnUInt8 * null_map, const ColumnString * col, std::vector<UInt64> & value_ids)
-    {
-        if (state->hash_mode != AdaptiveKeysHolder::State::VALUE_ID)
-            return;
-        const auto & offsets = col->getOffsets();
-        const auto & chars = col->getChars();
-        IColumn::Offset prev_offset = 0;
-        UInt64 * value_id = value_ids.data();
-        const UInt8 * pos = chars.data();
-        size_t offset_index = 0;
-
-        for (size_t n = offsets.size(); offset_index < n; ++offset_index)
-        {
-            auto str_len = offsets[offset_index] - prev_offset;
-            UInt64 current_col_value_id = 0;
-            if constexpr (is_nullable)
-            {
-                if ((*null_map).getData()[offset_index])
-                {
-                    current_col_value_id = 1;
-                }
-                else
-                {
-                    assignValueIdDynamically(pos, str_len - 1, current_col_value_id);
-                }
-            }
-            else
-            {
-                assignValueIdDynamically(pos, str_len - 1, current_col_value_id);
-            }
-            *value_id = *value_id * max_distinct_values + current_col_value_id;
-            value_id++;
-            pos += str_len;
-            prev_offset = offsets[offset_index];
-        }
-        if (current_assigned_value_id >= max_distinct_values)
-        {
-            state->hash_mode = AdaptiveKeysHolder::State::HASH;
-        }
-    }
-
-    template<bool is_nullable>
-    void computeValueIdForFixedString(const ColumnUInt8 * null_map, const ColumnFixedString * col, std::vector<UInt64> & value_ids)
-    {
-        if (state->hash_mode != AdaptiveKeysHolder::State::VALUE_ID)
-            return;
-        size_t str_len = col->getN();
-        const auto & chars = col->getChars();
-        UInt64 * value_id = value_ids.data();
-        const UInt8 * pos = chars.data();
 #if defined(__AVX512F__) && defined(__AVX512BW__)
-        if (could_fitinto_cache)
+    ALWAYS_INLINE void computeLocalValueIdsForOneBatchAVX512(UInt64 * value_ids, const UInt8 * data_pos, size_t element_bytes)
+    {
+        alignas(64) UInt64 tmp_values[8] = {0};
+        const auto * local_data_pos = data_pos;
+        UInt64 str_to_int_mask = (-1UL) >>  ((sizeof(UInt64) - element_bytes) << 3);
+        for (auto & tmp_value : tmp_values)
         {
-            auto value_mask =  (-1UL) >> ((sizeof(UInt64) - str_len) << 3);
-            for (size_t i = 0, n = col->size(); i < n; ++i)
+            tmp_value = *reinterpret_cast<const UInt64 *>(local_data_pos) & str_to_int_mask;
+            local_data_pos += element_bytes;
+        }
+        if (enable_range_mode)
+        {
+            UInt64 range_delta = range_min - 1 - is_nullable;
+            auto range_max_v = _mm512_set1_epi64(range_max);
+            auto range_min_v = _mm512_set1_epi64(range_min);
+            __m512i tmp_values_v = _mm512_loadu_epi64(tmp_values);
+            auto range_max_cmp_mask = _mm512_cmpgt_epi64_mask(tmp_values_v, range_max_v);
+            auto range_min_cmp_mask = _mm512_cmpgt_epi64_mask(range_min_v, tmp_values_v);
+            if (!range_max_cmp_mask && !range_min_cmp_mask)
             {
-                UInt64 current_col_value_id = 0;
-                if constexpr (is_nullable)
+                auto range_delta_v = _mm512_set1_epi64(range_delta);
+                tmp_values_v = _mm512_sub_epi64(tmp_values_v, range_delta_v);
+                _mm512_storeu_epi64(value_ids, tmp_values_v);
+            }
+            else
+            {
+                local_data_pos = data_pos;
+                for (size_t j = 0; j < 8; ++j)
                 {
-                    if ((*null_map).getData()[i])
+                    StringRef raw_value(data_pos, element_bytes);
+                    if (tmp_values[j] > range_max || tmp_values[j] < range_min)
                     {
-                        current_col_value_id = 1;
+                        getValueId(raw_value, tmp_values[j], value_ids[j]);
                     }
                     else
                     {
-                        UInt64 value = *reinterpret_cast<const UInt64 *>(pos);
-                        value &= value_mask;
-                        if (!tryAssignValueIdInLowCardinalityCache(value, current_col_value_id, pos, str_len - 1))
-                            assignValueIdDynamically(pos, str_len, current_col_value_id);
+                        value_ids[j] = tmp_values[j] - range_delta;
                     }
+                    local_data_pos += element_bytes;
                 }
-                else
-                {
-                    UInt64 value = *reinterpret_cast<const UInt64 *>(pos);
-                    value &= value_mask;
-                    if (!tryAssignValueIdInLowCardinalityCache(value, current_col_value_id, pos, str_len - 1))
-                        assignValueIdDynamically(pos, str_len, current_col_value_id);
-                }
-                *value_id = *value_id * max_distinct_values + current_col_value_id;
-                value_id++;
-                pos += str_len;
             }
         }
         else
-#endif
         {
-            for (size_t i = 0, n = col->size(); i < n; ++i)
+            local_data_pos = data_pos;
+            for (size_t j = 0; j < 8; ++j)
             {
-                UInt64 current_col_value_id = 0;
-                if constexpr (is_nullable)
-                {
-                    if ((*null_map).getData()[i])
-                    {
-                        current_col_value_id = 1;
-                    }
-                    else
-                    {
-                        assignValueIdDynamically(pos, str_len, current_col_value_id);
-                    }
-                }
-                else
-                {
-                    assignValueIdDynamically(pos, str_len, current_col_value_id);
-                }
-                *value_id = *value_id * max_distinct_values + current_col_value_id;
-                value_id++;
-                pos += str_len;
+                StringRef raw_value(data_pos, element_bytes);
+                getValueId(raw_value, tmp_values[j], value_ids[j]);
+                local_data_pos += element_bytes;
             }
         }
 
-        if (current_assigned_value_id > max_distinct_values)
+    }
+
+    ALWAYS_INLINE void computeFinalValueIdsOneBatchAVX512(UInt64 * local_value_ids, UInt64 * value_ids, const UInt8 * null_map) const
+    {
+        auto multiplier_v = _mm512_set1_epi64(max_distinct_values);
+        auto value_ids_v = _mm512_loadu_epi64(value_ids);
+        auto multipy_result = _mm512_mullox_epi64(value_ids_v, multiplier_v);
+        auto local_value_ids_v = _mm512_loadu_epi64(local_value_ids);
+        auto add_result = _mm512_add_epi64(multipy_result, local_value_ids_v);
+        _mm512_storeu_epi64(value_ids, add_result);
+        if (is_nullable)
         {
-            state->hash_mode = AdaptiveKeysHolder::State::HASH;
+            for (size_t j = 0; j < 8; ++j)
+            {
+                value_ids[j] -= null_map[j];
+            }
+        }
+    }
+#endif
+
+    ALWAYS_INLINE void computeFinalValueIdsOneBatch(const UInt64 * local_value_ids, UInt64 * value_ids, const UInt8 * null_map, size_t n = 8) const
+    {
+        if (is_nullable)
+        {
+            for (size_t j = 0; j < n; ++j)
+            {
+                value_ids[j] = value_ids[j] * max_distinct_values + local_value_ids[j] - null_map[j];
+            }
+        }
+        else
+        {
+            for (size_t j = 0; j < n; ++j)
+            {
+                value_ids[j] = value_ids[j] * max_distinct_values + local_value_ids[j];
+            }
         }
     }
 
-    template<bool is_nullable, typename ElementType, typename ColumnType>
-    void computeValueIdForNumber(const ColumnUInt8 * null_map, const ColumnType * num_col, std::vector<UInt64> & value_ids)
-    {
-        size_t str_len = sizeof(ElementType);
-        const auto * pos = reinterpret_cast<const UInt8 *>(num_col->getData().data());
-        UInt64 * value_id = value_ids.data();
+};
 
-        if (state->hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
+
+class StringHashValueIdGenerator : public IHashValueIdGenerator
+{
+public:
+    explicit StringHashValueIdGenerator(const IColumn * col_, AdaptiveKeysHolder::State * state_, size_t max_distinct_values_)
+        : IHashValueIdGenerator(col_, state_, max_distinct_values_)
+    {
+        tryInitialize(col_);
+    }
+
+private:
+    void tryInitialize(const IColumn * col);
+
+    void computeValueIdImpl(const IColumn * col, UInt64 * value_ids) override
+    {
+        if (col->empty())
+            return;
+        const auto * nested_col = col;
+        const ColumnUInt8 * null_map = nullptr;
+        if (col->isNullable())
         {
+            const auto * null_col = typeid_cast<const ColumnNullable *>(col);
+            if (!null_col)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is nullable but not ColumnNullable", col->getName());
+            nested_col = &(null_col->getNestedColumn());
+            null_map = &(null_col->getNullMapColumn());
+        }
+
+        const auto * str_col = typeid_cast<const ColumnString *>(nested_col);
+        if (!str_col)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid column: {}", col->getName());
+        const auto & chars = str_col->getChars();
+        const UInt8 * char_pos = chars.data();
+        UInt64 * value_ids_pos = value_ids;
+
+        const auto & offsets = str_col->getOffsets();
+        IColumn::Offset prev_offset = 0;
+
+        alignas(64) UInt64 tmp_value_ids[8] = {0};
+        alignas(64) UInt64 str_lens[8] = {0};
+        size_t i = 0;
+        size_t n = str_col->size();
+
+        str_lens[0] = offsets[0];
+        innerComputeLocalValueIdsForOneBatch(tmp_value_ids, 1, char_pos, str_lens);
+        const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() : nullptr;
+        computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, null_map_pos, 1);
+        value_ids_pos += 1;
+        char_pos += str_lens[0];
+        prev_offset = offsets[0];
+
+        for (i = 1; i + 8 < n; i += 8)
+        {
+            bool is_all_short_string = false;
+            null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
+            computeOneBatchStringLength(i, offsets, str_lens, is_all_short_string);
 #if defined(__AVX512F__) && defined(__AVX512BW__)
-            if (could_fitinto_cache)
+            if (is_all_short_string)
             {
-                UInt64 current_col_value_id = 0;
-                auto assign_value = [&]()
-                {
-                    if constexpr (sizeof(ElementType) < sizeof(UInt64))
-                    {
-                        if (!tryAssignValueIdInLowCardinalityCache(
-                                static_cast<UInt64>(*reinterpret_cast<const ElementType *>(pos)), current_col_value_id, pos, str_len))
-                            assignValueIdDynamically(pos, str_len, current_col_value_id);
-                    }
-                    else
-                    {
-                        assignValueIdDynamically(pos, str_len, current_col_value_id);
-                    }
-                };
-                for (size_t i = 0, n = num_col->size(); i < n; ++i)
-                {
-                    current_col_value_id = 0;
-                    if constexpr (is_nullable)
-                    {
-                        if ((*null_map).getData()[i])
-                        {
-                            current_col_value_id = 1;
-                        }
-                        else
-                        {
-                           assign_value(); 
-                        }
-                    }
-                    else
-                    {
-                        assign_value();
-                    }
-                    *value_id = *value_id * max_distinct_values + current_col_value_id;
-                    value_id++;
-                    pos += str_len;
-                }
+                innerComputeLocalValueIdsForOneBatchAVX512(tmp_value_ids, char_pos, str_lens);
             }
             else
 #endif
             {
-                for (size_t i = 0, n = num_col->size(); i < n; ++i)
-                {
-                    UInt64 current_col_value_id = 0;
-                    if constexpr (is_nullable)
-                    {
-                        if ((*null_map).getData()[i])
-                        {
-                            current_col_value_id = 1;
-                        }
-                        else
-                        {
-                            assignValueIdDynamically(pos, str_len, current_col_value_id);
-                        }
-                    }
-                    else
-                    {
-                        assignValueIdDynamically(pos, str_len, current_col_value_id);
-                    }
-                    *value_id = *value_id * max_distinct_values + current_col_value_id;
-                    value_id++;
-                    pos += str_len;
-                }
+                innerComputeLocalValueIdsForOneBatch(tmp_value_ids, 8, char_pos, str_lens);
             }
-            if (current_assigned_value_id > max_distinct_values)
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+            computeFinalValueIdsOneBatchAVX512(tmp_value_ids, value_ids_pos, null_map_pos);
+#else
+            computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, null_map_pos);
+#endif
+            value_ids_pos += 8;
+            char_pos += offsets[i + 7] - prev_offset;
+            prev_offset = offsets[i + 7];
+        }
+
+        if (i < n)
+        {
+            auto remained = n - i;
+            for (size_t j = 0; j < remained; ++j)
             {
-                state->hash_mode = AdaptiveKeysHolder::State::HASH;
+                str_lens[j] = offsets[i + j] - prev_offset;
+                prev_offset = offsets[i + j];
             }
+            innerComputeLocalValueIdsForOneBatch(tmp_value_ids, remained, char_pos, str_lens);
+            null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
+            computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, null_map_pos, remained);
         }
     }
 
-    void computeValueIdForLowCardinality(const ColumnLowCardinality * col, std::vector<UInt64> & value_ids);
+    // 8 elements in a batch
+    ALWAYS_INLINE void computeOneBatchStringLength(size_t start, const IColumn::Offsets & offsets, UInt64 *lens, bool & is_all_short_string[[maybe_unused]])
+    {
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+        const auto * ptr = &offsets[start];
+        auto off = _mm512_loadu_epi64(ptr);
+        auto prev_off = _mm512_loadu_epi64(ptr - 1);
+        auto res = _mm512_sub_epi64(off, prev_off);
+        auto max_str_len = _mm512_set1_epi64(9);
+        is_all_short_string = _mm512_cmpgt_epi64_mask(res, max_str_len) == 0;
+        _mm512_store_epi64(lens, res);
+#else
+        const auto * offsets_pos = &offsets[start - 1];
+        lens[0] = offsets_pos[1] - offsets_pos[0];
+        lens[1] = offsets_pos[2] - offsets_pos[1];
+        lens[2] = offsets_pos[3] - offsets_pos[2];
+        lens[3] = offsets_pos[4] - offsets_pos[3];
+        lens[4] = offsets_pos[5] - offsets_pos[4];
+        lens[5] = offsets_pos[6] - offsets_pos[5];
+        lens[6] = offsets_pos[7] - offsets_pos[6];
+        lens[7] = offsets_pos[8] - offsets_pos[7];
+#endif
+    }
+
+    ALWAYS_INLINE void buildStringToIntMask(const UInt64 * str_lens, UInt64 * masks)
+    {
+        auto str_lens_v = _mm512_loadu_epi64(str_lens);
+        auto const_9_v = _mm512_set1_epi64(9);
+        auto const_8_v = _mm512_set1_epi64(8);
+        auto masks_v = _mm512_sub_epi64(const_9_v, str_lens_v);
+        masks_v = _mm512_mullox_epi64(masks_v, const_8_v);
+        auto const_max_val_v = _mm512_set1_epi64(-1UL);
+        masks_v = _mm512_srlv_epi64(const_max_val_v, masks_v);
+        _mm512_storeu_epi64(masks, masks_v);
+    }
+
+    ALWAYS_INLINE void innerComputeLocalValueIdsForOneBatch(UInt64 * value_ids, size_t n, const UInt8 * data_pos, const UInt64 * element_bytes)
+    {
+        if (enable_range_mode)
+        {
+            innerComputeLocalValueIdsForOneBatchImpl<true>(value_ids, n, data_pos, element_bytes);
+        }
+        else
+        {
+            innerComputeLocalValueIdsForOneBatchImpl<false>(value_ids, n, data_pos, element_bytes);
+        }
+    }
+
+    template <bool enable_range_mode>
+    ALWAYS_INLINE void innerComputeLocalValueIdsForOneBatchImpl(UInt64 * value_ids, size_t n, const UInt8 * data_pos, const UInt64 * element_bytes)
+    {
+        UInt64 range_delta = range_min - 1 - is_nullable;
+        for (size_t i = 0; i < n; ++i)
+        {
+            if (element_bytes[i] > 9)
+            {
+                getValueIdByMap(StringRef(data_pos, element_bytes[i] - 1), value_ids[i]);
+            }
+            else
+            {
+                StringRef raw_value(data_pos, element_bytes[i] - 1);
+                auto val = str2Int64(data_pos, element_bytes[i] - 1);
+                if constexpr (enable_range_mode)
+                {
+                    if (val > range_max || val < range_min)
+                    {
+                        getValueId(raw_value, val, value_ids[i]);
+                    }
+                    else
+                    {
+                        value_ids[i] = val - range_delta;
+                    }
+                }
+                else
+                {
+                    getValueId(raw_value, val, value_ids[i]);
+                }
+            }
+            data_pos += element_bytes[i];
+        }
+    }
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+    ALWAYS_INLINE void innerComputeLocalValueIdsForOneBatchAVX512(UInt64 * value_ids, const UInt8 * data_pos, const UInt64 * element_bytes)
+    {
+        alignas(64) UInt64 tmp_values[8] = {0};
+        const auto * local_data_pos = data_pos;
+        alignas(64) UInt64 value_masks[8] = {0};
+        buildStringToIntMask(element_bytes, value_masks);
+        for (size_t i = 0; i < 8; ++i)
+        {
+            tmp_values[i] = *reinterpret_cast<const UInt64 *>(local_data_pos) & value_masks[0];
+            local_data_pos += element_bytes[i];
+        }
+        if (enable_range_mode)
+        {
+            UInt64 range_delta = range_min - 1 - is_nullable;
+            auto range_max_v = _mm512_set1_epi64(range_max);
+            auto range_min_v = _mm512_set1_epi64(range_min);
+            __m512i tmp_values_v = _mm512_loadu_epi64(tmp_values);
+            auto range_max_cmp_mask = _mm512_cmpgt_epi64_mask(tmp_values_v, range_max_v);
+            auto range_min_cmp_mask = _mm512_cmpgt_epi64_mask(range_min_v, tmp_values_v);
+            if (!range_max_cmp_mask && !range_min_cmp_mask)
+            {
+                auto range_delta_v = _mm512_set1_epi64(range_delta);
+                tmp_values_v = _mm512_sub_epi64(tmp_values_v, range_delta_v);
+                _mm512_storeu_epi64(value_ids, tmp_values_v);
+            }
+            else
+            {
+                local_data_pos = data_pos;
+                for (size_t j = 0; j < 8; ++j)
+                {
+                    StringRef raw_value(local_data_pos, element_bytes[j] - 1);
+                    if (tmp_values[j] > range_max || tmp_values[j] < range_min) [[unlikely]]
+                    {
+                        getValueId(raw_value, tmp_values[j], value_ids[j]);
+                    }
+                    else
+                    {
+                        value_ids[j] = tmp_values[j] - range_delta;
+                    }
+                    local_data_pos += element_bytes[j];
+                }
+            }
+        }
+        else
+        {
+            local_data_pos = data_pos;
+            for (size_t j = 0; j < 8; ++j)
+            {
+                StringRef raw_value(local_data_pos, element_bytes[j] - 1);
+                getValueId(raw_value, tmp_values[j], value_ids[j]);
+                local_data_pos += element_bytes[j];
+            }
+        }
+
+    }
+#endif
+};
+
+class FixedStringHashValueIdGenerator : public IHashValueIdGenerator
+{
+public:
+    explicit FixedStringHashValueIdGenerator(const IColumn *col_, AdaptiveKeysHolder::State *state_, size_t max_distinct_values_)
+        : IHashValueIdGenerator(col_, state_, max_distinct_values_)
+    {
+        tryInitialize(col_);
+    }
+
+private:
+    void tryInitialize(const IColumn * col);
+
+    void computeValueIdImpl(const IColumn *col, UInt64 * value_ids) override
+    {
+        const auto * nested_col = col;
+        const ColumnUInt8 * null_map = nullptr;
+        if (col->isNullable())
+        {
+            const auto * null_col = typeid_cast<const ColumnNullable *>(col);
+            if (!null_col)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is nullable but not ColumnNullable", col->getName());
+            nested_col = &(null_col->getNestedColumn());
+            null_map = &(null_col->getNullMapColumn());
+        }
+
+        const auto * str_col = typeid_cast<const ColumnFixedString *>(nested_col);
+        const auto & chars = str_col->getChars();
+        const UInt8 * char_pos = chars.data();
+        UInt64 * value_ids_pos = value_ids;
+        auto str_len = str_col->getN();
+
+        alignas(64) UInt64 tmp_value_ids[8] = {0};
+        size_t i = 0;
+        size_t n = str_col->size();
+
+        for (; i + 8 < n; i += 8)
+        {
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+            if (str_len <= 8)
+            {
+                computeLocalValueIdsForOneBatchAVX512(tmp_value_ids, char_pos, str_len);
+            }
+            else
+#endif
+            {
+                computeLocalValueIdsForOneBatch(tmp_value_ids, 8, char_pos, str_len);
+            }
+            const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
+            /// update the output value_ids.
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+            computeFinalValueIdsOneBatchAVX512(tmp_value_ids, value_ids_pos, null_map_pos);
+#else
+            computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, null_map_pos);
+#endif
+            char_pos += str_len * 8;
+            value_ids_pos += 8;
+        }
+        computeLocalValueIdsForOneBatch(tmp_value_ids, n - i, char_pos, str_len);
+        computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, is_nullable ? null_map->getData().data() + i : nullptr, n - i);
+
+    }
+};
+
+template <typename ElementType, typename ColumnType>
+class NumericHashValueIdGenerator : public IHashValueIdGenerator
+{
+public:
+    explicit NumericHashValueIdGenerator(const IColumn * col_, AdaptiveKeysHolder::State * state_, size_t max_distinct_values_)
+        : IHashValueIdGenerator(col_, state_, max_distinct_values_)
+    {
+        tryInitialize(col_);
+    }
+private:
+    void tryInitialize(const IColumn * col)
+    {
+        is_nullable = col->isNullable();
+        const auto * nested_col = col;
+        if (col->isNullable())
+        {
+            const auto * null_col = typeid_cast<const ColumnNullable *>(col);
+            if (!null_col)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is nullable but not ColumnNullable", col->getName());
+            nested_col = &(null_col->getNestedColumn());
+        }
+        const auto * num_col = typeid_cast<const ColumnType *>(nested_col);
+        size_t element_bytes = sizeof(ElementType);
+        const UInt8 * data_pos = reinterpret_cast<const UInt8 *>(num_col->getData().data());
+        size_t i = 0;
+        size_t n = std::min(max_sample_rows, num_col->size());
+        for (i = 0; i < n; ++i)
+        {
+            if (element_bytes > 8)
+            {
+                enable_range_mode = false;
+                break;
+            }
+            UInt64 val = str2Int64(data_pos, element_bytes);
+            if (val > range_max)
+                range_max = val;
+            if (val < range_min)
+                range_min = val;
+            if (range_max - range_min + 1 + is_nullable > max_distinct_values)
+            {
+                enable_range_mode = false;
+                break;
+            }
+            data_pos += element_bytes;
+        }
+        if (enable_range_mode)
+        {
+            allocated_value_id =  range_max - range_min + 2 + is_nullable;
+        }
+        else
+        {
+            allocated_value_id = 1 + is_nullable;
+        }
+    }
+
+    void computeValueIdImpl(const IColumn * col, UInt64 * value_ids) override
+    {
+        const auto * nested_col = col;
+        const ColumnUInt8 * null_map = nullptr;
+        if (col->isNullable())
+        {
+            const auto * null_col = typeid_cast<const ColumnNullable *>(col);
+            if (!null_col)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is nullable but not ColumnNullable", col->getName());
+            nested_col = &(null_col->getNestedColumn());
+            null_map = &(null_col->getNullMapColumn());
+        }
+        const auto * num_col = typeid_cast<const ColumnType *>(nested_col);
+        size_t element_bytes = sizeof(ElementType);
+        const UInt8 * data_pos = reinterpret_cast<const UInt8 *>(num_col->getData().data());
+        UInt64 * value_ids_pos = value_ids;
+        size_t i = 0;
+        size_t n = num_col->size();
+
+        alignas(64) UInt64 tmp_value_ids[8] = {0};
+        for (; i + 8 < n; i += 8)
+        {
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+            if (element_bytes <= 8)
+            {
+                computeLocalValueIdsForOneBatchAVX512(tmp_value_ids, data_pos, element_bytes);
+            }
+            else
+#endif
+            {
+                computeLocalValueIdsForOneBatch(tmp_value_ids, 8, data_pos, element_bytes);
+            }
+            const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+            computeFinalValueIdsOneBatchAVX512(tmp_value_ids, value_ids_pos, null_map_pos);
+#else
+            computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, null_map_pos);
+#endif
+            data_pos += element_bytes * 8;
+            value_ids_pos += 8;
+        }
+        computeLocalValueIdsForOneBatch(tmp_value_ids, n - i, data_pos, element_bytes);
+        computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, is_nullable ? null_map->getData().data() + i : nullptr, n - i);
+    }
+};
+
+class LowCardinalityHashValueIdGenerator : public IHashValueIdGenerator
+{
+public:
+    explicit LowCardinalityHashValueIdGenerator(const IColumn * col_, AdaptiveKeysHolder::State * state_, size_t max_distinct_values_)
+        : IHashValueIdGenerator(col_, state_, max_distinct_values_)
+    {
+        enable_range_mode = false;
+    }
+private:
+    void computeValueIdImpl(const IColumn * col, UInt64 * value_ids) override
+    {
+        const auto * low_card_col = typeid_cast<const ColumnLowCardinality *>(col);
+        if (!low_card_col)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is not LowCardinality", col->getName());
+        const auto & indexes_col = low_card_col->getIndexes();
+        size_t index_bytes = low_card_col->getSizeOfIndexType();
+        const UInt8 * data_pos = nullptr;
+        switch (index_bytes)
+        {
+            case sizeof(UInt8):
+            {
+                data_pos = reinterpret_cast<const UInt8 *>(assert_cast<const ColumnUInt8 *>(&indexes_col)->getData().data());
+                assignIndexToValueId<UInt8>(value_ids, data_pos, col->size());
+                break;
+            }
+            case sizeof(UInt16):
+            {
+                data_pos = reinterpret_cast<const UInt8 *>(assert_cast<const ColumnUInt16 *>(&indexes_col)->getData().data());
+                assignIndexToValueId<UInt8>(value_ids, data_pos, col->size());
+                break;
+            }
+            case sizeof(UInt32):
+            {
+                data_pos = reinterpret_cast<const UInt8 *>(assert_cast<const ColumnUInt32 *>(&indexes_col)->getData().data());
+                assignIndexToValueId<UInt8>(value_ids, data_pos, col->size());
+                break;
+            }
+            case sizeof(UInt64):
+            {
+                data_pos = reinterpret_cast<const UInt8 *>(assert_cast<const ColumnUInt64 *>(&indexes_col)->getData().data());
+                assignIndexToValueId<UInt8>(value_ids, data_pos, col->size());
+                break;
+            }
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
+        }
+    }
+
+    template <typename IndexType>
+    void assignIndexToValueId(UInt64 * value_ids, const UInt8 * data_pos, size_t n)
+    {
+        const auto * typed_data_pos = reinterpret_cast<const IndexType *>(data_pos);
+        for (size_t i = 0; i < n; ++i)
+        {
+            UInt64 value_id = typed_data_pos[i];
+            value_ids[i] = value_ids[i] * max_distinct_values + value_id;
+            data_pos += sizeof(IndexType);
+            if (value_id > allocated_value_id)
+                allocated_value_id = value_id;
+        }
+    }
+};
+
+class HashValueIdGeneratorFactory
+{
+public:
+    static HashValueIdGeneratorFactory & instance();
+    std::unique_ptr<IHashValueIdGenerator> getGenerator(AdaptiveKeysHolder::State *state_, size_t max_distinct_values_, const IColumn * col);
 };
 }

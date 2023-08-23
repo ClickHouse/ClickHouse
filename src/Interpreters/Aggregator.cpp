@@ -839,7 +839,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         }
 
         /// Fallback case.
-        if (is_all_number_or_string && params.keys_size <= max_adaptive_aggregating_keys)
+        if (is_all_number_or_string && params.keys_size <= max_adaptive_aggregating_keys && params.enable_adaptive_aggregation_method)
         {
             return AggregatedDataVariants::Type::adaptive;
         }
@@ -928,7 +928,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
             return AggregatedDataVariants::Type::key_string;
     }
 
-    if (is_all_number_or_string && params.keys_size <= max_adaptive_aggregating_keys)
+    if (is_all_number_or_string && params.keys_size <= max_adaptive_aggregating_keys && params.enable_adaptive_aggregation_method)
     {
         return AggregatedDataVariants::Type::adaptive;
     }
