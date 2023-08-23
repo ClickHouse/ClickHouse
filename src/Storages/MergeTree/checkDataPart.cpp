@@ -16,10 +16,6 @@
 #include <IO/S3Common.h>
 #include <Common/CurrentMetrics.h>
 
-#if USE_AZURE_BLOB_STORAGE
-#include <azure/core/http/http.hpp>
-#endif
-
 namespace CurrentMetrics
 {
     extern const Metric ReplicatedChecks;
@@ -64,11 +60,6 @@ bool isRetryableException(const Exception & e)
 #if USE_AWS_S3
     const auto * s3_exception = dynamic_cast<const S3Exception *>(&e);
     if (s3_exception && s3_exception->isRetryableError())
-        return true;
-#endif
-
-#if USE_AZURE_BLOB_STORAGE
-    if (dynamic_cast<const Azure::Core::Http::TransportException*>(&e))
         return true;
 #endif
 

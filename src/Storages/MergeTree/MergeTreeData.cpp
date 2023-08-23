@@ -103,6 +103,10 @@
 #include <Poco/Logger.h>
 #include <Poco/Net/NetException.h>
 
+#if USE_AZURE_BLOB_STORAGE
+#include <azure/core/http/http.hpp>
+#endif
+
 template <>
 struct fmt::formatter<DB::DataPartPtr> : fmt::formatter<std::string>
 {
@@ -1248,6 +1252,12 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     {
         throw;
     }
+#if USE_AZURE_BLOB_STORAGE
+    catch (const Azure::Core::Http::TransportException &)
+    {
+        throw;
+    }
+#endif
     catch (...)
     {
         mark_broken();
