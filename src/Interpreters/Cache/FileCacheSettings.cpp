@@ -53,7 +53,6 @@ void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration &
     if (config.has(config_prefix + ".load_metadata_threads"))
         load_metadata_threads = config.getUInt(config_prefix + ".load_metadata_threads");
 
-    delayed_cleanup_interval_ms = config.getUInt64(config_prefix + ".delayed_cleanup_interval_ms", FILECACHE_DELAYED_CLEANUP_INTERVAL_MS);
 }
 
 }

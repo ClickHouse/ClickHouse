@@ -199,7 +199,7 @@ private:
     #if USE_VECTORSCAN
     MultiRegexps::DeferredConstructedRegexpsPtr hyperscan_regex;
     MultiRegexps::ScratchPtr origin_scratch;
-    hs_database_t* origin_db;
+    MultiRegexps::DataBasePtr origin_db;
     #endif
 
     Poco::Logger * logger;

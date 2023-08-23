@@ -35,10 +35,13 @@ def cluster():
         cluster.shutdown()
 
 
-def azure_query(node, query, try_num=10, settings={}):
+def azure_query(node, query, expect_error="false", try_num=10, settings={}):
     for i in range(try_num):
         try:
-            return node.query(query, settings=settings)
+            if expect_error == "true":
+                return node.query_and_get_error(query, settings=settings)
+            else:
+                return node.query(query, settings=settings)
         except Exception as ex:
             retriable_errors = [
                 "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response",
@@ -656,7 +659,7 @@ def test_read_from_not_existing_container(cluster):
     node = cluster.instances["node"]
     query = f"select * from azureBlobStorage('http://azurite1:10000/devstoreaccount1',  'cont_not_exists', 'test_table.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto')"
     expected_err_msg = "container does not exist"
-    assert expected_err_msg in node.query_and_get_error(query)
+    assert expected_err_msg in azure_query(node, query, expect_error="true")
 
 
 def test_function_signatures(cluster):
