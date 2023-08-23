@@ -546,3 +546,9 @@ def test_create_table_as_select(started_cluster, started_mysql_8_0, clickhouse_n
     materialized_with_ddl.create_table_as_select(
         clickhouse_node, started_mysql_8_0, "mysql80"
     )
+
+
+def test_table_with_indexes(started_cluster, started_mysql_8_0, clickhouse_node):
+    materialized_with_ddl.table_with_indexes(
+        clickhouse_node, started_mysql_8_0, "mysql80"
+    )

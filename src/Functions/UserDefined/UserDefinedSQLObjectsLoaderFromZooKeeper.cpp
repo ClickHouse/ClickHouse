@@ -223,7 +223,7 @@ bool UserDefinedSQLObjectsLoaderFromZooKeeper::storeObject(
     {
         auto code = zookeeper->tryCreate(path, create_statement, zkutil::CreateMode::Persistent);
         if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
-            throw zkutil::KeeperException(code, path);
+            throw zkutil::KeeperException::fromPath(code, path);
 
         if (code == Coordination::Error::ZNODEEXISTS)
         {
@@ -234,14 +234,14 @@ bool UserDefinedSQLObjectsLoaderFromZooKeeper::storeObject(
 
             code = zookeeper->trySet(path, create_statement);
             if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNONODE))
-                throw zkutil::KeeperException(code, path);
+                throw zkutil::KeeperException::fromPath(code, path);
         }
 
         if (code == Coordination::Error::ZOK)
             break;
 
         if (!--num_attempts)
-            throw zkutil::KeeperException(code, path);
+            throw zkutil::KeeperException::fromPath(code, path);
     }
     LOG_DEBUG(log, "Object {} stored", backQuote(object_name));
 
@@ -262,7 +262,7 @@ bool UserDefinedSQLObjectsLoaderFromZooKeeper::removeObject(
 
     auto code = zookeeper->tryRemove(path);
     if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNONODE))
-        throw zkutil::KeeperException(code, path);
+        throw zkutil::KeeperException::fromPath(code, path);
 
     if (code == Coordination::Error::ZNONODE)
     {

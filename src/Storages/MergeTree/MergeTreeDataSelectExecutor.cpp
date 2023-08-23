@@ -1031,6 +1031,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         };
 
         size_t num_threads = std::min<size_t>(num_streams, parts.size());
+        if (settings.max_threads_for_indexes)
+        {
+            num_threads = std::min<size_t>(num_streams, settings.max_threads_for_indexes);
+        }
 
         if (num_threads <= 1)
         {
@@ -1638,7 +1642,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         {
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 granule = reader.read();
-            // Cast to Ann condition
+
             auto ann_condition = std::dynamic_pointer_cast<IMergeTreeIndexConditionApproximateNearestNeighbor>(condition);
             if (ann_condition != nullptr)
             {

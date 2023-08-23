@@ -1,14 +1,18 @@
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
-#include <Parsers/Access/ASTCreateUserQuery.h>
-#include <Parsers/Access/ASTRolesOrUsersSet.h>
-#include <Parsers/Access/ASTUserNameWithHost.h>
-#include <Parsers/ASTDatabaseOrNone.h>
+
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
+#include <Access/ReplicatedAccessStorage.h>
 #include <Access/User.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/removeOnClusterClauseIfNeeded.h>
+#include <Parsers/ASTDatabaseOrNone.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <boost/range/algorithm/copy.hpp>
 
 
@@ -105,7 +109,9 @@ namespace
 
 BlockIO InterpreterCreateUserQuery::execute()
 {
-    const auto & query = query_ptr->as<const ASTCreateUserQuery &>();
+    const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
+    const auto & query = updated_query_ptr->as<const ASTCreateUserQuery &>();
+
     auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
     access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);
@@ -138,7 +144,7 @@ BlockIO InterpreterCreateUserQuery::execute()
     }
 
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, getContext());
+        return executeDDLQueryOnCluster(updated_query_ptr, getContext());
 
     IAccessStorage * storage = &access_control;
     MultipleAccessStorage::StoragePtr storage_ptr;

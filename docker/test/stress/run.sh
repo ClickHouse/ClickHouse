@@ -211,6 +211,11 @@ mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/cli
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 
+sudo cat /etc/clickhouse-server/config.d/logger_trace.xml \
+   | sed "s|<level>trace</level>|<level>test</level>|" \
+   > /etc/clickhouse-server/config.d/logger_trace.xml.tmp
+mv /etc/clickhouse-server/config.d/logger_trace.xml.tmp /etc/clickhouse-server/config.d/logger_trace.xml
+
 start
 
 stress --hung-check --drop-databases --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 \
