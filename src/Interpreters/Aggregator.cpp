@@ -39,7 +39,6 @@
 #include <Common/JSONBuilder.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/scope_guard_safe.h>
-#include <Common/BoolArgsToTemplateArgsDispatcher.h>
 
 #include <Parsers/ASTSelectQuery.h>
 
@@ -1066,30 +1065,40 @@ void NO_INLINE Aggregator::executeImpl(
 {
     typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
 
-    auto call_execute_impl_batch = [&]<bool b1, bool b2, bool b3, bool b4>()
-    {
-        executeImplBatch<b1, b2, b3, b4>(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, overflow_row);
-    };
-
-    bool use_compiled_functions = false;
-#if USE_EMBEDDED_COMPILER
-    use_compiled_functions = compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions);
-#endif
-
     if (!no_more_keys)
     {
         /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
         const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
             && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
-        BoolArgsToTemplateArgsDispatcher<decltype(call_execute_impl_batch)>::call(call_execute_impl_batch, no_more_keys, use_compiled_functions, prefetch, all_keys_are_const);
+
+#if USE_EMBEDDED_COMPILER
+        if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
+        {
+            if (prefetch)
+                executeImplBatch<false, true, true>(
+                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, all_keys_are_const, overflow_row);
+            else
+                executeImplBatch<false, true, false>(
+                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, all_keys_are_const, overflow_row);
+        }
+        else
+#endif
+        {
+            if (prefetch)
+                executeImplBatch<false, false, true>(
+                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, all_keys_are_const, overflow_row);
+            else
+                executeImplBatch<false, false, false>(
+                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, all_keys_are_const, overflow_row);
+        }
     }
     else
     {
-        BoolArgsToTemplateArgsDispatcher<decltype(call_execute_impl_batch)>::call(call_execute_impl_batch, no_more_keys, false, false, all_keys_are_const);
+        executeImplBatch<true, false, false>(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, all_keys_are_const, overflow_row);
     }
 }
 
-template <bool no_more_keys, bool use_compiled_functions, bool prefetch, bool all_keys_are_const, typename Method>
+template <bool no_more_keys, bool use_compiled_functions, bool prefetch, typename Method>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
     typename Method::State & state,
@@ -1097,6 +1106,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     size_t row_begin,
     size_t row_end,
     AggregateFunctionInstruction * aggregate_instructions,
+    bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
     using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
@@ -1113,7 +1123,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
         /// For all rows.
         AggregateDataPtr place = aggregates_pool->alloc(0);
-        if constexpr (all_keys_are_const)
+        if (all_keys_are_const)
         {
             state.emplaceKey(method.data, 0, *aggregates_pool).setMapped(place);
         }
@@ -1140,7 +1150,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     }
 
     /// Optimization for special case when aggregating by 8bit key.
-    if constexpr (!no_more_keys && !all_keys_are_const && std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type>)
+    if constexpr (!no_more_keys && std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type>)
     {
         /// We use another method if there are aggregate functions with -Array combinator.
         bool has_arrays = false;
@@ -1153,7 +1163,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             }
         }
 
-        if (!has_arrays && !hasSparseArguments(aggregate_instructions))
+        if (!has_arrays && !hasSparseArguments(aggregate_instructions) && !all_keys_are_const)
         {
             for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
             {
@@ -1184,7 +1194,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// For all rows.
     size_t start, end;
     /// If all keys are const, key columns contain only 1 row.
-    if constexpr (all_keys_are_const)
+    if  (all_keys_are_const)
     {
         start = 0;
         end = 1;
@@ -1201,7 +1211,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
         if constexpr (!no_more_keys)
         {
-            if constexpr (prefetch && !all_keys_are_const && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+            if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
             {
                 if (i == row_begin + prefetching.iterationsToMeasure())
                     prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
@@ -1273,7 +1283,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             {
                 /// If all keys are constant and this is new key
                 /// we don't need to do anything and just skip the whole block.
-                if constexpr (all_keys_are_const)
+                if (all_keys_are_const)
                     return;
                 aggregate_data = overflow_row;
             }
@@ -1299,7 +1309,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 columns_data.emplace_back(getColumnData(inst->batch_arguments[argument_index]));
         }
 
-        if constexpr (all_keys_are_const)
+        if (all_keys_are_const)
         {
             auto add_into_aggregate_states_function_single_place = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function_single_place;
             add_into_aggregate_states_function_single_place(row_begin, row_end, columns_data.data(), places[0]);
@@ -1323,7 +1333,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
         AggregateFunctionInstruction * inst = aggregate_instructions + i;
 
-        if constexpr (all_keys_are_const)
+        if (all_keys_are_const)
         {
             if (inst->offsets)
                 inst->batch_that->addBatchSinglePlace(inst->offsets[static_cast<ssize_t>(row_begin) - 1], inst->offsets[row_end - 1], places[0] + inst->state_offset, inst->batch_arguments, aggregates_pool);
