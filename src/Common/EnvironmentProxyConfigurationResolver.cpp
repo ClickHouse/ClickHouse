@@ -21,6 +21,11 @@ namespace
 {
     const char * getProxyHost(DB::ProxyConfiguration::Protocol protocol)
     {
+        /*
+         * getenv is safe to use here because ClickHouse code does not make any call to `setenv` or `putenv`
+         * aside from tests and a very early call during startup: https://github.com/ClickHouse/ClickHouse/blob/master/src/Daemon/BaseDaemon.cpp#L791
+         * */
+
         if (protocol == DB::ProxyConfiguration::Protocol::HTTP)
         {
             return std::getenv(PROXY_HTTP_ENVIRONMENT_VARIABLE); // NOLINT(concurrency-mt-unsafe)
