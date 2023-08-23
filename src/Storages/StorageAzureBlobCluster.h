@@ -47,7 +47,6 @@ private:
 
     StorageAzureBlob::Configuration configuration;
     NamesAndTypesList virtual_columns;
-    Block virtual_block;
     std::unique_ptr<AzureObjectStorage> object_storage;
 };
 
