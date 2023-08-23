@@ -263,7 +263,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
            "attnotnull AS not_null, attndims AS dims, atttypid as type_id, atttypmod as type_modifier "
            "FROM pg_attribute "
            "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) "
-           "AND NOT attisdropped AND attnum > 0", where);
+           "AND NOT attisdropped AND attnum > 0 order by attnum asc", where);
 
     auto postgres_table_with_schema = postgres_schema.empty() ? postgres_table : doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(postgres_table);
     table.physical_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, false);
