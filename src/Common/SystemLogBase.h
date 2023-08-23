@@ -33,12 +33,16 @@
 
 namespace Poco
 {
+
 class Logger;
+
 namespace Util
 {
     class AbstractConfiguration;
 }
+
 }
+
 
 namespace DB
 {
