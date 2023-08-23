@@ -12,7 +12,7 @@
 
 #include <IO/ReadSettings.h>
 
-#include <Core/BackgroundSchedulePool.h>
+#include <Common/ThreadPool.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Interpreters/Cache/FileSegment.h>
@@ -58,7 +58,7 @@ public:
     using PriorityIterator = IFileCachePriority::Iterator;
     using PriorityIterationResult = IFileCachePriority::IterationResult;
 
-    explicit FileCache(const FileCacheSettings & settings);
+    FileCache(const std::string & cache_name, const FileCacheSettings & settings);
 
     ~FileCache();
 
@@ -130,8 +130,6 @@ public:
 
     FileSegmentsHolderPtr dumpQueue();
 
-    void cleanup();
-
     void deactivateBackgroundOperations();
 
     /// For per query cache limit.
@@ -157,7 +155,6 @@ private:
 
     const size_t max_file_segment_size;
     const size_t bypass_cache_threshold = 0;
-    const size_t delayed_cleanup_interval_ms;
     const size_t boundary_alignment;
     const size_t background_download_threads;
 
@@ -202,9 +199,8 @@ private:
      * A background cleanup task.
      * Clears removed cache entries from metadata.
      */
-    BackgroundSchedulePool::TaskHolder cleanup_task;
-
     std::vector<ThreadFromGlobalPool> download_threads;
+    std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
 
     void assertInitialized() const;
 
@@ -235,8 +231,6 @@ private:
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
         const CacheGuard::Lock *);
-
-    void cleanupThreadFunc();
 };
 
 }

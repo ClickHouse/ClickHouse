@@ -706,7 +706,8 @@ Pipe StorageAzureBlob::read(
             configuration.compression_method,
             object_storage.get(),
             configuration.container,
-            iterator_wrapper));
+            iterator_wrapper,
+            query_info));
     }
 
     return Pipe::unitePipes(std::move(pipes));
@@ -1094,7 +1095,8 @@ StorageAzureBlobSource::StorageAzureBlobSource(
     String compression_hint_,
     AzureObjectStorage * object_storage_,
     const String & container_,
-    std::shared_ptr<IIterator> file_iterator_)
+    std::shared_ptr<IIterator> file_iterator_,
+    const SelectQueryInfo & query_info_)
     :ISource(info.source_header, false)
     , WithContext(context_)
     , requested_columns(info.requested_columns)
@@ -1109,6 +1111,7 @@ StorageAzureBlobSource::StorageAzureBlobSource(
     , object_storage(std::move(object_storage_))
     , container(container_)
     , file_iterator(file_iterator_)
+    , query_info(query_info_)
     , create_reader_pool(CurrentMetrics::ObjectStorageAzureThreads, CurrentMetrics::ObjectStorageAzureThreadsActive, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "AzureReader"))
 {
@@ -1142,6 +1145,7 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
             format, *read_buf, sample_block, getContext(), max_block_size,
             format_settings, std::nullopt, std::nullopt,
             /* is_remote_fs */ true, compression_method);
+    input_format->setQueryInfo(query_info, getContext());
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));

@@ -527,7 +527,8 @@ StorageS3Source::StorageS3Source(
     const String & bucket_,
     const String & version_id_,
     std::shared_ptr<IIterator> file_iterator_,
-    const size_t download_thread_num_)
+    const size_t max_parsing_threads_,
+    std::optional<SelectQueryInfo> query_info_)
     : ISource(info.source_header, false)
     , WithContext(context_)
     , name(std::move(name_))
@@ -542,9 +543,10 @@ StorageS3Source::StorageS3Source(
     , client(client_)
     , sample_block(info.format_header)
     , format_settings(format_settings_)
+    , query_info(std::move(query_info_))
     , requested_virtual_columns(info.requested_virtual_columns)
     , file_iterator(file_iterator_)
-    , download_thread_num(download_thread_num_)
+    , max_parsing_threads(max_parsing_threads_)
     , create_reader_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "CreateS3Reader"))
 {
@@ -571,9 +573,19 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
 
     auto read_buf = createS3ReadBuffer(key_with_info.key, object_size);
     auto input_format = FormatFactory::instance().getInput(
-            format, *read_buf, sample_block, getContext(), max_block_size,
-            format_settings, std::nullopt, std::nullopt,
-            /* is_remote_fs */ true, compression_method);
+        format,
+        *read_buf,
+        sample_block,
+        getContext(),
+        max_block_size,
+        format_settings,
+        max_parsing_threads,
+        /* max_download_threads= */ std::nullopt,
+        /* is_remote_fs */ true,
+        compression_method);
+
+    if (query_info.has_value())
+        input_format->setQueryInfo(query_info.value(), getContext());
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
@@ -1031,7 +1043,9 @@ Pipe StorageS3::read(
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
 
-    const size_t max_download_threads = local_context->getSettingsRef().max_download_threads;
+    const size_t max_threads = local_context->getSettingsRef().max_threads;
+    const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / num_streams);
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageS3Source>(
@@ -1047,7 +1061,8 @@ Pipe StorageS3::read(
             query_configuration.url.bucket,
             query_configuration.url.version_id,
             iterator_wrapper,
-            max_download_threads));
+            max_parsing_threads,
+            query_info));
     }
 
     return Pipe::unitePipes(std::move(pipes));
