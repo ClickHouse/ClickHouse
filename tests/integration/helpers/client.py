@@ -144,6 +144,7 @@ class Client:
         user=None,
         password=None,
         database=None,
+        query_id=None,
     ):
         return self.get_query_request(
             sql,
@@ -153,6 +154,7 @@ class Client:
             user=user,
             password=password,
             database=database,
+            query_id=query_id,
         ).get_answer_and_error()
 
 
