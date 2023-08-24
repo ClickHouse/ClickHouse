@@ -214,6 +214,9 @@ static size_t joinPushDown(
     QueryPlan::Nodes & nodes,
     bool split_result_can_be_true_on_default)
 {
+    if (!typeid_cast<const FilterStep *>(filter_node->step.get()))
+        return 0;
+
     QueryPlan::Node * join_node = filter_node->children.front();
     auto & join_step = join_node->step;
 
