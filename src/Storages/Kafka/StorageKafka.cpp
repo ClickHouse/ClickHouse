@@ -783,7 +783,7 @@ void StorageKafka::threadFunc(size_t idx)
         LOG_ERROR(log, "{} {}", __PRETTY_FUNCTION__, exception_str);
 
         auto safe_consumers = getSafeConsumers();
-        for (auto consumer_ptr_weak : safe_consumers.consumers)
+        for (auto const & consumer_ptr_weak : safe_consumers.consumers)
         {
             /// propagate materialized view exception to all consumers
             if (auto consumer_ptr = consumer_ptr_weak.lock())
