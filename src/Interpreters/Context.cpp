@@ -479,6 +479,9 @@ struct ContextSharedPart : boost::noncopyable
             return;
         shutdown_called = true;
 
+        /// Need to flush the async insert queue before shutting down the database catalog
+        async_insert_queue.reset();
+
         /// Stop periodic reloading of the configuration files.
         /// This must be done first because otherwise the reloading may pass a changed config
         /// to some destroyed parts of ContextSharedPart.
