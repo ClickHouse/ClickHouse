@@ -898,7 +898,7 @@ FileSegments LockedKey::sync()
                 "File segment has unexpected state: DETACHED ({})", file_segment->getInfoForLog());
         }
 
-        if (file_segment->getDownloadedSize(false) == 0)
+        if (file_segment->getDownloadedSize() == 0)
         {
             ++it;
             continue;
@@ -918,7 +918,7 @@ FileSegments LockedKey::sync()
         }
 
         const size_t actual_size = fs::file_size(path);
-        const size_t expected_size = file_segment->getDownloadedSize(false);
+        const size_t expected_size = file_segment->getDownloadedSize();
 
         if (actual_size == expected_size)
         {
