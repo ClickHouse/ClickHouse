@@ -182,7 +182,7 @@ public:
 
     void clear();
 
-    size_t weight() const;
+    size_t sizeInBytes() const;
     size_t count() const;
 
     /// Record new execution of query represented by key. Returns number of executions so far.
