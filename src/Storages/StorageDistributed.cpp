@@ -51,6 +51,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/WindowFunctionsUtils.h>
 
 #include <Planner/Planner.h>
 #include <Planner/Utils.h>
@@ -560,7 +561,7 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
         return {};
 
     // Window functions are not supported.
-    if (query_node.hasWindow())
+    if (hasWindowFunctionNodes(query_info.query_tree))
         return {};
     // TODO: extremes support can be implemented
     if (settings.extremes)
