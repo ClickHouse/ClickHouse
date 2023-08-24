@@ -8,6 +8,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Poco/URI.h>
 
 namespace DB
@@ -87,6 +88,8 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
+    bool supportsTrivialCountOptimization() const override { return true; }
+
 protected:
     friend class HDFSSource;
 
@@ -123,7 +126,7 @@ public:
     class DisclosedGlobIterator
     {
         public:
-            DisclosedGlobIterator(ContextPtr context_, const String & uri_);
+            DisclosedGlobIterator(const String & uri_, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
             StorageHDFS::PathWithInfo next();
         private:
             class Impl;
@@ -134,7 +137,7 @@ public:
     class URISIterator
     {
         public:
-            URISIterator(const std::vector<String> & uris_, ContextPtr context);
+            URISIterator(const std::vector<String> & uris_, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
             StorageHDFS::PathWithInfo next();
         private:
             class Impl;
@@ -150,7 +153,9 @@ public:
         StorageHDFSPtr storage_,
         ContextPtr context_,
         UInt64 max_block_size_,
-        std::shared_ptr<IteratorWrapper> file_iterator_);
+        std::shared_ptr<IteratorWrapper> file_iterator_,
+        bool need_only_count_,
+        const SelectQueryInfo & query_info_);
 
     String getName() const override;
 
@@ -164,6 +169,8 @@ private:
     UInt64 max_block_size;
     std::shared_ptr<IteratorWrapper> file_iterator;
     ColumnsDescription columns_description;
+    bool need_only_count;
+    SelectQueryInfo query_info;
 
     std::unique_ptr<ReadBuffer> read_buf;
     std::shared_ptr<IInputFormat> input_format;
