@@ -73,7 +73,7 @@ struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
 
     bool createBaseDirectory();
 
-    std::string getFileSegmentPath(const FileSegment & file_segment);
+    std::string getFileSegmentPath(const FileSegment & file_segment) const;
 
 private:
     KeyState key_state = KeyState::ACTIVE;
@@ -192,8 +192,8 @@ struct LockedKey : private boost::noncopyable
 
     bool removeAllFileSegments(bool if_releasable = true);
 
-    KeyMetadata::iterator removeFileSegment(size_t offset, const FileSegmentGuard::Lock &);
-    KeyMetadata::iterator removeFileSegment(size_t offset);
+    KeyMetadata::iterator removeFileSegment(size_t offset, const FileSegmentGuard::Lock &, bool can_be_broken = false);
+    KeyMetadata::iterator removeFileSegment(size_t offset, bool can_be_broken = false);
 
     void shrinkFileSegmentToDownloadedSize(size_t offset, const FileSegmentGuard::Lock &);
 
@@ -207,10 +207,12 @@ struct LockedKey : private boost::noncopyable
 
     void markAsRemoved();
 
+    FileSegments sync();
+
     std::string toString() const;
 
 private:
-    KeyMetadata::iterator removeFileSegmentImpl(KeyMetadata::iterator it, const FileSegmentGuard::Lock &);
+    KeyMetadata::iterator removeFileSegmentImpl(KeyMetadata::iterator it, const FileSegmentGuard::Lock &, bool can_be_broken = false);
 
     const std::shared_ptr<KeyMetadata> key_metadata;
     KeyGuard::Lock lock; /// `lock` must be destructed before `key_metadata`.
