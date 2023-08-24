@@ -86,14 +86,11 @@ namespace ErrorCodes
 
 struct DataPartsLock
 {
+    std::optional<Stopwatch> wait_watch;
     std::unique_lock<std::mutex> lock;
-    std::optional<Stopwatch> watch;
+    std::optional<Stopwatch> lock_watch;
     DataPartsLock() = default;
-
-    explicit DataPartsLock(std::mutex & data_parts_mutex_)
-        : lock(data_parts_mutex_)
-        , watch(Stopwatch(CLOCK_MONOTONIC))
-    {}
+    explicit DataPartsLock(std::mutex & data_parts_mutex_);
 
     ~DataPartsLock();
 };
