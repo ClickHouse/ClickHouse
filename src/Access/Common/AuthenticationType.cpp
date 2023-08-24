@@ -57,6 +57,11 @@ const AuthenticationTypeInfo & AuthenticationTypeInfo::get(AuthenticationType ty
             static const auto info = make_info("SSL_CERTIFICATE");
             return info;
         }
+        case AuthenticationType::BCRYPT_PASSWORD:
+        {
+            static const auto info = make_info("BCRYPT_PASSWORD", true);
+            return info;
+        }
         case AuthenticationType::MAX:
             break;
     }

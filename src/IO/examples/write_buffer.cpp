@@ -14,7 +14,7 @@ int main(int, char **)
     {
         DB::Int64 a = -123456;
         DB::Float64 b = 123.456;
-        DB::String c = "вася пе\tтя";
+        DB::String c = "вася pe\ttya";
         DB::String d = "'xyz\\";
 
         std::stringstream s;    // STYLE_CHECK_ALLOW_STD_STRING_STREAM

@@ -76,7 +76,7 @@ public:
 
     /// FIXME: processing after reading from dictionaries are not parallelized due to some bug:
     /// count() can return wrong result, see test_dictionaries_redis/test_long.py::test_redis_dict_long
-    bool parallelizeOutputAfterReading() const override { return false; }
+    bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
 
     std::shared_ptr<const IDictionary> getDictionary() const;
 

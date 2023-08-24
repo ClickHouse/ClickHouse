@@ -34,19 +34,19 @@ RestoreCoordinationRemote::RestoreCoordinationRemote(
         log,
         get_zookeeper_,
         keeper_settings,
-        [zookeeper_path = zookeeper_path, current_host = current_host, is_internal = is_internal]
+        [my_zookeeper_path = zookeeper_path, my_current_host = current_host, my_is_internal = is_internal]
         (WithRetries::FaultyKeeper & zk)
         {
             /// Recreate this ephemeral node to signal that we are alive.
-            if (is_internal)
+            if (my_is_internal)
             {
-                String alive_node_path = zookeeper_path + "/stage/alive|" + current_host;
+                String alive_node_path = my_zookeeper_path + "/stage/alive|" + my_current_host;
                 auto code = zk->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
 
                 if (code == Coordination::Error::ZNODEEXISTS)
                     zk->handleEphemeralNodeExistenceNoFailureInjection(alive_node_path, "");
                 else if (code != Coordination::Error::ZOK)
-                    throw zkutil::KeeperException(code, alive_node_path);
+                    throw zkutil::KeeperException::fromPath(code, alive_node_path);
             }
         })
 {
@@ -93,7 +93,10 @@ void RestoreCoordinationRemote::createRootNodes()
 
 void RestoreCoordinationRemote::setStage(const String & new_stage, const String & message)
 {
-    stage_sync->set(current_host, new_stage, message);
+    if (is_internal)
+        stage_sync->set(current_host, new_stage, message);
+    else
+        stage_sync->set(current_host, new_stage, /* message */ "", /* all_hosts */ true);
 }
 
 void RestoreCoordinationRemote::setError(const Exception & exception)
@@ -126,7 +129,7 @@ bool RestoreCoordinationRemote::acquireCreatingTableInReplicatedDatabase(const S
             path += "/" + escapeForFileName(table_name);
             auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
             if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
-                throw zkutil::KeeperException(code, path);
+                throw zkutil::KeeperException::fromPath(code, path);
 
             if (code == Coordination::Error::ZOK)
             {
@@ -152,7 +155,7 @@ bool RestoreCoordinationRemote::acquireInsertingDataIntoReplicatedTable(const St
             String path = zookeeper_path + "/repl_tables_data_acquired/" + escapeForFileName(table_zk_path);
             auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
             if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
-                throw zkutil::KeeperException(code, path);
+                throw zkutil::KeeperException::fromPath(code, path);
 
             if (code == Coordination::Error::ZOK)
             {
@@ -178,7 +181,7 @@ bool RestoreCoordinationRemote::acquireReplicatedAccessStorage(const String & ac
             String path = zookeeper_path + "/repl_access_storages_acquired/" + escapeForFileName(access_storage_zk_path);
             auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
             if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
-                throw zkutil::KeeperException(code, path);
+                throw zkutil::KeeperException::fromPath(code, path);
 
             if (code == Coordination::Error::ZOK)
             {
@@ -214,7 +217,7 @@ bool RestoreCoordinationRemote::acquireReplicatedSQLObjects(const String & loade
 
             auto code = zk->tryCreate(path, "", zkutil::CreateMode::Persistent);
             if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
-                throw zkutil::KeeperException(code, path);
+                throw zkutil::KeeperException::fromPath(code, path);
 
             if (code == Coordination::Error::ZOK)
             {
@@ -283,8 +286,8 @@ bool RestoreCoordinationRemote::hasConcurrentRestores(const std::atomic<size_t> 
                     String status;
                     if (zk->tryGet(root_zookeeper_path + "/" + existing_restore_path + "/stage", status))
                     {
-                        /// If status is not COMPLETED it could be because the restore failed, check if 'error' exists
-                        if (status != Stage::COMPLETED && !zk->exists(root_zookeeper_path + "/" + existing_restore_path + "/error"))
+                        /// Check if some other restore is in progress
+                        if (status == Stage::SCHEDULED_TO_START)
                         {
                             LOG_WARNING(log, "Found a concurrent restore: {}, current restore: {}", existing_restore_uuid, toString(restore_uuid));
                             result = true;
@@ -299,7 +302,7 @@ bool RestoreCoordinationRemote::hasConcurrentRestores(const std::atomic<size_t> 
                     break;
                 bool is_last_attempt = (attempt == MAX_ZOOKEEPER_ATTEMPTS - 1);
                 if ((code != Coordination::Error::ZBADVERSION) || is_last_attempt)
-                    throw zkutil::KeeperException(code, path);
+                    throw zkutil::KeeperException::fromPath(code, path);
             }
         });
 

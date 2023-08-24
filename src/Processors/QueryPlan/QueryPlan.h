@@ -105,9 +105,10 @@ public:
         std::vector<Node *> children = {};
     };
 
-    const Node * getRootNode() const { return root; }
-
     using Nodes = std::list<Node>;
+
+    Node * getRootNode() const { return root; }
+    static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
 
 private:
     QueryPlanResourceHolder resources;

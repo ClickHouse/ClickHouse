@@ -26,10 +26,11 @@ else:
 
 DRY_RUN_MARK = "<no url, dry run>"
 
-MAX_FAILURES_DEFAULT = 40
+MAX_FAILURES_DEFAULT = 30
 SLACK_URL_DEFAULT = DRY_RUN_MARK
 
-FLAKY_ALERT_PROBABILITY = 0.20
+FLAKY_ALERT_PROBABILITY = 0.50
+REPORT_NO_FAILURES_PROBABILITY = 0.99
 
 MAX_TESTS_TO_REPORT = 4
 
@@ -87,6 +88,22 @@ WHERE 1
     AND test_status LIKE 'F%'
     AND check_status != 'success'
     AND check_name ILIKE check_name_pattern
+"""
+
+# Returns percentage of failed checks (once per day, at noon)
+FAILED_CHECKS_PERCENTAGE_QUERY = """
+SELECT if(toHour(now('Europe/Amsterdam')) = 12, v, 0)
+FROM
+(
+    SELECT 
+        countDistinctIf((commit_sha, check_name), (test_status LIKE 'F%') AND (check_status != 'success')) 
+            / countDistinct((commit_sha, check_name)) AS v
+    FROM checks
+    WHERE 1 
+        AND (pull_request_number = 0)
+        AND (test_status != 'SKIPPED')
+        AND (check_start_time > (now() - toIntervalDay(1)))
+)
 """
 
 # It shows all recent failures of the specified test (helps to find when it started)
@@ -202,9 +219,9 @@ def get_too_many_failures_message_impl(failures_count):
     curr_failures = int(failures_count[0][0])
     prev_failures = int(failures_count[0][1])
     if curr_failures == 0 and prev_failures != 0:
-        return (
-            "Looks like CI is completely broken: there are *no failures* at all... 0_o"
-        )
+        if random.random() < REPORT_NO_FAILURES_PROBABILITY:
+            return None
+        return "Wow, there are *no failures* at all... 0_o"
     if curr_failures < MAX_FAILURES:
         return None
     if prev_failures < MAX_FAILURES:
@@ -224,6 +241,19 @@ def get_too_many_failures_message(failures_count):
     msg = get_too_many_failures_message_impl(failures_count)
     if msg:
         msg += "\nSee https://aretestsgreenyet.com/"
+    return msg
+
+
+def get_failed_checks_percentage_message(percentage):
+    p = float(percentage[0][0]) * 100
+
+    # Always report more than 1% of failed checks
+    # For <= 1%: higher percentage of failures == higher probability
+    if p <= random.random():
+        return None
+
+    msg = ":alert: " if p > 1 else "Only " if p < 0.5 else ""
+    msg += "*{0:.2f}%* of all checks in master have failed yesterday".format(p)
     return msg
 
 
@@ -280,6 +310,9 @@ def query_and_alert_if_needed(query, get_message_func):
 def check_and_alert():
     query_and_alert_if_needed(NEW_BROKEN_TESTS_QUERY, get_new_broken_tests_message)
     query_and_alert_if_needed(COUNT_FAILURES_QUERY, get_too_many_failures_message)
+    query_and_alert_if_needed(
+        FAILED_CHECKS_PERCENTAGE_QUERY, get_failed_checks_percentage_message
+    )
 
 
 def lambda_handler(event, context):

@@ -44,7 +44,7 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
     time_t timestamp = Poco::Timestamp().epochTime();
     auto curr_pid = Poco::Process::id();
 
-    process_id = std::to_string(DateLUT::instance().toNumYYYYMMDDhhmmss(timestamp)) + "_" + std::to_string(curr_pid);
+    process_id = std::to_string(DateLUT::serverTimezoneInstance().toNumYYYYMMDDhhmmss(timestamp)) + "_" + std::to_string(curr_pid);
     host_id = escapeForFileName(getFQDNOrHostName()) + '#' + process_id;
     process_path = fs::weakly_canonical(fs::path(base_dir) / ("clickhouse-copier_" + process_id));
     fs::create_directories(process_path);

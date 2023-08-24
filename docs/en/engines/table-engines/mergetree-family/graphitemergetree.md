@@ -148,7 +148,7 @@ Valid values:
     - `all` (default) - a universal rule, used when `rule_type` is omitted.
     - `plain` - a rule for plain metrics. The field `regexp` is processed as regular expression.
     - `tagged` - a rule for tagged metrics (metrics are stored in DB in the format of `someName?tag1=value1&tag2=value2&tag3=value3`). Regular expression must be sorted by tags' names, first tag must be `__name__` if exists. The field `regexp` is processed as regular expression.
-    - `tag_list` - a rule for tagged matrics, a simple DSL for easier metric description in graphite format `someName;tag1=value1;tag2=value2`, `someName`, or `tag1=value1;tag2=value2`. The field `regexp` is translated into a `tagged` rule. The sorting by tags' names is unnecessary, ti will be done automatically. A tag's value (but not a name) can be set as a regular expression, e.g. `env=(dev|staging)`.
+    - `tag_list` - a rule for tagged metrics, a simple DSL for easier metric description in graphite format `someName;tag1=value1;tag2=value2`, `someName`, or `tag1=value1;tag2=value2`. The field `regexp` is translated into a `tagged` rule. The sorting by tags' names is unnecessary, ti will be done automatically. A tag's value (but not a name) can be set as a regular expression, e.g. `env=(dev|staging)`.
 - `regexp` – A pattern for the metric name (a regular or DSL).
 - `age` – The minimum age of the data in seconds.
 - `precision`– How precisely to define the age of the data in seconds. Should be a divisor for 86400 (seconds in a day).

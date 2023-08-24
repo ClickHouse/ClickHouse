@@ -1,11 +1,11 @@
-if(NOT ARCH_AARCH64 AND NOT OS_FREEBSD AND NOT APPLE AND NOT ARCH_PPC64LE AND NOT ARCH_S390X)
+if(NOT OS_FREEBSD AND NOT APPLE AND NOT ARCH_PPC64LE AND NOT ARCH_S390X)
     option(ENABLE_HDFS "Enable HDFS" ${ENABLE_LIBRARIES})
 elseif(ENABLE_HDFS)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use HDFS3 with current configuration")
 endif()
 
 if(NOT ENABLE_HDFS)
-    message(STATUS "Not using hdfs")
+    message(STATUS "Not using HDFS")
     return()
 endif()
 
@@ -21,10 +21,17 @@ set(HDFS3_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3")
 set(HDFS3_SOURCE_DIR "${HDFS3_ROOT_DIR}/src")
 set(HDFS3_COMMON_DIR "${HDFS3_SOURCE_DIR}/common")
 
-# module
-set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMake" ${CMAKE_MODULE_PATH})
-include(Platform)
-include(Options)
+ADD_DEFINITIONS(-DTEST_HDFS_PREFIX="${TEST_HDFS_PREFIX}")
+ADD_DEFINITIONS(-D__STDC_FORMAT_MACROS)
+ADD_DEFINITIONS(-D_GNU_SOURCE)
+ADD_DEFINITIONS(-D_GLIBCXX_USE_NANOSLEEP)
+ADD_DEFINITIONS(-DHAVE_NANOSLEEP)
+set(HAVE_STEADY_CLOCK 1)
+set(HAVE_NESTED_EXCEPTION 1)
+SET(HAVE_BOOST_CHRONO 0)
+SET(HAVE_BOOST_ATOMIC 0)
+SET(HAVE_STD_CHRONO 1)
+SET(HAVE_STD_ATOMIC 1)
 
 # source
 set(PROTO_FILES
@@ -172,7 +179,7 @@ if (TARGET OpenSSL::SSL)
     target_link_libraries(_hdfs3 PRIVATE OpenSSL::Crypto OpenSSL::SSL)
 endif()
 
-if (ENABLE_ISAL_LIBRARY)
+if (TARGET ch_contrib::isal)
     target_link_libraries(_hdfs3 PRIVATE ch_contrib::isal)
     add_definitions(-DHADOOP_ISAL_LIBRARY)
 endif()

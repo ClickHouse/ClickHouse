@@ -101,12 +101,30 @@ void checkAccessRights(const TableNode & table_node, const Names & column_names,
         }
 
         throw Exception(ErrorCodes::ACCESS_DENIED,
-            "{}: Not enough privileges. To execute this query it's necessary to have grant SELECT for at least one column on {}",
+            "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
             query_context->getUserName(),
             storage_id.getFullTableName());
     }
 
-    query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
+    // In case of cross-replication we don't know what database is used for the table.
+    // `storage_id.hasDatabase()` can return false only on the initiator node.
+    // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
+    if (storage_id.hasDatabase())
+        query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
+}
+
+bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
+{
+    const auto & storage_id = table_node.getStorageID();
+    if (!storage_id.hasDatabase())
+        return false;
+    if (storage_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
+    {
+        static const boost::container::flat_set<String> tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
+        if (tables_ignoring_quota.count(storage_id.table_name))
+            return true;
+    }
+    return false;
 }
 
 NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot)
@@ -168,9 +186,10 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
 
 bool applyTrivialCountIfPossible(
     QueryPlan & query_plan,
+    SelectQueryInfo & select_query_info,
     const TableNode & table_node,
     const QueryTreeNodePtr & query_tree,
-    const ContextPtr & query_context,
+    ContextMutablePtr & query_context,
     const Names & columns_names)
 {
     const auto & settings = query_context->getSettingsRef();
@@ -178,6 +197,9 @@ bool applyTrivialCountIfPossible(
         return false;
 
     const auto & storage = table_node.getStorage();
+    if (!storage->supportsTrivialCountOptimization())
+        return false;
+
     auto storage_id = storage->getStorageID();
     auto row_policy_filter = query_context->getRowPolicyFilter(storage_id.getDatabaseName(),
         storage_id.getTableName(),
@@ -208,8 +230,7 @@ bool applyTrivialCountIfPossible(
     if (storage->hasLightweightDeletedMask())
         return false;
 
-    if (settings.max_parallel_replicas > 1 ||
-        settings.allow_experimental_query_deduplication
+    if (settings.allow_experimental_query_deduplication
         || settings.empty_result_for_aggregation_by_empty_set)
         return false;
 
@@ -223,10 +244,27 @@ bool applyTrivialCountIfPossible(
     if (!count_func)
         return false;
 
+    /// Some storages can optimize trivial count in read() method instead of totalRows() because it still can
+    /// require reading some data (but much faster than reading columns).
+    /// Set a special flag in query info so the storage will see it and optimize count in read() method.
+    select_query_info.optimize_trivial_count = true;
+
     /// Get number of rows
     std::optional<UInt64> num_rows = storage->totalRows(settings);
     if (!num_rows)
         return false;
+
+    if (settings.max_parallel_replicas > 1)
+    {
+        if (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas == 0)
+            return false;
+
+        /// The query could use trivial count if it didn't use parallel replicas, so let's disable it
+        query_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        query_context->setSetting("max_parallel_replicas", UInt64{0});
+        LOG_TRACE(&Poco::Logger::get("Planner"), "Disabling parallel replicas to be able to use a trivial count optimization");
+
+    }
 
     /// Set aggregation state
     const AggregateFunctionCount & agg_count = *count_func;
@@ -447,9 +485,9 @@ FilterDAGInfo buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
     auto const & storage_id = storage->getStorageID();
 
     ASTPtr additional_filter_ast;
-    for (size_t i = 0; i < additional_filters.size(); ++i)
+    for (const auto & additional_filter : additional_filters)
     {
-        const auto & tuple = additional_filters[i].safeGet<const Tuple &>();
+        const auto & tuple = additional_filter.safeGet<const Tuple &>();
         auto const & table = tuple.at(0).safeGet<String>();
         auto const & filter = tuple.at(1).safeGet<String>();
 
@@ -473,7 +511,7 @@ FilterDAGInfo buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
 }
 
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
-    const SelectQueryInfo & select_query_info,
+    SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
     PlannerContextPtr & planner_context,
     bool is_single_table_expression,
@@ -619,7 +657,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             is_single_table_expression &&
             table_node &&
             select_query_info.has_aggregates &&
-            applyTrivialCountIfPossible(query_plan, *table_node, select_query_info.query_tree, planner_context->getQueryContext(), table_expression_data.getColumnNames());
+            applyTrivialCountIfPossible(query_plan, select_query_info, *table_node, select_query_info.query_tree, planner_context->getMutableQueryContext(), table_expression_data.getColumnNames());
 
         if (is_trivial_count_applied)
         {
@@ -810,8 +848,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     }
     else
     {
+        SelectQueryOptions analyze_query_options = SelectQueryOptions(from_stage).analyze();
         Planner planner(select_query_info.query_tree,
-            SelectQueryOptions(from_stage).analyze(),
+            analyze_query_options,
             select_query_info.planner_context);
         planner.buildQueryPlanIfNeeded();
 
@@ -862,10 +901,11 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     JoinClausesAndActions join_clauses_and_actions;
     JoinKind join_kind = join_node.getKind();
+    JoinStrictness join_strictness = join_node.getStrictness();
 
     std::optional<bool> join_constant;
 
-    if (join_node.getStrictness() == JoinStrictness::All)
+    if (join_strictness == JoinStrictness::All)
         join_constant = tryExtractConstantFromJoinNode(join_table_expression);
 
     if (join_constant)
@@ -1355,8 +1395,8 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
 }
 
 JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
-    const SelectQueryInfo & select_query_info,
-    const SelectQueryOptions & select_query_options,
+    SelectQueryInfo & select_query_info,
+    SelectQueryOptions & select_query_options,
     const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context)
 {
@@ -1366,6 +1406,16 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
     std::vector<ColumnIdentifierSet> table_expressions_outer_scope_columns(table_expressions_stack_size);
     ColumnIdentifierSet current_outer_scope_columns = outer_scope_columns;
+
+    if (is_single_table_expression)
+    {
+        auto * table_node = table_expressions_stack[0]->as<TableNode>();
+        if (table_node && shouldIgnoreQuotaAndLimits(*table_node))
+        {
+            select_query_options.ignore_quota = true;
+            select_query_options.ignore_limits = true;
+        }
+    }
 
     /// For each table, table function, query, union table expressions prepare before query plan build
     for (size_t i = 0; i < table_expressions_stack_size; ++i)

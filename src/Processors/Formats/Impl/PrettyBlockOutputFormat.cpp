@@ -1,8 +1,3 @@
-#include <sys/ioctl.h>
-#if defined(OS_SUNOS)
-#  include <sys/termios.h>
-#endif
-#include <unistd.h>
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBuffer.h>
@@ -12,6 +7,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/PODArray.h>
 
+
 namespace DB
 {
 
@@ -19,9 +15,6 @@ PrettyBlockOutputFormat::PrettyBlockOutputFormat(
     WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_)
      : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations()), mono_block(mono_block_)
 {
-    struct winsize w;
-    if (0 == ioctl(STDOUT_FILENO, TIOCGWINSZ, &w))
-        terminal_width = w.ws_col;
 }
 
 

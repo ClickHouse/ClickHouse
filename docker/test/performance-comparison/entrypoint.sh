@@ -130,7 +130,7 @@ then
     git -C right/ch diff --name-only "$base" pr -- :!tests/performance :!docker/test/performance-comparison | tee other-changed-files.txt
 fi
 
-# Set python output encoding so that we can print queries with Russian letters.
+# Set python output encoding so that we can print queries with non-ASCII letters.
 export PYTHONIOENCODING=utf-8
 
 # By default, use the main comparison script from the tested package, so that we
@@ -151,11 +151,7 @@ export PATH
 export REF_PR
 export REF_SHA
 
-# Try to collect some core dumps. I've seen two patterns in Sandbox:
-# 1) |/home/zomb-sandbox/venv/bin/python /home/zomb-sandbox/client/sandbox/bin/coredumper.py %e %p %g %u %s %P %c
-#    Not sure what this script does (puts them to sandbox resources, logs some messages?),
-#    and it's not accessible from inside docker anyway.
-# 2) something like %e.%p.core.dmp. The dump should end up in the workspace directory.
+# Try to collect some core dumps.
 # At least we remove the ulimit and then try to pack some common file names into output.
 ulimit -c unlimited
 cat /proc/sys/kernel/core_pattern

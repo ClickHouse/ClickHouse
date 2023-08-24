@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/rabbitmq
-sidebar_position: 10
+sidebar_position: 170
 sidebar_label: RabbitMQ
 ---
 
@@ -42,7 +42,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [rabbitmq_queue_consume = false,]
     [rabbitmq_address = '',]
     [rabbitmq_vhost = '/',]
-    [rabbitmq_queue_consume = false,]
     [rabbitmq_username = '',]
     [rabbitmq_password = '',]
     [rabbitmq_commit_on_select = false,]

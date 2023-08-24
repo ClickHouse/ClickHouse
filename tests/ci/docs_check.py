@@ -9,13 +9,18 @@ import sys
 from github import Github
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import post_commit_status, get_commit, update_mergeable_check
+from commit_status_helper import (
+    NotSet,
+    RerunHelper,
+    get_commit,
+    post_commit_status,
+    update_mergeable_check,
+)
 from docker_pull_helper import get_image_with_version
 from env_helper import TEMP_PATH, REPO_COPY
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResults, TestResult
-from rerun_helper import RerunHelper
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -52,8 +57,9 @@ def main():
     pr_info = PRInfo(need_changed_files=True)
 
     gh = Github(get_best_robot_token(), per_page=100)
+    commit = get_commit(gh, pr_info.sha)
 
-    rerun_helper = RerunHelper(gh, pr_info, NAME)
+    rerun_helper = RerunHelper(commit, NAME)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
@@ -61,9 +67,8 @@ def main():
 
     if not pr_info.has_changes_in_documentation() and not args.force:
         logging.info("No changes in documentation")
-        commit = get_commit(gh, pr_info.sha)
-        commit.create_status(
-            context=NAME, description="No changes in docs", state="success"
+        post_commit_status(
+            commit, "success", NotSet, "No changes in docs", NAME, pr_info
         )
         sys.exit(0)
 
@@ -132,7 +137,7 @@ def main():
         s3_helper, pr_info.number, pr_info.sha, test_results, additional_files, NAME
     )
     print("::notice ::Report url: {report_url}")
-    post_commit_status(gh, pr_info.sha, NAME, description, status, report_url)
+    post_commit_status(commit, status, report_url, description, NAME, pr_info)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

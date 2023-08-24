@@ -122,9 +122,13 @@ public:
             tuple = typeid_cast<const ColumnTuple *>(materialized_tuple.get());
         }
 
-        auto set = column_set->getData();
+        auto future_set = column_set->getData();
+        if (!future_set)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No Set is passed as the second argument for function '{}'", getName());
+
+        auto set = future_set->get();
         if (!set)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set passed as the second argument for function '{}'", getName());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set is passed as the second argument for function '{}'", getName());
 
         auto set_types = set->getDataTypes();
 

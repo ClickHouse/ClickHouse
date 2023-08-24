@@ -1,4 +1,4 @@
--- Tags: race
+SET storage_system_stack_trace_pipe_read_timeout_ms = 1000;
 
 -- { echo }
 SELECT count() > 0 FROM system.stack_trace WHERE query_id != '';

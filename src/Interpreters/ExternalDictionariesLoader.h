@@ -50,6 +50,7 @@ protected:
 
     friend class StorageSystemDictionaries;
     friend class DatabaseDictionary;
+    friend class TableFunctionDictionary;
 };
 
 }

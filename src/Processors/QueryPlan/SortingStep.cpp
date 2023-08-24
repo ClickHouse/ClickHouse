@@ -176,6 +176,7 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             pipeline.getNumStreams(),
             result_sort_desc,
             sort_settings.max_block_size,
+            /*max_block_size_bytes=*/0,
             SortingQueueStrategy::Batch,
             limit_,
             always_read_till_end);
@@ -269,6 +270,7 @@ void SortingStep::fullSort(
             pipeline.getNumStreams(),
             result_sort_desc,
             sort_settings.max_block_size,
+            /*max_block_size_bytes=*/0,
             SortingQueueStrategy::Batch,
             limit_,
             always_read_till_end);

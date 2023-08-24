@@ -22,7 +22,8 @@ public:
         const Names & column_names_to_sum,
         /// List of partition key columns. They have to be excluded.
         const Names & partition_key_columns,
-        size_t max_block_size);
+        size_t max_block_size_rows,
+        size_t max_block_size_bytes);
 
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
@@ -63,7 +64,7 @@ public:
         using MergedData::insertRow;
 
     public:
-        SummingMergedData(MutableColumns columns_, UInt64 max_block_size_, ColumnsDefinition & def_);
+        SummingMergedData(MutableColumns columns_, UInt64 max_block_size_rows, UInt64 max_block_size_bytes_, ColumnsDefinition & def_);
 
         void startGroup(ColumnRawPtrs & raw_columns, size_t row);
         void finishGroup();

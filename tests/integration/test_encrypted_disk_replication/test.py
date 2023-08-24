@@ -44,7 +44,7 @@ def cleanup_after_test():
     try:
         yield
     finally:
-        node1.query("DROP TABLE IF EXISTS encrypted_test ON CLUSTER 'cluster' NO DELAY")
+        node1.query("DROP TABLE IF EXISTS encrypted_test ON CLUSTER 'cluster' SYNC")
 
 
 def create_table(

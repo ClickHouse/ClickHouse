@@ -1,8 +1,6 @@
 #pragma once
 #include <mutex>
-#include <Interpreters/Cache/FileCache_fwd.h>
 #include <boost/noncopyable.hpp>
-#include <map>
 
 namespace DB
 {
@@ -63,6 +61,8 @@ namespace DB
  */
 struct CacheGuard : private boost::noncopyable
 {
+    /// struct is used (not keyword `using`) to make CacheGuard::Lock non-interchangable with other guards locks
+    /// so, we wouldn't be able to pass CacheGuard::Lock to a function which accepts KeyGuard::Lock, for example
     struct Lock : public std::unique_lock<std::mutex>
     {
         explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {}

@@ -16,9 +16,6 @@
 #include "Poco/Exception.h"
 #include "Poco/Ascii.h"
 #include <sstream>
-#if !defined(POCO_NO_LOCALE)
-#include <locale>
-#endif
 #include <cstddef>
 
 
@@ -147,9 +144,6 @@ namespace
 	void formatOne(std::string& result, std::string::const_iterator& itFmt, const std::string::const_iterator& endFmt, std::vector<Any>::const_iterator& itVal)
 	{
 		std::ostringstream str;
-#if !defined(POCO_NO_LOCALE)
-		str.imbue(std::locale::classic());
-#endif
 		try
 		{
 			parseFlags(str, itFmt, endFmt);

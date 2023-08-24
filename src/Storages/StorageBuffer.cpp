@@ -656,7 +656,7 @@ private:
 };
 
 
-SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
 {
     return std::make_shared<BufferSink>(*this, metadata_snapshot);
 }
@@ -682,7 +682,7 @@ void StorageBuffer::startup()
 }
 
 
-void StorageBuffer::flush()
+void StorageBuffer::flushAndPrepareForShutdown()
 {
     if (!flush_handle)
         return;
@@ -996,8 +996,11 @@ void StorageBuffer::reschedule()
         std::unique_lock lock(buffer.tryLock());
         if (lock.owns_lock())
         {
-            min_first_write_time = buffer.first_write_time;
-            rows += buffer.data.rows();
+            if (buffer.data)
+            {
+                min_first_write_time = std::min(min_first_write_time, buffer.first_write_time);
+                rows += buffer.data.rows();
+            }
         }
     }
 

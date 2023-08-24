@@ -145,6 +145,8 @@ range([start, ] end [, step])
 
 -   Если в результате запроса создаются массивы суммарной длиной больше, чем количество элементов, указанное настройкой [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block), то генерируется исключение.
 
+-   Возвращает Null если любой аргумент Nullable(Nothing) типа. Генерируется исключение если любой аргумент Null (Nullable(T) тип).
+
 **Примеры**
 
 Запрос:

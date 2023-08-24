@@ -5,26 +5,23 @@ namespace DB
 
 StreamInQueryCacheTransform::StreamInQueryCacheTransform(
     const Block & header_,
-    QueryCachePtr cache,
-    const QueryCache::Key & cache_key,
-    std::chrono::milliseconds min_query_duration,
-    bool squash_partial_results,
-    size_t max_block_size,
-    size_t max_query_cache_size_in_bytes_quota, size_t max_query_cache_entries_quota)
+    std::shared_ptr<QueryCache::Writer> query_cache_writer_,
+    QueryCache::Writer::ChunkType chunk_type_)
     : ISimpleTransform(header_, header_, false)
-    , cache_writer(cache->createWriter(cache_key, min_query_duration, squash_partial_results, max_block_size, max_query_cache_size_in_bytes_quota, max_query_cache_entries_quota))
+    , query_cache_writer(query_cache_writer_)
+    , chunk_type(chunk_type_)
 {
 }
 
 void StreamInQueryCacheTransform::transform(Chunk & chunk)
 {
-    cache_writer.buffer(chunk.clone());
+    query_cache_writer->buffer(chunk.clone(), chunk_type);
 }
 
 void StreamInQueryCacheTransform::finalizeWriteInQueryCache()
 {
     if (!isCancelled())
-        cache_writer.finalizeWrite();
+        query_cache_writer->finalizeWrite();
 }
 
 };

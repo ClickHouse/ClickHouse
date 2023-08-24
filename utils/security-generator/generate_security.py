@@ -48,17 +48,20 @@ A public disclosure date is negotiated by the ClickHouse maintainers and the bug
 """
 
 
-def generate_supported_versions():
+def generate_supported_versions() -> str:
     with open(VERSIONS_FILE, "r", encoding="utf-8") as fd:
         versions = [line.split(maxsplit=1)[0][1:] for line in fd.readlines()]
 
     # The versions in VERSIONS_FILE are ordered ascending, so the first one is
     # the greatest one. We may have supported versions in the previous year
-    unsupported_year = int(versions[0].split(".", maxsplit=1)[0]) - 2
-    # 3 supported versions
-    supported = []  # type: List[str]
-    # 2 LTS versions, one of them could be in supported
+    greatest_year = int(versions[0].split(".", maxsplit=1)[0])
+    unsupported_year = greatest_year - 2
+    # 3 regular versions
+    regular = []  # type: List[str]
+    max_regular = 3
+    # 2 LTS versions, one of them could be in regular
     lts = []  # type: List[str]
+    max_lts = 2
     # The rest are unsupported
     unsupported = []  # type: List[str]
     table = [
@@ -69,18 +72,21 @@ def generate_supported_versions():
         year = int(version.split(".")[0])
         month = int(version.split(".")[1])
         version = f"{year}.{month}"
-        if version in supported or version in lts:
+        to_append = ""
+        if version in regular or version in lts:
             continue
-        if len(supported) < 3:
-            supported.append(version)
-            if len(lts) < 2 and month in [3, 8]:
-                # The version can be LTS as well
-                lts.append(version)
-            table.append(f"| {version} | ✔️ |")
-            continue
-        if len(lts) < 2 and month in [3, 8]:
+        if len(regular) < max_regular:
+            regular.append(version)
+            to_append = f"| {version} | ✔️ |"
+        if len(lts) < max_lts and month in [3, 8]:
             lts.append(version)
-            table.append(f"| {version} | ✔️ |")
+            to_append = f"| {version} | ✔️ |"
+        if to_append:
+            if len(regular) == max_regular and len(lts) == max_lts:
+                # if we reached the max number of supported versions, the rest
+                # are unsopported, so year.* will be used
+                unsupported_year = min(greatest_year - 1, year)
+            table.append(to_append)
             continue
         if year <= unsupported_year:
             # The whole year is unsopported
@@ -92,7 +98,7 @@ def generate_supported_versions():
     return "\n".join(table) + "\n"
 
 
-def main():
+def main() -> None:
     print(HEADER)
     print(generate_supported_versions())
     print(FOOTER)

@@ -45,7 +45,7 @@ namespace MongoDB
     /// Represents an Element of a Document or an Array.
     {
     public:
-        typedef Poco::SharedPtr<Element> Ptr;
+        using Ptr = Poco::SharedPtr<Element>;
 
         explicit Element(const std::string & name);
         /// Creates the Element with the given name.
@@ -80,7 +80,7 @@ namespace MongoDB
     }
 
 
-    typedef std::list<Element::Ptr> ElementSet;
+    using ElementSet = std::list<Element::Ptr>;
 
 
     template <typename T>
@@ -266,7 +266,7 @@ namespace MongoDB
     }
 
 
-    typedef Nullable<unsigned char> NullValue;
+    using NullValue = Nullable<unsigned char>;
 
 
     // BSON Null Value

@@ -9,6 +9,8 @@
 #include <Common/Stopwatch.h>
 #include <Common/ProfileEvents.h>
 #include <DataTypes/Native.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnNullable.h>
 #include <Interpreters/JIT/CHJIT.h>
 
 namespace
@@ -107,7 +109,7 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
 
     /// Initialize column row values
 
-    Values arguments;
+    ValuesWithType arguments;
     arguments.reserve(function_argument_types.size());
 
     for (size_t i = 0; i < function_argument_types.size(); ++i)
@@ -116,30 +118,30 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
         const auto & type = function_argument_types[i];
 
         auto * column_data_ptr = column.data_ptr;
-        auto * column_element_value = b.CreateLoad(column.data_element_type, b.CreateGEP(column.data_element_type, column_data_ptr, counter_phi));
+        auto * column_element_value = b.CreateLoad(column.data_element_type, b.CreateInBoundsGEP(column.data_element_type, column_data_ptr, counter_phi));
 
         if (!type->isNullable())
         {
-            arguments.emplace_back(column_element_value);
+            arguments.emplace_back(column_element_value, type);
             continue;
         }
 
-        auto * column_is_null_element_value = b.CreateLoad(b.getInt8Ty(), b.CreateGEP(b.getInt8Ty(), column.null_data_ptr, counter_phi));
+        auto * column_is_null_element_value = b.CreateLoad(b.getInt8Ty(), b.CreateInBoundsGEP(b.getInt8Ty(), column.null_data_ptr, counter_phi));
         auto * is_null = b.CreateICmpNE(column_is_null_element_value, b.getInt8(0));
         auto * nullable_unitialized = llvm::Constant::getNullValue(toNullableType(b, column.data_element_type));
         auto * nullable_value = b.CreateInsertValue(b.CreateInsertValue(nullable_unitialized, column_element_value, {0}), is_null, {1});
-        arguments.emplace_back(nullable_value);
+        arguments.emplace_back(nullable_value, type);
     }
 
     /// Compile values for column rows and store compiled value in result column
 
-    auto * result = function.compile(b, std::move(arguments));
-    auto * result_column_element_ptr = b.CreateGEP(columns.back().data_element_type, columns.back().data_ptr, counter_phi);
+    auto * result = function.compile(b, arguments);
+    auto * result_column_element_ptr = b.CreateInBoundsGEP(columns.back().data_element_type, columns.back().data_ptr, counter_phi);
 
     if (columns.back().null_data_ptr)
     {
         b.CreateStore(b.CreateExtractValue(result, {0}), result_column_element_ptr);
-        auto * result_column_is_null_element_ptr = b.CreateGEP(b.getInt8Ty(), columns.back().null_data_ptr, counter_phi);
+        auto * result_column_is_null_element_ptr = b.CreateInBoundsGEP(b.getInt8Ty(), columns.back().null_data_ptr, counter_phi);
         auto * is_result_column_element_null = b.CreateSelect(b.CreateExtractValue(result, {1}), b.getInt8(1), b.getInt8(0));
         b.CreateStore(is_result_column_element_null, result_column_is_null_element_ptr);
     }
@@ -298,24 +300,24 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module,
     else
         aggregation_place = places_arg;
 
-    std::vector<llvm::Value *> function_arguments_values;
+    ValuesWithType function_arguments;
     previous_columns_size = 0;
 
     for (const auto & function : functions)
     {
-        auto arguments_types = function.function->getArgumentTypes();
+        const auto & arguments_types = function.function->getArgumentTypes();
         size_t function_arguments_size = arguments_types.size();
 
         for (size_t column_argument_index = 0; column_argument_index < function_arguments_size; ++column_argument_index)
         {
             auto & column = columns[previous_columns_size + column_argument_index];
-            auto & argument_type = arguments_types[column_argument_index];
+            const auto & argument_type = arguments_types[column_argument_index];
 
             auto * column_data_element = b.CreateLoad(column.data_element_type, b.CreateGEP(column.data_element_type, column.data_ptr, counter_phi));
 
             if (!argument_type->isNullable())
             {
-                function_arguments_values.push_back(column_data_element);
+                function_arguments.emplace_back(column_data_element, argument_type);
                 continue;
             }
 
@@ -324,16 +326,16 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module,
             auto * nullable_unitialized = llvm::Constant::getNullValue(toNullableType(b, column.data_element_type));
             auto * first_insert = b.CreateInsertValue(nullable_unitialized, column_data_element, {0});
             auto * nullable_value = b.CreateInsertValue(first_insert, is_null, {1});
-            function_arguments_values.push_back(nullable_value);
+            function_arguments.emplace_back(nullable_value, argument_type);
         }
 
         size_t aggregate_function_offset = function.aggregate_data_offset;
         auto * aggregation_place_with_offset = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregation_place, aggregate_function_offset);
 
         const auto * aggregate_function_ptr = function.function;
-        aggregate_function_ptr->compileAdd(b, aggregation_place_with_offset, arguments_types, function_arguments_values);
+        aggregate_function_ptr->compileAdd(b, aggregation_place_with_offset, function_arguments);
 
-        function_arguments_values.clear();
+        function_arguments.clear();
 
         previous_columns_size += function_arguments_size;
     }

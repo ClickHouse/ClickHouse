@@ -1,5 +1,6 @@
 #pragma once
 
+#include <IO/S3/Client.h>
 #include <IO/S3/PocoHTTPClient.h>
 #include <IO/HTTPHeaderEntries.h>
 
@@ -14,13 +15,10 @@
 #include <Common/Exception.h>
 #include <Common/Throttler_fwd.h>
 
-#include <IO/S3/Client.h>
 #include <IO/S3/URI.h>
 
 #include <aws/core/Aws.h>
 #include <aws/s3/S3Errors.h>
-
-namespace Aws::S3 { class Client; }
 
 namespace DB
 {
@@ -71,6 +69,10 @@ namespace Poco::Util
 namespace DB::S3
 {
 
+HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
+
+ServerSideEncryptionKMSConfig getSSEKMSConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
+
 struct AuthSettings
 {
     static AuthSettings loadFromConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
@@ -79,6 +81,7 @@ struct AuthSettings
     std::string secret_access_key;
     std::string region;
     std::string server_side_encryption_customer_key_base64;
+    ServerSideEncryptionKMSConfig server_side_encryption_kms_config;
 
     HTTPHeaderEntries headers;
 

@@ -580,7 +580,7 @@ private:
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
             unalignedStoreLittleEndian<UInt64>(buf + 8, 0x00000000FFFF0000ull | (static_cast<UInt64>(ntohl(in)) << 32));
 #else
-            unalignedStoreLittleEndian<UInt64>(buf + 8, 0x00000000FFFF0000ull | (static_cast<UInt64>(in)) << 32));
+            unalignedStoreLittleEndian<UInt64>(buf + 8, 0x00000000FFFF0000ull | (static_cast<UInt64>(std::byteswap(in)) << 32));
 #endif
     }
 };

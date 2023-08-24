@@ -50,7 +50,7 @@ public:
             && settings.max_hyperscan_regexp_total_length == 0;
     }
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "or")

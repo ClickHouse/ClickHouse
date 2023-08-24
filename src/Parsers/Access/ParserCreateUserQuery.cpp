@@ -1,3 +1,4 @@
+#include <Access/IAccessStorage.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
@@ -109,6 +110,11 @@ namespace
                     else if (ParserKeyword{"DOUBLE_SHA1_HASH"}.ignore(pos, expected))
                     {
                         type = AuthenticationType::DOUBLE_SHA1_PASSWORD;
+                        expect_hash = true;
+                    }
+                    else if (ParserKeyword{"BCRYPT_HASH"}.ignore(pos, expected))
+                    {
+                        type = AuthenticationType::BCRYPT_PASSWORD;
                         expect_hash = true;
                     }
                     else
@@ -400,7 +406,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     auto names_ref = names->names;
 
     std::optional<String> new_name;
-    std::optional<String> temporary_password;
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
@@ -410,6 +415,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
     std::shared_ptr<ASTDatabaseOrNone> default_database;
     String cluster;
+    String storage_name;
 
     while (true)
     {
@@ -476,6 +482,9 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             }
         }
 
+        if (storage_name.empty() && ParserKeyword{"IN"}.ignore(pos, expected) && parseAccessStorageName(pos, expected, storage_name))
+            continue;
+
         break;
     }
 
@@ -510,6 +519,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->settings = std::move(settings);
     query->grantees = std::move(grantees);
     query->default_database = std::move(default_database);
+    query->storage_name = std::move(storage_name);
 
     if (query->auth_data)
         query->children.push_back(query->auth_data);

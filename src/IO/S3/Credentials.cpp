@@ -1,6 +1,7 @@
 #include <IO/S3/Credentials.h>
 
 #if USE_AWS_S3
+
 #    include <aws/core/Version.h>
 #    include <aws/core/platform/OSVersionInfo.h>
 #    include <aws/core/auth/STSCredentialsProvider.h>
@@ -13,12 +14,21 @@
 #    include <Common/logger_useful.h>
 
 #    include <IO/S3/PocoHTTPClient.h>
-#    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/Client.h>
 
 #    include <fstream>
+#    include <base/EnumReflection.h>
 
-namespace DB::S3
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int AWS_ERROR;
+}
+
+namespace S3
 {
 
 namespace
@@ -32,7 +42,6 @@ bool areCredentialsEmptyOrExpired(const Aws::Auth::AWSCredentials & credentials,
     const Aws::Utils::DateTime now = Aws::Utils::DateTime::Now();
     return now >= credentials.GetExpiration() - std::chrono::seconds(expiration_window_seconds);
 }
-
 
 }
 
@@ -95,39 +104,22 @@ Aws::String AWSEC2MetadataClient::awsComputeUserAgentString()
 Aws::String AWSEC2MetadataClient::getDefaultCredentialsSecurely() const
 {
     String user_agent_string = awsComputeUserAgentString();
-    String new_token;
-
+    auto [new_token, response_code] = getEC2MetadataToken(user_agent_string);
+    if (response_code == Aws::Http::HttpResponseCode::BAD_REQUEST)
+        return {};
+    else if (response_code != Aws::Http::HttpResponseCode::OK || new_token.empty())
     {
-        std::lock_guard locker(token_mutex);
-
-        Aws::StringStream ss;
-        ss << endpoint << EC2_IMDS_TOKEN_RESOURCE;
-        std::shared_ptr<Aws::Http::HttpRequest> token_request(Aws::Http::CreateHttpRequest(ss.str(), Aws::Http::HttpMethod::HTTP_PUT,
-                                                                    Aws::Utils::Stream::DefaultResponseStreamFactoryMethod));
-        token_request->SetHeaderValue(EC2_IMDS_TOKEN_TTL_HEADER, EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE);
-        token_request->SetUserAgent(user_agent_string);
-        LOG_TRACE(logger, "Calling EC2MetadataService to get token.");
-        auto result = GetResourceWithAWSWebServiceResult(token_request);
-        const String & token_string = result.GetPayload();
-        new_token = Aws::Utils::StringUtils::Trim(token_string.c_str());
-
-        if (result.GetResponseCode() == Aws::Http::HttpResponseCode::BAD_REQUEST)
-        {
-            return {};
-        }
-        else if (result.GetResponseCode() != Aws::Http::HttpResponseCode::OK || new_token.empty())
-        {
-            LOG_TRACE(logger, "Calling EC2MetadataService to get token failed, falling back to less secure way.");
-            return getDefaultCredentials();
-        }
-        token = new_token;
+        LOG_TRACE(logger, "Calling EC2MetadataService to get token failed, "
+                  "falling back to less secure way. HTTP response code: {}", response_code);
+        return getDefaultCredentials();
     }
 
+    token = std::move(new_token);
     String url = endpoint + EC2_SECURITY_CREDENTIALS_RESOURCE;
     std::shared_ptr<Aws::Http::HttpRequest> profile_request(Aws::Http::CreateHttpRequest(url,
             Aws::Http::HttpMethod::HTTP_GET,
             Aws::Utils::Stream::DefaultResponseStreamFactoryMethod));
-    profile_request->SetHeaderValue(EC2_IMDS_TOKEN_HEADER, new_token);
+    profile_request->SetHeaderValue(EC2_IMDS_TOKEN_HEADER, token);
     profile_request->SetUserAgent(user_agent_string);
     String profile_string = GetResourceWithAWSWebServiceResult(profile_request).GetPayload();
 
@@ -148,10 +140,53 @@ Aws::String AWSEC2MetadataClient::getDefaultCredentialsSecurely() const
     std::shared_ptr<Aws::Http::HttpRequest> credentials_request(Aws::Http::CreateHttpRequest(ss.str(),
             Aws::Http::HttpMethod::HTTP_GET,
             Aws::Utils::Stream::DefaultResponseStreamFactoryMethod));
-    credentials_request->SetHeaderValue(EC2_IMDS_TOKEN_HEADER, new_token);
+    credentials_request->SetHeaderValue(EC2_IMDS_TOKEN_HEADER, token);
     credentials_request->SetUserAgent(user_agent_string);
     LOG_DEBUG(logger, "Calling EC2MetadataService resource {} with token.", ss.str());
     return GetResourceWithAWSWebServiceResult(credentials_request).GetPayload();
+}
+
+Aws::String AWSEC2MetadataClient::getCurrentAvailabilityZone() const
+{
+    String user_agent_string = awsComputeUserAgentString();
+    auto [new_token, response_code] = getEC2MetadataToken(user_agent_string);
+    if (response_code != Aws::Http::HttpResponseCode::OK || new_token.empty())
+        throw DB::Exception(ErrorCodes::AWS_ERROR,
+            "Failed to make token request. HTTP response code: {}", response_code);
+
+    token = std::move(new_token);
+    const String url = endpoint + EC2_AVAILABILITY_ZONE_RESOURCE;
+    std::shared_ptr<Aws::Http::HttpRequest> profile_request(
+        Aws::Http::CreateHttpRequest(url, Aws::Http::HttpMethod::HTTP_GET, Aws::Utils::Stream::DefaultResponseStreamFactoryMethod));
+
+    profile_request->SetHeaderValue(EC2_IMDS_TOKEN_HEADER, token);
+    profile_request->SetUserAgent(user_agent_string);
+
+    const auto result = GetResourceWithAWSWebServiceResult(profile_request);
+    if (result.GetResponseCode() != Aws::Http::HttpResponseCode::OK)
+        throw DB::Exception(ErrorCodes::AWS_ERROR,
+            "Failed to get availability zone. HTTP response code: {}", result.GetResponseCode());
+
+    return Aws::Utils::StringUtils::Trim(result.GetPayload().c_str());
+}
+
+std::pair<Aws::String, Aws::Http::HttpResponseCode> AWSEC2MetadataClient::getEC2MetadataToken(const std::string & user_agent_string) const
+{
+    std::lock_guard locker(token_mutex);
+
+    Aws::StringStream ss;
+    ss << endpoint << EC2_IMDS_TOKEN_RESOURCE;
+    std::shared_ptr<Aws::Http::HttpRequest> token_request(
+        Aws::Http::CreateHttpRequest(
+            ss.str(), Aws::Http::HttpMethod::HTTP_PUT,
+            Aws::Utils::Stream::DefaultResponseStreamFactoryMethod));
+    token_request->SetHeaderValue(EC2_IMDS_TOKEN_TTL_HEADER, EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE);
+    token_request->SetUserAgent(user_agent_string);
+
+    LOG_TRACE(logger, "Calling EC2MetadataService to get token.");
+    const auto result = GetResourceWithAWSWebServiceResult(token_request);
+    const auto & token_string = result.GetPayload();
+    return { Aws::Utils::StringUtils::Trim(token_string.c_str()), result.GetResponseCode() };
 }
 
 Aws::String AWSEC2MetadataClient::getCurrentRegion() const
@@ -497,13 +532,13 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.enable_s3_requests_logging,
                 configuration.for_disk_s3,
                 configuration.get_request_throttler,
-                configuration.put_request_throttler);
+                configuration.put_request_throttler,
+                Aws::Http::SchemeMapper::ToString(Aws::Http::Scheme::HTTP));
 
             /// See MakeDefaultHttpResourceClientConfiguration().
             /// This is part of EC2 metadata client, but unfortunately it can't be accessed from outside
             /// of contrib/aws/aws-cpp-sdk-core/source/internal/AWSHttpResourceClient.cpp
             aws_client_configuration.maxConnections = 2;
-            aws_client_configuration.scheme = Aws::Http::Scheme::HTTP;
 
             /// Explicitly set the proxy settings to empty/zero to avoid relying on defaults that could potentially change
             /// in the future.
@@ -530,6 +565,8 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
     /// Quite verbose provider (argues if file with credentials doesn't exist) so iut's the last one
     /// in chain.
     AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
+}
+
 }
 
 }

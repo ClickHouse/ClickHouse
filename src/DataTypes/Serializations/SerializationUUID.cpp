@@ -51,19 +51,11 @@ void SerializationUUID::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
     {
         assertChar('\'', istr);
         char * next_pos = find_first_symbols<'\\', '\''>(istr.position(), istr.buffer().end());
-        size_t len = next_pos - istr.position();
-        if ((len == 32) && (istr.position()[32] == '\''))
+        const size_t len = next_pos - istr.position();
+        if ((len == 32 || len == 36) && istr.position()[len] == '\'')
         {
-            parseUUIDWithoutSeparator(
-                reinterpret_cast<const UInt8 *>(istr.position()), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
-            istr.ignore(33);
-            fast = true;
-        }
-        else if ((len == 36) && (istr.position()[36] == '\''))
-        {
-            parseUUID(
-                reinterpret_cast<const UInt8 *>(istr.position()), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
-            istr.ignore(37);
+            uuid = parseUUID(std::span(reinterpret_cast<const UInt8 *>(istr.position()), len));
+            istr.ignore(len + 1);
             fast = true;
         }
         else
@@ -119,25 +111,25 @@ void SerializationUUID::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
 void SerializationUUID::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
     UUID x = field.get<UUID>();
-    writeBinary(x, ostr);
+    writeBinaryLittleEndian(x, ostr);
 }
 
 void SerializationUUID::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID x;
-    readBinary(x, istr);
+    readBinaryLittleEndian(x, istr);
     field = NearestFieldType<UUID>(x);
 }
 
 void SerializationUUID::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeBinary(assert_cast<const ColumnVector<UUID> &>(column).getData()[row_num], ostr);
+    writeBinaryLittleEndian(assert_cast<const ColumnVector<UUID> &>(column).getData()[row_num], ostr);
 }
 
 void SerializationUUID::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID x;
-    readBinary(x, istr);
+    readBinaryLittleEndian(x, istr);
     assert_cast<ColumnVector<UUID> &>(column).getData().push_back(x);
 }
 

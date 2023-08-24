@@ -159,6 +159,8 @@ public:
             out->setAsyncCallback(async_callback);
     }
 
+    bool haveMoreAddressesToConnect() const { return have_more_addresses_to_connect; }
+
 private:
     String host;
     UInt16 port;
@@ -227,6 +229,8 @@ private:
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
     std::unique_ptr<NativeWriter> block_out;
 
+    bool have_more_addresses_to_connect = false;
+
     /// Logger is created lazily, for avoid to run DNS request in constructor.
     class LoggerWrapper
     {
@@ -256,7 +260,7 @@ private:
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
     void sendAddendum();
-    void receiveHello();
+    void receiveHello(const Poco::Timespan & handshake_timeout);
 
 #if USE_SSL
     void sendClusterNameAndSalt();
