@@ -16,6 +16,7 @@ public:
 private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
+    bool supportsCountRows() const override { return true; }
 
     void readPrefix() override;
     void readSuffix() override;
