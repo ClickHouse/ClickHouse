@@ -1186,7 +1186,7 @@ String createChallenge()
     UInt64 rand = rng();
     return encodeSHA256(&rand, sizeof(rand));
 #else
-    throw Exception("Can't generate challenge, because ClickHouse was built without OpenSSL", ErrorCodes::SUPPORT_IS_DISABLED);
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Can't generate challenge, because ClickHouse was built without OpenSSL");
 #endif
 }
 
