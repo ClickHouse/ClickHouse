@@ -610,6 +610,8 @@ Block ActionsDAG::updateHeader(Block header) const
     {
         if (e.code() == ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK)
             e.addMessage(" in block {}", header.dumpStructure());
+
+        throw;
     }
 
     if (isInputProjected())
