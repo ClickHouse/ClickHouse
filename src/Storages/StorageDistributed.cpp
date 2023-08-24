@@ -1520,7 +1520,6 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
 
     for (const auto & variant : *variants)
     {
-        //std::cerr << variant.at(0).column->getUInt(0) << std::endl;
         const auto selector = createSelector(cluster, variant.at(0));
         shards.insert(selector.begin(), selector.end());
     }
