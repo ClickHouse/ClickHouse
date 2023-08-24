@@ -325,9 +325,10 @@ Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': while parsing Kaf
     retries = 0
     result_system_kafka_consumers = ""
     while True:
+        # filter out stacktrace in exceptions.text[1] because it is hardly stable enough
         result_system_kafka_consumers = instance.query(
             """
-            SELECT substr(exceptions.text[1], 1, 131), length(exceptions.text) > 1 AND length(exceptions.text) < 15, length(exceptions.time) > 1 AND length(exceptions.time) < 15, abs(dateDiff('second', exceptions.time[1], now())) < 40, database, table FROM system.kafka_consumers ORDER BY table, assignments.partition_id[1]
+            SELECT substr(exceptions.text[1], 1, 131), length(exceptions.text) > 1 AND length(exceptions.text) < 15, length(exceptions.time) > 1 AND length(exceptions.time) < 15, abs(dateDiff('second', exceptions.time[1], now())) < 40, database, table FROM system.kafka_consumers WHERE table in('kafka_Avro', 'kafka_JSONEachRow') ORDER BY table, assignments.partition_id[1]
             """
         )
         result_system_kafka_consumers = result_system_kafka_consumers.replace("\t", "|")
@@ -356,9 +357,9 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
         f"""
         DROP TABLE IF EXISTS kafka_materialized;
         DROP TABLE IF EXISTS kafka_consumer;
-        DROP TABLE IF EXISTS kafka;
+        DROP TABLE IF EXISTS kafka1;
 
-        CREATE TABLE kafka (key UInt64, value String)
+        CREATE TABLE kafka1 (key UInt64, value String)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'tomv',
@@ -371,20 +372,20 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
         CREATE MATERIALIZED VIEW kafka_consumer TO kafka_materialized
         (`key` UInt64, `value` UInt64) AS
         SELECT key, CAST(value, 'UInt64') AS value
-        FROM kafka;
+        FROM kafka1;
     """
     )
 
     kafka_produce(kafka_cluster, "tomv", ['{"key":10, "value":"aaa"}'])
 
-    expected_result = """Code: 6. DB::Exception: Cannot parse string \\'aaa\\' as UInt64: syntax error at begin of string. Note: there are toUInt64OrZero and to|1|1|1|default|kafka
+    expected_result = """Code: 6. DB::Exception: Cannot parse string \\'aaa\\' as UInt64: syntax error at begin of string. Note: there are toUInt64OrZero and to|1|1|1|default|kafka1
 """
     retries = 0
     result_system_kafka_consumers = ""
     while True:
         result_system_kafka_consumers = instance.query(
             """
-            SELECT substr(exceptions.text[1], 1, 131), length(exceptions.text) > 1 AND length(exceptions.text) < 15, length(exceptions.time) > 1 AND length(exceptions.time) < 15, abs(dateDiff('second', exceptions.time[1], now())) < 40, database, table FROM system.kafka_consumers ORDER BY table, assignments.partition_id[1]
+            SELECT substr(exceptions.text[1], 1, 131), length(exceptions.text) > 1 AND length(exceptions.text) < 15, length(exceptions.time) > 1 AND length(exceptions.time) < 15, abs(dateDiff('second', exceptions.time[1], now())) < 40, database, table FROM system.kafka_consumers  WHERE table='kafka1' ORDER BY table, assignments.partition_id[1]
             """
         )
         result_system_kafka_consumers = result_system_kafka_consumers.replace("\t", "|")
