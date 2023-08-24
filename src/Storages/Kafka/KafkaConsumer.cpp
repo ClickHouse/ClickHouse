@@ -549,26 +549,15 @@ void KafkaConsumer::setExceptionInfo(const cppkafka::Error & err, bool with_stac
 
 void KafkaConsumer::setExceptionInfo(const std::string & text, bool with_stacktrace)
 {
-    std::string exceptionWithTrace;
+    std::string enriched_text = text;
 
     if (with_stacktrace)
     {
-        try
-        {
-            throw Exception();
-        }
-        catch (const std::exception & ex)
-        {
-            exceptionWithTrace = text + getExceptionStackTraceString(ex);
-        }
-    }
-    else
-    {
-        exceptionWithTrace = text;
+        enriched_text.append(StackTrace().toString());
     }
 
     std::lock_guard<std::mutex> lock(exception_mutex);
-    exceptions_buffer.push_back({exceptionWithTrace, static_cast<UInt64>(Poco::Timestamp().epochTime())});
+    exceptions_buffer.push_back({enriched_text, static_cast<UInt64>(Poco::Timestamp().epochTime())});
 }
 
 /*
