@@ -372,7 +372,8 @@ public:
         const std::string & filter_name,
         bool can_remove_filter,
         const Names & available_inputs,
-        const ColumnsWithTypeAndName & all_inputs);
+        const ColumnsWithTypeAndName & all_inputs,
+        bool split_result_can_be_true_on_default = true);
 
     bool
     isSortingPreserved(const Block & input_header, const SortDescription & sort_description, const String & ignore_output_column = "") const;

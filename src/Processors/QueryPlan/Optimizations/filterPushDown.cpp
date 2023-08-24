@@ -100,7 +100,11 @@ static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
     return res;
 }
 
-static ActionsDAGPtr splitFilter(QueryPlan::Node * parent_node, const Names & allowed_inputs, size_t child_idx = 0)
+static ActionsDAGPtr splitFilter(
+    QueryPlan::Node * parent_node,
+    const Names & allowed_inputs,
+    size_t child_idx = 0,
+    bool split_result_can_be_true_on_default = true)
 {
     QueryPlan::Node * child_node = parent_node->children.front();
     checkChildrenSize(child_node, child_idx + 1);
@@ -115,7 +119,7 @@ static ActionsDAGPtr splitFilter(QueryPlan::Node * parent_node, const Names & al
 
     const auto & all_inputs = child->getInputStreams()[child_idx].header.getColumnsWithTypeAndName();
 
-    auto split_filter = expression->cloneActionsForFilterPushDown(filter_column_name, removes_filter, allowed_inputs, all_inputs);
+    auto split_filter = expression->cloneActionsForFilterPushDown(filter_column_name, removes_filter, allowed_inputs, all_inputs, split_result_can_be_true_on_default);
     return split_filter;
 }
 
@@ -202,6 +206,56 @@ static size_t simplePushDownOverStep(QueryPlan::Node * parent_node, QueryPlan::N
             return updated_steps;
     }
     return 0;
+}
+
+static size_t joinPushDown(
+    QueryPlan::Node * filter_node,
+    size_t child_idx,
+    QueryPlan::Nodes & nodes,
+    bool split_result_can_be_true_on_default)
+{
+    QueryPlan::Node * join_node = filter_node->children.front();
+    auto & join_step = join_node->step;
+
+    const auto & input_header = join_step->getInputStreams().at(child_idx).header;
+    const auto & res_header = join_step->getOutputStream().header;
+    Names allowed_keys;
+    const auto & source_columns = input_header.getNames();
+    for (const auto & name : source_columns)
+    {
+        /// Skip key if it is renamed.
+        /// I don't know if it is possible. Just in case.
+        if (!input_header.has(name) || !res_header.has(name))
+            continue;
+
+        /// Skip if type is changed. Push down expression expect equal types.
+        if (!input_header.getByName(name).type->equals(*res_header.getByName(name).type))
+            continue;
+
+        allowed_keys.push_back(name);
+    }
+
+    ActionsDAGPtr split_filter = splitFilter(filter_node, allowed_keys, child_idx, split_result_can_be_true_on_default);
+    if (!split_filter)
+        return 0;
+    /*
+        * We should check the presence of a split filter column name in `source_columns` to avoid removing the required column.
+        *
+        * Example:
+        * A filter expression is `a AND b = c`, but `b` and `c` belong to another side of the join and not in `allowed_keys`, so the final split filter is just `a`.
+        * In this case `a` can be in `source_columns` but not `and(a, equals(b, c))`.
+        *
+        * New filter column is the first one.
+        */
+    const String & split_filter_column_name = split_filter->getOutputs().front()->result_name;
+    bool can_remove_filter = source_columns.end() == std::find(source_columns.begin(), source_columns.end(), split_filter_column_name);
+    const size_t updated_steps = tryAddNewFilterStep(filter_node, nodes, split_filter, can_remove_filter, child_idx);
+    if (updated_steps > 0)
+        LOG_DEBUG(
+            getLogger("QueryPlanOptimizations"), "Pushed down filter {} to the {} side of join",
+            split_filter_column_name, child_idx == 0 ? "LEFT" : "RIGHT");
+
+    return updated_steps;
 }
 
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
@@ -332,71 +386,37 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (join || filled_join)
     {
-        auto join_push_down = [&](JoinKind kind) -> size_t
+        const auto & table_join = join ? join->getJoin()->getTableJoin() : filled_join->getJoin()->getTableJoin();
+
+        size_t left_depth = 0;
+        size_t right_depth = 0;
+
+        if (table_join.kind() == JoinKind::Inner || table_join.kind() != JoinKind::Cross)
         {
-            const auto & table_join = join ? join->getJoin()->getTableJoin() : filled_join->getJoin()->getTableJoin();
-
-            /// Only inner, cross and left(/right) join are supported. Other types may generate default values for left table keys.
-            /// So, if we push down a condition like `key != 0`, not all rows may be filtered.
-            if (table_join.kind() != JoinKind::Inner && table_join.kind() != JoinKind::Cross && table_join.kind() != kind)
-                return 0;
-
-            /// There is no ASOF Right join, so we're talking about pushing to the right side
-            if (kind == JoinKind::Right && table_join.strictness() == JoinStrictness::Asof)
-                return 0;
-
-            bool is_left = kind == JoinKind::Left;
-            const auto & input_header = is_left ? child->getInputStreams().front().header : child->getInputStreams().back().header;
-            const auto & res_header = child->getOutputStream().header;
-            Names allowed_keys;
-            const auto & source_columns = input_header.getNames();
-            for (const auto & name : source_columns)
-            {
-                /// Skip key if it is renamed.
-                /// I don't know if it is possible. Just in case.
-                if (!input_header.has(name) || !res_header.has(name))
-                    continue;
-
-                /// Skip if type is changed. Push down expression expect equal types.
-                if (!input_header.getByName(name).type->equals(*res_header.getByName(name).type))
-                    continue;
-
-                allowed_keys.push_back(name);
-            }
-
-            /// For left JOIN, push down to the first child; for right - to the second one.
-            const auto child_idx = is_left ? 0 : 1;
-            ActionsDAGPtr split_filter = splitFilter(parent_node, allowed_keys, child_idx);
-            if (!split_filter)
-                return 0;
-            /*
-             * We should check the presence of a split filter column name in `source_columns` to avoid removing the required column.
-             *
-             * Example:
-             * A filter expression is `a AND b = c`, but `b` and `c` belong to another side of the join and not in `allowed_keys`, so the final split filter is just `a`.
-             * In this case `a` can be in `source_columns` but not `and(a, equals(b, c))`.
-             *
-             * New filter column is the first one.
-             */
-            const String & split_filter_column_name = split_filter->getOutputs().front()->result_name;
-            bool can_remove_filter = source_columns.end() == std::find(source_columns.begin(), source_columns.end(), split_filter_column_name);
-            const size_t updated_steps = tryAddNewFilterStep(parent_node, nodes, split_filter, can_remove_filter, child_idx);
-            if (updated_steps > 0)
-            {
-                LOG_DEBUG(getLogger("QueryPlanOptimizations"), "Pushed down filter {} to the {} side of join", split_filter_column_name, kind);
-            }
-            return updated_steps;
-        };
-
-        if (size_t updated_steps = join_push_down(JoinKind::Left))
-            return updated_steps;
-
-        /// For full sorting merge join we push down both to the left and right tables, because left and right streams are not independent.
-        if (join && join->allowPushDownToRight())
-        {
-            if (size_t updated_steps = join_push_down(JoinKind::Right))
-                return updated_steps;
+            left_depth = joinPushDown(parent_node, 0, nodes, true);
+            right_depth = joinPushDown(parent_node, 1, nodes, true);
         }
+        else if (table_join.kind() == JoinKind::Left)
+        {
+            left_depth = joinPushDown(parent_node, 0, nodes, true);
+
+            if (table_join.strictness() != JoinStrictness::Asof && join && join->allowPushDownToRight())
+                right_depth = joinPushDown(parent_node, 1, nodes, false);
+        }
+        else if (table_join.kind() == JoinKind::Right)
+        {
+            right_depth = joinPushDown(parent_node, 1, nodes, true);
+            left_depth = joinPushDown(parent_node, 0, nodes, false);
+        }
+        else if (table_join.kind() == JoinKind::Full)
+        {
+            right_depth = joinPushDown(parent_node, 1, nodes, false);
+            /// Probably there is no FilledRight Fill join. But check just in case.
+            if (join && join->allowPushDownToRight())
+                left_depth = joinPushDown(parent_node, 0, nodes, false);
+        }
+
+        return std::max(left_depth, right_depth);
     }
 
     /// TODO.
