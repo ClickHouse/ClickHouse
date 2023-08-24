@@ -256,8 +256,9 @@ void ConfigProcessor::decryptRecursive(Poco::XML::Node * config_root)
 
 void ConfigProcessor::hideRecursive(Poco::XML::Node * config_root)
 {
-    for (Node * node = config_root->firstChild(); node; node = node->nextSibling())
+    for (Node * node = config_root->firstChild(); node;)
     {
+        Node * next_node = node->nextSibling();
         if (node->nodeType() == Node::ELEMENT_NODE)
         {
             Element & element = dynamic_cast<Element &>(*node);
@@ -267,6 +268,7 @@ void ConfigProcessor::hideRecursive(Poco::XML::Node * config_root)
             } else
                 hideRecursive(node);
         }
+        node = next_node;
     }
 }
 
