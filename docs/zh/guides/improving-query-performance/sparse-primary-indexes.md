@@ -1185,9 +1185,9 @@ ClickHouse服务器日志文件中跟踪日志确认了ClickHouse正在对索引
 
 我们将使用一个包含上述所有三列的复合主键，该主键可用于加快计算以下内容的典型网络分析查询速度
 - 特定 URL 有多少（百分比）流量来自机器人，或
-- 我们对特定用户是否为僵尸用户有多大把握（假定来自该用户的流量中有多大比例为僵尸流量
+- 我们对特定用户是否为僵尸用户有多大把握（来自该用户的流量中有多大比例被认为是（或不是）僵尸流量）
 
-我们使用该查询来计算我们要用作复合主键中键列的三列的基数（注意，我们使用 [URL 表函数](/docs/en/sql-reference/table-functions/url.md) 来即席查询 TSV 数据，而无需创建本地表）。在 `clickhouse client`中运行此查询：
+我们使用该查询来计算我们要用作复合主键中三个列的基数（注意，我们使用 [URL 表函数](/docs/en/sql-reference/table-functions/url.md) 来即席查询 TSV 数据，而无需创建本地表）。在 `clickhouse client`中运行此查询：
 ```sql
 SELECT
     formatReadableQuantity(uniq(URL)) AS cardinality_URL,
@@ -1360,7 +1360,7 @@ ORDER BY Ratio ASC
 
 下面我们将说明，为什么主键列按基数升序排列有利于提高表列的压缩率。
 
-下图描绘了主键的磁盘上行顺序，其中键列是按基数升序排列的：
+下图阐述了主键的磁盘上行顺序，其中键列是按基数升序排列的：
 <img src={require('../../../en/guides/best-practices/images/sparse-primary-indexes-14a.png').default} class="image"/>
 
 我们讨论过 [表的行数据按主键列有序存储在磁盘上](#数据按照主键排序存储在磁盘上)。
@@ -1368,9 +1368,9 @@ ORDER BY Ratio ASC
 在上图中，表格的行（它们在磁盘上的列值）首先按其 `cl` 值排序，具有相同 `cl` 值的行按其 `ch` 值排序。由于第一键列 `cl` 的基数较低，因此很可能存在具有相同 `cl` 值的行。因此，`ch`值也很可能是有序的（局部地--对于具有相同`cl`值的行而言）。
 
 如果在一列中，相似的数据被放在彼此相近的位置，例如通过排序，那么这些数据将得到更好的压缩。
-一般来说，压缩算法会受益于数据的运行长度（看到的数据越多，压缩效果越好）和局部性（数据越相似，压缩率越高）。
+一般来说，压缩算法会受益于数据的运行长度（可见的数据越多，压缩效果越好）和局部性（数据越相似，压缩率越高）。
 
-与上图不同的是，下图勾画了主键的磁盘上行顺序，其中主键列是按基数降序排列的：
+与上图不同的是，下图阐述了主键的磁盘上行顺序，其中主键列是按基数降序排列的：
 <img src={require('../../../en/guides/best-practices/images/sparse-primary-indexes-14b.png').default} class="image"/>
 
 现在，表格的行首先按其 `ch` 值排序，具有相同 `ch` 值的行按其 `cl` 值排序。
@@ -1404,7 +1404,7 @@ ORDER BY Ratio ASC
 
 ### 一个具体例子
 
-一个具体的例子是 Alexey Milovidov 开发的明文粘贴服务 https://pastila.nl， 相关[博客](https://clickhouse.com/blog/building-a-paste-service-with-clickhouse/)。
+一个具体的例子是 Alexey Milovidov 开发的文本粘贴服务 https://pastila.nl， 相关[博客](https://clickhouse.com/blog/building-a-paste-service-with-clickhouse/)。
 
 每次更改文本区域时，数据都会自动保存到 ClickHouse 表格行中（每次更改保存一行）。
 
