@@ -104,6 +104,7 @@ public:
         QueryTreeNodePtr query_tree_,
         const Settings & settings);
 
+    SetAndKeyPtr getSetAndKey() const;
     SetPtr get() const override;
     const DataTypes & getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;

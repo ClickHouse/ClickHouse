@@ -1138,6 +1138,10 @@ void Context::setUserID(const UUID & user_id_)
 
 
 std::optional<UUID> Context::getUserID() const
+{
+    auto lock = getLock();
+    return user_id;
+}
 
 bool Context::addQueryCoordinationMetaInfo(String cluster_name_, const std::vector<StorageID> & storages_, const std::vector<String> & sharding_keys_)
 {
@@ -1162,7 +1166,7 @@ bool Context::addQueryCoordinationMetaInfo(String cluster_name_, const std::vect
 void Context::setQuotaKey(String quota_key_)
 {
     auto lock = getLock();
-    return user_id;
+    client_info.quota_key = std::move(quota_key_);
 }
 
 

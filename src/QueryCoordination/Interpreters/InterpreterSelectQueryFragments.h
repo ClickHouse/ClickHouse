@@ -28,7 +28,7 @@ class SubqueryForSet;
 class InterpreterSelectWithUnionQuery;
 class Context;
 class QueryPlan;
-using Node = QueryPlan::Node;
+class DataStream;
 
 struct GroupingSetsParams;
 using GroupingSetsParamsList = std::vector<GroupingSetsParams>;

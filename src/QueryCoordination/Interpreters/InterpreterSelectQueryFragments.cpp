@@ -19,6 +19,7 @@
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <QueryCoordination/Interpreters/InterpreterSelectQueryFragments.h>
@@ -590,27 +591,10 @@ InterpreterSelectQueryFragments::InterpreterSelectQueryFragments(
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
-        NameToNameMap parameter_types;
         if (view)
         {
             query_info.is_parameterized_view = view->isParameterizedView();
-            /// We need to fetch the parameters set for SELECT ... FROM parameterized_view(<params>) before the query is replaced.
-            /// replaceWithSubquery replaces the function child and adds the subquery in its place.
-            /// the parameters are children of function child, if function (which corresponds to parametrised view and has
-            /// parameters in its arguments: `parametrised_view(<params>)`) is replaced the parameters are also gone from tree
-            /// So we need to get the parameters before they are removed from the tree
-            /// and after query is replaced, we use these parameters to substitute in the parameterized view query
-            if (query_info.is_parameterized_view)
-            {
-                query_info.parameterized_view_values = analyzeFunctionParamValues(query_ptr);
-                parameter_types = view->getParameterTypes();
-            }
             view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
-            if (query_info.is_parameterized_view)
-            {
-                view->replaceQueryParametersIfParametrizedView(query_ptr, query_info.parameterized_view_values);
-            }
-
         }
 
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(
@@ -619,13 +603,11 @@ InterpreterSelectQueryFragments::InterpreterSelectQueryFragments(
             options,
             joined_tables.tablesWithColumns(),
             required_result_column_names,
-            table_join,
-            query_info.is_parameterized_view,
-            query_info.parameterized_view_values,
-            parameter_types);
+            table_join);
 
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
+//        context->setDistributed(syntax_analyzer_result->is_remote_storage);
 
         if (storage && !query.final() && storage->needRewriteQueryWithFinal(syntax_analyzer_result->requiredSourceColumns()))
             query.setFinal();
@@ -772,7 +754,7 @@ InterpreterSelectQueryFragments::InterpreterSelectQueryFragments(
                 query_info.filter_asts.push_back(parallel_replicas_custom_filter_ast);
             }
 
-            source_header = storage_snapshot->getSampleBlockForColumns(required_columns, query_info.parameterized_view_values);
+            source_header = storage_snapshot->getSampleBlockForColumns(required_columns);
         }
 
         /// Calculate structure of the result.
@@ -907,8 +889,6 @@ Block InterpreterSelectQueryFragments::getSampleBlockImpl()
 
     if (storage && !options.only_analyze)
     {
-        query_analyzer->makeSetsForIndex(select_query.where());
-        query_analyzer->makeSetsForIndex(select_query.prewhere());
         query_info.prepared_sets = query_analyzer->getPreparedSets();
     }
 
@@ -2198,8 +2178,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
                                            const PreparedSetsPtr & prepared_sets,
                                            const std::vector<ActionsDAGPtr> & result_actions_to_execute)
 {
-    PreparedSets::SubqueriesForSets subqueries_for_sets;
-
+    PreparedSets::Subqueries subqueries;
     for (const auto & actions_to_execute : result_actions_to_execute)
     {
         if (!actions_to_execute)
@@ -2209,17 +2188,25 @@ void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
         {
             const auto & set_key = node.result_name;
 
-            SubqueryForSet * subquery_for_set = prepared_sets->getSetOrNull(set_key);
-
-            if (!subquery_for_set || !subquery_for_set->hasSource())
-                continue;
-
-            subqueries_for_sets.emplace(set_key, std::move(*subquery_for_set));
+            for (auto & future_set_from_subquery : prepared_sets->getSubqueries())
+            {
+                if (set_key == future_set_from_subquery->getSetAndKey()->key)
+                {
+                    subqueries.emplace_back(future_set_from_subquery);
+                }
+            }
         }
     }
 
-    if (!subqueries_for_sets.empty())
-        addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), context);
+    if (!subqueries.empty())
+    {
+        auto step = std::make_unique<DelayedCreatingSetsStep>(
+            query_plan.getCurrentDataStream(),
+            std::move(subqueries),
+            context);
+
+        query_plan.addStep(std::move(step));
+    }
 }
 
 void InterpreterSelectQueryFragments::executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter)
@@ -2672,20 +2659,27 @@ void InterpreterSelectQueryFragments::executeWithFill(QueryPlan & query_plan)
     auto & query = getSelectQuery();
     if (query.orderBy())
     {
-        SortDescription order_descr = getSortDescription(query, context);
-        SortDescription fill_descr;
-        for (auto & desc : order_descr)
+        SortDescription sort_description = getSortDescription(query, context);
+        SortDescription fill_description;
+        for (auto & desc : sort_description)
         {
             if (desc.with_fill)
-                fill_descr.push_back(desc);
+                fill_description.push_back(desc);
         }
 
-        if (fill_descr.empty())
+        if (fill_description.empty())
             return;
 
         InterpolateDescriptionPtr interpolate_descr =
             getInterpolateDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context);
-        auto filling_step = std::make_shared<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_descr), interpolate_descr);
+
+        const Settings & settings = context->getSettingsRef();
+        auto filling_step = std::make_shared<FillingStep>(
+            query_plan.getCurrentDataStream(),
+            std::move(sort_description),
+            std::move(fill_description),
+            interpolate_descr,
+            settings.use_with_fill_by_sorting_prefix);
         query_plan.addStep(std::move(filling_step));
     }
 }

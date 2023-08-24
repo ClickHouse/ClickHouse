@@ -1083,6 +1083,7 @@ Packet Connection::receivePacket()
             case Protocol::Server::TimezoneUpdate:
                 readStringBinary(server_timezone, *in);
                 res.server_timezone = server_timezone;
+                return res;
 
             case Protocol::Server::PipelinesReady:
                 return res;

@@ -9,6 +9,13 @@ namespace DB
 class LimitStep : public ITransformingStep
 {
 public:
+    enum Type
+    {
+        Global,
+        Local,
+        Unknown,
+    };
+
     LimitStep(
         const DataStream & input_stream_,
         size_t limit_, size_t offset_,
@@ -37,6 +44,10 @@ public:
 
     size_t getOffset() const { return offset; }
 
+    Type getType() const { return type; }
+
+    void setType(Type type_) { type = type_; }
+
 private:
     void updateOutputStream() override
     {
@@ -49,6 +60,8 @@ private:
 
     bool with_ties;
     const SortDescription description;
+
+    Type type = Type::Unknown;
 };
 
 }

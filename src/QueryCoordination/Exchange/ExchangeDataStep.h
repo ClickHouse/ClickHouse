@@ -2,7 +2,7 @@
 
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <QueryPipeline/StreamLocalLimits.h>
-#include <QueryCoordination/NewOptimizer/PhysicalProperties.h>
+#include <QueryCoordination/Optimizer/PhysicalProperties.h>
 
 namespace DB
 {

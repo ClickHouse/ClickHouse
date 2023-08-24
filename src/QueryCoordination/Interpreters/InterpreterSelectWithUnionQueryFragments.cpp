@@ -26,7 +26,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <QueryCoordination/NewOptimizer/Optimizer.h>
+#include <QueryCoordination/Optimizer/Optimizer.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 
