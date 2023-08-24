@@ -248,6 +248,7 @@ public:
         AzureObjectStorage * object_storage_,
         const String & container_,
         std::shared_ptr<IIterator> file_iterator_,
+        bool need_only_count_,
         const SelectQueryInfo & query_info_);
 
     ~StorageAzureBlobSource() override;
@@ -269,6 +270,7 @@ private:
     AzureObjectStorage * object_storage;
     String container;
     std::shared_ptr<IIterator> file_iterator;
+    bool need_only_count;
     SelectQueryInfo query_info;
 
     struct ReaderHolder

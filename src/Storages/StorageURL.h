@@ -177,7 +177,8 @@ public:
         const SelectQueryInfo & query_info,
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
-        bool glob_url = false);
+        bool glob_url = false,
+        bool need_only_count_ = false);
 
     String getName() const override { return name; }
 
@@ -209,6 +210,7 @@ private:
     Block block_for_format;
     std::shared_ptr<IteratorWrapper> uri_iterator;
     Poco::URI curr_uri;
+    bool need_only_count;
 
     std::unique_ptr<ReadBuffer> read_buf;
     std::shared_ptr<IInputFormat> input_format;
