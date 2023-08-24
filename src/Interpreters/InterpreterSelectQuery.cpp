@@ -1609,7 +1609,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                             order_descr.emplace_back(key_name);
 
                         SortingStep::Settings sort_settings(*context);
-
+                        /// full sort
                         auto sorting_step = std::make_unique<SortingStep>(
                             plan.getCurrentDataStream(),
                             std::move(order_descr),
@@ -2849,7 +2849,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         if (!window.full_sort_description.empty() && (i == 0 || !sortIsPrefix(window, *windows_sorted[i - 1])))
         {
             SortingStep::Settings sort_settings(*context);
-
+            /// full sort
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentDataStream(),
                 window.full_sort_description,
@@ -2871,7 +2871,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
 void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info, UInt64 limit, SortDescription & output_order_descr)
 {
     const Settings & settings = context->getSettingsRef();
-
+    /// finishing sort
     auto finish_sorting_step = std::make_unique<SortingStep>(
         query_plan.getCurrentDataStream(),
         input_sorting_info->sort_description_for_merging,
@@ -2904,7 +2904,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
 
     SortingStep::Settings sort_settings(*context);
 
-    /// Merge the sorted blocks.
+    /// Merge the sorted blocks. Full sort
     auto sorting_step = std::make_unique<SortingStep>(
         query_plan.getCurrentDataStream(),
         output_order_descr,
@@ -2924,7 +2924,7 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const st
     const UInt64 limit = getLimitForSorting(query, context);
     const auto max_block_size = context->getSettingsRef().max_block_size;
     const auto exact_rows_before_limit = context->getSettingsRef().exact_rows_before_limit;
-
+    /// MergingSorted
     auto merging_sorted = std::make_unique<SortingStep>(
         query_plan.getCurrentDataStream(), std::move(sort_description), max_block_size, limit, exact_rows_before_limit);
     merging_sorted->setStepDescription("Merge sorted streams " + description);

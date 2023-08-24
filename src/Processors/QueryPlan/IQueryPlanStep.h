@@ -121,5 +121,5 @@ protected:
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 };
 
-using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
+using QueryPlanStepPtr = std::shared_ptr<IQueryPlanStep>;
 }

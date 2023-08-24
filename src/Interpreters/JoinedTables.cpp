@@ -7,6 +7,7 @@
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/getTableExpressions.h>
+#include <QueryCoordination/Interpreters/InterpreterSelectWithUnionQueryFragments.h>
 #include <Functions/FunctionsExternalDictionaries.h>
 
 #include <Parsers/ASTAsterisk.h>
@@ -193,10 +194,13 @@ bool JoinedTables::isLeftTableFunction() const
     return left_table_expression && left_table_expression->as<ASTFunction>();
 }
 
-std::unique_ptr<InterpreterSelectWithUnionQuery> JoinedTables::makeLeftTableSubquery(const SelectQueryOptions & select_options)
+std::unique_ptr<IInterpreterUnionOrSelectQuery> JoinedTables::makeLeftTableSubquery(const SelectQueryOptions & select_options)
 {
     if (!isLeftTableSubquery())
         return {};
+
+    if (context->getSettingsRef().allow_experimental_query_coordination)
+        return std::make_unique<InterpreterSelectWithUnionQueryFragments>(left_table_expression, context, select_options.copy().analyze());
 
     /// Only build dry_run interpreter during analysis. We will reconstruct the subquery interpreter during plan building.
     return std::make_unique<InterpreterSelectWithUnionQuery>(left_table_expression, context, select_options.copy().analyze());

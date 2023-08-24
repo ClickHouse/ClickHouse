@@ -19,6 +19,22 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+
+    size_t getGroupLength() const
+    {
+        return group_length;
+    }
+
+    size_t getGroupOffset() const
+    {
+        return group_offset;
+    }
+
+    Names getColumns() const
+    {
+        return columns;
+    }
+
 private:
     void updateOutputStream() override
     {

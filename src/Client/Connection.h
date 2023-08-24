@@ -34,6 +34,8 @@ using Connections = std::vector<ConnectionPtr>;
 
 class NativeReader;
 class NativeWriter;
+class FragmentsRequest;
+struct ExchangeDataRequest;
 
 
 /** Connection with database server, to use by client.
@@ -105,6 +107,32 @@ public:
         const ClientInfo * client_info/* = nullptr */,
         bool with_pending_data/* = false */,
         std::function<void(const Progress &)> process_progress_callback) override;
+
+    void sendQuery(
+        const ConnectionTimeouts & timeouts,
+        const String & query,
+        const NameToNameMap& query_parameters,
+        const String & query_id_/* = "" */,
+        UInt64 stage/* = QueryProcessingStage::Complete */,
+        const Settings * settings/* = nullptr */,
+        const ClientInfo * client_info/* = nullptr */,
+        bool with_pending_data/* = false */,
+        std::function<void(const Progress &)> process_progress_callback,
+        bool need_protocol);
+
+    void sendFragments(
+        const ConnectionTimeouts & timeouts,
+        const String & query,
+        const NameToNameMap & query_parameters,
+        const String & query_id_,
+        UInt64 stage,
+        const Settings * settings,
+        const ClientInfo * client_info,
+        const FragmentsRequest & fragment);
+
+    void sendBeginExecutePipelines(const String & query_id_);
+
+    void sendExchangeData(const ExchangeDataRequest & request);
 
     void sendCancel() override;
 

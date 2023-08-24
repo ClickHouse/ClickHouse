@@ -3,22 +3,25 @@
 #include <optional>
 #include <Poco/Net/TCPServerConnection.h>
 
-#include <base/getFQDNOrHostName.h>
-#include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Stopwatch.h>
-#include <Common/ThreadStatus.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
-#include <IO/Progress.h>
-#include <IO/TimeoutSetter.h>
-#include <QueryPipeline/BlockIO.h>
-#include <Interpreters/InternalTextLogsQueue.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/ClientInfo.h>
-#include <Interpreters/ProfileEventsExt.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
+#include <IO/Progress.h>
+#include <IO/TimeoutSetter.h>
+#include <Interpreters/ClientInfo.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/ProfileEventsExt.h>
+#include <QueryCoordination/IO/FragmentsRequest.h>
+#include <QueryCoordination/IO/ExchangeDataRequest.h>
+#include <QueryPipeline/BlockIO.h>
+#include <base/getFQDNOrHostName.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+#include <Common/ThreadStatus.h>
+#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
 
 #include "IServer.h"
 #include "Server/TCPProtocolStackData.h"
@@ -43,6 +46,7 @@ struct ProfileInfo;
 class TCPServer;
 class NativeWriter;
 class NativeReader;
+class ExchangeDataSource;
 
 /// State of query processing.
 struct QueryState
@@ -115,6 +119,16 @@ struct QueryState
 
     /// Timeouts setter for current query
     std::unique_ptr<TimeoutSetter> timeout_setter;
+
+    /// for query coordination
+    std::optional<FragmentsRequest> fragments_request;
+
+    std::optional<ExchangeDataRequest> exchange_data_request;
+
+    std::shared_ptr<ExchangeDataSource> exchange_data_receiver;
+
+    /// sample block from ExchangeData
+    Block exchange_data_header;
 
     void reset()
     {
@@ -228,6 +242,7 @@ private:
     void receiveHello();
     void receiveAddendum();
     bool receivePacket();
+    void receiveFragments();
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
     String receiveReadTaskResponseAssumeLocked();
@@ -243,6 +258,7 @@ private:
     [[noreturn]] void receiveUnexpectedIgnoredPartUUIDs();
     [[noreturn]] void receiveUnexpectedHello();
     [[noreturn]] void receiveUnexpectedTablesStatusRequest();
+    bool receiveBeginExecutePipelines();
 
     /// Process INSERT query
     void processInsertQuery();
@@ -251,6 +267,8 @@ private:
     void processOrdinaryQuery();
 
     void processOrdinaryQueryWithProcessors();
+
+    void processOrdinaryQueryWithCoordination(std::function<void()> finish_or_cancel);
 
     void processTablesStatusRequest();
 

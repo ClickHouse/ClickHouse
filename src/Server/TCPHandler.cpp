@@ -42,13 +42,20 @@
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/thread_local_rng.h>
+#include <QueryCoordination/FragmentMgr.h>
 #include <fmt/format.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <QueryCoordination/QueryCoordinationExecutor.h>
+#include <QueryCoordination/Fragments/DistributedFragmentBuilder.h>
+#include <QueryCoordination/Pipelines/PipelinesBuilder.h>
+#include <QueryCoordination/Coordinator.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <QueryCoordination/Exchange/ExchangeManager.h>
+#include <QueryCoordination/fragmentsToPipelines.h>
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
@@ -58,6 +65,7 @@
 #include "Core/Protocol.h"
 #include "Storages/MergeTree/RequestResponse.h"
 #include "TCPHandler.h"
+#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
 
 #include "config_version.h"
 
@@ -434,6 +442,21 @@ void TCPHandler::runImpl()
             /// Processing Query
             state.io = executeQuery(state.query, query_context, false, state.stage);
 
+            /// For query coordination
+            /// SECONDARY_QUERY fragments_request parse fragments and add it to FragmentMgr, it's job finished.
+            if (state.fragments_request && query_context->getSettingsRef().allow_experimental_query_coordination
+                && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+            {
+                state.io.query_coord_state.pipelines = fragmentsToPipelines(state.io.query_coord_state.fragments, state.fragments_request->fragmentsRequest(), query_context->getCurrentQueryId(), query_context->getSettingsRef());
+
+                /// send ready
+                writeVarUInt(Protocol::Server::PipelinesReady, *out);
+                out->next();
+
+                /// receive begin
+                receiveBeginExecutePipelines();
+            }
+
             after_check_cancelled.restart();
             after_send_progress.restart();
 
@@ -445,7 +468,11 @@ void TCPHandler::runImpl()
                     state.io.onFinish();
             };
 
-            if (state.io.pipeline.pushing())
+            if (query_context->getSettingsRef().allow_experimental_query_coordination && query_context->isDistributed())
+            {
+                processOrdinaryQueryWithCoordination(finish_or_cancel);
+            }
+            else if (state.io.pipeline.pushing())
             {
                 /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
                 state.need_receive_data_for_insert = true;
@@ -796,6 +823,157 @@ void TCPHandler::processInsertQuery()
     }
 
     sendInsertProfileEvents();
+}
+
+void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> finish_or_cancel)
+{
+    bool initial_query_coordination = query_context->getSettingsRef().allow_experimental_query_coordination
+        && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
+
+    bool secondary_query_coordination = query_context->getSettingsRef().allow_experimental_query_coordination
+        && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+
+    if (secondary_query_coordination)
+    {
+        {
+            auto completed_pipelines_executor = state.io.query_coord_state.pipelines.createCompletedPipelinesExecutor();
+
+            auto callback = [this]()
+            {
+                std::scoped_lock lock(task_callback_mutex, fatal_error_mutex);
+
+                if (getQueryCancellationStatus() == CancellationStatus::FULLY_CANCELLED)
+                    return true;
+
+                sendProgress();
+                sendSelectProfileEvents();
+                sendLogs();
+
+                return false;
+            };
+
+            completed_pipelines_executor->setCancelCallback(callback, interactive_delay / 1000);
+            completed_pipelines_executor->execute();
+        }
+
+        finish_or_cancel();
+
+        std::lock_guard lock(task_callback_mutex);
+
+        /// Send final progress after calling onFinish(), since it will update the progress.
+        ///
+        /// NOTE: we cannot send Progress for regular INSERT (with VALUES)
+        /// without breaking protocol compatibility, but it can be done
+        /// by increasing revision.
+        sendProgress();
+        sendSelectProfileEvents();
+    }
+    else if (initial_query_coordination)
+    {
+        auto & pipeline = state.io.pipeline;
+
+        if (query_context->getSettingsRef().allow_experimental_query_deduplication)
+        {
+            std::lock_guard lock(task_callback_mutex);
+            sendPartUUIDs();
+        }
+
+        /// Send header-block, to allow client to prepare output format for data to send.
+        {
+            const auto & header = pipeline.getHeader();
+
+            if (header)
+            {
+                std::lock_guard lock(task_callback_mutex);
+                sendData(header);
+            }
+        }
+
+        /// Defer locking to cover a part of the scope below and everything after it
+        std::unique_lock progress_lock(task_callback_mutex, std::defer_lock);
+
+        {
+            std::shared_ptr<QueryCoordinationExecutor> executor
+                = state.io.query_coord_state.pipelines.createCoordinationExecutor(pipeline, state.io.query_coord_state.storage_limits);
+
+            auto remote_pipelines_manager = executor->getRemotePipelinesManager();
+            remote_pipelines_manager->setManagedNode(state.io.query_coord_state.remote_host_connection);
+            remote_pipelines_manager->setProgressCallback(
+                [this](const Progress & value) { return this->updateProgress(value); }, query_context->getProcessListElement());
+
+            CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
+
+            Block block;
+            while (executor->pull(block, interactive_delay / 1000))
+            {
+                std::unique_lock lock(task_callback_mutex);
+
+                auto cancellation_status = getQueryCancellationStatus();
+                if (cancellation_status == CancellationStatus::FULLY_CANCELLED)
+                {
+                    /// Several callback like callback for parallel reading could be called from inside the pipeline
+                    /// and we have to unlock the mutex from our side to prevent deadlock.
+                    lock.unlock();
+                    /// A packet was received requesting to stop execution of the request.
+                    executor->cancel();
+                    break;
+                }
+                else if (cancellation_status == CancellationStatus::READ_CANCELLED)
+                {
+                    executor->cancelReading();
+                }
+
+                if (after_send_progress.elapsed() / 1000 >= interactive_delay)
+                {
+                    /// Some time passed and there is a progress.
+                    after_send_progress.restart();
+                    sendProgress();
+                    sendSelectProfileEvents();
+                }
+
+                sendLogs();
+
+                if (block)
+                {
+                    if (!state.io.null_format)
+                        sendData(block);
+                }
+            }
+
+            /// This lock wasn't acquired before and we make .lock() call here
+            /// so everything under this line is covered even together
+            /// with sendProgress() out of the scope
+            progress_lock.lock();
+
+            /** If data has run out, we will send the profiling data and total values to
+          * the last zero block to be able to use
+          * this information in the suffix output of stream.
+          * If the request was interrupted, then `sendTotals` and other methods could not be called,
+          *  because we have not read all the data yet,
+          *  and there could be ongoing calculations in other threads at the same time.
+          */
+            if (getQueryCancellationStatus() != CancellationStatus::FULLY_CANCELLED)
+            {
+                sendTotals(executor->getTotalsBlock());
+                sendExtremes(executor->getExtremesBlock());
+                sendProfileInfo(executor->getProfileInfo());
+                sendProgress();
+                sendLogs();
+                sendSelectProfileEvents();
+            }
+
+            if (state.is_connection_closed)
+                return;
+
+            sendData({});
+            last_sent_snapshots.clear();
+        }
+
+        sendProgress();
+
+
+        finish_or_cancel();
+    }
 }
 
 
@@ -1305,6 +1483,24 @@ void TCPHandler::receiveUnexpectedHello()
     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Hello received from client");
 }
 
+bool TCPHandler::receiveBeginExecutePipelines()
+{
+    UInt64 packet_type = 0;
+    readVarUInt(packet_type, *in);
+    if (packet_type != Protocol::Client::BeginExecutePipelines)
+    {
+        throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet BeginExecutePipelines received from client");
+    }
+
+    String query_id;
+    readStringBinary(query_id, *in);
+
+    LOG_DEBUG(log, "Receive BeginExecutePipelines packet for query {}", query_id);
+
+    state.query_id = query_id;
+    return true;
+}
+
 
 void TCPHandler::sendHello()
 {
@@ -1360,6 +1556,56 @@ bool TCPHandler::receivePacket()
                 receiveUnexpectedQuery();
             receiveQuery();
             return true;
+
+        case Protocol::Client::PlanFragments:
+            if (!state.empty())
+                receiveUnexpectedQuery();
+            receiveFragments();
+            return true;
+
+        case Protocol::Client::BeginExecutePipelines:
+            throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet BeginExecutePipelines received from client");
+
+        case Protocol::Client::ExchangeData:
+        {
+            state.is_empty = false;
+
+            ExchangeDataRequest exchange_data_request;
+            exchange_data_request.read(*in);
+            state.exchange_data_request.emplace(exchange_data_request);
+
+            LOG_DEBUG(log, "Read exchange data request {}", state.exchange_data_request->toString());
+
+            /// TODO ThreadGroup
+//            std::optional<CurrentThread::QueryScope> query_scope;
+//
+//            auto context = FragmentMgr::getInstance().findQueryContext(state.exchange_data_request->query_id);
+//
+//            query_scope.emplace(context, /* fatal_error_callback */ [this]
+//            {
+//                std::lock_guard lock(fatal_error_mutex);
+//                sendLogs();
+//            });
+
+            UInt64 compression = 0;
+            readVarUInt(compression, *in);
+            state.compression = static_cast<Protocol::Compression>(compression);
+            last_block_in.compression = state.compression;
+
+            LOG_DEBUG(log, "Read compression");
+
+            state.exchange_data_receiver = ExchangeManager::getInstance().findExchangeDataSource(*state.exchange_data_request);
+            state.exchange_data_header = state.exchange_data_receiver->getHeader();
+
+            LOG_DEBUG(log, "Found exchange data receiver");
+
+            /// read exchange data
+            readData();
+
+            LOG_DEBUG(log, "Read exchange data done");
+
+            return false;
+        }
 
         case Protocol::Client::Data:
         case Protocol::Client::Scalar:
@@ -1462,6 +1708,20 @@ void TCPHandler::receiveClusterNameAndSalt()
 {
     readStringBinary(cluster, *in);
     readStringBinary(salt, *in, 32);
+}
+
+
+void TCPHandler::receiveFragments()
+{
+    receiveQuery();
+
+    // read with_pending_data empty block
+//    readData();
+
+    FragmentsRequest fragments_request;
+    fragments_request.query = state.query;
+    fragments_request.read(*in);
+    state.fragments_request.emplace(fragments_request);
 }
 
 void TCPHandler::receiveQuery()
@@ -1673,7 +1933,7 @@ bool TCPHandler::receiveData(bool scalar)
     /// Read one block from the network and write it down
     Block block = state.block_in->read();
 
-    if (!block)
+    if (!block && !state.exchange_data_request) // exchange_data_request empty block need send to receiver
     {
         state.read_all_data = true;
         return false;
@@ -1684,7 +1944,7 @@ bool TCPHandler::receiveData(bool scalar)
         /// Scalar value
         query_context->addScalar(temporary_id.table_name, block);
     }
-    else if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
+    else if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input && !state.exchange_data_request)
     {
         /// Data for external tables
 
@@ -1710,10 +1970,21 @@ bool TCPHandler::receiveData(bool scalar)
         executor.push(block);
         executor.finish();
     }
-    else if (state.need_receive_data_for_input)
+    else if (state.need_receive_data_for_input && !state.exchange_data_request)
     {
         /// 'input' table function.
         state.block_for_input = block;
+    }
+    else if (state.exchange_data_request)
+    {
+        bool has_data = true;
+        if (!block) // exchange_data_request empty block need send to receiver, it's meaning finished
+        {
+            LOG_DEBUG(log, "exchange_data receive empty block");
+            has_data = false;
+        }
+        state.exchange_data_receiver->receive(std::move(block));
+        return has_data;
     }
     else
     {
@@ -1764,6 +2035,8 @@ void TCPHandler::initBlockInput()
             header = state.io.pipeline.getHeader();
         else if (state.need_receive_data_for_input)
             header = state.input_header;
+        else if (state.exchange_data_request)
+            header = state.exchange_data_header;
 
         state.block_in = std::make_unique<NativeReader>(
             *state.maybe_compressed_in,
@@ -2013,6 +2286,17 @@ void TCPHandler::sendProgress()
     UInt64 current_elapsed_ns = state.watch.elapsedNanoseconds();
     increment.elapsed_ns = current_elapsed_ns - state.prev_elapsed_ns;
     state.prev_elapsed_ns = current_elapsed_ns;
+
+    LOG_DEBUG(log, "Send progress read_rows {}", increment.read_rows);
+    LOG_DEBUG(log, "Send progress read_bytes {}", increment.read_bytes);
+    LOG_DEBUG(log, "Send progress total_rows_to_read {}", increment.total_rows_to_read);
+    LOG_DEBUG(log, "Send progress total_bytes_to_read {}", increment.total_bytes_to_read);
+    LOG_DEBUG(log, "Send progress written_rows {}", increment.written_rows);
+    LOG_DEBUG(log, "Send progress written_bytes {}", increment.written_bytes);
+    LOG_DEBUG(log, "Send progress result_rows {}", increment.result_rows);
+    LOG_DEBUG(log, "Send progress result_bytes {}", increment.result_bytes);
+    LOG_DEBUG(log, "Send progress elapsed_ns {}", increment.elapsed_ns);
+
     increment.write(*out, client_tcp_protocol_version);
     out->next();
 }

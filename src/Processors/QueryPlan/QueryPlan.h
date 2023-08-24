@@ -1,8 +1,9 @@
 #pragma once
 
+#include <Columns/IColumn.h>
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
-#include <Columns/IColumn.h>
+#include <QueryCoordination/PlanNode.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 
 #include <list>
@@ -16,7 +17,7 @@ namespace DB
 class DataStream;
 
 class IQueryPlanStep;
-using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
+using QueryPlanStepPtr = std::shared_ptr<IQueryPlanStep>;
 
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
@@ -30,6 +31,11 @@ class Pipe;
 
 struct QueryPlanOptimizationSettings;
 struct BuildQueryPipelineSettings;
+
+class PlanFragment;
+using PlanFragmentPtr = std::shared_ptr<PlanFragment>;
+using PlanFragmentPtrs = std::vector<PlanFragmentPtr>;
+
 
 namespace JSONBuilder
 {
@@ -99,16 +105,16 @@ public:
     size_t getMaxThreads() const { return max_threads; }
 
     /// Tree node. Step and it's children.
-    struct Node
-    {
-        QueryPlanStepPtr step;
-        std::vector<Node *> children = {};
-    };
+    using Node = PlanNode;
 
     using Nodes = std::list<Node>;
 
     Node * getRootNode() const { return root; }
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
+
+    const Nodes & getNodes() const { return nodes; }
+
+    const QueryPlanResourceHolder & getResources() const { return resources; }
 
 private:
     QueryPlanResourceHolder resources;

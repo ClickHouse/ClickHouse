@@ -33,6 +33,8 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <pcg_random.hpp>
 #include <base/scope_guard.h>
+#include <QueryCoordination/IO/FragmentsRequest.h>
+#include <QueryCoordination/IO/ExchangeDataRequest.h>
 
 #include "config_version.h"
 #include "config.h"
@@ -553,7 +555,22 @@ void Connection::sendQuery(
     const Settings * settings,
     const ClientInfo * client_info,
     bool with_pending_data,
-    std::function<void(const Progress &)>)
+    std::function<void(const Progress &)> func)
+{
+    sendQuery(timeouts, query, query_parameters, query_id_, stage, settings, client_info, with_pending_data, func, true);
+}
+
+void Connection::sendQuery(
+    const ConnectionTimeouts & timeouts,
+    const String & query,
+    const NameToNameMap & query_parameters,
+    const String & query_id_,
+    UInt64 stage,
+    const Settings * settings,
+    const ClientInfo * client_info,
+    bool with_pending_data,
+    std::function<void(const Progress &)>,
+    bool need_protocol)
 {
     OpenTelemetry::SpanHolder span("Connection::sendQuery()", OpenTelemetry::CLIENT);
     span.addAttribute("clickhouse.query_id", query_id_);
@@ -598,7 +615,11 @@ void Connection::sendQuery(
 
     query_id = query_id_;
 
-    writeVarUInt(Protocol::Client::Query, *out);
+    if (need_protocol)
+    {
+        writeVarUInt(Protocol::Client::Query, *out);
+    }
+
     writeStringBinary(query_id, *out);
 
     /// Client info.
@@ -692,6 +713,41 @@ void Connection::sendCancel()
     out->next();
 }
 
+void Connection::sendExchangeData(const ExchangeDataRequest & request)
+{
+    compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
+
+    writeVarUInt(Protocol::Client::ExchangeData, *out);
+    request.write(*out);
+
+    writeVarUInt(static_cast<bool>(compression), *out);
+
+    out->next();
+}
+
+void Connection::sendFragments(
+    const ConnectionTimeouts & timeouts,
+    const String & query,
+    const NameToNameMap & query_parameters,
+    const String & query_id_,
+    UInt64 stage,
+    const Settings * settings,
+    const ClientInfo * client_info,
+    const FragmentsRequest & fragment)
+{
+    writeVarUInt(Protocol::Client::PlanFragments, *out);
+    sendQuery(timeouts, query, query_parameters, query_id_, stage, settings, client_info, true, {}, false);
+    fragment.write(*out);
+    sendData(Block(), "", false); // tcphandler and executeQuery use initializeExternalTablesIfSet
+    out->next();
+}
+
+void Connection::sendBeginExecutePipelines(const String & query_id_)
+{
+    writeVarUInt(Protocol::Client::BeginExecutePipelines, *out);
+    writeStringBinary(query_id_, *out);
+    out->next();
+}
 
 void Connection::sendData(const Block & block, const String & name, bool scalar)
 {
@@ -1027,6 +1083,8 @@ Packet Connection::receivePacket()
             case Protocol::Server::TimezoneUpdate:
                 readStringBinary(server_timezone, *in);
                 res.server_timezone = server_timezone;
+
+            case Protocol::Server::PipelinesReady:
                 return res;
 
             default:

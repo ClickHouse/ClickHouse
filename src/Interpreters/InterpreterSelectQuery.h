@@ -233,7 +233,7 @@ private:
     ActionsDAGPtr alias_actions;
 
     /// The subquery interpreter, if the subquery
-    std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter_subquery;
+    std::unique_ptr<IInterpreterUnionOrSelectQuery> interpreter_subquery;
 
     /// Table from where to read data, if not subquery.
     StoragePtr storage;

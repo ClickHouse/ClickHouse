@@ -10,12 +10,13 @@
 
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -172,7 +173,13 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     std::stack<Frame> stack;
     stack.push(Frame{.node = root});
 
-    while (!stack.empty())
+    std::unordered_set<Node *> all_nodes;
+    for (auto & node : nodes)
+    {
+        all_nodes.insert(&node);
+    }
+
+    while (!stack.empty() && all_nodes.contains(stack.top().node))
     {
         auto & frame = stack.top();
 
@@ -183,7 +190,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         }
 
         size_t next_child = frame.pipelines.size();
-        if (next_child == frame.node->children.size())
+        if (next_child == frame.node->children.size() || !all_nodes.contains(frame.node->children[next_child])) /// children belong next fragment
         {
             bool limit_max_threads = frame.pipelines.empty();
             last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines), build_pipeline_settings);
@@ -377,7 +384,13 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
     std::stack<Frame> stack;
     stack.push(Frame{.node = root});
 
-    while (!stack.empty())
+    std::unordered_set<Node *> all_nodes;
+    for (auto & node : nodes)
+    {
+        all_nodes.insert(&node);
+    }
+
+    while (!stack.empty() && all_nodes.contains(stack.top().node))
     {
         auto & frame = stack.top();
 

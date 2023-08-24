@@ -24,6 +24,7 @@
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
+#include <QueryCoordination/QueryCoordinationMetaInfo.h>
 
 #include "config.h"
 
@@ -294,6 +295,12 @@ private:
     /// This parameter can be set by the HTTP client to tune the behavior of output formats for compatibility.
     UInt64 client_protocol_version = 0;
 
+    /// for query coordination
+    Int32 fragment_id_counter = 0;
+
+    /// for query coordination secondary query
+    QueryCoordinationMetaInfo query_coordination_meta;
+
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
     {
@@ -543,8 +550,23 @@ public:
     void setUser(const UUID & user_id_, const std::optional<const std::vector<UUID>> & current_roles_ = {});
     UserPtr getUser() const;
 
+
     std::optional<UUID> getUserID() const;
     String getUserName() const;
+
+    Int32 getFragmentID()
+    {
+        return ++fragment_id_counter;
+    }
+
+    bool addQueryCoordinationMetaInfo(String cluster_name_, const std::vector<StorageID> & storages_, const std::vector<String> & sharding_keys_);
+
+    QueryCoordinationMetaInfo getQueryCoordinationMetaInfo() const
+    {
+        return query_coordination_meta;
+    }
+
+    void setQuotaKey(String quota_key_);
 
     void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();

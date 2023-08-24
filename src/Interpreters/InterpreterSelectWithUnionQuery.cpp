@@ -240,7 +240,9 @@ Block InterpreterSelectWithUnionQuery::getCurrentChildResultHeader(const ASTPtr 
         return InterpreterSelectWithUnionQuery(ast_ptr_, context, options.copy().analyze().noModify(), required_result_column_names)
             .getSampleBlock();
     else if (ast_ptr_->as<ASTSelectQuery>())
+    {
         return InterpreterSelectQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
+    }
     else
         return InterpreterSelectIntersectExceptQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
 }
@@ -251,7 +253,9 @@ InterpreterSelectWithUnionQuery::buildCurrentChildInterpreter(const ASTPtr & ast
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
         return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options, current_required_result_column_names);
     else if (ast_ptr_->as<ASTSelectQuery>())
+    {
         return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options, current_required_result_column_names);
+    }
     else
         return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, context, options);
 }
@@ -395,7 +399,8 @@ void InterpreterSelectWithUnionQuery::extendQueryLogElemImpl(QueryLogElement & e
 {
     for (const auto & interpreter : nested_interpreters)
     {
-        if (const auto * select_interpreter = dynamic_cast<const InterpreterSelectQuery *>(interpreter.get()))
+        const auto * select_interpreter = dynamic_cast<const InterpreterSelectQuery *>(interpreter.get());
+        if (select_interpreter)
         {
             auto filter = select_interpreter->getRowPolicyFilter();
             if (filter)

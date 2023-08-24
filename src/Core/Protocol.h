@@ -83,9 +83,11 @@ namespace Protocol
             ProfileEvents = 14,             /// Packet with profile events from server.
             MergeTreeAllRangesAnnounecement = 15,
             MergeTreeReadTaskRequest = 16,  /// Request from a MergeTree replica to a coordinator
-            TimezoneUpdate = 17,            /// Receive server's (session-wide) default timezone
-            MAX = TimezoneUpdate,
 
+            TimezoneUpdate = 17,            /// Receive server's (session-wide) default timezone
+
+            PipelinesReady = 18,  /// Request from a MergeTree replica to a coordinator
+            MAX = PipelinesReady,
         };
 
         /// NOTE: If the type of packet argument would be Enum, the comparison packet >= 0 && packet < 10
@@ -150,7 +152,11 @@ namespace Protocol
             IgnoredPartUUIDs = 8,           /// List of unique parts ids to exclude from query processing
             ReadTaskResponse = 9,           /// A filename to read from s3 (used in s3Cluster)
             MergeTreeReadTaskResponse = 10, /// Coordinator's decision with a modified set of mark ranges allowed to read
-            MAX = MergeTreeReadTaskResponse,
+
+            PlanFragments = 11,             ///
+            BeginExecutePipelines = 12, ///
+            ExchangeData = 13,              ///
+            MAX = ExchangeData,
         };
 
         inline const char * toString(UInt64 packet)

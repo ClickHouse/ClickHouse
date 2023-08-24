@@ -57,6 +57,12 @@ public:
                                const Settings * settings, PoolMode pool_mode,
                                AsyncCallback async_callback = {});
 
+    Entry getOne(
+        const ConnectionTimeouts & timeouts,
+        const Settings * settings,
+        const String & host_port,
+        AsyncCallback async_callback = {});
+
     /// The same as getMany(), but return std::vector<TryResult>.
     std::vector<TryResult> getManyForTableFunction(const ConnectionTimeouts & timeouts,
                                                    const Settings * settings, PoolMode pool_mode);

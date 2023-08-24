@@ -76,7 +76,9 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <QueryCoordination/Interpreters/InterpreterSelectQueryFragments.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <QueryCoordination/Interpreters/InterpreterSelectWithUnionQueryFragments.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterShowEngineQuery.h>
@@ -148,6 +150,9 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
         if (context->getSettingsRef().allow_experimental_analyzer)
             return std::make_unique<InterpreterSelectQueryAnalyzer>(query, context, options);
 
+        if (context->getSettingsRef().allow_experimental_query_coordination)
+            return std::make_unique<InterpreterSelectQueryFragments>(query, context, options);
+
         /// This is internal part of ASTSelectWithUnionQuery.
         /// Even if there is SELECT without union, it is represented by ASTSelectWithUnionQuery with single ASTSelectQuery as a child.
         return std::make_unique<InterpreterSelectQuery>(query, context, options);
@@ -158,6 +163,9 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
 
         if (context->getSettingsRef().allow_experimental_analyzer)
             return std::make_unique<InterpreterSelectQueryAnalyzer>(query, context, options);
+
+        if (context->getSettingsRef().allow_experimental_query_coordination)
+            return std::make_unique<InterpreterSelectWithUnionQueryFragments>(query, context, options);
 
         return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, options);
     }

@@ -13,6 +13,7 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/Context.h>
+#include <QueryCoordination/Interpreters/InterpreterSelectWithUnionQueryFragments.h>
 
 namespace DB
 {
@@ -21,14 +22,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
+std::shared_ptr<IInterpreterUnionOrSelectQuery> interpretSubquery(
     const ASTPtr & table_expression, ContextPtr context, size_t subquery_depth, const Names & required_source_columns)
 {
     auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth);
     return interpretSubquery(table_expression, context, required_source_columns, subquery_options);
 }
 
-std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
+std::shared_ptr<IInterpreterUnionOrSelectQuery> interpretSubquery(
     const ASTPtr & table_expression, ContextPtr context, const Names & required_source_columns, const SelectQueryOptions & options)
 {
     if (auto * expr = table_expression->as<ASTTableExpression>())
@@ -112,7 +113,13 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         subquery_options.removeDuplicates();
     }
 
-    return std::make_shared<InterpreterSelectWithUnionQuery>(query, subquery_context, subquery_options, required_source_columns);
+    /// We don't want to execute reading for subqueries in parallel
+    subquery_context->setSetting("allow_experimental_parallel_reading_from_replicas", false);
+
+    if (!context->getSettingsRef().allow_experimental_query_coordination)
+        return std::make_shared<InterpreterSelectWithUnionQuery>(query, subquery_context, subquery_options, required_source_columns);
+    else
+        return std::make_shared<InterpreterSelectWithUnionQueryFragments>(query, subquery_context, subquery_options, required_source_columns);
 }
 
 }
