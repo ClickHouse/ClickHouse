@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <type_traits>
 #include <vector>
 #include <Columns/ColumnFixedString.h>
@@ -113,11 +114,142 @@ protected:
     static constexpr size_t pad_left = integerRoundUp(PADDING_FOR_SIMD, 1);
     Arena pool;
 
+    // default implementation.
+    // The address may be not aligned. Cannot cast the pointer into a integer pointer.
+    static constexpr int DYNAMIC_STR_LEN = 0;
+    template<int len_type>
     ALWAYS_INLINE UInt64 str2Int64(const UInt8 * pos, size_t len)
     {
         assert(len <= 8);
-        UInt64 val = *reinterpret_cast<const UInt64 *>(pos);
-        return val & (-1UL) >> ((sizeof(UInt64) - len) << 3);
+        if (len == 1)
+        {
+            return static_cast<UInt64>(*reinterpret_cast<const UInt8*>(pos));
+        }
+        else if (len == 2)
+        {
+            auto res = static_cast<UInt64>(pos[0]);
+            res |= (static_cast<UInt64>(pos[1]) << 8);
+            return res;
+        }
+        else if (len == 4)
+        {
+            auto res = static_cast<UInt64>(pos[0]);
+            res |= (static_cast<UInt64>(pos[1]) << 8);
+            res |= (static_cast<UInt64>(pos[2]) << 16);
+            res |= (static_cast<UInt64>(pos[3]) << 24);
+            return res;
+        }
+        else if (len == 8)
+        {
+            auto res = static_cast<UInt64>(pos[0]);
+            res |= (static_cast<UInt64>(pos[1]) << 8);
+            res |= (static_cast<UInt64>(pos[2]) << 16);
+            res |= (static_cast<UInt64>(pos[3]) << 24);
+            res |= (static_cast<UInt64>(pos[4]) << 32);
+            res |= (static_cast<UInt64>(pos[5]) << 40);
+            res |= (static_cast<UInt64>(pos[6]) << 48);
+            res |= (static_cast<UInt64>(pos[7]) << 56);
+            return res;
+        }
+        else if (len == 3)
+        {
+            auto res = static_cast<UInt64>(pos[0]);
+            res |= (static_cast<UInt64>(pos[1]) << 8);
+            res |= (static_cast<UInt64>(pos[2]) << 16);
+            return res;
+        }
+        else if (len == 5)
+        {
+            auto res = static_cast<UInt64>(pos[0]);
+            res |= (static_cast<UInt64>(pos[1]) << 8);
+            res |= (static_cast<UInt64>(pos[2]) << 16);
+            res |= (static_cast<UInt64>(pos[3]) << 24);
+            res |= (static_cast<UInt64>(pos[4]) << 32);
+            return res;
+
+        }
+        else  if (len == 6)
+        {
+            auto res = static_cast<UInt64>(pos[0]);
+            res |= (static_cast<UInt64>(pos[1]) << 8);
+            res |= (static_cast<UInt64>(pos[2]) << 16);
+            res |= (static_cast<UInt64>(pos[3]) << 24);
+            res |= (static_cast<UInt64>(pos[4]) << 32);
+            res |= (static_cast<UInt64>(pos[5]) << 40);
+            return res;
+        }
+        else if (len == 7)
+        {
+            auto res = static_cast<UInt64>(pos[0]);
+            res |= (static_cast<UInt64>(pos[1]) << 8);
+            res |= (static_cast<UInt64>(pos[2]) << 16);
+            res |= (static_cast<UInt64>(pos[3]) << 24);
+            res |= (static_cast<UInt64>(pos[4]) << 32);
+            res |= (static_cast<UInt64>(pos[5]) << 40);
+            res |= (static_cast<UInt64>(pos[6]) << 48);
+            return res;
+        }
+        else if (!len)
+            return 0;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid string length: {}", len);
+    }
+    template<>
+    ALWAYS_INLINE UInt64 str2Int64<1>(const UInt8 * pos, size_t len[[maybe_unused]])
+    {
+        return static_cast<UInt64>(*reinterpret_cast<const UInt8*>(pos));
+    }
+    template<>
+    ALWAYS_INLINE UInt64 str2Int64<2>(const UInt8 * pos, size_t len[[maybe_unused]])
+    {
+        return static_cast<UInt64>(*reinterpret_cast<const UInt16*>(pos));
+    }
+    template<>
+    ALWAYS_INLINE UInt64 str2Int64<3>(const UInt8 * pos, size_t len[[maybe_unused]])
+    {
+        auto res = static_cast<UInt64>(pos[0]);
+        res |= (static_cast<UInt64>(pos[1]) << 8);
+        res |= (static_cast<UInt64>(pos[2]) << 16);
+        return res;
+    }
+    template<>
+    ALWAYS_INLINE UInt64 str2Int64<4>(const UInt8 * pos, size_t len[[maybe_unused]])
+    {
+        return static_cast<UInt64>(*reinterpret_cast<const UInt32*>(pos));
+    }
+    template<>
+    ALWAYS_INLINE UInt64 str2Int64<5>(const UInt8 * pos, size_t len[[maybe_unused]])
+    {
+        auto res = static_cast<UInt64>(pos[0]);
+        res |= (static_cast<UInt64>(pos[1]) << 8);
+        res |= (static_cast<UInt64>(pos[2]) << 16);
+        res |= (static_cast<UInt64>(pos[3]) << 24);
+        res |= (static_cast<UInt64>(pos[4]) << 32);
+        return res;
+    }
+    template<>
+    ALWAYS_INLINE UInt64 str2Int64<6>(const UInt8 * pos, size_t len[[maybe_unused]])
+    {
+        auto res = static_cast<UInt64>(*reinterpret_cast<const UInt16*>(pos));
+        res |= (static_cast<UInt64>(*reinterpret_cast<const UInt16*>(pos + 2)) << 16);
+        res |= (static_cast<UInt64>(*reinterpret_cast<const UInt16*>(pos + 4)) << 32);
+        return res;
+    }
+    template<>
+    ALWAYS_INLINE UInt64 str2Int64<7>(const UInt8 * pos, size_t len[[maybe_unused]])
+    {
+        auto res = static_cast<UInt64>(pos[0]);
+        res |= (static_cast<UInt64>(pos[1]) << 8);
+        res |= (static_cast<UInt64>(pos[2]) << 16);
+        res |= (static_cast<UInt64>(pos[3]) << 24);
+        res |= (static_cast<UInt64>(pos[4]) << 32);
+        res |= (static_cast<UInt64>(pos[5]) << 40);
+        res |= (static_cast<UInt64>(pos[6]) << 48);
+        return res;
+    }
+    template<>
+    ALWAYS_INLINE UInt64 str2Int64<8>(const UInt8 * pos, size_t len[[maybe_unused]])
+    {
+        return static_cast<UInt64>(*reinterpret_cast<const UInt64*>(pos));
     }
 
     ALWAYS_INLINE void emplaceValueId(const StringRef & raw_value, UInt64 value_id)
@@ -192,27 +324,28 @@ protected:
             getValueIdByMap(raw_value, value_id);
     }
 
+    template<int string_lenght_type>
     ALWAYS_INLINE void computeLocalValueIdsForOneBatch(UInt64 * value_ids, size_t n, const UInt8 * data_pos, size_t element_bytes, const UInt8 * null_map)
     {
         if (element_bytes > 8 && enable_range_mode)
         {
-            computeLocalValueIdsForOneBatchImpl<true, true>(value_ids, n, data_pos, element_bytes, null_map);
+            computeLocalValueIdsForOneBatchImpl<true, true, string_lenght_type>(value_ids, n, data_pos, element_bytes, null_map);
         }
         else if (element_bytes > 8 && !enable_range_mode)
         {
-            computeLocalValueIdsForOneBatchImpl<false, true>(value_ids, n, data_pos, element_bytes, null_map);
+            computeLocalValueIdsForOneBatchImpl<false, true, string_lenght_type>(value_ids, n, data_pos, element_bytes, null_map);
         }
         else if (element_bytes <= 8 && enable_range_mode)
         {
-            computeLocalValueIdsForOneBatchImpl<true, false>(value_ids, n, data_pos, element_bytes, null_map);
+            computeLocalValueIdsForOneBatchImpl<true, false, string_lenght_type>(value_ids, n, data_pos, element_bytes, null_map);
         }
         else
         {
-            computeLocalValueIdsForOneBatchImpl<false, false>(value_ids, n, data_pos, element_bytes, null_map);
+            computeLocalValueIdsForOneBatchImpl<false, false, string_lenght_type>(value_ids, n, data_pos, element_bytes, null_map);
         }
     }
 
-    template <bool enable_range_mode, bool is_long_value>
+    template <bool enable_range_mode, bool is_long_value, int string_lenght_type>
     ALWAYS_INLINE void computeLocalValueIdsForOneBatchImpl(UInt64 * value_ids, size_t n, const UInt8 * data_pos, size_t element_bytes, const UInt8 * null_map)
     {
         UInt64 range_delta = range_min - is_nullable;
@@ -225,7 +358,7 @@ protected:
             else
             {
                 StringRef raw_value(data_pos, element_bytes);
-                auto val = str2Int64(data_pos, element_bytes);
+                auto val = str2Int64<string_lenght_type>(data_pos, element_bytes);
                 if constexpr (enable_range_mode)
                 {
                     if (val > range_max || val < range_min)
@@ -255,14 +388,14 @@ protected:
     }
 
 #if defined(__AVX512F__) && defined(__AVX512BW__)
+    template<int string_lenght_type>
     ALWAYS_INLINE void computeLocalValueIdsForOneBatchAVX512(UInt64 * value_ids, const UInt8 * data_pos, size_t element_bytes, const UInt8 * null_map)
     {
         alignas(64) UInt64 tmp_values[8] = {0};
         const auto * local_data_pos = data_pos;
-        UInt64 str_to_int_mask = (-1UL) >>  ((sizeof(UInt64) - element_bytes) << 3);
         for (auto & tmp_value : tmp_values)
         {
-            tmp_value = *reinterpret_cast<const UInt64 *>(local_data_pos) & str_to_int_mask;
+            tmp_value = str2Int64<string_lenght_type>(local_data_pos, element_bytes);
             local_data_pos += element_bytes;
         }
         if (enable_range_mode)
@@ -389,8 +522,9 @@ private:
         value_ids_pos += 1;
         char_pos += str_lens[0];
         prev_offset = offsets[0];
+        i += 1;
 
-        for (i = 1; i + 8 < n; i += 8)
+        for (; i + 8 < n; i += 8)
         {
             bool is_all_short_string = false;
             null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
@@ -423,8 +557,8 @@ private:
                 str_lens[j] = offsets[i + j] - prev_offset;
                 prev_offset = offsets[i + j];
             }
-            innerComputeLocalValueIdsForOneBatch(tmp_value_ids, remained, char_pos, str_lens, null_map_pos);
             null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
+            innerComputeLocalValueIdsForOneBatch(tmp_value_ids, remained, char_pos, str_lens, null_map_pos);
             computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, remained);
         }
     }
@@ -490,7 +624,7 @@ private:
             else
             {
                 StringRef raw_value(data_pos, element_bytes[i] - 1);
-                auto val = str2Int64(data_pos, element_bytes[i] - 1);
+                auto val = str2Int64<DYNAMIC_STR_LEN>(data_pos, element_bytes[i] - 1);
                 if constexpr (enable_range_mode)
                 {
                     if (val > range_max || val < range_min)
@@ -523,11 +657,9 @@ private:
     {
         alignas(64) UInt64 tmp_values[8] = {0};
         const auto * local_data_pos = data_pos;
-        alignas(64) UInt64 value_masks[8] = {0};
-        buildStringToIntMask(element_bytes, value_masks);
         for (size_t i = 0; i < 8; ++i)
         {
-            tmp_values[i] = *reinterpret_cast<const UInt64 *>(local_data_pos) & value_masks[0];
+            tmp_values[i] = str2Int64<DYNAMIC_STR_LEN>(local_data_pos, element_bytes[i]);
             local_data_pos += element_bytes[i];
         }
         if (enable_range_mode)
@@ -585,6 +717,7 @@ private:
 #endif
 };
 
+template<int string_lenght_type>
 class FixedStringHashValueIdGenerator : public IHashValueIdGenerator
 {
 public:
@@ -595,7 +728,56 @@ public:
     }
 
 private:
-    void tryInitialize(const IColumn * col);
+    void tryInitialize(const IColumn * col)
+    {
+        is_nullable = col->isNullable();
+        const auto * nested_col = col;
+        if (is_nullable)
+        {
+            const auto * null_col = typeid_cast<const ColumnNullable *>(col);
+            if (!null_col)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is nullable but not ColumnNullable", col->getName());
+            nested_col = &(null_col->getNestedColumn());
+        }
+        const auto * str_col = typeid_cast<const ColumnFixedString *>(nested_col);
+        const auto & chars = str_col->getChars();
+        const UInt8 * char_pos = chars.data();
+
+        enable_range_mode = true;
+        auto str_len = str_col->getN();
+        if (str_len > 8)
+        {
+            enable_range_mode = false;
+        }
+        else
+        {
+            size_t i = 0;
+            size_t n = std::min(max_sample_rows, str_col->size());
+            for (i = 0; i < n; i++)
+            {
+                auto val = str2Int64<string_lenght_type>(char_pos, str_len);
+                if (val > range_max)
+                    range_max = val;
+                if (val < range_min)
+                    range_min = val;
+                if (range_max - range_min + 1 + is_nullable > max_distinct_values)
+                {
+                    enable_range_mode = false;
+                    break;
+                }
+                char_pos += str_len;
+            }
+        }
+        enable_range_mode = enable_range_mode && range_max > range_min && range_max - range_min + 1 + is_nullable <= max_distinct_values;
+        if (enable_range_mode)
+        {
+            allocated_value_id = range_max - range_min + 1 + is_nullable;
+        }
+        else
+        {
+            allocated_value_id = is_nullable;
+        }
+    }
 
     void computeValueIdImpl(const IColumn *col, UInt64 * value_ids) override
     {
@@ -626,12 +808,12 @@ private:
 #if defined(__AVX512F__) && defined(__AVX512BW__)
             if (str_len <= 8)
             {
-                computeLocalValueIdsForOneBatchAVX512(tmp_value_ids, char_pos, str_len, null_map_pos);
+                computeLocalValueIdsForOneBatchAVX512<string_lenght_type>(tmp_value_ids, char_pos, str_len, null_map_pos);
             }
             else
 #endif
             {
-                computeLocalValueIdsForOneBatch(tmp_value_ids, 8, char_pos, str_len, null_map_pos);
+                computeLocalValueIdsForOneBatch<string_lenght_type>(tmp_value_ids, 8, char_pos, str_len, null_map_pos);
             }
             /// update the output value_ids.
 #if defined(__AVX512F__) && defined(__AVX512BW__)
@@ -643,7 +825,7 @@ private:
             value_ids_pos += 8;
         }
         const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
-        computeLocalValueIdsForOneBatch(tmp_value_ids, n - i, char_pos, str_len, null_map_pos);
+        computeLocalValueIdsForOneBatch<string_lenght_type>(tmp_value_ids, n - i, char_pos, str_len, null_map_pos);
         computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, n - i);
 
     }
@@ -682,7 +864,7 @@ private:
                 enable_range_mode = false;
                 break;
             }
-            UInt64 val = str2Int64(data_pos, element_bytes);
+            UInt64 val = str2Int64<sizeof(ElementType)>(data_pos, element_bytes);
             if (val > range_max)
                 range_max = val;
             if (val < range_min)
@@ -694,6 +876,7 @@ private:
             }
             data_pos += element_bytes;
         }
+        enable_range_mode = enable_range_mode && range_max > range_min && range_max - range_min + 1 + is_nullable <= max_distinct_values;
         if (enable_range_mode)
         {
             allocated_value_id =  range_max - range_min + 1 + is_nullable;
@@ -730,12 +913,12 @@ private:
 #if defined(__AVX512F__) && defined(__AVX512BW__)
             if (element_bytes <= 8)
             {
-                computeLocalValueIdsForOneBatchAVX512(tmp_value_ids, data_pos, element_bytes, null_map_pos);
+                computeLocalValueIdsForOneBatchAVX512<sizeof(ElementType)>(tmp_value_ids, data_pos, element_bytes, null_map_pos);
             }
             else
 #endif
             {
-                computeLocalValueIdsForOneBatch(tmp_value_ids, 8, data_pos, element_bytes, null_map_pos);
+                computeLocalValueIdsForOneBatch<sizeof(ElementType)>(tmp_value_ids, 8, data_pos, element_bytes, null_map_pos);
             }
 #if defined(__AVX512F__) && defined(__AVX512BW__)
             computeFinalValueIdsOneBatchAVX512(tmp_value_ids, value_ids_pos);
@@ -746,7 +929,7 @@ private:
             value_ids_pos += 8;
         }
         const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
-        computeLocalValueIdsForOneBatch(tmp_value_ids, n - i, data_pos, element_bytes, null_map_pos);
+        computeLocalValueIdsForOneBatch<sizeof(ElementType)>(tmp_value_ids, n - i, data_pos, element_bytes, null_map_pos);
         computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, n - i);
     }
 };

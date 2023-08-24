@@ -19,6 +19,7 @@ namespace ErrorCodes
 void StringHashValueIdGenerator::tryInitialize(const IColumn *col)
 {
     is_nullable = col->isNullable();
+
     const auto * nested_col = col;
     if (is_nullable)
     {
@@ -36,115 +37,34 @@ void StringHashValueIdGenerator::tryInitialize(const IColumn *col)
     enable_range_mode = true;
     size_t i = 0;
     size_t n = std::min(max_sample_rows, str_col->size());
-    alignas(64) UInt64 str_lens[8] = {0};
-    for (i = 1; i + 8 < n; i += 8)
+    for (; i < n; i++)
     {
-        bool is_all_short_string = false;
-        computeOneBatchStringLength(i, offsets, str_lens, is_all_short_string);
-        for (UInt64 str_len : str_lens)
+        auto str_len = offsets[i] - prev_offset;
+        if (str_len == 1)
         {
-            if (!str_len)
-            {
-                continue;
-            }
-            if (str_len > 9)
-            {
-                enable_range_mode = false;
-                break;
-            }
-            auto val = str2Int64(char_pos, str_len - 1);
-            if (val > range_max)
-                range_max = val;
-            if (val < range_min)
-                range_min = val;
-            if (range_max - range_min + 1 + is_nullable > max_distinct_values)
-            {
-                enable_range_mode = false;
-                break;
-            }
             char_pos += str_len;
-        }
-        if (!enable_range_mode)
-            break;
-        prev_offset = offsets[i + 7];
-    }
-    if (enable_range_mode)
-    {
-        for (; i < n; i++)
-        {
-            auto str_len = offsets[i] - prev_offset;
-            if (!str_len)
-                continue;
-            if (str_len > 9)
-            {
-                enable_range_mode = false;
-                break;
-            }
-            auto val = str2Int64(char_pos, str_len - 1);
-            if (val > range_max)
-                range_max = val;
-            if (val < range_min)
-                range_min = val;
-            if (range_max - range_min + 1 + is_nullable > max_distinct_values)
-            {
-                enable_range_mode = false;
-                break;
-            }
             prev_offset = offsets[i];
-            char_pos += str_len;
+            continue;
         }
-    }
-    if (enable_range_mode)
-    {
-        allocated_value_id = range_max - range_min + 1 + is_nullable;
-    }
-    else
-    {
-        allocated_value_id = is_nullable;
-    }
-}
-
-void FixedStringHashValueIdGenerator::tryInitialize(const IColumn *col)
-{
-    is_nullable = col->isNullable();
-    const auto * nested_col = col;
-    if (is_nullable)
-    {
-        const auto * null_col = typeid_cast<const ColumnNullable *>(col);
-        if (!null_col)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is nullable but not ColumnNullable", col->getName());
-        nested_col = &(null_col->getNestedColumn());
-    }
-    const auto * str_col = typeid_cast<const ColumnFixedString *>(nested_col);
-    const auto & chars = str_col->getChars();
-    const UInt8 * char_pos = chars.data();
-
-    enable_range_mode = true;
-    auto str_len = str_col->getN();
-    if (str_len > 8)
-    {
-        enable_range_mode = false;
-    }
-    else
-    {
-        size_t i = 0;
-        size_t n = std::min(max_sample_rows, str_col->size());
-        for (i = 0; i < n ; i++)
+        if (str_len > 9)
         {
-            auto val = str2Int64(char_pos, str_len);
-            if (val > range_max)
-                range_max = val;
-            if (val < range_min)
-                range_min = val;
-            if (range_max - range_min + 1 + is_nullable > max_distinct_values)
-            {
-                enable_range_mode = false;
-                break;
-            }
-            char_pos += str_len;
+            enable_range_mode = false;
+            break;
         }
+        auto val = str2Int64<DYNAMIC_STR_LEN>(char_pos, str_len - 1);
+        if (val > range_max)
+            range_max = val;
+        if (val < range_min)
+            range_min = val;
+        if (range_max - range_min + 1 + is_nullable > max_distinct_values)
+        {
+            enable_range_mode = false;
+            break;
+        }
+        prev_offset = offsets[i];
+        char_pos += str_len;
     }
-
+    enable_range_mode = enable_range_mode && range_max > range_min && range_max - range_min + 1 + is_nullable <= max_distinct_values;
     if (enable_range_mode)
     {
         allocated_value_id = range_max - range_min + 1 + is_nullable;
@@ -153,7 +73,6 @@ void FixedStringHashValueIdGenerator::tryInitialize(const IColumn *col)
     {
         allocated_value_id = is_nullable;
     }
-
 }
 
 HashValueIdGeneratorFactory & HashValueIdGeneratorFactory::instance()
@@ -189,7 +108,24 @@ std::unique_ptr<IHashValueIdGenerator> HashValueIdGeneratorFactory::getGenerator
     }
     else if (which_type.isFixedString())
     {
-        return std::make_unique<FixedStringHashValueIdGenerator>(col, state_, max_distinct_values_);
+        const auto * fixed_str_col = typeid_cast<const ColumnFixedString *>(nested_col);
+        if (fixed_str_col->getN() == 1)
+            return std::make_unique<FixedStringHashValueIdGenerator<1>>(col, state_, max_distinct_values_);
+        else if (fixed_str_col->getN() == 2)
+            return std::make_unique<FixedStringHashValueIdGenerator<2>>(col, state_, max_distinct_values_);
+        else if (fixed_str_col->getN() == 3)
+            return std::make_unique<FixedStringHashValueIdGenerator<3>>(col, state_, max_distinct_values_);
+        else if (fixed_str_col->getN() == 4)
+            return std::make_unique<FixedStringHashValueIdGenerator<4>>(col, state_, max_distinct_values_);
+        else if (fixed_str_col->getN() == 5)
+            return std::make_unique<FixedStringHashValueIdGenerator<5>>(col, state_, max_distinct_values_);
+        else if (fixed_str_col->getN() == 6)
+            return std::make_unique<FixedStringHashValueIdGenerator<6>>(col, state_, max_distinct_values_);
+        else if (fixed_str_col->getN() == 7)
+            return std::make_unique<FixedStringHashValueIdGenerator<7>>(col, state_, max_distinct_values_);
+        else if (fixed_str_col->getN() == 8)
+            return std::make_unique<FixedStringHashValueIdGenerator<8>>(col, state_, max_distinct_values_);
+        return std::make_unique<FixedStringHashValueIdGenerator<0>>(col, state_, max_distinct_values_);
     }
     else if (const auto * low_card_col = typeid_cast<const ColumnLowCardinality *>(col))
     {
