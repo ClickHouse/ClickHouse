@@ -50,12 +50,15 @@ void MergeTreeDataPartChecksum::checkSize(const IDataPartStorage & storage, cons
     if (name.ends_with(".gin_dict") || name.ends_with(".gin_post") || name.ends_with(".gin_seg") || name.ends_with(".gin_sid"))
         return;
 
+    // This is a projection, no need to check its size.
+    if (name.ends_with(".proj"))
+        return;
+
     if (!storage.exists(name))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "{} doesn't exist", fs::path(storage.getRelativePath()) / name);
 
-    // This is a projection, no need to check its size.
     if (storage.isDirectory(name))
-        return;
+        throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART, "Directory {} in data part is not a projection", fs::path(storage.getRelativePath()) / name);
 
     UInt64 size = storage.getFileSize(name);
     if (size != file_size)
