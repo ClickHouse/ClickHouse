@@ -2112,7 +2112,8 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     const std::string & filter_name,
     bool can_remove_filter,
     const Names & available_inputs,
-    const ColumnsWithTypeAndName & all_inputs)
+    const ColumnsWithTypeAndName & all_inputs,
+    bool split_result_can_be_true_on_default)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
@@ -2167,6 +2168,16 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     auto actions = cloneActionsForConjunction(conjunction.allowed, all_inputs);
     if (!actions)
         return nullptr;
+
+    if (!split_result_can_be_true_on_default)
+    {
+        Block default_header;
+        for (const auto * input : actions->getInputs())
+            default_header.insert({input->result_type->createColumnConstWithDefaultValue(1), input->result_type, input->result_name});
+        default_header = actions->updateHeader(std::move(default_header));
+        if (default_header.getByPosition(0).column->getBool(0))
+            return nullptr;
+    }
 
     /// Now, when actions are created, update the current DAG.
 
