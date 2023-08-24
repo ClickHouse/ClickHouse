@@ -68,13 +68,13 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
 {
     if (auto mark_cache = getContext()->getMarkCache())
     {
-        new_values["MarkCacheBytes"] = { mark_cache->weight(), "Total size of mark cache in bytes" };
+        new_values["MarkCacheBytes"] = { mark_cache->sizeInBytes(), "Total size of mark cache in bytes" };
         new_values["MarkCacheFiles"] = { mark_cache->count(), "Total number of mark files cached in the mark cache" };
     }
 
     if (auto uncompressed_cache = getContext()->getUncompressedCache())
     {
-        new_values["UncompressedCacheBytes"] = { uncompressed_cache->weight(),
+        new_values["UncompressedCacheBytes"] = { uncompressed_cache->sizeInBytes(),
             "Total size of uncompressed cache in bytes. Uncompressed cache does not usually improve the performance and should be mostly avoided." };
         new_values["UncompressedCacheCells"] = { uncompressed_cache->count(),
             "Total number of entries in the uncompressed cache. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided." };
@@ -82,13 +82,13 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
 
     if (auto index_mark_cache = getContext()->getIndexMarkCache())
     {
-        new_values["IndexMarkCacheBytes"] = { index_mark_cache->weight(), "Total size of mark cache for secondary indices in bytes." };
+        new_values["IndexMarkCacheBytes"] = { index_mark_cache->sizeInBytes(), "Total size of mark cache for secondary indices in bytes." };
         new_values["IndexMarkCacheFiles"] = { index_mark_cache->count(), "Total number of mark files cached in the mark cache for secondary indices." };
     }
 
     if (auto index_uncompressed_cache = getContext()->getIndexUncompressedCache())
     {
-        new_values["IndexUncompressedCacheBytes"] = { index_uncompressed_cache->weight(),
+        new_values["IndexUncompressedCacheBytes"] = { index_uncompressed_cache->sizeInBytes(),
             "Total size of uncompressed cache in bytes for secondary indices. Uncompressed cache does not usually improve the performance and should be mostly avoided." };
         new_values["IndexUncompressedCacheCells"] = { index_uncompressed_cache->count(),
             "Total number of entries in the uncompressed cache for secondary indices. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided." };
@@ -104,7 +104,7 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
 
     if (auto query_cache = getContext()->getQueryCache())
     {
-        new_values["QueryCacheBytes"] = { query_cache->weight(), "Total size of the query cache in bytes." };
+        new_values["QueryCacheBytes"] = { query_cache->sizeInBytes(), "Total size of the query cache in bytes." };
         new_values["QueryCacheEntries"] = { query_cache->count(), "Total number of entries in the query cache." };
     }
 
@@ -136,7 +136,7 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
 #if USE_EMBEDDED_COMPILER
     if (auto * compiled_expression_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
     {
-        new_values["CompiledExpressionCacheBytes"] = { compiled_expression_cache->weight(),
+        new_values["CompiledExpressionCacheBytes"] = { compiled_expression_cache->sizeInBytes(),
             "Total bytes used for the cache of JIT-compiled code." };
         new_values["CompiledExpressionCacheCount"] = { compiled_expression_cache->count(),
             "Total entries in the cache of JIT-compiled code." };
