@@ -12,6 +12,7 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int DIRECTORY_ALREADY_EXISTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -227,12 +228,31 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
         moving_part.part->assertOnDisk();
         String path_to_clone = fs::path(data->getRelativeDataPath()) / MergeTreeData::MOVING_DIR_NAME / "";
         String relative_path = part->getDataPartStorage().getPartDirectory();
-        if (disk->exists(path_to_clone + relative_path))
+
+        // Initial flow was to issue a warning if target directory exists.
+        // A new solution was issued in 23.7 and backported to 23.3.10 -- throw an exception. Both are bad
+        // It's generally a flaw in zero copy replication, but
+        // - Throwing an exception makes the replication non-usable
+        // - Rewriting local metadata directory may create orphaned data on s3
+        // So, a hack is presented -- if metadata matches, issue a warning, throw otherwise
+        // This isn't the best solution, and it should be removed once zero copy replication is fixed
+        if (disk->exists(path_to_clone + relative_path)) [[unlikely]]
         {
-            throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS,
-                "Cannot clone part {} from '{}' to '{}': path '{}' already exists",
-                part->name, part->getDataPartStorage().getDiskName(), disk->getName(),
+            LOG_WARNING(log, "Path {} metadata already exists. Will try to compare checksums",
                 fullPath(disk, path_to_clone + relative_path));
+
+            MergeTreeDataPartChecksums existing_checksums;
+            ReadBufferFromFile buf {fs::path(path_to_clone) / relative_path / ""};
+            if (!existing_checksums.read(buf))
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Cannot clone part {} from '{}' to '{}': path '{}' already exists"
+                    "and checksums are corrupted",
+                    part->name, part->getDataPartStorage().getDiskName(), disk->getName(),
+                    fullPath(disk, path_to_clone + relative_path));
+
+            part->checksums.checkEqual(existing_checksums, /*don't uncompress data*/false);
+            // Easier to re-fetch than to re-init part storage from existing files
+            disk->removeRecursive(fs::path(path_to_clone) / relative_path / "");
         }
 
         disk->createDirectories(path_to_clone);
