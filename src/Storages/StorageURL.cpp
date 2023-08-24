@@ -28,6 +28,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
 #include <Common/ProfileEvents.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
@@ -160,6 +161,26 @@ namespace
     StorageURLSource::FailoverOptions getFailoverOptions(const String & uri, size_t max_addresses)
     {
         return parseRemoteDescription(uri, 0, uri.size(), '|', max_addresses);
+    }
+
+    auto proxyConfigurationToPocoProxyConfiguration(const ProxyConfiguration & proxy_configuration)
+    {
+        Poco::Net::HTTPClientSession::ProxyConfig poco_proxy_config;
+
+        poco_proxy_config.host = proxy_configuration.host;
+        poco_proxy_config.port = proxy_configuration.port;
+        poco_proxy_config.protocol = ProxyConfiguration::protocolToString(proxy_configuration.protocol);
+
+        return poco_proxy_config;
+    }
+
+    auto getProxyConfiguration(const std::string & protocol_string)
+    {
+        auto protocol = protocol_string == "https" ? ProxyConfigurationResolver::Protocol::HTTPS
+                                             : ProxyConfigurationResolver::Protocol::HTTP;
+        auto proxy_config = ProxyConfigurationResolverProvider::get(protocol)->resolve();
+
+        return proxyConfigurationToPocoProxyConfiguration(proxy_config);
     }
 }
 
@@ -402,6 +423,8 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
         const auto settings = context->getSettings();
 
+        auto proxy_config = getProxyConfiguration(http_method);
+
         try
         {
             auto res = std::make_unique<ReadWriteBufferFromHTTP>(
@@ -417,7 +440,9 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
                 &context->getRemoteHostFilter(),
                 delay_initialization,
                 /* use_external_buffer */ false,
-                /* skip_url_not_found_error */ skip_url_not_found_error);
+                /* skip_url_not_found_error */ skip_url_not_found_error,
+                /* file_info */ std::nullopt,
+                proxy_config);
 
             if (context->getSettingsRef().engine_url_skip_empty_files && res->eof() && option != std::prev(end))
             {
@@ -464,10 +489,17 @@ StorageURLSink::StorageURLSink(
     std::string content_type = FormatFactory::instance().getContentType(format, context, format_settings);
     std::string content_encoding = toContentEncodingName(compression_method);
 
+    auto proxy_config = getProxyConfiguration(http_method);
+
+    auto write_buffer = std::make_unique<WriteBufferFromHTTP>(
+        Poco::URI(uri), http_method, content_type, content_encoding, headers, timeouts, DBMS_DEFAULT_BUFFER_SIZE, proxy_config
+    );
+
     write_buf = wrapWriteBufferWithCompressionMethod(
-        std::make_unique<WriteBufferFromHTTP>(Poco::URI(uri), http_method, content_type, content_encoding, headers, timeouts),
+        std::move(write_buffer),
         compression_method,
-        3);
+        3
+    );
     writer = FormatFactory::instance().getOutputFormat(format, *write_buf, sample_block, context, format_settings);
 }
 
@@ -948,8 +980,12 @@ std::optional<time_t> IStorageURLBase::getLastModificationTime(
 
     try
     {
+        auto uri = Poco::URI(url);
+
+        auto proxy_config = getProxyConfiguration(uri.getScheme());
+
         ReadWriteBufferFromHTTP buf(
-            Poco::URI(url),
+            uri,
             Poco::Net::HTTPRequest::HTTP_GET,
             {},
             getHTTPTimeouts(context),
@@ -961,7 +997,9 @@ std::optional<time_t> IStorageURLBase::getLastModificationTime(
             &context->getRemoteHostFilter(),
             true,
             false,
-            false);
+            false,
+            std::nullopt,
+            proxy_config);
 
         return buf.getLastModificationTime();
     }
