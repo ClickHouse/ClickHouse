@@ -245,7 +245,7 @@ namespace
             }
             user->auth_data.setSshKeys(std::move(keys));
 #else
-            throw Exception("SSH is disabled, because ClickHouse is built without OpenSSL", ErrorCodes::SUPPORT_IS_DISABLED);
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
 #endif
         }
 
