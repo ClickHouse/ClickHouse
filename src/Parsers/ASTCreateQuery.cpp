@@ -442,7 +442,9 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS"
                       << settings.nl_or_ws
                       << (comment ? "(" : "") << (settings.hilite ? hilite_none : "");
-        select->formatImpl(settings, state, frame);
+        FormatSettings settings_ = settings;
+        settings_.always_quote_identifiers = true;
+        select->formatImpl(settings_, state, frame);
         settings.ostr << (settings.hilite ? hilite_keyword : "") << (comment ? ")" : "") << (settings.hilite ? hilite_none : "");
     }
 
