@@ -247,7 +247,8 @@ StorageURLSource::StorageURLSource(
     const SelectQueryInfo & query_info,
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
-    bool glob_url)
+    bool glob_url,
+    bool need_only_count_)
     : ISource(info.source_header, false)
     , name(std::move(name_))
     , columns_description(info.columns_description)
@@ -255,6 +256,7 @@ StorageURLSource::StorageURLSource(
     , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
     , uri_iterator(uri_iterator_)
+    , need_only_count(need_only_count_)
 {
     auto headers = getHeaders(headers_);
 
@@ -303,11 +305,14 @@ StorageURLSource::StorageURLSource(
             context,
             max_block_size,
             format_settings,
-            max_parsing_threads,
-            /* max_download_threads= */ std::nullopt,
-            /* is_remote_fs= */ true,
+            need_only_count ? 1 : max_parsing_threads,
+            /*max_download_threads*/ std::nullopt,
+            /* is_remote_fs */ true,
             compression_method);
         input_format->setQueryInfo(query_info, context);
+
+        if (need_only_count)
+            input_format->needOnlyCount();
 
         QueryPipelineBuilder builder;
         builder.init(Pipe(input_format));
@@ -754,6 +759,8 @@ Pipe IStorageURLBase::read(
     }
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+        && local_context->getSettingsRef().optimize_count_from_files;
 
     Pipes pipes;
     pipes.reserve(num_streams);
@@ -785,7 +792,8 @@ Pipe IStorageURLBase::read(
             query_info,
             headers,
             params,
-            is_url_with_globs));
+            is_url_with_globs,
+            need_only_count));
     }
 
     return Pipe::unitePipes(std::move(pipes));

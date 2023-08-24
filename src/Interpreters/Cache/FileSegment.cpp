@@ -882,8 +882,15 @@ void FileSegment::setDetachedState(const FileSegmentGuard::Lock & lock)
     key_metadata.reset();
     cache = nullptr;
     queue_iterator = nullptr;
-    cache_writer.reset();
-    remote_file_reader.reset();
+    try
+    {
+        cache_writer.reset();
+        remote_file_reader.reset();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)

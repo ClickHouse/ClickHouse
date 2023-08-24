@@ -131,6 +131,7 @@ public:
         const String & version_id,
         std::shared_ptr<IIterator> file_iterator_,
         size_t max_parsing_threads,
+        bool need_only_count_,
         std::optional<SelectQueryInfo> query_info);
 
     ~StorageS3Source() override;
@@ -219,6 +220,7 @@ private:
     NamesAndTypesList requested_virtual_columns;
     std::shared_ptr<IIterator> file_iterator;
     size_t max_parsing_threads = 1;
+    bool need_only_count;
 
     Poco::Logger * log = &Poco::Logger::get("StorageS3Source");
 
