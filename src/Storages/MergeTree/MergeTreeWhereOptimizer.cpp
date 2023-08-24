@@ -10,7 +10,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/misc.h>
-#include "Common/logger_useful.h"
 #include <Common/typeid_cast.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/ActionsDAG.h>

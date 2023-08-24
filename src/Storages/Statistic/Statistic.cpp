@@ -131,11 +131,6 @@ Float64 ConditionEstimator::estimateSelectivity(const RPNBuilderTreeNode & node)
 
 StatisticPtr TDigestCreator(const StatisticDescription & stat)
 {
-    if (stat.column_names.size() != 1)
-    {
-        /// throw
-    }
-
     /// TODO: check column data types.
     return StatisticPtr(new TDigestStatistic(stat));
 }

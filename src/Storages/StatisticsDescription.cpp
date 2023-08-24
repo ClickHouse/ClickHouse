@@ -41,14 +41,18 @@ StatisticDescription StatisticDescription::getStatisticFromAST(const ASTPtr & de
     stat.type = Poco::toLower(stat_definition->type->name);
 
     ASTPtr expr_list = extractKeyExpressionList(stat_definition->columns->clone());
+    if (expr_list->children.size() != 1)
+    {
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Statistic must contain exactly one column");
+    }
     for (const auto & ast : expr_list->children)
     {
         ASTIdentifier* ident = ast->as<ASTIdentifier>();
         if (!ident || !columns.hasPhysical(ident->getColumnName()))
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Incorrect column");
         const auto & column = columns.get(ident->getColumnName());
-        stat.column_names.push_back(column.name);
-        stat.data_types.push_back(column.type);
+        stat.column_name = column.name;
+        stat.data_type = column.type;
     }
 
     UNUSED(context);
@@ -60,7 +64,8 @@ StatisticDescription::StatisticDescription(const StatisticDescription & other)
     : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
     , name(other.name)
     , type(other.type)
-    , column_names(other.column_names)
+    , column_name(other.column_name)
+    , data_type(other.data_type)
 {
 }
 
@@ -76,7 +81,8 @@ StatisticDescription & StatisticDescription::operator=(const StatisticDescriptio
 
     name = other.name;
     type = other.type;
-    column_names = other.column_names;
+    column_name = other.column_name;
+    data_type = other.data_type;
 
     return *this;
 }

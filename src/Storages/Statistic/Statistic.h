@@ -45,7 +45,7 @@ public:
 
     const String & columnName() const
     {
-        return statistics.column_names[0];
+        return statistics.column_name;
     }
     /// const String& type() const = 0;
     /// virtual StatisticType statisticType() const = 0;
@@ -93,7 +93,7 @@ public:
 
     void update(const Block & block) override
     {
-        const auto & column_with_type = block.getByName(statistics.column_names[0]);
+        const auto & column_with_type = block.getByName(statistics.column_name);
         size_t size = block.rows();
 
         for (size_t i = 0; i < size; ++i)

@@ -716,8 +716,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (it == std::cend(statistics_desc))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statistic: {}", command.statistic_name);
 
-            for (const auto & column : it->column_names)
-                dependencies.emplace(column, ColumnDependency::STATISTIC);
+            dependencies.emplace(it->column_name, ColumnDependency::STATISTIC);
             materialized_statistics.emplace(command.statistic_name);
         }
         else if (command.type == MutationCommand::MATERIALIZE_PROJECTION)
