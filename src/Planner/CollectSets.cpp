@@ -51,11 +51,16 @@ public:
         auto * second_argument_table = in_second_argument->as<TableNode>();
         StorageSet * storage_set = second_argument_table != nullptr ? dynamic_cast<StorageSet *>(second_argument_table->getStorage().get()) : nullptr;
 
+        auto set_key = in_second_argument->getTreeHash();
+        /// For some cases we will get prepared set by AST Hash.
+        /// For example: queries disabling query_plan_optimize_primary_key or queries on StorageSystemNumbers.
+        auto ast_set_key = in_second_argument->toAST({.fully_qualified_identifiers = false})->getTreeHash();
+
         if (storage_set)
         {
             /// Handle storage_set as ready set.
-            auto set_key = in_second_argument->getTreeHash();
             sets.addFromStorage(set_key, storage_set->getSet());
+            sets.addFromStorage(ast_set_key, storage_set->getSet());
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
@@ -71,18 +76,17 @@ public:
                 set_element_types = left_tuple_type->getElements();
 
             set_element_types = Set::getElementTypes(std::move(set_element_types), settings.transform_null_in);
-            auto set_key = in_second_argument->getTreeHash();
 
             if (sets.findTuple(set_key, set_element_types))
                 return;
 
-            sets.addFromTuple(set_key, std::move(set), settings);
+            sets.addFromTuple(set_key, set, settings);
+            sets.addFromTuple(ast_set_key, set, settings);
         }
         else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
             in_second_argument_node_type == QueryTreeNodeType::UNION ||
             in_second_argument_node_type == QueryTreeNodeType::TABLE)
         {
-            auto set_key = in_second_argument->getTreeHash();
             if (sets.findSubquery(set_key))
                 return;
 
@@ -116,7 +120,8 @@ public:
                 subquery_to_execute = std::move(subquery_for_table);
             }
 
-            sets.addFromSubquery(set_key, std::move(subquery_to_execute), settings);
+            sets.addFromSubquery(set_key, subquery_to_execute, settings);
+            sets.addFromSubquery(ast_set_key, subquery_to_execute, settings);
         }
         else
         {
