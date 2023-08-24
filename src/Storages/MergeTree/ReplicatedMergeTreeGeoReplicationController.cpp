@@ -21,10 +21,9 @@ void ReplicatedMergeTreeGeoReplicationController::onLeader()
     auto lease_path = fs::path(storage.getZooKeeperPath()) / "regions" / region / "leader_lease";
     current_zookeeper->createAncestors(lease_path);
     leader_lease_holder = zkutil::EphemeralNodeHolder::create(lease_path, *current_zookeeper, storage.getReplicaName());
-    LOG_INFO(storage.log.load(), "Replica {} becomes leader for region {}", storage.getReplicaName(), region);
 }
 
-void ReplicatedMergeTreeGeoReplicationController::resetCurrentTerm()
+void ReplicatedMergeTreeGeoReplicationController::exitLeaderElection()
 {
     try
     {
@@ -62,10 +61,10 @@ void ReplicatedMergeTreeGeoReplicationController::enterLeaderElection()
             storage.getContext()->getSchedulePool(),
             election_path,
             *current_zookeeper,
+            [this]() { leader_lease_holder.reset(); },
             [this]() { return onLeader(); },
             "",
-            storage.getSettings()->geo_replication_control_leader_election_period_ms,
-            false);
+            storage.getSettings()->geo_replication_control_leader_election_period_ms);
     }
     catch (...)
     {
@@ -76,7 +75,7 @@ void ReplicatedMergeTreeGeoReplicationController::enterLeaderElection()
 
 void ReplicatedMergeTreeGeoReplicationController::startLeaderElection()
 {
-    resetCurrentTerm();
+    exitLeaderElection();
     enterLeaderElection();
 }
 
@@ -117,8 +116,6 @@ namespace zkutil
 class LeaderElection
 {
 public:
-    using LeadershipHandler = std::function<void()>;
-
     /** handler is called when this instance become leader.
       *
       * identifier - if not empty, must uniquely (within same path) identify participant of leader election.
@@ -129,17 +126,17 @@ public:
         DB::BackgroundSchedulePool & pool_,
         const std::string & path_,
         ZooKeeper & zookeeper_,
-        LeadershipHandler handler_,
+        std::function<void()> before_election_,
+        std::function<void()> on_leader_,
         const std::string & identifier_,
-        int time_wait_ms_,
-        bool allow_multiple_leaders_)
+        int time_wait_ms_)
         : pool(pool_)
         , path(path_)
         , zookeeper(zookeeper_)
-        , handler(std::move(handler_))
-        , identifier(allow_multiple_leaders_ ? (identifier_ + suffix) : identifier_)
+        , before_election(std::move(before_election_))
+        , on_leader(std::move(on_leader_))
+        , identifier(identifier_)
         , time_wait_ms(time_wait_ms_ > 0 ? time_wait_ms_ : 10 * 1000)
-        , allow_multiple_leaders(allow_multiple_leaders_)
         , log_name("LeaderElection (" + path + ")")
         , log(&Poco::Logger::get(log_name))
     {
@@ -159,15 +156,14 @@ public:
     ~LeaderElection() { releaseNode(); }
 
 private:
-    static inline constexpr auto suffix = " (multiple leaders Ok)";
     DB::BackgroundSchedulePool & pool;
     DB::BackgroundSchedulePool::TaskHolder task;
     std::string path;
     ZooKeeper & zookeeper;
-    LeadershipHandler handler;
+    std::function<void()> before_election;
+    std::function<void()> on_leader;
     std::string identifier;
     int time_wait_ms;
-    bool allow_multiple_leaders;
     std::string log_name;
     Poco::Logger * log;
 
@@ -179,7 +175,7 @@ private:
     void createNode()
     {
         shutdown_called = false;
-        node = EphemeralNodeHolder::createSequential(fs::path(path) / "leader_election-", zookeeper, identifier);
+        node = EphemeralNodeHolder::createSequential(fs::path(path) / "leader_election-", zookeeper);
 
         std::string node_path = node->getPath();
         node_name = node_path.substr(node_path.find_last_of('/') + 1);
@@ -200,6 +196,7 @@ private:
         try
         {
             LOG_INFO(log, "Running leader election");
+            before_election(); /// Allow to reset current state before starting a new term
             Strings children = zookeeper.getChildren(path);
             std::sort(children.begin(), children.end());
 
@@ -209,27 +206,14 @@ private:
 
             String value = zookeeper.get(path + "/" + children.front());
 
-            if (allow_multiple_leaders)
+            if (my_node_it == children.begin())
             {
-                if (value.ends_with(suffix))
-                {
-                    handler();
-                    return;
-                }
-
-                if (my_node_it == children.begin())
-                    throw Poco::Exception("Assertion failed in LeaderElection");
-            }
-            else
-            {
-                if (my_node_it == children.begin())
-                {
-                    handler();
-                    LOG_INFO(log, "Become leader");
-                    return;
-                }
+                on_leader();
+                LOG_INFO(log, "{} becomes leader", identifier);
+                return;
             }
 
+            LOG_INFO(log, "{} becomes follower", identifier);
             /// Watch for the node in front of us.
             --my_node_it;
             std::string get_path_value;

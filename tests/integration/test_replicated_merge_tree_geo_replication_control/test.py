@@ -64,16 +64,11 @@ def test_follower_only_fetch_from_leader(start_cluster):
         apac2.query("SYSTEM STOP FETCHES us_table")
         apac1.query("SYSTEM START FETCHES us_table")
         apac1.query("SYSTEM SYNC REPLICA us_table LIGHTWEIGHT")
+        us3.query("SYSTEM STOP REPLICATED SENDS")
 
         # restart apac1, so apac2 should becomes leader and will start fetching from apac1
         cluster.restart_instance(apac1)
 
-        # limit send speed from us3 to 1 bytes/s, so no replica can successfully fetch from it
-        us3.query(
-            "ALTER TABLE us_table MODIFY SETTING max_replicated_sends_network_bandwidth = 1"
-        )
-
-        us3_send_speed = []
         apac2.query("SYSTEM START FETCHES us_table")
 
         time.sleep(5)
@@ -83,7 +78,9 @@ def test_follower_only_fetch_from_leader(start_cluster):
         count = int(apac2.query("SELECT count() FROM us_table"))
         assert (
             count == count_ref
-        ), "Follower should start fetching from any replica if leader timeout, but table on follower is empty"
+        ), "Apac2 should becomes leader and fetches from apac1, but table on apac2 only has {} rows compared to {} rows on apac1".format(
+            count_ref, count
+        )
 
     finally:
         for node in [apac1, apac2, us3]:
@@ -97,7 +94,7 @@ def test_follower_fetch_from_leader_timeout(start_cluster):
         ):  # apac1 will become leader of APAC
             node.query(
                 f"CREATE TABLE us_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/us_table', '{i}') ORDER BY tuple() PARTITION BY key "
-                + f"SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 1;"
+                + f"SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 2;"
             )
             time.sleep(1)
 
@@ -151,7 +148,7 @@ def test_all_nodes_have_data_when_zookeeper_restart(start_cluster):
                 )
                 == 0
                 and int(
-                    apac1.query("SELECT count() FROM system.replicas WHERE is_readonly")
+                    apac2.query("SELECT count() FROM system.replicas WHERE is_readonly")
                 )
                 == 0
             ):
@@ -194,12 +191,10 @@ def test_merged_cannot_fetch_across_regions(start_cluster):
 
         apac1.query("ALTER TABLE us_table MODIFY SETTING always_fetch_merged_part = 1")
         apac2.query("ALTER TABLE us_table MODIFY SETTING always_fetch_merged_part = 1")
-        us3.query("SYSTEM STOP MERGES us_table")
 
         for i in range(5):
             us3.query("INSERT INTO us_table SELECT 1, toString({})".format(i))
 
-        us3.query("SYSTEM START MERGES us_table")
         us3.query("OPTIMIZE TABLE us_table FINAL")
 
         count_ref = int(us3.query("SELECT count() FROM us_table"))

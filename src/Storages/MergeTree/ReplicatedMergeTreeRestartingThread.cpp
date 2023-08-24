@@ -138,12 +138,6 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
 
     setNotReadonly();
 
-    /// Start regional election if needed
-    if (storage.geo_replication_controller.isValid())
-    {
-        storage.getZooKeeper()->createOrUpdate(fs::path(storage.getZooKeeperPath()) / "replicas" / storage.getReplicaName() / "region", storage.geo_replication_controller.getRegion(), zkutil::CreateMode::Ephemeral);
-        storage.geo_replication_controller.startLeaderElection();
-    }
 
     /// Start queue processing
     storage.background_operations_assignee.start();
@@ -154,6 +148,13 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.cleanup_thread.start();
     storage.async_block_ids_cache.start();
     storage.part_check_thread.start();
+
+    /// Start regional election if needed
+    if (storage.geo_replication_controller.isValid())
+    {
+        storage.getZooKeeper()->createOrUpdate(fs::path(storage.getZooKeeperPath()) / "replicas" / storage.getReplicaName() / "region", storage.geo_replication_controller.getRegion(), zkutil::CreateMode::Ephemeral);
+        storage.geo_replication_controller.startLeaderElection();
+    }
 
     LOG_DEBUG(log, "Table started successfully");
     return true;

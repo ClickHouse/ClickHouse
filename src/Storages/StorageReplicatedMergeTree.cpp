@@ -2610,7 +2610,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
     Strings replicas = getAllReplicasPossiblyWithRegionAwareness(
         geo_replication_controller,
         zookeeper,
-        entry.source_replica,
+        entry.source_shard,
         false);
     String replica;
     for (const String & candidate : replicas)

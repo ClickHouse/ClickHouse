@@ -47,7 +47,7 @@ class ReplicatedMergeTreeGeoReplicationController
 {
 public:
     explicit ReplicatedMergeTreeGeoReplicationController(StorageReplicatedMergeTree & storage_);
-    ~ReplicatedMergeTreeGeoReplicationController() { resetCurrentTerm(); }
+    ~ReplicatedMergeTreeGeoReplicationController() { exitLeaderElection(); }
 
     bool isValid() const { return !region.empty(); }
 
@@ -67,7 +67,7 @@ private:
     zkutil::EphemeralNodeHolderPtr leader_lease_holder;
 
     void onLeader();
-    void resetCurrentTerm();
+    void exitLeaderElection();
     void enterLeaderElection();
 };
 
