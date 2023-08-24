@@ -544,6 +544,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
         auto table_expression_query_info = select_query_info;
         table_expression_query_info.table_expression = table_expression;
+        table_expression_query_info.filter_actions_dag = table_expression_data.getFilterActions();
 
         size_t max_streams = settings.max_threads;
         size_t max_threads_execute_query = settings.max_threads;
