@@ -351,7 +351,7 @@ struct Checker
 ;
 
 
-#if !defined(USE_MUSL)
+#if !defined(FUZZING_MODE) && !defined(USE_MUSL)
 /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
 void checkHarmfulEnvironmentVariables(char ** argv)
 {
