@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class StorageDummy final : public IStorage
+class StorageDummy : public IStorage
 {
 public:
     StorageDummy(const StorageID & table_id_, const ColumnsDescription & columns_, ColumnsDescription object_columns_ = {});
@@ -46,7 +46,7 @@ private:
     const ColumnsDescription object_columns;
 };
 
-class ReadFromDummy final : public SourceStepWithFilter
+class ReadFromDummy : public SourceStepWithFilter
 {
 public:
     explicit ReadFromDummy(const StorageDummy & storage_,

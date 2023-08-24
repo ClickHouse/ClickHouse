@@ -94,7 +94,7 @@ Expression ((Projection + Before ORDER BY))
         Name: annoy_index
         Description: annoy GRANULARITY 2
         Parts: 0/1
-        Granules: 2/4
+        Granules: 0/4
 ORDER BY type, L2Distance, check that index is used
 Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
@@ -110,7 +110,7 @@ Expression (Projection)
             Name: annoy_index
             Description: annoy GRANULARITY 2
             Parts: 1/1
-            Granules: 4/4
+            Granules: 2/4
 --- Test with Array, GRANULARITY = 4, index_granularity = 4 ---
 WHERE type, L2Distance, check that index is used
 Expression ((Projection + Before ORDER BY))
@@ -125,7 +125,7 @@ Expression ((Projection + Before ORDER BY))
         Name: annoy_index
         Description: annoy GRANULARITY 4
         Parts: 0/1
-        Granules: 3/4
+        Granules: 0/4
 ORDER BY type, L2Distance, check that index is used
 Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
@@ -141,7 +141,7 @@ Expression (Projection)
             Name: annoy_index
             Description: annoy GRANULARITY 4
             Parts: 1/1
-            Granules: 4/4
+            Granules: 1/4
 --- Test correctness of Annoy index with > 1 mark
 1	[1,0,0,0]
 9000	[9000,0,0,0]
