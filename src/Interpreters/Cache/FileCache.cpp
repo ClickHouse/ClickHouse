@@ -44,6 +44,7 @@ size_t roundUpToMultiple(size_t num, size_t multiple)
 {
     return roundDownToMultiple(num + multiple - 1, multiple);
 }
+
 }
 
 namespace DB
@@ -176,31 +177,6 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
                         "Cannot have zero size downloaded file segments. {}",
                         file_segment->getInfoForLog());
                 }
-
-#ifndef NDEBUG
-                /**
-                * Check that in-memory state of the cache is consistent with the state on disk.
-                * Check only in debug build, because such checks can be done often and can be quite
-                * expensive compared to overall query execution time.
-                */
-
-                fs::path path = file_segment->getPathInLocalCache();
-                if (!fs::exists(path))
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "File path does not exist, but file has DOWNLOADED state. {}",
-                        file_segment->getInfoForLog());
-                }
-
-                if (fs::file_size(path) == 0)
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Cannot have zero size downloaded file segments. {}",
-                        file_segment->getInfoForLog());
-                }
-#endif
             }
         }
         else
@@ -1045,7 +1021,7 @@ void FileCache::deactivateBackgroundOperations()
         cleanup_thread->join();
 }
 
-FileSegmentsHolderPtr FileCache::getSnapshot()
+FileSegments FileCache::getSnapshot()
 {
     assertInitialized();
 #ifndef NDEBUG
@@ -1058,19 +1034,19 @@ FileSegmentsHolderPtr FileCache::getSnapshot()
         for (const auto & [_, file_segment_metadata] : locked_key)
             file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata->file_segment));
     });
-    return std::make_unique<FileSegmentsHolder>(std::move(file_segments), /* complete_on_dtor */false);
+    return file_segments;
 }
 
-FileSegmentsHolderPtr FileCache::getSnapshot(const Key & key)
+FileSegments FileCache::getSnapshot(const Key & key)
 {
     FileSegments file_segments;
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW_LOGICAL);
     for (const auto & [_, file_segment_metadata] : *locked_key->getKeyMetadata())
         file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata->file_segment));
-    return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
+    return file_segments;
 }
 
-FileSegmentsHolderPtr FileCache::dumpQueue()
+FileSegments FileCache::dumpQueue()
 {
     assertInitialized();
 
@@ -1081,7 +1057,7 @@ FileSegmentsHolderPtr FileCache::dumpQueue()
         return PriorityIterationResult::CONTINUE;
     }, lockCache());
 
-    return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
+    return file_segments;
 }
 
 std::vector<String> FileCache::tryGetCachePaths(const Key & key)
@@ -1154,6 +1130,17 @@ FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
     auto lock = lockCache();
     auto context = query_limit->getOrSetQueryContext(query_id, settings, lock);
     return std::make_unique<QueryContextHolder>(query_id, this, std::move(context));
+}
+
+FileSegments FileCache::sync()
+{
+    FileSegments file_segments;
+    metadata.iterate([&](LockedKey & locked_key)
+    {
+        auto broken = locked_key.sync();
+        file_segments.insert(file_segments.end(), broken.begin(), broken.end());
+    });
+    return file_segments;
 }
 
 }

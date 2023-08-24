@@ -128,7 +128,7 @@ bool KeyMetadata::createBaseDirectory()
     return true;
 }
 
-std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment)
+std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment) const
 {
     return fs::path(key_path)
         / CacheMetadata::getFileNameForFileSegment(file_segment.offset(), file_segment.getKind());
@@ -704,26 +704,26 @@ bool LockedKey::removeAllFileSegments(bool if_releasable)
     return removed_all;
 }
 
-KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset)
+KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, bool can_be_broken)
 {
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no offset {}", offset);
 
     auto file_segment = it->second->file_segment;
-    return removeFileSegmentImpl(it, file_segment->lock());
+    return removeFileSegmentImpl(it, file_segment->lock(), can_be_broken);
 }
 
-KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegmentGuard::Lock & segment_lock)
+KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegmentGuard::Lock & segment_lock, bool can_be_broken)
 {
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no offset {}", offset);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no offset {} in key {}", offset, getKey());
 
-    return removeFileSegmentImpl(it, segment_lock);
+    return removeFileSegmentImpl(it, segment_lock, can_be_broken);
 }
 
-KeyMetadata::iterator LockedKey::removeFileSegmentImpl(KeyMetadata::iterator it, const FileSegmentGuard::Lock & segment_lock)
+KeyMetadata::iterator LockedKey::removeFileSegmentImpl(KeyMetadata::iterator it, const FileSegmentGuard::Lock & segment_lock, bool can_be_broken)
 {
     auto file_segment = it->second->file_segment;
 
@@ -731,30 +731,45 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(KeyMetadata::iterator it,
         key_metadata->log, "Remove from cache. Key: {}, offset: {}, size: {}",
         getKey(), file_segment->offset(), file_segment->reserved_size);
 
-    chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
+    chassert(can_be_broken || file_segment->assertCorrectnessUnlocked(segment_lock));
 
     if (file_segment->queue_iterator)
         file_segment->queue_iterator->invalidate();
 
     file_segment->detach(segment_lock, *this);
 
-    const auto path = key_metadata->getFileSegmentPath(*file_segment);
-    bool exists = fs::exists(path);
-    if (exists)
+    try
     {
-        fs::remove(path);
+        const auto path = key_metadata->getFileSegmentPath(*file_segment);
+        bool exists = fs::exists(path);
+        if (exists)
+        {
+            fs::remove(path);
 
-        /// Clear OpenedFileCache to avoid reading from incorrect file descriptor.
-        int flags = file_segment->getFlagsForLocalRead();
-        /// Files are created with flags from file_segment->getFlagsForLocalRead()
-        /// plus optionally O_DIRECT is added, depends on query setting, so remove both.
-        OpenedFileCache::instance().remove(path, flags);
-        OpenedFileCache::instance().remove(path, flags | O_DIRECT);
+            /// Clear OpenedFileCache to avoid reading from incorrect file descriptor.
+            int flags = file_segment->getFlagsForLocalRead();
+            /// Files are created with flags from file_segment->getFlagsForLocalRead()
+            /// plus optionally O_DIRECT is added, depends on query setting, so remove both.
+            OpenedFileCache::instance().remove(path, flags);
+            OpenedFileCache::instance().remove(path, flags | O_DIRECT);
 
-        LOG_TEST(key_metadata->log, "Removed file segment at path: {}", path);
+            LOG_TEST(key_metadata->log, "Removed file segment at path: {}", path);
+        }
+        else if (file_segment->downloaded_size && !can_be_broken)
+        {
+#ifdef ABORT_ON_LOGICAL_ERROR
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist", path);
+#else
+            LOG_WARNING(key_metadata->log, "Expected path {} to exist, while removing {}:{}",
+                        path, getKey(), file_segment->offset());
+#endif
+        }
     }
-    else if (file_segment->downloaded_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist", path);
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        chassert(false);
+    }
 
     return key_metadata->erase(it);
 }
@@ -868,6 +883,58 @@ std::string LockedKey::toString() const
         result += std::to_string(it->first);
     }
     return result;
+}
+
+FileSegments LockedKey::sync()
+{
+    FileSegments broken;
+    for (auto it = key_metadata->begin(); it != key_metadata->end();)
+    {
+        auto file_segment = it->second->file_segment;
+        if (file_segment->isDetached())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "File segment has unexpected state: DETACHED ({})", file_segment->getInfoForLog());
+        }
+
+        if (file_segment->getDownloadedSize(false) == 0)
+        {
+            ++it;
+            continue;
+        }
+
+        const auto & path = key_metadata->getFileSegmentPath(*file_segment);
+        if (!fs::exists(path))
+        {
+            LOG_WARNING(
+                key_metadata->log,
+                "File segment has DOWNLOADED state, but file does not exist ({})",
+                file_segment->getInfoForLog());
+
+            broken.push_back(FileSegment::getSnapshot(file_segment));
+            it = removeFileSegment(file_segment->offset(), file_segment->lock(), /* can_be_broken */true);
+            continue;
+        }
+
+        const size_t actual_size = fs::file_size(path);
+        const size_t expected_size = file_segment->getDownloadedSize(false);
+
+        if (actual_size == expected_size)
+        {
+            ++it;
+            continue;
+        }
+
+        LOG_WARNING(
+            key_metadata->log,
+            "File segment has unexpected size. Having {}, expected {} ({})",
+            actual_size, expected_size, file_segment->getInfoForLog());
+
+        broken.push_back(FileSegment::getSnapshot(file_segment));
+        it = removeFileSegment(file_segment->offset(), file_segment->lock(), /* can_be_broken */false);
+    }
+    return broken;
 }
 
 }
