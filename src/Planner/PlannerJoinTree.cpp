@@ -86,7 +86,7 @@ namespace
 /// Check if current user has privileges to SELECT columns from table
 void checkAccessRights(const TableNode & table_node, const Names & column_names, const ContextPtr & query_context)
 {
-    /// StorageDummy is created on preliminary stage, igore access check for it.
+    /// StorageDummy is created on preliminary stage, ignore access check for it.
     if (typeid_cast<const StorageDummy *>(table_node.getStorage().get()))
         return;
 
