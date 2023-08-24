@@ -197,7 +197,8 @@ struct SimpliestRaftServer
             port,
             nuraft::asio_service::options{},
             params,
-            opts);
+            opts,
+            false);
 
         if (!raft_instance)
         {
