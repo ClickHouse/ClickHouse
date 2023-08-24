@@ -390,7 +390,10 @@ static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UI
 
 static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
 {
-    const UInt128 & src = src_uuid.toUnderType();
+    auto src_copy = src_uuid;
+    transformEndianness<std::endian::little, std::endian::native>(src_copy);
+
+    const UInt128 & src = src_copy.toUnderType();
     UInt128 & dst = dst_uuid.toUnderType();
 
     SipHash hash;
@@ -400,8 +403,9 @@ static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
     /// Saving version and variant from an old UUID
     dst = hash.get128();
 
-    dst.items[1] = (dst.items[1] & 0x1fffffffffffffffull) | (src.items[1] & 0xe000000000000000ull);
-    dst.items[0] = (dst.items[0] & 0xffffffffffff0fffull) | (src.items[0] & 0x000000000000f000ull);
+    const UInt64 trace[2] = {0x000000000000f000ull, 0xe000000000000000ull};
+    UUIDHelpers::getLowBytes(dst_uuid) = (UUIDHelpers::getLowBytes(dst_uuid) & (0xffffffffffffffffull - trace[1])) | (UUIDHelpers::getLowBytes(src_uuid) & trace[1]);
+    UUIDHelpers::getHighBytes(dst_uuid) = (UUIDHelpers::getHighBytes(dst_uuid) & (0xffffffffffffffffull - trace[0])) | (UUIDHelpers::getHighBytes(src_uuid) & trace[0]);
 }
 
 class FixedStringModel : public IModel

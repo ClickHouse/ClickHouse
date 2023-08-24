@@ -46,6 +46,8 @@ public:
 
     void setReadUntilEnd() override { return setReadUntilPosition(getFileSize()); }
 
+    size_t getFileOffsetOfBufferEnd() const override  { return file_offset_of_buffer_end; }
+
     off_t getPosition() override { return file_offset_of_buffer_end - available() + bytes_to_ignore; }
 
 private:
