@@ -84,7 +84,7 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
 
     T gcd_divider{};
     const auto * cur_source = source;
-    while (cur_source < source_end)
+    while (gcd_divider != T(1) && cur_source < source_end)
     {
         if (cur_source == source)
         {
@@ -93,10 +93,6 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
         else
         {
             gcd_divider = boost::math::gcd(gcd_divider, unalignedLoad<T>(cur_source));
-        }
-        if (gcd_divider == T(1))
-        {
-            break;
         }
     }
 
