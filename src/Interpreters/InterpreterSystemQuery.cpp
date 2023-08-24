@@ -53,6 +53,7 @@
 #include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
 #include <Storages/HDFS/StorageHDFS.h>
+#include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -103,40 +104,34 @@ namespace ActionLocks
 namespace
 {
 
-ExecutionStatus getOverallExecutionStatusOfCommands()
+/// Sequentially tries to execute all commands and throws exception with info about failed commands
+void executeCommandsAndThrowIfError(std::vector<std::function<void()>> commands)
 {
-    return ExecutionStatus(0);
-}
-
-/// Consequently tries to execute all commands and generates final exception message for failed commands
-template <typename Callable, typename ... Callables>
-ExecutionStatus getOverallExecutionStatusOfCommands(Callable && command, Callables && ... commands)
-{
-    ExecutionStatus status_head(0);
-    try
+    ExecutionStatus result(0);
+    for (auto & command : commands)
     {
-        command();
+        try
+        {
+            command();
+        }
+        catch (...)
+        {
+            ExecutionStatus current_result = ExecutionStatus::fromCurrentException();
+
+            if (result.code == 0)
+                result.code = current_result.code;
+
+            if (!current_result.message.empty())
+            {
+                if (!result.message.empty())
+                    result.message += '\n';
+                result.message += current_result.message;
+            }
+        }
     }
-    catch (...)
-    {
-        status_head = ExecutionStatus::fromCurrentException();
-    }
 
-    ExecutionStatus status_tail = getOverallExecutionStatusOfCommands(std::forward<Callables>(commands)...);
-
-    auto res_status = status_head.code != 0 ? status_head.code : status_tail.code;
-    auto res_message = status_head.message + (status_tail.message.empty() ? "" : ("\n" + status_tail.message));
-
-    return ExecutionStatus(res_status, res_message);
-}
-
-/// Consequently tries to execute all commands and throws exception with info about failed commands
-template <typename ... Callables>
-void executeCommandsAndThrowIfError(Callables && ... commands)
-{
-    auto status = getOverallExecutionStatusOfCommands(std::forward<Callables>(commands)...);
-    if (status.code != 0)
-        throw Exception::createDeprecated(status.message, status.code);
+    if (result.code != 0)
+        throw Exception::createDeprecated(result.message, result.code);
 }
 
 
@@ -325,33 +320,33 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::DROP_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
-            system_context->dropMarkCache();
+            system_context->clearMarkCache();
             break;
         case Type::DROP_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
-            system_context->dropUncompressedCache();
+            system_context->clearUncompressedCache();
             break;
         case Type::DROP_INDEX_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
-            system_context->dropIndexMarkCache();
+            system_context->clearIndexMarkCache();
             break;
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
-            system_context->dropIndexUncompressedCache();
+            system_context->clearIndexUncompressedCache();
             break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
-            system_context->dropMMappedFileCache();
+            system_context->clearMMappedFileCache();
             break;
         case Type::DROP_QUERY_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
-            getContext()->dropQueryCache();
+            getContext()->clearQueryCache();
             break;
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
             if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
-                cache->reset();
+                cache->clear();
             break;
 #endif
 #if USE_AWS_S3
@@ -387,6 +382,54 @@ BlockIO InterpreterSystemQuery::execute()
                         cache->removeKey(key);
                 }
             }
+            break;
+        }
+        case Type::SYNC_FILESYSTEM_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_SYNC_FILESYSTEM_CACHE);
+
+            ColumnsDescription columns{NamesAndTypesList{
+                {"cache_name", std::make_shared<DataTypeString>()},
+                {"path", std::make_shared<DataTypeString>()},
+                {"size", std::make_shared<DataTypeUInt64>()},
+            }};
+            Block sample_block;
+            for (const auto & column : columns)
+                sample_block.insert({column.type->createColumn(), column.type, column.name});
+
+            MutableColumns res_columns = sample_block.cloneEmptyColumns();
+
+            auto fill_data = [&](const std::string & cache_name, const FileCachePtr & cache, const FileSegments & file_segments)
+            {
+                for (const auto & file_segment : file_segments)
+                {
+                    size_t i = 0;
+                    const auto path = cache->getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->getKind());
+                    res_columns[i++]->insert(cache_name);
+                    res_columns[i++]->insert(path);
+                    res_columns[i++]->insert(file_segment->getDownloadedSize(false));
+                }
+            };
+
+            if (query.filesystem_cache_name.empty())
+            {
+                auto caches = FileCacheFactory::instance().getAll();
+                for (const auto & [cache_name, cache_data] : caches)
+                {
+                    auto file_segments = cache_data->cache->sync();
+                    fill_data(cache_name, cache_data->cache, file_segments);
+                }
+            }
+            else
+            {
+                auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name).cache;
+                auto file_segments = cache->sync();
+                fill_data(query.filesystem_cache_name, cache, file_segments);
+            }
+
+            size_t num_rows = res_columns[0]->size();
+            auto source = std::make_shared<SourceFromSingleChunk>(sample_block, Chunk(std::move(res_columns), num_rows));
+            result.pipeline = QueryPipeline(std::move(source));
             break;
         }
         case Type::DROP_SCHEMA_CACHE:
@@ -425,10 +468,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RELOAD_DICTIONARIES:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
-            executeCommandsAndThrowIfError(
+            executeCommandsAndThrowIfError({
                 [&] { system_context->getExternalDictionariesLoader().reloadAllTriedToLoad(); },
                 [&] { system_context->getEmbeddedDictionaries().reload(); }
-            );
+            });
             ExternalDictionariesLoader::resetAll();
             break;
         }
@@ -557,23 +600,14 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::FLUSH_LOGS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
-            executeCommandsAndThrowIfError(
-                [&] { if (auto query_log = getContext()->getQueryLog()) query_log->flush(true); },
-                [&] { if (auto part_log = getContext()->getPartLog("")) part_log->flush(true); },
-                [&] { if (auto query_thread_log = getContext()->getQueryThreadLog()) query_thread_log->flush(true); },
-                [&] { if (auto trace_log = getContext()->getTraceLog()) trace_log->flush(true); },
-                [&] { if (auto text_log = getContext()->getTextLog()) text_log->flush(true); },
-                [&] { if (auto metric_log = getContext()->getMetricLog()) metric_log->flush(true); },
-                [&] { if (auto asynchronous_metric_log = getContext()->getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); },
-                [&] { if (auto opentelemetry_span_log = getContext()->getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); },
-                [&] { if (auto query_views_log = getContext()->getQueryViewsLog()) query_views_log->flush(true); },
-                [&] { if (auto zookeeper_log = getContext()->getZooKeeperLog()) zookeeper_log->flush(true); },
-                [&] { if (auto session_log = getContext()->getSessionLog()) session_log->flush(true); },
-                [&] { if (auto transactions_info_log = getContext()->getTransactionsInfoLog()) transactions_info_log->flush(true); },
-                [&] { if (auto processors_profile_log = getContext()->getProcessorsProfileLog()) processors_profile_log->flush(true); },
-                [&] { if (auto cache_log = getContext()->getFilesystemCacheLog()) cache_log->flush(true); },
-                [&] { if (auto asynchronous_insert_log = getContext()->getAsynchronousInsertLog()) asynchronous_insert_log->flush(true); }
-            );
+
+            auto logs = getContext()->getSystemLogs();
+            std::vector<std::function<void()>> commands;
+            commands.reserve(logs.size());
+            for (auto * system_log : logs)
+                commands.emplace_back([system_log] { system_log->flush(true); });
+
+            executeCommandsAndThrowIfError(commands);
             break;
         }
         case Type::STOP_LISTEN:
@@ -1035,6 +1069,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
+        case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_SCHEMA_CACHE:
 #if USE_AWS_S3
         case Type::DROP_S3_CLIENT_CACHE:

@@ -132,6 +132,21 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot MATERIALIZE TTL as there is no TTL set for table {}",
                     table->getStorageID().getNameForLogs());
 
+            if (mut_command->type == MutationCommand::UPDATE || mut_command->type == MutationCommand::DELETE)
+            {
+                /// TODO: add a check for result query size.
+                auto rewritten_command_ast = replaceNonDeterministicToScalars(*command_ast, getContext());
+                if (rewritten_command_ast)
+                {
+                    auto * new_alter_command = rewritten_command_ast->as<ASTAlterCommand>();
+                    mut_command = MutationCommand::parse(new_alter_command);
+                    if (!mut_command)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Alter command '{}' is rewritten to invalid command '{}'",
+                            queryToString(*command_ast), queryToString(*rewritten_command_ast));
+                }
+            }
+
             mutation_commands.emplace_back(std::move(*mut_command));
         }
         else

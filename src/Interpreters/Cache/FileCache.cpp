@@ -42,6 +42,7 @@ size_t roundUpToMultiple(size_t num, size_t multiple)
 {
     return roundDownToMultiple(num + multiple - 1, multiple);
 }
+
 }
 
 namespace DB
@@ -51,13 +52,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-FileCache::FileCache(const FileCacheSettings & settings)
+FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & settings)
     : max_file_segment_size(settings.max_file_segment_size)
     , bypass_cache_threshold(settings.enable_bypass_cache_with_threashold ? settings.bypass_cache_threashold : 0)
-    , delayed_cleanup_interval_ms(settings.delayed_cleanup_interval_ms)
     , boundary_alignment(settings.boundary_alignment)
     , background_download_threads(settings.background_download_threads)
-    , log(&Poco::Logger::get("FileCache"))
+    , log(&Poco::Logger::get("FileCache(" + cache_name + ")"))
     , metadata(settings.base_path)
 {
     main_priority = std::make_unique<LRUFileCachePriority>(settings.max_size, settings.max_elements);
@@ -134,9 +134,7 @@ void FileCache::initialize()
     for (size_t i = 0; i < background_download_threads; ++i)
          download_threads.emplace_back([this] { metadata.downloadThreadFunc(); });
 
-    cleanup_task = Context::getGlobalContextInstance()->getSchedulePool().createTask("FileCacheCleanup", [this]{ cleanupThreadFunc(); });
-    cleanup_task->activate();
-    cleanup_task->scheduleAfter(delayed_cleanup_interval_ms);
+    cleanup_thread = std::make_unique<ThreadFromGlobalPool>(std::function{ [this]{ metadata.cleanupThreadFunc(); }});
 }
 
 CacheGuard::Lock FileCache::lockCache() const
@@ -177,31 +175,6 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
                         "Cannot have zero size downloaded file segments. {}",
                         file_segment->getInfoForLog());
                 }
-
-#ifndef NDEBUG
-                /**
-                * Check that in-memory state of the cache is consistent with the state on disk.
-                * Check only in debug build, because such checks can be done often and can be quite
-                * expensive compared to overall query execution time.
-                */
-
-                fs::path path = file_segment->getPathInLocalCache();
-                if (!fs::exists(path))
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "File path does not exist, but file has DOWNLOADED state. {}",
-                        file_segment->getInfoForLog());
-                }
-
-                if (fs::file_size(path) == 0)
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Cannot have zero size downloaded file segments. {}",
-                        file_segment->getInfoForLog());
-                }
-#endif
             }
         }
         else
@@ -823,23 +796,13 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
 void FileCache::removeKey(const Key & key)
 {
     assertInitialized();
-    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW);
-    locked_key->removeAll();
+    metadata.removeKey(key, /* if_exists */false, /* if_releasable */true);
 }
 
 void FileCache::removeKeyIfExists(const Key & key)
 {
     assertInitialized();
-
-    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::RETURN_NULL);
-    if (!locked_key)
-        return;
-
-    /// In ordinary case we remove data from cache when it's not used by anyone.
-    /// But if we have multiple replicated zero-copy tables on the same server
-    /// it became possible to start removing something from cache when it is used
-    /// by other "zero-copy" tables. That is why it's not an error.
-    locked_key->removeAll(/* if_releasable */true);
+    metadata.removeKey(key, /* if_exists */true, /* if_releasable */true);
 }
 
 void FileCache::removeFileSegment(const Key & key, size_t offset)
@@ -857,8 +820,7 @@ void FileCache::removePathIfExists(const String & path)
 void FileCache::removeAllReleasable()
 {
     assertInitialized();
-
-    metadata.iterate([](LockedKey & locked_key) { locked_key.removeAll(/* if_releasable */true); });
+    metadata.removeAllKeys(/* if_releasable */true);
 
     if (stash)
     {
@@ -990,6 +952,7 @@ void FileCache::loadMetadata()
                         fs::remove(offset_it->path());
                         continue;
                     }
+                    LOG_TEST(log, "Added file segment {}:{} (size: {}) with path: {}", key, offset, size, offset_it->path().string());
 
                     const auto & file_segment_metadata = file_segment_metadata_it->second;
                     chassert(file_segment_metadata->file_segment->assertCorrectness());
@@ -1005,7 +968,7 @@ void FileCache::loadMetadata()
                         log,
                         "Cache capacity changed (max size: {}, used: {}), "
                         "cached file `{}` does not fit in cache anymore (size: {})",
-                        main_priority->getSizeLimit(), main_priority->getSize(lock), key_directory.string(), size);
+                        main_priority->getSizeLimit(), main_priority->getSize(lock), offset_it->path().string(), size);
 
                     fs::remove(offset_it->path());
                 }
@@ -1039,36 +1002,18 @@ FileCache::~FileCache()
 
 void FileCache::deactivateBackgroundOperations()
 {
-    if (cleanup_task)
-        cleanup_task->deactivate();
-
     metadata.cancelDownload();
+    metadata.cancelCleanup();
+
     for (auto & thread : download_threads)
         if (thread.joinable())
             thread.join();
+
+    if (cleanup_thread && cleanup_thread->joinable())
+        cleanup_thread->join();
 }
 
-void FileCache::cleanup()
-{
-    metadata.doCleanup();
-}
-
-void FileCache::cleanupThreadFunc()
-{
-    try
-    {
-        cleanup();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        chassert(false);
-    }
-
-    cleanup_task->scheduleAfter(delayed_cleanup_interval_ms);
-}
-
-FileSegmentsHolderPtr FileCache::getSnapshot()
+FileSegments FileCache::getSnapshot()
 {
     assertInitialized();
 #ifndef NDEBUG
@@ -1081,19 +1026,19 @@ FileSegmentsHolderPtr FileCache::getSnapshot()
         for (const auto & [_, file_segment_metadata] : locked_key)
             file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata->file_segment));
     });
-    return std::make_unique<FileSegmentsHolder>(std::move(file_segments), /* complete_on_dtor */false);
+    return file_segments;
 }
 
-FileSegmentsHolderPtr FileCache::getSnapshot(const Key & key)
+FileSegments FileCache::getSnapshot(const Key & key)
 {
     FileSegments file_segments;
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW_LOGICAL);
     for (const auto & [_, file_segment_metadata] : *locked_key->getKeyMetadata())
         file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata->file_segment));
-    return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
+    return file_segments;
 }
 
-FileSegmentsHolderPtr FileCache::dumpQueue()
+FileSegments FileCache::dumpQueue()
 {
     assertInitialized();
 
@@ -1104,7 +1049,7 @@ FileSegmentsHolderPtr FileCache::dumpQueue()
         return PriorityIterationResult::CONTINUE;
     }, lockCache());
 
-    return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
+    return file_segments;
 }
 
 std::vector<String> FileCache::tryGetCachePaths(const Key & key)
@@ -1177,6 +1122,17 @@ FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
     auto lock = lockCache();
     auto context = query_limit->getOrSetQueryContext(query_id, settings, lock);
     return std::make_unique<QueryContextHolder>(query_id, this, std::move(context));
+}
+
+FileSegments FileCache::sync()
+{
+    FileSegments file_segments;
+    metadata.iterate([&](LockedKey & locked_key)
+    {
+        auto broken = locked_key.sync();
+        file_segments.insert(file_segments.end(), broken.begin(), broken.end());
+    });
+    return file_segments;
 }
 
 }

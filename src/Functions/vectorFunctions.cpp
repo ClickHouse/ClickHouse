@@ -23,6 +23,9 @@ struct PlusName { static constexpr auto name = "plus"; };
 struct MinusName { static constexpr auto name = "minus"; };
 struct MultiplyName { static constexpr auto name = "multiply"; };
 struct DivideName { static constexpr auto name = "divide"; };
+struct ModuloName { static constexpr auto name = "modulo"; };
+struct IntDivName { static constexpr auto name = "intDiv"; };
+struct IntDivOrZeroName { static constexpr auto name = "intDivOrZero"; };
 
 struct L1Label { static constexpr auto name = "1"; };
 struct L2Label { static constexpr auto name = "2"; };
@@ -140,6 +143,12 @@ using FunctionTupleMinus = FunctionTupleOperator<MinusName>;
 using FunctionTupleMultiply = FunctionTupleOperator<MultiplyName>;
 
 using FunctionTupleDivide = FunctionTupleOperator<DivideName>;
+
+using FunctionTupleModulo = FunctionTupleOperator<ModuloName>;
+
+using FunctionTupleIntDiv = FunctionTupleOperator<IntDivName>;
+
+using FunctionTupleIntDivOrZero = FunctionTupleOperator<IntDivOrZeroName>;
 
 class FunctionTupleNegate : public ITupleFunction
 {
@@ -296,6 +305,12 @@ public:
 using FunctionTupleMultiplyByNumber = FunctionTupleOperatorByNumber<MultiplyName>;
 
 using FunctionTupleDivideByNumber = FunctionTupleOperatorByNumber<DivideName>;
+
+using FunctionTupleModuloByNumber = FunctionTupleOperatorByNumber<ModuloName>;
+
+using FunctionTupleIntDivByNumber = FunctionTupleOperatorByNumber<IntDivName>;
+
+using FunctionTupleIntDivOrZeroByNumber = FunctionTupleOperatorByNumber<IntDivOrZeroName>;
 
 class FunctionDotProduct : public ITupleFunction
 {
@@ -1563,6 +1578,9 @@ REGISTER_FUNCTION(VectorFunctions)
     factory.registerAlias("vectorDifference", FunctionTupleMinus::name, FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionTupleMultiply>();
     factory.registerFunction<FunctionTupleDivide>();
+    factory.registerFunction<FunctionTupleModulo>();
+    factory.registerFunction<FunctionTupleIntDiv>();
+    factory.registerFunction<FunctionTupleIntDivOrZero>();
     factory.registerFunction<FunctionTupleNegate>();
 
     factory.registerFunction<FunctionAddTupleOfIntervals>(FunctionDocumentation
@@ -1626,6 +1644,9 @@ If the types of the first interval (or the interval in the tuple) and the second
 
     factory.registerFunction<FunctionTupleMultiplyByNumber>();
     factory.registerFunction<FunctionTupleDivideByNumber>();
+    factory.registerFunction<FunctionTupleModuloByNumber>();
+    factory.registerFunction<FunctionTupleIntDivByNumber>();
+    factory.registerFunction<FunctionTupleIntDivOrZeroByNumber>();
 
     factory.registerFunction<TupleOrArrayFunctionDotProduct>();
     factory.registerAlias("scalarProduct", TupleOrArrayFunctionDotProduct::name, FunctionFactory::CaseInsensitive);

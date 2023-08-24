@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS d"
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE d (oid UInt64) ENGINE = MergeTree ORDER BY oid"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE d (oid UInt64) ENGINE = MergeTree ORDER BY oid SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi'"
 ${CLICKHOUSE_CLIENT} --min_insert_block_size_rows 0 --min_insert_block_size_bytes 0 --max_block_size 8192 --query "insert into d select * from numbers(1000000)"
 
 # In previous ClickHouse versions there was a mistake that makes quantileDeterministic functions not really deterministic (in edge cases).
