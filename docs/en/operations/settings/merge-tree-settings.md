@@ -623,6 +623,19 @@ Possible values:
 
 Default value: false
 
+## number_of_free_entries_in_pool_to_execute_optimize_entire_partition {#number_of_free_entries_in_pool_to_execute_optimize_entire_partition}
+
+When there is less than specified number of free entries in pool, do not execute optimizing entire partition in the background (this task generated when set `min_age_to_force_merge_seconds` and enable `min_age_to_force_merge_on_partition_only`). This is to leave free threads for regular merges and avoid "Too many parts".
+
+Possible values:
+
+- Positive integer.
+
+Default value: 25
+
+The value of the `number_of_free_entries_in_pool_to_execute_optimize_entire_partition` setting should be less than the value of the [background_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_pool_size) * [background_merges_mutations_concurrency_ratio](/docs/en/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio). Otherwise, ClickHouse throws an exception.
+
+
 ## allow_floating_point_partition_key {#allow_floating_point_partition_key}
 
 Enables to allow floating-point number as a partition key.
