@@ -192,30 +192,30 @@ protected:
             getValueIdByMap(raw_value, value_id);
     }
 
-    ALWAYS_INLINE void computeLocalValueIdsForOneBatch(UInt64 * value_ids, size_t n, const UInt8 * data_pos, size_t element_bytes)
+    ALWAYS_INLINE void computeLocalValueIdsForOneBatch(UInt64 * value_ids, size_t n, const UInt8 * data_pos, size_t element_bytes, const UInt8 * null_map)
     {
         if (element_bytes > 8 && enable_range_mode)
         {
-            computeLocalValueIdsForOneBatchImpl<true, true>(value_ids, n, data_pos, element_bytes);
+            computeLocalValueIdsForOneBatchImpl<true, true>(value_ids, n, data_pos, element_bytes, null_map);
         }
         else if (element_bytes > 8 && !enable_range_mode)
         {
-            computeLocalValueIdsForOneBatchImpl<false, true>(value_ids, n, data_pos, element_bytes);
+            computeLocalValueIdsForOneBatchImpl<false, true>(value_ids, n, data_pos, element_bytes, null_map);
         }
         else if (element_bytes <= 8 && enable_range_mode)
         {
-            computeLocalValueIdsForOneBatchImpl<true, false>(value_ids, n, data_pos, element_bytes);
+            computeLocalValueIdsForOneBatchImpl<true, false>(value_ids, n, data_pos, element_bytes, null_map);
         }
         else
         {
-            computeLocalValueIdsForOneBatchImpl<false, false>(value_ids, n, data_pos, element_bytes);
+            computeLocalValueIdsForOneBatchImpl<false, false>(value_ids, n, data_pos, element_bytes, null_map);
         }
     }
 
     template <bool enable_range_mode, bool is_long_value>
-    ALWAYS_INLINE void computeLocalValueIdsForOneBatchImpl(UInt64 * value_ids, size_t n, const UInt8 * data_pos, size_t element_bytes)
+    ALWAYS_INLINE void computeLocalValueIdsForOneBatchImpl(UInt64 * value_ids, size_t n, const UInt8 * data_pos, size_t element_bytes, const UInt8 * null_map)
     {
-        UInt64 range_delta = range_min - 1 - is_nullable;
+        UInt64 range_delta = range_min - is_nullable;
         for (size_t i = 0; i < n; ++i)
         {
             if constexpr (is_long_value)
@@ -244,10 +244,18 @@ protected:
             }
             data_pos += element_bytes;
         }
+        if (null_map)
+        {
+            constexpr UInt64 mask = -1UL;
+            for (size_t i = 0; i < n; ++i)
+            {
+                value_ids[i] &= ~(mask * null_map[i]);
+            }
+        }
     }
 
 #if defined(__AVX512F__) && defined(__AVX512BW__)
-    ALWAYS_INLINE void computeLocalValueIdsForOneBatchAVX512(UInt64 * value_ids, const UInt8 * data_pos, size_t element_bytes)
+    ALWAYS_INLINE void computeLocalValueIdsForOneBatchAVX512(UInt64 * value_ids, const UInt8 * data_pos, size_t element_bytes, const UInt8 * null_map)
     {
         alignas(64) UInt64 tmp_values[8] = {0};
         const auto * local_data_pos = data_pos;
@@ -259,7 +267,7 @@ protected:
         }
         if (enable_range_mode)
         {
-            UInt64 range_delta = range_min - 1 - is_nullable;
+            UInt64 range_delta = range_min - is_nullable;
             auto range_max_v = _mm512_set1_epi64(range_max);
             auto range_min_v = _mm512_set1_epi64(range_min);
             __m512i tmp_values_v = _mm512_loadu_epi64(tmp_values);
@@ -299,10 +307,18 @@ protected:
                 local_data_pos += element_bytes;
             }
         }
+        if (null_map)
+        {
+            constexpr UInt64 mask = -1UL;
+            for (size_t i = 0; i < 8; ++i)
+            {
+                value_ids[i] &= ~(mask * null_map[i]);
+            }
+        }
 
     }
 
-    ALWAYS_INLINE void computeFinalValueIdsOneBatchAVX512(UInt64 * local_value_ids, UInt64 * value_ids, const UInt8 * null_map) const
+    ALWAYS_INLINE void computeFinalValueIdsOneBatchAVX512(UInt64 * local_value_ids, UInt64 * value_ids) const
     {
         auto multiplier_v = _mm512_set1_epi64(max_distinct_values);
         auto value_ids_v = _mm512_loadu_epi64(value_ids);
@@ -310,31 +326,14 @@ protected:
         auto local_value_ids_v = _mm512_loadu_epi64(local_value_ids);
         auto add_result = _mm512_add_epi64(multipy_result, local_value_ids_v);
         _mm512_storeu_epi64(value_ids, add_result);
-        if (is_nullable)
-        {
-            for (size_t j = 0; j < 8; ++j)
-            {
-                value_ids[j] -= null_map[j];
-            }
-        }
     }
 #endif
 
-    ALWAYS_INLINE void computeFinalValueIdsOneBatch(const UInt64 * local_value_ids, UInt64 * value_ids, const UInt8 * null_map, size_t n = 8) const
+    ALWAYS_INLINE void computeFinalValueIdsOneBatch(const UInt64 * local_value_ids, UInt64 * value_ids, size_t n = 8) const
     {
-        if (is_nullable)
+        for (size_t j = 0; j < n; ++j)
         {
-            for (size_t j = 0; j < n; ++j)
-            {
-                value_ids[j] = value_ids[j] * max_distinct_values + local_value_ids[j] - null_map[j];
-            }
-        }
-        else
-        {
-            for (size_t j = 0; j < n; ++j)
-            {
-                value_ids[j] = value_ids[j] * max_distinct_values + local_value_ids[j];
-            }
+            value_ids[j] = value_ids[j] * max_distinct_values + local_value_ids[j];
         }
     }
 
@@ -384,9 +383,9 @@ private:
         size_t n = str_col->size();
 
         str_lens[0] = offsets[0];
-        innerComputeLocalValueIdsForOneBatch(tmp_value_ids, 1, char_pos, str_lens);
         const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() : nullptr;
-        computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, null_map_pos, 1);
+        innerComputeLocalValueIdsForOneBatch(tmp_value_ids, 1, char_pos, str_lens, null_map_pos);
+        computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, 1);
         value_ids_pos += 1;
         char_pos += str_lens[0];
         prev_offset = offsets[0];
@@ -399,17 +398,17 @@ private:
 #if defined(__AVX512F__) && defined(__AVX512BW__)
             if (is_all_short_string)
             {
-                innerComputeLocalValueIdsForOneBatchAVX512(tmp_value_ids, char_pos, str_lens);
+                innerComputeLocalValueIdsForOneBatchAVX512(tmp_value_ids, char_pos, str_lens, null_map_pos);
             }
             else
 #endif
             {
-                innerComputeLocalValueIdsForOneBatch(tmp_value_ids, 8, char_pos, str_lens);
+                innerComputeLocalValueIdsForOneBatch(tmp_value_ids, 8, char_pos, str_lens, null_map_pos);
             }
 #if defined(__AVX512F__) && defined(__AVX512BW__)
-            computeFinalValueIdsOneBatchAVX512(tmp_value_ids, value_ids_pos, null_map_pos);
+            computeFinalValueIdsOneBatchAVX512(tmp_value_ids, value_ids_pos);
 #else
-            computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, null_map_pos);
+            computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos);
 #endif
             value_ids_pos += 8;
             char_pos += offsets[i + 7] - prev_offset;
@@ -424,9 +423,9 @@ private:
                 str_lens[j] = offsets[i + j] - prev_offset;
                 prev_offset = offsets[i + j];
             }
-            innerComputeLocalValueIdsForOneBatch(tmp_value_ids, remained, char_pos, str_lens);
+            innerComputeLocalValueIdsForOneBatch(tmp_value_ids, remained, char_pos, str_lens, null_map_pos);
             null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
-            computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, null_map_pos, remained);
+            computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, remained);
         }
     }
 
@@ -466,22 +465,22 @@ private:
         _mm512_storeu_epi64(masks, masks_v);
     }
 
-    ALWAYS_INLINE void innerComputeLocalValueIdsForOneBatch(UInt64 * value_ids, size_t n, const UInt8 * data_pos, const UInt64 * element_bytes)
+    ALWAYS_INLINE void innerComputeLocalValueIdsForOneBatch(UInt64 * value_ids, size_t n, const UInt8 * data_pos, const UInt64 * element_bytes, const UInt8 * null_map)
     {
         if (enable_range_mode)
         {
-            innerComputeLocalValueIdsForOneBatchImpl<true>(value_ids, n, data_pos, element_bytes);
+            innerComputeLocalValueIdsForOneBatchImpl<true>(value_ids, n, data_pos, element_bytes, null_map);
         }
         else
         {
-            innerComputeLocalValueIdsForOneBatchImpl<false>(value_ids, n, data_pos, element_bytes);
+            innerComputeLocalValueIdsForOneBatchImpl<false>(value_ids, n, data_pos, element_bytes, null_map);
         }
     }
 
     template <bool enable_range_mode>
-    ALWAYS_INLINE void innerComputeLocalValueIdsForOneBatchImpl(UInt64 * value_ids, size_t n, const UInt8 * data_pos, const UInt64 * element_bytes)
+    ALWAYS_INLINE void innerComputeLocalValueIdsForOneBatchImpl(UInt64 * value_ids, size_t n, const UInt8 * data_pos, const UInt64 * element_bytes, const UInt8 * null_map)
     {
-        UInt64 range_delta = range_min - 1 - is_nullable;
+        UInt64 range_delta = range_min - is_nullable;
         for (size_t i = 0; i < n; ++i)
         {
             if (element_bytes[i] > 9)
@@ -510,9 +509,17 @@ private:
             }
             data_pos += element_bytes[i];
         }
+        if (null_map)
+        {
+            constexpr UInt64 mask = -1UL;
+            for (size_t i = 0; i < n; ++i)
+            {
+                value_ids[i] &= ~(mask * null_map[i]);
+            }
+        }
     }
 #if defined(__AVX512F__) && defined(__AVX512BW__)
-    ALWAYS_INLINE void innerComputeLocalValueIdsForOneBatchAVX512(UInt64 * value_ids, const UInt8 * data_pos, const UInt64 * element_bytes)
+    ALWAYS_INLINE void innerComputeLocalValueIdsForOneBatchAVX512(UInt64 * value_ids, const UInt8 * data_pos, const UInt64 * element_bytes, const UInt8 * null_map)
     {
         alignas(64) UInt64 tmp_values[8] = {0};
         const auto * local_data_pos = data_pos;
@@ -525,7 +532,7 @@ private:
         }
         if (enable_range_mode)
         {
-            UInt64 range_delta = range_min - 1 - is_nullable;
+            UInt64 range_delta = range_min - is_nullable;
             auto range_max_v = _mm512_set1_epi64(range_max);
             auto range_min_v = _mm512_set1_epi64(range_min);
             __m512i tmp_values_v = _mm512_loadu_epi64(tmp_values);
@@ -563,6 +570,14 @@ private:
                 StringRef raw_value(local_data_pos, element_bytes[j] - 1);
                 getValueId(raw_value, tmp_values[j], value_ids[j]);
                 local_data_pos += element_bytes[j];
+            }
+        }
+        if (null_map)
+        {
+            constexpr UInt64 mask = -1UL;
+            for (size_t i = 0; i < 8; ++i)
+            {
+                value_ids[i] &= ~(mask * null_map[i]);
             }
         }
 
@@ -607,28 +622,29 @@ private:
 
         for (; i + 8 < n; i += 8)
         {
+            const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
 #if defined(__AVX512F__) && defined(__AVX512BW__)
             if (str_len <= 8)
             {
-                computeLocalValueIdsForOneBatchAVX512(tmp_value_ids, char_pos, str_len);
+                computeLocalValueIdsForOneBatchAVX512(tmp_value_ids, char_pos, str_len, null_map_pos);
             }
             else
 #endif
             {
-                computeLocalValueIdsForOneBatch(tmp_value_ids, 8, char_pos, str_len);
+                computeLocalValueIdsForOneBatch(tmp_value_ids, 8, char_pos, str_len, null_map_pos);
             }
-            const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
             /// update the output value_ids.
 #if defined(__AVX512F__) && defined(__AVX512BW__)
-            computeFinalValueIdsOneBatchAVX512(tmp_value_ids, value_ids_pos, null_map_pos);
+            computeFinalValueIdsOneBatchAVX512(tmp_value_ids, value_ids_pos);
 #else
-            computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, null_map_pos);
+            computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos);
 #endif
             char_pos += str_len * 8;
             value_ids_pos += 8;
         }
-        computeLocalValueIdsForOneBatch(tmp_value_ids, n - i, char_pos, str_len);
-        computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, is_nullable ? null_map->getData().data() + i : nullptr, n - i);
+        const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
+        computeLocalValueIdsForOneBatch(tmp_value_ids, n - i, char_pos, str_len, null_map_pos);
+        computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, n - i);
 
     }
 };
@@ -680,11 +696,11 @@ private:
         }
         if (enable_range_mode)
         {
-            allocated_value_id =  range_max - range_min + 2 + is_nullable;
+            allocated_value_id =  range_max - range_min + 1 + is_nullable;
         }
         else
         {
-            allocated_value_id = 1 + is_nullable;
+            allocated_value_id = is_nullable;
         }
     }
 
@@ -710,27 +726,28 @@ private:
         alignas(64) UInt64 tmp_value_ids[8] = {0};
         for (; i + 8 < n; i += 8)
         {
+            const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
 #if defined(__AVX512F__) && defined(__AVX512BW__)
             if (element_bytes <= 8)
             {
-                computeLocalValueIdsForOneBatchAVX512(tmp_value_ids, data_pos, element_bytes);
+                computeLocalValueIdsForOneBatchAVX512(tmp_value_ids, data_pos, element_bytes, null_map_pos);
             }
             else
 #endif
             {
-                computeLocalValueIdsForOneBatch(tmp_value_ids, 8, data_pos, element_bytes);
+                computeLocalValueIdsForOneBatch(tmp_value_ids, 8, data_pos, element_bytes, null_map_pos);
             }
-            const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
 #if defined(__AVX512F__) && defined(__AVX512BW__)
-            computeFinalValueIdsOneBatchAVX512(tmp_value_ids, value_ids_pos, null_map_pos);
+            computeFinalValueIdsOneBatchAVX512(tmp_value_ids, value_ids_pos);
 #else
-            computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, null_map_pos);
+            computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos);
 #endif
             data_pos += element_bytes * 8;
             value_ids_pos += 8;
         }
-        computeLocalValueIdsForOneBatch(tmp_value_ids, n - i, data_pos, element_bytes);
-        computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, is_nullable ? null_map->getData().data() + i : nullptr, n - i);
+        const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
+        computeLocalValueIdsForOneBatch(tmp_value_ids, n - i, data_pos, element_bytes, null_map_pos);
+        computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, n - i);
     }
 };
 

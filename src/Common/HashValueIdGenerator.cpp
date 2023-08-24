@@ -43,6 +43,10 @@ void StringHashValueIdGenerator::tryInitialize(const IColumn *col)
         computeOneBatchStringLength(i, offsets, str_lens, is_all_short_string);
         for (UInt64 str_len : str_lens)
         {
+            if (!str_len)
+            {
+                continue;
+            }
             if (str_len > 9)
             {
                 enable_range_mode = false;
@@ -69,6 +73,8 @@ void StringHashValueIdGenerator::tryInitialize(const IColumn *col)
         for (; i < n; i++)
         {
             auto str_len = offsets[i] - prev_offset;
+            if (!str_len)
+                continue;
             if (str_len > 9)
             {
                 enable_range_mode = false;
@@ -90,11 +96,11 @@ void StringHashValueIdGenerator::tryInitialize(const IColumn *col)
     }
     if (enable_range_mode)
     {
-        allocated_value_id = range_max - range_min + 2 + is_nullable;
+        allocated_value_id = range_max - range_min + 1 + is_nullable;
     }
     else
     {
-        allocated_value_id = 1 + is_nullable;
+        allocated_value_id = is_nullable;
     }
 }
 
@@ -141,11 +147,11 @@ void FixedStringHashValueIdGenerator::tryInitialize(const IColumn *col)
 
     if (enable_range_mode)
     {
-        allocated_value_id = range_max - range_min + 2 + is_nullable;
+        allocated_value_id = range_max - range_min + 1 + is_nullable;
     }
     else
     {
-        allocated_value_id = 1 + is_nullable;
+        allocated_value_id = is_nullable;
     }
 
 }
