@@ -160,8 +160,8 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
             if (offsets[i + 1] - offsets[i] != size)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column {} must have equal length", index_column_name);
 
-
-        index = std::make_shared<USearchIndexWithSerialization<Metric>>(size);
+        if (!index)
+            index = std::make_shared<USearchIndexWithSerialization<Metric>>(size);
 
         /// Add all rows of block
         if (!index->reserve(unum::usearch::ceil2(index->size() + num_rows)))
@@ -188,7 +188,8 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
         if (data.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple has 0 rows, {} rows expected", rows_read);
 
-        index = std::make_shared<USearchIndexWithSerialization<Metric>>(data[0].size());
+        if (!index)
+            index = std::make_shared<USearchIndexWithSerialization<Metric>>(data[0].size());
 
         if (!index->reserve(unum::usearch::ceil2(index->size() + data.size())))
             throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for usearch index");
