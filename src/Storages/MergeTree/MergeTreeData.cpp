@@ -1217,10 +1217,10 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         auto part_size_str = res.size_of_part ? formatReadableSizeWithBinarySuffix(*res.size_of_part) : "failed to calculate size";
 
         LOG_ERROR(log,
-            "Detaching broken part {}{} (size: {}). "
+            "Detaching broken part {} (size: {}). "
             "If it happened after update, it is likely because of backward incompatibility. "
             "You need to resolve this manually",
-            getFullPathOnDisk(part_disk_ptr), part_name, part_size_str);
+            fs::path(getFullPathOnDisk(part_disk_ptr)) / part_name, part_size_str);
     };
 
     try
