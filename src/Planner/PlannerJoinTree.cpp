@@ -46,6 +46,8 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
+#include <Storages/StorageDummy.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
@@ -84,6 +86,10 @@ namespace
 /// Check if current user has privileges to SELECT columns from table
 void checkAccessRights(const TableNode & table_node, const Names & column_names, const ContextPtr & query_context)
 {
+    /// StorageDummy is created on preliminary stage, igore access check for it.
+    if (typeid_cast<const StorageDummy *>(table_node.getStorage().get()))
+        return;
+
     const auto & storage_id = table_node.getStorageID();
     const auto & storage_snapshot = table_node.getStorageSnapshot();
 
