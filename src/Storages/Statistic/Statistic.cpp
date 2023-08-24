@@ -123,7 +123,7 @@ Float64 ConditionEstimator::estimateSelectivity(const RPNBuilderTreeNode & node)
     }
     else if (op == "greater" || op == "greaterThan")
     {
-        return estimator.estimateLess(val) / total_count;
+        return estimator.estimateGreater(val) / total_count;
     }
     else
         return default_unknown_cond_factor;

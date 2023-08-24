@@ -47,6 +47,7 @@ public:
     {
         return statistics.column_name;
     }
+
     /// const String& type() const = 0;
     /// virtual StatisticType statisticType() const = 0;
 
@@ -69,12 +70,6 @@ public:
     {
     }
 
-    struct Range
-    {
-        Float64 left, right;
-    };
-
-    /// FIXME: implement correct count estimate method.
     Float64 estimateLess(Float64 val) const
     {
         return data.getCountLessThan(val);

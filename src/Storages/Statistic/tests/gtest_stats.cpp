@@ -22,6 +22,7 @@ TEST(Statistic, TDigestLessThan)
 
         for (int i = 0; i < data1.size(); i++)
             t_digest.add(data1[i]);
+
         t_digest.compress();
 
         for (int i = 0; i < v.size(); i ++)
@@ -36,7 +37,6 @@ TEST(Statistic, TDigestLessThan)
     };
     test_less_than(data, {-1, 1e9, 50000.0, 3000.0, 30.0}, {0, 100000, 50000, 3000, 30}, {0, 0, 0.001, 0.001, 0.001});
 
-    /// If we reversely construct the digest, the error is as bad as 5%.
     std::reverse(data.begin(), data.end());
     test_less_than(data, {-1, 1e9, 50000.0, 3000.0, 30.0}, {0, 100000, 50000, 3000, 30}, {0, 0, 0.001, 0.001, 0.001});
 
