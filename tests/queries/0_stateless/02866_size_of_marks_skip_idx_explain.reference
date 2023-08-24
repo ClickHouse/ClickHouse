@@ -1,5 +1,5 @@
-Expression ((Projection + Before ORDER BY))
-  Filter (WHERE)
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_skip_idx)
     Indexes:
       Skip
@@ -12,8 +12,8 @@ Expression ((Projection + Before ORDER BY))
         Description: minmax GRANULARITY 1
         Parts: 1/1
         Granules: 1/2
-Expression ((Projection + Before ORDER BY))
-  Filter (WHERE)
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_skip_idx)
     Indexes:
       Skip
