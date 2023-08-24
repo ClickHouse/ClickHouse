@@ -776,6 +776,8 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) cons
     {
         chassert(downloader_id.empty());
         chassert(downloaded_size == reserved_size);
+        chassert(downloaded_size == range().size());
+        chassert(downloaded_size > 0);
         chassert(std::filesystem::file_size(getPathInLocalCache()) > 0);
         chassert(queue_iterator);
         check_iterator(queue_iterator);

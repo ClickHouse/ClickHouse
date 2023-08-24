@@ -407,7 +407,7 @@ BlockIO InterpreterSystemQuery::execute()
                     const auto path = cache->getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->getKind());
                     res_columns[i++]->insert(cache_name);
                     res_columns[i++]->insert(path);
-                    res_columns[i++]->insert(file_segment->getDownloadedSize(false));
+                    res_columns[i++]->insert(file_segment->getDownloadedSize());
                 }
             };
 
