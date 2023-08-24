@@ -100,31 +100,36 @@ set(libssh_SRCS
     ${LIB_SOURCE_DIR}/src/libcrypto.c
     ${LIB_SOURCE_DIR}/src/dh_crypto.c
 )
-if (NOT HAVE_OPENSSL_ED25519)
-    set(libssh_SRCS
-        ${libssh_SRCS}
-        ${LIB_SOURCE_DIR}/src/pki_ed25519.c
-        ${LIB_SOURCE_DIR}/src/external/ed25519.c
-        ${LIB_SOURCE_DIR}/src/external/fe25519.c
-        ${LIB_SOURCE_DIR}/src/external/ge25519.c
-        ${LIB_SOURCE_DIR}/src/external/sc25519.c
-       )
-endif (NOT HAVE_OPENSSL_ED25519)
 if(OPENSSL_VERSION VERSION_LESS "1.1.0")
     set(libssh_SRCS ${libssh_SRCS} ${LIB_SOURCE_DIR}/src/libcrypto-compat.c)
 endif()
 
-add_library(ssh STATIC ${libssh_SRCS})
+set(libssh_SRCS
+${libssh_SRCS}
+${LIB_SOURCE_DIR}/src/options.c
+${LIB_SOURCE_DIR}/src/server.c
+${LIB_SOURCE_DIR}/src/bind.c
+${LIB_SOURCE_DIR}/src/bind_config.c
+)
+
+
+add_library(_ssh STATIC ${libssh_SRCS})
 
 message(STATUS "Libssh links to: ${LIBSSH_LINK_LIBRARIES}")
-target_include_directories(ssh PRIVATE ${LIB_BINARY_DIR})
-target_include_directories(ssh PUBLIC "${LIB_SOURCE_DIR}/include" "${LIB_BINARY_DIR}/include")
-target_link_libraries(ssh
+target_include_directories(_ssh PRIVATE ${LIB_BINARY_DIR})
+target_include_directories(_ssh PUBLIC "${LIB_SOURCE_DIR}/include" "${LIB_BINARY_DIR}/include")
+target_link_libraries(_ssh
                       PRIVATE ${LIBSSH_LINK_LIBRARIES})
 
-add_library(ssh::ssh ALIAS ssh)
+add_library(ch_contrib::ssh ALIAS _ssh)
 
-set_target_properties(ssh
+target_compile_options(_ssh
+                     PRIVATE
+                        ${DEFAULT_C_COMPILE_FLAGS}
+                        -D_GNU_SOURCE)
+
+
+set_target_properties(_ssh
     PROPERTIES
       VERSION
         ${LIBRARY_VERSION}
