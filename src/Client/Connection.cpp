@@ -353,7 +353,7 @@ void Connection::sendHello()
             String signature = ssh_private_key.signString(to_sign);
             writeStringBinary(signature, *out);
 #else
-        throw Exception("SSH is disabled, because ClickHouse is built without OpenSSL", ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
 #endif
         }
     }

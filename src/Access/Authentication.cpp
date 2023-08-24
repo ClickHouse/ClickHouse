@@ -234,7 +234,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
 #if USE_SSL
                 return checkSshSignature(auth_data.getSshKeys(), ssh_credentials->getSignature(), ssh_credentials->getOriginal());
 #else
-                throw Exception("SSH is disabled, because ClickHouse is built without OpenSSL", ErrorCodes::SUPPORT_IS_DISABLED);
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
 #endif
             case AuthenticationType::MAX:
                 break;
