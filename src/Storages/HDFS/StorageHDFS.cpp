@@ -376,21 +376,13 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
     ContextPtr ctx)
 {
     const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
-    bool has_globs = path_from_uri.find_first_of("*?{") != std::string::npos;
-    std::vector<StorageHDFS::PathWithInfo> paths_with_info;
-    if (has_globs)
-    {
-        paths_with_info = getPathsList(path_from_uri, uri, ctx);
-        if (paths_with_info.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
-            throw Exception(
-                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path."
-                " You must specify table structure manually", format);
-    }
-    else
-    {
-        paths_with_info = {PathWithInfo{path_from_uri, {}}};
-    }
+    auto paths_with_info = getPathsList(path_from_uri, uri, ctx);
+
+    if (paths_with_info.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
+        throw Exception(
+            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+            "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path."
+            " You must specify table structure manually", format);
 
     std::optional<ColumnsDescription> columns_from_cache;
     if (ctx->getSettingsRef().schema_inference_use_cache_for_hdfs)
