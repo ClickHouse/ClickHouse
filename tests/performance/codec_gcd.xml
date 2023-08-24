@@ -3,10 +3,10 @@
     <create_query>CREATE TABLE delta_codec (n UInt64 CODEC(Delta, LZ4)) ENGINE = MergeTree ORDER BY tuple()</create_query>
 
 
-    <query>INSERT INTO gcd_codec SELECT * FROM generateRandom() LIMIT 133722869 SETTINGS max_threads=1</query>
+    <query>INSERT INTO gcd_codec SELECT * FROM generateRandom() LIMIT 133722877 SETTINGS max_threads=1</query>
     <query>SELECT * FROM gcd_codec SETTINGS max_threads=1</query>
 
-    <query>INSERT INTO delta_codec SELECT * FROM generateRandom() LIMIT 133722869 SETTINGS max_threads=1</query>
+    <query>INSERT INTO delta_codec SELECT * FROM generateRandom() LIMIT 133722877 SETTINGS max_threads=1</query>
     <query>SELECT * FROM delta_codec_codec SETTINGS max_threads=1</query>
 
     <drop_query>DROP TABLE gcd_codec</drop_query>
