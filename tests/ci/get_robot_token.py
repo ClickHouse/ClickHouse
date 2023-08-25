@@ -54,18 +54,18 @@ def get_parameters_from_ssm(
 ROBOT_TOKEN = None  # type: Optional[Token]
 
 
-def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
+def get_best_robot_token(tokens_path: str = "/github-tokens") -> str:
     global ROBOT_TOKEN
     if ROBOT_TOKEN is not None:
         return ROBOT_TOKEN.value
     client = boto3.client("ssm", region_name="us-east-1")
-    parameters_list = client.describe_parameters(
-        ParameterFilters=[
-            {"Key": "Name", "Option": "BeginsWith", "Values": [token_prefix_env_name]}
+    tokens = {
+        p["Name"]: p["Value"]
+        for p in client.get_parameters_by_path(Path=tokens_path, WithDecryption=True)[
+            "Parameters"
         ]
-    )["Parameters"]
-    assert parameters_list
-    tokens = get_parameters_from_ssm([p["Name"] for p in parameters_list], True, client)
+    }
+    assert tokens
 
     for value in tokens.values():
         gh = Github(value, per_page=100)
