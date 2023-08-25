@@ -397,7 +397,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (table_join.kind() == JoinKind::Inner || table_join.kind() == JoinKind::Cross)
         {
             left_depth = joinPushDown(parent_node, 0, nodes, true);
-            right_depth = joinPushDown(parent_node, 1, nodes, true);
+
+            if (table_join.strictness() != JoinStrictness::Asof)
+                right_depth = joinPushDown(parent_node, 1, nodes, true);
         }
         else if (table_join.kind() == JoinKind::Left)
         {
