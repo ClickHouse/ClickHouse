@@ -1,0 +1,10 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <hdd_blob>
+                <type>local_blob_storage</type>
+                <path>/</path>
+            </hdd_blob>
+        </disks>
+    </storage_configuration>
+</clickhouse>
