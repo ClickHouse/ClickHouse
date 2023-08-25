@@ -110,6 +110,9 @@ using CustomizeCountDistinctVisitor = InDepthNodeVisitor<OneTypeMatcher<Customiz
 char countifdistinct[] = "countifdistinct";
 using CustomizeCountIfDistinctVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<countifdistinct>>, true>;
 
+char countdistinctif[] = "countdistinctif";
+using CustomizeCountDistinctIfVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<countdistinctif>>, true>;
+
 char in[] = "in";
 using CustomizeInVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<in>>, true>;
 
@@ -1367,6 +1370,12 @@ void TreeRewriter::normalize(
 
     CustomizeIfDistinctVisitor::Data data_distinct_if{"DistinctIf"};
     CustomizeIfDistinctVisitor(data_distinct_if).visit(query);
+
+    if (settings.rewrite_count_distinct_if_with_count_distinct_implementation)
+    {
+        CustomizeCountDistinctIfVisitor::Data data_count_distinct_if{settings.count_distinct_implementation.toString() + "If"};
+        CustomizeCountDistinctIfVisitor(data_count_distinct_if).visit(query);
+    }
 
     ExistsExpressionVisitor::Data exists;
     ExistsExpressionVisitor(exists).visit(query);

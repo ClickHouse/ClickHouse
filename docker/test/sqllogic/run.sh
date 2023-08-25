@@ -1,4 +1,5 @@
 #!/bin/bash
+
 set -exu
 trap "exit" INT TERM
 
@@ -96,5 +97,4 @@ rg -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
 zstd < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.zst &
 
 # Compressed (FIXME: remove once only github actions will be left)
-rm /var/log/clickhouse-server/clickhouse-server.log
 mv /var/log/clickhouse-server/stderr.log /test_output/ ||:

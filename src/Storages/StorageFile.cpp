@@ -6,11 +6,13 @@
 #include <Storages/Distributed/DistributedAsyncInsertSource.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -22,6 +24,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Archives/createArchiveReader.h>
+#include <IO/Archives/IArchiveReader.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -35,6 +39,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Sources/ConstChunkGenerator.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ResizeProcessor.h>
 
@@ -57,12 +62,12 @@
 #include <cmath>
 #include <algorithm>
 
-
 namespace ProfileEvents
 {
     extern const Event CreatedReadBufferOrdinary;
     extern const Event CreatedReadBufferMMap;
     extern const Event CreatedReadBufferMMapFailed;
+    extern const Event EngineFileLikeReadFiles;
 }
 
 namespace fs = std::filesystem;
@@ -379,9 +384,32 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     bool use_table_fd,
     int table_fd,
     const String & compression_method,
-    ContextPtr context)
+    ContextPtr context,
+    const String & path_to_archive = "")
 {
     CompressionMethod method;
+
+    if (!path_to_archive.empty())
+    {
+        auto reader = createArchiveReader(path_to_archive);
+
+        if (current_path.find_first_of("*?{") != std::string::npos)
+        {
+            auto matcher = std::make_shared<re2::RE2>(makeRegexpPatternFromGlobs(current_path));
+            if (!matcher->ok())
+                throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                    "Cannot compile regex from glob ({}): {}", current_path, matcher->error());
+
+            return reader->readFile([my_matcher = std::move(matcher)](const std::string & path)
+            {
+                return re2::RE2::FullMatch(path, *my_matcher);
+            }, /*throw_on_not_found=*/true);
+        }
+        else
+        {
+            return reader->readFile(current_path, /*throw_on_not_found=*/true);
+        }
+    }
 
     if (use_table_fd)
         method = chooseCompressionMethod("", compression_method);
@@ -436,6 +464,76 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     return paths;
 }
 
+namespace
+{
+    struct ReadBufferFromFileIterator : public IReadBufferIterator, WithContext
+    {
+    public:
+        ReadBufferFromFileIterator(
+            const std::vector<String> & paths_,
+            const std::vector<String> & paths_to_archive_,
+            const String & format_,
+            const String & compression_method_,
+            const std::optional<FormatSettings> & format_settings_,
+            ContextPtr context_)
+            : WithContext(context_)
+            , paths(paths_)
+            , paths_to_archive(paths_to_archive_)
+            , format(format_)
+            , compression_method(compression_method_)
+            , format_settings(format_settings_)
+        {
+        }
+
+        std::unique_ptr<ReadBuffer> next() override
+        {
+
+            String path;
+            struct stat file_stat;
+            bool is_first = current_index == 0;
+            const auto & paths_ref = paths_to_archive.empty() ? paths : paths_to_archive;
+
+            do
+            {
+                if (current_index == paths_ref.size())
+                {
+                    if (is_first)
+                        throw Exception(
+                            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                            "Cannot extract table structure from {} format file, because all files are empty. You must specify table structure manually",
+                            format);
+                    return nullptr;
+                }
+
+                path = paths_ref[current_index++];
+                file_stat = getFileStat(path, false, -1, "File");
+            } while (getContext()->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0);
+
+            if (paths_to_archive.empty())
+                return createReadBuffer(path, file_stat, false, -1, compression_method, getContext());
+
+            return createReadBuffer(paths[0], file_stat, false, -1, compression_method, getContext(), path);
+        }
+
+        void setNumRowsToLastFile(size_t num_rows) override
+        {
+            if (!getContext()->getSettingsRef().use_cache_for_count_from_files || !paths_to_archive.empty())
+                return;
+
+            auto key = getKeyForSchemaCache(paths[current_index - 1], format, format_settings, getContext());
+            StorageFile::getSchemaCache(getContext()).addNumRows(key, num_rows);
+        }
+
+    private:
+        const std::vector<String> & paths;
+        const std::vector<String> & paths_to_archive;
+        size_t current_index = 0;
+        String format;
+        String compression_method;
+        const std::optional<FormatSettings> & format_settings;
+    };
+}
+
 ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr context)
 {
     /// If we want to read schema from file descriptor we should create
@@ -445,16 +543,13 @@ ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr c
     /// in case of file descriptor we have a stream of data and we cannot
     /// start reading data from the beginning after reading some data for
     /// schema inference.
-    ReadBufferIterator read_buffer_iterator = [&](ColumnsDescription &)
-    {
-        /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
-        /// where we can store the original read buffer.
-        auto file_stat = getFileStat("", true, table_fd, getName());
-        read_buffer_from_fd = createReadBuffer("", file_stat, true, table_fd, compression_method, context);
-        auto read_buf = std::make_unique<PeekableReadBuffer>(*read_buffer_from_fd);
-        read_buf->setCheckpoint();
-        return read_buf;
-    };
+    auto file_stat = getFileStat("", true, table_fd, getName());
+    /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
+    /// where we can store the original read buffer.
+    read_buffer_from_fd = createReadBuffer("", file_stat, true, table_fd, compression_method, context);
+    auto read_buf = std::make_unique<PeekableReadBuffer>(*read_buffer_from_fd);
+    read_buf->setCheckpoint();
+    auto read_buffer_iterator = SingleReadBufferIterator(std::move(read_buf));
 
     auto columns = readSchemaFromFormat(format_name, format_settings, read_buffer_iterator, false, context, peekable_read_buffer_from_fd);
     if (peekable_read_buffer_from_fd)
@@ -471,7 +566,8 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     const std::vector<String> & paths,
     const String & compression_method,
     const std::optional<FormatSettings> & format_settings,
-    ContextPtr context)
+    ContextPtr context,
+    const std::vector<String> & paths_to_archive)
 {
     if (format == "Distributed")
     {
@@ -491,36 +587,16 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     if (context->getSettingsRef().schema_inference_use_cache_for_file)
         columns_from_cache = tryGetColumnsFromCache(paths, format, format_settings, context);
 
-    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin(), first = true](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
-    {
-        String path;
-        struct stat file_stat;
-        do
-        {
-            if (it == paths.end())
-            {
-                if (first)
-                    throw Exception(
-                        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                        "Cannot extract table structure from {} format file, because all files are empty. You must specify table structure manually",
-                        format);
-                return nullptr;
-            }
-
-            path = *it++;
-            file_stat = getFileStat(path, false, -1, "File");
-        }
-        while (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0);
-
-        first = false;
-        return createReadBuffer(path, file_stat, false, -1, compression_method, context);
-    };
-
     ColumnsDescription columns;
     if (columns_from_cache)
+    {
         columns = *columns_from_cache;
+    }
     else
+    {
+        ReadBufferFromFileIterator read_buffer_iterator(paths, paths_to_archive, format, compression_method, format_settings, context);
         columns = readSchemaFromFormat(format, format_settings, read_buffer_iterator, paths.size() > 1, context);
+    }
 
     if (context->getSettingsRef().schema_inference_use_cache_for_file)
         addColumnsToCache(paths, columns, format, format_settings, context);
@@ -566,8 +642,17 @@ StorageFile::StorageFile(int table_fd_, CommonArguments args)
 StorageFile::StorageFile(const std::string & table_path_, const std::string & user_files_path, CommonArguments args)
     : StorageFile(args)
 {
+    if (!args.path_to_archive.empty())
+    {
+        paths_to_archive = getPathsList(args.path_to_archive, user_files_path, args.getContext(), total_bytes_to_read);
+        paths = {table_path_};
+    }
+    else
+    {
+        paths = getPathsList(table_path_, user_files_path, args.getContext(), total_bytes_to_read);
+    }
+
     is_db_table = false;
-    paths = getPathsList(table_path_, user_files_path, args.getContext(), total_bytes_to_read);
     is_path_with_globs = paths.size() > 1;
     if (!paths.empty())
         path_for_partitioned_write = paths.front();
@@ -621,7 +706,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
             columns = getTableStructureFromFileDescriptor(args.getContext());
         else
         {
-            columns = getTableStructureFromFile(format_name, paths, compression_method, format_settings, args.getContext());
+            columns = getTableStructureFromFile(format_name, paths, compression_method, format_settings, args.getContext(), paths_to_archive);
             if (!args.columns.empty() && args.columns != columns)
                 throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Table structure and file structure are different");
         }
@@ -633,6 +718,8 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     storage_metadata.setConstraints(args.constraints);
     storage_metadata.setComment(args.comment);
     setInMemoryMetadata(storage_metadata);
+
+    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 
@@ -654,21 +741,64 @@ public:
     class FilesIterator
     {
     public:
-        explicit FilesIterator(const Strings & files_) : files(files_)
+        explicit FilesIterator(
+            const Strings & files_,
+            std::vector<std::string> archives_,
+            const IArchiveReader::NameFilter & name_filter_,
+            ASTPtr query,
+            const NamesAndTypesList & virtual_columns,
+            ContextPtr context_)
+            : files(files_), archives(std::move(archives_)), name_filter(name_filter_)
         {
+            ASTPtr filter_ast;
+            if (archives.empty() && !files.empty() && !files[0].empty())
+                filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, files[0], context_);
+
+            if (filter_ast)
+                VirtualColumnUtils::filterByPathOrFile(files, files, query, virtual_columns, context_, filter_ast);
         }
 
         String next()
         {
+            const auto & fs = fromArchive() ? archives : files;
+
             auto current_index = index.fetch_add(1, std::memory_order_relaxed);
-            if (current_index >= files.size())
+            if (current_index >= fs.size())
                 return "";
 
-            return files[current_index];
+            return fs[current_index];
         }
 
+        bool fromArchive() const
+        {
+            return !archives.empty();
+        }
+
+        bool readSingleFileFromArchive() const
+        {
+            return !name_filter;
+        }
+
+        bool passesFilter(const std::string & name) const
+        {
+            std::lock_guard lock(filter_mutex);
+            return name_filter(name);
+        }
+
+        const String & getFileName()
+        {
+            if (files.size() != 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected only 1 filename but got {}", files.size());
+
+            return files[0];
+        }
     private:
         std::vector<std::string> files;
+
+        std::vector<std::string> archives;
+        mutable std::mutex filter_mutex;
+        IArchiveReader::NameFilter name_filter;
+
         std::atomic<size_t> index = 0;
     };
 
@@ -679,9 +809,11 @@ public:
         std::shared_ptr<StorageFile> storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         ContextPtr context_,
+        const SelectQueryInfo & query_info_,
         UInt64 max_block_size_,
         FilesIteratorPtr files_iterator_,
-        std::unique_ptr<ReadBuffer> read_buf_)
+        std::unique_ptr<ReadBuffer> read_buf_,
+        bool need_only_count_)
         : ISource(info.source_header, false)
         , storage(std::move(storage_))
         , storage_snapshot(storage_snapshot_)
@@ -692,7 +824,9 @@ public:
         , requested_virtual_columns(info.requested_virtual_columns)
         , block_for_format(info.format_header)
         , context(context_)
+        , query_info(query_info_)
         , max_block_size(max_block_size_)
+        , need_only_count(need_only_count_)
     {
         if (!storage->use_table_fd)
         {
@@ -776,9 +910,72 @@ public:
             {
                 if (!storage->use_table_fd)
                 {
-                    current_path = files_iterator->next();
-                    if (current_path.empty())
-                        return {};
+                    if (files_iterator->fromArchive())
+                    {
+                        if (files_iterator->readSingleFileFromArchive())
+                        {
+                            auto archive = files_iterator->next();
+                            if (archive.empty())
+                                return {};
+
+                            struct stat file_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
+                            if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
+                                continue;
+
+                            archive_reader = createArchiveReader(archive);
+                            current_path = files_iterator->getFileName();
+                            read_buf = archive_reader->readFile(current_path, /*throw_on_not_found=*/false);
+                            if (!read_buf)
+                                continue;
+                        }
+                        else
+                        {
+                            while (true)
+                            {
+                                if (file_enumerator == nullptr)
+                                {
+                                    auto archive = files_iterator->next();
+                                    if (archive.empty())
+                                        return {};
+
+                                    struct stat file_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
+                                    if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
+                                        continue;
+
+                                    archive_reader = createArchiveReader(archive);
+                                    file_enumerator = archive_reader->firstFile();
+                                    continue;
+                                }
+
+                                bool file_found = true;
+                                while (!files_iterator->passesFilter(file_enumerator->getFileName()))
+                                {
+                                    if (!file_enumerator->nextFile())
+                                    {
+                                        file_found = false;
+                                        break;
+                                    }
+                                }
+
+                                if (file_found)
+                                {
+                                    current_path = file_enumerator->getFileName();
+                                    break;
+                                }
+
+                                file_enumerator = nullptr;
+                            }
+
+                            chassert(file_enumerator);
+                            read_buf = archive_reader->readFile(std::move(file_enumerator));
+                        }
+                    }
+                    else
+                    {
+                        current_path = files_iterator->next();
+                        if (current_path.empty())
+                            return {};
+                    }
 
                     /// Special case for distributed format. Defaults are not needed here.
                     if (storage->format_name == "Distributed")
@@ -791,16 +988,45 @@ public:
 
                 if (!read_buf)
                 {
-                    auto file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
+                    struct stat file_stat;
+                    file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
+
                     if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
                         continue;
+
+                    if (need_only_count && context->getSettingsRef().use_cache_for_count_from_files)
+                    {
+                        auto num_rows_from_cache = tryGetNumRowsFromCache(current_path, file_stat.st_mtime);
+                        if (num_rows_from_cache)
+                        {
+                            /// We should not return single chunk with all number of rows,
+                            /// because there is a chance that this chunk will be materialized later
+                            /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
+                            /// Instead, we use special ConstChunkGenerator that will generate chunks
+                            /// with max_block_size rows until total number of rows is reached.
+                            auto const_chunk_generator = std::make_shared<ConstChunkGenerator>(block_for_format, *num_rows_from_cache, max_block_size);
+                            QueryPipelineBuilder builder;
+                            builder.init(Pipe(const_chunk_generator));
+                            builder.addSimpleTransform([&](const Block & header)
+                            {
+                                return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
+                            });
+                            pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+                            reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
+                            continue;
+                        }
+                    }
+
                     read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, context);
                 }
 
                 const Settings & settings = context->getSettingsRef();
                 chassert(!storage->paths.empty());
                 const auto max_parsing_threads = std::max<size_t>(settings.max_threads/ storage->paths.size(), 1UL);
-                input_format = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, max_parsing_threads);
+                input_format = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, need_only_count ? 1 : max_parsing_threads);
+                input_format->setQueryInfo(query_info, context);
+                if (need_only_count)
+                    input_format->needOnlyCount();
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(input_format));
@@ -821,35 +1047,23 @@ public:
                 });
 
                 pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
-
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
+
+                ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
             }
 
             Chunk chunk;
             if (reader->pull(chunk))
             {
                 UInt64 num_rows = chunk.getNumRows();
+                total_rows_in_file += num_rows;
                 size_t chunk_size = 0;
-                if (storage->format_name != "Distributed")
+                if (input_format && storage->format_name != "Distributed")
                     chunk_size = input_format->getApproxBytesReadForChunk();
                 progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
                 /// Enrich with virtual columns.
-
-                for (const auto & virtual_column : requested_virtual_columns)
-                {
-                    if (virtual_column.name == "_path")
-                    {
-                        chunk.addColumn(virtual_column.type->createColumnConst(num_rows, current_path)->convertToFullColumnIfConst());
-                    }
-                    else if (virtual_column.name == "_file")
-                    {
-                        size_t last_slash_pos = current_path.find_last_of('/');
-                        auto file_name = current_path.substr(last_slash_pos + 1);
-                        chunk.addColumn(virtual_column.type->createColumnConst(num_rows, file_name)->convertToFullColumnIfConst());
-                    }
-                }
-
+                VirtualColumnUtils::addRequestedPathAndFileVirtualsToChunk(chunk, requested_virtual_columns, current_path);
                 return chunk;
             }
 
@@ -857,10 +1071,19 @@ public:
             if (storage->use_table_fd)
                 finished_generate = true;
 
+            if (input_format && storage->format_name != "Distributed" && context->getSettingsRef().use_cache_for_count_from_files)
+                addNumRowsToCache(current_path, total_rows_in_file);
+
+            total_rows_in_file = 0;
+
             /// Close file prematurely if stream was ended.
             reader.reset();
             pipeline.reset();
             input_format.reset();
+
+            if (files_iterator->fromArchive() && !files_iterator->readSingleFileFromArchive())
+                file_enumerator = archive_reader->nextFile(std::move(read_buf));
+
             read_buf.reset();
         }
 
@@ -869,6 +1092,24 @@ public:
 
 
 private:
+    void addNumRowsToCache(const String & path, size_t num_rows)
+    {
+        auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, context);
+        StorageFile::getSchemaCache(context).addNumRows(key, num_rows);
+    }
+
+    std::optional<size_t> tryGetNumRowsFromCache(const String & path, time_t last_mod_time)
+    {
+        auto & schema_cache = StorageFile::getSchemaCache(context);
+        auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, context);
+        auto get_last_mod_time = [&]() -> std::optional<time_t>
+        {
+            return last_mod_time;
+        };
+
+        return schema_cache.tryGetNumRows(key, get_last_mod_time);
+    }
+
     std::shared_ptr<StorageFile> storage;
     StorageSnapshotPtr storage_snapshot;
     FilesIteratorPtr files_iterator;
@@ -879,15 +1120,21 @@ private:
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
 
+    std::shared_ptr<IArchiveReader> archive_reader;
+    std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator = nullptr;
+
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
 
     ContextPtr context;    /// TODO Untangle potential issues with context lifetime.
+    SelectQueryInfo query_info;
     UInt64 max_block_size;
 
     bool finished_generate = false;
+    bool need_only_count = false;
+    size_t total_rows_in_file = 0;
 
     std::shared_lock<std::shared_timed_mutex> shared_lock;
 };
@@ -896,7 +1143,7 @@ private:
 Pipe StorageFile::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
@@ -908,21 +1155,46 @@ Pipe StorageFile::read(
     }
     else
     {
-        if (paths.size() == 1 && !fs::exists(paths[0]))
+        const auto & p = paths_to_archive.empty() ? paths : paths_to_archive;
+        if (p.size() == 1 && !fs::exists(p[0]))
         {
             if (context->getSettingsRef().engine_file_empty_if_not_exists)
                 return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
             else
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", paths[0]);
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", p[0]);
         }
     }
 
-    auto files_iterator = std::make_shared<StorageFileSource::FilesIterator>(paths);
+    IArchiveReader::NameFilter filter;
+    if (!paths_to_archive.empty())
+    {
+        if (paths.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Multiple paths defined for reading from archive");
+
+        const auto & path = paths[0];
+
+        if (path.find_first_of("*?{") != std::string::npos)
+        {
+            auto matcher = std::make_shared<re2::RE2>(makeRegexpPatternFromGlobs(path));
+            if (!matcher->ok())
+                throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                    "Cannot compile regex from glob ({}): {}", path, matcher->error());
+
+            filter = [matcher](const std::string & p)
+            {
+                return re2::RE2::FullMatch(p, *matcher);
+            };
+        }
+    }
+
+    auto files_iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, paths_to_archive, std::move(filter), query_info.query, virtual_columns, context);
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
     size_t num_streams = max_num_streams;
-    if (max_num_streams > paths.size())
-        num_streams = paths.size();
+
+    auto files_to_read = std::max(paths_to_archive.size(), paths.size());
+    if (max_num_streams > files_to_read)
+        num_streams = files_to_read;
 
     Pipes pipes;
     pipes.reserve(num_streams);
@@ -934,6 +1206,8 @@ Pipe StorageFile::read(
         progress_callback(FileProgress(0, total_bytes_to_read));
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+        && context->getSettingsRef().optimize_count_from_files;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -950,9 +1224,11 @@ Pipe StorageFile::read(
             this_ptr,
             storage_snapshot,
             context,
+            query_info,
             max_block_size,
             files_iterator,
-            std::move(read_buffer)));
+            std::move(read_buffer),
+            need_only_count));
     }
 
     return Pipe::unitePipes(std::move(pipes));
@@ -1202,6 +1478,9 @@ SinkToStoragePtr StorageFile::write(
     ContextPtr context,
     bool /*async_insert*/)
 {
+    if (!use_table_fd && !paths_to_archive.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writing to archives is not supported");
+
     if (format_name == "Distributed")
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not implemented for Distributed format");
 
@@ -1375,6 +1654,7 @@ void registerStorageFile(StorageFactory & factory)
                 factory_args.constraints,
                 factory_args.comment,
                 {},
+                {},
             };
 
             ASTs & engine_args_ast = factory_args.engine_args;
@@ -1445,7 +1725,7 @@ void registerStorageFile(StorageFactory & factory)
                 else if (type == Field::Types::UInt64)
                     source_fd = static_cast<int>(literal->value.get<UInt64>());
                 else if (type == Field::Types::String)
-                    source_path = literal->value.get<String>();
+                    StorageFile::parseFileSource(literal->value.get<String>(), source_path, storage_args.path_to_archive);
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be path or file descriptor");
             }
@@ -1464,14 +1744,6 @@ void registerStorageFile(StorageFactory & factory)
                 return std::make_shared<StorageFile>(source_path, factory_args.getContext()->getUserFilesPath(), storage_args);
         },
         storage_features);
-}
-
-
-NamesAndTypesList StorageFile::getVirtuals() const
-{
-    return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
 SchemaCache & StorageFile::getSchemaCache(const ContextPtr & context)
@@ -1497,7 +1769,7 @@ std::optional<ColumnsDescription> StorageFile::tryGetColumnsFromCache(
         };
 
         auto cache_key = getKeyForSchemaCache(path, format_name, format_settings, context);
-        auto columns = schema_cache.tryGet(cache_key, get_last_mod_time);
+        auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
         if (columns)
             return columns;
     }
@@ -1514,7 +1786,35 @@ void StorageFile::addColumnsToCache(
 {
     auto & schema_cache = getSchemaCache(context);
     auto cache_keys = getKeysForSchemaCache(paths, format_name, format_settings, context);
-    schema_cache.addMany(cache_keys, columns);
+    schema_cache.addManyColumns(cache_keys, columns);
+}
+
+void StorageFile::parseFileSource(String source, String & filename, String & path_to_archive)
+{
+    size_t pos = source.find("::");
+    if (pos == String::npos)
+    {
+        filename = std::move(source);
+        return;
+    }
+
+    std::string_view path_to_archive_view = std::string_view{source}.substr(0, pos);
+    while (path_to_archive_view.back() == ' ')
+        path_to_archive_view.remove_suffix(1);
+
+    if (path_to_archive_view.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path to archive is empty");
+
+    path_to_archive = path_to_archive_view;
+
+    std::string_view filename_view = std::string_view{source}.substr(pos + 2);
+    while (filename_view.front() == ' ')
+        filename_view.remove_prefix(1);
+
+    if (filename_view.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filename is empty");
+
+    filename = filename_view;
 }
 
 }

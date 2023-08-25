@@ -15,8 +15,7 @@
 #include <Core/UUID.h>
 #include <base/IPv4andIPv6.h>
 #include <base/DayNum.h>
-#include <base/strong_typedef.h>
-#include <base/EnumReflection.h>
+
 
 namespace DB
 {
@@ -139,7 +138,7 @@ template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale
 template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 template <typename T> bool decimalLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
 
-template <typename T>
+template <is_decimal T>
 class DecimalField
 {
 public:
@@ -449,7 +448,7 @@ public:
 
     Types::Which getType() const { return which; }
 
-    constexpr std::string_view getTypeName() const { return magic_enum::enum_name(which); }
+    std::string_view getTypeName() const;
 
     bool isNull() const { return which == Types::Null; }
     template <typename T>
@@ -839,7 +838,7 @@ template <> struct Field::EnumToType<Field::Types::Decimal32> { using Type = Dec
 template <> struct Field::EnumToType<Field::Types::Decimal64> { using Type = DecimalField<Decimal64>; };
 template <> struct Field::EnumToType<Field::Types::Decimal128> { using Type = DecimalField<Decimal128>; };
 template <> struct Field::EnumToType<Field::Types::Decimal256> { using Type = DecimalField<Decimal256>; };
-template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { using Type = DecimalField<AggregateFunctionStateData>; };
+template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { using Type = AggregateFunctionStateData; };
 template <> struct Field::EnumToType<Field::Types::CustomType> { using Type = CustomType; };
 template <> struct Field::EnumToType<Field::Types::Bool> { using Type = UInt64; };
 
@@ -1005,7 +1004,7 @@ void writeFieldText(const Field & x, WriteBuffer & buf);
 
 String toString(const Field & x);
 
-String fieldTypeToString(Field::Types::Which type);
+std::string_view fieldTypeToString(Field::Types::Which type);
 
 }
 

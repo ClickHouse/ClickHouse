@@ -687,7 +687,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
             }
 
             if (response->error != Coordination::Error::ZOK)
-                promise->set_exception(std::make_exception_ptr(zkutil::KeeperException("SessionID request failed with error", response->error)));
+                promise->set_exception(std::make_exception_ptr(zkutil::KeeperException::fromMessage(response->error, "SessionID request failed with error")));
 
             promise->set_value(session_id_response.session_id);
         };
