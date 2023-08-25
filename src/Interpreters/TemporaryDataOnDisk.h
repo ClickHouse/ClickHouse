@@ -186,7 +186,7 @@ public:
     void finishWriting();
     bool isWriteFinished() const;
     bool isEof() const;
-    void write(const Block & block);
+    void write(Block && block);
     Block read();
 
 private:

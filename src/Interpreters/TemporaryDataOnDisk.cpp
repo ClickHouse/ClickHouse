@@ -428,7 +428,7 @@ bool ThreadSafeTemporaryFileStream::isEof() const
     return write_finished && file_in_buf && file_in_buf->eof();
 }
 
-void ThreadSafeTemporaryFileStream::write(const Block & block)
+void ThreadSafeTemporaryFileStream::write(Block && block)
 {
     if (write_finished) [[unlikely]]
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing a finished file");
@@ -438,7 +438,7 @@ void ThreadSafeTemporaryFileStream::write(const Block & block)
     {
         std::lock_guard pending_blocks_lock(pending_blocks_mutex);
         pending_rows += block.rows();
-        pending_blocks.push_back(block);
+        pending_blocks.emplace_back(std::move(block));
         if (pending_rows >= max_block_size)
         {
             need_flush = true;

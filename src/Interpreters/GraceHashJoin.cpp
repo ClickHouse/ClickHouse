@@ -92,24 +92,24 @@ public:
         return std::make_shared<TemporaryFileStreamImpl>(header, tmp_data_disk.createRawStream(), max_block_size);
     }
 
-    inline void addLeftBlock(const Block & block)
+    inline void addLeftBlock(Block && block)
     {
-        addBlockImpl(block, *left_file);
+        addBlockImpl(std::move(block), *left_file);
     }
 
-    inline void addRightBlock(const Block & block)
+    inline void addRightBlock(Block && block)
     {
-        addBlockImpl(block, *right_file);
+        addBlockImpl(std::move(block), *right_file);
     }
 
-    inline bool tryAddLeftBlock(const Block & block)
+    inline bool tryAddLeftBlock(Block && block)
     {
-        return addBlockImpl(block, *left_file);
+        return addBlockImpl(std::move(block), *left_file);
     }
 
-    inline bool tryAddRightBlock(const Block & block)
+    inline bool tryAddRightBlock(Block && block)
     {
-        return addBlockImpl(block, *right_file);
+        return addBlockImpl(std::move(block), *right_file);
     }
 
     bool finished() const
@@ -145,14 +145,14 @@ public:
     const size_t idx;
 
 private:
-    bool addBlockImpl(const Block & block, TemporaryFileStreamImpl & writer)
+    bool addBlockImpl(Block && block, TemporaryFileStreamImpl & writer)
     {
         ensureState(State::WRITING_BLOCKS);
 
         if (block.rows())
             is_empty = false;
 
-        writer.write(block);
+        writer.write(std::move(block));
         return true;
     }
 
@@ -197,9 +197,9 @@ void flushBlocksToBuckets(Blocks & blocks, const GraceHashJoin::Buckets & bucket
 
             bool flushed = false;
             if constexpr (table_side == JoinTableSide::Left)
-                flushed = buckets[i]->tryAddLeftBlock(blocks[i]);
+                flushed = buckets[i]->tryAddLeftBlock(std::move(blocks[i]));
             if constexpr (table_side == JoinTableSide::Right)
-                flushed = buckets[i]->tryAddRightBlock(blocks[i]);
+                flushed = buckets[i]->tryAddRightBlock(std::move(blocks[i]));
 
             if (flushed)
                 blocks[i].clear();
