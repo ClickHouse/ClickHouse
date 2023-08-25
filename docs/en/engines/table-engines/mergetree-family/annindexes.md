@@ -219,6 +219,10 @@ LIMIT N
 SETTINGS annoy_index_search_k_nodes=100;
 ```
 
+:::note
+The Annoy index currently does not work with per-table, non-default `index_granularity` settings (see
+[here](https://github.com/ClickHouse/ClickHouse/pull/51325#issuecomment-1605920475)). If necessary, the value must be changed in config.xml.
+:::
 ## USearch {#usearch}
 
 This type of ANN index is based on the [the USearch library](https://github.com/unum-cloud/usearch), which implements the [HNSW
