@@ -15,6 +15,7 @@
 #include <Poco/DOM/Comment.h>
 #include <Poco/XML/XMLWriter.h>
 #include <Poco/Util/XMLConfiguration.h>
+#include <Poco/NumberParser.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -262,7 +263,7 @@ void ConfigProcessor::hideRecursive(Poco::XML::Node * config_root)
         if (node->nodeType() == Node::ELEMENT_NODE)
         {
             Element & element = dynamic_cast<Element &>(*node);
-            if (element.hasAttribute("hidden") && element.getAttribute("hidden") == "true")
+            if (element.hasAttribute("hidden") && Poco::NumberParser::parseBool(element.getAttribute("hidden")))
             {
                 config_root->removeChild(node);
             } else
