@@ -42,9 +42,9 @@ static void processWatchesImpl(const String & path, TestKeeper::Watches & watche
     auto it = watches.find(watch_response.path);
     if (it != watches.end())
     {
-        for (auto & callback : it->second)
+        for (const auto & callback : it->second)
             if (callback)
-                callback(watch_response);
+                (*callback)(watch_response);
 
         watches.erase(it);
     }
@@ -55,9 +55,9 @@ static void processWatchesImpl(const String & path, TestKeeper::Watches & watche
     it = list_watches.find(watch_list_response.path);
     if (it != list_watches.end())
     {
-        for (auto & callback : it->second)
+        for (const auto & callback : it->second)
             if (callback)
-                callback(watch_list_response);
+                (*callback)(watch_list_response);
 
         list_watches.erase(it);
     }
@@ -587,11 +587,11 @@ void TestKeeper::processingThread()
                             ? list_watches
                             : watches;
 
-                        watches_type[info.request->getPath()].emplace_back(std::move(info.watch));
+                        watches_type[info.request->getPath()].insert(info.watch);
                     }
                     else if (response->error == Error::ZNONODE && dynamic_cast<const ExistsRequest *>(info.request.get()))
                     {
-                        watches[info.request->getPath()].emplace_back(std::move(info.watch));
+                        watches[info.request->getPath()].insert(info.watch);
                     }
                 }
 
@@ -634,13 +634,13 @@ void TestKeeper::finalize(const String &)
                 response.state = EXPIRED_SESSION;
                 response.error = Error::ZSESSIONEXPIRED;
 
-                for (auto & callback : path_watch.second)
+                for (const auto & callback : path_watch.second)
                 {
                     if (callback)
                     {
                         try
                         {
-                            callback(response);
+                            (*callback)(response);
                         }
                         catch (...)
                         {
@@ -677,7 +677,7 @@ void TestKeeper::finalize(const String &)
                 response.error = Error::ZSESSIONEXPIRED;
                 try
                 {
-                    info.watch(response);
+                    (*info.watch)(response);
                 }
                 catch (...)
                 {
@@ -756,7 +756,7 @@ void TestKeeper::remove(
 void TestKeeper::exists(
         const String & path,
         ExistsCallback callback,
-        WatchCallback watch)
+        WatchCallbackPtr watch)
 {
     TestKeeperExistsRequest request;
     request.path = path;
@@ -771,7 +771,7 @@ void TestKeeper::exists(
 void TestKeeper::get(
         const String & path,
         GetCallback callback,
-        WatchCallback watch)
+        WatchCallbackPtr watch)
 {
     TestKeeperGetRequest request;
     request.path = path;
@@ -804,7 +804,7 @@ void TestKeeper::list(
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallback watch)
+        WatchCallbackPtr watch)
 {
     TestKeeperFilteredListRequest request;
     request.path = path;

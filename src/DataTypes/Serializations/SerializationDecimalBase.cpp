@@ -15,14 +15,14 @@ template <typename T>
 void SerializationDecimalBase<T>::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
     FieldType x = field.get<DecimalField<T>>();
-    writeBinary(x, ostr);
+    writeBinaryLittleEndian(x, ostr);
 }
 
 template <typename T>
 void SerializationDecimalBase<T>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     const FieldType & x = assert_cast<const ColumnType &>(column).getElement(row_num);
-    writeBinary(x, ostr);
+    writeBinaryLittleEndian(x, ostr);
 }
 
 template <typename T>
@@ -34,15 +34,26 @@ void SerializationDecimalBase<T>::serializeBinaryBulk(const IColumn & column, Wr
 
     if (limit == 0 || offset + limit > size)
         limit = size - offset;
-
-    ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(FieldType) * limit);
+    if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
+    {
+        for (size_t i = 0; i < limit; i++)
+        {
+            auto tmp(x[offset+i]);
+            char *start = reinterpret_cast<char*>(&tmp);
+            char *end = start + sizeof(FieldType);
+            std::reverse(start, end);
+            ostr.write(reinterpret_cast<const char *>(&tmp), sizeof(FieldType));
+        }
+    }
+    else
+        ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(FieldType) * limit);
 }
 
 template <typename T>
 void SerializationDecimalBase<T>::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     typename FieldType::NativeType x;
-    readBinary(x, istr);
+    readBinaryLittleEndian(x, istr);
     field = DecimalField(T(x), this->scale);
 }
 
@@ -50,7 +61,7 @@ template <typename T>
 void SerializationDecimalBase<T>::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     typename FieldType::NativeType x;
-    readBinary(x, istr);
+    readBinaryLittleEndian(x, istr);
     assert_cast<ColumnType &>(column).getData().push_back(FieldType(x));
 }
 
@@ -61,6 +72,16 @@ void SerializationDecimalBase<T>::deserializeBinaryBulk(IColumn & column, ReadBu
     size_t initial_size = x.size();
     x.resize(initial_size + limit);
     size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(FieldType) * limit);
+    if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
+    {
+        for (size_t i = 0; i < limit; i++)
+        {
+            char *start = reinterpret_cast<char*>(&x[initial_size + i]);
+            char *end = start + sizeof(FieldType);
+            std::reverse(start, end);
+        }
+    }
+
     x.resize(initial_size + size / sizeof(FieldType));
 }
 
