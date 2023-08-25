@@ -891,7 +891,10 @@ FileSegments LockedKey::sync()
     for (auto it = key_metadata->begin(); it != key_metadata->end();)
     {
         if (it->second->evicting() || !it->second->releasable())
+        {
+            ++it;
             continue;
+        }
 
         auto file_segment = it->second->file_segment;
         if (file_segment->isDetached())
