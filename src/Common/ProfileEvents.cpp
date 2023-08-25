@@ -395,6 +395,8 @@ The server successfully detected this situation and will download merged part fr
     \
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache") \
     M(FilesystemCacheEvictedFileSegments, "Number of file segments evicted from filesystem cache") \
+    M(FilesystemCacheEvictionSkippedFileSegments, "Number of file segments skipped for eviction because of being unreleasable") \
+    M(FilesystemCacheEvictionTries, "Number of filesystem cache eviction attempts") \
     M(FilesystemCacheLockKeyMicroseconds, "Lock cache key time") \
     M(FilesystemCacheLockMetadataMicroseconds, "Lock filesystem cache metadata time") \
     M(FilesystemCacheLockCacheMicroseconds, "Lock filesystem cache time") \
