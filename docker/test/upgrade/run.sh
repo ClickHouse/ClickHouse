@@ -63,7 +63,6 @@ configure
 # it contains some new settings, but we can safely remove it
 rm /etc/clickhouse-server/config.d/merge_tree.xml
 rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
-rm /etc/clickhouse-server/config.d/filesystem_caches_path.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 
 start
@@ -94,7 +93,6 @@ sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_defau
 # it contains some new settings, but we can safely remove it
 rm /etc/clickhouse-server/config.d/merge_tree.xml
 rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
-rm /etc/clickhouse-server/config.d/filesystem_caches_path.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 
 start
@@ -131,6 +129,7 @@ sudo cat /etc/clickhouse-server/config.d/lost_forever_check.xml \
   | sed "s|>1<|>0<|g" \
   > /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp
 sudo mv /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp /etc/clickhouse-server/config.d/lost_forever_check.xml
+rm /etc/clickhouse-server/config.d/filesystem_caches_path.xml
 
 start 500
 clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
