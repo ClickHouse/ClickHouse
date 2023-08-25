@@ -2394,6 +2394,12 @@ Possible values:
 
 Default value: `1`.
 
+## use_cache_for_count_from_files {#use_cache_for_count_from_files}
+
+Enables caching of rows number during count from files in table functions `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
+
+Enabled by default.
+
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 - Type: seconds

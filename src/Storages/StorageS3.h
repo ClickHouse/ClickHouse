@@ -13,6 +13,7 @@
 
 #include <Processors/ISource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Poco/URI.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/CompressionMethod.h>
@@ -129,6 +130,7 @@ public:
         const std::shared_ptr<const S3::Client> & client_,
         const String & bucket,
         const String & version_id,
+        const String & url_host_and_port,
         std::shared_ptr<IIterator> file_iterator_,
         size_t max_parsing_threads,
         bool need_only_count_,
@@ -146,6 +148,7 @@ private:
     String name;
     String bucket;
     String version_id;
+    String url_host_and_port;
     String format;
     ColumnsDescription columns_desc;
     NamesAndTypesList requested_columns;
@@ -161,16 +164,16 @@ private:
     {
     public:
         ReaderHolder(
-            String key_,
+            KeyWithInfo key_with_info_,
             String bucket_,
             std::unique_ptr<ReadBuffer> read_buf_,
-            std::shared_ptr<IInputFormat> input_format_,
+            std::shared_ptr<ISource> source_,
             std::unique_ptr<QueryPipeline> pipeline_,
             std::unique_ptr<PullingPipelineExecutor> reader_)
-            : key(std::move(key_))
+            : key_with_info(std::move(key_with_info_))
             , bucket(std::move(bucket_))
             , read_buf(std::move(read_buf_))
-            , input_format(std::move(input_format_))
+            , source(std::move(source_))
             , pipeline(std::move(pipeline_))
             , reader(std::move(reader_))
         {
@@ -191,9 +194,9 @@ private:
             /// reader uses pipeline, pipeline uses read_buf.
             reader = std::move(other.reader);
             pipeline = std::move(other.pipeline);
-            input_format = std::move(other.input_format);
+            source = std::move(other.source);
             read_buf = std::move(other.read_buf);
-            key = std::move(other.key);
+            key_with_info = std::move(other.key_with_info);
             bucket = std::move(other.bucket);
             return *this;
         }
@@ -201,16 +204,17 @@ private:
         explicit operator bool() const { return reader != nullptr; }
         PullingPipelineExecutor * operator->() { return reader.get(); }
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
-        String getPath() const { return fs::path(bucket) / key; }
-        const String & getFile() const { return key; }
+        String getPath() const { return fs::path(bucket) / key_with_info.key; }
+        const String & getFile() const { return key_with_info.key; }
+        const KeyWithInfo & getKeyWithInfo() const { return key_with_info; }
 
-        const IInputFormat * getInputFormat() const { return input_format.get(); }
+        const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
 
     private:
-        String key;
+        KeyWithInfo key_with_info;
         String bucket;
         std::unique_ptr<ReadBuffer> read_buf;
-        std::shared_ptr<IInputFormat> input_format;
+        std::shared_ptr<ISource> source;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
     };
@@ -228,12 +232,17 @@ private:
     ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
 
+    size_t total_rows_in_file = 0;
+
     /// Recreate ReadBuffer and Pipeline for each file.
     ReaderHolder createReader();
     std::future<ReaderHolder> createReaderAsync();
 
     std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key, size_t object_size);
     std::unique_ptr<ReadBuffer> createAsyncS3ReadBuffer(const String & key, const ReadSettings & read_settings, size_t object_size);
+
+    void addNumRowsToCache(const String & key, size_t num_rows);
+    std::optional<size_t> tryGetNumRowsFromCache(const KeyWithInfo & key_with_info);
 };
 
 /**
@@ -321,6 +330,25 @@ public:
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx);
 
+    using KeysWithInfo = StorageS3Source::KeysWithInfo;
+
+    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
+        const KeysWithInfo::const_iterator & begin,
+        const KeysWithInfo::const_iterator & end,
+        const Configuration & configuration,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & ctx);
+
+    static void addColumnsToCache(
+        const KeysWithInfo & keys,
+        const Configuration & configuration,
+        const ColumnsDescription & columns,
+        const String & format_name,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & ctx);
+
+    bool supportsTrivialCountOptimization() const override { return true; }
+
 protected:
     virtual Configuration updateConfigurationAndGetCopy(ContextPtr local_context);
 
@@ -344,8 +372,6 @@ private:
     std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
 
-    using KeysWithInfo = StorageS3Source::KeysWithInfo;
-
     static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
         const Configuration & configuration,
         bool distributed_processing,
@@ -367,21 +393,6 @@ private:
     bool prefersLargeBlocks() const override;
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
-
-    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
-        const KeysWithInfo::const_iterator & begin,
-        const KeysWithInfo::const_iterator & end,
-        const Configuration & configuration,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & ctx);
-
-    static void addColumnsToCache(
-        const KeysWithInfo & keys,
-        const Configuration & configuration,
-        const ColumnsDescription & columns,
-        const String & format_name,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & ctx);
 };
 
 }

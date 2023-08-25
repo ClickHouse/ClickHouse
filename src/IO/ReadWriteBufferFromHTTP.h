@@ -204,7 +204,7 @@ namespace detail
 
         const std::string & getCompressionMethod() const;
 
-        std::optional<time_t> getLastModificationTime();
+        std::optional<time_t> tryGetLastModificationTime();
 
         HTTPFileInfo getFileInfo();
 
