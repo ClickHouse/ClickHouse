@@ -1066,6 +1066,10 @@ arrayReverse
 arrayReverseFill
 arrayReverseSort
 arrayReverseSplit
+arrayRotateLeft
+arrayRotateRight
+arrayShiftLeft
+arrayShiftRight
 arraySlice
 arraySort
 arraySplit
@@ -2253,6 +2257,7 @@ subdirectory
 subexpression
 subexpressions
 subfolder
+subfolders
 subinterval
 subintervals
 subkey
@@ -2564,6 +2569,7 @@ xlarge
 xml
 xxHash
 xz
+yaml
 yandex
 youtube
 zLib
