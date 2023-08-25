@@ -12,6 +12,7 @@
 /build
 /build_*
 /build-*
+/builds
 /tests/venv
 /obj-x86_64-linux-gnu/
 
@@ -171,4 +172,6 @@ tests/integration/**/_gen
 /rust/**/vendor
 
 utils/local-engine/tests/testConfig.h
-/utils/extern-local-engine
+utils/extern-local-engine
+
+.history

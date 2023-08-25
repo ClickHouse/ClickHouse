@@ -155,6 +155,9 @@ if (COMPILER_CLANG)
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xclang -fuse-ctor-homing")
     endif()
 
+    # uncommment this to analyze flame graph
+    # set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -fno-optimize-sibling-calls")
+    # set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -fno-optimize-sibling-calls")
     no_warning(enum-constexpr-conversion) # breaks Protobuf in clang-16
 endif ()
 
