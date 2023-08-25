@@ -1467,7 +1467,7 @@ class TestSuite:
             else:
                 raise Exception(f"Unknown file_extension: {filename}")
 
-        def parse_tags_from_line(line, comment_sign) -> set[str]:
+        def parse_tags_from_line(line, comment_sign) -> Set[str]:
             if not line.startswith(comment_sign):
                 return set()
             tags_str = line[len(comment_sign) :].lstrip()  # noqa: ignore E203
