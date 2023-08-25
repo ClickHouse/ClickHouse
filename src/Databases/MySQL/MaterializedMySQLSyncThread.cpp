@@ -1,4 +1,3 @@
-#include "Common/logger_useful.h"
 #include "config.h"
 
 #if USE_MYSQL
@@ -141,6 +140,7 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
     {
         bool first = true;
         WriteBufferFromOwnString error_message;
+        error_message << "Illegal MySQL variables, the MaterializedMySQL engine requires ";
         for (const auto & [variable_name, variable_error_val] : variables_error_message)
         {
             error_message << (first ? "" : ", ") << variable_name << "='" << variable_error_val << "'";
@@ -149,8 +149,7 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
                 first = false;
         }
 
-        throw Exception(ErrorCodes::ILLEGAL_MYSQL_VARIABLE, "Illegal MySQL variables, the MaterializedMySQL engine requires {}",
-                        error_message.str());
+        throw Exception::createDeprecated(error_message.str(), ErrorCodes::ILLEGAL_MYSQL_VARIABLE);
     }
 }
 
@@ -500,10 +499,7 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
             {
                 throw;
             }
-            catch (const mysqlxx::ConnectionFailed & ex)
-            {
-                LOG_TRACE(log, "Connection to MySQL failed {}", ex.displayText());
-            }
+            catch (const mysqlxx::ConnectionFailed &) {}
             catch (const mysqlxx::BadQuery & e)
             {
                 // Lost connection to MySQL server during query

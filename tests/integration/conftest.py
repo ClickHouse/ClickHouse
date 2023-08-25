@@ -17,15 +17,15 @@ def tune_local_port_range():
     # Lots of services uses non privileged ports:
     # - hdfs -- 50020/50070/...
     # - minio
+    # - mysql
+    # - psql
+    #
+    # So instead of tuning all these thirdparty services, let's simply
+    # prohibit using such ports for outgoing connections, this should fix
+    # possible "Address already in use" errors.
     #
     # NOTE: 5K is not enough, and sometimes leads to EADDRNOTAVAIL error.
-    # NOTE: it is not inherited, so you may need to specify this in docker_compose_$SERVICE.yml
-    try:
-        run_and_check(["sysctl net.ipv4.ip_local_port_range='55000 65535'"], shell=True)
-    except Exception as ex:
-        logging.warning(
-            "Failed to run sysctl, tests may fail with EADDRINUSE %s", str(ex)
-        )
+    run_and_check(["sysctl net.ipv4.ip_local_port_range='55000 65535'"], shell=True)
 
 
 @pytest.fixture(autouse=True, scope="session")

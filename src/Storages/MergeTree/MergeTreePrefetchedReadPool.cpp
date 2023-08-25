@@ -97,7 +97,7 @@ std::future<MergeTreeReaderPtr> MergeTreePrefetchedReadPool::createPrefetchedRea
     Priority priority) const
 {
     auto reader = data_part.getReader(
-        columns, storage_snapshot, required_ranges,
+        columns, storage_snapshot->metadata, required_ranges,
         uncompressed_cache, mark_cache, alter_conversions, reader_settings,
         IMergeTreeReader::ValueSizeMap{}, profile_callback);
 

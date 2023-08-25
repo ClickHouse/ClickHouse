@@ -764,9 +764,7 @@ KeyCondition::KeyCondition(
         ++key_index;
     }
 
-    ASTPtr filter_node;
-    if (query)
-        filter_node = buildFilterNode(query, additional_filter_asts);
+    auto filter_node = buildFilterNode(query, additional_filter_asts);
 
     if (!filter_node)
     {

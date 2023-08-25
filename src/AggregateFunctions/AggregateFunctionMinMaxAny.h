@@ -547,7 +547,7 @@ public:
 
         /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
         Int32 size_to_write = size ? size : -1;
-        writeBinaryLittleEndian(size_to_write, buf);
+        writeBinary(size_to_write, buf);
         if (has())
             buf.write(getData(), size);
     }
@@ -573,7 +573,7 @@ public:
     {
         /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
         Int32 rhs_size_signed;
-        readBinaryLittleEndian(rhs_size_signed, buf);
+        readBinary(rhs_size_signed, buf);
 
         if (rhs_size_signed < 0)
         {

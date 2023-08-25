@@ -83,22 +83,6 @@ namespace ProfileEvents
     extern const Event MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds;
 }
 
-namespace DB::ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-    extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int CLIENT_HAS_CONNECTED_TO_WRONG_PORT;
-    extern const int UNKNOWN_EXCEPTION;
-    extern const int UNKNOWN_PACKET_FROM_CLIENT;
-    extern const int POCO_EXCEPTION;
-    extern const int SOCKET_TIMEOUT;
-    extern const int UNEXPECTED_PACKET_FROM_CLIENT;
-    extern const int UNKNOWN_PROTOCOL;
-    extern const int AUTHENTICATION_FAILED;
-    extern const int QUERY_WAS_CANCELLED;
-    extern const int CLIENT_INFO_DOES_NOT_MATCH;
-}
-
 namespace
 {
 NameToNameMap convertToQueryParameters(const Settings & passed_params)
@@ -114,55 +98,25 @@ NameToNameMap convertToQueryParameters(const Settings & passed_params)
     return query_parameters;
 }
 
-void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo & client_info)
-{
-    // Secondary query may contain different client_info.
-    // In the case of select from distributed table or 'select * from remote' from non-tcp handler. Server sends the initial client_info data.
-    //
-    // Example 1: curl -q -s --max-time 60 -sS "http://127.0.0.1:8123/?" -d "SELECT 1 FROM remote('127.0.0.1', system.one)"
-    // HTTP handler initiates TCP connection with remote 127.0.0.1 (session on remote 127.0.0.1 use TCP interface)
-    // HTTP handler sends client_info with HTTP interface and HTTP data by TCP protocol in Protocol::Client::Query message.
-    //
-    // Example 2: select * from <distributed_table>  --host shard_1 // distributed table has 2 shards: shard_1, shard_2
-    // shard_1 receives a message with 'ClickHouse client' client_name
-    // shard_1 initiates TCP connection with shard_2 with 'ClickHouse server' client_name.
-    // shard_1 sends 'ClickHouse client' client_name in Protocol::Client::Query message to shard_2.
-    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-        return;
-
-    if (session_client_info.interface != client_info.interface)
-    {
-        throw Exception(
-            DB::ErrorCodes::CLIENT_INFO_DOES_NOT_MATCH,
-            "Client info's interface does not match: {} not equal to {}",
-            toString(session_client_info.interface),
-            toString(client_info.interface));
-    }
-
-    if (session_client_info.interface == ClientInfo::Interface::TCP)
-    {
-        if (session_client_info.client_name != client_info.client_name)
-            throw Exception(
-                DB::ErrorCodes::CLIENT_INFO_DOES_NOT_MATCH,
-                "Client info's client_name does not match: {} not equal to {}",
-                session_client_info.client_name,
-                client_info.client_name);
-
-        // TCP handler got patch version 0 always for backward compatibility.
-        if (!session_client_info.clientVersionEquals(client_info, false))
-            throw Exception(
-                DB::ErrorCodes::CLIENT_INFO_DOES_NOT_MATCH,
-                "Client info's version does not match: {} not equal to {}",
-                session_client_info.getVersionStr(),
-                client_info.getVersionStr());
-
-        // os_user, quota_key, client_trace_context can be different.
-    }
-}
 }
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CLIENT_HAS_CONNECTED_TO_WRONG_PORT;
+    extern const int UNKNOWN_EXCEPTION;
+    extern const int UNKNOWN_PACKET_FROM_CLIENT;
+    extern const int POCO_EXCEPTION;
+    extern const int SOCKET_TIMEOUT;
+    extern const int UNEXPECTED_PACKET_FROM_CLIENT;
+    extern const int UNKNOWN_PROTOCOL;
+    extern const int AUTHENTICATION_FAILED;
+    extern const int QUERY_WAS_CANCELLED;
+}
 
 TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
     : Poco::Net::TCPServerConnection(socket_)
@@ -230,17 +184,14 @@ void TCPHandler::runImpl()
     try
     {
         receiveHello();
-
-        /// In interserver mode queries are executed without a session context.
-        if (!is_interserver_mode)
-            session->makeSessionContext();
-
         sendHello();
         if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             receiveAddendum();
 
-        if (!is_interserver_mode)
+        if (!is_interserver_mode) /// In interserver mode queries are executed without a session context.
         {
+            session->makeSessionContext();
+
             /// If session created, then settings in session context has been updated.
             /// So it's better to update the connection settings for flexibility.
             extractConnectionSettingsFromContext(session->sessionContext());
@@ -309,17 +260,6 @@ void TCPHandler::runImpl()
         std::unique_ptr<DB::Exception> exception;
         bool network_error = false;
         bool query_duration_already_logged = false;
-        auto log_query_duration = [this, &query_duration_already_logged]()
-        {
-            if (query_duration_already_logged)
-                return;
-            query_duration_already_logged = true;
-            auto elapsed_sec = state.watch.elapsedSeconds();
-            /// We already logged more detailed info if we read some rows
-            if (elapsed_sec < 1.0 && state.progress.read_rows)
-                return;
-            LOG_DEBUG(log, "Processed in {} sec.", elapsed_sec);
-        };
 
         try
         {
@@ -549,7 +489,9 @@ void TCPHandler::runImpl()
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
             query_scope->logPeakMemoryUsage();
-            log_query_duration();
+
+            LOG_DEBUG(log, "Processed in {} sec.", state.watch.elapsedSeconds());
+            query_duration_already_logged = true;
 
             if (state.is_connection_closed)
                 break;
@@ -671,7 +613,10 @@ void TCPHandler::runImpl()
             LOG_WARNING(log, "Can't skip data packets after query failure.");
         }
 
-        log_query_duration();
+        if (!query_duration_already_logged)
+        {
+            LOG_DEBUG(log, "Processed in {} sec.", state.watch.elapsedSeconds());
+        }
 
         /// QueryState should be cleared before QueryScope, since otherwise
         /// the MemoryTracker will be wrong for possible deallocations.
@@ -1236,6 +1181,7 @@ std::unique_ptr<Session> TCPHandler::makeSession()
     res->setClientName(client_name);
     res->setClientVersion(client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
     res->setConnectionClientVersion(client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
+    res->setQuotaClientKey(quota_key);
     res->setClientInterface(interface);
 
     return res;
@@ -1328,10 +1274,11 @@ void TCPHandler::receiveHello()
 void TCPHandler::receiveAddendum()
 {
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY)
+    {
         readStringBinary(quota_key, *in);
-
-    if (!is_interserver_mode)
-        session->setQuotaClientKey(quota_key);
+        if (!is_interserver_mode)
+            session->setQuotaClientKey(quota_key);
+    }
 }
 
 
@@ -1355,16 +1302,16 @@ void TCPHandler::receiveUnexpectedHello()
 void TCPHandler::sendHello()
 {
     writeVarUInt(Protocol::Server::Hello, *out);
-    writeStringBinary(VERSION_NAME, *out);
-    writeVarUInt(VERSION_MAJOR, *out);
-    writeVarUInt(VERSION_MINOR, *out);
+    writeStringBinary(DBMS_NAME, *out);
+    writeVarUInt(DBMS_VERSION_MAJOR, *out);
+    writeVarUInt(DBMS_VERSION_MINOR, *out);
     writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
         writeStringBinary(server_display_name, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
-        writeVarUInt(VERSION_PATCH, *out);
+        writeVarUInt(DBMS_VERSION_PATCH, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
     {
         auto rules = server.context()->getAccessControl().getPasswordComplexityRules();
@@ -1530,10 +1477,7 @@ void TCPHandler::receiveQuery()
     /// Read client info.
     ClientInfo client_info = session->getClientInfo();
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
-    {
         client_info.read(*in, client_tcp_protocol_version);
-        validateClientInfo(session->getClientInfo(), client_info);
-    }
 
     /// Per query settings are also passed via TCP.
     /// We need to check them before applying due to they can violate the settings constraints.
@@ -1647,12 +1591,12 @@ void TCPHandler::receiveQuery()
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         /// Throw an exception if the passed settings violate the constraints.
-        query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
+        query_context->checkSettingsConstraints(settings_changes);
     }
     else
     {
         /// Quietly clamp to the constraints if it's not an initial query.
-        query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
+        query_context->clampToSettingsConstraints(settings_changes);
     }
     query_context->applySettingsChanges(settings_changes);
 

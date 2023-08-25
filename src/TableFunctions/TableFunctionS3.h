@@ -64,12 +64,11 @@ protected:
         const ASTPtr & ast_function,
         ContextPtr context,
         const std::string & table_name,
-        ColumnsDescription cached_columns,
-        bool is_insert_query) const override;
+        ColumnsDescription cached_columns) const override;
 
     const char * getStorageTypeName() const override { return "S3"; }
 
-    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     mutable StorageS3::Configuration configuration;

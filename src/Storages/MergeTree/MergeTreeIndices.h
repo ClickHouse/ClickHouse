@@ -238,11 +238,6 @@ MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index);
 void annoyIndexValidator(const IndexDescription & index, bool attach);
 #endif
 
-#ifdef ENABLE_USEARCH
-MergeTreeIndexPtr usearchIndexCreator(const IndexDescription& index);
-void usearchIndexValidator(const IndexDescription& index, bool attach);
-#endif
-
 MergeTreeIndexPtr invertedIndexCreator(const IndexDescription& index);
 void invertedIndexValidator(const IndexDescription& index, bool attach);
 

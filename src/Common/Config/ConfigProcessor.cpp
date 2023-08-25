@@ -192,13 +192,13 @@ static void mergeAttributes(Element & config_element, Element & with_element)
 
 std::string ConfigProcessor::encryptValue(const std::string & codec_name, const std::string & value)
 {
-    EncryptionMethod encryption_method = toEncryptionMethod(codec_name);
-    CompressionCodecEncrypted codec(encryption_method);
+    EncryptionMethod method = getEncryptionMethod(codec_name);
+    CompressionCodecEncrypted codec(method);
 
     Memory<> memory;
     memory.resize(codec.getCompressedReserveSize(static_cast<UInt32>(value.size())));
     auto bytes_written = codec.compress(value.data(), static_cast<UInt32>(value.size()), memory.data());
-    std::string encrypted_value(memory.data(), bytes_written);
+    auto encrypted_value = std::string(memory.data(), bytes_written);
     std::string hex_value;
     boost::algorithm::hex(encrypted_value.begin(), encrypted_value.end(), std::back_inserter(hex_value));
     return hex_value;
@@ -206,8 +206,8 @@ std::string ConfigProcessor::encryptValue(const std::string & codec_name, const 
 
 std::string ConfigProcessor::decryptValue(const std::string & codec_name, const std::string & value)
 {
-    EncryptionMethod encryption_method = toEncryptionMethod(codec_name);
-    CompressionCodecEncrypted codec(encryption_method);
+    EncryptionMethod method = getEncryptionMethod(codec_name);
+    CompressionCodecEncrypted codec(method);
 
     Memory<> memory;
     std::string encrypted_value;
@@ -223,7 +223,7 @@ std::string ConfigProcessor::decryptValue(const std::string & codec_name, const 
 
     memory.resize(codec.readDecompressedBlockSize(encrypted_value.data()));
     codec.decompress(encrypted_value.data(), static_cast<UInt32>(encrypted_value.size()), memory.data());
-    std::string decrypted_value(memory.data(), memory.size());
+    std::string decrypted_value = std::string(memory.data(), memory.size());
     return decrypted_value;
 }
 
@@ -234,7 +234,7 @@ void ConfigProcessor::decryptRecursive(Poco::XML::Node * config_root)
         if (node->nodeType() == Node::ELEMENT_NODE)
         {
             Element & element = dynamic_cast<Element &>(*node);
-            if (element.hasAttribute("encrypted_by"))
+            if (element.hasAttribute("encryption_codec"))
             {
                 const NodeListPtr children = element.childNodes();
                 if (children->length() != 1)
@@ -244,8 +244,8 @@ void ConfigProcessor::decryptRecursive(Poco::XML::Node * config_root)
                 if (text_node->nodeType() != Node::TEXT_NODE)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted node {} should have text node", node->nodeName());
 
-                auto encrypted_by = element.getAttribute("encrypted_by");
-                text_node->setNodeValue(decryptValue(encrypted_by, text_node->getNodeValue()));
+                auto encryption_codec = element.getAttribute("encryption_codec");
+                text_node->setNodeValue(decryptValue(encryption_codec, text_node->getNodeValue()));
             }
             decryptRecursive(node);
         }
@@ -328,7 +328,7 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
     }
 }
 
-bool ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
+void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
 {
     Node * config_root = getRootNode(config.get());
     Node * with_root = getRootNode(with.get());
@@ -343,15 +343,11 @@ bool ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
         && !((config_root_node_name == "yandex" || config_root_node_name == "clickhouse")
             && (merged_root_node_name == "yandex" || merged_root_node_name == "clickhouse")))
     {
-        if (config_root_node_name != "clickhouse" && config_root_node_name != "yandex")
-            return false;
-
         throw Poco::Exception("Root element doesn't have the corresponding root element as the config file."
             " It must be <" + config_root->nodeName() + ">");
     }
 
     mergeRecursive(config, config_root, with_root);
-    return true;
 }
 
 void ConfigProcessor::doIncludesRecursive(
@@ -649,12 +645,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
                 with = dom_parser.parse(merge_file);
             }
 
-            if (!merge(config, with))
-            {
-                LOG_DEBUG(log, "Merging bypassed - configuration file '{}' doesn't belong to configuration '{}' - merging root node name '{}' doesn't match '{}'",
-                               merge_file, path, getRootNode(with.get())->nodeName(), getRootNode(config.get())->nodeName());
-                continue;
-            }
+            merge(config, with);
 
             contributing_files.push_back(merge_file);
         }
@@ -784,7 +775,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
 
 void ConfigProcessor::decryptEncryptedElements(LoadedConfig & loaded_config)
 {
-    CompressionCodecEncrypted::Configuration::instance().load(*loaded_config.configuration, "encryption_codecs");
+    CompressionCodecEncrypted::Configuration::instance().tryLoad(*loaded_config.configuration, "encryption_codecs");
     Node * config_root = getRootNode(loaded_config.preprocessed_xml.get());
     decryptRecursive(config_root);
     loaded_config.configuration = new Poco::Util::XMLConfiguration(loaded_config.preprocessed_xml);

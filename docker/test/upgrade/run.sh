@@ -129,7 +129,6 @@ sudo cat /etc/clickhouse-server/config.d/lost_forever_check.xml \
   | sed "s|>1<|>0<|g" \
   > /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp
 sudo mv /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp /etc/clickhouse-server/config.d/lost_forever_check.xml
-rm /etc/clickhouse-server/config.d/filesystem_caches_path.xml
 
 start 500
 clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
@@ -231,11 +230,5 @@ clickhouse-local --structure "test String, res String, time Nullable(Float32), d
 rowNumberInAllBlocks()
 LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
-
-# But OOMs in stress test are allowed
-if rg 'OOM in dmesg|Signal 9' /test_output/check_status.tsv
-then
-    sed -i 's/failure/success/' /test_output/check_status.tsv
-fi
 
 collect_core_dumps

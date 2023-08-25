@@ -471,21 +471,6 @@ std::unique_ptr<SourceFromChunks> QueryCache::Reader::getSourceExtremes()
     return std::move(source_from_chunks_extremes);
 }
 
-QueryCache::QueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
-    : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryCacheEntryWeight, IsStale>>(std::make_unique<PerUserTTLCachePolicyUserQuota>()))
-{
-    updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_);
-}
-
-void QueryCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
-{
-    std::lock_guard lock(mutex);
-    cache.setMaxSizeInBytes(max_size_in_bytes);
-    cache.setMaxCount(max_entries);
-    max_entry_size_in_bytes = max_entry_size_in_bytes_;
-    max_entry_size_in_rows = max_entry_size_in_rows_;
-}
-
 QueryCache::Reader QueryCache::createReader(const Key & key)
 {
     std::lock_guard lock(mutex);
@@ -503,21 +488,12 @@ QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::millis
     return Writer(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
 }
 
-void QueryCache::clear()
+void QueryCache::reset()
 {
-    cache.clear();
+    cache.reset();
     std::lock_guard lock(mutex);
     times_executed.clear();
-}
-
-size_t QueryCache::sizeInBytes() const
-{
-    return cache.sizeInBytes();
-}
-
-size_t QueryCache::count() const
-{
-    return cache.count();
+    cache_size_in_bytes = 0;
 }
 
 size_t QueryCache::recordQueryRun(const Key & key)
@@ -525,7 +501,7 @@ size_t QueryCache::recordQueryRun(const Key & key)
     std::lock_guard lock(mutex);
     size_t times = ++times_executed[key];
     // Regularly drop times_executed to avoid DOS-by-unlimited-growth.
-    static constexpr auto TIMES_EXECUTED_MAX_SIZE = 10'000uz;
+    static constexpr size_t TIMES_EXECUTED_MAX_SIZE = 10'000;
     if (times_executed.size() > TIMES_EXECUTED_MAX_SIZE)
         times_executed.clear();
     return times;
@@ -534,6 +510,25 @@ size_t QueryCache::recordQueryRun(const Key & key)
 std::vector<QueryCache::Cache::KeyMapped> QueryCache::dump() const
 {
     return cache.dump();
+}
+
+QueryCache::QueryCache()
+    : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryCacheEntryWeight, IsStale>>(std::make_unique<PerUserTTLCachePolicyUserQuota>()))
+{
+}
+
+void QueryCache::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(mutex);
+
+    size_t max_size_in_bytes = config.getUInt64("query_cache.max_size_in_bytes", 1_GiB);
+    cache.setMaxSize(max_size_in_bytes);
+
+    size_t max_entries = config.getUInt64("query_cache.max_entries", 1024);
+    cache.setMaxCount(max_entries);
+
+    max_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size_in_bytes", 1_MiB);
+    max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows_in_rows", 30'000'000);
 }
 
 }

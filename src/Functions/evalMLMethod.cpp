@@ -5,6 +5,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/typeid_cast.h>
 
+#include <iostream>
 
 #include <Common/PODArray.h>
 

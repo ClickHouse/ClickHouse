@@ -35,8 +35,7 @@ public:
         Tables external_tables_,
         Poco::Logger * log_,
         UInt32 shard_count_,
-        std::shared_ptr<const StorageLimitsList> storage_limits_,
-        const String & cluster_name_);
+        std::shared_ptr<const StorageLimitsList> storage_limits_);
 
     String getName() const override { return "ReadFromRemote"; }
 
@@ -56,9 +55,8 @@ private:
     Tables external_tables;
     std::shared_ptr<const StorageLimitsList> storage_limits;
     Poco::Logger * log;
-    UInt32 shard_count;
-    String cluster_name;
 
+    UInt32 shard_count;
     void addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);
     void addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);
 };

@@ -143,7 +143,7 @@ RegexpSchemaReader::RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & 
 {
 }
 
-std::optional<DataTypes> RegexpSchemaReader::readRowAndGetDataTypes()
+DataTypes RegexpSchemaReader::readRowAndGetDataTypes()
 {
     if (buf.eof())
         return {};

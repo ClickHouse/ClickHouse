@@ -1,17 +1,16 @@
 #pragma once
 
+#include <Poco/URI.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/ISource.h>
 #include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
-#include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <Processors/ISource.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Storages/Cache/SchemaCache.h>
+#include <IO/HTTPHeaderEntries.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageConfiguration.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/prepareReadingFromFormat.h>
-#include <Poco/URI.h>
+#include <Storages/Cache/SchemaCache.h>
+#include <Storages/StorageConfiguration.h>
 
 
 namespace DB
@@ -59,12 +58,6 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
-    static std::optional<time_t> tryGetLastModificationTime(
-        const String & url,
-        const HTTPHeaderEntries & headers,
-        const Poco::Net::HTTPBasicCredentials & credentials,
-        const ContextPtr & context);
-
 protected:
     IStorageURLBase(
         const String & uri_,
@@ -94,8 +87,6 @@ protected:
     ASTPtr partition_by;
     bool distributed_processing;
 
-    NamesAndTypesList virtual_columns;
-
     virtual std::string getReadMethod() const;
 
     virtual std::vector<std::pair<std::string, std::string>> getReadURIParams(
@@ -120,8 +111,6 @@ protected:
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
-    bool supportsTrivialCountOptimization() const override { return true; }
-
 private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
 
@@ -139,10 +128,16 @@ private:
         const String & format_name,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context);
+
+    static std::optional<time_t> getLastModificationTime(
+        const String & url,
+        const HTTPHeaderEntries & headers,
+        const Poco::Net::HTTPBasicCredentials & credentials,
+        const ContextPtr & context);
 };
 
 
-class StorageURLSource : public ISource, WithContext
+class StorageURLSource : public ISource
 {
     using URIParams = std::vector<std::pair<String, String>>;
 
@@ -150,8 +145,7 @@ public:
     class DisclosedGlobIterator
     {
     public:
-        DisclosedGlobIterator(const String & uri_, size_t max_addresses, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
-
+        DisclosedGlobIterator(const String & uri_, size_t max_addresses);
         String next();
         size_t size();
     private:
@@ -164,29 +158,31 @@ public:
     using IteratorWrapper = std::function<FailoverOptions()>;
 
     StorageURLSource(
-        const ReadFromFormatInfo & info,
+        const std::vector<NameAndTypePair> & requested_virtual_columns_,
         std::shared_ptr<IteratorWrapper> uri_iterator_,
         const std::string & http_method,
         std::function<void(std::ostream &)> callback,
         const String & format,
         const std::optional<FormatSettings> & format_settings,
         String name_,
+        const Block & sample_block,
         ContextPtr context,
+        const ColumnsDescription & columns,
         UInt64 max_block_size,
         const ConnectionTimeouts & timeouts,
         CompressionMethod compression_method,
-        size_t max_parsing_threads,
-        const SelectQueryInfo & query_info,
+        size_t download_threads,
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
-        bool glob_url = false,
-        bool need_only_count_ = false);
+        bool glob_url = false);
 
     String getName() const override { return name; }
 
     Chunk generate() override;
 
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
+
+    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
     static std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> getFirstAvailableURIAndReadBuffer(
         std::vector<String>::const_iterator & option,
@@ -202,24 +198,13 @@ public:
         bool delay_initialization);
 
 private:
-    void addNumRowsToCache(const String & uri, size_t num_rows);
-    std::optional<size_t> tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time);
-
     using InitializeFunc = std::function<bool()>;
     InitializeFunc initialize;
 
     String name;
-    ColumnsDescription columns_description;
-    NamesAndTypesList requested_columns;
-    NamesAndTypesList requested_virtual_columns;
-    Block block_for_format;
+    std::vector<NameAndTypePair> requested_virtual_columns;
     std::shared_ptr<IteratorWrapper> uri_iterator;
     Poco::URI curr_uri;
-    String format;
-    const std::optional<FormatSettings> & format_settings;
-    HTTPHeaderEntries headers;
-    bool need_only_count;
-    size_t total_rows_in_file = 0;
 
     std::unique_ptr<ReadBuffer> read_buf;
     std::shared_ptr<IInputFormat> input_format;
@@ -285,8 +270,6 @@ public:
     {
         return storage_snapshot->metadata->getSampleBlock();
     }
-
-    bool supportsSubcolumns() const override { return true; }
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 

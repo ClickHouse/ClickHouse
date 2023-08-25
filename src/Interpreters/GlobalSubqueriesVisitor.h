@@ -115,7 +115,7 @@ public:
             if (alias.empty())
             {
                 auto hash = subquery_or_table_name->getTreeHash();
-                external_table_name = fmt::format("_data_{}", toString(hash));
+                external_table_name = fmt::format("_data_{}_{}", hash.first, hash.second);
             }
             else
                 external_table_name = alias;

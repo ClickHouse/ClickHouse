@@ -681,6 +681,7 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
 bool StorageLiveView::getNewBlocks(const std::lock_guard<std::mutex> & lock)
 {
     SipHash hash;
+    UInt128 key;
     BlocksPtr new_blocks = std::make_shared<Blocks>();
     BlocksMetadataPtr new_blocks_metadata = std::make_shared<BlocksMetadata>();
 
@@ -712,7 +713,7 @@ bool StorageLiveView::getNewBlocks(const std::lock_guard<std::mutex> & lock)
         new_blocks->push_back(block);
     }
 
-    const auto key = hash.get128();
+    hash.get128(key);
 
     /// Update blocks only if hash keys do not match
     /// NOTE: hash could be different for the same result

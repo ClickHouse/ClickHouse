@@ -118,7 +118,9 @@ IAST::Hash IAST::getTreeHash() const
 {
     SipHash hash_state;
     updateTreeHash(hash_state);
-    return getSipHash128AsPair(hash_state);
+    IAST::Hash res;
+    hash_state.get128(res);
+    return res;
 }
 
 

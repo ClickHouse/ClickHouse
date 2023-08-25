@@ -6,6 +6,7 @@
 #include <Common/noexcept_scope.h>
 
 #include <cassert>
+#include <iostream>
 #include <type_traits>
 
 #include <Poco/Util/Application.h>

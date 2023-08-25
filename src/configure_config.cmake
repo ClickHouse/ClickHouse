@@ -162,8 +162,5 @@ endif ()
 if (TARGET ch_contrib::fiu)
     set(FIU_ENABLE 1)
 endif()
-if (TARGET ch_contrib::libarchive)
-    set(USE_LIBARCHIVE 1)
-endif()
 
 set(SOURCE_DIR ${CMAKE_SOURCE_DIR})
