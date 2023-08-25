@@ -33,8 +33,6 @@ def keeper_query(query: str):
             str(cluster.get_instance_ip("zoo1")),
             "--port",
             str(cluster.zookeeper_port),
-            "--log-level",
-            "error",
             "-q",
             query,
         ],
