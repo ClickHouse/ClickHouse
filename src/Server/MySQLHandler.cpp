@@ -1,29 +1,29 @@
 #include "MySQLHandler.h"
 
 #include <limits>
-#include <Common/NetException.h>
-#include <Common/OpenSSLHelpers.h>
+#include <regex>
+#include <Core/MySQL/Authentication.h>
+#include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsPreparedStatements.h>
-#include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/NamesAndTypes.h>
-#include <Interpreters/Session.h>
-#include <Interpreters/executeQuery.h>
-#include <IO/copyData.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/ReadHelpers.h>
+#include <IO/copyData.h>
+#include <Interpreters/Session.h>
+#include <Interpreters/executeQuery.h>
 #include <Server/TCPServer.h>
 #include <Storages/IStorage.h>
-#include <regex>
-#include <Common/setThreadName.h>
-#include <Core/MySQL/Authentication.h>
-#include <Common/logger_useful.h>
 #include <base/scope_guard.h>
+#include <Common/NetException.h>
+#include <Common/OpenSSLHelpers.h>
+#include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 
 #include "config_version.h"
 
@@ -67,10 +67,7 @@ static String killConnectionIdReplacementQuery(const String & query);
 static String selectLimitReplacementQuery(const String & query);
 
 MySQLHandler::MySQLHandler(
-    IServer & server_,
-    TCPServer & tcp_server_,
-    const Poco::Net::StreamSocket & socket_,
-    bool ssl_enabled, uint32_t connection_id_)
+    IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool ssl_enabled, uint32_t connection_id_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
@@ -78,7 +75,8 @@ MySQLHandler::MySQLHandler(
     , connection_id(connection_id_)
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
 {
-    server_capabilities = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF;
+    server_capabilities = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA
+        | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF;
     if (ssl_enabled)
         server_capabilities |= CLIENT_SSL;
 
@@ -104,8 +102,13 @@ void MySQLHandler::run()
 
     try
     {
-        Handshake handshake(server_capabilities, connection_id, VERSION_STRING + String("-") + VERSION_NAME,
-            auth_plugin->getName(), auth_plugin->getAuthPluginData(), CharacterSet::utf8_general_ci);
+        Handshake handshake(
+            server_capabilities,
+            connection_id,
+            VERSION_STRING + String("-") + VERSION_NAME,
+            auth_plugin->getName(),
+            auth_plugin->getAuthPluginData(),
+            CharacterSet::utf8_general_ci);
         packet_endpoint->sendPacket<Handshake>(handshake, true);
 
         LOG_TRACE(log, "Sent handshake");
@@ -115,8 +118,10 @@ void MySQLHandler::run()
         client_capabilities = handshake_response.capability_flags;
         max_packet_size = handshake_response.max_packet_size ? handshake_response.max_packet_size : MAX_PACKET_LENGTH;
 
-        LOG_TRACE(log,
-            "Capabilities: {}, max_packet_size: {}, character_set: {}, user: {}, auth_response length: {}, database: {}, auth_plugin_name: {}",
+        LOG_TRACE(
+            log,
+            "Capabilities: {}, max_packet_size: {}, character_set: {}, user: {}, auth_response length: {}, database: {}, auth_plugin_name: "
+            "{}",
             handshake_response.capability_flags,
             handshake_response.max_packet_size,
             static_cast<int>(handshake_response.character_set),
@@ -160,8 +165,8 @@ void MySQLHandler::run()
             // For commands which are executed without MemoryTracker.
             LimitReadBuffer limited_payload(payload, 10000, /* trow_exception */ true, /* exact_limit */ {}, "too long MySQL packet.");
 
-            LOG_DEBUG(log, "Received command: {}. Connection id: {}.",
-                static_cast<int>(static_cast<unsigned char>(command)), connection_id);
+            LOG_DEBUG(
+                log, "Received command: {}. Connection id: {}.", static_cast<int>(static_cast<unsigned char>(command)), connection_id);
 
             if (!tcp_server.isOpen())
                 return;
@@ -175,7 +180,7 @@ void MySQLHandler::run()
                         comInitDB(limited_payload);
                         break;
                     case COM_QUERY:
-                        comQuery(payload);
+                        comQuery(payload, false);
                         break;
                     case COM_FIELD_LIST:
                         comFieldList(limited_payload);
@@ -227,13 +232,15 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     size_t pos = 0;
 
     /// Reads at least count and at most packet_size bytes.
-    auto read_bytes = [this, &buf, &pos, &packet_size](size_t count) -> void {
+    auto read_bytes = [this, &buf, &pos, &packet_size](size_t count) -> void
+    {
         while (pos < count)
         {
             int ret = socket().receiveBytes(buf + pos, static_cast<uint32_t>(packet_size - pos));
             if (ret == 0)
             {
-                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data. Bytes read: {}. Bytes expected: 3", std::to_string(pos));
+                throw Exception(
+                    ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data. Bytes read: {}. Bytes expected: 3", std::to_string(pos));
             }
             pos += ret;
         }
@@ -272,7 +279,8 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
             authPluginSSL();
         }
 
-        std::optional<String> auth_response = auth_plugin_name == auth_plugin->getName() ? std::make_optional<String>(initial_auth_response) : std::nullopt;
+        std::optional<String> auth_response
+            = auth_plugin_name == auth_plugin->getName() ? std::make_optional<String>(initial_auth_response) : std::nullopt;
         auth_plugin->authenticate(user_name, *session, auth_response, packet_endpoint, secure_connection, socket().peerAddress());
     }
     catch (const Exception & exc)
@@ -304,8 +312,17 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
         ColumnDefinition column_definition(
-            database, packet.table, packet.table, column.name, column.name, CharacterSet::binary, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0, true
-        );
+            database,
+            packet.table,
+            packet.table,
+            column.name,
+            column.name,
+            CharacterSet::binary,
+            100,
+            ColumnType::MYSQL_TYPE_STRING,
+            0,
+            0,
+            true);
         packet_endpoint->sendPacket(column_definition);
     }
     packet_endpoint->sendPacket(OKPacket(0xfe, client_capabilities, 0, 0, 0), true);
@@ -318,7 +335,7 @@ void MySQLHandler::comPing()
 
 static bool isFederatedServerSetupSetCommand(const String & query);
 
-void MySQLHandler::comQuery(ReadBuffer & payload)
+void MySQLHandler::comQuery(ReadBuffer & payload, bool use_binary_protocol_result_set)
 {
     String query = String(payload.position(), payload.buffer().end());
 
@@ -350,20 +367,22 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
         CurrentThread::QueryScope query_scope{query_context};
 
-        std::atomic<size_t> affected_rows {0};
+        std::atomic<size_t> affected_rows{0};
         auto prev = query_context->getProgressCallback();
-        query_context->setProgressCallback([&, my_prev = prev](const Progress & progress)
-        {
-            if (my_prev)
-                my_prev(progress);
+        query_context->setProgressCallback(
+            [&, my_prev = prev](const Progress & progress)
+            {
+                if (my_prev)
+                    my_prev(progress);
 
-            affected_rows += progress.written_rows;
-        });
+                affected_rows += progress.written_rows;
+            });
 
         FormatSettings format_settings;
         format_settings.mysql_wire.client_capabilities = client_capabilities;
         format_settings.mysql_wire.max_packet_size = max_packet_size;
         format_settings.mysql_wire.sequence_id = &sequence_id;
+        format_settings.mysql_wire.use_binary_result_set = use_binary_protocol_result_set;
 
         auto set_result_details = [&with_output](const QueryResultDetails & details)
         {
@@ -385,11 +404,18 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 
 void MySQLHandler::comStmtPrepare(DB::ReadBuffer & payload)
 {
+    if (prepared_statements_map.size() > 10000) /// Shouldn't happen in reality as COM_STMT_CLOSE cleans up the elements
+    {
+        LOG_ERROR(log, "Too many prepared statements");
+        packet_endpoint->sendPacket(ERRPacket(), true);
+        return;
+    }
+
     String query;
     readStringUntilEOF(query, payload);
 
     uint32_t statement_id = current_prepared_statement_id;
-    if (current_prepared_statement_id == std::numeric_limits<uint32_t>::max()) [[unlikely]]
+    if (current_prepared_statement_id == std::numeric_limits<uint32_t>::max())
     {
         current_prepared_statement_id = 0;
     }
@@ -400,7 +426,7 @@ void MySQLHandler::comStmtPrepare(DB::ReadBuffer & payload)
 
     // Key collisions should not happen here, as we remove the elements from the map with COM_STMT_CLOSE,
     // and we have quite a big range of available identifiers with 32-bit unsigned integer
-    if (prepared_statements_map.contains(statement_id)) [[unlikely]]
+    if (prepared_statements_map.contains(statement_id))
     {
         LOG_ERROR(
             log,
@@ -411,8 +437,8 @@ void MySQLHandler::comStmtPrepare(DB::ReadBuffer & payload)
         packet_endpoint->sendPacket(ERRPacket(), true);
         return;
     }
-    prepared_statements_map.emplace(statement_id, query);
 
+    prepared_statements_map.emplace(statement_id, query);
     packet_endpoint->sendPacket(PrepareStatementResponseOK(statement_id, 0, 0, 0), true);
 }
 
@@ -421,7 +447,7 @@ void MySQLHandler::comStmtExecute(ReadBuffer & payload)
     uint32_t statement_id;
     payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
 
-    if (!prepared_statements_map.contains(statement_id)) [[unlikely]]
+    if (!prepared_statements_map.contains(statement_id))
     {
         LOG_ERROR(log, "Could not find prepared statement with id {}", statement_id);
         packet_endpoint->sendPacket(ERRPacket(), true);
@@ -430,14 +456,16 @@ void MySQLHandler::comStmtExecute(ReadBuffer & payload)
 
     // Temporary workaround as we work only with queries that do not bind any parameters atm
     ReadBufferFromString com_query_payload(prepared_statements_map.at(statement_id));
-    MySQLHandler::comQuery(com_query_payload);
+    MySQLHandler::comQuery(com_query_payload, true);
 };
 
-void MySQLHandler::comStmtClose([[maybe_unused]] ReadBuffer & payload) {
+void MySQLHandler::comStmtClose(ReadBuffer & payload)
+{
     uint32_t statement_id;
     payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
 
-    if (prepared_statements_map.contains(statement_id)) {
+    if (prepared_statements_map.contains(statement_id))
+    {
         prepared_statements_map.erase(statement_id);
     }
 
@@ -447,13 +475,17 @@ void MySQLHandler::comStmtClose([[maybe_unused]] ReadBuffer & payload) {
 
 void MySQLHandler::authPluginSSL()
 {
-    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ClickHouse was built without SSL support. Try specifying password using double SHA1 in users.xml.");
+    throw Exception(
+        ErrorCodes::SUPPORT_IS_DISABLED,
+        "ClickHouse was built without SSL support. Try specifying password using double SHA1 in users.xml.");
 }
 
 void MySQLHandler::finishHandshakeSSL(
-    [[maybe_unused]] size_t packet_size, [[maybe_unused]] char * buf, [[maybe_unused]] size_t pos,
-    [[maybe_unused]] std::function<void(size_t)> read_bytes, [[maybe_unused]] MySQLProtocol::ConnectionPhase::HandshakeResponse & packet)
+    [[maybe_unused]] size_t packet_size,
+    [[maybe_unused]] char * buf,
+    [[maybe_unused]] size_t pos,
+    [[maybe_unused]] std::function<void(size_t)> read_bytes,
+    [[maybe_unused]] MySQLProtocol::ConnectionPhase::HandshakeResponse & packet)
 {
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Client requested SSL, while it is disabled.");
 }
@@ -467,10 +499,9 @@ MySQLHandlerSSL::MySQLHandlerSSL(
     uint32_t connection_id_,
     RSA & public_key_,
     RSA & private_key_)
-    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_)
-    , public_key(public_key_)
-    , private_key(private_key_)
-{}
+    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_), public_key(public_key_), private_key(private_key_)
+{
+}
 
 void MySQLHandlerSSL::authPluginSSL()
 {
@@ -478,7 +509,10 @@ void MySQLHandlerSSL::authPluginSSL()
 }
 
 void MySQLHandlerSSL::finishHandshakeSSL(
-    size_t packet_size, char *buf, size_t pos, std::function<void(size_t)> read_bytes,
+    size_t packet_size,
+    char * buf,
+    size_t pos,
+    std::function<void(size_t)> read_bytes,
     MySQLProtocol::ConnectionPhase::HandshakeResponse & packet)
 {
     read_bytes(packet_size); /// Reading rest SSLRequest.
@@ -508,8 +542,8 @@ static bool isFederatedServerSetupSetCommand(const String & query)
         "|(^(SET AUTOCOMMIT(.*)))"
         "|(^(SET sql_mode(.*)))"
         "|(^(SET @@(.*)))"
-        "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))"
-        , std::regex::icase};
+        "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))",
+        std::regex::icase};
     return 1 == std::regex_match(query, expr);
 }
 
