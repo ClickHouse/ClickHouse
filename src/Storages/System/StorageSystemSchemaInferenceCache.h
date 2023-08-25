@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Storages/System/IStorageSystemOneBlock.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
 {

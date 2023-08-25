@@ -786,9 +786,21 @@ template <typename UpdatableSessionPtr>
 const std::string & ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::getCompressionMethod() const { return content_encoding; }
 
 template <typename UpdatableSessionPtr>
-std::optional<time_t> ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::getLastModificationTime()
+std::optional<time_t> ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::tryGetLastModificationTime()
 {
-    return getFileInfo().last_modified;
+    if (!file_info)
+    {
+        try
+        {
+            file_info = getFileInfo();
+        }
+        catch (...)
+        {
+            return std::nullopt;
+        }
+    }
+
+    return file_info->last_modified;
 }
 
 template <typename UpdatableSessionPtr>
