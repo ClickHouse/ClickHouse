@@ -657,21 +657,23 @@ void LocalServer::processConfig()
     /// There is no need for concurrent queries, override max_concurrent_queries.
     global_context->getProcessList().setMaxSize(0);
 
-    const size_t memory_amount = getMemoryAmount();
+    const size_t physical_server_memory = getMemoryAmount();
     const double cache_size_to_ram_max_ratio = config().getDouble("cache_size_to_ram_max_ratio", 0.5);
-    const size_t max_cache_size = static_cast<size_t>(memory_amount * cache_size_to_ram_max_ratio);
+    const size_t max_cache_size = static_cast<size_t>(physical_server_memory * cache_size_to_ram_max_ratio);
 
     String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", DEFAULT_UNCOMPRESSED_CACHE_POLICY);
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE);
+    double uncompressed_cache_size_ratio = config().getDouble("uncompressed_cache_size_ratio", DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO);
     if (uncompressed_cache_size > max_cache_size)
     {
         uncompressed_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
+    global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size, uncompressed_cache_size_ratio);
 
     String mark_cache_policy = config().getString("mark_cache_policy", DEFAULT_MARK_CACHE_POLICY);
     size_t mark_cache_size = config().getUInt64("mark_cache_size", DEFAULT_MARK_CACHE_MAX_SIZE);
+    double mark_cache_size_ratio = config().getDouble("mark_cache_size_ratio", DEFAULT_MARK_CACHE_SIZE_RATIO);
     if (!mark_cache_size)
         LOG_ERROR(log, "Too low mark cache size will lead to severe performance degradation.");
     if (mark_cache_size > max_cache_size)
@@ -679,23 +681,27 @@ void LocalServer::processConfig()
         mark_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
-    global_context->setMarkCache(mark_cache_policy, mark_cache_size);
+    global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
 
+    String index_uncompressed_cache_policy = config().getString("index_uncompressed_cache_policy", DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY);
     size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE);
+    double index_uncompressed_cache_size_ratio = config().getDouble("index_uncompressed_cache_size_ratio", DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO);
     if (index_uncompressed_cache_size > max_cache_size)
     {
         index_uncompressed_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
+    global_context->setIndexUncompressedCache(index_uncompressed_cache_policy, index_uncompressed_cache_size, index_uncompressed_cache_size_ratio);
 
+    String index_mark_cache_policy = config().getString("index_mark_cache_policy", DEFAULT_INDEX_MARK_CACHE_POLICY);
     size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", DEFAULT_INDEX_MARK_CACHE_MAX_SIZE);
+    double index_mark_cache_size_ratio = config().getDouble("index_mark_cache_size_ratio", DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO);
     if (index_mark_cache_size > max_cache_size)
     {
         index_mark_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    global_context->setIndexMarkCache(index_mark_cache_size);
+    global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
     size_t mmap_cache_size = config().getUInt64("mmap_cache_size", DEFAULT_MMAP_CACHE_MAX_SIZE);
     if (mmap_cache_size > max_cache_size)

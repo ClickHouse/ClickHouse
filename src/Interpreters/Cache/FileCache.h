@@ -124,11 +124,11 @@ public:
 
     bool tryReserve(FileSegment & file_segment, size_t size, FileCacheReserveStat & stat);
 
-    FileSegmentsHolderPtr getSnapshot();
+    FileSegments getSnapshot();
 
-    FileSegmentsHolderPtr getSnapshot(const Key & key);
+    FileSegments getSnapshot(const Key & key);
 
-    FileSegmentsHolderPtr dumpQueue();
+    FileSegments dumpQueue();
 
     void deactivateBackgroundOperations();
 
@@ -149,6 +149,8 @@ public:
     QueryContextHolderPtr getQueryContextHolder(const String & query_id, const ReadSettings & settings);
 
     CacheGuard::Lock lockCache() const;
+
+    FileSegments sync();
 
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;

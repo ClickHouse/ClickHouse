@@ -1243,6 +1243,7 @@ void Client::processConfig()
             global_context->getSettingsRef().max_insert_block_size);
     }
 
+    global_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
     global_context->setQueryKindInitial();
     global_context->setQuotaClientKey(config().getString("quota_key", ""));
     global_context->setQueryKind(query_kind);
