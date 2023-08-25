@@ -217,7 +217,14 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
         }
     }
 
-    Poco::Logger::root().setLevel(config().getString("log-level", "information"));
+    String default_log_level;
+    if (config().has("query"))
+        /// We don't want to see any information log in query mode, unless it was set explicitly
+        default_log_level = "error";
+    else
+        default_log_level = "information";
+
+    Poco::Logger::root().setLevel( config().getString("log-level", default_log_level));
 
     EventNotifier::init();
 }
