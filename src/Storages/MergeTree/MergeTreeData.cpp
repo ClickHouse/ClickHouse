@@ -103,6 +103,10 @@
 #include <Poco/Logger.h>
 #include <Poco/Net/NetException.h>
 
+#if USE_AZURE_BLOB_STORAGE
+#include <azure/core/http/http.hpp>
+#endif
+
 template <>
 struct fmt::formatter<DB::DataPartPtr> : fmt::formatter<std::string>
 {
@@ -128,6 +132,8 @@ namespace ProfileEvents
     extern const Event RejectedMutations;
     extern const Event DelayedMutations;
     extern const Event DelayedMutationsMilliseconds;
+    extern const Event PartsLockWaitMicroseconds;
+    extern const Event PartsLockHoldMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -187,8 +193,8 @@ static void checkSuspiciousIndices(const ASTFunction * index_function)
     std::unordered_set<UInt64> unique_index_expression_hashes;
     for (const auto & child : index_function->arguments->children)
     {
-        IAST::Hash hash = child->getTreeHash();
-        UInt64 first_half_of_hash = hash.first;
+        const IAST::Hash hash = child->getTreeHash();
+        const auto & first_half_of_hash = hash.low64;
 
         if (!unique_index_expression_hashes.emplace(first_half_of_hash).second)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -307,6 +313,20 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
         if (min_format_version == MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING.toUnderType())
             throw Exception(ErrorCodes::METADATA_MISMATCH, "MergeTree data format version on disk doesn't support custom partitioning");
     }
+}
+DataPartsLock::DataPartsLock(std::mutex & data_parts_mutex_)
+    : wait_watch(Stopwatch(CLOCK_MONOTONIC))
+    , lock(data_parts_mutex_)
+    , lock_watch(Stopwatch(CLOCK_MONOTONIC))
+{
+    ProfileEvents::increment(ProfileEvents::PartsLockWaitMicroseconds, wait_watch->elapsedMicroseconds());
+}
+
+
+DataPartsLock::~DataPartsLock()
+{
+    if (lock_watch.has_value())
+        ProfileEvents::increment(ProfileEvents::PartsLockHoldMicroseconds, lock_watch->elapsedMicroseconds());
 }
 
 MergeTreeData::MergeTreeData(
@@ -1217,10 +1237,10 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         auto part_size_str = res.size_of_part ? formatReadableSizeWithBinarySuffix(*res.size_of_part) : "failed to calculate size";
 
         LOG_ERROR(log,
-            "Detaching broken part {}{} (size: {}). "
+            "Detaching broken part {} (size: {}). "
             "If it happened after update, it is likely because of backward incompatibility. "
             "You need to resolve this manually",
-            getFullPathOnDisk(part_disk_ptr), part_name, part_size_str);
+            fs::path(getFullPathOnDisk(part_disk_ptr)) / part_name, part_size_str);
     };
 
     try
@@ -1248,6 +1268,12 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     {
         throw;
     }
+#if USE_AZURE_BLOB_STORAGE
+    catch (const Azure::Core::Http::TransportException &)
+    {
+        throw;
+    }
+#endif
     catch (...)
     {
         mark_broken();
@@ -1396,6 +1422,18 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     size_t max_backoff_ms,
     size_t max_tries)
 {
+    auto handle_exception = [&, this](String exception_message, size_t try_no)
+    {
+        if (try_no + 1 == max_tries)
+            throw;
+
+        LOG_DEBUG(log, "Failed to load data part {} at try {} with retryable error: {}. Will retry in {} ms",
+                  part_name, try_no, exception_message, initial_backoff_ms);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(initial_backoff_ms));
+        initial_backoff_ms = std::min(initial_backoff_ms * 2, max_backoff_ms);
+    };
+
     for (size_t try_no = 0; try_no < max_tries; ++try_no)
     {
         try
@@ -1404,15 +1442,17 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
         }
         catch (const Exception & e)
         {
-            if (!isRetryableException(e) || try_no + 1 == max_tries)
+            if (isRetryableException(e))
+                handle_exception(e.message(),try_no);
+            else
                 throw;
-
-            LOG_DEBUG(log, "Failed to load data part {} at try {} with retryable error: {}. Will retry in {} ms",
-                part_name, try_no, e.message(), initial_backoff_ms);
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(initial_backoff_ms));
-            initial_backoff_ms = std::min(initial_backoff_ms * 2, max_backoff_ms);
         }
+#if USE_AZURE_BLOB_STORAGE
+        catch (const Azure::Core::Http::TransportException & e)
+        {
+            handle_exception(e.Message,try_no);
+        }
+#endif
     }
     UNREACHABLE();
 }
@@ -2328,7 +2368,7 @@ size_t MergeTreeData::clearOldPartsFromFilesystem(bool force)
     removePartsFinally(parts_to_remove);
     /// This is needed to close files to avoid they reside on disk after being deleted.
     /// NOTE: we can drop files from cache more selectively but this is good enough.
-    getContext()->dropMMappedFileCache();
+    getContext()->clearMMappedFileCache();
 
     return parts_to_remove.size();
 }
@@ -2834,7 +2874,7 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
     }
 
     if (!getStorageID().hasUUID())
-        getContext()->dropCaches();
+        getContext()->clearCaches();
 
     /// TODO: remove const_cast
     for (const auto & part : data_parts_by_info)
@@ -2875,9 +2915,9 @@ void MergeTreeData::dropAllData()
     }
 
     /// Tables in atomic databases have UUID and stored in persistent locations.
-    /// No need to drop caches (that are keyed by filesystem path) because collision is not possible.
+    /// No need to clear caches (that are keyed by filesystem path) because collision is not possible.
     if (!getStorageID().hasUUID())
-        getContext()->dropCaches();
+        getContext()->clearCaches();
 
     /// Removing of each data part before recursive removal of directory is to speed-up removal, because there will be less number of syscalls.
     NameSet part_names_failed;
@@ -6244,14 +6284,14 @@ void MergeTreeData::Transaction::clear()
     precommitted_parts.clear();
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData::DataPartsLock * acquired_parts_lock)
+MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock * acquired_parts_lock)
 {
     DataPartsVector total_covered_parts;
 
     if (!isEmpty())
     {
         auto settings = data.getSettings();
-        auto parts_lock = acquired_parts_lock ? MergeTreeData::DataPartsLock() : data.lockParts();
+        auto parts_lock = acquired_parts_lock ? DataPartsLock() : data.lockParts();
         auto * owing_parts_lock = acquired_parts_lock ? acquired_parts_lock : &parts_lock;
 
         for (const auto & part : precommitted_parts)
