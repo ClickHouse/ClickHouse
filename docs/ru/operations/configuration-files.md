@@ -122,6 +122,23 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85
 ```
 
+## Скрытие {#hidden}
+
+Вы можете использовать  `hidden` аттрибут для скрытие некоторых элементов в файле предобработки.
+
+Пример:
+
+```xml
+<clickhouse>
+
+    <interserver_http_credentials hidden="true">
+        <user>admin</user>
+        <password>secret</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
 ## Примеры записи конфигурации на YAML {#example}
 
 Здесь можно рассмотреть пример реальной конфигурации записанной на YAML: [config.yaml.example](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example).
