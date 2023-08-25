@@ -168,16 +168,6 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
         if (!file_segment_metadata.evicting())
         {
             file_segment = file_segment_metadata.file_segment;
-            if (file_segment->isDownloaded())
-            {
-                if (file_segment->getDownloadedSize(true) == 0)
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Cannot have zero size downloaded file segments. {}",
-                        file_segment->getInfoForLog());
-                }
-            }
         }
         else
         {
