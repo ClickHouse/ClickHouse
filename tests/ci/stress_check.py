@@ -14,6 +14,7 @@ from build_download_helper import download_all_deb_packages
 from clickhouse_helper import (
     ClickHouseHelper,
     prepare_tests_results_for_clickhouse,
+    get_instance_type,
 )
 from commit_status_helper import RerunHelper, get_commit, post_commit_status
 from docker_pull_helper import get_image_with_version
@@ -28,12 +29,34 @@ from upload_result_helper import upload_results
 
 
 def get_run_command(
-    build_path, result_folder, repo_tests_path, server_log_folder, image
+    pr_info,
+    check_start_time,
+    check_name,
+    build_path,
+    result_folder,
+    repo_tests_path,
+    server_log_folder,
+    image,
 ):
+    instance_type = get_instance_type()
+
+    envs = [
+        # a static link, don't use S3_URL or S3_DOWNLOAD
+        "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets'",
+        "-e CLICKHOUSE_CI_LOGS_HOST",
+        "-e CLICKHOUSE_CI_LOGS_PASSWORD",
+        f"-e PULL_REQUEST_NUMBER='{pr_info.number}'",
+        f"-e COMMIT_SHA='{pr_info.sha}'",
+        f"-e CHECK_START_TIME='{check_start_time}'",
+        f"-e CHECK_NAME='{check_name}'",
+        f"-e INSTANCE_TYPE='{instance_type}'",
+    ]
+
+    env_str = " ".join(envs)
+
     cmd = (
         "docker run --cap-add=SYS_PTRACE "
-        # a static link, don't use S3_URL or S3_DOWNLOAD
-        "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
+        f"{env_str} "
         # For dmesg and sysctl
         "--privileged "
         f"--volume={build_path}:/package_folder "
@@ -149,9 +172,16 @@ def run_stress_test(docker_image_name):
     run_log_path = os.path.join(temp_path, "run.log")
 
     run_command = get_run_command(
-        packages_path, result_path, repo_tests_path, server_log_path, docker_image
+        pr_info,
+        stopwatch.start_time_str,
+        check_name,
+        packages_path,
+        result_path,
+        repo_tests_path,
+        server_log_path,
+        docker_image,
     )
-    logging.info("Going to run func tests: %s", run_command)
+    logging.info("Going to run stress test: %s", run_command)
 
     with TeePopen(run_command, run_log_path, timeout=60 * 150) as process:
         retcode = process.wait()
@@ -167,6 +197,23 @@ def run_stress_test(docker_image_name):
         result_path, server_log_path, run_log_path
     )
     ch_helper = ClickHouseHelper()
+
+    # Cleanup run log from the credentials of CI logs database.
+    # Note: a malicious user can still print them by splitting the value into parts.
+    # But we will be warned when a malicious user modifies CI script.
+    # Although they can also print them from inside tests.
+    # Nevertheless, the credentials of the CI logs have limited scope
+    # and does not provide access to sensitive info.
+
+    ci_logs_host = os.getenv("CLICKHOUSE_CI_LOGS_HOST", "CLICKHOUSE_CI_LOGS_HOST")
+    ci_logs_password = os.getenv(
+        "CLICKHOUSE_CI_LOGS_PASSWORD", "CLICKHOUSE_CI_LOGS_PASSWORD"
+    )
+    if ci_logs_host not in ("CLICKHOUSE_CI_LOGS_HOST", ""):
+        subprocess.check_call(
+            f"sed -i -r -e 's!{ci_logs_host}!CLICKHOUSE_CI_LOGS_HOST!g; s!{ci_logs_password}!CLICKHOUSE_CI_LOGS_PASSWORD!g;' '{run_log_path}'",
+            shell=True,
+        )
 
     report_url = upload_results(
         s3_helper,

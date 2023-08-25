@@ -119,7 +119,8 @@
             "docker/test/stateless",
             "docker/test/integration/base",
             "docker/test/fuzzer",
-            "docker/test/keeper-jepsen"
+            "docker/test/keeper-jepsen",
+            "docker/test/sqltest"
          ]
     },
     "docker/test/integration/kerberized_hadoop": {
@@ -152,6 +153,10 @@
     },
     "docker/test/sqllogic": {
         "name": "clickhouse/sqllogic-test",
+        "dependent": []
+    },
+    "docker/test/sqltest": {
+        "name": "clickhouse/sqltest",
         "dependent": []
     }
 }

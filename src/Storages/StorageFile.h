@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Storages/IStorage.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/IStorage.h>
 #include <Common/FileRenamer.h>
 
 #include <atomic>
@@ -22,8 +22,8 @@ public:
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
         const String & comment;
-
         const std::string rename_after_processing;
+        std::string path_to_archive;
     };
 
     /// From file descriptor
@@ -65,7 +65,7 @@ public:
     bool storesDataOnDisk() const override;
     Strings getDataPaths() const override;
 
-    NamesAndTypesList getVirtuals() const override;
+    NamesAndTypesList getVirtuals() const override { return virtual_columns; }
 
     static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read);
 
@@ -90,9 +90,14 @@ public:
         const std::vector<String> & paths,
         const String & compression_method,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr context);
+        ContextPtr context,
+        const std::vector<String> & paths_to_archive = {"auto"});
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
+
+    static void parseFileSource(String source, String & filename, String & path_to_archive);
+
+    bool supportsTrivialCountOptimization() const override { return true; }
 
 protected:
     friend class StorageFileSource;
@@ -123,6 +128,7 @@ private:
 
     std::string base_path;
     std::vector<std::string> paths;
+    std::vector<std::string> paths_to_archive;
 
     bool is_db_table = true;        /// Table is stored in real database, not user's file
     bool use_table_fd = false;      /// Use table_fd instead of path
@@ -148,6 +154,8 @@ private:
     std::atomic<int32_t> readers_counter = 0;
     FileRenamer file_renamer;
     bool was_renamed = false;
+
+    NamesAndTypesList virtual_columns;
 };
 
 }

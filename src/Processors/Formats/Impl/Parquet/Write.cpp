@@ -37,8 +37,10 @@ namespace
 template <typename T, typename SourceType>
 struct StatisticsNumeric
 {
-    T min = std::numeric_limits<T>::max();
-    T max = std::numeric_limits<T>::min();
+    T min = std::numeric_limits<T>::has_infinity
+        ? std::numeric_limits<T>::infinity() : std::numeric_limits<T>::max();
+    T max = std::numeric_limits<T>::has_infinity
+        ? -std::numeric_limits<T>::infinity() : std::numeric_limits<T>::lowest();
 
     void add(SourceType x)
     {
@@ -251,6 +253,28 @@ struct ConverterNumeric
                 buf[i] = static_cast<To>(column.getData()[offset + i]); // NOLINT
             return buf.data();
         }
+    }
+};
+
+struct ConverterDateTime64WithMultiplier
+{
+    using Statistics = StatisticsNumeric<Int64, Int64>;
+
+    using Col = ColumnDecimal<DateTime64>;
+    const Col & column;
+    Int64 multiplier;
+    PODArray<Int64> buf;
+
+    ConverterDateTime64WithMultiplier(const ColumnPtr & c, Int64 multiplier_) : column(assert_cast<const Col &>(*c)), multiplier(multiplier_) {}
+
+    const Int64 * getBatch(size_t offset, size_t count)
+    {
+        buf.resize(count);
+        for (size_t i = 0; i < count; ++i)
+            /// Not checking overflow because DateTime64 values should already be in the range where
+            /// they fit in Int64 at any allowed scale (i.e. up to nanoseconds).
+            buf[i] = column.getData()[offset + i].value * multiplier;
+        return buf.data();
     }
 };
 
@@ -786,9 +810,14 @@ void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & option
             break;
 
         case TypeIndex::DateTime64:
-            writeColumnImpl<parquet::Int64Type>(
-                s, options, out, ConverterNumeric<ColumnDecimal<DateTime64>, Int64, Int64>(
-                    s.primitive_column));
+            if (s.datetime64_multiplier == 1)
+                writeColumnImpl<parquet::Int64Type>(
+                    s, options, out, ConverterNumeric<ColumnDecimal<DateTime64>, Int64, Int64>(
+                        s.primitive_column));
+            else
+                writeColumnImpl<parquet::Int64Type>(
+                    s, options, out, ConverterDateTime64WithMultiplier(
+                        s.primitive_column, s.datetime64_multiplier));
             break;
 
         case TypeIndex::IPv4:

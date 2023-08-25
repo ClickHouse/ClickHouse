@@ -148,6 +148,8 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     {
         if (index->type->name == "annoy")
             index->granularity = ASTIndexDeclaration::DEFAULT_ANNOY_INDEX_GRANULARITY;
+        else if (index->type->name == "usearch")
+            index->granularity = ASTIndexDeclaration::DEFAULT_USEARCH_INDEX_GRANULARITY;
         else
             index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
     }
@@ -502,7 +504,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
-    ParserCompoundIdentifier table_name_p(true, true);
+    ParserCompoundIdentifier table_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ true);
     ParserKeyword s_from("FROM");
     ParserKeyword s_on("ON");
     ParserToken s_dot(TokenType::Dot);
@@ -740,7 +742,7 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserKeyword s_create("CREATE");
     ParserKeyword s_attach("ATTACH");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
-    ParserCompoundIdentifier table_name_p(true, true);
+    ParserCompoundIdentifier table_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ true);
     ParserKeyword s_as("AS");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_live("LIVE");
@@ -878,7 +880,7 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_attach("ATTACH");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
-    ParserCompoundIdentifier table_name_p(true);
+    ParserCompoundIdentifier table_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ true);
     ParserKeyword s_as("AS");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_window("WINDOW");
@@ -1015,11 +1017,16 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     query->if_not_exists = if_not_exists;
     query->is_window_view = true;
 
-    StorageID table_id = table->as<ASTTableIdentifier>()->getTableId();
-    query->setDatabase(table_id.database_name);
-    query->setTable(table_id.table_name);
-    query->uuid = table_id.uuid;
+    auto * table_id = table->as<ASTTableIdentifier>();
+    query->database = table_id->getDatabase();
+    query->table = table_id->getTable();
+    query->uuid = table_id->uuid;
     query->cluster = cluster_str;
+
+    if (query->database)
+        query->children.push_back(query->database);
+    if (query->table)
+        query->children.push_back(query->table);
 
     if (to_table)
         query->to_table_id = to_table->as<ASTTableIdentifier>()->getTableId();
@@ -1265,7 +1272,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_create("CREATE");
     ParserKeyword s_attach("ATTACH");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
-    ParserCompoundIdentifier table_name_p(true, true);
+    ParserCompoundIdentifier table_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ true);
+    ParserCompoundIdentifier to_table_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ false);
     ParserKeyword s_as("AS");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_materialized("MATERIALIZED");
@@ -1487,7 +1495,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ParserKeyword s_dictionary("DICTIONARY");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserKeyword s_on("ON");
-    ParserCompoundIdentifier dict_name_p(true, true);
+    ParserCompoundIdentifier dict_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ true);
     ParserToken s_left_paren(TokenType::OpeningRoundBracket);
     ParserToken s_right_paren(TokenType::ClosingRoundBracket);
     ParserToken s_dot(TokenType::Dot);
