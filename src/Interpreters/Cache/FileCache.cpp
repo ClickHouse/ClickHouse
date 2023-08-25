@@ -23,6 +23,8 @@ namespace ProfileEvents
 {
     extern const Event FilesystemCacheEvictedBytes;
     extern const Event FilesystemCacheEvictedFileSegments;
+    extern const Event FilesystemCacheEvictionSkippedFileSegments;
+    extern const Event FilesystemCacheEvictionTries;
     extern const Event FilesystemCacheLockCacheMicroseconds;
     extern const Event FilesystemCacheReserveMicroseconds;
     extern const Event FilesystemCacheEvictMicroseconds;
@@ -42,6 +44,7 @@ size_t roundUpToMultiple(size_t num, size_t multiple)
 {
     return roundDownToMultiple(num + multiple - 1, multiple);
 }
+
 }
 
 namespace DB
@@ -165,41 +168,6 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
         if (!file_segment_metadata.evicting())
         {
             file_segment = file_segment_metadata.file_segment;
-            if (file_segment->isDownloaded())
-            {
-                if (file_segment->getDownloadedSize(true) == 0)
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Cannot have zero size downloaded file segments. {}",
-                        file_segment->getInfoForLog());
-                }
-
-#ifndef NDEBUG
-                /**
-                * Check that in-memory state of the cache is consistent with the state on disk.
-                * Check only in debug build, because such checks can be done often and can be quite
-                * expensive compared to overall query execution time.
-                */
-
-                fs::path path = file_segment->getPathInLocalCache();
-                if (!fs::exists(path))
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "File path does not exist, but file has DOWNLOADED state. {}",
-                        file_segment->getInfoForLog());
-                }
-
-                if (fs::file_size(path) == 0)
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Cannot have zero size downloaded file segments. {}",
-                        file_segment->getInfoForLog());
-                }
-#endif
-            }
         }
         else
         {
@@ -669,6 +637,8 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
         {
             stat_by_kind.non_releasable_size += segment_metadata->size();
             ++stat_by_kind.non_releasable_count;
+
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedFileSegments);
         }
 
         return PriorityIterationResult::CONTINUE;
@@ -684,6 +654,8 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
 
         if (is_query_priority_overflow())
         {
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
+
             query_priority->iterate(
                 [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
                 { return is_query_priority_overflow() ? iterate_func(locked_key, segment_metadata) : PriorityIterationResult::BREAK; },
@@ -731,6 +703,8 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
 
     if (is_main_priority_overflow())
     {
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
+
         main_priority->iterate(
             [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
             { return is_main_priority_overflow() ? iterate_func(locked_key, segment_metadata) : PriorityIterationResult::BREAK; },
@@ -1037,7 +1011,7 @@ void FileCache::deactivateBackgroundOperations()
         cleanup_thread->join();
 }
 
-FileSegmentsHolderPtr FileCache::getSnapshot()
+FileSegments FileCache::getSnapshot()
 {
     assertInitialized();
 #ifndef NDEBUG
@@ -1050,19 +1024,19 @@ FileSegmentsHolderPtr FileCache::getSnapshot()
         for (const auto & [_, file_segment_metadata] : locked_key)
             file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata->file_segment));
     });
-    return std::make_unique<FileSegmentsHolder>(std::move(file_segments), /* complete_on_dtor */false);
+    return file_segments;
 }
 
-FileSegmentsHolderPtr FileCache::getSnapshot(const Key & key)
+FileSegments FileCache::getSnapshot(const Key & key)
 {
     FileSegments file_segments;
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW_LOGICAL);
     for (const auto & [_, file_segment_metadata] : *locked_key->getKeyMetadata())
         file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata->file_segment));
-    return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
+    return file_segments;
 }
 
-FileSegmentsHolderPtr FileCache::dumpQueue()
+FileSegments FileCache::dumpQueue()
 {
     assertInitialized();
 
@@ -1073,7 +1047,7 @@ FileSegmentsHolderPtr FileCache::dumpQueue()
         return PriorityIterationResult::CONTINUE;
     }, lockCache());
 
-    return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
+    return file_segments;
 }
 
 std::vector<String> FileCache::tryGetCachePaths(const Key & key)
@@ -1146,6 +1120,17 @@ FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
     auto lock = lockCache();
     auto context = query_limit->getOrSetQueryContext(query_id, settings, lock);
     return std::make_unique<QueryContextHolder>(query_id, this, std::move(context));
+}
+
+FileSegments FileCache::sync()
+{
+    FileSegments file_segments;
+    metadata.iterate([&](LockedKey & locked_key)
+    {
+        auto broken = locked_key.sync();
+        file_segments.insert(file_segments.end(), broken.begin(), broken.end());
+    });
+    return file_segments;
 }
 
 }
