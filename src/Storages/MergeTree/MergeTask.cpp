@@ -901,14 +901,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     global_ctx->horizontal_stage_progress = std::make_unique<MergeStageProgress>(
         ctx->column_sizes ? ctx->column_sizes->keyColumnsWeight() : 1.0);
 
-    if (data_settings->allow_experimental_block_number_column
-        && global_ctx->metadata_snapshot->getGroupByTTLs().empty()
-        && std::find(global_ctx->merging_column_names.begin(), global_ctx->merging_column_names.end(), BlockNumberColumn.name)
-           == global_ctx->merging_column_names.end())
-    {
-        global_ctx->merging_column_names.emplace_back(BlockNumberColumn.name);
-    }
-
     for (const auto & part : global_ctx->future_part->parts)
     {
         Pipe pipe = createMergeTreeSequentialSource(
