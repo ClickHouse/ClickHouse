@@ -1,4 +1,5 @@
 default	begin inserts
 default	end inserts
-20	210
-20	210
+default	threads finished
+30	465
+30	465

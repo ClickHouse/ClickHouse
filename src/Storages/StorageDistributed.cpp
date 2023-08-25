@@ -1438,6 +1438,12 @@ ActionLock StorageDistributed::getActionLock(StorageActionBlockType type)
 
 void StorageDistributed::flushAndPrepareForShutdown()
 {
+    if (!getDistributedSettingsRef().flush_on_detach)
+    {
+        LOG_INFO(log, "Skip flushing data (due to flush_on_detach=0)");
+        return;
+    }
+
     try
     {
         flushClusterNodesAllData(getContext());
