@@ -36,7 +36,7 @@ std::string ZooKeeperRequest::toString() const
         "OpNum = {}\n"
         "Additional info:\n{}",
         xid,
-        getOpNum(),
+        Coordination::toString(getOpNum()),
         toStringImpl());
 }
 
@@ -74,41 +74,6 @@ void ZooKeeperSyncResponse::readImpl(ReadBuffer & in)
 void ZooKeeperSyncResponse::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(path, out);
-}
-
-void ZooKeeperReconfigRequest::writeImpl(WriteBuffer & out) const
-{
-    Coordination::write(joining, out);
-    Coordination::write(leaving, out);
-    Coordination::write(new_members, out);
-    Coordination::write(version, out);
-}
-
-void ZooKeeperReconfigRequest::readImpl(ReadBuffer & in)
-{
-    Coordination::read(joining, in);
-    Coordination::read(leaving, in);
-    Coordination::read(new_members, in);
-    Coordination::read(version, in);
-}
-
-std::string ZooKeeperReconfigRequest::toStringImpl() const
-{
-    return fmt::format(
-        "joining = {}\nleaving = {}\nnew_members = {}\nversion = {}",
-        joining, leaving, new_members, version);
-}
-
-void ZooKeeperReconfigResponse::readImpl(ReadBuffer & in)
-{
-    Coordination::read(value, in);
-    Coordination::read(stat, in);
-}
-
-void ZooKeeperReconfigResponse::writeImpl(WriteBuffer & out) const
-{
-    Coordination::write(value, out);
-    Coordination::write(stat, out);
 }
 
 void ZooKeeperWatchResponse::readImpl(ReadBuffer & in)
@@ -461,7 +426,8 @@ void ZooKeeperErrorResponse::readImpl(ReadBuffer & in)
     Coordination::read(read_error, in);
 
     if (read_error != error)
-        throw Exception(Error::ZMARSHALLINGERROR, "Error code in ErrorResponse ({}) doesn't match error code in header ({})", read_error, error);
+        throw Exception(fmt::format("Error code in ErrorResponse ({}) doesn't match error code in header ({})", read_error, error),
+            Error::ZMARSHALLINGERROR);
 }
 
 void ZooKeeperErrorResponse::writeImpl(WriteBuffer & out) const
@@ -533,7 +499,7 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, 
             requests.push_back(std::make_shared<ZooKeeperFilteredListRequest>(*concrete_request_list));
         }
         else
-            throw Exception::fromMessage(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
+            throw Exception("Illegal command as part of multi ZooKeeper request", Error::ZBADARGUMENTS);
     }
 }
 
@@ -576,9 +542,9 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
         if (done)
         {
             if (op_num != OpNum::Error)
-                throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected op_num received at the end of results for multi transaction");
+                throw Exception("Unexpected op_num received at the end of results for multi transaction", Error::ZMARSHALLINGERROR);
             if (error != -1)
-                throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected error value received at the end of results for multi transaction");
+                throw Exception("Unexpected error value received at the end of results for multi transaction", Error::ZMARSHALLINGERROR);
             break;
         }
 
@@ -587,7 +553,7 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
         requests.push_back(request);
 
         if (in.eof())
-            throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Not enough results received for multi transaction");
+            throw Exception("Not enough results received for multi transaction", Error::ZMARSHALLINGERROR);
     }
 }
 
@@ -620,7 +586,7 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
         Coordination::read(op_error, in);
 
         if (done)
-            throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Not enough results received for multi transaction");
+            throw Exception("Not enough results received for multi transaction", Error::ZMARSHALLINGERROR);
 
         /// op_num == -1 is special for multi transaction.
         /// For unknown reason, error code is duplicated in header and in response body.
@@ -641,8 +607,6 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
 
         if (op_error == Error::ZOK || op_num == OpNum::Error)
             dynamic_cast<ZooKeeperResponse &>(*response).readImpl(in);
-
-        response->zxid = zxid;
     }
 
     /// Footer.
@@ -656,11 +620,11 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
         Coordination::read(error_read, in);
 
         if (!done)
-            throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Too many results received for multi transaction");
+            throw Exception("Too many results received for multi transaction", Error::ZMARSHALLINGERROR);
         if (op_num != OpNum::Error)
-            throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected op_num received at the end of results for multi transaction");
+            throw Exception("Unexpected op_num received at the end of results for multi transaction", Error::ZMARSHALLINGERROR);
         if (error_read != -1)
-            throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected error value received at the end of results for multi transaction");
+            throw Exception("Unexpected error value received at the end of results for multi transaction", Error::ZMARSHALLINGERROR);
     }
 }
 
@@ -700,7 +664,6 @@ ZooKeeperResponsePtr ZooKeeperRemoveRequest::makeResponse() const { return setTi
 ZooKeeperResponsePtr ZooKeeperExistsRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperExistsResponse>()); }
 ZooKeeperResponsePtr ZooKeeperGetRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperGetResponse>()); }
 ZooKeeperResponsePtr ZooKeeperSetRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperSetResponse>()); }
-ZooKeeperResponsePtr ZooKeeperReconfigRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperReconfigResponse>()); }
 ZooKeeperResponsePtr ZooKeeperListRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperListResponse>()); }
 ZooKeeperResponsePtr ZooKeeperSimpleListRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperSimpleListResponse>()); }
 
@@ -898,8 +861,7 @@ void ZooKeeperMultiResponse::fillLogElements(LogElements & elems, size_t idx) co
 void ZooKeeperRequestFactory::registerRequest(OpNum op_num, Creator creator)
 {
     if (!op_num_to_request.try_emplace(op_num, creator).second)
-        throw Coordination::Exception(Coordination::Error::ZRUNTIMEINCONSISTENCY,
-            "Request type {} already registered", op_num);
+        throw Coordination::Exception("Request type " + toString(op_num) + " already registered", Coordination::Error::ZRUNTIMEINCONSISTENCY);
 }
 
 std::shared_ptr<ZooKeeperRequest> ZooKeeperRequest::read(ReadBuffer & in)
@@ -954,7 +916,7 @@ ZooKeeperRequestPtr ZooKeeperRequestFactory::get(OpNum op_num) const
 {
     auto it = op_num_to_request.find(op_num);
     if (it == op_num_to_request.end())
-        throw Exception(Error::ZBADARGUMENTS, "Unknown operation type {}", op_num);
+        throw Exception("Unknown operation type " + toString(op_num), Error::ZBADARGUMENTS);
 
     return it->second();
 }
@@ -998,7 +960,6 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::SimpleList, ZooKeeperSimpleListRequest>(*this);
     registerZooKeeperRequest<OpNum::List, ZooKeeperListRequest>(*this);
     registerZooKeeperRequest<OpNum::Check, ZooKeeperCheckRequest>(*this);
-    registerZooKeeperRequest<OpNum::Reconfig, ZooKeeperReconfigRequest>(*this);
     registerZooKeeperRequest<OpNum::Multi, ZooKeeperMultiRequest>(*this);
     registerZooKeeperRequest<OpNum::MultiRead, ZooKeeperMultiRequest>(*this);
     registerZooKeeperRequest<OpNum::SessionID, ZooKeeperSessionIDRequest>(*this);

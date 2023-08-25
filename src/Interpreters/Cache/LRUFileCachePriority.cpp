@@ -166,17 +166,15 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CacheGuard::Lock &
     }
 }
 
-void LRUFileCachePriority::LRUFileCacheIterator::remove(const CacheGuard::Lock &)
+LRUFileCachePriority::Iterator
+LRUFileCachePriority::LRUFileCacheIterator::remove(const CacheGuard::Lock &)
 {
-    checkUsable();
-    cache_priority->remove(queue_iter);
-    queue_iter = LRUQueueIterator{};
+    return std::make_shared<LRUFileCacheIterator>(
+        cache_priority, cache_priority->remove(queue_iter));
 }
 
 void LRUFileCachePriority::LRUFileCacheIterator::invalidate()
 {
-    checkUsable();
-
     LOG_TEST(
         cache_priority->log,
         "Invalidating entry in LRU queue. Key: {}, offset: {}, previous size: {}",
@@ -189,8 +187,6 @@ void LRUFileCachePriority::LRUFileCacheIterator::invalidate()
 
 void LRUFileCachePriority::LRUFileCacheIterator::updateSize(int64_t size)
 {
-    checkUsable();
-
     LOG_TEST(
         cache_priority->log,
         "Update size with {} in LRU queue for key: {}, offset: {}, previous size: {}",
@@ -202,15 +198,8 @@ void LRUFileCachePriority::LRUFileCacheIterator::updateSize(int64_t size)
 
 size_t LRUFileCachePriority::LRUFileCacheIterator::use(const CacheGuard::Lock &)
 {
-    checkUsable();
     cache_priority->queue.splice(cache_priority->queue.end(), cache_priority->queue, queue_iter);
     return ++queue_iter->hits;
-}
-
-void LRUFileCachePriority::LRUFileCacheIterator::checkUsable() const
-{
-    if (queue_iter == LRUQueueIterator{})
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to use invalid iterator");
 }
 
 }

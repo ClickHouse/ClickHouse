@@ -21,8 +21,6 @@ struct FileCacheKey
     static FileCacheKey random();
 
     bool operator==(const FileCacheKey & other) const { return key == other.key; }
-
-    static FileCacheKey fromKeyString(const std::string & key_str);
 };
 
 using FileCacheKeyAndOffset = std::pair<FileCacheKey, size_t>;

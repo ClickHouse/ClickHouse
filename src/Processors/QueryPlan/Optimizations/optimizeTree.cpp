@@ -131,8 +131,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
                 /// Projection optimization relies on PK optimization
                 if (optimization_settings.optimize_projection)
-                    num_applied_projection
-                        += optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings.optimize_use_implicit_projections);
+                    num_applied_projection += optimizeUseAggregateProjections(*frame.node, nodes);
 
                 if (optimization_settings.aggregation_in_order)
                     optimizeAggregationInOrder(*frame.node, nodes);
@@ -181,7 +180,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
 }
 
-void optimizeTreeThirdPass(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void optimizeTreeThirdPass(QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     Stack stack;
     stack.push_back({.node = &root});
@@ -205,7 +204,7 @@ void optimizeTreeThirdPass(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::
             source_step_with_filter->applyFilters();
         }
 
-        addPlansForSets(plan, *frame.node, nodes);
+        addPlansForSets(*frame.node, nodes);
 
         stack.pop_back();
     }

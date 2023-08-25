@@ -32,13 +32,9 @@ public:
 
     std::string getName() const override { return "URLCluster"; }
 
-    NamesAndTypesList getVirtuals() const override { return virtual_columns; }
+    NamesAndTypesList getVirtuals() const override;
 
     RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const override;
-
-    bool supportsSubcolumns() const override { return true; }
-
-    bool supportsTrivialCountOptimization() const override { return true; }
 
 private:
     void addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context) override;
@@ -46,7 +42,6 @@ private:
     String uri;
     String format_name;
     String compression_method;
-    NamesAndTypesList virtual_columns;
 };
 
 

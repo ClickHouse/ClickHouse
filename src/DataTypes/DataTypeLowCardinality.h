@@ -46,7 +46,6 @@ public:
     bool canBeUsedInBooleanContext() const override { return dictionary_type->canBeUsedInBooleanContext(); }
     bool isValueRepresentedByNumber() const override { return dictionary_type->isValueRepresentedByNumber(); }
     bool isValueRepresentedByInteger() const override { return dictionary_type->isValueRepresentedByInteger(); }
-    bool isValueRepresentedByUnsignedInteger() const override { return dictionary_type->isValueRepresentedByUnsignedInteger(); }
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
     bool haveMaximumSizeOfValue() const override { return dictionary_type->haveMaximumSizeOfValue(); }
     size_t getMaximumSizeOfValueInMemory() const override { return dictionary_type->getMaximumSizeOfValueInMemory(); }

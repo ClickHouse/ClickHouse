@@ -258,12 +258,12 @@ struct AggregateFunctionSumData
 
     void write(WriteBuffer & buf) const
     {
-        writeBinaryLittleEndian(sum, buf);
+        writeBinary(sum, buf);
     }
 
     void read(ReadBuffer & buf)
     {
-        readBinaryLittleEndian(sum, buf);
+        readBinary(sum, buf);
     }
 
     T get() const
