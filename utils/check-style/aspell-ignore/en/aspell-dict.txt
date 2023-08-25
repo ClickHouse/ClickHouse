@@ -2253,6 +2253,7 @@ subdirectory
 subexpression
 subexpressions
 subfolder
+subfolders
 subinterval
 subintervals
 subkey
@@ -2564,6 +2565,7 @@ xlarge
 xml
 xxHash
 xz
+yaml
 yandex
 youtube
 zLib

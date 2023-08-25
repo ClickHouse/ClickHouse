@@ -52,7 +52,9 @@
 #include <Storages/StorageFile.h>
 #include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
+#include <Storages/StorageAzureBlob.h>
 #include <Storages/HDFS/StorageHDFS.h>
+#include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -383,12 +385,60 @@ BlockIO InterpreterSystemQuery::execute()
             }
             break;
         }
+        case Type::SYNC_FILESYSTEM_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_SYNC_FILESYSTEM_CACHE);
+
+            ColumnsDescription columns{NamesAndTypesList{
+                {"cache_name", std::make_shared<DataTypeString>()},
+                {"path", std::make_shared<DataTypeString>()},
+                {"size", std::make_shared<DataTypeUInt64>()},
+            }};
+            Block sample_block;
+            for (const auto & column : columns)
+                sample_block.insert({column.type->createColumn(), column.type, column.name});
+
+            MutableColumns res_columns = sample_block.cloneEmptyColumns();
+
+            auto fill_data = [&](const std::string & cache_name, const FileCachePtr & cache, const FileSegments & file_segments)
+            {
+                for (const auto & file_segment : file_segments)
+                {
+                    size_t i = 0;
+                    const auto path = cache->getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->getKind());
+                    res_columns[i++]->insert(cache_name);
+                    res_columns[i++]->insert(path);
+                    res_columns[i++]->insert(file_segment->getDownloadedSize(false));
+                }
+            };
+
+            if (query.filesystem_cache_name.empty())
+            {
+                auto caches = FileCacheFactory::instance().getAll();
+                for (const auto & [cache_name, cache_data] : caches)
+                {
+                    auto file_segments = cache_data->cache->sync();
+                    fill_data(cache_name, cache_data->cache, file_segments);
+                }
+            }
+            else
+            {
+                auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name).cache;
+                auto file_segments = cache->sync();
+                fill_data(query.filesystem_cache_name, cache, file_segments);
+            }
+
+            size_t num_rows = res_columns[0]->size();
+            auto source = std::make_shared<SourceFromSingleChunk>(sample_block, Chunk(std::move(res_columns), num_rows));
+            result.pipeline = QueryPipeline(std::move(source));
+            break;
+        }
         case Type::DROP_SCHEMA_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_SCHEMA_CACHE);
             std::unordered_set<String> caches_to_drop;
             if (query.schema_cache_storage.empty())
-                caches_to_drop = {"FILE", "S3", "HDFS", "URL"};
+                caches_to_drop = {"FILE", "S3", "HDFS", "URL", "AZURE"};
             else
                 caches_to_drop = {query.schema_cache_storage};
 
@@ -404,6 +454,10 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
             if (caches_to_drop.contains("URL"))
                 StorageURL::getSchemaCache(getContext()).clear();
+#if USE_AZURE_BLOB_STORAGE
+            if (caches_to_drop.contains("AZURE"))
+                StorageAzureBlob::getSchemaCache(getContext()).clear();
+#endif
             break;
         }
         case Type::RELOAD_DICTIONARY:
@@ -1020,6 +1074,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
+        case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_SCHEMA_CACHE:
 #if USE_AWS_S3
         case Type::DROP_S3_CLIENT_CACHE:
