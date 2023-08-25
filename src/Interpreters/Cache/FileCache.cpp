@@ -23,6 +23,8 @@ namespace ProfileEvents
 {
     extern const Event FilesystemCacheEvictedBytes;
     extern const Event FilesystemCacheEvictedFileSegments;
+    extern const Event FilesystemCacheEvictionSkippedFileSegments;
+    extern const Event FilesystemCacheEvictionTries;
     extern const Event FilesystemCacheLockCacheMicroseconds;
     extern const Event FilesystemCacheReserveMicroseconds;
     extern const Event FilesystemCacheEvictMicroseconds;
@@ -645,6 +647,8 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
         {
             stat_by_kind.non_releasable_size += segment_metadata->size();
             ++stat_by_kind.non_releasable_count;
+
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedFileSegments);
         }
 
         return PriorityIterationResult::CONTINUE;
@@ -660,6 +664,8 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
 
         if (is_query_priority_overflow())
         {
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
+
             query_priority->iterate(
                 [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
                 { return is_query_priority_overflow() ? iterate_func(locked_key, segment_metadata) : PriorityIterationResult::BREAK; },
@@ -707,6 +713,8 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
 
     if (is_main_priority_overflow())
     {
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
+
         main_priority->iterate(
             [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
             { return is_main_priority_overflow() ? iterate_func(locked_key, segment_metadata) : PriorityIterationResult::BREAK; },
