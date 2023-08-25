@@ -2,6 +2,7 @@
 
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
+#include <Daemon/MinidumpWriter.h>
 #include <base/errnoToString.h>
 #include <base/defines.h>
 
@@ -85,13 +86,14 @@ using namespace DB;
 
 PipeFDs signal_pipe;
 
-
 /** Reset signal handler to the default and send signal to itself.
   * It's called from user signal handler to write core dump.
   */
 static void call_default_signal_handler(int sig)
 {
-    if (SIG_ERR == signal(sig, SIG_DFL))
+    if (MinidumpWriter::useMinidump())
+        MinidumpWriter::installMinidumpHandler(sig); /// This will install minidump handler if sig considered a crash signal
+    else if (SIG_ERR == signal(sig, SIG_DFL))
         throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 
     if (0 != raise(sig))
@@ -966,6 +968,7 @@ extern String getGitHash();
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
     SentryWriter::initialize(config());
+    MinidumpWriter::initialize(config());
     std::set_terminate(terminate_handler);
 
     /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.

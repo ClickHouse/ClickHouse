@@ -167,3 +167,7 @@ if (TARGET ch_contrib::libarchive)
 endif()
 
 set(SOURCE_DIR ${PROJECT_SOURCE_DIR})
+if (TARGET ch_contrib::breakpad)
+    set(USE_BREAKPAD 1)
+endif()
+set(SOURCE_DIR ${CMAKE_SOURCE_DIR})
