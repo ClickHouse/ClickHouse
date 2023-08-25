@@ -26,6 +26,9 @@ public:
                 [[fallthrough]];
             case QueryTreeNodeType::UNION:
             {
+                /// Queries like `(SELECT 1) as t` have invalid syntax. To avoid creating such queries (e.g. in StorageDistributed)
+                /// we need to remove aliases for top level queries.
+                /// N.B. Subquery depth starts count from 1, so the following condition checks if it's a top level.
                 if (getSubqueryDepth() == 1)
                 {
                     node->removeAlias();
