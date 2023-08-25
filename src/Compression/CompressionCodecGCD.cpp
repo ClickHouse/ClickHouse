@@ -52,7 +52,10 @@ namespace ErrorCodes
 
 UInt32 CompressionCodecGCD::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
-    return uncompressed_size + 2;
+    return uncompressed_size
+           + gcd_bytes_size // To store gcd
+           + gcd_bytes_size // Max bytes_to_skip
+           + 2; // Local header
 }
 
 CompressionCodecGCD::CompressionCodecGCD(UInt8 gcd_bytes_size_)
@@ -75,7 +78,7 @@ namespace
 {
 
 template <typename T>
-void compressDataForType(const char * source, UInt32 source_size, char * dest)
+UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
     if (source_size % sizeof(T) != 0)
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot GCD compress, data size {}  is not aligned to {}", source_size, sizeof(T));
@@ -97,6 +100,7 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
     }
 
     unalignedStore<T>(dest, gcd_divider);
+    auto * dest_start = dest;
     dest += sizeof(T);
 
     if (typeid(T) == typeid(UInt32) || typeid(T) == typeid(UInt64))
@@ -122,6 +126,7 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
             dest += sizeof(T);
         }
     }
+    return static_cast<UInt32>(dest - dest_start);
 }
 
 template <typename T>
@@ -158,28 +163,29 @@ UInt32 CompressionCodecGCD::doCompressData(const char * source, UInt32 source_si
     dest[1] = bytes_to_skip; /// unused (backward compatibility)
     memcpy(&dest[2], source, bytes_to_skip);
     size_t start_pos = 2 + bytes_to_skip;
+    UInt32 result_size = 0;
     switch (gcd_bytes_size)
     {
     case 1:
-        compressDataForType<UInt8>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
+        result_size = compressDataForType<UInt8>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
         break;
     case 2:
-        compressDataForType<UInt16>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
+        result_size = compressDataForType<UInt16>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
         break;
     case 4:
-        compressDataForType<UInt32>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
+        result_size = compressDataForType<UInt32>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
         break;
     case 8:
-        compressDataForType<UInt64>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
+        result_size = compressDataForType<UInt64>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
         break;
     case 16:
-        compressDataForType<UInt128>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
+        result_size = compressDataForType<UInt128>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
         break;
     case 32:
-        compressDataForType<UInt256>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
+        result_size = compressDataForType<UInt256>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
         break;
     }
-    return 2 + source_size;
+    return 2 + bytes_to_skip + result_size;
 }
 
 void CompressionCodecGCD::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
