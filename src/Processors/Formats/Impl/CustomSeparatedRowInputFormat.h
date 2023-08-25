@@ -33,8 +33,6 @@ private:
     void syncAfterError() override;
     void readPrefix() override;
 
-    bool supportsCountRows() const override { return true; }
-
     std::unique_ptr<PeekableReadBuffer> buf;
     bool ignore_spaces;
 };
@@ -50,9 +48,9 @@ public:
 
     void skipField(size_t /*file_column*/) override { skipField(); }
     void skipField();
-    void skipNames() override { skipRow(); }
-    void skipTypes() override { skipRow(); }
-    void skipRow() override;
+    void skipNames() override { skipHeaderRow(); }
+    void skipTypes() override { skipHeaderRow(); }
+    void skipHeaderRow();
 
     void skipPrefixBeforeHeader() override;
     void skipRowStartDelimiter() override;
@@ -76,11 +74,9 @@ public:
 
     std::vector<String> readRowForHeaderDetection() override { return readRowImpl<ReadFieldMode::AS_POSSIBLE_STRING>(); }
 
-    bool checkForEndOfRow() override;
-    bool allowVariableNumberOfColumns() const override { return format_settings.custom.allow_variable_number_of_columns; }
-
+    bool checkEndOfRow();
     bool checkForSuffixImpl(bool check_eof);
-    inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf, true); }
+    inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf); }
 
     EscapingRule getEscapingRule() const override { return format_settings.custom.escaping_rule; }
 
@@ -113,11 +109,9 @@ public:
     CustomSeparatedSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_setting_);
 
 private:
-    bool allowVariableNumberOfColumns() const override { return format_settings.custom.allow_variable_number_of_columns; }
+    DataTypes readRowAndGetDataTypesImpl() override;
 
-    std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
-
-    std::optional<std::pair<std::vector<String>, DataTypes>> readRowAndGetFieldsAndDataTypes() override;
+    std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() override;
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 

@@ -11,10 +11,3 @@ libc = "0.2.132"
 [lib]
 crate-type = ["staticlib"]
 
-[profile.release]
-debug = true
-
-[profile.release-thinlto]
-inherits = "release"
-# BLAKE3 module requires "full" LTO (not "thin") to get additional 10% performance benefit
-lto = true

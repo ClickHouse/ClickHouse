@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
-#include <IO/SharedThreadPools.h>
+#include <IO/IOThreadPool.h>
 #include <Common/EventFD.h>
 
 namespace DB
@@ -84,7 +84,7 @@ struct MergeTreeSource::AsyncReadingState
     {
         try
         {
-            callback_runner(std::move(job), Priority{});
+            callback_runner(std::move(job), 0);
         }
         catch (...)
         {
@@ -105,7 +105,7 @@ struct MergeTreeSource::AsyncReadingState
     AsyncReadingState()
     {
         control = std::make_shared<Control>();
-        callback_runner = threadPoolCallbackRunner<void>(getIOThreadPool().get(), "MergeTreeRead");
+        callback_runner = threadPoolCallbackRunner<void>(IOThreadPool::get(), "MergeTreeRead");
     }
 
     ~AsyncReadingState()
@@ -207,7 +207,6 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
 
             try
             {
-                OpenTelemetry::SpanHolder span{"MergeTreeSource::tryGenerate()"};
                 holder->setResult(algorithm->read());
             }
             catch (...)
@@ -222,7 +221,6 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
     }
 #endif
 
-    OpenTelemetry::SpanHolder span{"MergeTreeSource::tryGenerate()"};
     return processReadResult(algorithm->read());
 }
 

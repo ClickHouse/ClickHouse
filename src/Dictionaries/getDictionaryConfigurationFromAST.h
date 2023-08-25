@@ -18,7 +18,6 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 struct ClickHouseDictionarySourceInfo
 {
     QualifiedTableName table_name;
-    String query;
     bool is_local = false;
 };
 

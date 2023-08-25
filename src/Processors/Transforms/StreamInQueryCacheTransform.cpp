@@ -4,24 +4,21 @@ namespace DB
 {
 
 StreamInQueryCacheTransform::StreamInQueryCacheTransform(
-    const Block & header_,
-    std::shared_ptr<QueryCache::Writer> query_cache_writer_,
-    QueryCache::Writer::ChunkType chunk_type_)
+    const Block & header_, QueryCachePtr cache, const QueryCache::Key & cache_key, std::chrono::milliseconds min_query_duration)
     : ISimpleTransform(header_, header_, false)
-    , query_cache_writer(query_cache_writer_)
-    , chunk_type(chunk_type_)
+    , cache_writer(cache->createWriter(cache_key, min_query_duration))
 {
 }
 
 void StreamInQueryCacheTransform::transform(Chunk & chunk)
 {
-    query_cache_writer->buffer(chunk.clone(), chunk_type);
+    cache_writer.buffer(chunk.clone());
 }
 
 void StreamInQueryCacheTransform::finalizeWriteInQueryCache()
 {
     if (!isCancelled())
-        query_cache_writer->finalizeWrite();
+        cache_writer.finalizeWrite();
 }
 
 };

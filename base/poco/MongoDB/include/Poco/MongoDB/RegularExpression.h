@@ -33,7 +33,7 @@ namespace MongoDB
     /// Represents a regular expression in BSON format.
     {
     public:
-        using Ptr = SharedPtr<RegularExpression>;
+        typedef SharedPtr<RegularExpression> Ptr;
 
         RegularExpression();
         /// Creates an empty RegularExpression.

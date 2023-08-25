@@ -196,7 +196,7 @@ class TestResult:
             )
         for log_path in log_paths:
             file = Path(log_path)
-            assert file.exists(), file
+            assert file.exists()
             self.log_files.append(file)
 
 
@@ -239,11 +239,10 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True) -> TestRes
 @dataclass
 class BuildResult:
     compiler: str
-    debug_build: bool
+    build_type: str
     sanitizer: str
     status: str
     elapsed_seconds: int
-    comment: str
 
 
 BuildResults = List[BuildResult]
@@ -282,7 +281,7 @@ def _format_header(
 
 def _get_status_style(status: str, colortheme: Optional[ColorTheme] = None) -> str:
     ok_statuses = ("OK", "success", "PASSED")
-    fail_statuses = ("FAIL", "failure", "error", "FAILED", "Timeout", "NOT_FAILED")
+    fail_statuses = ("FAIL", "failure", "error", "FAILED", "Timeout")
 
     if colortheme is None:
         colortheme = ReportColorTheme.default
@@ -349,8 +348,8 @@ def create_test_html_report(
                 has_log_urls = True
 
             row = "<tr>"
-            has_error = test_result.status in ("FAIL", "NOT_FAILED")
-            if has_error and test_result.raw_logs is not None:
+            is_fail = test_result.status in ("FAIL", "FLAKY")
+            if is_fail and test_result.raw_logs is not None:
                 row = '<tr class="failed">'
             row += "<td>" + test_result.name + "</td>"
             colspan += 1
@@ -358,7 +357,7 @@ def create_test_html_report(
 
             # Allow to quickly scroll to the first failure.
             fail_id = ""
-            if has_error:
+            if is_fail:
                 num_fails = num_fails + 1
                 fail_id = f'id="fail{num_fails}" '
 
@@ -453,7 +452,6 @@ tr:hover td {{filter: brightness(95%);}}
 <th>Build log</th>
 <th>Build time</th>
 <th class="artifacts">Artifacts</th>
-<th>Comment</th>
 </tr>
 {rows}
 </table>
@@ -484,8 +482,8 @@ def create_build_html_report(
     ):
         row = "<tr>"
         row += f"<td>{build_result.compiler}</td>"
-        if build_result.debug_build:
-            row += "<td>debug</td>"
+        if build_result.build_type:
+            row += f"<td>{build_result.build_type}</td>"
         else:
             row += "<td>relwithdebuginfo</td>"
         if build_result.sanitizer:
@@ -520,8 +518,6 @@ def create_build_html_report(
             if links:
                 links = links[: -len(link_separator)]
             row += f"<td>{links}</td>"
-
-        row += f"<td>{build_result.comment}</td>"
 
         row += "</tr>"
         rows += row

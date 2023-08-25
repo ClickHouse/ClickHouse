@@ -45,9 +45,9 @@ namespace JSONUtils
             const auto current_object_size = memory.size() + static_cast<size_t>(pos - in.position());
             if (min_bytes != 0 && current_object_size > 10 * min_bytes)
                 throw ParsingException(ErrorCodes::INCORRECT_DATA,
-                    "Size of JSON object at position {} is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. "
+                    "Size of JSON object is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. "
                     "Increase the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, "
-                    "most likely JSON is malformed", in.count(), min_bytes, current_object_size);
+                    "most likely JSON is malformed", min_bytes, current_object_size);
 
             if (quotes)
             {
@@ -124,86 +124,6 @@ namespace JSONUtils
     fileSegmentationEngineJSONCompactEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows)
     {
         return fileSegmentationEngineJSONEachRowImpl<'[', ']'>(in, memory, min_bytes, min_rows, max_rows);
-    }
-
-    template <const char opening_bracket, const char closing_bracket>
-    void skipRowForJSONEachRowImpl(ReadBuffer & in)
-    {
-        size_t balance = 0;
-        bool quotes = false;
-        while (!in.eof())
-        {
-            if (quotes)
-            {
-                auto * pos = find_first_symbols<'\\', '"'>(in.position(), in.buffer().end());
-                in.position() = pos;
-
-                if (in.position() > in.buffer().end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-                else if (in.position() == in.buffer().end())
-                    continue;
-
-                if (*in.position() == '\\')
-                {
-                    ++in.position();
-                    if (!in.eof())
-                        ++in.position();
-                }
-                else if (*in.position() == '"')
-                {
-                    ++in.position();
-                    quotes = false;
-                }
-            }
-            else
-            {
-                auto * pos = find_first_symbols<opening_bracket, closing_bracket, '\\', '"'>(in.position(), in.buffer().end());
-                in.position() = pos;
-
-                if (in.position() > in.buffer().end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-                else if (in.position() == in.buffer().end())
-                    continue;
-
-                else if (*in.position() == opening_bracket)
-                {
-                    ++balance;
-                    ++in.position();
-                }
-                else if (*in.position() == closing_bracket)
-                {
-                    --balance;
-                    ++in.position();
-                }
-                else if (*in.position() == '\\')
-                {
-                    ++in.position();
-                    if (!in.eof())
-                        ++in.position();
-                }
-                else if (*in.position() == '"')
-                {
-                    quotes = true;
-                    ++in.position();
-                }
-
-                if (balance == 0)
-                    return;
-            }
-        }
-
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected eof");
-
-    }
-
-    void skipRowForJSONEachRow(ReadBuffer & in)
-    {
-        return skipRowForJSONEachRowImpl<'{', '}'>(in);
-    }
-
-    void skipRowForJSONCompactEachRow(ReadBuffer & in)
-    {
-        return skipRowForJSONEachRowImpl<'[', ']'>(in);
     }
 
     NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, const FormatSettings & settings, JSONInferenceInfo * inference_info)
@@ -324,15 +244,6 @@ namespace JSONUtils
         writeCString(after_delimiter, out);
     }
 
-    void writeTitlePretty(const char * title, WriteBuffer & out, size_t indent, const char * after_delimiter)
-    {
-        writeChar(' ', indent * 4, out);
-        writeChar('"', out);
-        writeCString(title, out);
-        writeCString("\": ", out);
-        writeCString(after_delimiter, out);
-    }
-
     void writeObjectStart(WriteBuffer & out, size_t indent, const char * title)
     {
         if (title)
@@ -395,20 +306,10 @@ namespace JSONUtils
         WriteBuffer & out,
         const std::optional<String> & name,
         size_t indent,
-        const char * title_after_delimiter,
-        bool pretty_json)
+        const char * title_after_delimiter)
     {
         if (name.has_value())
-        {
-            if (pretty_json)
-            {
-                writeTitlePretty(name->data(), out, indent, title_after_delimiter);
-            }
-            else
-            {
-                writeTitle(name->data(), out, indent, title_after_delimiter);
-            }
-        }
+            writeTitle(name->data(), out, indent, title_after_delimiter);
 
         if (yield_strings)
         {
@@ -418,16 +319,7 @@ namespace JSONUtils
             writeJSONString(buf.str(), out, settings);
         }
         else
-        {
-            if (pretty_json)
-            {
-                serialization.serializeTextJSONPretty(column, row_num, out, settings, indent);
-            }
-            else
-            {
-                serialization.serializeTextJSON(column, row_num, out, settings);
-            }
-        }
+            serialization.serializeTextJSON(column, row_num, out, settings);
     }
 
     void writeColumns(
@@ -692,11 +584,8 @@ namespace JSONUtils
         auto names_and_types = JSONUtils::readMetadata(in);
         for (const auto & [name, type] : names_and_types)
         {
-            if (!header.has(name))
-                continue;
-
             auto header_type = header.getByName(name).type;
-            if (!type->equals(*header_type))
+            if (header.has(name) && !type->equals(*header_type))
                 throw Exception(
                                 ErrorCodes::INCORRECT_DATA,
                                 "Type {} of column '{}' from metadata is not the same as type in header {}",

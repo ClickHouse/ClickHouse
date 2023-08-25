@@ -138,15 +138,17 @@ struct FunctionPortRFC : public FunctionPortImpl<true>
 
 REGISTER_FUNCTION(Port)
 {
-    factory.registerFunction<FunctionPort>(FunctionDocumentation
+    factory.registerFunction<FunctionPort>(
     {
-        .description=R"(Returns the port or `default_port` if there is no port in the URL (or in case of validation error).)",
-        .categories{"URL"}
+        R"(Returns the port or `default_port` if there is no port in the URL (or in case of validation error).)",
+        Documentation::Examples{},
+        Documentation::Categories{"URL"}
     });
-    factory.registerFunction<FunctionPortRFC>(FunctionDocumentation
+    factory.registerFunction<FunctionPortRFC>(
     {
-        .description=R"(Similar to `port`, but conforms to RFC 3986.)",
-        .categories{"URL"}
+        R"(Similar to `port`, but conforms to RFC 3986.)",
+        Documentation::Examples{},
+        Documentation::Categories{"URL"}
     });
 }
 

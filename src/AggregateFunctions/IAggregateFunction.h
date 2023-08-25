@@ -6,11 +6,10 @@
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
-#include <Core/ValuesWithType.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <Common/Exception.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 #include <Core/IResolvedFunction.h>
 
 #include "config.h"
@@ -47,7 +46,6 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
 using AggregateDataPtr = char *;
-using AggregateDataPtrs = std::vector<AggregateDataPtr>;
 using ConstAggregateDataPtr = const char *;
 
 class IAggregateFunction;
@@ -148,13 +146,6 @@ public:
     /// Adds several default values of arguments into aggregation data on which place points to.
     /// Default values must be a the 0-th positions in columns.
     virtual void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const = 0;
-
-    virtual bool isParallelizeMergePrepareNeeded() const { return false; }
-
-    virtual void parallelizeMergePrepare(AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "parallelizeMergePrepare() with thread pool parameter isn't implemented for {} ", getName());
-    }
 
     /// Merges state (on which place points to) with other state of current aggregation function.
     virtual void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
@@ -398,7 +389,7 @@ public:
     }
 
     /// compileAdd should generate code for updating aggregate function state stored in aggregate_data_ptr
-    virtual void compileAdd(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/, const ValuesWithType & /*arguments*/) const
+    virtual void compileAdd(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/, const DataTypes & /*arguments_types*/, const std::vector<llvm::Value *> & /*arguments_values*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
     }

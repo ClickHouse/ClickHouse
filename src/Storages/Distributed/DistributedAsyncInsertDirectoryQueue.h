@@ -100,7 +100,7 @@ private:
     void addFile(const std::string & file_path);
     void initializeFilesFromDisk();
     void processFiles();
-    void processFile(std::string & file_path);
+    void processFile(const std::string & file_path);
     void processFilesWithBatching();
 
     void markAsBroken(const std::string & file_path);
@@ -149,9 +149,7 @@ private:
 
     BackgroundSchedulePoolTaskHolder task_handle;
 
-    CurrentMetrics::Increment metric_pending_bytes;
     CurrentMetrics::Increment metric_pending_files;
-    CurrentMetrics::Increment metric_broken_bytes;
     CurrentMetrics::Increment metric_broken_files;
 };
 

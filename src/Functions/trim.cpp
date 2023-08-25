@@ -112,8 +112,5 @@ REGISTER_FUNCTION(Trim)
     factory.registerFunction<FunctionTrimLeft>();
     factory.registerFunction<FunctionTrimRight>();
     factory.registerFunction<FunctionTrimBoth>();
-    factory.registerAlias("ltrim", FunctionTrimLeft::name);
-    factory.registerAlias("rtrim", FunctionTrimRight::name);
-    factory.registerAlias("trim", FunctionTrimBoth::name);
 }
 }

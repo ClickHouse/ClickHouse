@@ -1,4 +1,4 @@
-set (SOURCE_DIR "${PROJECT_SOURCE_DIR}/contrib/snappy")
+set (SOURCE_DIR "${CMAKE_SOURCE_DIR}/contrib/snappy")
 
 if (ARCH_S390X)
     set (SNAPPY_IS_BIG_ENDIAN 1)

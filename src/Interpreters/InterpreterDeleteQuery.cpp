@@ -72,8 +72,7 @@ BlockIO InterpreterDeleteQuery::execute()
         mutation_commands.emplace_back(mut_command);
 
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
-        MutationsInterpreter::Settings settings(false);
-        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), settings).validate();
+        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), false).validate();
         table->mutate(mutation_commands, getContext());
         return {};
     }

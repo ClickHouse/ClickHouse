@@ -22,22 +22,33 @@ public:
         FileCachePtr cache;
         FileCacheSettings settings;
 
-        FileCacheData() = default;
         FileCacheData(FileCachePtr cache_, const FileCacheSettings & settings_) : cache(cache_), settings(settings_) {}
     };
-    using FileCacheDataPtr = std::shared_ptr<FileCacheData>;
-    using CacheByName = std::unordered_map<std::string, FileCacheDataPtr>;
+
+    using Caches = std::list<FileCacheData>;
+    using CacheByBasePath = std::unordered_map<std::string, Caches::iterator>;
+    using CacheByName = std::unordered_map<std::string, Caches::iterator>;
 
     static FileCacheFactory & instance();
 
-    FileCachePtr getOrCreate(const std::string & cache_name, const FileCacheSettings & file_cache_settings);
+    FileCachePtr getOrCreate(const std::string & cache_base_path, const FileCacheSettings & file_cache_settings, const std::string & name);
 
-    CacheByName getAll();
+    FileCachePtr tryGet(const std::string & cache_base_path);
+    FileCachePtr get(const std::string & cache_base_path);
 
-    FileCacheData getByName(const std::string & cache_name);
+    CacheByBasePath getAll();
+
+    const FileCacheSettings & getSettings(const std::string & cache_base_path);
+
+    FileCacheData getByName(const std::string & name);
+
+    CacheByName getAllByName();
 
 private:
     std::mutex mutex;
+    Caches caches;
+
+    CacheByBasePath caches_by_path;
     CacheByName caches_by_name;
 };
 

@@ -26,9 +26,12 @@ struct IValueSource
     virtual bool isConst() const { return false; }
 };
 
+#pragma GCC visibility push(hidden)
+
 template <typename Derived>
 class ValueSourceImpl : public Visitable<Derived, IValueSource, ValueSourceVisitor> {};
 
+#pragma GCC visibility pop
 }
 
 }

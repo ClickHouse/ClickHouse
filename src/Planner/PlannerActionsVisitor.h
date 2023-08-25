@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/HashTable/Hash.h>
+
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 

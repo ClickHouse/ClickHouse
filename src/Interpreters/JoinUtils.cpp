@@ -160,14 +160,16 @@ static ColumnPtr tryConvertColumnToNullable(ColumnPtr col)
 
     if (col->lowCardinality())
     {
-        const ColumnLowCardinality & col_lc = assert_cast<const ColumnLowCardinality &>(*col);
-        if (col_lc.nestedIsNullable())
+        auto mut_col = IColumn::mutate(std::move(col));
+        ColumnLowCardinality * col_lc = assert_cast<ColumnLowCardinality *>(mut_col.get());
+        if (col_lc->nestedIsNullable())
         {
-            return col;
+            return mut_col;
         }
-        else if (col_lc.nestedCanBeInsideNullable())
+        else if (col_lc->nestedCanBeInsideNullable())
         {
-            return col_lc.cloneNullable();
+            col_lc->nestedToNullable();
+            return mut_col;
         }
     }
     else if (const ColumnConst * col_const = checkAndGetColumn<ColumnConst>(*col))
@@ -230,7 +232,11 @@ void removeColumnNullability(ColumnWithTypeAndName & column)
 
         if (column.column && column.column->lowCardinality())
         {
-            column.column = assert_cast<const ColumnLowCardinality *>(column.column.get())->cloneWithDefaultOnNull();
+            auto mut_col = IColumn::mutate(std::move(column.column));
+            ColumnLowCardinality * col_as_lc = typeid_cast<ColumnLowCardinality *>(mut_col.get());
+            if (col_as_lc && col_as_lc->nestedIsNullable())
+                col_as_lc->nestedRemoveNullable();
+            column.column = std::move(mut_col);
         }
     }
     else
@@ -303,11 +309,6 @@ ColumnPtr emptyNotNullableClone(const ColumnPtr & column)
     return column->cloneEmpty();
 }
 
-ColumnPtr materializeColumn(const ColumnPtr & column)
-{
-    return recursiveRemoveLowCardinality(recursiveRemoveSparse(column->convertToFullColumnIfConst()));
-}
-
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
 {
     ColumnRawPtrs ptrs;
@@ -316,7 +317,7 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
     for (const auto & column_name : names)
     {
         auto & column = block.getByName(column_name).column;
-        column = materializeColumn(column);
+        column = recursiveRemoveLowCardinality(recursiveRemoveSparse(column->convertToFullColumnIfConst()));
         ptrs.push_back(column.get());
     }
 
@@ -331,7 +332,12 @@ ColumnPtrMap materializeColumnsInplaceMap(const Block & block, const Names & nam
     for (const auto & column_name : names)
     {
         ColumnPtr column = block.getByName(column_name).column;
-        ptrs[column_name] = materializeColumn(column);
+
+        column = column->convertToFullColumnIfConst();
+        column = recursiveRemoveLowCardinality(column);
+        column = recursiveRemoveSparse(column);
+
+        ptrs[column_name] = column;
     }
 
     return ptrs;
@@ -340,7 +346,8 @@ ColumnPtrMap materializeColumnsInplaceMap(const Block & block, const Names & nam
 ColumnPtr materializeColumn(const Block & block, const String & column_name)
 {
     const auto & src_column = block.getByName(column_name).column;
-    return materializeColumn(src_column);
+    return recursiveRemoveLowCardinality(
+        recursiveRemoveSparse(src_column->convertToFullColumnIfConst()));
 }
 
 Columns materializeColumns(const Block & block, const Names & names)
@@ -538,7 +545,7 @@ JoinMask getColumnAsMask(const Block & block, const String & column_name)
         return JoinMask(const_cond->getBool(0), block.rows());
     }
 
-    ColumnPtr join_condition_col = materializeColumn(src_col.column);
+    ColumnPtr join_condition_col = recursiveRemoveLowCardinality(src_col.column->convertToFullColumnIfConst());
     if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(join_condition_col.get()))
     {
         if (isNothing(assert_cast<const DataTypeNullable &>(*col_type).getNestedType()))

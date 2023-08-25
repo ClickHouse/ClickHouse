@@ -11,10 +11,12 @@
 #include <base/range.h>
 
 /// Warning in boost::geometry during template strategy substitution.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 #include <boost/geometry.hpp>
-#pragma clang diagnostic pop
+
+#pragma GCC diagnostic pop
 
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
@@ -635,7 +637,9 @@ UInt128 sipHash128(Polygon && polygon)
     for (auto & inner : inners)
         hash_ring(inner);
 
-    return hash.get128();
+    UInt128 res;
+    hash.get128(res);
+    return res;
 }
 
 }

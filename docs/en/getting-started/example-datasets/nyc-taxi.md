@@ -75,7 +75,7 @@ SELECT
     payment_type,
     pickup_ntaname,
     dropoff_ntaname
-FROM gcs(
+FROM s3(
     'https://storage.googleapis.com/clickhouse-public-datasets/nyc-taxi/trips_{0..2}.gz',
     'TabSeparatedWithNames'
 );

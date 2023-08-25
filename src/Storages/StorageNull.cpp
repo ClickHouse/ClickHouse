@@ -37,7 +37,7 @@ void registerStorageNull(StorageFactory & factory)
 
 void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
-    std::optional<NameDependencies> name_deps{};
+    auto name_deps = getDependentViewsByColumn(context);
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN
@@ -50,9 +50,7 @@ void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPt
 
         if (command.type == AlterCommand::DROP_COLUMN && !command.clear)
         {
-            if (!name_deps)
-                name_deps = getDependentViewsByColumn(context);
-            const auto & deps_mv = name_deps.value()[command.column_name];
+            const auto & deps_mv = name_deps[command.column_name];
             if (!deps_mv.empty())
             {
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,

@@ -15,12 +15,12 @@ avg(x)
 
 **Arguments**
 
-- `x` — input values, must be [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), or [Decimal](../../../sql-reference/data-types/decimal.md).
+-   `x` — input values, must be [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), or [Decimal](../../../sql-reference/data-types/decimal.md).
 
 **Returned value**
 
-- The arithmetic mean, always as [Float64](../../../sql-reference/data-types/float.md).
-- `NaN` if the input parameter `x` is empty.
+-   The arithmetic mean, always as [Float64](../../../sql-reference/data-types/float.md).
+-   `NaN` if the input parameter `x` is empty.
 
 **Example**
 

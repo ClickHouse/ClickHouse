@@ -1,6 +1,5 @@
 #include <Analyzer/SortNode.h>
 
-#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
 #include <IO/WriteBufferFromString.h>
