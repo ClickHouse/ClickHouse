@@ -57,6 +57,30 @@ bool ProtobufListInputFormat::readRow(MutableColumns & columns, RowReadExtension
     return true;
 }
 
+size_t ProtobufListInputFormat::countRows(size_t max_block_size)
+{
+    if (getTotalRows() == 0)
+        reader->startMessage(true);
+
+    if (reader->eof())
+    {
+        reader->endMessage(false);
+        return 0;
+    }
+
+    size_t num_rows = 0;
+    while (!reader->eof() && num_rows < max_block_size)
+    {
+        int tag;
+        reader->readFieldNumber(tag);
+        reader->startNestedMessage();
+        reader->endNestedMessage();
+        ++num_rows;
+    }
+
+    return num_rows;
+}
+
 ProtobufListSchemaReader::ProtobufListSchemaReader(const FormatSettings & format_settings)
     : schema_info(
           format_settings.schema.format_schema,
