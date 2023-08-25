@@ -94,39 +94,39 @@ public:
     {
     }
 
-    size_t weight(std::lock_guard<std::mutex> & /* cache_lock */) const override
+    size_t sizeInBytes() const override
     {
         return size_in_bytes;
     }
 
-    size_t count(std::lock_guard<std::mutex> & /* cache_lock */) const override
+    size_t count() const override
     {
         return cache.size();
     }
 
-    size_t maxSize(std::lock_guard<std::mutex> & /* cache_lock */) const override
+    size_t maxSizeInBytes() const override
     {
         return max_size_in_bytes;
     }
 
-    void setMaxCount(size_t max_count_, std::lock_guard<std::mutex> & /* cache_lock */) override
+    void setMaxCount(size_t max_count_) override
     {
         /// lazy behavior: the cache only shrinks upon the next insert
         max_count = max_count_;
     }
 
-    void setMaxSize(size_t max_size_in_bytes_, std::lock_guard<std::mutex> & /* cache_lock */) override
+    void setMaxSizeInBytes(size_t max_size_in_bytes_) override
     {
         /// lazy behavior: the cache only shrinks upon the next insert
         max_size_in_bytes = max_size_in_bytes_;
     }
 
-    void reset(std::lock_guard<std::mutex> & /* cache_lock */) override
+    void clear() override
     {
         cache.clear();
     }
 
-    void remove(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) override
+    void remove(const Key & key) override
     {
         auto it = cache.find(key);
         if (it == cache.end())
@@ -137,7 +137,7 @@ public:
         size_in_bytes -= sz;
     }
 
-    MappedPtr get(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) override
+    MappedPtr get(const Key & key) override
     {
         auto it = cache.find(key);
         if (it == cache.end())
@@ -145,7 +145,7 @@ public:
         return it->second;
     }
 
-    std::optional<KeyMapped> getWithKey(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) override
+    std::optional<KeyMapped> getWithKey(const Key & key) override
     {
         auto it = cache.find(key);
         if (it == cache.end())
@@ -154,7 +154,7 @@ public:
     }
 
     /// Evicts on a best-effort basis. If there are too many non-stale entries, the new entry may not be cached at all!
-    void set(const Key & key, const MappedPtr & mapped, std::lock_guard<std::mutex> & /* cache_lock */) override
+    void set(const Key & key, const MappedPtr & mapped) override
     {
         chassert(mapped.get());
 

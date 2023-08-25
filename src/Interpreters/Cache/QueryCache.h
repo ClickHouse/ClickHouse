@@ -180,9 +180,9 @@ public:
     Reader createReader(const Key & key);
     Writer createWriter(const Key & key, std::chrono::milliseconds min_query_runtime, bool squash_partial_results, size_t max_block_size, size_t max_query_cache_size_in_bytes_quota, size_t max_query_cache_entries_quota);
 
-    void reset();
+    void clear();
 
-    size_t weight() const;
+    size_t sizeInBytes() const;
     size_t count() const;
 
     /// Record new execution of query represented by key. Returns number of executions so far.
