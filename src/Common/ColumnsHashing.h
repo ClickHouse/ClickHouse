@@ -11,7 +11,9 @@
 #include <Common/assert_cast.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/PODArray.h>
+#include "Exception.h"
 #include "PODArray_fwd.h"
+#include "logger_useful.h"
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -756,32 +758,6 @@ struct HashMethodKeysAdaptive
     HashMethodContextPtr ctx;
     AdaptiveHashMethodContext::HashValueIdGeneratorState * value_id_generators_state = nullptr;
 
-    struct ValueIdCache
-    {
-        UInt64 hash = 0;
-        StringRef serialized_keys;
-        ValueIdCache() = default;
-        ValueIdCache(UInt64 hash_, const StringRef & serialized_keys_) : hash(hash_), serialized_keys(serialized_keys_) { }
-    };
-
-    using ValueIdCacheMap = HashMap<UInt64, std::shared_ptr<ValueIdCache>>;
-    mutable ValueIdCacheMap value_id_cache;
-
-    /// For real small set, this could bring performance improvement.
-#if defined(__AVX512F__) && defined(__AVX512BW__)
-    static constexpr size_t cache_line_num = 1;
-    static constexpr size_t cache_line_num_mask = cache_line_num - 1;
-    struct ValueIdCacheLine
-    {
-        size_t allocated_num = 0;
-        alignas(64) UInt64 value_ids[8] = {-1UL, -1UL, -1UL, -1UL, -1UL, -1UL, -1UL, -1UL};
-        alignas(64) UInt64 hash[8] = {0};
-        StringRef values[8];
-
-    };
-    mutable ValueIdCacheLine value_id_cache_lines[cache_line_num];
-#endif
-
     PaddedPODArray<UInt64> value_ids;
 
     HashMethodKeysAdaptive(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & ctx_, UInt64 variant_index)
@@ -817,9 +793,13 @@ struct HashMethodKeysAdaptive
             }
         }
 
-        if (value_id_cache.size() >= max_value_id_number)
+        if (value_id_generators_state->shared_keys_holder_state.cached_values.size() >= max_value_id_number)
         {
             value_id_generators_state->shared_keys_holder_state.hash_mode = AdaptiveKeysHolder::State::HASH;
+            for (size_t i = 0; i < keys_size; ++i)
+            {
+                value_id_generators_state->value_id_generators[i]->release();
+            }
         }
 
         if (value_id_generators_state->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
@@ -840,74 +820,66 @@ struct HashMethodKeysAdaptive
         if (value_id_generators_state->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
         {
             auto & value_id = value_ids[row];
+            auto & cached_values = value_id_generators_state->shared_keys_holder_state.cached_values;
 
             /// For small enough value_id set, simd could accelate the query.
 #if defined(__AVX512F__) && defined(__AVX512BW__)
-            auto & value_id_cache_line = value_id_cache_lines[value_id & cache_line_num_mask];
-            if (value_id_cache_line.allocated_num <= 8)
+            auto & value_cache_lines = value_id_generators_state->shared_keys_holder_state.value_cache_lines;
+            auto & value_cache_line = value_cache_lines[value_id & value_id_generators_state->shared_keys_holder_state.cache_line_num_mask];
+            if (value_cache_line.allocated_num <= 8)
             {
                 auto value_id_v = _mm512_set1_epi64(value_id);
-                auto value_id_line = _mm512_load_epi64(reinterpret_cast<const UInt8 *>(value_id_cache_line.value_ids));
+                auto value_id_line = _mm512_load_epi64(reinterpret_cast<const UInt8 *>(value_cache_line.value_ids));
                 auto cmp_mask = _mm512_cmpeq_epi64_mask(value_id_line, value_id_v);
                 auto hit_pos = _tzcnt_u32(cmp_mask);
                 if (hit_pos >= 8) [[unlikely]]
                 {
-                    if (value_id_cache_line.allocated_num < 8)
+                    if (value_cache_line.allocated_num < 8)
                     {
-                        auto current_index = value_id_cache_line.allocated_num++;
-                        value_id_cache_line.value_ids[current_index] = value_id;
-                        value_id_cache_line.values[current_index] = serializeKeysToPoolContiguous(
+                        auto current_index = value_cache_line.allocated_num++;
+                        auto serialized_keys = serializeKeysToPoolContiguous(
                             row, keys_size, key_columns, *value_id_generators_state->shared_keys_holder_state.pool);
-                        value_id_cache_line.hash[current_index] = ::DefaultHash<StringRef>()(value_id_cache_line.values[current_index]);
+                        auto hash = ::DefaultHash<StringRef>()(serialized_keys);
 
-                        typename ValueIdCacheMap::LookupResult insert_result;
-                        bool inserted = false;
-                        value_id_cache.emplace(value_id, insert_result, inserted);
-                        insert_result->getMapped() = std::make_shared<ValueIdCache>(value_id_cache_line.hash[current_index], value_id_cache_line.values[current_index]);
-                        return AdaptiveKeysHolder{
-                            value_id, value_id_cache_line.values[current_index], &value_id_generators_state->shared_keys_holder_state, value_id_cache_line.hash[current_index]};
+                        cached_values[value_id] = AdaptiveKeysHolder::CachedValue(
+                            serialized_keys, value_id, hash, &value_id_generators_state->shared_keys_holder_state);
+
+                        value_cache_line.value_ids[current_index] = value_id;
+                        value_id_cache_line.cached_values[current_index] = &cached_values[value_id];
+
+                        return AdaptiveKeysHolder{serialized_keys, value_id_cache_line.cached_values[current_index]};
                     }
                     else
-                        value_id_cache_line.allocated_num += 1;
+                        value_cache_line.allocated_num += 1;
                 }
                 else
                 {
-                    return AdaptiveKeysHolder{
-                        value_id, value_id_cache_line.values[hit_pos], &value_id_generators_state->shared_keys_holder_state, value_id_cache_line.hash[hit_pos]};
+                    return AdaptiveKeysHolder{value_id_cache_line.cached_values[hit_pos]->serialized_keys, value_id_cache_line.cached_values[hit_pos]};
                 }
             }
 #endif
-
-            StringRef serialized_keys;
-            UInt64 hash = 0;
-            auto cache_it = value_id_cache.find(value_id);
-            if (!cache_it) [[unlikely]]
+            auto cache_it = cached_values.find(value_id);
+            if (cache_it == cached_values.end()) [[unlikely]]
             {
-                serialized_keys
+                auto serialized_keys
                     = serializeKeysToPoolContiguous(row, keys_size, key_columns, *value_id_generators_state->shared_keys_holder_state.pool);
-                typename ValueIdCacheMap::LookupResult insert_result;
-                bool inserted = false;
-                value_id_cache.emplace(value_id, insert_result, inserted);
-                hash = ::DefaultHash<StringRef>()(serialized_keys);
-                insert_result->getMapped() = std::make_shared<ValueIdCache>(hash, serialized_keys);
+                auto hash = ::DefaultHash<StringRef>()(serialized_keys);
+
+                cached_values[value_id] = AdaptiveKeysHolder::CachedValue(
+                    serialized_keys, value_id, hash, &value_id_generators_state->shared_keys_holder_state);
+                return AdaptiveKeysHolder{serialized_keys, &cached_values[value_id]};
+
             }
             else
             {
-                const auto & mapped = cache_it->getMapped();
-                serialized_keys = mapped->serialized_keys;
-                hash = mapped->hash;
+                return AdaptiveKeysHolder{cache_it->second.serialized_keys, &cache_it->second};
             }
-            if (!serialized_keys.data) [[unlikely]]
-            {
-                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "serialized_key.data is null");
-            }
-            return AdaptiveKeysHolder{value_id, serialized_keys, &value_id_generators_state->shared_keys_holder_state, hash};
         }
         else
         {
             auto serialized_keys
                 = serializeKeysToPoolContiguous(row, keys_size, key_columns, *value_id_generators_state->shared_keys_holder_state.pool);
-            return AdaptiveKeysHolder{0, serialized_keys, &value_id_generators_state->shared_keys_holder_state, ::DefaultHash<StringRef>()(serialized_keys)};
+            return AdaptiveKeysHolder{serialized_keys, nullptr};
         }
     }
 

@@ -76,6 +76,15 @@ public:
         if (allocated_value_id > max_distinct_values)
         {
             state->hash_mode = AdaptiveKeysHolder::State::HASH;
+            m_value_ids.clearAndShrink();
+        }
+    }
+
+    void release()
+    {
+        if (state->hash_mode != AdaptiveKeysHolder::State::VALUE_ID)
+        {
+            m_value_ids.clearAndShrink();
         }
     }
 

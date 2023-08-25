@@ -77,7 +77,7 @@ bool check(const T & x) { return x == T{}; }
 template<>
 inline bool check<DB::AdaptiveKeysHolder>(const DB::AdaptiveKeysHolder & x)
 {
-    return !x.value_id && !x.serialized_keys.data;
+    return !x.serialized_keys.data;
 }
 
 template <typename T>
