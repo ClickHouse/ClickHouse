@@ -254,7 +254,8 @@ public:
     /// because those are internally translated into 'ALTER UDPATE' mutations.
     virtual bool supportsDelete() const { return false; }
 
-    /// Return true if the trivial count query could be optimized without reading the data at all.
+    /// Return true if the trivial count query could be optimized without reading the data at all
+    /// in totalRows() or totalRowsByPartitionPredicate() methods or with optimized reading in read() method.
     virtual bool supportsTrivialCountOptimization() const { return false; }
 
 private:
