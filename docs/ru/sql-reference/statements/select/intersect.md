@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/select/intersect
 sidebar_label: INTERSECT
 ---
 

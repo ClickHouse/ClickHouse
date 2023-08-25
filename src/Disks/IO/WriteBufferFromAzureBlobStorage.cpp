@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -6,32 +6,24 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>
-#include <IO/ResourceGuard.h>
 
-
-namespace ProfileEvents
-{
-    extern const Event RemoteWriteThrottlerBytes;
-    extern const Event RemoteWriteThrottlerSleepMicroseconds;
-}
 
 namespace DB
 {
-
-static constexpr auto DEFAULT_RETRY_NUM = 3;
 
 WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & blob_path_,
     size_t max_single_part_upload_size_,
     size_t buf_size_,
-    const WriteSettings & write_settings_)
-    : WriteBufferFromFileBase(buf_size_, nullptr, 0)
-    , log(&Poco::Logger::get("WriteBufferFromAzureBlobStorage"))
+    const WriteSettings & write_settings_,
+    std::optional<std::map<std::string, std::string>> attributes_)
+    : BufferWithOwnMemory<WriteBuffer>(buf_size_, nullptr, 0)
+    , blob_container_client(blob_container_client_)
     , max_single_part_upload_size(max_single_part_upload_size_)
     , blob_path(blob_path_)
     , write_settings(write_settings_)
-    , blob_container_client(blob_container_client_)
+    , attributes(attributes_)
 {
 }
 
@@ -41,102 +33,63 @@ WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
     finalize();
 }
 
-void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, size_t num_tries, size_t cost)
+void WriteBufferFromAzureBlobStorage::finalizeImpl()
 {
-    auto handle_exception = [&, this](const auto & e, size_t i)
+    if (attributes.has_value())
     {
-        if (cost)
-            write_settings.resource_link.accumulate(cost); // Accumulate resource for later use, because we have failed to consume it
+        auto blob_client = blob_container_client->GetBlobClient(blob_path);
+        Azure::Storage::Metadata metadata;
+        for (const auto & [key, value] : *attributes)
+            metadata[key] = value;
+        blob_client.SetMetadata(metadata);
+    }
 
-        if (i == num_tries - 1)
-            throw;
-
-        LOG_DEBUG(log, "Write at attempt {} for blob `{}` failed: {} {}", i + 1, blob_path, e.what(), e.Message);
-    };
-
-    for (size_t i = 0; i < num_tries; ++i)
+    const size_t max_tries = 3;
+    for (size_t i = 0; i < max_tries; ++i)
     {
         try
         {
-            ResourceGuard rlock(write_settings.resource_link, cost); // Note that zero-cost requests are ignored
-            func();
+            next();
             break;
-        }
-        catch (const Azure::Core::Http::TransportException & e)
-        {
-            handle_exception(e, i);
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            handle_exception(e, i);
-        }
-        catch (...)
-        {
-            if (cost)
-                write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
-            throw;
+            if (i == max_tries - 1)
+                throw;
+            LOG_INFO(&Poco::Logger::get("WriteBufferFromAzureBlobStorage"),
+                     "Exception caught during finalizing azure storage write at attempt {}: {}", i + 1, e.Message);
         }
     }
-}
-
-void WriteBufferFromAzureBlobStorage::finalizeImpl()
-{
-    execWithRetry([this](){ next(); }, DEFAULT_RETRY_NUM);
-
-    if (tmp_buffer_write_offset > 0)
-        uploadBlock(tmp_buffer->data(), tmp_buffer_write_offset);
-
-    auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
-    execWithRetry([&](){ block_blob_client.CommitBlockList(block_ids); }, DEFAULT_RETRY_NUM);
-
-    LOG_TRACE(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
-}
-
-void WriteBufferFromAzureBlobStorage::uploadBlock(const char * data, size_t size)
-{
-    auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
-    const std::string & block_id = block_ids.emplace_back(getRandomASCIIString(64));
-
-    Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(data), size);
-    execWithRetry([&](){ block_blob_client.StageBlock(block_id, memory_stream); }, DEFAULT_RETRY_NUM, size);
-    tmp_buffer_write_offset = 0;
-
-    LOG_TRACE(log, "Staged block (id: {}) of size {} (blob path: {}).", block_id, size, blob_path);
-}
-
-WriteBufferFromAzureBlobStorage::MemoryBufferPtr WriteBufferFromAzureBlobStorage::allocateBuffer() const
-{
-    return std::make_unique<Memory<>>(max_single_part_upload_size);
 }
 
 void WriteBufferFromAzureBlobStorage::nextImpl()
 {
-    size_t size_to_upload = offset();
-
-    if (size_to_upload == 0)
+    if (!offset())
         return;
 
-    if (!tmp_buffer)
-        tmp_buffer = allocateBuffer();
+    auto * buffer_begin = working_buffer.begin();
+    auto len = offset();
+    auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
 
-    size_t uploaded_size = 0;
-    while (uploaded_size != size_to_upload)
+    size_t read = 0;
+    std::vector<std::string> block_ids;
+    while (read < len)
     {
-        size_t memory_buffer_remaining_size = max_single_part_upload_size - tmp_buffer_write_offset;
-        if (memory_buffer_remaining_size == 0)
-            uploadBlock(tmp_buffer->data(), tmp_buffer->size());
+        auto part_len = std::min(len - read, max_single_part_upload_size);
 
-        size_t size = std::min(memory_buffer_remaining_size, size_to_upload - uploaded_size);
-        memcpy(tmp_buffer->data() + tmp_buffer_write_offset, working_buffer.begin() + uploaded_size, size);
-        uploaded_size += size;
-        tmp_buffer_write_offset += size;
+        auto block_id = getRandomASCIIString(64);
+        block_ids.push_back(block_id);
+
+        Azure::Core::IO::MemoryBodyStream tmp_buffer(reinterpret_cast<uint8_t *>(buffer_begin + read), part_len);
+        block_blob_client.StageBlock(block_id, tmp_buffer);
+
+        read += part_len;
     }
 
-    if (tmp_buffer_write_offset == max_single_part_upload_size)
-        uploadBlock(tmp_buffer->data(), tmp_buffer->size());
+    block_blob_client.CommitBlockList(block_ids);
 
     if (write_settings.remote_throttler)
-        write_settings.remote_throttler->add(size_to_upload, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+        write_settings.remote_throttler->add(read);
 }
 
 }

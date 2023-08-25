@@ -13,7 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
 }
@@ -39,8 +39,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} needs at least one argument; passed {}." , getName(), arguments.size());
+            throw Exception("Function " + getName() + " needs at least one argument; passed " + toString(arguments.size()) + "."
+                , ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         DataTypes arguments_types;
         for (size_t index = 0; index < arguments.size(); ++index)
@@ -48,8 +48,8 @@ public:
             const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[index].type.get());
 
             if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {} of function {} must be array. Found {} instead.",
-                    toString(index + 1), getName(), arguments[0].type->getName());
+                throw Exception("Argument " + toString(index + 1) + " of function " + getName()
+                    + " must be array. Found " + arguments[0].type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             arguments_types.emplace_back(array_type->getNestedType());
         }
@@ -72,8 +72,8 @@ public:
             const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(holder.get());
 
             if (!column_array)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument {} of function {} must be array. Found column {} instead.",
-                    i + 1, getName(), holder->getName());
+                throw Exception("Argument " + toString(i + 1) + " of function " + getName() + " must be array."
+                    " Found column " + holder->getName() + " instead.", ErrorCodes::ILLEGAL_COLUMN);
 
             if (i == 0)
             {
@@ -81,9 +81,8 @@ public:
             }
             else if (!column_array->hasEqualOffsets(static_cast<const ColumnArray &>(*first_array_column)))
             {
-                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                                "The argument 1 and argument {} of function {} have different array sizes",
-                                i + 1, getName());
+                throw Exception("The argument 1 and argument " + toString(i + 1) + " of function " + getName() + " have different array sizes",
+                    ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
             }
 
             tuple_columns[i] = column_array->getDataPtr();

@@ -1,8 +1,7 @@
-import logging
 import os
 from os import path as p
 
-from build_download_helper import get_gh_api
+from build_download_helper import get_with_retries
 
 module_dir = p.abspath(p.dirname(__file__))
 git_root = p.abspath(p.join(module_dir, "..", ".."))
@@ -47,7 +46,7 @@ def GITHUB_JOB_ID() -> str:
     jobs = []
     page = 1
     while not _GITHUB_JOB_ID:
-        response = get_gh_api(
+        response = get_with_retries(
             f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
             f"actions/runs/{GITHUB_RUN_ID}/jobs?per_page=100&page={page}"
         )
@@ -65,32 +64,6 @@ def GITHUB_JOB_ID() -> str:
             or len(data["jobs"]) == 0  # if we excided pages
         ):
             _GITHUB_JOB_ID = "0"
-
-    # FIXME: until it's here, we can't move to reusable workflows
-    if not _GITHUB_JOB_URL:
-        # This is a terrible workaround for the case of another broken part of
-        # GitHub actions. For nested workflows it doesn't provide a proper GITHUB_JOB
-        # value, but only the final one. So, for `OriginalJob / NestedJob / FinalJob`
-        # full name, GITHUB_JOB contains only FinalJob
-        matched_jobs = []
-        for job in jobs:
-            nested_parts = job["name"].split(" / ")
-            if len(nested_parts) <= 1:
-                continue
-            if nested_parts[-1] == GITHUB_JOB:
-                matched_jobs.append(job)
-        if len(matched_jobs) == 1:
-            # The best case scenario
-            _GITHUB_JOB_ID = matched_jobs[0]["id"]
-            _GITHUB_JOB_URL = matched_jobs[0]["html_url"]
-            return _GITHUB_JOB_ID
-        if matched_jobs:
-            logging.error(
-                "We could not get the ID and URL for the current job name %s, there "
-                "are more than one jobs match it for the nested workflows. Please, "
-                "refer to https://github.com/actions/runner/issues/2577",
-                GITHUB_JOB,
-            )
 
     return _GITHUB_JOB_ID
 

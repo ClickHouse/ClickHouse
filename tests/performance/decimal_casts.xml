@@ -17,7 +17,7 @@
     <query>SELECT toUInt256(x) y, toDecimal32(y, 1), toDecimal64(y, 5), toDecimal128(y, 6) FROM t LIMIT 10000000 FORMAT Null</query>
     <query>SELECT toFloat32(x) y, toDecimal32(y, 1), toDecimal64(y, 5), toDecimal128(y, 6) FROM t FORMAT Null</query>
     <query>SELECT toFloat64(x) y, toDecimal32(y, 1), toDecimal64(y, 5), toDecimal128(y, 6) FROM t FORMAT Null</query>
-
+    
     <query>SELECT toInt32(d32),   toInt64(d32),   toInt128(d32)   FROM t FORMAT Null</query>
     <query>SELECT toInt32(d64),   toInt64(d64),   toInt128(d64)   FROM t FORMAT Null</query>
     <query>SELECT toInt32(d128),  toInt64(d128),  toInt128(d128)  FROM t FORMAT Null</query>

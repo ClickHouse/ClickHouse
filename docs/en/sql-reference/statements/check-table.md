@@ -1,14 +1,14 @@
 ---
-slug: /en/sql-reference/statements/check-table
 sidebar_position: 41
-sidebar_label: CHECK TABLE
-title: "CHECK TABLE Statement"
+sidebar_label: CHECK
 ---
+
+# CHECK TABLE Statement
 
 Checks if the data in the table is corrupted.
 
 ``` sql
-CHECK TABLE [db.]name [PARTITION partition_expr]
+CHECK TABLE [db.]name
 ```
 
 The `CHECK TABLE` query compares actual file sizes with the expected values which are stored on the server. If the file sizes do not match the stored values, it means the data is corrupted. This can be caused, for example, by a system crash during query execution.
@@ -16,15 +16,15 @@ The `CHECK TABLE` query compares actual file sizes with the expected values whic
 The query response contains the `result` column with a single row. The row has a value of
 [Boolean](../../sql-reference/data-types/boolean.md) type:
 
-- 0 - The data in the table is corrupted.
-- 1 - The data maintains integrity.
+-   0 - The data in the table is corrupted.
+-   1 - The data maintains integrity.
 
 The `CHECK TABLE` query supports the following table engines:
 
-- [Log](../../engines/table-engines/log-family/log.md)
-- [TinyLog](../../engines/table-engines/log-family/tinylog.md)
-- [StripeLog](../../engines/table-engines/log-family/stripelog.md)
-- [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
+-   [Log](../../engines/table-engines/log-family/log.md)
+-   [TinyLog](../../engines/table-engines/log-family/tinylog.md)
+-   [StripeLog](../../engines/table-engines/log-family/stripelog.md)
+-   [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
 
 Performed over the tables with another table engines causes an exception.
 

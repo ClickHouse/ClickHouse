@@ -1,291 +1,335 @@
----
-slug: /zh/development/tests
-sidebar_position: 70
-sidebar_label: Testing
-title: ClickHouse Testing
-description: Most of ClickHouse features can be tested with functional tests and they are mandatory to use for every change in ClickHouse code that can be tested that way.
----
+# ClickHouse 测试 {#clickhouse-testing}
 
-## Functional Tests
+## 功能测试 {#functional-tests}
 
-Functional tests are the most simple and convenient to use. Most of ClickHouse features can be tested with functional tests and they are mandatory to use for every change in ClickHouse code that can be tested that way.
+功能测试使用起来最简单方便. 大多数 ClickHouse 特性都可以通过功能测试进行测试, 并且对于可以通过功能测试进行测试的 ClickHouse 代码的每一个更改, 都必须使用这些特性
 
-Each functional test sends one or multiple queries to the running ClickHouse server and compares the result with reference.
+每个功能测试都会向正在运行的 ClickHouse 服务器发送一个或多个查询, 并将结果与参考进行比较.
 
-Tests are located in `queries` directory. There are two subdirectories: `stateless` and `stateful`. Stateless tests run queries without any preloaded test data - they often create small synthetic datasets on the fly, within the test itself. Stateful tests require preloaded test data from ClickHouse and it is available to general public.
+测试位于 `查询` 目录中. 有两个子目录: `无状态` 和 `有状态`. 无状态测试在没有任何预加载测试数据的情况下运行查询 - 它们通常在测试本身内即时创建小型合成数据集. 状态测试需要来自 Yandex.Metrica 的预加载测试数据, 它对公众开放.
 
-Each test can be one of two types: `.sql` and `.sh`. `.sql` test is the simple SQL script that is piped to `clickhouse-client --multiquery`. `.sh` test is a script that is run by itself. SQL tests are generally preferable to `.sh` tests. You should use `.sh` tests only when you have to test some feature that cannot be exercised from pure SQL, such as piping some input data into `clickhouse-client` or testing `clickhouse-local`.
+每个测试可以是两种类型之一: `.sql` 和 `.sh`. `.sql` 测试是简单的 SQL 脚本, 它通过管道传输到  `clickhouse-client --multiquery --testmode`. `.sh` 测试是一个自己运行的脚本. SQL 测试通常比 `.sh` 测试更可取. 仅当您必须测试某些无法从纯 SQL 中执行的功能时才应使用 `.sh` 测试, 例如将一些输入数据传送到 `clickhouse-client` 或测试 `clickhouse-local`.
 
-### Running a Test Locally {#functional-test-locally}
+### 在本地运行测试 {#functional-test-locally}
 
-Start the ClickHouse server locally, listening on the default port (9000). To
-run, for example, the test `01428_hash_set_nan_key`, change to the repository
-folder and run the following command:
+在本地启动ClickHouse服务器, 监听默认端口(9000). 例如, 要运行测试 `01428_hash_set_nan_key`, 请切换到存储库文件夹并运行以下命令:
 
 ```
 PATH=$PATH:<path to clickhouse-client> tests/clickhouse-test 01428_hash_set_nan_key
 ```
 
-For more options, see `tests/clickhouse-test --help`. You can simply run all tests or run subset of tests filtered by substring in test name: `./clickhouse-test substring`. There are also options to run tests in parallel or in randomized order.
+有关更多选项, 请参阅`tests/clickhouse-test --help`. 您可以简单地运行所有测试或运行由测试名称中的子字符串过滤的测试子集：`./clickhouse-test substring`. 还有并行或随机顺序运行测试的选项.
 
-### Adding a New Test
+### 添加新测试 {#adding-new-test}
 
-To add new test, create a `.sql` or `.sh` file in `queries/0_stateless` directory, check it manually and then generate `.reference` file in the following way: `clickhouse-client --multiquery < 00000_test.sql > 00000_test.reference` or `./00000_test.sh > ./00000_test.reference`.
+添加新的测试, 在 `queries/0_stateless` 目录下创建 `.sql` 或 `.sh` 文件, 手动检查, 然后通过以下方式生成`.reference`文件：`clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` 或 `./00000_test.sh > ./00000_test.reference`.
 
-Tests should use (create, drop, etc) only tables in `test` database that is assumed to be created beforehand; also tests can use temporary tables.
+测试应仅使用(创建、删除等)`test` 数据库中假定已预先创建的表; 测试也可以使用临时表.
 
-### Choosing the Test Name
+### 选择测试名称 {#choosing-test-name}
 
-The name of the test starts with a five-digit prefix followed by a descriptive name, such as `00422_hash_function_constexpr.sql`. To choose the prefix, find the largest prefix already present in the directory, and increment it by one. In the meantime, some other tests might be added with the same numeric prefix, but this is OK and does not lead to any problems, you don't have to change it later.
+测试名称以五位数前缀开头, 后跟描述性名称, 例如 `00422_hash_function_constexpr.sql`. 要选择前缀, 请找到目录中已存在的最大前缀, 并将其加一. 在此期间, 可能会添加一些具有相同数字前缀的其他测试, 但这没关系并且不会导致任何问题, 您以后不必更改它.
 
-Some tests are marked with `zookeeper`, `shard` or `long` in their names. `zookeeper` is for tests that are using ZooKeeper. `shard` is for tests that requires server to listen `127.0.0.*`; `distributed` or `global` have the same meaning. `long` is for tests that run slightly longer that one second. You can disable these groups of tests using `--no-zookeeper`, `--no-shard` and `--no-long` options, respectively. Make sure to add a proper prefix to your test name if it needs ZooKeeper or distributed queries.
+一些测试的名称中标有 `zookeeper`、`shard` 或 `long` . `zookeeper` 用于使用 ZooKeeper 的测试. `shard` 用于需要服务器监听 `127.0.0.*` 的测试; `distributed` 或 `global` 具有相同的含义. `long` 用于运行时间稍长于一秒的测试. Yo你可以分别使用 `--no-zookeeper`、`--no-shard` 和 `--no-long` 选项禁用这些测试组. 如果需要 ZooKeeper 或分布式查询，请确保为您的测试名称添加适当的前缀.
 
-### Checking for an Error that Must Occur
+### 检查必须发生的错误 {#checking-error-must-occur}
 
-Sometimes you want to test that a server error occurs for an incorrect query. We support special annotations for this in SQL tests, in the following form:
+有时您想测试是否因不正确的查询而发生服务器错误. 我们支持在 SQL 测试中对此进行特殊注释, 形式如下:
 ```
 select x; -- { serverError 49 }
 ```
-This test ensures that the server returns an error with code 49 about unknown column `x`. If there is no error, or the error is different, the test will fail. If you want to ensure that an error occurs on the client side, use `clientError` annotation instead.
+此测试确保服务器返回关于未知列“x”的错误代码为 49. 如果没有错误, 或者错误不同, 则测试失败. 如果您想确保错误发生在客户端, 请改用 `clientError` 注释.
 
-Do not check for a particular wording of error message, it may change in the future, and the test will needlessly break. Check only the error code. If the existing error code is not precise enough for your needs, consider adding a new one.
+不要检查错误消息的特定措辞, 它将来可能会发生变化, 并且测试将不必要地中断. 只检查错误代码. 如果现有的错误代码不足以满足您的需求, 请考虑添加一个新的.
 
-### Testing a Distributed Query
+### 测试分布式查询 {#testing-distributed-query}
 
-If you want to use distributed queries in functional tests, you can leverage `remote` table function with `127.0.0.{1..2}` addresses for the server to query itself; or you can use predefined test clusters in server configuration file like `test_shard_localhost`. Remember to add the words `shard` or `distributed` to the test name, so that it is run in CI in correct configurations, where the server is configured to support distributed queries.
+如果你想在功能测试中使用分布式查询, 你可以使用 `127.0.0.{1..2}` 的地址, 以便服务器查询自己; 或者您可以在服务器配置文件中使用预定义的测试集群, 例如`test_shard_localhost`. 请记住在测试名称中添加 `shard` 或 `distributed` 字样, 以便它以正确的配置在 CI 中运行, 其中服务器配置为支持分布式查询.
 
 
-## Known Bugs {#known-bugs}
+## 已知错误 {#known-bugs}
 
-If we know some bugs that can be easily reproduced by functional tests, we place prepared functional tests in `tests/queries/bugs` directory. These tests will be moved to `tests/queries/0_stateless` when bugs are fixed.
+如果我们知道一些可以通过功能测试轻松重现的错误, 我们将准备好的功能测试放在 `tests/queries/bugs` 目录中. 修复错误后, 这些测试将移至 `tests/queries/0_stateless` .
 
-## Integration Tests {#integration-tests}
+## 集成测试 {#integration-tests}
 
-Integration tests allow testing ClickHouse in clustered configuration and ClickHouse interaction with other servers like MySQL, Postgres, MongoDB. They are useful to emulate network splits, packet drops, etc. These tests are run under Docker and create multiple containers with various software.
+集成测试允许在集群配置中测试 ClickHouse 以及 ClickHouse 与其他服务器(如 MySQL、Postgres、MongoDB)的交互. 它们可以用来模拟网络分裂、丢包等情况. 这些测试在Docker下运行, 并使用各种软件创建多个容器.
 
-See `tests/integration/README.md` on how to run these tests.
+有关如何运行这些测试, 请参阅 `tests/integration/README.md` .
 
-Note that integration of ClickHouse with third-party drivers is not tested. Also, we currently do not have integration tests with our JDBC and ODBC drivers.
+注意, ClickHouse与第三方驱动程序的集成没有经过测试. 另外, 我们目前还没有JDBC和ODBC驱动程序的集成测试.
 
-## Unit Tests {#unit-tests}
+## 单元测试 {#unit-tests}
 
-Unit tests are useful when you want to test not the ClickHouse as a whole, but a single isolated library or class. You can enable or disable build of tests with `ENABLE_TESTS` CMake option. Unit tests (and other test programs) are located in `tests` subdirectories across the code. To run unit tests, type `ninja test`. Some tests use `gtest`, but some are just programs that return non-zero exit code on test failure.
+当您想测试的不是 ClickHouse 整体, 而是单个独立库或类时，单元测试很有用. 您可以使用 `ENABLE_TESTS` CMake 选项启用或禁用测试构建. 单元测试(和其他测试程序)位于代码中的 `tests` 子目录中. 要运行单元测试, 请键入 `ninja test` 。有些测试使用 `gtest` , 但有些程序在测试失败时会返回非零退出码.
 
-It’s not necessary to have unit tests if the code is already covered by functional tests (and functional tests are usually much more simple to use).
+如果代码已经被功能测试覆盖了, 就没有必要进行单元测试(而且功能测试通常更易于使用).
 
-You can run individual gtest checks by calling the executable directly, for example:
+例如, 您可以通过直接调用可执行文件来运行单独的 gtest 检查:
 
 ```bash
 $ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
 ```
 
-## Performance Tests {#performance-tests}
+## 性能测试 {#performance-tests}
 
-Performance tests allow to measure and compare performance of some isolated part of ClickHouse on synthetic queries. Performance tests are located at `tests/performance/`. Each test is represented by an `.xml` file with a description of the test case. Tests are run with `docker/test/performance-comparison` tool . See the readme file for invocation.
+性能测试允许测量和比较 ClickHouse 的某些孤立部分在合成查询上的性能. 测试位于 `tests/performance`. 每个测试都由带有测试用例描述的 `.xml` 文件表示. 测试使用 `docker/tests/performance-comparison` 工具运行. 请参阅自述文件以进行调用.
 
-Each test run one or multiple queries (possibly with combinations of parameters) in a loop.
+每个测试在循环中运行一个或多个查询(可能带有参数组合). 一些测试可以包含预加载测试数据集的先决条件.
 
-If you want to improve performance of ClickHouse in some scenario, and if improvements can be observed on simple queries, it is highly recommended to write a performance test. Also, it is recommended to write performance tests when you add or modify SQL functions which are relatively isolated and not too obscure. It always makes sense to use `perf top` or other `perf` tools during your tests.
+如果您希望在某些场景中提高ClickHouse的性能，并且如果可以在简单的查询中观察到改进，那么强烈建议编写性能测试。在测试期间使用 `perf top` 或其他perf工具总是有意义的.
 
-## Test Tools and Scripts {#test-tools-and-scripts}
+## 测试工具和脚本 {#test-tools-and-scripts}
 
-Some programs in `tests` directory are not prepared tests, but are test tools. For example, for `Lexer` there is a tool `src/Parsers/tests/lexer` that just do tokenization of stdin and writes colorized result to stdout. You can use these kind of tools as a code examples and for exploration and manual testing.
+  `tests` 目录中的一些程序不是准备好的测试，而是测试工具. 例如, 对于 `Lexer`, 有一个工具 `src/Parsers/tests/lexer` , 它只是对标准输入进行标记化并将着色结果写入标准输出. 您可以将这些类型的工具用作代码示例以及用于探索和手动测试.
 
-## Miscellaneous Tests {#miscellaneous-tests}
+## 其他测试 {#miscellaneous-tests}
 
-There are tests for machine learned models in `tests/external_models`. These tests are not updated and must be transferred to integration tests.
+在 `tests/external_models` 中有机器学习模型的测试. 这些测试不会更新, 必须转移到集成测试.
 
-There is separate test for quorum inserts. This test run ClickHouse cluster on separate servers and emulate various failure cases: network split, packet drop (between ClickHouse nodes, between ClickHouse and ZooKeeper, between ClickHouse server and client, etc.), `kill -9`, `kill -STOP` and `kill -CONT` , like [Jepsen](https://aphyr.com/tags/Jepsen). Then the test checks that all acknowledged inserts was written and all rejected inserts was not.
+仲裁插入有单独的测试. 该测试在不同的服务器上运行 ClickHouse 集群并模拟各种故障情况：网络分裂、丢包(ClickHouse 节点之间、ClickHouse 和 ZooKeeper 之间、ClickHouse 服务器和客户端之间等)、`kill -9`、`kill -STOP` 和 `kill -CONT` , 比如 [Jepsen](https://aphyr.com/tags/Jepsen). 然后测试检查所有已确认的插入是否已写入并且所有被拒绝的插入均未写入.
 
-Quorum test was written by separate team before ClickHouse was open-sourced. This team no longer work with ClickHouse. Test was accidentally written in Java. For these reasons, quorum test must be rewritten and moved to integration tests.
+在 ClickHouse 开源之前, Quorum 测试是由单独的团队编写的. 这个团队不再与ClickHouse合作. 测试碰巧是用Java编写的. 由于这些原因, 必须重写仲裁测试并将其转移到集成测试.
 
-## Manual Testing {#manual-testing}
+## 手动测试 {#manual-testing}
 
-When you develop a new feature, it is reasonable to also test it manually. You can do it with the following steps:
+当您开发一个新特性时, 手动测试它也是合理的. 您可以按照以下步骤进行操作:
 
-Build ClickHouse. Run ClickHouse from the terminal: change directory to `programs/clickhouse-server` and run it with `./clickhouse-server`. It will use configuration (`config.xml`, `users.xml` and files within `config.d` and `users.d` directories) from the current directory by default. To connect to ClickHouse server, run `programs/clickhouse-client/clickhouse-client`.
+构建 ClickHouse. 从终端运行 ClickHouse：将目录更改为 `programs/clickhouse-server` 并使用 `./clickhouse-server` 运行它.  默认情况下, 它将使用当前目录中的配置(`config.xml`、`users.xml` 和`config.d` 和`users.d` 目录中的文件). 要连接到 ClickHouse 服务器, 请运行 `programs/clickhouse-client/clickhouse-client` .
 
-Note that all clickhouse tools (server, client, etc) are just symlinks to a single binary named `clickhouse`. You can find this binary at `programs/clickhouse`. All tools can also be invoked as `clickhouse tool` instead of `clickhouse-tool`.
+请注意, 所有 clickhouse 工具(服务器、客户端等)都只是指向名为 `clickhouse` 的单个二进制文件的符号链接. 你可以在 `programs/clickhouse` 找到这个二进制文件. 所有工具也可以作为 `clickhouse tool` 而不是 `clickhouse-tool` 调用.
 
-Alternatively you can install ClickHouse package: either stable release from ClickHouse repository or you can build package for yourself with `./release` in ClickHouse sources root. Then start the server with `sudo clickhouse start` (or stop to stop the server). Look for logs at `/etc/clickhouse-server/clickhouse-server.log`.
+或者, 您可以安装 ClickHouse 包: 从 Yandex 存储库稳定发布, 或者您可以在 ClickHouse 源根目录中使用 `./release` 为自己构建包. 然后使用 `sudo service clickhouse-server start` 启动服务器(或停止以停止服务器). 在 `/etc/clickhouse-server/clickhouse-server.log` 中查找日志.
 
-When ClickHouse is already installed on your system, you can build a new `clickhouse` binary and replace the existing binary:
+当您的系统上已经安装了 ClickHouse 时，您可以构建一个新的 `clickhouse` 二进制文件并替换现有的二进制文件:
 
 ``` bash
-$ sudo clickhouse stop
+$ sudo service clickhouse-server stop
 $ sudo cp ./clickhouse /usr/bin/
-$ sudo clickhouse start
+$ sudo service clickhouse-server start
 ```
 
-Also you can stop system clickhouse-server and run your own with the same configuration but with logging to terminal:
+您也可以停止系统 clickhouse-server 并使用相同的配置运行您自己的服务器, 但登录到终端:
 
 ``` bash
-$ sudo clickhouse stop
+$ sudo service clickhouse-server stop
 $ sudo -u clickhouse /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
-Example with gdb:
+使用 gdb 的示例:
 
 ``` bash
 $ sudo -u clickhouse gdb --args /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
-If the system clickhouse-server is already running and you do not want to stop it, you can change port numbers in your `config.xml` (or override them in a file in `config.d` directory), provide appropriate data path, and run it.
+如果系统 clickhouse-server 已经在运行并且你不想停止它, 你可以在你的 `config.xml` 中更改端口号(或在 `config.d` 目录中的文件中覆盖它们), 提供适当的数据路径, 并运行它.
 
-`clickhouse` binary has almost no dependencies and works across wide range of Linux distributions. To quick and dirty test your changes on a server, you can simply `scp` your fresh built `clickhouse` binary to your server and then run it as in examples above.
+`clickhouse` 二进制文件几乎没有依赖关系, 可以在广泛的 Linux 发行版中使用. 要在服务器上快速而肮脏地测试您的更改, 您可以简单地将新构建的 `clickhouse` 二进制文件 `scp` 到您的服务器, 然后按照上面的示例运行它.
 
-## Build Tests {#build-tests}
+## 测试环境 {#testing-environment}
 
-Build tests allow to check that build is not broken on various alternative configurations and on some foreign systems. These tests are automated as well.
+在发布稳定版之前, 我们将其部署在测试环境中.测试环境是一个集群，处理 [Yandex.Metrica](https://metrica.yandex.com/) 数据的 1/39 部分. 我们与 Yandex.Metrica 团队共享我们的测试环境. ClickHouse无需在现有数据上停机即可升级. 我们首先看到的是, 数据被成功地处理了, 没有滞后于实时, 复制继续工作, Yandex.Metrica 团队没有发现任何问题. 第一次检查可以通过以下方式进行:
 
-Examples:
--   cross-compile for Darwin x86_64 (Mac OS X)
--   cross-compile for FreeBSD x86_64
--   cross-compile for Linux AArch64
--   build on Ubuntu with libraries from system packages (discouraged)
--   build with shared linking of libraries (discouraged)
+``` sql
+SELECT hostName() AS h, any(version()), any(uptime()), max(UTCEventTime), count() FROM remote('example01-01-{1..3}t', merge, hits) WHERE EventDate >= today() - 2 GROUP BY h ORDER BY h;
+```
 
-For example, build with system packages is bad practice, because we cannot guarantee what exact version of packages a system will have. But this is really needed by Debian maintainers. For this reason we at least have to support this variant of build. Another example: shared linking is a common source of trouble, but it is needed for some enthusiasts.
+在某些情况下, 我们还会部署到 Yandex 中我们朋友团队的测试环境：Market、Cloud 等. 此外, 我们还有一些用于开发目的的硬件服务器.
 
-Though we cannot run all tests on all variant of builds, we want to check at least that various build variants are not broken. For this purpose we use build tests.
+## 负载测试 {#load-testing}
 
-We also test that there are no translation units that are too long to compile or require too much RAM.
+部署到测试环境后, 我们使用来自生产集群的查询运行负载测试. 这是手动完成的.
 
-We also test that there are no too large stack frames.
+确保您在生产集群上启用了 `query_log`.
 
-## Testing for Protocol Compatibility {#testing-for-protocol-compatibility}
+收集一天或更长时间的查询日志:
 
-When we extend ClickHouse network protocol, we test manually that old clickhouse-client works with new clickhouse-server and new clickhouse-client works with old clickhouse-server (simply by running binaries from corresponding packages).
+``` bash
+$ clickhouse-client --query="SELECT DISTINCT query FROM system.query_log WHERE event_date = today() AND query LIKE '%ym:%' AND query NOT LIKE '%system.query_log%' AND type = 2 AND is_initial_query" > queries.tsv
+```
 
-We also test some cases automatically with integrational tests:
-- if data written by old version of ClickHouse can be successfully read by the new version;
-- do distributed queries work in a cluster with different ClickHouse versions.
+这是一个复杂的例子. `type = 2` 将过滤成功执行的查询. `query LIKE '%ym:%'` 是从 Yandex.Metrica 中选择相关查询. `is_initial_query` 是只选择客户端发起的查询, 而不是 ClickHouse 本身(作为分布式查询处理的一部分).
 
-## Help from the Compiler {#help-from-the-compiler}
+`scp` 将此日志记录到您的测试集群并按如下方式运行它:
 
-Main ClickHouse code (that is located in `dbms` directory) is built with `-Wall -Wextra -Werror` and with some additional enabled warnings. Although these options are not enabled for third-party libraries.
+``` bash
+$ clickhouse benchmark --concurrency 16 < queries.tsv
+```
 
-Clang has even more useful warnings - you can look for them with `-Weverything` and pick something to default build.
+(可能你还想指定一个 `--user`)
 
-For production builds, clang is used, but we also test make gcc builds. For development, clang is usually more convenient to use. You can build on your own machine with debug mode (to save battery of your laptop), but please note that compiler is able to generate more warnings with `-O3` due to better control flow and inter-procedure analysis. When building with clang in debug mode, debug version of `libc++` is used that allows to catch more errors at runtime.
+然后把它留到晚上或周末, 去休息一下.
 
-## Sanitizers {#sanitizers}
+您应该检查 `clickhouse-server` 没有崩溃, 内存占用是有限的, 且性能不会随着时间的推移而降低.
 
-### Address sanitizer
-We run functional, integration, stress and unit tests under ASan on per-commit basis.
+由于查询和环境的高度可变性, 没有记录和比较精确的查询执行时间.
 
-### Thread sanitizer
-We run functional, integration, stress and unit tests under TSan on per-commit basis.
+## 构建测试 {#build-tests}
 
-### Memory sanitizer
-We run functional, integration, stress and unit tests under MSan on per-commit basis.
+构建测试允许检查在各种可选配置和一些外部系统上的构建是否被破坏. 这些测试也是自动化的.
 
-### Undefined behaviour sanitizer
-We run functional, integration, stress and unit tests under UBSan on per-commit basis. The code of some third-party libraries is not sanitized for UB.
+示例:
+-   Darwin x86_64 (Mac OS X) 交叉编译
+-   FreeBSD x86_64 交叉编译
+-   Linux AArch64 交叉编译
+-   使用系统包中的库在 Ubuntu 上构建（不鼓励）
+-   使用库的共享链接构建（不鼓励）
+
+例如, 使用系统包构建是不好的做法, 因为我们无法保证系统将拥有哪个确切版本的包. 但这确实是 Debian 维护者所需要的. 出于这个原因, 我们至少必须支持这种构建变体. 另一个例子: 共享链接是一个常见的麻烦来源, 但对于一些爱好者来说是需要的.
+
+虽然我们无法对所有构建变体运行所有测试, 但我们希望至少检查各种构建变体没有被破坏. 为此, 我们使用构建测试.
+
+我们还测试了那些太长而无法编译或需要太多RAM的没有翻译单元.
+
+我们还测试没有太大的堆栈帧.
+
+## 协议兼容性测试 {#testing-for-protocol-compatibility}
+
+当我们扩展 ClickHouse 网络协议时, 我们手动测试旧的 clickhouse-client 与新的 clickhouse-server 一起工作, 而新的 clickhouse-client 与旧的 clickhouse-server 一起工作(只需从相应的包中运行二进制文件).
+
+我们还使用集成测试自动测试一些案例:
+- 旧版本ClickHouse写入的数据是否可以被新版本成功读取;
+- 在具有不同 ClickHouse 版本的集群中执行分布式查询.
+
+## 编译器的帮助 {#help-from-the-compiler}
+
+主要的 ClickHouse 代码(位于 `dbms` 目录中)是用 `-Wall -Wextra -Werror` 和一些额外的启用警告构建的. 虽然没有为第三方库启用这些选项.
+
+Clang 有更多有用的警告 - 你可以用 `-Weverything` 寻找它们并选择一些东西来默认构建.
+
+对于生产构建, 使用 clang, 但我们也测试 make gcc 构建. 对于开发, clang 通常使用起来更方便. 您可以使用调试模式在自己的机器上构建(以节省笔记本电脑的电池), 但请注意, 由于更好的控制流和过程间分析, 编译器能够使用 `-O3` 生成更多警告. 在调试模式下使用 clang 构建时, 使用调试版本的 `libc++` 允许在运行时捕获更多错误.
+
+## 地址清理器 {#sanitizers}
+
+### 地址清理器
+我们在ASan上运行功能测试、集成测试、压力测试和单元测试.
+
+### 线程清理器
+我们在TSan下运行功能测试、集成测试、压力测试和单元测试.
+
+### 内存清理器
+我们在MSan上运行功能测试、集成测试、压力测试和单元测试.
+
+### 未定义的行为清理器
+我们在UBSan下运行功能测试、集成测试、压力测试和单元测试. 某些第三方库的代码未针对 UB 进行清理.
 
 ### Valgrind (Memcheck)
-We used to run functional tests under Valgrind overnight, but don't do it anymore. It takes multiple hours. Currently there is one known false positive in `re2` library, see [this article](https://research.swtch.com/sparse).
+我们曾经在 Valgrind 下通宵运行功能测试, 但不再这样做了. 这需要几个小时. 目前在`re2`库中有一个已知的误报, 见[这篇文章](https://research.swtch.com/sparse).
 
-## Fuzzing {#fuzzing}
+## 模糊测试 {#fuzzing}
 
-ClickHouse fuzzing is implemented both using [libFuzzer](https://llvm.org/docs/LibFuzzer.html) and random SQL queries.
-All the fuzz testing should be performed with sanitizers (Address and Undefined).
+ClickHouse 模糊测试是使用 [libFuzzer](https://llvm.org/docs/LibFuzzer.html) 和随机 SQL 查询实现的. 所有模糊测试都应使用sanitizers(地址和未定义)进行.
 
-LibFuzzer is used for isolated fuzz testing of library code. Fuzzers are implemented as part of test code and have “_fuzzer” name postfixes.
-Fuzzer example can be found at `src/Parsers/fuzzers/lexer_fuzzer.cpp`. LibFuzzer-specific configs, dictionaries and corpus are stored at `tests/fuzz`.
-We encourage you to write fuzz tests for every functionality that handles user input.
+LibFuzzer 用于库代码的隔离模糊测试. Fuzzer 作为测试代码的一部分实现, 并具有 `_fuzzer` 名称后缀.
+Fuzzer 示例可以在 `src/Parsers/tests/lexer_fuzzer.cpp` 中找到. LibFuzzer 特定的配置、字典和语料库存储在 `tests/fuzz` 中.
+我们鼓励您为处理用户输入的每个功能编写模糊测试.
 
-Fuzzers are not built by default. To build fuzzers both `-DENABLE_FUZZING=1` and `-DENABLE_TESTS=1` options should be set.
-We recommend to disable Jemalloc while building fuzzers. Configuration used to integrate ClickHouse fuzzing to
-Google OSS-Fuzz can be found at `docker/fuzz`.
+默认情况下不构建模糊器. 要构建模糊器, 应设置` -DENABLE_FUZZING=1` 和 `-DENABLE_TESTS=1` 选项.
+我们建议在构建模糊器时禁用 Jemalloc. 用于将 ClickHouse fuzzing 集成到 Google OSS-Fuzz 的配置可以在 `docker/fuzz` 中找到.
 
-We also use simple fuzz test to generate random SQL queries and to check that the server does not die executing them.
-You can find it in `00746_sql_fuzzy.pl`. This test should be run continuously (overnight and longer).
+我们还使用简单的模糊测试来生成随机SQL查询, 并检查服务器在执行这些查询时是否会死亡.
+你可以在 `00746_sql_fuzzy.pl` 中找到它. 这个测试应该连续运行(通宵或更长时间).
 
-We also use sophisticated AST-based query fuzzer that is able to find huge amount of corner cases. It does random permutations and substitutions in queries AST. It remembers AST nodes from previous tests to use them for fuzzing of subsequent tests while processing them in random order. You can learn more about this fuzzer in [this blog article](https://clickhouse.com/blog/en/2021/fuzzing-clickhouse/).
+我们还使用复杂的基于 AST 的查询模糊器, 它能够找到大量的极端情况. 它在查询 AST 中进行随机排列和替换. 它会记住先前测试中的 AST 节点, 以使用它们对后续测试进行模糊测试, 同时以随机顺序处理它们. 您可以在 [这篇博客文章](https://clickhouse.com/blog/en/2021/fuzzing-clickhouse/) 中了解有关此模糊器的更多信息.
 
-## Stress test
+## 压力测试 {#stress-test}
 
-Stress tests are another case of fuzzing. It runs all functional tests in parallel in random order with a single server. Results of the tests are not checked.
+压力测试是另一种模糊测试. 它使用单个服务器以随机顺序并行运行所有功能测试. 不检查测试结果.
 
-It is checked that:
-- server does not crash, no debug or sanitizer traps are triggered;
-- there are no deadlocks;
-- the database structure is consistent;
-- server can successfully stop after the test and start again without exceptions.
+经检查:
+- 服务器不会崩溃，不会触发调试或清理程序陷阱;
+- 没有死锁;
+- 数据库结构一致;
+- 服务器可以在测试后成功停止并重新启动，没有异常;
 
-There are five variants (Debug, ASan, TSan, MSan, UBSan).
+有五种变体 (Debug, ASan, TSan, MSan, UBSan).
 
-## Thread Fuzzer
+## 线程模糊器 {#thread-fuzzer}
 
-Thread Fuzzer (please don't mix up with Thread Sanitizer) is another kind of fuzzing that allows to randomize thread order of execution. It helps to find even more special cases.
+Thread Fuzzer(请不要与 Thread Sanitizer 混淆)是另一种允许随机化线程执行顺序的模糊测试. 它有助于找到更多特殊情况.
 
-## Security Audit
+## 安全审计 {#security-audit}
 
-Our Security Team did some basic overview of ClickHouse capabilities from the security standpoint.
+Yandex安全团队的人员从安全的角度对ClickHouse的功能做了一些基本的概述.
 
-## Static Analyzers {#static-analyzers}
+## 静态分析仪 {#static-analyzers}
 
-We run `clang-tidy` on per-commit basis. `clang-static-analyzer` checks are also enabled. `clang-tidy` is also used for some style checks.
+我们在每次提交的基础上运行 `clang-tidy`. `clang-static-analyzer` 检查也被启用. `clang-tidy` 也用于一些样式检查.
 
-We have evaluated `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`, `CodeQL`. You will find instructions for usage in `tests/instructions/` directory.
+我们已经评估了 `clang-tidy`、`Coverity`、`cppcheck`、`PVS-Studio`、`tscancode`、`CodeQL`. 您将在 `tests/instructions/` 目录中找到使用说明. 你也可以阅读[俄文文章](https://habr.com/company/yandex/blog/342018/).
 
-If you use `CLion` as an IDE, you can leverage some `clang-tidy` checks out of the box.
+如果你使用 `CLion` 作为 IDE, 你可以利用一些开箱即用的 `clang-tidy` 检查
 
-We also use `shellcheck` for static analysis of shell scripts.
+我们还使用 `shellcheck` 对shell脚本进行静态分析.
 
-## Hardening {#hardening}
+## 硬化 {#hardening}
 
-In debug build we are using custom allocator that does ASLR of user-level allocations.
+在调试版本中, 我们使用自定义分配器执行用户级分配的 ASLR.
 
-We also manually protect memory regions that are expected to be readonly after allocation.
+我们还手动保护在分配后预期为只读的内存区域.
 
-In debug build we also involve a customization of libc that ensures that no "harmful" (obsolete, insecure, not thread-safe) functions are called.
+在调试构建中, 我们还需要对libc进行自定义, 以确保不会调用 "有害的" (过时的、不安全的、非线程安全的)函数.
 
-Debug assertions are used extensively.
+Debug 断言被广泛使用.
 
-In debug build, if exception with "logical error" code (implies a bug) is being thrown, the program is terminated prematurely. It allows to use exceptions in release build but make it an assertion in debug build.
+在调试版本中，如果抛出带有 "逻辑错误" 代码(暗示错误)的异常, 则程序会过早终止. 它允许在发布版本中使用异常, 但在调试版本中使其成为断言.
 
-Debug version of jemalloc is used for debug builds.
-Debug version of libc++ is used for debug builds.
+jemalloc 的调试版本用于调试版本.
+libc++ 的调试版本用于调试版本.
 
-## Runtime Integrity Checks
+## 运行时完整性检查
 
-Data stored on disk is checksummed. Data in MergeTree tables is checksummed in three ways simultaneously* (compressed data blocks, uncompressed data blocks, the total checksum across blocks). Data transferred over network between client and server or between servers is also checksummed. Replication ensures bit-identical data on replicas.
+对存储在磁盘上的数据是校验和. MergeTree 表中的数据同时以三种方式进行校验和*(压缩数据块、未压缩数据块、跨块的总校验和). 客户端和服务器之间或服务器之间通过网络传输的数据也会进行校验和. 复制确保副本上的数据位相同.
 
-It is required to protect from faulty hardware (bit rot on storage media, bit flips in RAM on server, bit flips in RAM of network controller, bit flips in RAM of network switch, bit flips in RAM of client, bit flips on the wire). Note that bit flips are common and likely to occur even for ECC RAM and in presence of TCP checksums (if you manage to run thousands of servers processing petabytes of data each day). [See the video (russian)](https://www.youtube.com/watch?v=ooBAQIe0KlQ).
+需要防止硬件故障(存储介质上的位腐烂、服务器上 RAM 中的位翻转、网络控制器 RAM 中的位翻转、网络交换机 RAM 中的位翻转、客户端 RAM 中的位翻转、线路上的位翻转). 请注意，比特位操作很常见, 即使对于 ECC RAM 和 TCP 校验和(如果您每天设法运行数千台处理 PB 数据的服务器, 也可能发生比特位操作. [观看视频(俄语)](https://www.youtube.com/watch?v=ooBAQIe0KlQ).
 
-ClickHouse provides diagnostics that will help ops engineers to find faulty hardware.
+ClickHouse 提供诊断功能, 可帮助运维工程师找到故障硬件.
 
-\* and it is not slow.
+\* 它并不慢.
 
-## Code Style {#code-style}
+## 代码风格 {#code-style}
 
-Code style rules are described [here](style.md).
+[此处](style.md)描述了代码样式规则.
 
-To check for some common style violations, you can use `utils/check-style` script.
+要检查一些常见的样式违规，您可以使用 `utils/check-style` 脚本.
 
-To force proper style of your code, you can use `clang-format`. File `.clang-format` is located at the sources root. It mostly corresponding with our actual code style. But it’s not recommended to apply `clang-format` to existing files because it makes formatting worse. You can use `clang-format-diff` tool that you can find in clang source repository.
+要强制使用正确的代码样式, 您可以使用 `clang-format`. 文件 `.clang-format` 位于源根目录. 它大多与我们的实际代码风格相对应. 但是不建议将 `clang-format` 应用于现有文件, 因为它会使格式变得更糟. 您可以使用可以在 clang 源代码库中找到的 `clang-format-diff` 工具.
 
-Alternatively you can try `uncrustify` tool to reformat your code. Configuration is in `uncrustify.cfg` in the sources root. It is less tested than `clang-format`.
+或者, 您可以尝试使用 `uncrustify` 工具来重新格式化您的代码. 配置位于源根目录中的 `uncrustify.cfg` 中. 它比 `clang-format` 测试更少.
 
-`CLion` has its own code formatter that has to be tuned for our code style.
+`CLion` 有自己的代码格式化程序, 必须根据我们的代码风格进行调整.
 
-We also use `codespell` to find typos in code. It is automated as well.
+我们还使用 `codespell` 来查找代码中的拼写错误.它也是自动化的.
 
-## Test Coverage {#test-coverage}
+## Metrica B2B 测试 {#metrica-b2b-tests}
 
-We also track test coverage but only for functional tests and only for clickhouse-server. It is performed on daily basis.
+每个 ClickHouse 版本都使用 Yandex Metrica 和 AppMetrica 引擎进行测试. ClickHouse 的测试版和稳定版部署在 VM 上, 并使用 Metrica 引擎的小副本运行, 该引擎处理输入数据的固定样本. 然后将两个 Metrica 引擎实例的结果放在一起比较.
+
+这些测试由单独的团队自动化. 由于移动部件数量众多, 测试在大多数情况下都因完全不相关的原因而失败, 这些原因很难弄清楚. 这些测试很可能对我们有负面价值. 尽管如此, 这些测试在数百次中被证明是有用的.
+
+## 测试覆盖率 {#test-coverage}
+
+我们还跟踪测试覆盖率, 但仅针对功能测试和 clickhouse-server. 它每天进行.
 
 ## Tests for Tests
 
-There is automated check for flaky tests. It runs all new tests 100 times (for functional tests) or 10 times (for integration tests). If at least single time the test failed, it is considered flaky.
+有自动检测薄片测试. 它运行所有新测试100次(用于功能测试)或10次(用于集成测试). 如果至少有一次测试失败，它就被认为是脆弱的.
 
-## Test Automation {#test-automation}
+## Testflows
 
-We run tests with [GitHub Actions](https://github.com/features/actions).
+[Testflows](https://testflows.com/) 是一个企业级的测试框架. Altinity 使用它进行一些测试, 我们在 CI 中运行这些测试.
 
-Build jobs and tests are run in Sandbox on per commit basis. Resulting packages and test results are published in GitHub and can be downloaded by direct links. Artifacts are stored for several months. When you send a pull request on GitHub, we tag it as “can be tested” and our CI system will build ClickHouse packages (release, debug, with address sanitizer, etc) for you.
+## Yandex 检查 (only for Yandex employees)
 
-We do not use Travis CI due to the limit on time and computational power.
-We do not use Jenkins. It was used before and now we are happy we are not using Jenkins.
+这些检查将ClickHouse代码导入到Yandex内部的单一存储库中, 所以ClickHouse代码库可以被Yandex的其他产品(YT和YDB)用作库. 请注意, clickhouse-server本身并不是由内部回购构建的, Yandex应用程序使用的是未经修改的开源构建的.
+
+## 测试自动化 {#test-automation}
+
+我们使用 Yandex 内部 CI 和名为 "Sandbox" 的作业自动化系统运行测试.
+
+在每次提交的基础上, 构建作业和测试都在沙箱中运行. 生成的包和测试结果发布在GitHub上, 可以通过直接链接下载. 产物要保存几个月. 当你在GitHub上发送一个pull请求时, 我们会把它标记为 "可以测试" , 我们的CI系统会为你构建ClickHouse包(发布、调试、使用地址清理器等).
+
+由于时间和计算能力的限制, 我们不使用 Travis CI.
+我们不用Jenkins. 以前用过, 现在我们很高兴不用Jenkins了.
+
+[原始文章](https://clickhouse.com/docs/en/development/tests/) <!--hide-->

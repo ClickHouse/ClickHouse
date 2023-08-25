@@ -4,11 +4,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 /// Step which has single input and single output data stream.
 /// It doesn't mean that pipeline has single port before or after such step.
 class ITransformingStep : public IQueryPlanStep
@@ -18,6 +13,11 @@ public:
     /// They are specified in constructor and cannot be changed.
     struct DataStreamTraits
     {
+        /// Keep distinct_columns unchanged.
+        /// Examples: true for LimitStep, false for ExpressionStep with ARRAY JOIN
+        /// It some columns may be removed from result header, call updateDistinctColumns
+        bool preserves_distinct_columns;
+
         /// True if pipeline has single output port after this step.
         /// Examples: MergeSortingStep, AggregatingStep
         bool returns_single_stream;
@@ -64,18 +64,19 @@ public:
         input_streams.emplace_back(std::move(input_stream));
 
         updateOutputStream();
+
+        updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
     }
 
     void describePipeline(FormatSettings & settings) const override;
 
-    /// Enforcement is supposed to be done through the special settings that will be taken into account by remote nodes during query planning (e.g. force_aggregation_in_order).
-    /// Should be called only if data_stream_traits.can_enforce_sorting_properties_in_distributed_query == true.
-    virtual void adjustSettingsToEnforceSortingPropertiesInDistributedQuery(ContextMutablePtr) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
-    }
+    /// Append extra processors for this step.
+    void appendExtraProcessors(const Processors & extra_processors);
 
 protected:
+    /// Clear distinct_columns if res_header doesn't contain all of them.
+    static void updateDistinctColumns(const Block & res_header, NameSet & distinct_columns);
+
     /// Create output stream from header and traits.
     static DataStream createOutputStream(
             const DataStream & input_stream,
@@ -87,7 +88,8 @@ protected:
 private:
     virtual void updateOutputStream() = 0;
 
-    /// If we should collect processors got after pipeline transformation.
+    /// We collect processors got after pipeline transformation.
+    Processors processors;
     bool collect_processors;
 
     const DataStreamTraits data_stream_traits;

@@ -42,8 +42,8 @@ public:
         size_t num_inputs_,
         AggregatingTransformParamsPtr params_,
         const SortDescription & description_,
-        size_t max_block_size_rows_,
-        size_t max_block_size_bytes_);
+        size_t max_block_size_,
+        size_t max_block_bytes_);
 
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
@@ -79,8 +79,8 @@ private:
     size_t num_inputs;
     AggregatingTransformParamsPtr params;
     SortDescriptionWithPositions description;
-    size_t max_block_size_rows;
-    size_t max_block_size_bytes;
+    size_t max_block_size;
+    size_t max_block_bytes;
 
     Inputs current_inputs;
 
@@ -88,7 +88,6 @@ private:
     std::vector<size_t> inputs_to_update;
 
     std::vector<Chunk> chunks;
-    UInt64 chunk_num = 0;
     size_t accumulated_rows = 0;
     size_t accumulated_bytes = 0;
 };

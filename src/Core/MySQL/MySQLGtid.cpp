@@ -60,7 +60,7 @@ void GTIDSets::parse(String gtid_format)
                     break;
                 }
                 default:
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "GTIDParse: Invalid GTID interval: {}", server_ids[k]);
+                    throw Exception("GTIDParse: Invalid GTID interval: " + server_ids[k], ErrorCodes::LOGICAL_ERROR);
             }
             set.intervals.emplace_back(val);
         }
@@ -81,8 +81,9 @@ void GTIDSets::update(const GTID & other)
                 /// Already Contained.
                 if (other.seq_no >= current.start && other.seq_no < current.end)
                 {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "GTIDSets updates other: {} invalid successor to {}",
-                        std::to_string(other.seq_no), std::to_string(current.end));
+                    throw Exception(
+                        "GTIDSets updates other: " + std::to_string(other.seq_no) + " invalid successor to " + std::to_string(current.end),
+                        ErrorCodes::LOGICAL_ERROR);
                 }
 
                 /// Try to shrink Sequence interval.
@@ -174,8 +175,8 @@ String GTIDSets::toPayload() const
     for (const auto & set : sets)
     {
         // MySQL UUID is big-endian.
-        writeBinaryBigEndian(UUIDHelpers::getHighBytes(set.uuid), buffer);
-        writeBinaryBigEndian(UUIDHelpers::getLowBytes(set.uuid), buffer);
+        writeBinaryBigEndian(set.uuid.toUnderType().items[0], buffer);
+        writeBinaryBigEndian(set.uuid.toUnderType().items[1], buffer);
 
         UInt64 intervals_size = set.intervals.size();
         buffer.write(reinterpret_cast<const char *>(&intervals_size), 8);

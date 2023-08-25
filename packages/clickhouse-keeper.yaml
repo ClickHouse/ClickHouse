@@ -30,14 +30,6 @@ contents:
   type: config|noreplace
 - src: root/usr/bin/clickhouse-keeper
   dst: /usr/bin/clickhouse-keeper
-- src: clickhouse-keeper.service
-  dst: /lib/systemd/system/clickhouse-keeper.service
-- src: clickhouse
-  dst: /usr/bin/clickhouse-keeper-client
-  type: symlink
-- src: clickhouse
-  dst: /usr/bin/clickhouse-keeper-converter
-  type: symlink
 # docs
 - src: ../AUTHORS
   dst: /usr/share/doc/clickhouse-keeper/AUTHORS
@@ -47,6 +39,3 @@ contents:
   dst: /usr/share/doc/clickhouse-keeper/LICENSE
 - src: ../README.md
   dst: /usr/share/doc/clickhouse-keeper/README.md
-
-scripts:
-  postinstall: ./clickhouse-keeper.postinstall

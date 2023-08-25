@@ -17,8 +17,7 @@ void MMapReadBufferFromFileWithCache::init()
     BufferBase::set(mapped->getData(), length, 0);
 
     size_t page_size = static_cast<size_t>(::getPageSize());
-    ReadBuffer::padded = (length % page_size) > 0 && (length % page_size) <= (page_size - (PADDING_FOR_SIMD - 1));
-    ReadBufferFromFileBase::file_size = length;
+    ReadBuffer::padded = (length % page_size) > 0 && (length % page_size) <= (page_size - 15);
 }
 
 

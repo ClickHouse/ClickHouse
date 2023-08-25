@@ -1,6 +1,3 @@
----
-slug: /zh/operations/system-tables/query_thread_log
----
 # 系统。query_thread_log {#system_tables-query_thread_log}
 
 包含有关执行查询的线程的信息，例如，线程名称、线程开始时间、查询处理的持续时间。
@@ -36,11 +33,11 @@ ClickHouse不会自动从表中删除数据。 欲了解更多详情，请参照
     -   0 — 由其他查询发起的分布式查询。
 -   `user` ([字符串](../../sql-reference/data-types/string.md)) — 发起查询的用户名。
 -   `query_id` ([字符串](../../sql-reference/data-types/string.md)) — 查询的ID。
--   `address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — 发起查询的IP地址。
+-   `address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — 发起查询的IP地址。
 -   `port` ([UInt16](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 发起查询的端口。
 -   `initial_user` ([字符串](../../sql-reference/data-types/string.md)) — 首次发起查询的用户名（对于分布式查询）。
 -   `initial_query_id` ([字符串](../../sql-reference/data-types/string.md)) — 首次发起查询的ID（对于分布式查询）。
--   `initial_address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — 发起该查询的父查询IP地址。
+-   `initial_address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — 发起该查询的父查询IP地址。
 -   `initial_port` ([UInt16](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 发起该查询的父查询端口。
 -   `interface` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 发起查询的界面，可能的值:
     -   1 — TCP.

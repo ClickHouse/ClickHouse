@@ -42,9 +42,8 @@ inline bool checkFunctionIsInOrGlobalInOperator(const ASTFunction & func)
     {
         size_t num_arguments = func.arguments->children.size();
         if (num_arguments != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Wrong number of arguments passed to function in. Expected: 2, passed: {}",
-                num_arguments);
+            throw Exception("Wrong number of arguments passed to function in. Expected: 2, passed: " + std::to_string(num_arguments),
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return true;
     }

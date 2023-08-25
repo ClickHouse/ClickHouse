@@ -5,4 +5,4 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Checks that these functions are working inside clickhouse-local. Does not check specific values.
-$CLICKHOUSE_LOCAL --query "SELECT filesystemAvailable() > 0, filesystemUnreserved() <= filesystemCapacity()"
+$CLICKHOUSE_LOCAL --query "SELECT filesystemAvailable() > 0, filesystemFree() <= filesystemCapacity()"

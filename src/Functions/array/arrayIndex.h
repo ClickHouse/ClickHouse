@@ -76,8 +76,8 @@ private:
     using ArrOffset = ColumnArray::Offset;
     using ArrOffsets = ColumnArray::Offsets;
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wsign-compare"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
 
     static constexpr bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i) noexcept
     {
@@ -107,7 +107,7 @@ private:
         return 0 == left.compareAt(i, RightArgIsConstant ? 0 : j, right, 1);
     }
 
-#pragma clang diagnostic pop
+#pragma GCC diagnostic pop
 
     static constexpr bool hasNull(const NullMap * const null_map, size_t i) noexcept { return (*null_map)[i]; }
 
@@ -390,9 +390,8 @@ public:
         {
             if (!array_type && !map_type)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be an array or map. Actual {}",
-                    getName(),
-                    first_argument_type->getName());
+                    "First argument for function {} must be an array or map.",
+                    getName());
 
             inner_type = map_type ? map_type->getKeyType() : array_type->getNestedType();
         }
@@ -400,9 +399,8 @@ public:
         {
             if (!array_type)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be an array. Actual {}",
-                    getName(),
-                    first_argument_type->getName());
+                    "First argument for function {} must be an array.",
+                    getName());
 
             inner_type = array_type->getNestedType();
         }
@@ -585,7 +583,9 @@ private:
                 if (auto res = executeLowCardinality(arguments))
                     return res;
 
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal internal type of first argument of function {}", getName());
+                throw Exception(
+                    "Illegal internal type of first argument of function " + getName(),
+                    ErrorCodes::ILLEGAL_COLUMN);
             }
         }
 
@@ -594,7 +594,9 @@ private:
               || (res = executeConst(arguments, result_type))
               || (res = executeString(arguments))
               || (res = executeGeneric(arguments))))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal internal type of first argument of function {}", getName());
+            throw Exception(
+                "Illegal internal type of first argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
 
         return res;
     }
@@ -926,7 +928,9 @@ private:
                     null_map_data,
                     null_map_item);
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Logical error: ColumnConst contains not String nor FixedString column");
+                throw Exception(
+                    "Logical error: ColumnConst contains not String nor FixedString column",
+                        ErrorCodes::ILLEGAL_COLUMN);
         }
         else if (const auto *const item_arg_vector = checkAndGetColumn<ColumnString>(&data.right))
         {

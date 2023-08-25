@@ -1,10 +1,7 @@
 SELECT
-    DomainID,
+    1 AS DomainID,
     Domain
-FROM
-(
-    SELECT 1 AS DomainID FROM system.one
-) js1
+FROM system.one
 ANY LEFT JOIN
 (
     SELECT

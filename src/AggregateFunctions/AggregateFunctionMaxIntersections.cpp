@@ -24,8 +24,8 @@ namespace
 
         AggregateFunctionPtr res(createWithNumericType<AggregateFunctionIntersectionsMax>(*argument_types[0], kind, argument_types));
         if (!res)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types {} and {} of argument for aggregate function {}",
-                argument_types[0]->getName(), argument_types[1]->getName(), name);
+            throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
+                + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return res;
     }

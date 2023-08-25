@@ -157,7 +157,7 @@ public:
             });
         }
 
-        return arena.allocatedBytes() + sizeof(Cell) * configuration.max_size_in_cells + attributes_size_in_bytes;
+        return arena.size() + sizeof(Cell) * configuration.max_size_in_cells + attributes_size_in_bytes;
     }
 
 private:
@@ -276,7 +276,7 @@ private:
                             attribute,
                             fetched_columns_index,
                             fetched_keys,
-                            [&](auto value) { data.push_back(static_cast<AttributeType>(value)); },
+                            [&](auto value) { data.push_back(value); },
                             default_value_provider);
                     }
                 };
@@ -338,7 +338,7 @@ private:
                         }
                         else
                         {
-                            container.back() = static_cast<ElementType>(column_value.get<ElementType>());
+                            container.back() = column_value.get<NearestFieldType<ElementType>>();
                         }
                     });
                 }
@@ -391,7 +391,7 @@ private:
                         }
                         else
                         {
-                            container[index_to_use] = static_cast<ElementType>(column_value.get<ElementType>());
+                            container[index_to_use] = column_value.get<NearestFieldType<ElementType>>();
                         }
                     });
                 }
@@ -557,8 +557,6 @@ private:
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,
-            ContainerType<IPv4>,
-            ContainerType<IPv6>,
             ContainerType<StringRef>,
             ContainerType<Array>,
             ContainerType<Field>> attribute_container;

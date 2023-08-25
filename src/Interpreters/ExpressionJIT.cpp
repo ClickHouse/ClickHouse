@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #if USE_EMBEDDED_COMPILER
 
@@ -113,14 +113,14 @@ public:
                 const auto & null_map_column = nullable_column->getNullMapColumn();
 
                 auto nested_column_raw_data = nested_column.getRawData();
-                __msan_unpoison(nested_column_raw_data.data(), nested_column_raw_data.size());
+                __msan_unpoison(nested_column_raw_data.data, nested_column_raw_data.size);
 
                 auto null_map_column_raw_data = null_map_column.getRawData();
-                __msan_unpoison(null_map_column_raw_data.data(), null_map_column_raw_data.size());
+                __msan_unpoison(null_map_column_raw_data.data, null_map_column_raw_data.size);
             }
             else
             {
-                __msan_unpoison(result_column->getRawData().data(), result_column->getRawData().size());
+                __msan_unpoison(result_column->getRawData().data, result_column->getRawData().size);
             }
 
             #endif
@@ -160,9 +160,9 @@ public:
 
     bool isCompilable() const override { return true; }
 
-    llvm::Value * compile(llvm::IRBuilderBase & builder, const ValuesWithType & arguments) const override
+    llvm::Value * compile(llvm::IRBuilderBase & builder, Values values) const override
     {
-        return dag.compile(builder, arguments).value;
+        return dag.compile(builder, values);
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
@@ -263,7 +263,7 @@ public:
         return result;
     }
 
-    static void applyFunction(const IFunctionBase & function, Field & value)
+    static void applyFunction(IFunctionBase & function, Field & value)
     {
         const auto & type = function.getArgumentTypes().at(0);
         ColumnsWithTypeAndName args{{type->createColumnConst(1, value), type, "x" }};
@@ -338,7 +338,7 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
     if (node.type != ActionsDAG::ActionType::FUNCTION)
         return false;
 
-    const auto & function = *node.function_base;
+    auto & function = *node.function_base;
 
     IFunction::ShortCircuitSettings settings;
     if (function.isShortCircuit(settings, node.children.size()))

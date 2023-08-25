@@ -1,3 +1,2 @@
-if (ENABLE_FUZZING)
-    add_subdirectory(fuzzers)
-endif()
+include(configure_config.cmake)
+configure_file(config_formats.h.in ${ConfigIncludePath}/config_formats.h)

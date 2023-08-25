@@ -79,7 +79,8 @@ inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, GenericArr
         sink.current_offset += slice.size;
     }
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function writeSlice expects same column types for GenericArraySlice and GenericArraySink.");
+        throw Exception("Function writeSlice expects same column types for GenericArraySlice and GenericArraySink.",
+                        ErrorCodes::LOGICAL_ERROR);
 }
 
 template <typename T>
@@ -158,7 +159,8 @@ inline ALWAYS_INLINE void writeSlice(const GenericValueSlice & slice, GenericArr
         ++sink.current_offset;
     }
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function writeSlice expects same column types for GenericValueSlice and GenericArraySink.");
+        throw Exception("Function writeSlice expects same column types for GenericValueSlice and GenericArraySink.",
+                        ErrorCodes::LOGICAL_ERROR);
 }
 
 template <typename T>
@@ -206,9 +208,9 @@ void concat(const std::vector<std::unique_ptr<IArraySource>> & array_sources, Si
     auto check_and_get_size_to_reserve = [] (auto source, IArraySource * array_source)
     {
         if (source == nullptr)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Concat function expected {} or {} but got {}",
-                            demangle(typeid(Source).name()), demangle(typeid(ConstSource<Source>).name()),
-                            demangle(typeid(*array_source).name()));
+            throw Exception("Concat function expected " + demangle(typeid(Source).name()) + " or "
+                            + demangle(typeid(ConstSource<Source>).name()) + " but got "
+                            + demangle(typeid(*array_source).name()), ErrorCodes::LOGICAL_ERROR);
         return source->getSizeForReserve();
     };
 
@@ -612,7 +614,7 @@ bool sliceHas(const GenericArraySlice & first, const GenericArraySlice & second)
 {
     /// Generic arrays should have the same type in order to use column.compareAt(...)
     if (!first.elements->structureEquals(*second.elements))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function sliceHas expects same column types for slices.");
+        throw Exception("Function sliceHas expects same column types for slices.", ErrorCodes::LOGICAL_ERROR);
 
     auto impl = sliceHasImpl<search_type, GenericArraySlice, GenericArraySlice, sliceEqualElements, insliceEqualElements>;
     return impl(first, second, nullptr, nullptr);

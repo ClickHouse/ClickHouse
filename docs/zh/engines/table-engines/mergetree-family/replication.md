@@ -1,6 +1,3 @@
----
-slug: /zh/engines/table-engines/mergetree-family/replication
----
 # 数据副本 {#table_engines-replication}
 
 只有 MergeTree 系列里的表可支持副本：
@@ -98,7 +95,7 @@ CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_con
 
 对于非常大的集群，你可以把不同的 ZooKeeper 集群用于不同的分片。然而，即使 Yandex.Metrica 集群（大约300台服务器）也证明还不需要这么做。
 
-复制是多主异步。 `INSERT` 语句（以及 `ALTER` ）可以发给任意可用的服务器。数据会先插入到执行该语句的服务器上，然后被复制到其他服务器。由于它是异步的，在其他副本上最近插入的数据会有一些延迟。如果部分副本不可用，则数据在其可用时再写入。副本可用的情况下，则延迟时长是通过网络传输压缩数据块所需的时间。为复制表执行后台任务的线程数量，可以通过 [background_schedule_pool_size](../../../operations/server-configuration-parameters/settings.md#background_schedule_pool_size) 进行设置。
+复制是多主异步。 `INSERT` 语句（以及 `ALTER` ）可以发给任意可用的服务器。数据会先插入到执行该语句的服务器上，然后被复制到其他服务器。由于它是异步的，在其他副本上最近插入的数据会有一些延迟。如果部分副本不可用，则数据在其可用时再写入。副本可用的情况下，则延迟时长是通过网络传输压缩数据块所需的时间。为复制表执行后台任务的线程数量，可以通过 [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size) 进行设置。
 
 `ReplicatedMergeTree` 引擎采用一个独立的线程池进行复制拉取。线程池的大小通过 [background_fetches_pool_size](../../../operations/settings/settings.md#background_fetches_pool_size) 进行限定，它可以在重启服务器时进行调整。
 
@@ -282,8 +279,10 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 **参考**
 
--   [background_schedule_pool_size](../../../operations/server-configuration-parameters/settings.md#background_schedule_pool_size)
--   [background_fetches_pool_size](../../../operations/server-configuration-parameters/settings.md#background_fetches_pool_size)
+-   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
+-   [background_fetches_pool_size](../../../operations/settings/settings.md#background_fetches_pool_size)
 -   [execute_merges_on_single_replica_time_threshold](../../../operations/settings/settings.md#execute-merges-on-single-replica-time-threshold)
--   [max_replicated_fetches_network_bandwidth](../../../operations/settings/merge-tree-settings.mdx#max_replicated_fetches_network_bandwidth)
--   [max_replicated_sends_network_bandwidth](../../../operations/settings/merge-tree-settings.mdx#max_replicated_sends_network_bandwidth)
+-   [max_replicated_fetches_network_bandwidth](../../../operations/settings/merge-tree-settings.md#max_replicated_fetches_network_bandwidth)
+-   [max_replicated_sends_network_bandwidth](../../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth)
+
+[原始文章](https://clickhouse.com/docs/en/operations/table_engines/replication/) <!--hide-->

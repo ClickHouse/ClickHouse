@@ -12,7 +12,6 @@ import pymysql.connections
 import pymysql.err
 import pytest
 import sys
-import os
 import time
 import logging
 from helpers.cluster import ClickHouseCluster, run_and_check
@@ -26,7 +25,7 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
     main_configs=[
-        "configs/overrides_from_zk.xml",
+        "configs/ports_from_zk.xml",
         "configs/ssl_conf.xml",
         "configs/dhparam.pem",
         "configs/server.crt",
@@ -34,10 +33,6 @@ instance = cluster.add_instance(
     ],
     user_configs=["configs/default_passwd.xml"],
     with_zookeeper=True,
-    # Bug in TSAN reproduces in this test https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
-    env_variables={
-        "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS", default="")
-    },
 )
 
 
@@ -63,7 +58,7 @@ import clickhouse_grpc_pb2_grpc
 @pytest.fixture(name="cluster", scope="module")
 def fixture_cluster():
     try:
-        cluster.add_zookeeper_startup_command(configure_from_zk)
+        cluster.add_zookeeper_startup_command(configure_ports_from_zk)
         cluster.start()
         yield cluster
     finally:
@@ -117,15 +112,11 @@ def get_pgsql_client(cluster, port):
             time.sleep(0.1)
 
 
-@contextlib.contextmanager
 def get_grpc_channel(cluster, port):
     host_port = cluster.get_instance_ip("instance") + f":{port}"
     channel = grpc.insecure_channel(host_port)
     grpc.channel_ready_future(channel).result(timeout=10)
-    try:
-        yield channel
-    finally:
-        channel.close()
+    return channel
 
 
 def grpc_query(channel, query_text):
@@ -137,7 +128,7 @@ def grpc_query(channel, query_text):
     return result.output.decode()
 
 
-def configure_from_zk(zk, querier=None):
+def configure_ports_from_zk(zk, querier=None):
     default_config = [
         ("/clickhouse/listen_hosts", b"<listen_host>0.0.0.0</listen_host>"),
         ("/clickhouse/ports/tcp", b"9000"),
@@ -145,7 +136,6 @@ def configure_from_zk(zk, querier=None):
         ("/clickhouse/ports/mysql", b"9004"),
         ("/clickhouse/ports/postgresql", b"9005"),
         ("/clickhouse/ports/grpc", b"9100"),
-        ("/clickhouse/http_handlers", b"<defaults/>"),
     ]
     for path, value in default_config:
         if querier is not None:
@@ -155,7 +145,7 @@ def configure_from_zk(zk, querier=None):
             zk.create(path=path, value=value, makepath=True)
             has_changed = True
         except NodeExistsError:
-            if zk.get(path)[0] != value:
+            if zk.get(path) != value:
                 zk.set(path=path, value=value)
                 has_changed = True
         if has_changed and querier is not None:
@@ -192,7 +182,7 @@ def default_client(cluster, zk, restore_via_http=False):
         yield client
     finally:
         querier = instance.http_query if restore_via_http else client.query
-        configure_from_zk(zk, querier)
+        configure_ports_from_zk(zk, querier)
 
 
 def test_change_tcp_port(cluster, zk):
@@ -247,17 +237,16 @@ def test_change_postgresql_port(cluster, zk):
 
 def test_change_grpc_port(cluster, zk):
     with default_client(cluster, zk) as client:
-        with get_grpc_channel(cluster, port=9100) as grpc_channel:
-            assert grpc_query(grpc_channel, "SELECT 1") == "1\n"
-            with sync_loaded_config(client.query):
-                zk.set("/clickhouse/ports/grpc", b"9090")
-            with pytest.raises(
-                grpc._channel._InactiveRpcError, match="StatusCode.UNAVAILABLE"
-            ):
-                grpc_query(grpc_channel, "SELECT 1")
-
-        with get_grpc_channel(cluster, port=9090) as grpc_channel_on_new_port:
-            assert grpc_query(grpc_channel_on_new_port, "SELECT 1") == "1\n"
+        grpc_channel = get_grpc_channel(cluster, port=9100)
+        assert grpc_query(grpc_channel, "SELECT 1") == "1\n"
+        with sync_loaded_config(client.query):
+            zk.set("/clickhouse/ports/grpc", b"9090")
+        with pytest.raises(
+            grpc._channel._InactiveRpcError, match="StatusCode.UNAVAILABLE"
+        ):
+            grpc_query(grpc_channel, "SELECT 1")
+        grpc_channel_on_new_port = get_grpc_channel(cluster, port=9090)
+        assert grpc_query(grpc_channel_on_new_port, "SELECT 1") == "1\n"
 
 
 def test_remove_tcp_port(cluster, zk):
@@ -302,14 +291,14 @@ def test_remove_postgresql_port(cluster, zk):
 
 def test_remove_grpc_port(cluster, zk):
     with default_client(cluster, zk) as client:
-        with get_grpc_channel(cluster, port=9100) as grpc_channel:
-            assert grpc_query(grpc_channel, "SELECT 1") == "1\n"
-            with sync_loaded_config(client.query):
-                zk.delete("/clickhouse/ports/grpc")
-            with pytest.raises(
-                grpc._channel._InactiveRpcError, match="StatusCode.UNAVAILABLE"
-            ):
-                grpc_query(grpc_channel, "SELECT 1")
+        grpc_channel = get_grpc_channel(cluster, port=9100)
+        assert grpc_query(grpc_channel, "SELECT 1") == "1\n"
+        with sync_loaded_config(client.query):
+            zk.delete("/clickhouse/ports/grpc")
+        with pytest.raises(
+            grpc._channel._InactiveRpcError, match="StatusCode.UNAVAILABLE"
+        ):
+            grpc_query(grpc_channel, "SELECT 1")
 
 
 def test_change_listen_host(cluster, zk):
@@ -331,7 +320,7 @@ def test_change_listen_host(cluster, zk):
         assert localhost_client.query("SELECT 1") == "1\n"
     finally:
         with sync_loaded_config(localhost_client.query):
-            configure_from_zk(zk)
+            configure_ports_from_zk(zk)
 
 
 # This is a regression test for the case when the clickhouse-server was waiting
@@ -382,7 +371,7 @@ def test_reload_via_client(cluster, zk):
             while True:
                 try:
                     with sync_loaded_config(localhost_client.query):
-                        configure_from_zk(zk)
+                        configure_ports_from_zk(zk)
                     break
                 except QueryRuntimeException:
                     logging.exception("The new socket is not binded yet")
@@ -390,33 +379,3 @@ def test_reload_via_client(cluster, zk):
 
     if exception:
         raise exception
-
-
-def test_change_http_handlers(cluster, zk):
-    with default_client(cluster, zk) as client:
-        curl_result = instance.exec_in_container(
-            ["bash", "-c", "curl -s '127.0.0.1:8123/it_works'"]
-        )
-        assert "There is no handle /it_works" in curl_result
-
-        with sync_loaded_config(client.query):
-            zk.set(
-                "/clickhouse/http_handlers",
-                b"""
-                <defaults/>
-
-                <rule>
-                    <url>/it_works</url>
-                    <methods>GET</methods>
-                    <handler>
-                        <type>predefined_query_handler</type>
-                        <query>SELECT 'It works.'</query>
-                    </handler>
-                </rule>
-            """,
-            )
-
-        curl_result = instance.exec_in_container(
-            ["bash", "-c", "curl -s '127.0.0.1:8123/it_works'"]
-        )
-        assert curl_result == "It works.\n"

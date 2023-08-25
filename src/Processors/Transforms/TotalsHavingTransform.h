@@ -2,9 +2,13 @@
 
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/finalizeChunk.h>
+#include <Common/Arena.h>
 
 namespace DB
 {
+
+class Arena;
+using ArenaPtr = std::shared_ptr<Arena>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -37,8 +41,6 @@ public:
 
     Status prepare() override;
     void work() override;
-
-    bool hasFilter() const { return !filter_column_name.empty(); }
 
     static Block transformHeader(Block block, const ActionsDAG * expression, const std::string & filter_column_name, bool remove_filter, bool final, const ColumnsMask & aggregates_mask);
 

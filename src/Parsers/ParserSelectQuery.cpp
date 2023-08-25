@@ -68,7 +68,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
-    ParserNotEmptyExpressionList exp_list_for_select_clause(/*allow_alias_without_as_keyword*/ true, /*allow_trailing_commas*/ true);
+    ParserNotEmptyExpressionList exp_list_for_select_clause(true);    /// Allows aliases without AS keyword.
     ParserExpressionWithOptionalAlias exp_elem(false);
     ParserOrderByExpressionList order_list;
     ParserGroupingSetsExpressionList grouping_sets_list;
@@ -106,13 +106,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (with_expression_list->children.empty())
                 return false;
         }
-    }
-
-    /// FROM database.table or FROM table or FROM (subquery) or FROM tableFunction(...)
-    if (s_from.ignore(pos, expected))
-    {
-        if (!ParserTablesInSelectQuery(false).parse(pos, tables, expected))
-            return false;
     }
 
     /// SELECT [ALL/DISTINCT [ON (expr_list)]] [TOP N [WITH TIES]] expr_list
@@ -173,7 +166,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     /// FROM database.table or FROM table or FROM (subquery) or FROM tableFunction(...)
-    if (!tables && s_from.ignore(pos, expected))
+    if (s_from.ignore(pos, expected))
     {
         if (!ParserTablesInSelectQuery().parse(pos, tables, expected))
             return false;
@@ -202,8 +195,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             select_query->group_by_with_cube = true;
         else if (s_grouping_sets.ignore(pos, expected))
             select_query->group_by_with_grouping_sets = true;
-        else if (s_all.ignore(pos, expected))
-            select_query->group_by_all = true;
 
         if ((select_query->group_by_with_rollup || select_query->group_by_with_cube || select_query->group_by_with_grouping_sets) &&
             !open_bracket.ignore(pos, expected))
@@ -214,7 +205,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!grouping_sets_list.parse(pos, group_expression_list, expected))
                 return false;
         }
-        else if (!select_query->group_by_all)
+        else
         {
             if (!exp_list.parse(pos, group_expression_list, expected))
                 return false;
@@ -233,6 +224,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             select_query->group_by_with_rollup = true;
         else if (s_cube.ignore(pos, expected))
             select_query->group_by_with_cube = true;
+        else if (s_grouping_sets.ignore(pos, expected))
+            select_query->group_by_with_grouping_sets = true;
         else if (s_totals.ignore(pos, expected))
             select_query->group_by_with_totals = true;
         else
@@ -292,9 +285,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// This is needed for TOP expression, because it can also use WITH TIES.
     bool limit_with_ties_occured = false;
 
-    bool has_offset_clause = false;
-    bool offset_clause_has_sql_standard_row_or_rows = false; /// OFFSET offset_row_count {ROW | ROWS}
-
     /// LIMIT length | LIMIT offset, length | LIMIT count BY expr-list | LIMIT offset, length BY expr-list
     if (s_limit.ignore(pos, expected))
     {
@@ -319,8 +309,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             if (!exp_elem.parse(pos, limit_offset, expected))
                 return false;
-
-            has_offset_clause = true;
         }
         else if (s_with_ties.ignore(pos, expected))
         {
@@ -329,7 +317,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
 
         if (limit_with_ties_occured && distinct_on_expression_list)
-            throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
+            throw Exception("Can not use WITH TIES alongside LIMIT BY/DISTINCT ON", ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED);
 
         if (s_by.ignore(pos, expected))
         {
@@ -337,10 +325,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             /// But there are other kind of queries like LIMIT n BY smth LIMIT m WITH TIES which are allowed.
             /// So we have to ignore WITH TIES exactly in LIMIT BY state.
             if (limit_with_ties_occured)
-                throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
+                throw Exception("Can not use WITH TIES alongside LIMIT BY/DISTINCT ON", ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED);
 
             if (distinct_on_expression_list)
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Can not use DISTINCT ON alongside LIMIT BY");
+                throw Exception("Can not use DISTINCT ON alongside LIMIT BY", ErrorCodes::SYNTAX_ERROR);
 
             limit_by_length = limit_length;
             limit_by_offset = limit_offset;
@@ -352,69 +340,64 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
 
         if (top_length && limit_length)
-            throw Exception(ErrorCodes::TOP_AND_LIMIT_TOGETHER, "Can not use TOP and LIMIT together");
+            throw Exception("Can not use TOP and LIMIT together", ErrorCodes::TOP_AND_LIMIT_TOGETHER);
     }
     else if (s_offset.ignore(pos, expected))
     {
-        /// OFFSET without LIMIT
-
-        has_offset_clause = true;
+        /// OFFSET offset_row_count {ROW | ROWS} FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}
+        bool offset_with_fetch_maybe = false;
 
         if (!exp_elem.parse(pos, limit_offset, expected))
-            return false;
-
-        /// SQL standard OFFSET N ROW[S] ...
-
-        if (s_row.ignore(pos, expected))
-            offset_clause_has_sql_standard_row_or_rows = true;
-
-        if (s_rows.ignore(pos, expected))
-        {
-            if (offset_clause_has_sql_standard_row_or_rows)
-                throw Exception(ErrorCodes::ROW_AND_ROWS_TOGETHER, "Can not use ROW and ROWS together");
-
-            offset_clause_has_sql_standard_row_or_rows = true;
-        }
-    }
-
-    /// SQL standard FETCH (either following SQL standard OFFSET or following ORDER BY)
-    if ((!has_offset_clause || offset_clause_has_sql_standard_row_or_rows)
-        && s_fetch.ignore(pos, expected))
-    {
-        /// FETCH clause must exist with "ORDER BY"
-        if (!order_expression_list)
-            throw Exception(ErrorCodes::OFFSET_FETCH_WITHOUT_ORDER_BY, "Can not use OFFSET FETCH clause without ORDER BY");
-
-        if (s_first.ignore(pos, expected))
-        {
-            if (s_next.ignore(pos, expected))
-                throw Exception(ErrorCodes::FIRST_AND_NEXT_TOGETHER, "Can not use FIRST and NEXT together");
-        }
-        else if (!s_next.ignore(pos, expected))
-            return false;
-
-        if (!exp_elem.parse(pos, limit_length, expected))
             return false;
 
         if (s_row.ignore(pos, expected))
         {
             if (s_rows.ignore(pos, expected))
-                throw Exception(ErrorCodes::ROW_AND_ROWS_TOGETHER, "Can not use ROW and ROWS together");
+                throw Exception("Can not use ROW and ROWS together", ErrorCodes::ROW_AND_ROWS_TOGETHER);
+            offset_with_fetch_maybe = true;
         }
-        else if (!s_rows.ignore(pos, expected))
-            return false;
+        else if (s_rows.ignore(pos, expected))
+        {
+            offset_with_fetch_maybe = true;
+        }
 
-        if (s_with_ties.ignore(pos, expected))
+        if (offset_with_fetch_maybe && s_fetch.ignore(pos, expected))
         {
-            select_query->limit_with_ties = true;
-        }
-        else if (s_only.ignore(pos, expected))
-        {
-            select_query->limit_with_ties = false;
-        }
-        else
-        {
-            return false;
+            /// OFFSET FETCH clause must exists with "ORDER BY"
+            if (!order_expression_list)
+                throw Exception("Can not use OFFSET FETCH clause without ORDER BY", ErrorCodes::OFFSET_FETCH_WITHOUT_ORDER_BY);
+
+            if (s_first.ignore(pos, expected))
+            {
+                if (s_next.ignore(pos, expected))
+                    throw Exception("Can not use FIRST and NEXT together", ErrorCodes::FIRST_AND_NEXT_TOGETHER);
+            }
+            else if (!s_next.ignore(pos, expected))
+                return false;
+
+            if (!exp_elem.parse(pos, limit_length, expected))
+                return false;
+
+            if (s_row.ignore(pos, expected))
+            {
+                if (s_rows.ignore(pos, expected))
+                    throw Exception("Can not use ROW and ROWS together", ErrorCodes::ROW_AND_ROWS_TOGETHER);
+            }
+            else if (!s_rows.ignore(pos, expected))
+                return false;
+
+            if (s_with_ties.ignore(pos, expected))
+            {
+                select_query->limit_with_ties = true;
+            }
+            else if (s_only.ignore(pos, expected))
+            {
+                select_query->limit_with_ties = false;
+            }
+            else
+            {
+                return false;
+            }
         }
     }
 
@@ -462,7 +445,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// WITH TIES was used without ORDER BY
     if (!order_expression_list && select_query->limit_with_ties)
-        throw Exception(ErrorCodes::WITH_TIES_WITHOUT_ORDER_BY, "Can not use WITH TIES without ORDER BY");
+        throw Exception("Can not use WITH TIES without ORDER BY", ErrorCodes::WITH_TIES_WITHOUT_ORDER_BY);
 
     /// SETTINGS key1 = value1, key2 = value2, ...
     if (s_settings.ignore(pos, expected))

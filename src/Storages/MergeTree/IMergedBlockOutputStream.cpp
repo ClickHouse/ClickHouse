@@ -1,19 +1,19 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
-    const MergeTreeMutableDataPartPtr & data_part,
+    DataPartStorageBuilderPtr data_part_storage_builder_,
+    const MergeTreeDataPartPtr & data_part,
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list,
     bool reset_columns_)
     : storage(data_part->storage)
     , metadata_snapshot(metadata_snapshot_)
-    , data_part_storage(data_part->getDataPartStoragePtr())
+    , data_part_storage_builder(std::move(data_part_storage_builder_))
     , reset_columns(reset_columns_)
 {
     if (reset_columns)
@@ -106,7 +106,6 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         if (remove_it != columns.end())
             columns.erase(remove_it);
     }
-
     return remove_files;
 }
 

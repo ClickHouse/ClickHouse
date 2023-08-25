@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/quantiletdigestweighted
 sidebar_position: 208
 ---
 
@@ -60,3 +59,4 @@ SELECT quantileTDigestWeighted(number, 1) FROM numbers(10)
 
 -   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
 -   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
+

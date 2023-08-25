@@ -23,9 +23,6 @@ namespace Nested
     /// 2) For an Array with named Tuple element column, a Array(Tuple(x ..., y ..., ...)), replace it with multiple Array Columns, a.x ..., a.y ..., ...
     Block flatten(const Block & block);
 
-    /// Same as flatten but only for Array with named Tuple element column.
-    Block flattenArrayOfTuples(const Block & block);
-
     /// Collect Array columns in a form of `column_name.element_name` to single Array(Tuple(...)) column.
     NamesAndTypesList collect(const NamesAndTypesList & names_and_types);
 
@@ -37,9 +34,6 @@ namespace Nested
 
     /// Get all nested tables names from a block.
     std::unordered_set<String> getAllTableNames(const Block & block, bool to_lower_case = false);
-
-    /// Extract all column names that are nested for specifying table.
-    Names getAllNestedColumnsForTable(const Block & block, const std::string & table_name);
 }
 
 /// Use this class to extract element columns from columns of nested type in a block, e.g. named Tuple.

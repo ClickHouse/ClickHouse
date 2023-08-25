@@ -11,8 +11,6 @@
 namespace DB
 {
 
-class IMergeTreeDataPart;
-
 /** Interface of algorithm to select data parts to merge
  *   (merge is also known as "compaction").
   * Following properties depend on it:
@@ -28,7 +26,6 @@ class IMergeTreeDataPart;
   */
 class IMergeSelector
 {
-    using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 public:
     /// Information about data part relevant to merge selecting strategy.
     struct Part
@@ -53,11 +50,6 @@ public:
         ASTPtr compression_codec_desc;
 
         bool shall_participate_in_merges = true;
-
-        const DataPartPtr & getDataPartPtr() const
-        {
-            return *static_cast<const DataPartPtr *>(data);
-        }
     };
 
     /// Parts are belong to partitions. Only parts within same partition could be merged.

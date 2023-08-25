@@ -1,6 +1,0 @@
-<clickhouse>
-    <kerberos>
-        <realm>TEST.CLICKHOUSE.TECH</realm>
-        <keytab>/tmp/keytab/clickhouse.keytab</keytab>
-    </kerberos>
-</clickhouse>

@@ -10,7 +10,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
-#include <IO/ReadBufferFromString.h>
 
 namespace DB
 {
@@ -76,7 +75,7 @@ void SerializationDateTime::deserializeTextEscaped(IColumn & column, ReadBuffer 
     readText(x, istr, settings, time_zone, utc_time_zone);
     if (x < 0)
         x = 0;
-    assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
+    assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 void SerializationDateTime::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -100,9 +99,7 @@ void SerializationDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer &
     }
     if (x < 0)
         x = 0;
-
-    /// It's important to do this at the end - for exception safety.
-    assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
+    assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
 
 void SerializationDateTime::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -126,7 +123,7 @@ void SerializationDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & i
     }
     if (x < 0)
         x = 0;
-    assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
+    assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 void SerializationDateTime::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -146,34 +143,17 @@ void SerializationDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & is
     char maybe_quote = *istr.position();
 
     if (maybe_quote == '\'' || maybe_quote == '\"')
-    {
         ++istr.position();
-        readText(x, istr, settings, time_zone, utc_time_zone);
+
+    readText(x, istr, settings, time_zone, utc_time_zone);
+
+    if (maybe_quote == '\'' || maybe_quote == '\"')
         assertChar(maybe_quote, istr);
-    }
-    else
-    {
-        if (settings.csv.delimiter != ',' || settings.date_time_input_format == FormatSettings::DateTimeInputFormat::Basic)
-        {
-            readText(x, istr, settings, time_zone, utc_time_zone);
-        }
-        /// Best effort parsing supports datetime in format like "01.01.2000, 00:00:00"
-        /// and can mistakenly read comma as a part of datetime.
-        /// For example data "...,01.01.2000,some string,..." cannot be parsed correctly.
-        /// To fix this problem we first read CSV string and then try to parse it as datetime.
-        else
-        {
-            String datetime_str;
-            readCSVString(datetime_str, istr, settings.csv);
-            ReadBufferFromString buf(datetime_str);
-            readText(x, buf, settings, time_zone, utc_time_zone);
-        }
-    }
 
     if (x < 0)
         x = 0;
 
-    assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
+    assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 }

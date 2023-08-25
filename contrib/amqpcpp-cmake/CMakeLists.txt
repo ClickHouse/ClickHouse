@@ -4,11 +4,6 @@ if (NOT ENABLE_AMQPCPP)
     message(STATUS "Not using AMQP-CPP")
     return()
 endif()
-if (OS_FREEBSD)
-    message(STATUS "Not using AMQP-CPP because libuv is disabled")
-    return()
-endif()
-
 
 # can be removed once libuv build on MacOS with GCC is possible
 if (NOT TARGET ch_contrib::uv)

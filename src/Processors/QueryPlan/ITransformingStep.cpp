@@ -20,13 +20,16 @@ DataStream ITransformingStep::createOutputStream(
 {
     DataStream output_stream{.header = std::move(output_header)};
 
+    if (stream_traits.preserves_distinct_columns)
+        output_stream.distinct_columns = input_stream.distinct_columns;
+
     output_stream.has_single_port = stream_traits.returns_single_stream
                                      || (input_stream.has_single_port && stream_traits.preserves_number_of_streams);
 
     if (stream_traits.preserves_sorting)
     {
         output_stream.sort_description = input_stream.sort_description;
-        output_stream.sort_scope = input_stream.sort_scope;
+        output_stream.sort_mode = input_stream.sort_mode;
     }
 
     return output_stream;
@@ -47,9 +50,29 @@ QueryPipelineBuilderPtr ITransformingStep::updatePipeline(QueryPipelineBuilders 
     return std::move(pipelines.front());
 }
 
+void ITransformingStep::updateDistinctColumns(const Block & res_header, NameSet & distinct_columns)
+{
+    if (distinct_columns.empty())
+        return;
+
+    for (const auto & column : distinct_columns)
+    {
+        if (!res_header.has(column))
+        {
+            distinct_columns.clear();
+            break;
+        }
+    }
+}
+
 void ITransformingStep::describePipeline(FormatSettings & settings) const
 {
     IQueryPlanStep::describePipeline(processors, settings);
+}
+
+void ITransformingStep::appendExtraProcessors(const Processors & extra_processors)
+{
+    processors.insert(processors.end(), extra_processors.begin(), extra_processors.end());
 }
 
 }

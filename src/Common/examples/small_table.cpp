@@ -27,7 +27,7 @@ int main(int, char **)
             std::cerr << x.getValue() << std::endl;
 
         DB::WriteBufferFromOwnString wb;
-        cont.write(wb);
+        cont.writeText(wb);
 
         std::cerr << "dump: " << wb.str() << std::endl;
     }

@@ -31,6 +31,10 @@ function download
     # Test all of them.
     declare -a urls_to_try=(
         "$S3_URL/PRs/$left_pr/$left_sha/$BUILD_NAME/performance.tar.zst"
+        "$S3_URL/$left_pr/$left_sha/$BUILD_NAME/performance.tar.zst"
+        "$S3_URL/$left_pr/$left_sha/$BUILD_NAME/performance.tgz"
+        "https://s3.amazonaws.com/clickhouse-builds/$left_pr/$left_sha/$BUILD_NAME/performance.tgz"
+        "https://s3.amazonaws.com/clickhouse-builds/$left_pr/$left_sha/performance/performance.tgz"
     )
 
     for path in "${urls_to_try[@]}"
@@ -46,7 +50,7 @@ function download
     # download anything, for example in some manual runs. In this case, SHAs are not set.
     if ! [ "$left_sha" = "$right_sha" ]
     then
-        wget -nv -nd -c "$left_path" -O- | tar -C left --no-same-owner --strip-components=1 --zstd --extract --verbose  &
+        wget -nv -nd -c "$left_path" -O- | tar -C left --no-same-owner --strip-components=1 -zxv  &
     elif [ "$right_sha" != "" ]
     then
         mkdir left ||:
@@ -61,7 +65,7 @@ function download
             >&2 echo "Unknown dataset '$dataset_name'"
             exit 1
         fi
-        cd db0 && wget -nv -nd -c "$dataset_path" -O- | tar --extract --verbose &
+        cd db0 && wget -nv -nd -c "$dataset_path" -O- | tar -xv &
     done
 
     mkdir ~/fg ||:

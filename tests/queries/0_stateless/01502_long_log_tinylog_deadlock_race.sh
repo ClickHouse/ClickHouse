@@ -33,7 +33,7 @@ function thread_rename {
 
 function thread_select {
     while true; do
-        $CLICKHOUSE_CLIENT --local_filesystem_read_method pread --query "SELECT * FROM $1 FORMAT Null" 2>&1 | grep -v -e 'Received exception from server' -e '^(query: ' | grep -v -P 'Code: (60|218)'
+        $CLICKHOUSE_CLIENT --query "SELECT * FROM $1 FORMAT Null" 2>&1 | grep -v -e 'Received exception from server' -e '^(query: ' | grep -v -P 'Code: (60|218)'
         sleep 0.0$RANDOM
     done
 }
@@ -47,7 +47,7 @@ function thread_insert {
 
 function thread_insert_select {
     while true; do
-        $CLICKHOUSE_CLIENT --local_filesystem_read_method pread --query "INSERT INTO $1 SELECT * FROM $2" 2>&1 | grep -v -e 'Received exception from server' -e '^(query: ' | grep -v -P 'Code: (60|218)'
+        $CLICKHOUSE_CLIENT --query "INSERT INTO $1 SELECT * FROM $2" 2>&1 | grep -v -e 'Received exception from server' -e '^(query: ' | grep -v -P 'Code: (60|218)'
         sleep 0.0$RANDOM
     done
 }
@@ -88,9 +88,3 @@ test_with_engine Log
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t1"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t2"
-
-# It is not enough to kill the commands running the queries, we also have to kill the queries, the server might be still running
-# to avoid the following error:
-# Code: 219. DB::Exception: New table appeared in database being dropped or detached. Try again. (DATABASE_NOT_EMPTY)
-
-$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE current_database = currentDatabase() SYNC FORMAT Null"

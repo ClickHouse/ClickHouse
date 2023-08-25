@@ -13,14 +13,10 @@
            <values>
                <value>protocol</value>
                <value>domain</value>
-               <value>domainRFC</value>
                <value>domainWithoutWWW</value>
-               <value>domainWithoutWWWRFC</value>
                <value>topLevelDomain</value>
                <value>firstSignificantSubdomain</value>
-               <value>firstSignificantSubdomainRFC</value>
                <value>cutToFirstSignificantSubdomain</value>
-               <value>cutToFirstSignificantSubdomainRFC</value>
                <value>path</value>
                <value>pathFull</value>
                <value>queryString</value>

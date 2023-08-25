@@ -136,17 +136,20 @@ class BaseStateKeysFixed<Key, false>
 protected:
     void init(const ColumnRawPtrs &)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal error: calling init() for non-nullable keys is forbidden");
+        throw Exception{"Internal error: calling init() for non-nullable"
+            " keys is forbidden", ErrorCodes::LOGICAL_ERROR};
     }
 
     const ColumnRawPtrs & getActualColumns() const
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal error: calling getActualColumns() for non-nullable keys is forbidden");
+        throw Exception{"Internal error: calling getActualColumns() for non-nullable"
+            " keys is forbidden", ErrorCodes::LOGICAL_ERROR};
     }
 
     KeysNullMap<Key> createBitmap(size_t) const
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal error: calling createBitmap() for non-nullable keys is forbidden");
+        throw Exception{"Internal error: calling createBitmap() for non-nullable keys"
+            " is forbidden", ErrorCodes::LOGICAL_ERROR};
     }
 };
 

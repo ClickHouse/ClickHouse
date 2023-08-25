@@ -1,14 +1,10 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <DataTypes/ObjectUtils.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Columns/ColumnObject.h>
-#include <Columns/ColumnTuple.h>
 #include <Common/FieldVisitorToString.h>
 
-#include <Common/assert_cast.h>
 #include <Common/randomSeed.h>
 #include <fmt/core.h>
 #include <pcg_random.hpp>
@@ -120,38 +116,5 @@ TEST(ColumnObject, InsertRangeFrom)
 
         subcolumn_dst.insertRangeFrom(subcolumn_src, from, to - from);
         checkFieldsAreEqual(subcolumn_dst, fields_dst);
-    }
-}
-
-TEST(ColumnObject, Unflatten)
-{
-    auto check_empty_tuple = [](const auto & type, const auto & column)
-    {
-        const auto & type_tuple = assert_cast<const DataTypeTuple &>(*type);
-        const auto & column_tuple = assert_cast<const ColumnTuple &>(*column);
-
-        ASSERT_EQ(type_tuple.getElements().size(), 1);
-        ASSERT_EQ(type_tuple.getElements()[0]->getName(), "UInt8");
-        ASSERT_EQ(type_tuple.getElementNames()[0], ColumnObject::COLUMN_NAME_DUMMY);
-
-        ASSERT_EQ(column_tuple.getColumns().size(), 1);
-        ASSERT_EQ(column_tuple.getColumns()[0]->getName(), "UInt8");
-    };
-
-    {
-        auto column_object = ColumnObject::create(false);
-        auto [column, type] = unflattenObjectToTuple(*column_object);
-
-        check_empty_tuple(type, column);
-        ASSERT_EQ(column->size(), 0);
-    }
-
-    {
-        auto column_object = ColumnObject::create(false);
-        column_object->insertManyDefaults(5);
-        auto [column, type] = unflattenObjectToTuple(*column_object);
-
-        check_empty_tuple(type, column);
-        ASSERT_EQ(column->size(), 5);
     }
 }

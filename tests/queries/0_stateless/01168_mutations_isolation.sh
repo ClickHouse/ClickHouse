@@ -91,16 +91,3 @@ tx 14 "begin transaction"
 tx 14 "select 10, n, _part from mt order by n"
 
 $CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=0 -q "drop table mt"
-
-$CLICKHOUSE_CLIENT -q "create table mt (n int) engine=MergeTree order by tuple()"
-$CLICKHOUSE_CLIENT --implicit_transaction=1 -q "insert into mt values (1)"
-
-tx 15 "begin transaction"
-tx 16                                           "begin transaction"
-tx 16                                           "insert into mt values (2)"
-tx 15 "alter table mt update n = 10*n where 1"
-tx 15 "commit"
-tx 16                                           "commit"
-$CLICKHOUSE_CLIENT --implicit_transaction=1 -q "select 11, n, _part from mt order by n"
-
-$CLICKHOUSE_CLIENT -q "drop table mt"

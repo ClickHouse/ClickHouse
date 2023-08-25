@@ -1,4 +1,3 @@
--- Tags: no-fasttest, no-parallel
+-- Tags: no-fasttest
 
-SYSTEM DROP FILESYSTEM CACHE 's3_cache';
-DESCRIBE FILESYSTEM CACHE 's3_cache';
+DESCRIBE CACHE 's3_cache';

@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/entropy
 sidebar_position: 302
 ---
 
@@ -15,11 +14,11 @@ entropy(val)
 
 **Arguments**
 
-- `val` — Column of values of any type.
+-   `val` — Column of values of any type.
 
 **Returned value**
 
-- Shannon entropy.
+-   Shannon entropy.
 
 Type: [Float64](../../../sql-reference/data-types/float.md).
 

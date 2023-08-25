@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/data-types/enum
 sidebar_position: 50
 sidebar_label: Enum
 ---
@@ -12,8 +11,8 @@ Named values can be declared as `'string' = integer` pairs or `'string'` names .
 
 ClickHouse supports:
 
-- 8-bit `Enum`. It can contain up to 256 values enumerated in the `[-128, 127]` range.
-- 16-bit `Enum`. It can contain up to 65536 values enumerated in the `[-32768, 32767]` range.
+-   8-bit `Enum`. It can contain up to 256 values enumerated in the `[-128, 127]` range.
+-   16-bit `Enum`. It can contain up to 65536 values enumerated in the `[-32768, 32767]` range.
 
 ClickHouse automatically chooses the type of `Enum` when data is inserted. You can also use `Enum8` or `Enum16` types to be sure in the size of storage.
 
@@ -160,3 +159,5 @@ Enum values are also convertible to numeric types using the `toT` function, wher
 The Enum type can be changed without cost using ALTER, if only the set of values is changed. It is possible to both add and remove members of the Enum using ALTER (removing is safe only if the removed value has never been used in the table). As a safeguard, changing the numeric value of a previously defined Enum member will throw an exception.
 
 Using ALTER, it is possible to change an Enum8 to an Enum16 or vice versa, just like changing an Int8 to Int16.
+
+[Original article](https://clickhouse.com/docs/en/data_types/enum/) <!--hide-->

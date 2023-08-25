@@ -2,7 +2,7 @@
 
 #include <Processors/ISource.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
-#include <Storages/RabbitMQ/RabbitMQConsumer.h>
+#include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 
 
 namespace DB
@@ -18,20 +18,22 @@ public:
             ContextPtr context_,
             const Names & columns,
             size_t max_block_size_,
-            UInt64 max_execution_time_,
             bool ack_in_suffix = false);
 
     ~RabbitMQSource() override;
 
     String getName() const override { return storage.getName(); }
-    void updateChannel(RabbitMQConnection & connection) { consumer->updateChannel(connection); }
+    ConsumerBufferPtr getBuffer() { return buffer; }
 
     Chunk generate() override;
 
-    bool hasPendingMessages() const { return consumer && consumer->hasPendingMessages(); }
+    bool queueEmpty() const { return !buffer || buffer->queueEmpty(); }
     bool needChannelUpdate();
     void updateChannel();
     bool sendAck();
+
+
+    void setTimeLimit(Poco::Timespan max_execution_time_) { max_execution_time = max_execution_time_; }
 
 private:
     StorageRabbitMQ & storage;
@@ -45,13 +47,12 @@ private:
     const Block non_virtual_header;
     const Block virtual_header;
 
-    Poco::Logger * log;
-    RabbitMQConsumerPtr consumer;
+    ConsumerBufferPtr buffer;
 
-    uint64_t max_execution_time_ms = 0;
+    Poco::Timespan max_execution_time = 0;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
-    RabbitMQConsumer::CommitInfo commit_info;
+    bool checkTimeLimit() const;
 
     RabbitMQSource(
         StorageRabbitMQ & storage_,
@@ -60,7 +61,6 @@ private:
         ContextPtr context_,
         const Names & columns,
         size_t max_block_size_,
-        UInt64 max_execution_time_,
         bool ack_in_suffix);
 
     Chunk generateImpl();

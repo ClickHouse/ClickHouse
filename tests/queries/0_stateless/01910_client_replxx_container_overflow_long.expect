@@ -1,4 +1,5 @@
 #!/usr/bin/expect -f
+# Tags: long
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
@@ -9,9 +10,9 @@ set timeout 60
 match_max 100000
 expect_after {
     # Do not ignore eof from expect
-    -i $any_spawn_id eof { exp_continue }
+    eof { exp_continue }
     # A default timeout action is to do nothing, change it to fail
-    -i $any_spawn_id timeout { exit 1 }
+    timeout { exit 1 }
 }
 
 # history file is not required, in-memory history is enough
@@ -23,13 +24,12 @@ send -- "SELECT 1\r"
 expect "1"
 expect ":) "
 
-# Do regular reverse-search (Ctrl-T).
-send -- ""
+# Do reverse-search.
+send -- ""
 expect "(reverse-i-search)"
 send -- "1"
 expect "(reverse-i-search)"
 # This will trigger the container-overflow under ASAN before the fix.
-# NOTE: that the next search in the list is still Ctrl-R
 send -- ""
 expect "(reverse-i-search)"
 

@@ -1,5 +1,0 @@
-<clickhouse>
-    <logger>
-        <count>20</count>
-    </logger>
-</clickhouse>

@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
-from pathlib import Path
-from typing import Dict, List, Optional
-import json
-import logging
 import time
+import logging
+import json
 
 import requests  # type: ignore
-
 from get_robot_token import get_parameter_from_ssm
-from pr_info import PRInfo
-from report import TestResults
 
 
 class InsertException(Exception):
@@ -17,64 +12,37 @@ class InsertException(Exception):
 
 
 class ClickHouseHelper:
-    def __init__(
-        self, url: Optional[str] = None, auth: Optional[Dict[str, str]] = None
-    ):
+    def __init__(self, url=None):
         if url is None:
             url = get_parameter_from_ssm("clickhouse-test-stat-url")
 
         self.url = url
-        self.auth = auth or {
+        self.auth = {
             "X-ClickHouse-User": get_parameter_from_ssm("clickhouse-test-stat-login"),
             "X-ClickHouse-Key": get_parameter_from_ssm("clickhouse-test-stat-password"),
         }
 
     @staticmethod
-    def insert_file(
-        url: str,
-        auth: Optional[Dict[str, str]],
-        query: str,
-        file: Path,
-        additional_options: Optional[Dict[str, str]] = None,
-    ) -> None:
-        params = {
-            "query": query,
-            "date_time_input_format": "best_effort",
-            "send_logs_level": "warning",
-        }
-        if additional_options:
-            for k, v in additional_options.items():
-                params[k] = v
-
-        with open(file, "rb") as data_fd:
-            ClickHouseHelper._insert_post(
-                url, params=params, data=data_fd, headers=auth
-            )
-
-    @staticmethod
-    def insert_json_str(url, auth, db, table, json_str):
+    def _insert_json_str_info_impl(url, auth, db, table, json_str):
         params = {
             "database": db,
             "query": f"INSERT INTO {table} FORMAT JSONEachRow",
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
         }
-        ClickHouseHelper._insert_post(url, params=params, data=json_str, headers=auth)
-
-    @staticmethod
-    def _insert_post(*args, **kwargs):
-        url = ""
-        if args:
-            url = args[0]
-        url = kwargs.get("url", url)
-        kwargs["timeout"] = kwargs.get("timeout", 100)
 
         for i in range(5):
             try:
-                response = requests.post(*args, **kwargs)
+                response = requests.post(
+                    url, params=params, data=json_str, headers=auth
+                )
             except Exception as e:
-                error = f"Received exception while sending data to {url} on {i} attempt: {e}"
-                logging.warning(error)
+                logging.warning(
+                    "Received exception while sending data to %s on %s attempt: %s",
+                    url,
+                    i,
+                    e,
+                )
                 continue
 
             logging.info("Response content '%s'", response.content)
@@ -83,12 +51,17 @@ class ClickHouseHelper:
                 break
 
             error = (
-                f"Cannot insert data into clickhouse at try {i}: HTTP code "
-                f"{response.status_code}: '{response.text}'"
+                "Cannot insert data into clickhouse at try "
+                + str(i)
+                + ": HTTP code "
+                + str(response.status_code)
+                + ": '"
+                + str(response.text)
+                + "'"
             )
 
             if response.status_code >= 500:
-                # A retryable error
+                # A retriable error
                 time.sleep(1)
                 continue
 
@@ -103,7 +76,7 @@ class ClickHouseHelper:
             raise InsertException(error)
 
     def _insert_json_str_info(self, db, table, json_str):
-        self.insert_json_str(self.url, self.auth, db, table, json_str)
+        self._insert_json_str_info_impl(self.url, self.auth, db, table, json_str)
 
     def insert_event_into(self, db, table, event, safe=True):
         event_str = json.dumps(event)
@@ -159,32 +132,16 @@ class ClickHouseHelper:
         return result
 
 
-# Obtain the machine type from IMDS:
-def get_instance_type():
-    url = "http://169.254.169.254/latest/meta-data/instance-type"
-    for i in range(5):
-        try:
-            response = requests.get(url, timeout=1)
-            if response.status_code == 200:
-                return response.text
-        except Exception as e:
-            error = (
-                f"Received exception while sending data to {url} on {i} attempt: {e}"
-            )
-            logging.warning(error)
-            continue
-    return ""
-
-
 def prepare_tests_results_for_clickhouse(
-    pr_info: PRInfo,
-    test_results: TestResults,
-    check_status: str,
-    check_duration: float,
-    check_start_time: str,
-    report_url: str,
-    check_name: str,
-) -> List[dict]:
+    pr_info,
+    test_results,
+    check_status,
+    check_duration,
+    check_start_time,
+    report_url,
+    check_name,
+):
+
     pull_request_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
     base_ref = "master"
     head_ref = "master"
@@ -212,7 +169,6 @@ def prepare_tests_results_for_clickhouse(
         head_ref=head_ref,
         head_repo=head_repo,
         task_url=pr_info.task_url,
-        instance_type=get_instance_type(),
     )
 
     # Always publish a total record for all checks. For checks with individual
@@ -220,18 +176,37 @@ def prepare_tests_results_for_clickhouse(
     result = [common_properties]
     for test_result in test_results:
         current_row = common_properties.copy()
-        test_name = test_result.name
-        test_status = test_result.status
+        test_name = test_result[0]
+        test_status = test_result[1]
 
-        test_time = test_result.time or 0
-        current_row["test_duration_ms"] = int(test_time * 1000)
+        test_time = 0
+        if len(test_result) > 2 and test_result[2]:
+            test_time = test_result[2]
+        current_row["test_duration_ms"] = int(float(test_time) * 1000)
         current_row["test_name"] = test_name
         current_row["test_status"] = test_status
-        if test_result.raw_logs:
-            # Protect from too big blobs that contain garbage
-            current_row["test_context_raw"] = test_result.raw_logs[: 32 * 1024]
-        else:
-            current_row["test_context_raw"] = ""
         result.append(current_row)
 
     return result
+
+
+def mark_flaky_tests(clickhouse_helper, check_name, test_results):
+    try:
+        query = f"""SELECT DISTINCT test_name
+FROM checks
+WHERE
+    check_start_time BETWEEN now() - INTERVAL 3 DAY AND now()
+    AND check_name = '{check_name}'
+    AND (test_status = 'FAIL' OR test_status = 'FLAKY')
+    AND pull_request_number = 0
+"""
+
+        tests_data = clickhouse_helper.select_json_each_row("default", query)
+        master_failed_tests = {row["test_name"] for row in tests_data}
+        logging.info("Found flaky tests: %s", ", ".join(master_failed_tests))
+
+        for test_result in test_results:
+            if test_result[1] == "FAIL" and test_result[0] in master_failed_tests:
+                test_result[1] = "FLAKY"
+    except Exception as ex:
+        logging.error("Exception happened during flaky tests fetch %s", ex)

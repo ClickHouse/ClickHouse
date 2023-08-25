@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Core/Types.h>
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_REPLXX
-#   include <Client/ReplxxLineReader.h>
+#   include <base/ReplxxLineReader.h>
 #endif
 
 

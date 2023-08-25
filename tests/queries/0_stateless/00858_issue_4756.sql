@@ -1,4 +1,3 @@
-set allow_experimental_analyzer = 1;
 set distributed_product_mode = 'local';
 
 drop table if exists shard1;
@@ -22,7 +21,7 @@ where distr1.id in
     from distr1
     join distr2 on distr1.id = distr2.id
     where distr1.id > 0
-);
+); -- { serverError 288 }
 
 select distinct(d0.id) from distr1 d0
 where d0.id in
@@ -33,14 +32,15 @@ where d0.id in
     where d1.id > 0
 );
 
-select distinct(distr1.id) from distr1
-where distr1.id in
-(
-   select distr1.id
-   from distr1 as d1
-   join distr2 as d2 on distr1.id = distr2.id
-   where distr1.id > 0
-);
+-- TODO
+--select distinct(distr1.id) from distr1
+--where distr1.id in
+--(
+--    select distr1.id
+--    from distr1 as d1
+--    join distr2 as d2 on distr1.id = distr2.id
+--    where distr1.id > 0
+--);
 
 drop table shard1;
 drop table shard2;

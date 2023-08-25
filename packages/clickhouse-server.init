@@ -47,10 +47,9 @@ CLICKHOUSE_PIDFILE="$CLICKHOUSE_PIDDIR/$PROGRAM.pid"
 # Some systems lack "flock"
 command -v flock >/dev/null && FLOCK=flock
 
-# Override defaults from optional config file and export them automatically
-set -a
+# Override defaults from optional config file
 test -f /etc/default/clickhouse && . /etc/default/clickhouse
-set +a
+
 
 die()
 {
@@ -120,11 +119,7 @@ use_cron()
     if [ -x "/bin/systemctl" ] && [ -f /etc/systemd/system/clickhouse-server.service ] && [ -d /run/systemd/system ]; then
         return 1
     fi
-    # 2. checking whether the config is existed
-    if [ ! -f "$CLICKHOUSE_CRONFILE" ]; then
-        return 1
-    fi
-    # 3. disabled by config
+    # 2. disabled by config
     if [ -z "$CLICKHOUSE_CRONFILE" ]; then
         return 2
     fi

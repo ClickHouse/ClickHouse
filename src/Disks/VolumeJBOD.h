@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <optional>
-#include <queue>
 
 #include <Disks/IVolume.h>
 
@@ -68,7 +67,7 @@ private:
     struct DiskWithSize
     {
         DiskPtr disk;
-        std::optional<UInt64> free_size = 0;
+        uint64_t free_size = 0;
 
         DiskWithSize(DiskPtr disk_)
             : disk(disk_)
@@ -80,12 +79,9 @@ private:
             return free_size < rhs.free_size;
         }
 
-        ReservationPtr reserve(UInt64 bytes)
+        ReservationPtr reserve(uint64_t bytes)
         {
             ReservationPtr reservation = disk->reserve(bytes);
-            if (!reservation)
-                return {};
-
             /// Not just subtract bytes, but update the value,
             /// since some reservations may be done directly via IDisk, or not by ClickHouse.
             free_size = reservation->getUnreservedSpace();

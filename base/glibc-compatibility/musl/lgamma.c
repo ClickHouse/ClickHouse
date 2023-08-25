@@ -78,6 +78,9 @@
  *
  */
 
+// Disable warnings by PVS-Studio
+//-V::GA
+
 static const double
 pi  =  3.14159265358979311600e+00, /* 0x400921FB, 0x54442D18 */
 a0  =  7.72156649015328655494e-02, /* 0x3FB3C467, 0xE37DB0C8 */

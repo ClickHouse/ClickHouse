@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_BROTLI
 #    include <IO/BrotliWriteBuffer.h>
@@ -42,7 +42,10 @@ BrotliWriteBuffer::BrotliWriteBuffer(std::unique_ptr<WriteBuffer> out_, int comp
     BrotliEncoderSetParameter(brotli->state, BROTLI_PARAM_LGWIN, 24);
 }
 
-BrotliWriteBuffer::~BrotliWriteBuffer() = default;
+BrotliWriteBuffer::~BrotliWriteBuffer()
+{
+    finalize();
+}
 
 void BrotliWriteBuffer::nextImpl()
 {
@@ -75,7 +78,7 @@ void BrotliWriteBuffer::nextImpl()
 
             if (result == 0)
             {
-                throw Exception(ErrorCodes::BROTLI_WRITE_FAILED, "brotli compress failed");
+                throw Exception("brotli compress failed", ErrorCodes::BROTLI_WRITE_FAILED);
             }
         }
         while (in_available > 0);
@@ -116,7 +119,7 @@ void BrotliWriteBuffer::finalizeBefore()
 
         if (result == 0)
         {
-            throw Exception(ErrorCodes::BROTLI_WRITE_FAILED, "brotli compress failed");
+            throw Exception("brotli compress failed", ErrorCodes::BROTLI_WRITE_FAILED);
         }
     }
 }

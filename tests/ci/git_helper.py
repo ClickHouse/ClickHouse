@@ -4,7 +4,7 @@ import logging
 import os.path as p
 import re
 import subprocess
-from typing import Any, List, Optional
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -21,19 +21,19 @@ TWEAK = 1
 
 
 # Py 3.8 removeprefix and removesuffix
-def removeprefix(string: str, prefix: str) -> str:
+def removeprefix(string: str, prefix: str):
     if string.startswith(prefix):
         return string[len(prefix) :]  # noqa: ignore E203, false positive
     return string
 
 
-def removesuffix(string: str, suffix: str) -> str:
+def removesuffix(string: str, suffix: str):
     if string.endswith(suffix):
         return string[: -len(suffix)]
     return string
 
 
-def commit(name: str) -> str:
+def commit(name: str):
     r = re.compile(SHA_REGEXP)
     if not r.match(name):
         raise argparse.ArgumentTypeError(
@@ -42,7 +42,7 @@ def commit(name: str) -> str:
     return name
 
 
-def release_branch(name: str) -> str:
+def release_branch(name: str):
     r = re.compile(RELEASE_BRANCH_REGEXP)
     if not r.match(name):
         raise argparse.ArgumentTypeError("release branch should be as 12.1")
@@ -55,23 +55,20 @@ class Runner:
     def __init__(self, cwd: str = CWD):
         self._cwd = cwd
 
-    def run(self, cmd: str, cwd: Optional[str] = None, **kwargs: Any) -> str:
+    def run(self, cmd: str, cwd: Optional[str] = None, **kwargs) -> str:
         if cwd is None:
             cwd = self.cwd
         logger.debug("Running command: %s", cmd)
-        output = str(
-            subprocess.check_output(
-                cmd, shell=True, cwd=cwd, encoding="utf-8", **kwargs
-            ).strip()
-        )
-        return output
+        return subprocess.check_output(
+            cmd, shell=True, cwd=cwd, encoding="utf-8", **kwargs
+        ).strip()
 
     @property
     def cwd(self) -> str:
         return self._cwd
 
     @cwd.setter
-    def cwd(self, value: str) -> None:
+    def cwd(self, value: str):
         # Set _cwd only once, then set it to readonly
         if self._cwd != CWD:
             return
@@ -143,7 +140,7 @@ class Git:
         )
 
     @staticmethod
-    def check_tag(value: str) -> None:
+    def check_tag(value: str):
         if value == "":
             return
         if not Git._tag_pattern.match(value):
@@ -154,7 +151,7 @@ class Git:
         return self._latest_tag
 
     @latest_tag.setter
-    def latest_tag(self, value: str) -> None:
+    def latest_tag(self, value: str):
         self.check_tag(value)
         self._latest_tag = value
 
@@ -163,7 +160,7 @@ class Git:
         return self._new_tag
 
     @new_tag.setter
-    def new_tag(self, value: str) -> None:
+    def new_tag(self, value: str):
         self.check_tag(value)
         self._new_tag = value
 

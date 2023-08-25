@@ -45,7 +45,6 @@ struct ReplicatedMergeTreeLogEntryData
         ALTER_METADATA, /// Apply alter modification according to global /metadata and /columns paths
         SYNC_PINNED_PART_UUIDS, /// Synchronization point for ensuring that all replicas have up to date in-memory state.
         CLONE_PART_FROM_SHARD,  /// Clone part from another shard.
-        DROP_PART,      /// NOTE: Virtual (has the same (de)serialization format as DROP_RANGE). Deletes the specified part.
     };
 
     static String typeToString(Type type)
@@ -63,9 +62,8 @@ struct ReplicatedMergeTreeLogEntryData
             case ReplicatedMergeTreeLogEntryData::ALTER_METADATA:   return "ALTER_METADATA";
             case ReplicatedMergeTreeLogEntryData::SYNC_PINNED_PART_UUIDS: return "SYNC_PINNED_PART_UUIDS";
             case ReplicatedMergeTreeLogEntryData::CLONE_PART_FROM_SHARD:  return "CLONE_PART_FROM_SHARD";
-            case ReplicatedMergeTreeLogEntryData::DROP_PART:  return "DROP_PART";
             default:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown log entry type: {}", DB::toString<int>(type));
+                throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
         }
     }
 
@@ -75,7 +73,7 @@ struct ReplicatedMergeTreeLogEntryData
     }
 
     void writeText(WriteBuffer & out) const;
-    void readText(ReadBuffer & in, MergeTreeDataFormatVersion partition_format_version);
+    void readText(ReadBuffer & in);
     String toString() const;
 
     String znode_name;
@@ -90,7 +88,7 @@ struct ReplicatedMergeTreeLogEntryData
     /// The name of resulting part for GET_PART and MERGE_PARTS
     /// Part range for DROP_RANGE and CLEAR_COLUMN
     String new_part_name;
-    MergeTreeDataPartFormat new_part_format;
+    MergeTreeDataPartType new_part_type;
     String block_id;                        /// For parts of level zero, the block identifier for deduplication (node name in /blocks/).
     mutable String actual_new_part_name;    /// GET_PART could actually fetch a part covering 'new_part_name'.
     UUID new_part_uuid = UUIDHelpers::Nil;
@@ -98,7 +96,6 @@ struct ReplicatedMergeTreeLogEntryData
     Strings source_parts;
     bool deduplicate = false; /// Do deduplicate on merge
     Strings deduplicate_by_columns = {}; // Which columns should be checked for duplicates, empty means 'all' (default).
-    bool cleanup = false;
     MergeType merge_type = MergeType::Regular;
     String column_name;
     String index_name;
@@ -160,7 +157,6 @@ struct ReplicatedMergeTreeLogEntryData
     /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
     size_t num_tries = 0;                 /// The number of attempts to perform the action (since the server started, including the running one).
     std::exception_ptr exception;         /// The last exception, in the case of an unsuccessful attempt to perform the action.
-    time_t last_exception_time = 0;       /// The time at which the last exception occurred.
     time_t last_attempt_time = 0;         /// The time at which the last attempt was attempted to complete the action.
     size_t num_postponed = 0;             /// The number of times the action was postponed.
     String postpone_reason;               /// The reason why the action was postponed, if it was postponed.
@@ -186,7 +182,7 @@ struct ReplicatedMergeTreeLogEntry : public ReplicatedMergeTreeLogEntryData, std
 
     std::condition_variable execution_complete; /// Awake when currently_executing becomes false.
 
-    static Ptr parse(const String & s, const Coordination::Stat & stat, MergeTreeDataFormatVersion format_version);
+    static Ptr parse(const String & s, const Coordination::Stat & stat);
 };
 
 using ReplicatedMergeTreeLogEntryPtr = std::shared_ptr<ReplicatedMergeTreeLogEntry>;

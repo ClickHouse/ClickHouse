@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/URL/FunctionsURL.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/StringHelpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -76,8 +76,9 @@ public:
             return col_res;
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+            throw Exception(
+                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 
     static void vector(FirstSignificantSubdomainCustomLookup & tld_lookup,

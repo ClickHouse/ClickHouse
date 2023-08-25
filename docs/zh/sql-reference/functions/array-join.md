@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/functions/array-join
----
 # arrayJoin函数 {#functions_arrayjoin}
 
 这是一个非常有用的函数。
@@ -27,3 +24,5 @@ SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
     │   2 │ Hello     │ [1,2,3] │
     │   3 │ Hello     │ [1,2,3] │
     └─────┴───────────┴─────────┘
+
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/array_join/) <!--hide-->

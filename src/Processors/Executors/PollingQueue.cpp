@@ -3,7 +3,6 @@
 #if defined(OS_LINUX)
 
 #include <Common/Exception.h>
-#include <base/defines.h>
 #include <sys/epoll.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -32,11 +31,8 @@ PollingQueue::PollingQueue()
 
 PollingQueue::~PollingQueue()
 {
-    int err;
-    err = close(pipe_fd[0]);
-    chassert(!err || errno == EINTR);
-    err = close(pipe_fd[1]);
-    chassert(!err || errno == EINTR);
+    close(pipe_fd[0]);
+    close(pipe_fd[1]);
 }
 
 void PollingQueue::addTask(size_t thread_number, void * data, int fd)
@@ -74,7 +70,7 @@ PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
 
     epoll_event event;
     event.data.ptr = nullptr;
-    epoll.getManyReady(1, &event, -1);
+    epoll.getManyReady(1, &event, true);
 
     lock.lock();
 
