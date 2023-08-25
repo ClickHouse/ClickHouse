@@ -102,6 +102,23 @@ Example:
 961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85
 ```
 
+## Hiding Configuration {#hidden}
+
+You can use `hidden` attribute to hide certain elements from the preprocessed file.
+
+Example:
+
+```xml
+<clickhouse>
+
+    <interserver_http_credentials hidden="true">
+        <user>admin</user>
+        <password>secret</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
 ## User Settings {#user-settings}
 
 The `config.xml` file can specify a separate config with user settings, profiles, and quotas. The relative path to this config is set in the `users_config` element. By default, it is `users.xml`. If `users_config` is omitted, the user settings, profiles, and quotas are specified directly in `config.xml`.
