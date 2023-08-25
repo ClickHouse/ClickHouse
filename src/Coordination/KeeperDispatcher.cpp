@@ -480,6 +480,7 @@ void KeeperDispatcher::shutdown()
                         .session_id = session,
                         .time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(),
                         .request = std::move(request),
+                        .digest = std::nullopt
                     };
 
                     close_requests.push_back(std::move(request_info));
@@ -576,6 +577,7 @@ void KeeperDispatcher::sessionCleanerTask()
                         .session_id = dead_session,
                         .time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(),
                         .request = std::move(request),
+                        .digest = std::nullopt
                     };
                     if (!requests_queue->push(std::move(request_info)))
                         LOG_INFO(log, "Cannot push close request to queue while cleaning outdated sessions");
