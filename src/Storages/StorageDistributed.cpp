@@ -531,7 +531,7 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     auto expr_contains_sharding_key = [&](const ListNode & exprs) -> bool
     {
         std::unordered_set<std::string> expr_columns;
-        for (auto & expr : exprs)
+        for (const auto & expr : exprs)
         {
             const auto * id = expr->as<const ColumnNode>();
             if (!id)
@@ -1435,7 +1435,7 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
     const auto & slot_to_shard = cluster->getSlotToShard();
 
     const IColumn * column = result.column.get();
-    if (auto col_const = typeid_cast<const ColumnConst *>(column))
+    if (const auto * col_const = typeid_cast<const ColumnConst *>(column))
         column = &col_const->getDataColumn();
 
 // If result.type is DataTypeLowCardinality, do shard according to its dictionaryType

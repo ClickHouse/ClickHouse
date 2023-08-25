@@ -427,12 +427,11 @@ namespace
         if (!to_type_no_lc->canBeInsideNullable())
             return {};
 
-        auto res = castColumnAccurateOrNull({std::move(col), from_type, std::string()}, makeNullable(to_type_no_lc));
+        auto res = castColumnAccurateOrNull({col, from_type, std::string()}, makeNullable(to_type_no_lc));
         if (res->onlyNull())
             return nullptr;
 
-        auto col_nullable = typeid_cast<const ColumnNullable *>(res.get());
-        if (!col_nullable)
+        if (!typeid_cast<const ColumnNullable *>(res.get()))
             return nullptr;
 
         return res;
@@ -537,7 +536,7 @@ namespace
         if (node->result_type->isNullable() && set->hasNull())
         {
             auto col_null = node->result_type->createColumnConst(1, Field());
-            res.push_back({ConjunctionMap{{node, {std::move(col_null), node->result_type, node->result_name}}}});
+            res.push_back({ConjunctionMap{{node, {col_null, node->result_type, node->result_name}}}});
         }
 
         size_t num_rows = column->size();
@@ -626,7 +625,7 @@ namespace
                     if (res.size() * list.size() > max_elements)
                         break;
 
-                    res = andDisjunctions(std::move(res), std::move(list));
+                    res = andDisjunctions(res, list);
                 }
 
                 return res;
