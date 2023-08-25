@@ -739,6 +739,7 @@ Refactorings
 ReferenceKeyed
 RegexpTree
 RemoteRead
+RemoveGarbageParametersFromURL
 ReplacingMergeTree
 ReplicasMaxAbsoluteDelay
 ReplicasMaxInsertsInQueue
@@ -2103,6 +2104,7 @@ reinterpretAsString
 reinterpretAsUInt
 reinterpretAsUUID
 remoteSecure
+removeGarbageParametersFromURL
 replaceAll
 replaceOne
 replaceRegexpAll
