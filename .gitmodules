@@ -347,3 +347,15 @@
 [submodule "contrib/incbin"]
 	path = contrib/incbin
 	url = https://github.com/graphitemaster/incbin.git
+[submodule "contrib/usearch"]
+	path = contrib/usearch
+	url = https://github.com/unum-cloud/usearch.git
+[submodule "contrib/SimSIMD"]
+	path = contrib/SimSIMD
+	url = https://github.com/ashvardanian/SimSIMD.git
+[submodule "contrib/FP16"]
+	path = contrib/FP16
+	url = https://github.com/Maratyszcza/FP16.git
+[submodule "contrib/robin-map"]
+	path = contrib/robin-map
+	url = https://github.com/Tessil/robin-map.git
