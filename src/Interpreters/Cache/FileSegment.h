@@ -178,11 +178,9 @@ public:
 
     size_t getRefCount() const { return ref_count; }
 
-    size_t getCurrentWriteOffset(bool sync) const;
+    size_t getCurrentWriteOffset() const;
 
-    size_t getFirstNonDownloadedOffset(bool sync) const;
-
-    size_t getDownloadedSize(bool sync) const;
+    size_t getDownloadedSize() const;
 
     size_t getReservedSize() const;
 
@@ -302,7 +300,6 @@ private:
     /// downloaded_size should always be less or equal to reserved_size
     std::atomic<size_t> downloaded_size = 0;
     std::atomic<size_t> reserved_size = 0;
-    mutable std::mutex download_mutex;
 
     mutable FileSegmentGuard segment_guard;
     std::weak_ptr<KeyMetadata> key_metadata;

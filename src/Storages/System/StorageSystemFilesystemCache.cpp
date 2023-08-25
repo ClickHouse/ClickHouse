@@ -65,7 +65,7 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
             res_columns[i++]->insert(FileSegment::stateToString(file_segment->state()));
             res_columns[i++]->insert(file_segment->getHitsCount());
             res_columns[i++]->insert(file_segment->getRefCount());
-            res_columns[i++]->insert(file_segment->getDownloadedSize(false));
+            res_columns[i++]->insert(file_segment->getDownloadedSize());
             res_columns[i++]->insert(toString(file_segment->getKind()));
             res_columns[i++]->insert(file_segment->isUnbound());
             try
