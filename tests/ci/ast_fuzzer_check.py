@@ -21,7 +21,6 @@ from commit_status_helper import (
 )
 from docker_pull_helper import get_image_with_version
 from env_helper import (
-    GITHUB_RUN_URL,
     REPORTS_PATH,
     TEMP_PATH,
 )
@@ -30,6 +29,7 @@ from pr_info import PRInfo
 from report import TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
+from upload_result_helper import upload_results
 
 IMAGE_NAME = "clickhouse/fuzzer"
 
@@ -183,10 +183,6 @@ def main():
             logging.info("Exception uploading file %s text %s", f, ex)
             paths[f] = ""
 
-    report_url = GITHUB_RUN_URL
-    if paths["report.html"]:
-        report_url = paths["report.html"]
-
     # Try to get status message saved by the fuzzer
     try:
         with open(
@@ -207,6 +203,19 @@ def main():
     test_result = TestResult(description, "OK")
     if "fail" in status:
         test_result.status = "FAIL"
+
+    if paths["report.html"]:
+        report_url = paths["report.html"]
+    else:
+        report_url = upload_results(
+            s3_helper,
+            pr_info.number,
+            pr_info.sha,
+            [test_result],
+            [],
+            check_name,
+            [url for url in paths.values() if url],
+        )
 
     ch_helper = ClickHouseHelper()
 

@@ -1193,12 +1193,12 @@ static InterpolateDescriptionPtr getInterpolateDescription(
             }
 
             col_set.clear();
-            for (const auto & column : source_block)
+            for (const auto & column : result_block)
             {
                 source_columns.emplace_back(column.name, column.type);
                 col_set.insert(column.name);
             }
-            for (const auto & column : result_block)
+            for (const auto & column : source_block)
                 if (!col_set.contains(column.name))
                     source_columns.emplace_back(column.name, column.type);
         }
@@ -2266,6 +2266,10 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 max_paralle
     auto & query = getSelectQuery();
     if (!query.prewhere() && !query.where() && !context->getCurrentTransaction())
     {
+        /// Some storages can optimize trivial count in read() method instead of totalRows() because it still can
+        /// require reading some data (but much faster than reading columns).
+        /// Set a special flag in query info so the storage will see it and optimize count in read() method.
+        query_info.optimize_trivial_count = optimize_trivial_count;
         return storage->totalRows(settings);
     }
     else

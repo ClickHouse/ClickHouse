@@ -1918,6 +1918,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         subquery_settings.max_result_rows = 1;
         subquery_settings.extremes = false;
         subquery_context->setSettings(subquery_settings);
+        /// When execute `INSERT INTO t WITH ... SELECT ...`, it may lead to `Unknown columns`
+        /// exception with this settings enabled(https://github.com/ClickHouse/ClickHouse/issues/52494).
+        subquery_context->setSetting("use_structure_from_insertion_table_in_table_functions", false);
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node->toAST(), subquery_context, options);
@@ -2033,7 +2036,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     auto & nearest_query_scope_query_node = nearest_query_scope->scope_node->as<QueryNode &>();
     auto & mutable_context = nearest_query_scope_query_node.getMutableContext();
 
-    auto scalar_query_hash_string = std::to_string(node_with_hash.hash.first) + '_' + std::to_string(node_with_hash.hash.second);
+    auto scalar_query_hash_string = DB::toString(node_with_hash.hash);
 
     if (mutable_context->hasQueryContext())
         mutable_context->getQueryContext()->addScalar(scalar_query_hash_string, scalar_block);
