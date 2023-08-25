@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Poco/Net/TCPServerConnection.h>
-#include <base/getFQDNOrHostName.h>
-#include <Common/CurrentMetrics.h>
 #include <Core/MySQL/Authentication.h>
-#include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsConnection.h>
+#include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsProtocolText.h>
+#include <base/getFQDNOrHostName.h>
+#include <Poco/Net/TCPServerConnection.h>
+#include <Common/CurrentMetrics.h>
 #include "IServer.h"
 
 #include "config.h"
@@ -19,7 +19,7 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric MySQLConnection;
+extern const Metric MySQLConnection;
 }
 
 namespace DB
@@ -32,11 +32,7 @@ class MySQLHandler : public Poco::Net::TCPServerConnection
 {
 public:
     MySQLHandler(
-        IServer & server_,
-        TCPServer & tcp_server_,
-        const Poco::Net::StreamSocket & socket_,
-        bool ssl_enabled,
-        uint32_t connection_id_);
+        IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool ssl_enabled, uint32_t connection_id_);
 
     void run() final;
 
@@ -46,7 +42,7 @@ protected:
     /// Enables SSL, if client requested.
     void finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResponse &);
 
-    void comQuery(ReadBuffer & payload);
+    void comQuery(ReadBuffer & payload, bool use_binary_protocol_result_set);
 
     void comFieldList(ReadBuffer & payload);
 
@@ -63,7 +59,12 @@ protected:
     void comStmtClose(ReadBuffer & payload);
 
     virtual void authPluginSSL();
-    virtual void finishHandshakeSSL(size_t packet_size, char * buf, size_t pos, std::function<void(size_t)> read_bytes, MySQLProtocol::ConnectionPhase::HandshakeResponse & packet);
+    virtual void finishHandshakeSSL(
+        size_t packet_size,
+        char * buf,
+        size_t pos,
+        std::function<void(size_t)> read_bytes,
+        MySQLProtocol::ConnectionPhase::HandshakeResponse & packet);
 
     IServer & server;
     TCPServer & tcp_server;
@@ -109,8 +110,11 @@ private:
     void authPluginSSL() override;
 
     void finishHandshakeSSL(
-        size_t packet_size, char * buf, size_t pos,
-        std::function<void(size_t)> read_bytes, MySQLProtocol::ConnectionPhase::HandshakeResponse & packet) override;
+        size_t packet_size,
+        char * buf,
+        size_t pos,
+        std::function<void(size_t)> read_bytes,
+        MySQLProtocol::ConnectionPhase::HandshakeResponse & packet) override;
 
     RSA & public_key;
     RSA & private_key;

@@ -37,7 +37,7 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
 SELECT
     name AS field,
     type AS type,
-    startsWith(type, 'Nullable') AS null,
+    if(startsWith(type, 'Nullable'), 'YES', 'NO') AS null,
     trim(concatWithSeparator(' ', if (is_in_primary_key, 'PRI', ''), if (is_in_sorting_key, 'SOR', ''))) AS key,
     if (default_kind IN ('ALIAS', 'DEFAULT', 'MATERIALIZED'), default_expression, NULL) AS default,
     '' AS extra )";
