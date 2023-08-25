@@ -40,12 +40,10 @@ public:
         {
             try
             {
-                if (connection->isConnected())
-                    connection->getRef().reset();
+                connection->getRef().reset();
             }
             catch (...)
             {
-                DB::tryLogCurrentException(__PRETTY_FUNCTION__);
                 connection.reset();
             }
         }

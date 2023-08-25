@@ -189,6 +189,16 @@ PostgreSQLSource<T>::~PostgreSQLSource()
 {
     if (!is_completed)
     {
+        try
+        {
+            stream.reset();
+            tx.reset();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
         connection_holder->setBroken();
     }
 }
