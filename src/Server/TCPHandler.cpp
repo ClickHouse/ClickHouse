@@ -1266,8 +1266,10 @@ String TCPHandler::prepareStringForSshValidation(String user, String challenge)
 
 void TCPHandler::receiveHello()
 {
-
     String challenge;
+    String user;
+    String password;
+    String default_db;
 
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
@@ -1283,10 +1285,6 @@ void TCPHandler::receiveHello()
     }
 
     /// Receive `hello` packet.
-    String user;
-    String password;
-    String default_db;
-
     if (packet_type != Protocol::Client::Hello)
     {
         /** If you accidentally accessed the HTTP protocol for a port destined for an internal TCP protocol,
@@ -1341,10 +1339,11 @@ void TCPHandler::receiveHello()
     {
         auto cred = SshCredentials(user, password, prepareStringForSshValidation(user, challenge));
         session->authenticate(cred, getClientAddress(client_info));
+        return;
     }
 #if USE_SSL
     /// Authentication with SSL user certificate
-    else if (dynamic_cast<Poco::Net::SecureStreamSocketImpl*>(socket().impl()))
+    if (dynamic_cast<Poco::Net::SecureStreamSocketImpl*>(socket().impl()))
     {
         Poco::Net::SecureStreamSocket secure_socket(socket());
         if (secure_socket.havePeerCertificate())
@@ -1363,10 +1362,8 @@ void TCPHandler::receiveHello()
         }
     }
 #endif
-    else
-    {
-        session->authenticate(user, password, getClientAddress(client_info));
-    }
+
+    session->authenticate(user, password, getClientAddress(client_info));
 }
 
 void TCPHandler::receiveAddendum()

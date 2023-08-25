@@ -77,13 +77,12 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
             if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
                 passphrase = result;
         }
+
         ssh::SshKey key = ssh::SshKeyFactory::makePrivateFromFile(filename, passphrase);
-        if (key.isPrivate())
-        {
-           ssh_private_key = std::move(key);
-        }
-        else
+        if (!key.isPrivate())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found public key in file: {} but expected private", filename);
+
+        ssh_private_key = std::move(key);
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
 #endif
