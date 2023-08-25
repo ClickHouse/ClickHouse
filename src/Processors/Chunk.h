@@ -114,20 +114,16 @@ private:
 
 using Chunks = std::vector<Chunk>;
 
-/// AsyncInsert needs two kinds of information:
-/// - offsets of different sub-chunks
-/// - tokens of different sub-chunks, which are assigned by setting `insert_deduplication_token`.
-class AsyncInsertInfo : public ChunkInfo
+/// ChunkOffsets marks offsets of different sub-chunks, which will be used by async inserts.
+class ChunkOffsets : public ChunkInfo
 {
 public:
-    AsyncInsertInfo() = default;
-    explicit AsyncInsertInfo(const std::vector<size_t> & offsets_, const std::vector<String> & tokens_) : offsets(offsets_), tokens(tokens_) {}
-
+    ChunkOffsets() = default;
+    explicit ChunkOffsets(const std::vector<size_t> & offsets_) : offsets(offsets_) {}
     std::vector<size_t> offsets;
-    std::vector<String> tokens;
 };
 
-using AsyncInsertInfoPtr = std::shared_ptr<AsyncInsertInfo>;
+using ChunkOffsetsPtr = std::shared_ptr<ChunkOffsets>;
 
 /// Extension to support delayed defaults. AddingDefaultsProcessor uses it to replace missing values with column defaults.
 class ChunkMissingValues : public ChunkInfo
@@ -155,8 +151,5 @@ private:
 /// and their structure must be equal (e.g. compareAt).
 void convertToFullIfConst(Chunk & chunk);
 void convertToFullIfSparse(Chunk & chunk);
-
-/// Creates a chunk with the same columns but makes them constants with a default value and a specified number of rows.
-Chunk cloneConstWithDefault(const Chunk & chunk, size_t num_rows);
 
 }

@@ -11,7 +11,6 @@ node1 = cluster.add_instance(
     tag="20.8.11.17",
     with_installed_binary=True,
     stay_alive=True,
-    allow_analyzer=False,
 )
 
 

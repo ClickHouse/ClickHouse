@@ -1,6 +1,6 @@
 <clickhouse>
     <remote_servers>
-        <one_shard_two_nodes>
+        <two_shards>
             <shard>
                 <replica>
                     <host>node1</host>
@@ -11,6 +11,6 @@
                     <port>9000</port>
                 </replica>
             </shard>
-        </one_shard_two_nodes>
+        </two_shards>
     </remote_servers>
 </clickhouse>

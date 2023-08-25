@@ -12,7 +12,7 @@
 
 #include <IO/ReadSettings.h>
 
-#include <Common/ThreadPool.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Interpreters/Cache/FileSegment.h>
@@ -30,22 +30,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/// Track acquired space in cache during reservation
-/// to make error messages when no space left more informative.
-struct FileCacheReserveStat
-{
-    struct Stat
-    {
-        size_t releasable_size;
-        size_t releasable_count;
-
-        size_t non_releasable_size;
-        size_t non_releasable_count;
-    };
-
-    std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
-};
-
 /// Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
 /// Different caching algorithms are implemented using IFileCachePriority.
 class FileCache : private boost::noncopyable
@@ -58,7 +42,7 @@ public:
     using PriorityIterator = IFileCachePriority::Iterator;
     using PriorityIterationResult = IFileCachePriority::IterationResult;
 
-    FileCache(const std::string & cache_name, const FileCacheSettings & settings);
+    explicit FileCache(const FileCacheSettings & settings);
 
     ~FileCache();
 
@@ -99,19 +83,10 @@ public:
 
     FileSegmentsHolderPtr set(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
 
-    /// Remove file segment by `key` and `offset`. Throws if file segment does not exist.
-    void removeFileSegment(const Key & key, size_t offset);
-
-    /// Remove files by `key`. Throws if key does not exist.
-    void removeKey(const Key & key);
-
-    /// Remove files by `key`.
+    /// Remove files by `key`. Removes files which might be used at the moment.
     void removeKeyIfExists(const Key & key);
 
-    /// Removes files by `path`.
-    void removePathIfExists(const String & path);
-
-    /// Remove files by `key`.
+    /// Remove files by `key`. Will not remove files which are used at the moment.
     void removeAllReleasable();
 
     std::vector<String> tryGetCachePaths(const Key & key);
@@ -122,13 +97,15 @@ public:
 
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
-    bool tryReserve(FileSegment & file_segment, size_t size, FileCacheReserveStat & stat);
+    bool tryReserve(FileSegment & file_segment, size_t size);
 
-    FileSegments getSnapshot();
+    FileSegmentsHolderPtr getSnapshot();
 
-    FileSegments getSnapshot(const Key & key);
+    FileSegmentsHolderPtr getSnapshot(const Key & key);
 
-    FileSegments dumpQueue();
+    FileSegmentsHolderPtr dumpQueue();
+
+    void cleanup();
 
     void deactivateBackgroundOperations();
 
@@ -148,17 +125,15 @@ public:
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
     QueryContextHolderPtr getQueryContextHolder(const String & query_id, const ReadSettings & settings);
 
-    CacheGuard::Lock lockCache() const;
-
-    FileSegments sync();
+    CacheGuard::Lock lockCache() { return cache_guard.lock(); }
 
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
     const size_t max_file_segment_size;
+    const bool allow_persistent_files;
     const size_t bypass_cache_threshold = 0;
-    const size_t boundary_alignment;
-    const size_t background_download_threads;
+    const size_t delayed_cleanup_interval_ms;
 
     Poco::Logger * log;
 
@@ -201,10 +176,11 @@ private:
      * A background cleanup task.
      * Clears removed cache entries from metadata.
      */
-    std::vector<ThreadFromGlobalPool> download_threads;
-    std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
+    BackgroundSchedulePool::TaskHolder cleanup_task;
 
     void assertInitialized() const;
+
+    size_t boundary_alignment;
 
     void assertCacheCorrectness();
 
@@ -233,6 +209,8 @@ private:
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
         const CacheGuard::Lock *);
+
+    void cleanupThreadFunc();
 };
 
 }

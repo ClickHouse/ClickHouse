@@ -1,7 +1,3 @@
-COLUMNS
-SCHEMATA
-TABLES
-VIEWS
 columns
 schemata
 tables
@@ -10,10 +6,6 @@ COLUMNS
 SCHEMATA
 TABLES
 VIEWS
-columns
-schemata
-tables
-views
 INFORMATION_SCHEMA	INFORMATION_SCHEMA	default	\N	\N	\N	\N
 information_schema	information_schema	default	\N	\N	\N	\N
 default	default	mv	VIEW
@@ -33,5 +25,3 @@ default	default	v	default	v	f	2		0	Float64	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\
 		tmp		tmp	d	1		0	Date	\N	\N	\N	\N	\N	0	\N	\N	\N	\N	\N	\N	\N	\N	\N		Date
 		tmp		tmp	dt	2		0	DateTime	\N	\N	\N	\N	\N	0	\N	\N	\N	\N	\N	\N	\N	\N	\N		DateTime
 		tmp		tmp	dtms	3		0	DateTime64(3)	\N	\N	\N	\N	\N	3	\N	\N	\N	\N	\N	\N	\N	\N	\N		DateTime64(3)
-1
-1

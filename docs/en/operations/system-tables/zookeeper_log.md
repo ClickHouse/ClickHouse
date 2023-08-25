@@ -15,7 +15,7 @@ Columns with request parameters:
     - `Finalize` — The connection is lost, no response was received.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the event happened.
 - `event_time` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — The date and time when the event happened.
-- `address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP address of ZooKeeper server that was used to make the request.
+- `address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP address of ZooKeeper server that was used to make the request.
 - `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The port of ZooKeeper server that was used to make the request.
 - `session_id` ([Int64](../../sql-reference/data-types/int-uint.md)) — The session ID that the ZooKeeper server sets for each connection.
 - `xid` ([Int32](../../sql-reference/data-types/int-uint.md)) — The ID of the request within the session. This is usually a sequential request number. It is the same for the request row and the paired `response`/`finalize` row.

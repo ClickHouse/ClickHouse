@@ -62,10 +62,9 @@ ColumnsDescription StorageMeiliSearch::getTableStructureFromData(const MeiliSear
 String convertASTtoStr(ASTPtr ptr)
 {
     WriteBufferFromOwnString out;
-    IAST::FormatSettings settings(
-        out, /*one_line*/ true, /*hilite*/ false,
-        /*always_quote_identifiers*/ IdentifierQuotingStyle::BackticksMySQL != IdentifierQuotingStyle::None,
-        /*identifier_quoting_style*/ IdentifierQuotingStyle::BackticksMySQL);
+    IAST::FormatSettings settings(out, true);
+    settings.identifier_quoting_style = IdentifierQuotingStyle::BackticksMySQL;
+    settings.always_quote_identifiers = IdentifierQuotingStyle::BackticksMySQL != IdentifierQuotingStyle::None;
     ptr->format(settings);
     return out.str();
 }

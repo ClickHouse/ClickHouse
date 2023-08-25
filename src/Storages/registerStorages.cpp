@@ -34,8 +34,6 @@ void registerStorageS3(StorageFactory & factory);
 void registerStorageCOS(StorageFactory & factory);
 void registerStorageOSS(StorageFactory & factory);
 void registerStorageHudi(StorageFactory & factory);
-void registerStorageS3Queue(StorageFactory & factory);
-
 #if USE_PARQUET
 void registerStorageDeltaLake(StorageFactory & factory);
 #endif
@@ -61,7 +59,6 @@ void registerStorageMySQL(StorageFactory & factory);
 #endif
 
 void registerStorageMongoDB(StorageFactory & factory);
-void registerStorageRedis(StorageFactory & factory);
 
 
 #if USE_RDKAFKA
@@ -135,7 +132,6 @@ void registerStorages()
     registerStorageCOS(factory);
     registerStorageOSS(factory);
     registerStorageHudi(factory);
-    registerStorageS3Queue(factory);
 
     #if USE_PARQUET
     registerStorageDeltaLake(factory);
@@ -164,7 +160,6 @@ void registerStorages()
     #endif
 
     registerStorageMongoDB(factory);
-    registerStorageRedis(factory);
 
     #if USE_RDKAFKA
     registerStorageKafka(factory);

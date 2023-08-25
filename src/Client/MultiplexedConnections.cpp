@@ -259,7 +259,6 @@ Packet MultiplexedConnections::drain()
 
         switch (packet.type)
         {
-            case Protocol::Server::TimezoneUpdate:
             case Protocol::Server::MergeTreeAllRangesAnnounecement:
             case Protocol::Server::MergeTreeReadTaskRequest:
             case Protocol::Server::ReadTaskRequest:
@@ -319,26 +318,28 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
         throw Exception(ErrorCodes::NO_AVAILABLE_REPLICA, "Logical error: no available replica");
 
     Packet packet;
-    try
     {
         AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
-        packet = current_connection->receivePacket();
-    }
-    catch (Exception & e)
-    {
-        if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
+
+        try
         {
-            /// Exception may happen when packet is received, e.g. when got unknown packet.
-            /// In this case, invalidate replica, so that we would not read from it anymore.
-            current_connection->disconnect();
-            invalidateReplica(state);
+            packet = current_connection->receivePacket();
         }
-        throw;
+        catch (Exception & e)
+        {
+            if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
+            {
+                /// Exception may happen when packet is received, e.g. when got unknown packet.
+                /// In this case, invalidate replica, so that we would not read from it anymore.
+                current_connection->disconnect();
+                invalidateReplica(state);
+            }
+            throw;
+        }
     }
 
     switch (packet.type)
     {
-        case Protocol::Server::TimezoneUpdate:
         case Protocol::Server::MergeTreeAllRangesAnnounecement:
         case Protocol::Server::MergeTreeReadTaskRequest:
         case Protocol::Server::ReadTaskRequest:

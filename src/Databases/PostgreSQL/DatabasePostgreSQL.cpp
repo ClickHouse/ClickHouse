@@ -54,7 +54,6 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     , cache_tables(cache_tables_)
     , log(&Poco::Logger::get("DatabasePostgreSQL(" + dbname_ + ")"))
 {
-    fs::create_directories(metadata_path);
     cleaner_task = getContext()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
     cleaner_task->deactivate();
 }
@@ -297,7 +296,7 @@ void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 }
 
 
-void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, LoadingStrictnessLevel /*mode*/)
+void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, LoadingStrictnessLevel /*mode*/, bool /* skip_startup_tables */)
 {
     {
         std::lock_guard lock{mutex};

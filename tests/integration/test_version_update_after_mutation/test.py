@@ -13,10 +13,6 @@ node1 = cluster.add_instance(
     tag="20.4.9.110",
     with_installed_binary=True,
     stay_alive=True,
-    main_configs=[
-        "configs/compat.xml",
-    ],
-    allow_analyzer=False,
 )
 node2 = cluster.add_instance(
     "node2",
@@ -25,10 +21,6 @@ node2 = cluster.add_instance(
     tag="20.4.9.110",
     with_installed_binary=True,
     stay_alive=True,
-    main_configs=[
-        "configs/compat.xml",
-    ],
-    allow_analyzer=False,
 )
 node3 = cluster.add_instance(
     "node3",
@@ -37,10 +29,6 @@ node3 = cluster.add_instance(
     tag="20.4.9.110",
     with_installed_binary=True,
     stay_alive=True,
-    main_configs=[
-        "configs/compat.xml",
-    ],
-    allow_analyzer=False,
 )
 
 
@@ -70,8 +58,6 @@ def test_mutate_and_upgrade(start_cluster):
 
     node2.query("DETACH TABLE mt")  # stop being leader
     node1.query("DETACH TABLE mt")  # stop being leader
-    node1.query("SYSTEM FLUSH LOGS")
-    node2.query("SYSTEM FLUSH LOGS")
     node1.restart_with_latest_version(signal=9, fix_metadata=True)
     node2.restart_with_latest_version(signal=9, fix_metadata=True)
 

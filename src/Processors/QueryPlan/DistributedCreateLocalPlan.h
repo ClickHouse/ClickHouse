@@ -10,9 +10,6 @@
 namespace DB
 {
 
-class PreparedSets;
-using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
-
 std::unique_ptr<QueryPlan> createLocalPlan(
     const ASTPtr & query_ast,
     const Block & header,
