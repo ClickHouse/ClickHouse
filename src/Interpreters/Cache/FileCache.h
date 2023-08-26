@@ -124,11 +124,11 @@ public:
 
     bool tryReserve(FileSegment & file_segment, size_t size, FileCacheReserveStat & stat);
 
-    FileSegmentsHolderPtr getSnapshot();
+    FileSegments getSnapshot();
 
-    FileSegmentsHolderPtr getSnapshot(const Key & key);
+    FileSegments getSnapshot(const Key & key);
 
-    FileSegmentsHolderPtr dumpQueue();
+    FileSegments dumpQueue();
 
     void deactivateBackgroundOperations();
 
@@ -150,6 +150,8 @@ public:
 
     CacheGuard::Lock lockCache() const;
 
+    FileSegments sync();
+
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
@@ -157,6 +159,7 @@ private:
     const size_t bypass_cache_threshold = 0;
     const size_t boundary_alignment;
     const size_t background_download_threads;
+    const size_t metadata_download_threads;
 
     Poco::Logger * log;
 
@@ -207,6 +210,8 @@ private:
     void assertCacheCorrectness();
 
     void loadMetadata();
+    void loadMetadataImpl();
+    void loadMetadataForKeys(const std::filesystem::path & keys_dir);
 
     FileSegments getImpl(const LockedKey & locked_key, const FileSegment::Range & range) const;
 

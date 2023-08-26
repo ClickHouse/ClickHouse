@@ -264,6 +264,8 @@ public:
     /// Some old parts don't have metadata version, so we set it to the current table's version when loading the part
     bool old_part_with_no_metadata_version_on_disk = false;
 
+    bool new_part_was_committed_to_zookeeper_after_rename_on_disk = false;
+
     using TTLInfo = MergeTreeDataPartTTLInfo;
     using TTLInfos = MergeTreeDataPartTTLInfos;
 
