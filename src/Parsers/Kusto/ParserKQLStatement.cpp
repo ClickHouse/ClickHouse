@@ -58,48 +58,6 @@ bool ParserKQLWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 
     return true;
 }
-/*
-bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserKQLWithUnionQuery kql_p;
-    ASTPtr select;
-    ParserToken s_lparen(TokenType::OpeningRoundBracket);
-
-    auto begin = pos;
-    auto paren_count = 0;
-    String kql_statement;
-
-    if (s_lparen.ignore(pos, expected))
-    {
-        ++paren_count;
-        auto pos_start = pos;
-        while (!pos->isEnd())
-        {
-            if (pos->type == TokenType::ClosingRoundBracket)
-                --paren_count;
-            if (pos->type == TokenType::OpeningRoundBracket)
-                ++paren_count;
-
-            if (paren_count == 0)
-                break;
-            ++pos;
-        }
-        kql_statement = String(pos_start->begin, (--pos)->end);
-        ++pos;
-
-        Tokens token_kql(kql_statement.c_str(), kql_statement.c_str() + kql_statement.size());
-        IParser::Pos pos_kql(token_kql, pos.max_depth);
-
-        if (kql_p.parse(pos_kql, select, expected))
-        {
-            node = select;
-            ++pos;
-            return true;
-        }
-    }
-    pos = begin;
-    return false;
-};*/
 
 bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -115,11 +73,7 @@ bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     {
         if (pos->type == TokenType::HereDoc)
         {
-            auto kql_table_str = String(pos->begin, pos->end);
-            size_t pos1 = kql_table_str.find("$$");
-            size_t pos2 = kql_table_str.rfind("$$");
-            if (pos1 != std::string::npos && pos2 != std::string::npos && pos1 < pos2)
-                kql_statement = kql_table_str.substr(pos1+2, pos2 - pos1 -2);
+            kql_statement = String(pos->begin + 2, pos->end - 2);
         }
         else
         {
