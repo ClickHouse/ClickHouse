@@ -7,6 +7,7 @@
 # - sometimes warnings from 3rd party libraries may come from macro substitutions in our code
 #   and we have to wrap them with #pragma GCC/clang diagnostic ignored
 
+message(STATUS "INSIDE WARNINGS")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 
 # Control maximum size of stack frames. It can be important if the code is run in fibers with small stack size.
