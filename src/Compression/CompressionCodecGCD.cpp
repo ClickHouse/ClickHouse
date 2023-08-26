@@ -80,7 +80,7 @@ namespace
 template <typename T>
 UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
-    UInt32 result = 0;
+    size_t result = 0;
     if (source_size % sizeof(T) != 0)
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot GCD compress, data size {}  is not aligned to {}", source_size, sizeof(T));
 
@@ -129,7 +129,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
             result += sizeof(T);
         }
     }
-    return result;
+    return static_cast<UInt32>(result);
 }
 
 template <typename T>
