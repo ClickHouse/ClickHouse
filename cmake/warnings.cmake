@@ -18,6 +18,7 @@ endif ()
 if (COMPILER_CLANG)
     # Add some warnings that are not available even with -Wall -Wextra -Wpedantic.
     # We want to get everything out of the compiler for code quality.
+    message(STATUS "WARNINGS SETUP")
     add_warning(everything)
     add_warning(pedantic)
     no_warning(zero-length-array)
