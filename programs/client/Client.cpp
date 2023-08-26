@@ -708,7 +708,20 @@ bool Client::processWithFuzzing(const String & full_query)
 
     const auto & settings = global_context->getSettingsRef();
     const Dialect & dialect = settings.dialect;
-    String old_dialect = dialect == DB::Dialect::kusto ? "kusto" : "clickhouse";
+    String old_dialect;
+    switch (dialect)
+    {
+        case DB::Dialect::kusto:
+            old_dialect = "kusto";
+            break;
+        case DB::Dialect::clickhouse:
+            old_dialect = "clickhouse";
+            break;
+        case DB::Dialect::prql:
+            old_dialect = "prql";
+            break;
+    }
+
     if (auto *q = orig_ast->as<ASTSetQuery>())
     {
         auto *setDialect = q->changes.tryGet("dialect");
@@ -826,8 +839,8 @@ bool Client::processWithFuzzing(const String & full_query)
             }
 
             query_to_execute = ast_to_process->formatForErrorMessage();
-                if (auto res = processFuzzingStep(query_to_execute, ast_to_process))
-                    return *res;
+            if (auto res = processFuzzingStep(query_to_execute, ast_to_process))
+                return *res;
         }
         catch (...)
         {
