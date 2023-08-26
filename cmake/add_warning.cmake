@@ -3,6 +3,7 @@ include (CheckCCompilerFlag)
 
 # Try to add -Wflag if compiler supports it
 macro (add_warning flag)
+    message(STATUS "ADD WARNING ${flag}")
     string (REPLACE "-" "_" underscored_flag ${flag})
     string (REPLACE "+" "x" underscored_flag ${underscored_flag})
 
