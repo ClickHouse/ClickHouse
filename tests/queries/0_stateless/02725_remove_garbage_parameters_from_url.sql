@@ -6,7 +6,8 @@ CREATE TABLE test.hits
 (
     URL String
 )
-ENGINE = MergeTree();
+ENGINE = MergeTree()
+ORDER BY URL;
 INSERT INTO test.hits (URL) VALUES
     ('http://webmodelka/118820005260808&cond=onair.html%3Fbprtment-arizm.ru/task/12810faSOWQ%3D%3DfrSMw%3D%3DfsSaHR0cDovL21lbWJlcmxpYWV0c2tv.ru/s/21/03/20/region;noagent.do?NextServingatlanakomster-dzhemchura.ru%2fcity=on&default-summessage/2229000012173/tuk196EII5dZrmAg'),
     ('http://webmodelka/118820005260808&cond=onair.html%3Fbprtment-arizm.ru/task/12810faSOWQ%3D%3DfrSMw%3D%3DfsSaHR0cDovL21lbWJlcmxpYWV0c2tv.ru/s/21/03/20/region;noagent.do?NextServingatlanakomster-dzhemchura.ru%2fcity=on&default-summessage/2229000012173/tuk196EII5dZrmAg'),
