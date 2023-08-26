@@ -1,3 +1,5 @@
+message(STATUS "INSIDE WARNINGS 0")
+
 # Our principle is to enable as many warnings as possible and always do it with "warnings as errors" flag.
 #
 # But it comes with some cost:
