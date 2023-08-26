@@ -5074,7 +5074,7 @@ jobs:
     steps:
       - name: Build Fuzzers (${{ matrix.sanitizer }})
         id: build
-        uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@master
+        uses: clickhouse/oss-fuzz/infra/cifuzz/actions/build_fuzzers@no-implicit-int-float-conversion
         with:
           oss-fuzz-project-name: 'clickhouse'
           language: c++
