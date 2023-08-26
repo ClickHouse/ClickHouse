@@ -296,7 +296,7 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module,
     llvm::Value * aggregation_place = nullptr;
 
     if (places_argument_type == AddIntoAggregateStatesPlacesArgumentType::MultiplePlaces)
-        aggregation_place = b.CreateLoad(b.getInt8Ty()->getPointerTo(), b.CreateGEP(b.getInt8Ty()->getPointerTo(), places_arg, counter_phi));
+        aggregation_place = b.CreateLoad(b.getInt8Ty()->getPointerTo(), b.CreateInBoundsGEP(b.getInt8Ty()->getPointerTo(), places_arg, counter_phi));
     else
         aggregation_place = places_arg;
 
@@ -313,7 +313,7 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module,
             auto & column = columns[previous_columns_size + column_argument_index];
             const auto & argument_type = arguments_types[column_argument_index];
 
-            auto * column_data_element = b.CreateLoad(column.data_element_type, b.CreateGEP(column.data_element_type, column.data_ptr, counter_phi));
+            auto * column_data_element = b.CreateLoad(column.data_element_type, b.CreateInBoundsGEP(column.data_element_type, column.data_ptr, counter_phi));
 
             if (!argument_type->isNullable())
             {
@@ -321,7 +321,7 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module,
                 continue;
             }
 
-            auto * column_null_data_with_offset = b.CreateGEP(b.getInt8Ty(), column.null_data_ptr, counter_phi);
+            auto * column_null_data_with_offset = b.CreateInBoundsGEP(b.getInt8Ty(), column.null_data_ptr, counter_phi);
             auto * is_null = b.CreateICmpNE(b.CreateLoad(b.getInt8Ty(), column_null_data_with_offset), b.getInt8(0));
             auto * nullable_unitialized = llvm::Constant::getNullValue(toNullableType(b, column.data_element_type));
             auto * first_insert = b.CreateInsertValue(nullable_unitialized, column_data_element, {0});
@@ -460,7 +460,7 @@ static void compileInsertAggregatesIntoResultColumns(llvm::Module & module, cons
     auto * counter_phi = b.CreatePHI(row_start_arg->getType(), 2);
     counter_phi->addIncoming(row_start_arg, entry);
 
-    auto * aggregate_data_place = b.CreateLoad(b.getInt8Ty()->getPointerTo(), b.CreateGEP(b.getInt8Ty()->getPointerTo(), aggregate_data_places_arg, counter_phi));
+    auto * aggregate_data_place = b.CreateLoad(b.getInt8Ty()->getPointerTo(), b.CreateInBoundsGEP(b.getInt8Ty()->getPointerTo(), aggregate_data_places_arg, counter_phi));
 
     for (size_t i = 0; i < functions.size(); ++i)
     {
@@ -470,11 +470,11 @@ static void compileInsertAggregatesIntoResultColumns(llvm::Module & module, cons
         const auto * aggregate_function_ptr = functions[i].function;
         auto * final_value = aggregate_function_ptr->compileGetResult(b, aggregation_place_with_offset);
 
-        auto * result_column_data_element = b.CreateGEP(columns[i].data_element_type, columns[i].data_ptr, counter_phi);
+        auto * result_column_data_element = b.CreateInBoundsGEP(columns[i].data_element_type, columns[i].data_ptr, counter_phi);
         if (columns[i].null_data_ptr)
         {
             b.CreateStore(b.CreateExtractValue(final_value, {0}), result_column_data_element);
-            auto * result_column_is_null_element = b.CreateGEP(b.getInt8Ty(), columns[i].null_data_ptr, counter_phi);
+            auto * result_column_is_null_element = b.CreateInBoundsGEP(b.getInt8Ty(), columns[i].null_data_ptr, counter_phi);
             b.CreateStore(b.CreateSelect(b.CreateExtractValue(final_value, {1}), b.getInt8(1), b.getInt8(0)), result_column_is_null_element);
         }
         else
