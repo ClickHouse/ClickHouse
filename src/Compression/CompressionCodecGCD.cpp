@@ -80,6 +80,7 @@ namespace
 template <typename T>
 UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
+    UInt32 result = 0;
     if (source_size % sizeof(T) != 0)
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot GCD compress, data size {}  is not aligned to {}", source_size, sizeof(T));
 
@@ -100,8 +101,8 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
     }
 
     unalignedStore<T>(dest, gcd_divider);
-    auto * dest_start = dest;
     dest += sizeof(T);
+    result += sizeof(T);
 
     if (typeid(T) == typeid(UInt32) || typeid(T) == typeid(UInt64))
     {
@@ -114,6 +115,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
             unalignedStore<TUInt32Or64>(dest, unalignedLoad<TUInt32Or64>(cur_source) / divider);
             cur_source += sizeof(TUInt32Or64);
             dest += sizeof(TUInt32Or64);
+            result += sizeof(T);
         }
     }
     else
@@ -124,9 +126,10 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
             unalignedStore<T>(dest, unalignedLoad<T>(cur_source) / gcd_divider);
             cur_source += sizeof(T);
             dest += sizeof(T);
+            result += sizeof(T);
         }
     }
-    return static_cast<UInt32>(dest - dest_start);
+    return result;
 }
 
 template <typename T>
