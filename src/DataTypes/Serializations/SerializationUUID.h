@@ -25,6 +25,8 @@ public:
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+
+    void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 };
 
 }

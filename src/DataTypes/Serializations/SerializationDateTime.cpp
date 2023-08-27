@@ -176,4 +176,10 @@ void SerializationDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & is
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
 }
 
+void SerializationDateTime::serializeTextMarkdown(
+    const DB::IColumn & column, size_t row_num, DB::WriteBuffer & ostr, const DB::FormatSettings & settings) const
+{
+    serializeTextEscaped(column, row_num, ostr, settings);
+}
+
 }

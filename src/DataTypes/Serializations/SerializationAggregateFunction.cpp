@@ -215,4 +215,17 @@ void SerializationAggregateFunction::deserializeTextCSV(IColumn & column, ReadBu
     deserializeFromString(function, column, s, version);
 }
 
+void SerializationAggregateFunction::serializeTextMarkdown(
+    const DB::IColumn & column, size_t row_num, DB::WriteBuffer & ostr, const DB::FormatSettings & settings) const
+{
+    if (settings.output_format_markdown_escape_special_characters)
+    {
+        writeMarkdownEscapedString(serializeToString(function, column, row_num, version), ostr);
+    }
+    else
+    {
+        serializeTextEscaped(column, row_num, ostr, settings);
+    }
+}
+
 }
