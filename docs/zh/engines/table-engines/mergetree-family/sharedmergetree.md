@@ -33,7 +33,7 @@ SharedMergeTree带来的一个重要改进是，与ReplicatedMergeTree相比，�
 
 `system.virtual_parts`
 
-这个表作为SharedMergeTree对system.replication_queue的替代，存储关于最新的一组data parts，以及未来正在进行的合并、变更和删除parts。
+这个表作为SharedMergeTree对 `system.replication_queue` 的替代，存储关于最新的一组data parts，以及未来正在进行的合并、变更和删除parts。
 
 `system.shared_merge_tree_fetches`
 
