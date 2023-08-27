@@ -581,6 +581,8 @@ function(get_all_targets var)
 endfunction()
 
 if (FUZZER)
+    # Bundle fuzzers target
+    add_custom_target(fuzzers)
     # Instrument all targets having pattern *_fuzzer with fuzzer and link with libfuzzer
     get_all_targets(all_targets)
     foreach(target ${all_targets})
@@ -588,6 +590,8 @@ if (FUZZER)
             target_link_libraries(${target} PRIVATE ch_contrib::fuzzer)
             target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
             message(STATUS "${target} instrumented with fuzzer")
+            # Add to bundle
+            add_dependencies(fuzzers ${target})
         endif()
     endforeach()
 endif()
