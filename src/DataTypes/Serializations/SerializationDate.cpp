@@ -85,4 +85,10 @@ SerializationDate::SerializationDate(const DateLUTImpl & time_zone_) : time_zone
 {
 }
 
+void SerializationDate::serializeTextMarkdown(
+    const DB::IColumn & column, size_t row_num, DB::WriteBuffer & ostr, const DB::FormatSettings & settings) const
+{
+    serializeTextEscaped(column, row_num, ostr, settings);
+}
+
 }

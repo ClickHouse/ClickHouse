@@ -467,6 +467,12 @@ void SerializationNullable::deserializeWholeText(IColumn & column, ReadBuffer & 
     deserializeWholeTextImpl<void>(column, istr, settings, nested);
 }
 
+void SerializationNullable::serializeTextMarkdown(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeTextEscaped(column, row_num, ostr, settings);
+}
+
 template <typename ReturnType>
 ReturnType SerializationNullable::deserializeWholeTextImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings,
                                                   const SerializationPtr & nested)

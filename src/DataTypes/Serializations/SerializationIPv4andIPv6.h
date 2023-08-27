@@ -124,6 +124,10 @@ public:
         size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(IPv) * limit);
         x.resize(initial_size + size / sizeof(IPv));
     }
+    void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
+    {
+        serializeTextEscaped(column, row_num, ostr, settings);
+    }
 };
 
 using SerializationIPv4 = SerializationIP<IPv4>;

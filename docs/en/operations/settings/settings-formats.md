@@ -634,6 +634,17 @@ Ignore extra columns in rows with more columns than expected and treat missing c
 
 Disabled by default.
 
+### output_format_markdown_escape_special_characters {#output_format_markdown_escape_special_characters}
+
+When enabled, automatically escape special characters in Markdown.
+
+Possible values:
+
++ 0 — Disable.
++ 1 — Enable.
+
+Default value: 0.
+
 ## TSV format settings {#tsv-format-settings}
 
 ### input_format_tsv_empty_as_default {#input_format_tsv_empty_as_default}
