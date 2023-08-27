@@ -98,6 +98,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
         {
             gcd_divider = boost::math::gcd(gcd_divider, unalignedLoad<T>(cur_source));
         }
+        cur_source += sizeof(T);
     }
 
     unalignedStore<T>(dest, gcd_divider);
