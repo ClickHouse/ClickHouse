@@ -56,7 +56,7 @@ ENGINE = MergeTree
 ORDER BY key 
 ```
 
-在ClickHouse Cloud中，由于default_table_engine=MergeTree，你不必再特别设置ENGINE=MergeTree。下面的查询语句和上面的完全一样。
+在ClickHouse Cloud中，由于 `default_table_engine=MergeTree`，用户不必再特别设置`ENGINE=MergeTree`。下面的查询语句和上面的完全一样。
 
 ```sql
 
