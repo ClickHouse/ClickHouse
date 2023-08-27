@@ -5074,13 +5074,13 @@ jobs:
     steps:
       - name: Build Fuzzers (${{ matrix.sanitizer }})
         id: build
-        uses: clickhouse/oss-fuzz/infra/cifuzz/actions/build_fuzzers@no-implicit-int-float-conversion
+        uses: clickhouse/oss-fuzz/infra/cifuzz/actions/build_fuzzers@localized.v1
         with:
           oss-fuzz-project-name: 'clickhouse'
           language: c++
           sanitizer: ${{ matrix.sanitizer }}
       - name: Run Fuzzers (${{ matrix.sanitizer }})
-        uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@master
+        uses: clickhouse/oss-fuzz/infra/cifuzz/actions/run_fuzzers@localized.v1
         with:
           oss-fuzz-project-name: 'clickhouse'
           language: c++
