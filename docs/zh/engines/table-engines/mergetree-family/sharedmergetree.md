@@ -29,7 +29,7 @@ SharedMergeTree带来的一个重要改进是，与ReplicatedMergeTree相比，�
 
 ## 系统监控
 
-用于系统监控的ReplicatedMergeTree的大部分系统表（system table）在SharedMergeTree中也存在，唯独没有system.replication_queue和system.replicated_fetches，因为没有数据和元数据的复制。然而，SharedMergeTree对这两个表有相应的替代表。
+用于系统监控的ReplicatedMergeTree的大部分系统表（system table）在SharedMergeTree中也存在，唯独没有`system.replication_queue`和`system.replicated_fetches`，因为没有数据和元数据的复制。然而，SharedMergeTree对这两个表有相应的替代表。
 
 `system.virtual_parts`
 
