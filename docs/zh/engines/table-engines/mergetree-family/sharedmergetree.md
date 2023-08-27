@@ -37,7 +37,7 @@ SharedMergeTree带来的一个重要改进是，与ReplicatedMergeTree相比，�
 
 `system.shared_merge_tree_fetches`
 
-这个表是SharedMergeTree对system.replicated_fetches的替代。它包含关于正在加载入内存的主键和校验码信息。
+这个表是SharedMergeTree对`system.replicated_fetches`的替代。它包含关于正在加载入内存的主键和校验码信息。
 
 ## 使用SharedMergeTree
 
