@@ -119,7 +119,7 @@ endif()
 add_library(global-libs INTERFACE)
 
 # We don't want to instrument everything with fuzzer, but only specific targets (see below),
-# also, since we build our own llvm, we specifically don't wan't to instrument
+# also, since we build our own llvm, we specifically don't want to instrument
 # libFuzzer library itself - it would result in infinite recursion
 #include (cmake/fuzzer.cmake)
 
@@ -529,9 +529,7 @@ set(CONFIG_INCLUDE_PATH ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTER
 include_directories(${CONFIG_INCLUDE_PATH})
 
 # Add as many warnings as possible for our own code.
-message(STATUS "BEFORE WARNINGS")
 include (cmake/warnings.cmake)
-message(STATUS "AFTER WARNINGS")
 include (cmake/print_flags.cmake)
 
 if (ENABLE_RUST)
