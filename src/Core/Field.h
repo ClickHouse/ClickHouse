@@ -15,7 +15,8 @@
 #include <Core/UUID.h>
 #include <base/IPv4andIPv6.h>
 #include <base/DayNum.h>
-
+#include <base/strong_typedef.h>
+#include <base/EnumReflection.h>
 
 namespace DB
 {
@@ -138,7 +139,7 @@ template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale
 template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 template <typename T> bool decimalLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
 
-template <is_decimal T>
+template <typename T>
 class DecimalField
 {
 public:
@@ -285,6 +286,11 @@ decltype(auto) castToNearestFieldType(T && x)
         return U(x);
 }
 
+template <typename T>
+concept not_field_or_bool_or_stringlike
+    = (!std::is_same_v<std::decay_t<T>, Field> && !std::is_same_v<std::decay_t<T>, bool>
+       && !std::is_same_v<NearestFieldType<std::decay_t<T>>, String>);
+
 /** 32 is enough. Round number is used for alignment and for better arithmetic inside std::vector.
   * NOTE: Actually, sizeof(std::string) is 32 when using libc++, so Field is 40 bytes.
   */
@@ -347,13 +353,6 @@ public:
             || which == Types::Decimal256;
     }
 
-    /// Templates to avoid ambiguity.
-    template <typename T, typename Z = void *>
-    using enable_if_not_field_or_bool_or_stringlike_t = std::enable_if_t<
-        !std::is_same_v<std::decay_t<T>, Field> &&
-        !std::is_same_v<std::decay_t<T>, bool> &&
-        !std::is_same_v<NearestFieldType<std::decay_t<T>>, String>, Z>;
-
     Field() : Field(Null{}) {}
 
     /** Despite the presence of a template constructor, this constructor is still needed,
@@ -370,7 +369,8 @@ public:
     }
 
     template <typename T>
-    Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T> = nullptr); /// NOLINT
+    requires not_field_or_bool_or_stringlike<T>
+    Field(T && rhs); /// NOLINT
 
     Field(bool rhs) : Field(castToNearestFieldType(rhs)) /// NOLINT
     {
@@ -425,7 +425,8 @@ public:
     /// 1. float <--> int needs explicit cast
     /// 2. customized types needs explicit cast
     template <typename T>
-    enable_if_not_field_or_bool_or_stringlike_t<T, Field> & /// NOLINT
+    requires not_field_or_bool_or_stringlike<T>
+    Field & /// NOLINT
     operator=(T && rhs);
 
     Field & operator= (bool rhs)
@@ -448,7 +449,7 @@ public:
 
     Types::Which getType() const { return which; }
 
-    std::string_view getTypeName() const;
+    constexpr std::string_view getTypeName() const { return magic_enum::enum_name(which); }
 
     bool isNull() const { return which == Types::Null; }
     template <typename T>
@@ -838,7 +839,7 @@ template <> struct Field::EnumToType<Field::Types::Decimal32> { using Type = Dec
 template <> struct Field::EnumToType<Field::Types::Decimal64> { using Type = DecimalField<Decimal64>; };
 template <> struct Field::EnumToType<Field::Types::Decimal128> { using Type = DecimalField<Decimal128>; };
 template <> struct Field::EnumToType<Field::Types::Decimal256> { using Type = DecimalField<Decimal256>; };
-template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { using Type = AggregateFunctionStateData; };
+template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { using Type = DecimalField<AggregateFunctionStateData>; };
 template <> struct Field::EnumToType<Field::Types::CustomType> { using Type = CustomType; };
 template <> struct Field::EnumToType<Field::Types::Bool> { using Type = UInt64; };
 
@@ -896,14 +897,16 @@ auto & Field::safeGet()
 
 
 template <typename T>
-Field::Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T>)
+requires not_field_or_bool_or_stringlike<T>
+Field::Field(T && rhs)
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
     createConcrete(std::forward<decltype(val)>(val));
 }
 
 template <typename T>
-Field::enable_if_not_field_or_bool_or_stringlike_t<T, Field> & /// NOLINT
+requires not_field_or_bool_or_stringlike<T>
+Field & /// NOLINT
 Field::operator=(T && rhs)
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
@@ -1004,7 +1007,7 @@ void writeFieldText(const Field & x, WriteBuffer & buf);
 
 String toString(const Field & x);
 
-std::string_view fieldTypeToString(Field::Types::Which type);
+String fieldTypeToString(Field::Types::Which type);
 
 }
 
