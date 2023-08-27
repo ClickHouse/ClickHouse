@@ -16,7 +16,7 @@ SharedMergeTree表引擎为ClickHouse Cloud的性能带来了显著提升。对�
 - 更快的扩容和缩容操作
 - 用于选择查询的更轻量级强一致性
 
-SharedMergeTree带来的一个重要改进是，与ReplicatedMergeTree相比，它提供了更深层次的计算和存储分离。下图展示了ReplicatedMergeTree如何分离计算和存储：
+SharedMergeTree带来的一个重要改进是，与ReplicatedMergeTree相比，它提供了更彻底的计算和存储分离。下图展示了ReplicatedMergeTree如何分离计算和存储：
 
 ![ReplicatedMergeTree Diagram](../../../images/shared-merge-tree-1.png)
 
