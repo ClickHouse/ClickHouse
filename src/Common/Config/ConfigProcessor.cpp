@@ -263,7 +263,7 @@ void ConfigProcessor::hideRecursive(Poco::XML::Node * config_root)
         if (node->nodeType() == Node::ELEMENT_NODE)
         {
             Element & element = dynamic_cast<Element &>(*node);
-            if (element.hasAttribute("hidden") && Poco::NumberParser::parseBool(element.getAttribute("hidden")))
+            if (element.hasAttribute("hide_in_preprocessed") && Poco::NumberParser::parseBool(element.getAttribute("hide_in_preprocessed")))
             {
                 config_root->removeChild(node);
             } else
