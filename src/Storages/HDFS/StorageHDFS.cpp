@@ -261,7 +261,7 @@ namespace
         HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context->getGlobalContext()->getConfigRef());
         HDFSFSPtr fs = createHDFSFS(builder.get());
 
-        auto res = LSWithRegexpMatching("/", fs, path_from_uri, context->getSettingsRef().ignore_eacces_multidirectory_globs)
+        auto res = LSWithRegexpMatching("/", fs, path_from_uri, context->getSettingsRef().ignore_eacces_multidirectory_globs);
         return res;
     }
 }
