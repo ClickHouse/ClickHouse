@@ -12,6 +12,7 @@
 #include <IO/TimeoutSetter.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
+#include <Client/ClientBase.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
 #include <Common/ClickHouseRevision.h>
@@ -1204,7 +1205,7 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         parameters.quota_key,
         "", /* cluster */
         "", /* cluster_secret */
-        "client",
+        std::string(DEFAULT_CLIENT_NAME),
         parameters.compression,
         parameters.security);
 }

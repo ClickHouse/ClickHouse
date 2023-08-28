@@ -48,7 +48,6 @@ public:
         SECONDARY_QUERY = 2,    /// Query that was initiated by another query for distributed or ON CLUSTER query execution.
     };
 
-
     QueryKind query_kind = QueryKind::NO_QUERY;
 
     /// Current values are not serialized, because it is passed separately.
@@ -135,8 +134,14 @@ public:
     /// Initialize parameters on client initiating query.
     void setInitialQuery();
 
+    bool clientVersionEquals(const ClientInfo & other, bool compare_patch) const;
+
+    String getVersionStr() const;
+
 private:
     void fillOSUserHostNameAndVersionInfo();
 };
+
+String toString(ClientInfo::Interface interface);
 
 }

@@ -47,7 +47,7 @@ bool isRetryableSchemaInferenceError(int code)
 ColumnsDescription readSchemaFromFormat(
     const String & format_name,
     const std::optional<FormatSettings> & format_settings,
-    ReadBufferIterator & read_buffer_iterator,
+    IReadBufferIterator & read_buffer_iterator,
     bool retry,
     ContextPtr & context,
     std::unique_ptr<ReadBuffer> & buf)
@@ -77,13 +77,12 @@ try
         size_t max_bytes_to_read = format_settings ? format_settings->max_bytes_to_read_for_schema_inference
                                                                              : context->getSettingsRef().input_format_max_bytes_to_read_for_schema_inference;
         size_t iterations = 0;
-        ColumnsDescription cached_columns;
         while (true)
         {
             bool is_eof = false;
             try
             {
-                buf = read_buffer_iterator(cached_columns);
+                buf = read_buffer_iterator.next();
                 if (!buf)
                     break;
                 is_eof = buf->eof();
@@ -123,6 +122,9 @@ try
                 schema_reader = FormatFactory::instance().getSchemaReader(format_name, *buf, context, format_settings);
                 schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
                 names_and_types = schema_reader->readSchema();
+                auto num_rows = schema_reader->readNumberOrRows();
+                if (num_rows)
+                    read_buffer_iterator.setNumRowsToLastFile(*num_rows);
                 break;
             }
             catch (...)
@@ -177,8 +179,8 @@ try
             }
         }
 
-        if (!cached_columns.empty())
-            return cached_columns;
+        if (auto cached_columns = read_buffer_iterator.getCachedColumns())
+            return *cached_columns;
 
         if (names_and_types.empty())
             throw Exception(
@@ -229,7 +231,7 @@ catch (Exception & e)
 ColumnsDescription readSchemaFromFormat(
     const String & format_name,
     const std::optional<FormatSettings> & format_settings,
-    ReadBufferIterator & read_buffer_iterator,
+    IReadBufferIterator & read_buffer_iterator,
     bool retry,
     ContextPtr & context)
 {

@@ -1,17 +1,17 @@
 #pragma once
 
-#include <Poco/URI.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/ISource.h>
 #include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
-#include <Storages/IStorage.h>
-#include <Storages/StorageFactory.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
+#include <Processors/ISource.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/IStorage.h>
 #include <Storages/StorageConfiguration.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Poco/URI.h>
 
 
 namespace DB
@@ -58,6 +58,12 @@ public:
         ContextPtr context);
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
+
+    static std::optional<time_t> tryGetLastModificationTime(
+        const String & url,
+        const HTTPHeaderEntries & headers,
+        const Poco::Net::HTTPBasicCredentials & credentials,
+        const ContextPtr & context);
 
 protected:
     IStorageURLBase(
@@ -114,6 +120,8 @@ protected:
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
+    bool supportsTrivialCountOptimization() const override { return true; }
+
 private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
 
@@ -131,16 +139,10 @@ private:
         const String & format_name,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context);
-
-    static std::optional<time_t> getLastModificationTime(
-        const String & url,
-        const HTTPHeaderEntries & headers,
-        const Poco::Net::HTTPBasicCredentials & credentials,
-        const ContextPtr & context);
 };
 
 
-class StorageURLSource : public ISource
+class StorageURLSource : public ISource, WithContext
 {
     using URIParams = std::vector<std::pair<String, String>>;
 
@@ -200,6 +202,9 @@ public:
         bool delay_initialization);
 
 private:
+    void addNumRowsToCache(const String & uri, size_t num_rows);
+    std::optional<size_t> tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time);
+
     using InitializeFunc = std::function<bool()>;
     InitializeFunc initialize;
 
@@ -210,7 +215,11 @@ private:
     Block block_for_format;
     std::shared_ptr<IteratorWrapper> uri_iterator;
     Poco::URI curr_uri;
+    String format;
+    const std::optional<FormatSettings> & format_settings;
+    HTTPHeaderEntries headers;
     bool need_only_count;
+    size_t total_rows_in_file = 0;
 
     std::unique_ptr<ReadBuffer> read_buf;
     std::shared_ptr<IInputFormat> input_format;
