@@ -146,7 +146,7 @@ Names NamesAndTypesList::getNames() const
     Names res;
     res.reserve(size());
     for (const NameAndTypePair & column : *this)
-        res.push_back(column.name);
+        res.push_back(std::move(column.name));
     return res;
 }
 
@@ -155,7 +155,7 @@ DataTypes NamesAndTypesList::getTypes() const
     DataTypes res;
     res.reserve(size());
     for (const NameAndTypePair & column : *this)
-        res.push_back(column.type);
+        res.push_back(std::move(column.type));
     return res;
 }
 
@@ -177,7 +177,7 @@ NamesAndTypesList NamesAndTypesList::filter(const NameSet & names) const
     for (const NameAndTypePair & column : *this)
     {
         if (names.contains(column.name))
-            res.push_back(column);
+            res.push_back(std::move(column));
     }
     return res;
 }
