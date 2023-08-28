@@ -3,15 +3,22 @@
 #include <cctz/civil_time.h>
 #include <cctz/time_zone.h>
 #include <cctz/zone_info_source.h>
-#include <Poco/Exception.h>
+#include <Common/Exception.h>
 
 #include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <cstring>
 #include <memory>
-#include <iostream>
 
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+}
 
 /// Embedded timezones.
 std::string_view getTimeZone(const char * name);
@@ -67,7 +74,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
 
     cctz::time_zone cctz_time_zone;
     if (!cctz::load_time_zone(time_zone, &cctz_time_zone))
-        throw Poco::Exception("Cannot load time zone " + time_zone_);
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Cannot load time zone {}", time_zone_);
 
     constexpr cctz::civil_day epoch{1970, 1, 1};
     constexpr cctz::civil_day lut_start{DATE_LUT_MIN_YEAR, 1, 1};

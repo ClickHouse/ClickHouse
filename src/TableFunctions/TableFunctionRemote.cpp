@@ -175,7 +175,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
                 {
                     if (arg_num >= args.size())
                     {
-                        throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table name was not found in function arguments. {}", static_cast<const std::string>(help_message));
                     }
                     else
                     {
@@ -220,15 +220,19 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
                 ++arg_num;
             }
 
-            if (arg_num < args.size() && !sharding_key)
+            if (arg_num < args.size())
             {
+                if (sharding_key)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Arguments `user` and `password` should be string literals (in single quotes)");
                 sharding_key = args[arg_num];
                 ++arg_num;
             }
         }
 
         if (arg_num < args.size())
+        {
             throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        }
     }
 
     if (!cluster_name.empty())

@@ -53,7 +53,7 @@ struct AsyncLoaderTest
     }
 
     explicit AsyncLoaderTest(size_t max_threads = 1)
-        : AsyncLoaderTest({{.max_threads = max_threads}})
+        : AsyncLoaderTest({{.max_threads = max_threads, .priority = {}}})
     {}
 
     std::vector<AsyncLoader::PoolInitializer> getPoolInitializers(std::vector<Initializer> initializers)

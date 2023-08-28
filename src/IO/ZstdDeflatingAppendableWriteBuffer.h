@@ -52,8 +52,6 @@ private:
     /// NOTE: will fill compressed data to the out.working_buffer, but will not call out.next method until the buffer is full
     void nextImpl() override;
 
-    void flush(ZSTD_EndDirective mode);
-
     /// Write terminating ZSTD_e_end: empty block + frame epilogue. BTW it
     /// should be almost noop, because frame epilogue contains only checksums,
     /// and they are disabled for this buffer.

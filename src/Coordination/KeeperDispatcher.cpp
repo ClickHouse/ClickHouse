@@ -480,6 +480,7 @@ void KeeperDispatcher::shutdown()
                         .session_id = session,
                         .time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(),
                         .request = std::move(request),
+                        .digest = std::nullopt
                     };
 
                     close_requests.push_back(std::move(request_info));
@@ -576,6 +577,7 @@ void KeeperDispatcher::sessionCleanerTask()
                         .session_id = dead_session,
                         .time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(),
                         .request = std::move(request),
+                        .digest = std::nullopt
                     };
                     if (!requests_queue->push(std::move(request_info)))
                         LOG_INFO(log, "Cannot push close request to queue while cleaning outdated sessions");
@@ -687,7 +689,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
             }
 
             if (response->error != Coordination::Error::ZOK)
-                promise->set_exception(std::make_exception_ptr(zkutil::KeeperException("SessionID request failed with error", response->error)));
+                promise->set_exception(std::make_exception_ptr(zkutil::KeeperException::fromMessage(response->error, "SessionID request failed with error")));
 
             promise->set_value(session_id_response.session_id);
         };

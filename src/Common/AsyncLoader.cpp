@@ -171,6 +171,7 @@ AsyncLoader::AsyncLoader(std::vector<PoolInitializer> pool_initializers, bool lo
                 /* max_threads = */ std::numeric_limits<size_t>::max(), // Unlimited number of threads, we do worker management ourselves
                 /* max_free_threads = */ 0, // We do not require free threads
                 /* queue_size = */0), // Unlimited queue to avoid blocking during worker spawning
+            .ready_queue = {},
             .max_threads = init.max_threads
         });
 }
