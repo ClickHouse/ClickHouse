@@ -1,0 +1,5 @@
+<test>
+    <query>SELECT ClientIP AS k, uniqUpTo(100)(UserID) FROM hits_100m_single GROUP BY k FORMAT Null</query>
+    <query>SELECT count() FROM zeros(100000) WHERE NOT ignore(randomFixedString(10000))</query>
+    <query>SELECT arrayReduce('count', range(100000000))</query>
+</test>

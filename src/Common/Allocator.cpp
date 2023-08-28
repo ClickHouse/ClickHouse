@@ -1,5 +1,7 @@
 #include "Allocator.h"
 
+#include <atomic>
+
 /** Keep definition of this constant in cpp file; otherwise its value
   * is inlined into allocator code making it impossible to override it
   * in third-party code.
@@ -19,6 +21,24 @@
       */
     __attribute__((__weak__)) extern const size_t MMAP_THRESHOLD = 16384;
 #endif
+
+
+namespace
+{
+/// Actually supposed to be set only once on the server startup.
+std::atomic_bool huge_pages_enabled{false};
+}
+
+void setEnableHugePagesFlag(bool flag)
+{
+    huge_pages_enabled.store(flag, std::memory_order_relaxed);
+}
+
+bool isHugePagesEnabled()
+{
+    return huge_pages_enabled.load(std::memory_order_relaxed);
+}
+
 
 template class Allocator<false, false>;
 template class Allocator<true, false>;
