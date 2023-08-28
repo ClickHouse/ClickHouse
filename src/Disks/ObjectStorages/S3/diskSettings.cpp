@@ -45,6 +45,7 @@ std::unique_ptr<S3::Client> getClient(
 {
     String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
     S3::URI uri(endpoint);
+    
     if(!uri.key.ends_with('/'))
         uri.key.push_back('/');
 
