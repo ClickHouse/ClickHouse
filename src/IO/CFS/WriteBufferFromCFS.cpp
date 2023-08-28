@@ -44,7 +44,7 @@ struct WriteBufferFromCFS::WriteBufferFromCFSImpl
         if (o_direct)
         {
             if (fcntl(fd, F_NOCACHE, 1) == -1)
-                throwFromErrnoWithPath("Cannot set F_NOCACHE on file " + file_name, file_name, ErrorCodes::CANNOT_OPEN_FILE);
+                throwFromErrnoWithPath("Cannot set F_NOCACHE on file " + cfs_file_path, cfs_file_path, ErrorCodes::CANNOT_OPEN_FILE);
         }
 #endif
     }
