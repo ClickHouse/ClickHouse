@@ -1,4 +1,5 @@
 <clickhouse>
+    <max_thread_pool_free_size hide_in_preprocessed="1">2000</max_thread_pool_free_size>
     <max_table_size_to_drop hide_in_preprocessed="true">60000000000</max_table_size_to_drop>
     <max_partition_size_to_drop hide_in_preprocessed="false">40000000000</max_partition_size_to_drop>
     <named_collections hide_in_preprocessed="true">
