@@ -363,8 +363,14 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 std::vector<std::pair<String, bool>> tables_to_drop;
                 for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
                 {
-                    iterator->table()->flushAndPrepareForShutdown();
-                    tables_to_drop.push_back({iterator->name(), iterator->table()->isDictionary()});
+                    auto table_ptr = iterator->table();
+                    String table_name = iterator->name();
+                    DDLGuardPtr table_guard;
+                    /// Avoid race with RESTART REPLICA (startup/shutdown)
+                    if (table_ptr->getName().ends_with("MergeTree"))
+                        table_guard = DatabaseCatalog::instance().getDDLGuard(database_name, table_name);
+                    table_ptr->flushAndPrepareForShutdown();
+                    tables_to_drop.push_back({table_name, table_ptr->isDictionary()});
                 }
 
                 for (const auto & table : tables_to_drop)
