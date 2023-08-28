@@ -104,7 +104,7 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
     {
         String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
         S3::URI uri(endpoint);
-        if(!uri.key.ends_with('/'))
+        if (!uri.key.ends_with('/'))
             uri.key.push_back('/');
 
         S3Capabilities s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
