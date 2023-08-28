@@ -1192,7 +1192,7 @@ private:
 
     static void mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope);
 
-    static void replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope);
+    void replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope);
 
     static void convertLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope);
 
@@ -2132,7 +2132,12 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
                 scope.scope_node->formatASTForErrorMessage());
 
         --positional_argument_number;
-        *node_to_replace = projection_nodes[positional_argument_number];
+        *node_to_replace = projection_nodes[positional_argument_number]->clone();
+        if (auto it = resolved_expressions.find(projection_nodes[positional_argument_number]);
+            it != resolved_expressions.end())
+        {
+            resolved_expressions[*node_to_replace] = it->second;
+        }
     }
 }
 
