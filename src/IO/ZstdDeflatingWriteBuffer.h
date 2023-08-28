@@ -37,6 +37,8 @@ private:
     void finalizeBefore() override;
     void finalizeAfter() override;
 
+    void flush(ZSTD_EndDirective mode);
+
     ZSTD_CCtx * cctx;
     ZSTD_inBuffer input;
     ZSTD_outBuffer output;

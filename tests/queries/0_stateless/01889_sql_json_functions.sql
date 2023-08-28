@@ -43,6 +43,8 @@ SELECT JSON_QUERY( '{hello:{"world":"!"}}}', '$.hello'); -- invalid json => defa
 SELECT JSON_QUERY('', '$.hello');
 SELECT JSON_QUERY('{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}', '$.array[*][0 to 2, 4]');
 SELECT JSON_QUERY('{"1key":1}', '$.1key');
+SELECT JSON_QUERY('{"123":1}', '$.123');
+SELECT JSON_QUERY('{"123":1}', '$[123]');
 SELECT JSON_QUERY('{"hello":1}', '$[hello]');
 SELECT JSON_QUERY('{"hello":1}', '$["hello"]');
 SELECT JSON_QUERY('{"hello":1}', '$[\'hello\']');

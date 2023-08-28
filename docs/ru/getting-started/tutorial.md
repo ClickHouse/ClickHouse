@@ -91,7 +91,7 @@ clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' < data.tsv
 
 ## Import Sample Dataset {#import-sample-dataset}
 
-Now it’s time to fill our ClickHouse server with some sample data. In this tutorial, we’ll use the anonymized data of Yandex.Metrica, the first service that runs ClickHouse in production way before it became open-source (more on that in [history section](../introduction/history.md)). There are [multiple ways to import Yandex.Metrica dataset](../getting-started/example-datasets/metrica.md), and for the sake of the tutorial, we’ll go with the most realistic one.
+Now it’s time to fill our ClickHouse server with some sample data. In this tutorial, we’ll use some anonymized metric data. There are [multiple ways to import the dataset](../getting-started/example-datasets/metrica.md), and for the sake of the tutorial, we’ll go with the most realistic one.
 
 ### Download and Extract Table Data {#download-and-extract-table-data}
 
@@ -116,7 +116,7 @@ Syntax for creating tables is way more complicated compared to databases (see [r
 2.  Table schema, i.e. list of columns and their [data types](../sql-reference/data-types/index.md).
 3.  [Table engine](../engines/table-engines/index.md) and its settings, which determines all the details on how queries to this table will be physically executed.
 
-Yandex.Metrica is a web analytics service, and sample dataset doesn’t cover its full functionality, so there are only two tables to create:
+There are only two tables to create:
 
 -   `hits` is a table with each action done by all users on all websites covered by the service.
 -   `visits` is a table that contains pre-built sessions instead of individual actions.
@@ -523,7 +523,7 @@ SELECT
     sumIf(Sign, has(Goals.ID, 1105530)) AS goal_visits,
     (100. * goal_visits) / visits AS goal_percent
 FROM tutorial.visits_v1
-WHERE (CounterID = 912887) AND (toYYYYMM(StartDate) = 201403) AND (domain(StartURL) = 'yandex.ru')
+WHERE (CounterID = 912887) AND (toYYYYMM(StartDate) = 201403)
 ```
 
 ## Cluster Deployment {#cluster-deployment}
@@ -544,19 +544,19 @@ Example config for a cluster with three shards, one replica each:
     <perftest_3shards_1replicas>
         <shard>
             <replica>
-                <host>example-perftest01j.yandex.ru</host>
+                <host>example-perftest01j.clickhouse.com</host>
                 <port>9000</port>
             </replica>
         </shard>
         <shard>
             <replica>
-                <host>example-perftest02j.yandex.ru</host>
+                <host>example-perftest02j.clickhouse.com</host>
                 <port>9000</port>
             </replica>
         </shard>
         <shard>
             <replica>
-                <host>example-perftest03j.yandex.ru</host>
+                <host>example-perftest03j.clickhouse.com</host>
                 <port>9000</port>
             </replica>
         </shard>
@@ -602,15 +602,15 @@ Example config for a cluster of one shard containing three replicas:
     <perftest_1shards_3replicas>
         <shard>
             <replica>
-                <host>example-perftest01j.yandex.ru</host>
+                <host>example-perftest01j.clickhouse.com</host>
                 <port>9000</port>
              </replica>
              <replica>
-                <host>example-perftest02j.yandex.ru</host>
+                <host>example-perftest02j.clickhouse.com</host>
                 <port>9000</port>
              </replica>
              <replica>
-                <host>example-perftest03j.yandex.ru</host>
+                <host>example-perftest03j.clickhouse.com</host>
                 <port>9000</port>
              </replica>
         </shard>
@@ -628,15 +628,15 @@ ZooKeeper locations are specified in the configuration file:
 ``` xml
 <zookeeper>
     <node>
-        <host>zoo01.yandex.ru</host>
+        <host>zoo01.clickhouse.com</host>
         <port>2181</port>
     </node>
     <node>
-        <host>zoo02.yandex.ru</host>
+        <host>zoo02.clickhouse.com</host>
         <port>2181</port>
     </node>
     <node>
-        <host>zoo03.yandex.ru</host>
+        <host>zoo03.clickhouse.com</host>
         <port>2181</port>
     </node>
 </zookeeper>
