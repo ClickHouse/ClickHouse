@@ -5,7 +5,6 @@
 #include <fstream>
 #include <iomanip>
 #include <random>
-#include <string_view>
 #include <pcg_random.hpp>
 #include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
@@ -49,7 +48,6 @@ namespace DB
 {
 
 using Ports = std::vector<UInt16>;
-static constexpr std::string_view DEFAULT_CLIENT_NAME = "benchmark";
 
 namespace ErrorCodes
 {
@@ -124,7 +122,7 @@ public:
                 default_database_, user_, password_, quota_key_,
                 /* cluster_= */ "",
                 /* cluster_secret_= */ "",
-                /* client_name_= */ std::string(DEFAULT_CLIENT_NAME),
+                /* client_name_= */ "benchmark",
                 Protocol::Compression::Enable,
                 secure));
 
@@ -137,8 +135,6 @@ public:
 
         global_context->makeGlobalContext();
         global_context->setSettings(settings);
-        global_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
-        global_context->setQueryKindInitial();
 
         std::cerr << std::fixed << std::setprecision(3);
 
