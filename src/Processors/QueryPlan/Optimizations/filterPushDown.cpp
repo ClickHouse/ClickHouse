@@ -254,9 +254,18 @@ static size_t joinPushDown(
     bool can_remove_filter = source_columns.end() == std::find(source_columns.begin(), source_columns.end(), split_filter_column_name);
     const size_t updated_steps = tryAddNewFilterStep(filter_node, nodes, split_filter, can_remove_filter, child_idx);
     if (updated_steps > 0)
+    {
         LOG_DEBUG(
             &Poco::Logger::get("QueryPlanOptimizations"), "Pushed down filter {} to the {} side of join",
             split_filter_column_name, child_idx == 0 ? "LEFT" : "RIGHT");
+
+        if (!split_result_can_be_true_on_default)
+        {
+            /// Here we should change join type to INNER
+            /// But instead I am doing this
+            static_cast<JoinStep &>(*join_step).addFilterDefault(split_filter->clone(), can_remove_filter);
+        }
+    }
 
     return updated_steps;
 }
@@ -394,31 +403,36 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         size_t left_depth = 0;
         size_t right_depth = 0;
 
+        bool can_push_down_right = table_join.strictness() != JoinStrictness::Asof && join && join->allowPushDownToRight();
+
         if (table_join.kind() == JoinKind::Inner || table_join.kind() == JoinKind::Cross)
         {
             left_depth = joinPushDown(parent_node, 0, nodes, true);
 
-            if (table_join.strictness() != JoinStrictness::Asof)
+            if (can_push_down_right)
                 right_depth = joinPushDown(parent_node, 1, nodes, true);
         }
         else if (table_join.kind() == JoinKind::Left)
         {
             left_depth = joinPushDown(parent_node, 0, nodes, true);
 
-            if (table_join.strictness() != JoinStrictness::Asof && join && join->allowPushDownToRight())
+            if (can_push_down_right && table_join.strictness() != JoinStrictness::Anti)
                 right_depth = joinPushDown(parent_node, 1, nodes, false);
         }
         else if (table_join.kind() == JoinKind::Right)
         {
-            right_depth = joinPushDown(parent_node, 1, nodes, true);
-            left_depth = joinPushDown(parent_node, 0, nodes, false);
+            if (can_push_down_right)
+                right_depth = joinPushDown(parent_node, 1, nodes, true);
+
+            if (table_join.strictness() != JoinStrictness::Anti)
+                left_depth = joinPushDown(parent_node, 0, nodes, false);
         }
         else if (table_join.kind() == JoinKind::Full)
         {
-            right_depth = joinPushDown(parent_node, 1, nodes, false);
+            right_depth = joinPushDown(parent_node, 0, nodes, false);
             /// Probably there is no FilledRight Fill join. But check just in case.
-            if (join && join->allowPushDownToRight())
-                left_depth = joinPushDown(parent_node, 0, nodes, false);
+            if (can_push_down_right)
+                left_depth = joinPushDown(parent_node, 1, nodes, false);
         }
 
         return std::max(left_depth, right_depth);
