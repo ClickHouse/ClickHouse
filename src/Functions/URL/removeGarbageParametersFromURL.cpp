@@ -29,6 +29,9 @@ struct RemoveGarbageParametersFromURLImpl
     {
         /// Deciding how much intervals to split symbols into and whether the string is long enough to be handled
         int64_t length = c_end - c_start;
+        if (length <= 0)
+            return false;
+
         int l = static_cast<int>(3.32 * log10(length)) + 1;
         if (l < 2)
             return false;
@@ -49,7 +52,7 @@ struct RemoveGarbageParametersFromURLImpl
         for (const char * i = c_start; i < c_end; ++i)
         {
             std::vector<double>::iterator it = lower_bound(alpha.begin(), alpha.end(), *i);
-            if (*it != *i || it == (alpha.end() - 1))
+            if (*it != static_cast<double>(*i) || it == (alpha.end() - 1))
                 --it;
 
             int64_t place = &(*it) - &(*alpha.begin());
