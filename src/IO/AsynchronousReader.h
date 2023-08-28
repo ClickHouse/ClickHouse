@@ -64,7 +64,7 @@ public:
         /// Optional. Useful when implementation needs to do ignore().
         size_t offset = 0;
 
-        std::unique_ptr<Stopwatch> execution_watch;
+        std::unique_ptr<Stopwatch> execution_watch = {};
 
         operator std::tuple<size_t &, size_t &>() { return {size, offset}; }
     };
