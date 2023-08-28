@@ -812,19 +812,22 @@ void ConfigProcessor::decryptEncryptedElements(LoadedConfig & loaded_config)
 
 #endif
 
-XMLDocumentPtr ConfigProcessor::hideElements(LoadedConfig & loaded_config)
+XMLDocumentPtr ConfigProcessor::hideElements(XMLDocumentPtr xml_tree)
 {
-    XMLDocumentPtr new_preprocessed_xml = new Poco::XML::Document;
+    /// Create a copy of XML Document because hiding elements from preprocessed_xml document
+    /// also influences on configuration which has a pointer to preprocessed_xml document.
 
-    for (Node * node = loaded_config.preprocessed_xml->firstChild(); node; node = node->nextSibling())
+    XMLDocumentPtr xml_tree_copy = new Poco::XML::Document;
+
+    for (Node * node = xml_tree->firstChild(); node; node = node->nextSibling())
     {
-        Node * new_node = new_preprocessed_xml->importNode(node, true);
-        new_preprocessed_xml->appendChild(new_node);
+        Node * new_node = xml_tree_copy->importNode(node, true);
+        xml_tree_copy->appendChild(new_node);
     }
-    Node * new_config_root = getRootNode(new_preprocessed_xml.get());
+    Node * new_config_root = getRootNode(xml_tree_copy.get());
     hideRecursive(new_config_root);
 
-    return new_preprocessed_xml;
+    return xml_tree_copy;
 }
 
 void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::string preprocessed_dir)
@@ -875,7 +878,8 @@ void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::
         writer.setNewLine("\n");
         writer.setIndent("    ");
         writer.setOptions(Poco::XML::XMLWriter::PRETTY_PRINT);
-        writer.writeNode(preprocessed_path, hideElements(loaded_config));
+        XMLDocumentPtr preprocessed_xml_without_hidden_elements = hideElements(loaded_config.preprocessed_xml);
+        writer.writeNode(preprocessed_path, preprocessed_xml_without_hidden_elements);
         LOG_DEBUG(log, "Saved preprocessed configuration to '{}'.", preprocessed_path);
     }
     catch (Poco::Exception & e)
