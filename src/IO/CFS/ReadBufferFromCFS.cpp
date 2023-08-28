@@ -48,7 +48,8 @@ struct ReadBufferFromCFS::ReadBufferFromCFSImpl : public BufferWithOwnMemory<See
         UInt64 max_single_read_retries_,
         size_t offset_,
         size_t read_until_position_,
-        bool use_external_buffer_)
+        bool use_external_buffer_,
+        int flags = -1)
         : BufferWithOwnMemory<SeekableReadBuffer>(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size)
         , cfs_file_path(cfs_file_path_)
         , read_settings(settings_)
@@ -57,18 +58,19 @@ struct ReadBufferFromCFS::ReadBufferFromCFSImpl : public BufferWithOwnMemory<See
         , file_offset_of_buffer_end(offset_)
         , read_until_position(read_until_position_)
     {
-#ifdef __APPLE__
+
+#if defined(OS_DARWIN)
         bool o_direct = (flags != -1) && (flags & O_DIRECT);
         if (o_direct)
             flags = flags & ~O_DIRECT;
 #endif
-        int flags = O_RDONLY | O_CLOEXEC;
-        fd = ::open(cfs_file_path.c_str(), flags);
+
+        fd = ::open(cfs_file_path.c_str(), flags == -1 ? O_RDONLY | O_CLOEXEC : flags | O_CLOEXEC);
         if (-1 == fd)
             throwFromErrnoWithPath("Cannot open file " + cfs_file_path, cfs_file_path,
                                     errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 
-#ifdef __APPLE__
+#if defined(OS_DARWIN)
         if (o_direct)
         {
             if (fcntl(fd, F_NOCACHE, 1) == -1)
@@ -217,18 +219,17 @@ ReadBufferFromCFS::ReadBufferFromCFS(
     UInt64 max_single_read_retries_,
     size_t offset_,
     size_t read_until_position_,
-    bool use_external_buffer_)
+    bool use_external_buffer_,
+    int flags)
     : ReadBufferFromFileBase(use_external_buffer_ ? settings_.remote_fs_buffer_size : 0, nullptr, 0)
     , use_external_buffer(use_external_buffer_)
     , impl(std::make_unique<ReadBufferFromCFSImpl>(cfs_file_path_, settings_, max_single_read_retries_,
-        offset_, read_until_position_, use_external_buffer_))
+        offset_, read_until_position_, use_external_buffer_, flags))
     , log(&Poco::Logger::get("ReadBufferFromCFS"))
 {
 }
 
-ReadBufferFromCFS::~ReadBufferFromCFS()
-{
-};
+ReadBufferFromCFS::~ReadBufferFromCFS() = default;
 
 bool ReadBufferFromCFS::nextImpl()
 {

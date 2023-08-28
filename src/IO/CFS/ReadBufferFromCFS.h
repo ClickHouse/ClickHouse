@@ -28,7 +28,8 @@ public:
         UInt64 max_single_read_retries_ = 2,
         size_t offset_ = 0,
         size_t read_until_position_ = 0,
-        bool use_external_buffer_ = false);
+        bool use_external_buffer_ = false,
+        int flags = -1);
 
     ~ReadBufferFromCFS() override;
 

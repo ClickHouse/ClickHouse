@@ -29,19 +29,18 @@ struct WriteBufferFromCFS::WriteBufferFromCFSImpl
             int flags)
         : cfs_file_path(cfs_file_path_), config(config_), write_settings(write_settings_)
     {
-#ifdef __APPLE__
+#if defined(OS_DARWIN)
         bool o_direct = (flags != -1) && (flags & O_DIRECT);
         if (o_direct)
             flags = flags & ~O_DIRECT;
 #endif
 
-        mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
-        fd = ::open(cfs_file_path.c_str(), flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT | O_CLOEXEC : flags | O_CLOEXEC, mode);
+        fd = ::open(cfs_file_path.c_str(), flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT | O_CLOEXEC : flags | O_CLOEXEC);
         if (-1 == fd)
             throwFromErrnoWithPath("Cannot open file " + cfs_file_path, cfs_file_path,
                                 errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 
-#ifdef __APPLE__
+#if defined(OS_DARWIN)
         if (o_direct)
         {
             if (fcntl(fd, F_NOCACHE, 1) == -1)
