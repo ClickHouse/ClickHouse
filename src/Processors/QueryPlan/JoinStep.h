@@ -9,6 +9,9 @@ namespace DB
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
+class ActionsDAG;
+using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
+
 /// Join two data streams.
 class JoinStep : public IQueryPlanStep
 {
@@ -21,9 +24,11 @@ public:
         size_t max_streams_,
         bool keep_left_read_in_order_);
 
+    ~JoinStep() override;
+
     String getName() const override { return "Join"; }
 
-    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
+    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
     void describePipeline(FormatSettings & settings) const override;
 
@@ -35,6 +40,8 @@ public:
 
     bool canUpdateInputStream() const override { return true; }
 
+    void addFilterDefault(ActionsDAGPtr filter_defaults_, bool can_remove_filter_);
+
 private:
     void updateOutputStream() override;
 
@@ -42,6 +49,8 @@ private:
     size_t max_block_size;
     size_t max_streams;
     bool keep_left_read_in_order;
+    ActionsDAGPtr filter_defaults;
+    bool can_remove_filter;
 };
 
 /// Special step for the case when Join is already filled.

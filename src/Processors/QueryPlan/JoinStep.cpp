@@ -1,8 +1,10 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/JoiningTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/ActionsDAG.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
@@ -38,6 +40,8 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
 
 }
 
+JoinStep::~JoinStep() = default;
+
 JoinStep::JoinStep(
     const DataStream & left_stream_,
     const DataStream & right_stream_,
@@ -50,7 +54,13 @@ JoinStep::JoinStep(
     updateInputStreams(DataStreams{left_stream_, right_stream_});
 }
 
-QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
+void JoinStep::addFilterDefault(ActionsDAGPtr filter_defaults_, bool can_remove_filter_)
+{
+    filter_defaults = std::move(filter_defaults_);
+    can_remove_filter = can_remove_filter_;
+}
+
+QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
 {
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStep expect two input steps");
@@ -63,7 +73,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         return joined_pipeline;
     }
 
-    return QueryPipelineBuilder::joinPipelinesRightLeft(
+    auto res = QueryPipelineBuilder::joinPipelinesRightLeft(
         std::move(pipelines[0]),
         std::move(pipelines[1]),
         join,
@@ -72,6 +82,18 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         max_streams,
         keep_left_read_in_order,
         &processors);
+
+    if (filter_defaults)
+    {
+        auto filter_defaults_expr = std::make_shared<ExpressionActions>(filter_defaults, settings.getActionsSettings());
+        res->addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
+        {
+            bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
+            return std::make_shared<FilterTransform>(header, filter_defaults_expr, filter_defaults->getOutputs().at(0)->result_name, can_remove_filter, on_totals);
+        });
+    }
+
+    return res;
 }
 
 bool JoinStep::allowPushDownToRight() const
