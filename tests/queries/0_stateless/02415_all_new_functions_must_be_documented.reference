@@ -302,6 +302,7 @@ formatRowNoNewline
 fragment
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
+fromUTCTimestamp
 fromUnixTimestamp
 fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
@@ -849,6 +850,7 @@ toUInt8
 toUInt8OrDefault
 toUInt8OrNull
 toUInt8OrZero
+toUTCTimestamp
 toUUID
 toUUIDOrDefault
 toUUIDOrNull
@@ -881,11 +883,18 @@ tumble
 tumbleEnd
 tumbleStart
 tuple
+tupleConcat
 tupleDivide
 tupleDivideByNumber
 tupleElement
 tupleHammingDistance
+tupleIntDiv
+tupleIntDivByNumber
+tupleIntDivOrZero
+tupleIntDivOrZeroByNumber
 tupleMinus
+tupleModulo
+tupleModuloByNumber
 tupleMultiply
 tupleMultiplyByNumber
 tupleNegate

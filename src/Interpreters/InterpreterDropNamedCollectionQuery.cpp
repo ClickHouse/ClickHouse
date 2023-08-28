@@ -22,11 +22,7 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, current_context, params);
     }
 
-    if (query.if_exists)
-        NamedCollectionUtils::removeIfExistsFromSQL(query.collection_name, current_context);
-    else
-        NamedCollectionUtils::removeFromSQL(query.collection_name, current_context);
-
+    NamedCollectionUtils::removeFromSQL(query, current_context);
     return {};
 }
 

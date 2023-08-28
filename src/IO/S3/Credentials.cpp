@@ -14,26 +14,26 @@
 #    include <Common/logger_useful.h>
 
 #    include <IO/S3/PocoHTTPClient.h>
-#    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/Client.h>
-#    include <IO/S3Common.h>
 
 #    include <fstream>
+#    include <base/EnumReflection.h>
 
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int AWS_ERROR;
 }
-}
 
-namespace DB::S3
+namespace S3
 {
 
 namespace
 {
+
 bool areCredentialsEmptyOrExpired(const Aws::Auth::AWSCredentials & credentials, uint64_t expiration_window_seconds)
 {
     if (credentials.IsEmpty())
@@ -532,13 +532,13 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.enable_s3_requests_logging,
                 configuration.for_disk_s3,
                 configuration.get_request_throttler,
-                configuration.put_request_throttler);
+                configuration.put_request_throttler,
+                Aws::Http::SchemeMapper::ToString(Aws::Http::Scheme::HTTP));
 
             /// See MakeDefaultHttpResourceClientConfiguration().
             /// This is part of EC2 metadata client, but unfortunately it can't be accessed from outside
             /// of contrib/aws/aws-cpp-sdk-core/source/internal/AWSHttpResourceClient.cpp
             aws_client_configuration.maxConnections = 2;
-            aws_client_configuration.scheme = Aws::Http::Scheme::HTTP;
 
             /// Explicitly set the proxy settings to empty/zero to avoid relying on defaults that could potentially change
             /// in the future.
@@ -565,6 +565,8 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
     /// Quite verbose provider (argues if file with credentials doesn't exist) so iut's the last one
     /// in chain.
     AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
+}
+
 }
 
 }

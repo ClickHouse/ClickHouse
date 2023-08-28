@@ -42,17 +42,17 @@ def keeper_query(query: str):
 
 def test_big_family():
     command = keeper_query(
-        "create test_big_family foo;"
-        "create test_big_family/1 foo;"
-        "create test_big_family/1/1 foo;"
-        "create test_big_family/1/2 foo;"
-        "create test_big_family/1/3 foo;"
-        "create test_big_family/1/4 foo;"
-        "create test_big_family/1/5 foo;"
-        "create test_big_family/2 foo;"
-        "create test_big_family/2/1 foo;"
-        "create test_big_family/2/2 foo;"
-        "create test_big_family/2/3 foo;"
+        "touch test_big_family;"
+        "touch test_big_family/1;"
+        "touch test_big_family/1/1;"
+        "touch test_big_family/1/2;"
+        "touch test_big_family/1/3;"
+        "touch test_big_family/1/4;"
+        "touch test_big_family/1/5;"
+        "touch test_big_family/2;"
+        "touch test_big_family/2/1;"
+        "touch test_big_family/2/2;"
+        "touch test_big_family/2/3;"
         "find_big_family test_big_family;"
     )
 
@@ -82,18 +82,18 @@ def test_big_family():
 
 def test_find_super_nodes():
     command = keeper_query(
-        "create test_find_super_nodes foo;"
-        "create test_find_super_nodes/1 foo;"
-        "create test_find_super_nodes/1/1 foo;"
-        "create test_find_super_nodes/1/2 foo;"
-        "create test_find_super_nodes/1/3 foo;"
-        "create test_find_super_nodes/1/4 foo;"
-        "create test_find_super_nodes/1/5 foo;"
-        "create test_find_super_nodes/2 foo;"
-        "create test_find_super_nodes/2/1 foo;"
-        "create test_find_super_nodes/2/2 foo;"
-        "create test_find_super_nodes/2/3 foo;"
-        "create test_find_super_nodes/2/4 foo;"
+        "touch test_find_super_nodes;"
+        "touch test_find_super_nodes/1;"
+        "touch test_find_super_nodes/1/1;"
+        "touch test_find_super_nodes/1/2;"
+        "touch test_find_super_nodes/1/3;"
+        "touch test_find_super_nodes/1/4;"
+        "touch test_find_super_nodes/1/5;"
+        "touch test_find_super_nodes/2;"
+        "touch test_find_super_nodes/2/1;"
+        "touch test_find_super_nodes/2/2;"
+        "touch test_find_super_nodes/2/3;"
+        "touch test_find_super_nodes/2/4;"
         "cd test_find_super_nodes;"
         "find_super_nodes 4;"
     )
@@ -106,16 +106,17 @@ def test_find_super_nodes():
     )
 
 
-def test_delete_stable_backups():
+def test_delete_stale_backups():
     command = keeper_query(
-        "create /clickhouse/backups foo;"
-        "create /clickhouse/backups/1 foo;"
-        "create /clickhouse/backups/1/stage foo;"
-        "create /clickhouse/backups/1/stage/alive123 foo;"
-        "create /clickhouse/backups/2 foo;"
-        "create /clickhouse/backups/2/stage foo;"
-        "create /clickhouse/backups/2/stage/dead123 foo;"
-        "delete_stable_backups;"
+        "touch /clickhouse;"
+        "touch /clickhouse/backups;"
+        "touch /clickhouse/backups/1;"
+        "touch /clickhouse/backups/1/stage;"
+        "touch /clickhouse/backups/1/stage/alive123;"
+        "touch /clickhouse/backups/2;"
+        "touch /clickhouse/backups/2/stage;"
+        "touch /clickhouse/backups/2/stage/dead123;"
+        "delete_stale_backups;"
         "y;"
         "ls clickhouse/backups;"
     )

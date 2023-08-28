@@ -95,6 +95,7 @@ RUN python3 -m pip install --no-cache-dir \
     pytest-timeout \
     pytest-xdist \
     pytz \
+    pyyaml==5.3.1 \
     redis \
     requests-kerberos \
     tzlocal==2.1 \
@@ -129,7 +130,7 @@ COPY misc/ /misc/
 
 # Same options as in test/base/Dockerfile
 # (in case you need to override them in tests)
-ENV TSAN_OPTIONS='halt_on_error=1 history_size=7 memory_limit_mb=46080 second_deadlock_stack=1'
+ENV TSAN_OPTIONS='halt_on_error=1 abort_on_error=1 history_size=7 memory_limit_mb=46080 second_deadlock_stack=1'
 ENV UBSAN_OPTIONS='print_stacktrace=1'
 ENV MSAN_OPTIONS='abort_on_error=1 poison_in_dtor=1'
 

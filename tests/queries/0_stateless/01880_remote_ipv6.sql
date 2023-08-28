@@ -10,3 +10,14 @@ SELECT * FROM remote('::1', system.one) FORMAT Null; -- { serverError 36 }
 SELECT * FROM remote('[::1][::1]', system.one) FORMAT Null; -- { serverError 36 }
 SELECT * FROM remote('[::1][::1', system.one) FORMAT Null; -- { serverError 36 }
 SELECT * FROM remote('[::1]::1]', system.one) FORMAT Null; -- { serverError 36 }
+
+SELECT * FROM remote('[::1]') FORMAT Null;
+SELECT * FROM remote('[::1]:9000') FORMAT Null;
+
+SELECT * FROM remote('[::1') FORMAT Null; -- { serverError 36 }
+SELECT * FROM remote('::1]') FORMAT Null; -- { serverError 36 }
+SELECT * FROM remote('::1') FORMAT Null; -- { serverError 36 }
+
+SELECT * FROM remote('[::1][::1]') FORMAT Null; -- { serverError 36 }
+SELECT * FROM remote('[::1][::1') FORMAT Null; -- { serverError 36 }
+SELECT * FROM remote('[::1]::1]') FORMAT Null; -- { serverError 36 }
