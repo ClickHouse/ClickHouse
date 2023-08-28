@@ -116,6 +116,11 @@ public:
         RETURN_NULL,
     };
 
+    KeyMetadataPtr getKeyMetadata(
+        const Key & key,
+        KeyNotFoundPolicy key_not_found_policy,
+        bool is_initial_load = false);
+
     LockedKeyPtr lockKeyMetadata(
         const Key & key,
         KeyNotFoundPolicy key_not_found_policy,
