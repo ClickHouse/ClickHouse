@@ -1111,37 +1111,43 @@ try
 
     String uncompressed_cache_policy = server_settings.uncompressed_cache_policy;
     size_t uncompressed_cache_size = server_settings.uncompressed_cache_size;
+    double uncompressed_cache_size_ratio = server_settings.uncompressed_cache_size_ratio;
     if (uncompressed_cache_size > max_cache_size)
     {
         uncompressed_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
+    global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size, uncompressed_cache_size_ratio);
 
     String mark_cache_policy = server_settings.mark_cache_policy;
     size_t mark_cache_size = server_settings.mark_cache_size;
+    double mark_cache_size_ratio = server_settings.mark_cache_size_ratio;
     if (mark_cache_size > max_cache_size)
     {
         mark_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
-    global_context->setMarkCache(mark_cache_policy, mark_cache_size);
+    global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
 
+    String index_uncompressed_cache_policy = server_settings.index_uncompressed_cache_policy;
     size_t index_uncompressed_cache_size = server_settings.index_uncompressed_cache_size;
+    double index_uncompressed_cache_size_ratio = server_settings.index_uncompressed_cache_size_ratio;
     if (index_uncompressed_cache_size > max_cache_size)
     {
         index_uncompressed_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
+    global_context->setIndexUncompressedCache(index_uncompressed_cache_policy, index_uncompressed_cache_size, index_uncompressed_cache_size_ratio);
 
+    String index_mark_cache_policy = server_settings.index_mark_cache_policy;
     size_t index_mark_cache_size = server_settings.index_mark_cache_size;
+    double index_mark_cache_size_ratio = server_settings.index_mark_cache_size_ratio;
     if (index_mark_cache_size > max_cache_size)
     {
         index_mark_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    global_context->setIndexMarkCache(index_mark_cache_size);
+    global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
     size_t mmap_cache_size = server_settings.mmap_cache_size;
     if (mmap_cache_size > max_cache_size)
