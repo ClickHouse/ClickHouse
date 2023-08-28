@@ -24,7 +24,7 @@
 
 namespace DB
 {
-  
+
 std::unique_ptr<S3ObjectStorageSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
     const Settings & settings = context->getSettingsRef();
