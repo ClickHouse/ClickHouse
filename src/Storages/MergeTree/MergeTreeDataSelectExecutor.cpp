@@ -1271,6 +1271,20 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         indexes);
 }
 
+static String partsNamesToString(const MergeTreeData::DataPartsVector & parts_vector, size_t max_count_to_print = 100)
+{
+    WriteBufferFromOwnString ss;
+    for (size_t i = 0; i < parts_vector.size() && i < max_count_to_print; ++i)
+    {
+        ss << parts_vector[i]->name;
+        if (i + 1 < parts_vector.size())
+            ss << ", ";
+    }
+    if (parts_vector.size() > max_count_to_print)
+        ss << "... " << (parts_vector.size() - max_count_to_print) << " more";
+    return ss.str();
+};
+
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     MergeTreeData::DataPartsVector parts,
     std::vector<AlterConversionsPtr> alter_conversions,
@@ -1300,6 +1314,8 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     bool sample_factor_column_queried = false;
 
     selectColumnNames(column_names_to_return, data, real_column_names, virt_column_names, sample_factor_column_queried);
+
+    LOG_TRACE(log, "Reading from parts: [{}]", partsNamesToString(parts, 100));
 
     return std::make_unique<ReadFromMergeTree>(
         std::move(parts),
