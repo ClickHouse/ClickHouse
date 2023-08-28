@@ -589,7 +589,7 @@ if (FUZZER)
             target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
             message(STATUS "${target} instrumented with fuzzer")
             # Skip this fuzzer because of linker errors (the size of the binary is too big)
-            if (target = "execute_query_fuzzer")
+            if (target EQUAL "execute_query_fuzzer")
                 continue()
             endif()
             # Add to bundle
