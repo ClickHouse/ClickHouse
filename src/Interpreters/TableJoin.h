@@ -66,7 +66,7 @@ public:
 
         JoinOnClause() = default;
 
-        void addKey(const String & left_name, const String right_name, bool null_safe_comparison)
+        void addKey(const String & left_name, const String & right_name, bool null_safe_comparison)
         {
             key_names_left.push_back(left_name);
             key_names_right.push_back(right_name);
