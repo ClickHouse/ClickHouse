@@ -157,8 +157,8 @@ def test_cfs_zero_copy_replication_insert(cluster):
             True,
         )
 
-        # check directory
-        file = os.listdir("./test_replicated_merge_tree_cfs/_instances/cfs/00/")[0]
+        # check the directory of shared data
+        file = os.listdir(cluster.cfs_dir + "/00/")[0]
         assert len(file) == 8
 
     finally:
