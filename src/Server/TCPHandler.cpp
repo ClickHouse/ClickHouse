@@ -1272,20 +1272,11 @@ void TCPHandler::receiveHello()
     String default_db;
 
     UInt64 packet_type = 0;
+    /// Receive packet
     readVarUInt(packet_type, *in);
 
-    // First message can require challenge to authenticate in further hello message
-    if (packet_type == Protocol::Client::SshChallengeRequest)
-    {
-        challenge = createChallenge();
-        writeVarUInt(Protocol::Server::SshChallenge, *out);
-        writeStringBinary(challenge, *out);
-        out->next();
-        readVarUInt(packet_type, *in);
-    }
-
-    /// Receive `hello` packet.
-    if (packet_type != Protocol::Client::Hello)
+    /// Sanity check
+    if (packet_type != Protocol::Client::Hello && packet_type != Protocol::Client::SSHChallengeRequest)
     {
         /** If you accidentally accessed the HTTP protocol for a port destined for an internal TCP protocol,
           * Then instead of the packet type, there will be G (GET) or P (POST), in most cases.
@@ -1298,6 +1289,17 @@ void TCPHandler::receiveHello()
         else
             throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
                                "Unexpected packet from client (expected Hello, got {})", packet_type);
+    }
+
+    /// First message can require challenge to authenticate in further hello message
+    if (packet_type == Protocol::Client::SSHChallengeRequest)
+    {
+        challenge = createChallenge();
+        writeVarUInt(Protocol::Server::SSHChallenge, *out);
+        writeStringBinary(challenge, *out);
+        out->next();
+        /// Receive `hello` packet.
+        readVarUInt(packet_type, *in);
     }
 
     readStringBinary(client_name, *in);

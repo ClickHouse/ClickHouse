@@ -298,14 +298,14 @@ void Connection::sendHello()
     // You may want to ask a server for a challenge if you want to authenticate using ssh keys
     if (!ssh_private_key.isEmpty())
     {
-        writeVarUInt(Protocol::Client::SshChallengeRequest, *out);
+        writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);
         out->next();
         UInt64 packet_type = 0;
         if (in->eof())
             throw Poco::Net::NetException("Connection reset by peer");
 
         readVarUInt(packet_type, *in);
-        if (packet_type == Protocol::Server::SshChallenge)
+        if (packet_type == Protocol::Server::SSHChallenge)
         {
             readStringBinary(challenge, *in);
         }
@@ -315,7 +315,7 @@ void Connection::sendHello()
         {
             /// Close connection, to not stay in unsynchronised state.
             disconnect();
-            throwUnexpectedPacket(packet_type, "SshChallenge or Exception");
+            throwUnexpectedPacket(packet_type, "SSHChallenge or Exception");
         }
     }
 

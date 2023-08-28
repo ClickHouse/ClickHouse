@@ -84,8 +84,8 @@ namespace Protocol
             MergeTreeAllRangesAnnounecement = 15,
             MergeTreeReadTaskRequest = 16,  /// Request from a MergeTree replica to a coordinator
             TimezoneUpdate = 17,            /// Receive server's (session-wide) default timezone
-            SshChallenge = 18,              /// Return challenge for ssh signature signing
-            MAX = SshChallenge,
+            SSHChallenge = 18,              /// Return challenge for SSH signature signing
+            MAX = SSHChallenge,
 
         };
 
@@ -114,7 +114,7 @@ namespace Protocol
                 "MergeTreeAllRangesAnnounecement",
                 "MergeTreeReadTaskRequest",
                 "TimezoneUpdate",
-                "SshChallenge",
+                "SSHChallenge",
             };
             return packet <= MAX
                 ? data[packet]
@@ -153,8 +153,8 @@ namespace Protocol
             ReadTaskResponse = 9,           /// A filename to read from s3 (used in s3Cluster)
             MergeTreeReadTaskResponse = 10, /// Coordinator's decision with a modified set of mark ranges allowed to read
 
-            SshChallengeRequest = 11,       /// Request for ssh signature challenge
-            MAX = SshChallengeRequest,
+            SSHChallengeRequest = 11,       /// Request for ssh signature challenge
+            MAX = SSHChallengeRequest,
         };
 
         inline const char * toString(UInt64 packet)
@@ -171,7 +171,7 @@ namespace Protocol
                 "IgnoredPartUUIDs",
                 "ReadTaskResponse",
                 "MergeTreeReadTaskResponse",
-                "SshChallengeRequest",
+                "SSHChallengeRequest",
             };
             return packet <= MAX
                 ? data[packet]

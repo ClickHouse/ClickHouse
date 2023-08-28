@@ -331,10 +331,6 @@ if (TARGET ch_contrib::cpuid)
     target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)
 endif()
 
-if (TARGET ssh)
-    target_link_libraries(clickhouse_common_io PUBLIC ssh)
-endif()
-
 if (TARGET ch_contrib::crc32_s390x)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32_s390x)
 endif()
