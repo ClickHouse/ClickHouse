@@ -4,18 +4,7 @@ import time
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-
-
-# Runs simple proxy resolver in python env container.
-def run_resolver(cluster):
-    container_id = cluster.get_container_id("resolver")
-    current_dir = os.path.dirname(__file__)
-    cluster.copy_file_to_container(
-        container_id,
-        os.path.join(current_dir, "proxy-resolver", "resolver.py"),
-        "resolver.py",
-    )
-    cluster.exec_in_container(container_id, ["python", "resolver.py"], detach=True)
+import helpers.s3_url_proxy_tests_util as proxy_util
 
 
 @pytest.fixture(scope="module")
@@ -29,7 +18,7 @@ def cluster():
         cluster.start()
         logging.info("Cluster started")
 
-        run_resolver(cluster)
+        proxy_util.run_resolver(cluster, os.path.dirname(__file__))
         logging.info("Proxy resolver started")
 
         yield cluster
@@ -46,7 +35,7 @@ def check_proxy_logs(cluster, proxy_instance, http_methods={"POST", "PUT", "GET"
                 return
             time.sleep(1)
         else:
-            assert False, "http method not found in logs"
+            assert False, f"{http_methods} method not found in logs of {proxy_instance}"
 
 
 @pytest.mark.parametrize("policy", ["s3", "s3_with_resolver"])
@@ -65,7 +54,6 @@ def test_s3_with_proxy_list(cluster, policy):
             policy
         )
     )
-
     node.query("INSERT INTO s3_test VALUES (0,'data'),(1,'data')")
     assert (
         node.query("SELECT * FROM s3_test order by id FORMAT Values")

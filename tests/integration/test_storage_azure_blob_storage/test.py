@@ -24,7 +24,7 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node",
-            main_configs=["configs/named_collections.xml"],
+            main_configs=["configs/named_collections.xml", "configs/schema_cache.xml"],
             user_configs=["configs/disable_profilers.xml", "configs/users.xml"],
             with_azurite=True,
         )
@@ -48,6 +48,10 @@ def azure_query(node, query, expect_error="false", try_num=10, settings={}):
                 "DB::Exception: Azure::Core::Http::TransportException: Connection closed before getting full response or response is less than expected",
                 "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response",
                 "DB::Exception: Azure::Core::Http::TransportException: Error while polling for socket ready read",
+                "Azure::Core::Http::TransportException, e.what() = Connection was closed by the server while trying to read a response",
+                "Azure::Core::Http::TransportException, e.what() = Connection closed before getting full response or response is less than expected",
+                "Azure::Core::Http::TransportException, e.what() = Connection was closed by the server while trying to read a response",
+                "Azure::Core::Http::TransportException, e.what() = Error while polling for socket ready read",
             ]
             retry = False
             for error in retriable_errors:
@@ -712,6 +716,265 @@ def test_function_signatures(cluster):
     # " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure\n"
     query_10 = f"select * from azureBlobStorage('{storage_account_url}',  'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'column1 UInt32')"
     assert azure_query(node, query_10) == "1\n2\n3\n"
+
+
+def check_profile_event_for_query(instance, file, profile_event, amount):
+    instance.query("system flush logs")
+    query_pattern = f"azureBlobStorage%{file}".replace("'", "\\'")
+    res = int(
+        instance.query(
+            f"select ProfileEvents['{profile_event}'] from system.query_log where query like '%{query_pattern}%' and query not like '%ProfileEvents%' and type = 'QueryFinish' order by query_start_time_microseconds desc limit 1"
+        )
+    )
+
+    assert res == amount
+
+
+def check_cache_misses(instance, file, amount=1):
+    check_profile_event_for_query(instance, file, "SchemaInferenceCacheMisses", amount)
+
+
+def check_cache_hits(instance, file, amount=1):
+    check_profile_event_for_query(instance, file, "SchemaInferenceCacheHits", amount)
+
+
+def check_cache_invalidations(instance, file, amount=1):
+    check_profile_event_for_query(
+        instance, file, "SchemaInferenceCacheInvalidations", amount
+    )
+
+
+def check_cache_evictions(instance, file, amount=1):
+    check_profile_event_for_query(
+        instance, file, "SchemaInferenceCacheEvictions", amount
+    )
+
+
+def check_cache_num_rows_hots(instance, file, amount=1):
+    check_profile_event_for_query(
+        instance, file, "SchemaInferenceCacheNumRowsHits", amount
+    )
+
+
+def run_describe_query(instance, file, connection_string):
+    query = f"desc azureBlobStorage('{connection_string}', 'cont', '{file}')"
+    azure_query(instance, query)
+
+
+def run_count_query(instance, file, connection_string):
+    query = f"select count() from azureBlobStorage('{connection_string}', 'cont', '{file}', auto, auto, 'x UInt64')"
+    return azure_query(instance, query)
+
+
+def check_cache(instance, expected_files):
+    sources = instance.query("select source from system.schema_inference_cache")
+    assert sorted(map(lambda x: x.strip().split("/")[-1], sources.split())) == sorted(
+        expected_files
+    )
+
+
+def test_schema_inference_cache(cluster):
+    node = cluster.instances["node"]
+    connection_string = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1;"
+    storage_account_url = "http://azurite1:10000/devstoreaccount1"
+    account_name = "devstoreaccount1"
+    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
+    node.query("system drop schema cache")
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_cache0.jsonl', '{account_name}', '{account_key}') select * from numbers(100)",
+    )
+
+    time.sleep(1)
+
+    run_describe_query(node, "test_cache0.jsonl", connection_string)
+    check_cache(node, ["test_cache0.jsonl"])
+    check_cache_misses(node, "test_cache0.jsonl")
+
+    run_describe_query(node, "test_cache0.jsonl", connection_string)
+    check_cache_hits(node, "test_cache0.jsonl")
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_cache0.jsonl', '{account_name}', '{account_key}') select * from numbers(100) settings azure_truncate_on_insert=1",
+    )
+
+    time.sleep(1)
+
+    run_describe_query(node, "test_cache0.jsonl", connection_string)
+    check_cache_invalidations(node, "test_cache0.jsonl")
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_cache1.jsonl', '{account_name}', '{account_key}') select * from numbers(100) settings azure_truncate_on_insert=1",
+    )
+    time.sleep(1)
+
+    run_describe_query(node, "test_cache1.jsonl", connection_string)
+    check_cache(node, ["test_cache0.jsonl", "test_cache1.jsonl"])
+    check_cache_misses(node, "test_cache1.jsonl")
+
+    run_describe_query(node, "test_cache1.jsonl", connection_string)
+    check_cache_hits(node, "test_cache1.jsonl")
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_cache2.jsonl', '{account_name}', '{account_key}') select * from numbers(100) settings azure_truncate_on_insert=1",
+    )
+    time.sleep(1)
+
+    run_describe_query(node, "test_cache2.jsonl", connection_string)
+    check_cache(node, ["test_cache1.jsonl", "test_cache2.jsonl"])
+    check_cache_misses(node, "test_cache2.jsonl")
+    check_cache_evictions(node, "test_cache2.jsonl")
+
+    run_describe_query(node, "test_cache2.jsonl", connection_string)
+    check_cache_hits(node, "test_cache2.jsonl")
+
+    run_describe_query(node, "test_cache1.jsonl", connection_string)
+    check_cache_hits(node, "test_cache1.jsonl")
+
+    run_describe_query(node, "test_cache0.jsonl", connection_string)
+    check_cache(node, ["test_cache0.jsonl", "test_cache1.jsonl"])
+    check_cache_misses(node, "test_cache0.jsonl")
+    check_cache_evictions(node, "test_cache0.jsonl")
+
+    run_describe_query(node, "test_cache2.jsonl", connection_string)
+    check_cache(node, ["test_cache0.jsonl", "test_cache2.jsonl"])
+    check_cache_misses(
+        node,
+        "test_cache2.jsonl",
+    )
+    check_cache_evictions(
+        node,
+        "test_cache2.jsonl",
+    )
+
+    run_describe_query(node, "test_cache2.jsonl", connection_string)
+
+    check_cache_hits(
+        node,
+        "test_cache2.jsonl",
+    )
+
+    run_describe_query(node, "test_cache0.jsonl", connection_string)
+    check_cache_hits(
+        node,
+        "test_cache0.jsonl",
+    )
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_cache3.jsonl', '{account_name}', '{account_key}') select * from numbers(100) settings azure_truncate_on_insert=1",
+    )
+    time.sleep(1)
+
+    files = "test_cache{0,1,2,3}.jsonl"
+    run_describe_query(node, files, connection_string)
+    print(node.query("select * from system.schema_inference_cache format Pretty"))
+    check_cache_hits(node, files)
+
+    node.query(f"system drop schema cache for azure")
+    check_cache(node, [])
+
+    run_describe_query(node, files, connection_string)
+    check_cache_misses(node, files, 4)
+
+    node.query("system drop schema cache")
+    check_cache(node, [])
+
+    run_describe_query(node, files, connection_string)
+    check_cache_misses(node, files, 4)
+
+    node.query("system drop schema cache")
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_cache0.csv', '{account_name}', '{account_key}') select * from numbers(100) settings azure_truncate_on_insert=1",
+    )
+    time.sleep(1)
+
+    res = run_count_query(node, "test_cache0.csv", connection_string)
+
+    assert int(res) == 100
+
+    check_cache(node, ["test_cache0.csv"])
+    check_cache_misses(
+        node,
+        "test_cache0.csv",
+    )
+
+    res = run_count_query(node, "test_cache0.csv", connection_string)
+    assert int(res) == 100
+
+    check_cache_hits(
+        node,
+        "test_cache0.csv",
+    )
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_cache0.csv', '{account_name}', '{account_key}') select * from numbers(200) settings azure_truncate_on_insert=1",
+    )
+    time.sleep(1)
+
+    res = run_count_query(node, "test_cache0.csv", connection_string)
+
+    assert int(res) == 200
+
+    check_cache_invalidations(
+        node,
+        "test_cache0.csv",
+    )
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_cache1.csv', '{account_name}', '{account_key}') select * from numbers(100) settings azure_truncate_on_insert=1",
+    )
+    time.sleep(1)
+
+    res = run_count_query(node, "test_cache1.csv", connection_string)
+
+    assert int(res) == 100
+    check_cache(node, ["test_cache0.csv", "test_cache1.csv"])
+    check_cache_misses(
+        node,
+        "test_cache1.csv",
+    )
+
+    res = run_count_query(node, "test_cache1.csv", connection_string)
+    assert int(res) == 100
+    check_cache_hits(
+        node,
+        "test_cache1.csv",
+    )
+
+    res = run_count_query(node, "test_cache{0,1}.csv", connection_string)
+    assert int(res) == 300
+    check_cache_hits(node, "test_cache{0,1}.csv", 2)
+
+    node.query(f"system drop schema cache for azure")
+    check_cache(node, [])
+
+    res = run_count_query(node, "test_cache{0,1}.csv", connection_string)
+    assert int(res) == 300
+    check_cache_misses(node, "test_cache{0,1}.csv", 2)
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_cache.parquet', '{account_name}', '{account_key}') select * from numbers(100) settings azure_truncate_on_insert=1",
+    )
+    time.sleep(1)
+
+    res = azure_query(
+        node,
+        f"select count() from azureBlobStorage('{connection_string}', 'cont', 'test_cache.parquet')",
+    )
+    assert int(res) == 100
+    check_cache_misses(node, "test_cache.parquet")
+    check_cache_hits(node, "test_cache.parquet")
+    check_cache_num_rows_hots(node, "test_cache.parquet")
 
 
 def test_filtering_by_file_or_path(cluster):
