@@ -384,10 +384,4 @@ void SerializationSparse::serializeTextXML(const IColumn & column, size_t row_nu
     nested->serializeTextXML(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
 }
 
-void SerializationSparse::serializeTextMarkdown(
-    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeTextEscaped(column, row_num, ostr, settings);
-}
-
 }

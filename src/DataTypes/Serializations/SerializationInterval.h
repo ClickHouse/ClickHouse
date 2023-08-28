@@ -66,7 +66,6 @@ public:
     void serializeTextJSON(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void serializeTextQuoted(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void serializeTextRaw(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
-    void serializeTextMarkdown(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
 private:
     template <typename... Args, std::invocable<const ISerialization *, Args...> Method>

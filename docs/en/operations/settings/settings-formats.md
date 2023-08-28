@@ -636,7 +636,7 @@ Disabled by default.
 
 ### output_format_markdown_escape_special_characters {#output_format_markdown_escape_special_characters}
 
-When enabled, automatically escape special characters in Markdown.
+When enabled, escape special characters in Markdown.
 
 Possible values:
 

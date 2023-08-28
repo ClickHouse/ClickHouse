@@ -146,10 +146,4 @@ void SerializationWrapper::serializeTextXML(const IColumn & column, size_t row_n
     nested_serialization->serializeTextXML(column, row_num, ostr, settings);
 }
 
-void SerializationWrapper::serializeTextMarkdown(
-    const DB::IColumn & column, size_t row_num, DB::WriteBuffer & ostr, const DB::FormatSettings & settings) const
-{
-    serializeTextEscaped(column, row_num, ostr, settings);
-}
-
 }

@@ -778,10 +778,4 @@ void SerializationLowCardinality::deserializeImpl(
     low_cardinality_column.insertFromFullColumn(*temp_column, 0);
 }
 
-void SerializationLowCardinality::serializeTextMarkdown(
-    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeTextEscaped(column, row_num, ostr, settings);
-}
-
 }

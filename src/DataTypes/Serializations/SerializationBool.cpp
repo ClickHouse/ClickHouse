@@ -332,10 +332,4 @@ void SerializationBool::serializeTextXML(const IColumn & column, size_t row_num,
     serializeSimple(column, row_num, ostr, settings);
 }
 
-void SerializationBool::serializeTextMarkdown(
-    const DB::IColumn & column, size_t row_num, DB::WriteBuffer & ostr, const DB::FormatSettings & settings) const
-{
-    serializeTextEscaped(column, row_num, ostr, settings);
-}
-
 }
