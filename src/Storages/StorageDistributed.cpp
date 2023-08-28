@@ -1476,7 +1476,7 @@ void StorageDistributed::flushClusterNodesAllData(ContextPtr local_context)
         if (need_flush)
             node->flushAllData();
         else
-            node->shutdown();
+            node->shutdownWithoutFlush();
     }
 }
 

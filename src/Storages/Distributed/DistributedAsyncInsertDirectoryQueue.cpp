@@ -186,7 +186,7 @@ void DistributedAsyncInsertDirectoryQueue::shutdownAndDropAllData()
     fs::remove_all(path);
 }
 
-void DistributedAsyncInsertDirectoryQueue::shutdown()
+void DistributedAsyncInsertDirectoryQueue::shutdownWithoutFlush()
 {
     /// It's incompatible with should_batch_inserts
     /// because processFilesWithBatching may push to the queue after shutdown

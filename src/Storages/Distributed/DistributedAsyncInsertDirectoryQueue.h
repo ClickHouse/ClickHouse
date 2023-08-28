@@ -66,7 +66,7 @@ public:
 
     void shutdownAndDropAllData();
 
-    void shutdown();
+    void shutdownWithoutFlush();
 
     static std::shared_ptr<ISource> createSourceFromFile(const String & file_name);
 
