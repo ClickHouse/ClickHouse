@@ -5,15 +5,9 @@ from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance(
-    "node1", main_configs=["configs/remote_servers.xml"]
-)
-node2 = cluster.add_instance(
-    "node2", main_configs=["configs/remote_servers.xml"]
-)
-node3 = cluster.add_instance(
-    "node3", main_configs=["configs/remote_servers.xml"]
-)
+node1 = cluster.add_instance("node1", main_configs=["configs/remote_servers.xml"])
+node2 = cluster.add_instance("node2", main_configs=["configs/remote_servers.xml"])
+node3 = cluster.add_instance("node3", main_configs=["configs/remote_servers.xml"])
 
 
 @pytest.fixture(scope="module")
@@ -38,6 +32,7 @@ def test_skip_unavailable_shards(start_cluster):
         )
         == "node1\nnode2\nnode3\n"
     )
+
 
 def test_error_on_unavailable_shards(start_cluster):
     with pytest.raises(QueryRuntimeException):
