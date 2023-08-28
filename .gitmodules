@@ -272,7 +272,7 @@
 	url = https://github.com/corrosion-rs/corrosion
 [submodule "contrib/libssh"]
 	path = contrib/libssh
-	url = https://github.com/InfJoker/libssh-signing-fork.git
+	url = https://github.com/ClickHouse/libssh.git
 [submodule "contrib/morton-nd"]
 	path = contrib/morton-nd
 	url = https://github.com/morton-nd/morton-nd
