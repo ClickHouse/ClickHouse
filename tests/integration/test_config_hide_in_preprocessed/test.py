@@ -19,7 +19,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_hidden(started_cluster):
+def test_hide_in_preprocessed(started_cluster):
     assert (
         node.query(
             "select value from system.server_settings where name ='max_table_size_to_drop'"
