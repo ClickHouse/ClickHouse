@@ -31,7 +31,6 @@ def test_skip_unavailable_shards(start_cluster):
             "SELECT hostName() as h FROM clusterAllReplicas('two_shards', system.one) order by h",
             settings={
                 "allow_experimental_parallel_reading_from_replicas": 2,
-                "prefer_localhost_replica": 0,
                 "max_parallel_replicas": 3,
                 "use_hedged_requests": 0,
                 "skip_unavailable_shards": 1,
@@ -46,7 +45,6 @@ def test_error_on_unavailable_shards(start_cluster):
             "SELECT hostName() as h FROM clusterAllReplicas('two_shards', system.one) order by h",
             settings={
                 "allow_experimental_parallel_reading_from_replicas": 2,
-                "prefer_localhost_replica": 0,
                 "max_parallel_replicas": 3,
                 "use_hedged_requests": 0,
                 "skip_unavailable_shards": 0,
