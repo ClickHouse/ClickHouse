@@ -76,7 +76,18 @@ class CreateCommand : public IKeeperClientCommand
 
     void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
 
-    String getHelpMessage() const override { return "{} <path> <value> -- Creates new node"; }
+    String getHelpMessage() const override { return "{} <path> <value> [mode] -- Creates new node with the set value"; }
+};
+
+class TouchCommand : public IKeeperClientCommand
+{
+    String getName() const override { return "touch"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override { return "{} <path> -- Creates new node with an empty string as value. Doesn't throw an exception if the node already exists"; }
 };
 
 class GetCommand : public IKeeperClientCommand
@@ -115,9 +126,9 @@ class FindSuperNodes : public IKeeperClientCommand
     }
 };
 
-class DeleteStableBackups : public IKeeperClientCommand
+class DeleteStaleBackups : public IKeeperClientCommand
 {
-    String getName() const override { return "delete_stable_backups"; }
+    String getName() const override { return "delete_stale_backups"; }
 
     bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
 
