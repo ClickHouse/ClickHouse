@@ -170,7 +170,7 @@ Disks StoragePolicy::getDisks() const
     Disks res;
     for (const auto & volume : volumes)
         for (const auto & disk : volume->getDisks())
-            res.push_back(disk);
+            res.push_back(std::move(disk));
     return res;
 }
 

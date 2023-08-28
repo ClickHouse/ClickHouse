@@ -631,7 +631,7 @@ Names Block::getNames() const
     res.reserve(columns());
 
     for (const auto & elem : data)
-        res.push_back(elem.name);
+        res.push_back(std::move(elem.name));
 
     return res;
 }
@@ -643,7 +643,7 @@ DataTypes Block::getDataTypes() const
     res.reserve(columns());
 
     for (const auto & elem : data)
-        res.push_back(elem.type);
+        res.push_back(std::move(elem.type));
 
     return res;
 }
@@ -655,7 +655,7 @@ Names Block::getDataTypeNames() const
     res.reserve(columns());
 
     for (const auto & elem : data)
-        res.push_back(elem.type->getName());
+        res.push_back(std::move(elem.type->getName()));
 
     return res;
 }
@@ -789,7 +789,7 @@ Serializations Block::getSerializations() const
     res.reserve(data.size());
 
     for (const auto & column : data)
-        res.push_back(column.type->getDefaultSerialization());
+        res.push_back(std::move(column.type->getDefaultSerialization()));
 
     return res;
 }

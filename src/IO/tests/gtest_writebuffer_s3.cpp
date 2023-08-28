@@ -111,7 +111,7 @@ public:
 
         auto & parts = multiPartUploads.at(upload_id);
         for (const auto & tag: etags) {
-            completedParts.push_back(parts.at(tag));
+            completedParts.push_back(std::move(parts.at(tag)));
         }
 
         std::stringstream file_data;
