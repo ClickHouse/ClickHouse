@@ -442,6 +442,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     res->schema_cache_storage = "HDFS";
                 else if (ParserKeyword{"URL"}.ignore(pos, expected))
                     res->schema_cache_storage = "URL";
+                else if (ParserKeyword{"AZURE"}.ignore(pos, expected))
+                    res->schema_cache_storage = "AZURE";
                 else
                     return false;
             }

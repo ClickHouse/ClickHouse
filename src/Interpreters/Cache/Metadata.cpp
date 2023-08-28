@@ -179,27 +179,9 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
     KeyNotFoundPolicy key_not_found_policy,
     bool is_initial_load)
 {
-    KeyMetadataPtr key_metadata;
-    {
-        auto lock = lockMetadata();
-
-        auto it = find(key);
-        if (it == end())
-        {
-            if (key_not_found_policy == KeyNotFoundPolicy::THROW)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key `{}` in cache", key);
-            else if (key_not_found_policy == KeyNotFoundPolicy::THROW_LOGICAL)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key);
-            else if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
-                return nullptr;
-
-            it = emplace(
-                key, std::make_shared<KeyMetadata>(
-                    key, getPathForKey(key), cleanup_queue, download_queue, log, key_prefix_directory_mutex, is_initial_load)).first;
-        }
-
-        key_metadata = it->second;
-    }
+    auto key_metadata = getKeyMetadata(key, key_not_found_policy, is_initial_load);
+    if (!key_metadata)
+        return nullptr;
 
     {
         auto locked_metadata = key_metadata->lockNoStateCheck();
@@ -231,6 +213,29 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
     /// but we need to return empty key (key_not_found_policy == KeyNotFoundPolicy::CREATE_EMPTY)
     /// Retry
     return lockKeyMetadata(key, key_not_found_policy);
+}
+
+KeyMetadataPtr CacheMetadata::getKeyMetadata(
+    const Key & key,
+    KeyNotFoundPolicy key_not_found_policy,
+    bool is_initial_load)
+{
+    auto lock = lockMetadata();
+
+    auto it = find(key);
+    if (it == end())
+    {
+        if (key_not_found_policy == KeyNotFoundPolicy::THROW)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key);
+        else if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
+            return nullptr;
+
+        it = emplace(
+            key, std::make_shared<KeyMetadata>(
+                key, getPathForKey(key), cleanup_queue, download_queue, log, key_prefix_directory_mutex, is_initial_load)).first;
+    }
+
+    return it->second;
 }
 
 void CacheMetadata::iterate(IterateFunc && func)
@@ -563,12 +568,12 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     if (file_segment.getOrSetDownloader() != FileSegment::getCallerId())
         return;
 
-    if (file_segment.getDownloadedSize(false) == file_segment.range().size())
+    if (file_segment.getDownloadedSize() == file_segment.range().size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
 
     LOG_TEST(
         log, "Downloading {} bytes for file segment {}",
-        file_segment.range().size() - file_segment.getDownloadedSize(false), file_segment.getInfoForLog());
+        file_segment.range().size() - file_segment.getDownloadedSize(), file_segment.getInfoForLog());
 
     auto reader = file_segment.getRemoteFileReader();
 
@@ -589,7 +594,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         reader->set(memory->data(), memory->size());
     }
 
-    size_t offset = file_segment.getCurrentWriteOffset(false);
+    size_t offset = file_segment.getCurrentWriteOffset();
     if (offset != static_cast<size_t>(reader->getPosition()))
         reader->seek(offset, SEEK_SET);
 
@@ -603,7 +608,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
                 log, "Failed to reserve space during background download "
                 "for {}:{} (downloaded size: {}/{})",
                 file_segment.key(), file_segment.offset(),
-                file_segment.getDownloadedSize(false), file_segment.range().size());
+                file_segment.getDownloadedSize(), file_segment.range().size());
             return;
         }
 
@@ -787,7 +792,7 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
     const auto & file_segment = metadata->file_segment;
     chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
 
-    const size_t downloaded_size = file_segment->getDownloadedSize(false);
+    const size_t downloaded_size = file_segment->getDownloadedSize();
     if (downloaded_size == file_segment->range().size())
     {
         throw Exception(
@@ -890,6 +895,12 @@ FileSegments LockedKey::sync()
     FileSegments broken;
     for (auto it = key_metadata->begin(); it != key_metadata->end();)
     {
+        if (it->second->evicting() || !it->second->releasable())
+        {
+            ++it;
+            continue;
+        }
+
         auto file_segment = it->second->file_segment;
         if (file_segment->isDetached())
         {
@@ -898,7 +909,7 @@ FileSegments LockedKey::sync()
                 "File segment has unexpected state: DETACHED ({})", file_segment->getInfoForLog());
         }
 
-        if (file_segment->getDownloadedSize(false) == 0)
+        if (file_segment->getDownloadedSize() == 0)
         {
             ++it;
             continue;
@@ -918,7 +929,7 @@ FileSegments LockedKey::sync()
         }
 
         const size_t actual_size = fs::file_size(path);
-        const size_t expected_size = file_segment->getDownloadedSize(false);
+        const size_t expected_size = file_segment->getDownloadedSize();
 
         if (actual_size == expected_size)
         {

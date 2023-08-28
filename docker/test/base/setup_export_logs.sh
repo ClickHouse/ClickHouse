@@ -41,7 +41,7 @@ do
 
     echo "Creating destination table ${table}_${hash}" >&2
 
-    echo "$statement" | clickhouse-client --distributed_ddl_task_timeout=10 $CONNECTION_PARAMETERS || continue
+    echo "$statement" | clickhouse-client --distributed_ddl_task_timeout=10 --receive_timeout=10 --send_timeout=10 $CONNECTION_PARAMETERS || continue
 
     echo "Creating table system.${table}_sender" >&2
 

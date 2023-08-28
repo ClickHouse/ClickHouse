@@ -2191,8 +2191,8 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
             /// Replace predicate result to constant 1.
             Node node;
             node.type = ActionType::COLUMN;
-            node.result_name = std::move(predicate->result_name);
-            node.result_type = std::move(predicate->result_type);
+            node.result_name = predicate->result_name;
+            node.result_type = predicate->result_type;
             node.column = node.result_type->createColumnConst(0, 1);
 
             if (predicate->type != ActionType::INPUT)

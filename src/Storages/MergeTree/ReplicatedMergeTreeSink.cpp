@@ -637,6 +637,27 @@ bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::Mutabl
     Stopwatch watch;
     ProfileEventsScope profile_events_scope;
 
+    String original_part_dir = part->getDataPartStorage().getPartDirectory();
+    auto try_rollback_part_rename = [this, &part, &original_part_dir]()
+    {
+        if (original_part_dir == part->getDataPartStorage().getPartDirectory())
+            return;
+
+        if (part->new_part_was_committed_to_zookeeper_after_rename_on_disk)
+            return;
+
+        /// Probably we have renamed the part on disk, but then failed to commit it to ZK.
+        /// We should rename it back, otherwise it will be lost (e.g. if it was a part from detached/ and we failed to attach it).
+        try
+        {
+            part->renameTo(original_part_dir, /*remove_new_dir_if_exists*/ false);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+    };
+
     try
     {
         part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
@@ -650,6 +671,7 @@ bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::Mutabl
     }
     catch (...)
     {
+        try_rollback_part_rename();
         PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, watch.elapsed(), profile_events_scope.getSnapshot()), ExecutionStatus::fromCurrentException("", true));
         throw;
     }
@@ -997,6 +1019,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         Coordination::Error multi_code = zookeeper->tryMultiNoThrow(ops, responses); /// 1 RTT
         if (multi_code == Coordination::Error::ZOK)
         {
+            part->new_part_was_committed_to_zookeeper_after_rename_on_disk = true;
             transaction.commit();
             storage.merge_selecting_task->schedule();
 
