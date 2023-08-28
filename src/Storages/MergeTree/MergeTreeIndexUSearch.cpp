@@ -56,7 +56,6 @@ void USearchIndexWithSerialization<Metric>::deserialize(ReadBuffer & istr)
     };
 
     Base::load_from_stream(callback);
-
 }
 
 template <unum::usearch::metric_kind_t Metric>
@@ -245,18 +244,17 @@ std::vector<size_t> MergeTreeIndexConditionUSearch::getUsefulRangesImpl(MergeTre
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to optimize query with where without distance");
 
     const std::vector<float> reference_vector = ann_condition.getReferenceVector();
+
     const auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleUSearch<Metric>>(idx_granule);
     if (granule == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule has the wrong type");
 
     const USearchIndexWithSerializationPtr<Metric> index = granule->index;
+
     if (ann_condition.getDimensions() != index->dimensions())
-        throw Exception(
-            ErrorCodes::INCORRECT_QUERY,
-            "The dimension of the space in the request ({}) "
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The dimension of the space in the request ({}) "
             "does not match the dimension in the index ({})",
-            ann_condition.getDimensions(),
-            index->dimensions());
+            ann_condition.getDimensions(), index->dimensions());
 
     auto result = index->search(reference_vector.data(), limit);
     std::vector<UInt64> neighbors(result.size()); /// indexes of dots which were closest to the reference vector
