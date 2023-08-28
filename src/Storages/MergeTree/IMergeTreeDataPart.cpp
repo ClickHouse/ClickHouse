@@ -2114,7 +2114,7 @@ std::optional<String> IMergeTreeDataPart::getStreamNameOrHash(
 
     auto hash = sipHash128String(stream_name);
     if (storage_.exists(hash + extension))
-        return stream_name;
+        return hash;
 
     return {};
 }
