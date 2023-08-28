@@ -210,7 +210,7 @@ namespace
 
             Poco::Util::AbstractConfiguration::Keys entries;
             config.keys(ssh_keys_config, entries);
-            std::vector<ssh::SshKey> keys;
+            std::vector<ssh::SSHKey> keys;
             for (const String& entry : entries)
             {
                 const auto conf_pref = ssh_keys_config + "." + entry + ".";
@@ -233,7 +233,7 @@ namespace
 
                     try
                     {
-                        keys.emplace_back(ssh::SshKeyFactory::makePublicFromBase64(base64_key, algorithm));
+                        keys.emplace_back(ssh::SSHKeyFactory::makePublicFromBase64(base64_key, algorithm));
                     }
                     catch (const std::invalid_argument&)
                     {

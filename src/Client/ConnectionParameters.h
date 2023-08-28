@@ -20,7 +20,7 @@ struct ConnectionParameters
     std::string user;
     std::string password;
     std::string quota_key;
-    ssh::SshKey ssh_private_key;
+    ssh::SSHKey ssh_private_key;
     Protocol::Secure security = Protocol::Secure::Disable;
     Protocol::Compression compression = Protocol::Compression::Enable;
     ConnectionTimeouts timeouts;

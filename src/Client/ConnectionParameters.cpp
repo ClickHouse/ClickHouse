@@ -78,7 +78,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
                 passphrase = result;
         }
 
-        ssh::SshKey key = ssh::SshKeyFactory::makePrivateFromFile(filename, passphrase);
+        ssh::SSHKey key = ssh::SSHKeyFactory::makePrivateFromFile(filename, passphrase);
         if (!key.isPrivate())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found public key in file: {} but expected private", filename);
 

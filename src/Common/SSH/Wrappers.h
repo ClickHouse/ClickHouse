@@ -9,63 +9,54 @@ using ssh_key = struct ssh_key_struct *;
 namespace ssh
 {
 
-class SshKeyFactory;
+class SSHKeyFactory;
 
-class SshKey
+class SSHKey
 {
 public:
-    SshKey() = default;
+    SSHKey() = default;
+    ~SSHKey();
 
-    bool isEmpty() { return key == nullptr; }
-
-    SshKey(const SshKey & other);
-
-    SshKey & operator=(const SshKey & other);
-
-    SshKey(SshKey && other) noexcept
+    SSHKey(const SSHKey & other);
+    SSHKey(SSHKey && other) noexcept
     {
         key = other.key;
         other.key = nullptr;
     }
+    SSHKey & operator=(const SSHKey & other);
+    SSHKey & operator=(SSHKey && other) noexcept;
 
-    SshKey & operator=(SshKey && other) noexcept;
-
+    bool isEmpty() { return key == nullptr; }
     String signString(std::string_view input) const;
-
     bool verifySignature(std::string_view signature, std::string_view original) const;
 
     bool isPublic() const;
-
     bool isPrivate() const;
 
-    ~SshKey();
-
-    friend SshKeyFactory;
-
+    friend SSHKeyFactory;
 private:
-    explicit SshKey(ssh_key key_) : key(key_) { }
+    explicit SSHKey(ssh_key key_) : key(key_) { }
     ssh_key key = nullptr;
 };
 
 
-class SshKeyFactory
+class SSHKeyFactory
 {
 public:
-    static SshKey makePrivateFromFile(String filename, String passphrase);
-
-    static SshKey makePublicFromFile(String filename);
-
-    static SshKey makePublicFromBase64(String base64_key, String type_name);
+    /// The check whether the path is allowed to read for ClickHouse has
+    /// (e.g. a file is inside `user_files` directory)
+    /// to be done outside of this functions.
+    static SSHKey makePrivateFromFile(String filename, String passphrase);
+    static SSHKey makePublicFromFile(String filename);
+    static SSHKey makePublicFromBase64(String base64_key, String type_name);
 };
 
-
 }
-
 
 #else
 namespace ssh
 {
-class SshKey
+class SSHKey
 {
 public:
     bool isEmpty() { return true; }

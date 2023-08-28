@@ -74,15 +74,11 @@ namespace
     }
 
 #if USE_SSL
-    bool checkSshSignature(const std::vector<ssh::SshKey>& keys, std::string_view signature, std::string_view original)
+    bool checkSshSignature(const std::vector<ssh::SSHKey> & keys, std::string_view signature, std::string_view original)
     {
-        for (const ssh::SshKey& key: keys)
-        {
+        for (const auto & key: keys)
             if (key.isPublic() && key.verifySignature(signature, original))
-            {
                 return true;
-            }
-        }
         return false;
     }
 #endif
