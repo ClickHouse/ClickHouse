@@ -100,7 +100,9 @@ set(libssh_SRCS
     ${LIB_SOURCE_DIR}/src/libcrypto.c
     ${LIB_SOURCE_DIR}/src/dh_crypto.c
 )
-if(OPENSSL_VERSION VERSION_LESS "1.1.0")
+
+# see the comment on s390x in libssh-cmake/CMakeLists.txt
+if(OPENSSL_VERSION VERSION_LESS "1.1.0" AND NOT ARCH_S390X)
     set(libssh_SRCS ${libssh_SRCS} ${LIB_SOURCE_DIR}/src/libcrypto-compat.c)
 endif()
 
@@ -115,7 +117,6 @@ ${LIB_SOURCE_DIR}/src/bind_config.c
 
 add_library(_ssh STATIC ${libssh_SRCS})
 
-message(STATUS "Libssh links to: ${LIBSSH_LINK_LIBRARIES}")
 target_include_directories(_ssh PRIVATE ${LIB_BINARY_DIR})
 target_include_directories(_ssh PUBLIC "${LIB_SOURCE_DIR}/include" "${LIB_BINARY_DIR}/include")
 target_link_libraries(_ssh
@@ -138,6 +139,3 @@ set_target_properties(_ssh
       DEFINE_SYMBOL
         LIBSSH_EXPORTS
 )
-
-
-message(STATUS "Threads_FOUND=${Threads_FOUND}")

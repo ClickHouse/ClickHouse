@@ -40,24 +40,31 @@ set(WITH_SYMBOL_VERSIONING OFF)
 set(WITH_SERVER ON)
 
 include(IncludeSources.cmake)
-if ("${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "ppc64le")
-    target_include_directories(_ssh PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/libssh-cmake/linux/ppc64le")
-elseif (OS_LINUX)
-    if (USE_MUSL)
-        target_include_directories(_ssh PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/libssh-cmake/linux/x86-64-musl")
-    else()
-        target_include_directories(_ssh PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/libssh-cmake/linux/x86-64")
-    endif()
+if (OS_LINUX)
+    if (ARCH_AMD64)
+        if (USE_MUSL)
+            target_include_directories(_ssh PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/libssh-cmake/linux/x86-64-musl")
+        else()
+            target_include_directories(_ssh PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/libssh-cmake/linux/x86-64")
+        endif ()
+    elseif (ARCH_PPC64LE)
+        target_include_directories(_ssh PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/libssh-cmake/linux/ppc64le")
+    elseif (ARCH_S390X)
+        # Like ppc64le but with HAVE_OPENSSL_FIPS_MODE undefined. This is because the OpenSSL used by s390x doesn't support
+        # FIPS_mode(). Besides that, the custom s390x/config.h only exists to make things compile without additional ifdefs.
+        # With high probability, libssl with OpenSSL on s390x is broken.
+        target_include_directories(_ssh PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/libssh-cmake/linux/s390x")
+    else ()
+        message(FATAL_ERROR "Platform is not supported")
+    endif ()
 elseif (OS_DARWIN)
     target_include_directories(_ssh PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/libssh-cmake/darwin")
 elseif (OS_FREEBSD)
     target_include_directories(_ssh PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/libssh-cmake/freebsd")
+else ()
+    message(FATAL_ERROR "Platform is not supported")
 endif()
+
 configure_file(${LIB_SOURCE_DIR}/include/libssh/libssh_version.h.cmake
                ${LIB_BINARY_DIR}/include/libssh/libssh_version.h
                @ONLY)
-
-
-message(STATUS "********************************************")
-message(STATUS "********** ${PROJECT_NAME} configured: **********")
-message(STATUS "********************************************")
