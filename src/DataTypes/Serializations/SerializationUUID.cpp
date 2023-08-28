@@ -155,10 +155,4 @@ void SerializationUUID::deserializeBinaryBulk(IColumn & column, ReadBuffer & ist
     x.resize(initial_size + size / sizeof(UUID));
 }
 
-void SerializationUUID::serializeTextMarkdown(
-    const DB::IColumn & column, size_t row_num, DB::WriteBuffer & ostr, const DB::FormatSettings & settings) const
-{
-    serializeTextEscaped(column, row_num, ostr, settings);
-}
-
 }

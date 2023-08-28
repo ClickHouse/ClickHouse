@@ -82,11 +82,4 @@ void SerializationDate32::deserializeTextCSV(IColumn & column, ReadBuffer & istr
 SerializationDate32::SerializationDate32(const DateLUTImpl & time_zone_) : time_zone(time_zone_)
 {
 }
-
-void SerializationDate32::serializeTextMarkdown(
-    const DB::IColumn & column, size_t row_num, DB::WriteBuffer & ostr, const DB::FormatSettings & settings) const
-{
-    serializeTextEscaped(column, row_num, ostr, settings);
-}
-
 }

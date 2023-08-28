@@ -206,11 +206,4 @@ void SerializationInterval::serializeTextRaw(const IColumn & column, size_t row,
 {
     dispatch(&ISerialization::serializeTextRaw, settings.interval.output_format, column, row, ostr, settings);
 }
-
-void SerializationInterval::serializeTextMarkdown(
-    const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeTextEscaped(column, row, ostr, settings);
-}
-
 }
