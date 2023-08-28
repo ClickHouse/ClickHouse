@@ -379,7 +379,7 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
             constraints->children.push_back(elem);
         else if (elem->as<ASTProjectionDeclaration>())
             projections->children.push_back(elem);
-        else if (elem->as<ASTForeignKeyDeclaration>()) 
+        else if (elem->as<ASTForeignKeyDeclaration>())
         {
             /// Ignore the foreign key node
             continue;

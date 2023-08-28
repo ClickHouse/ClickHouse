@@ -15,7 +15,7 @@ public:
 
     String getID(char) const override { return "Foreign Key"; }
 
-    ASTPtr clone() const override 
+    ASTPtr clone() const override
     {
         auto res = std::make_shared<ASTForeignKeyDeclaration>();
         res->name = name;
