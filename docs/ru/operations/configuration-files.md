@@ -122,16 +122,14 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85
 ```
 
-## Скрытие {#hidden}
-
-Вы можете использовать  `hidden` аттрибут для скрытие некоторых элементов в файле предобработки.
+Даже с применённым шифрованием в файле предобработки элементы все равно сохраняются в незашифрованном виде. В случае если это является проблемой, мы предлагаем две альтернативы: или установить разрешения на файл предобработки 600 или использовать аттрибут `hide_in_preprocessed`.
 
 Пример:
 
 ```xml
 <clickhouse>
 
-    <interserver_http_credentials hidden="true">
+    <interserver_http_credentials hide_in_preprocessed="true">
         <user>admin</user>
         <password>secret</password>
     </interserver_http_credentials>
