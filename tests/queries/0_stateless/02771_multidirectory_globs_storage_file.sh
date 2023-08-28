@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-replicated-database, no-parallel
 
-#SELECT *, _file FROM file('02771/dir?/{subdir?1/data1,subdir2?/data2}.csv', CSV) WHERE _file == 'data1.csv';
-#SELECT *, _file FROM file('02771/dir?/{subdir?1/data1,subdir2?/data2}.csv', CSV) WHERE _file == 'data2.csv';
-
 set -eu
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
