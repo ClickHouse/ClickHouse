@@ -93,9 +93,9 @@ SELECT '--';
 
 -- check illegal queries
 
-SELECT * FROM t1 JOIN t2 ON isNotDistinctFrom(); -- { serverError SYNTAX_ERROR }
-SELECT * FROM t1 JOIN t2 ON isNotDistinctFrom(t1.a); -- { serverError SYNTAX_ERROR }
-SELECT * FROM t1 JOIN t2 ON isNotDistinctFrom(t1.a, t2.a, t2.b); -- { serverError SYNTAX_ERROR }
+SELECT * FROM t1 JOIN t2 ON isNotDistinctFrom(); -- { serverError SYNTAX_ERROR,NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT * FROM t1 JOIN t2 ON isNotDistinctFrom(t1.a); -- { serverError SYNTAX_ERROR,NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT * FROM t1 JOIN t2 ON isNotDistinctFrom(t1.a, t2.a, t2.b); -- { serverError SYNTAX_ERROR,NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 SELECT isNotDistinctFrom(a) from t1; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT isNotDistinctFrom(a, b) from t1; -- { serverError NOT_IMPLEMENTED }

@@ -11,7 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /**
@@ -41,7 +41,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & ) const override { return std::make_shared<DataTypeUInt8>();}
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeUInt8>(); }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr &, size_t /* rows_count */) const override
     {

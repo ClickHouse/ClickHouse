@@ -1,12 +1,11 @@
 #pragma once
 
 #include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <Columns/ColumnTuple.h>
-#include <Interpreters/Context.h>
-#include <memory>
 
+#include <Columns/ColumnTuple.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Functions/FunctionFactory.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -24,8 +23,8 @@ class FunctionTuple : public IFunction
 public:
     static constexpr auto name = "tuple";
 
-    /// [[maybe_unused]]: false positive warning `unused-member-function`
-    [[maybe_unused]] static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTuple>(); }
+    /// maybe_unused: false-positive
+    [[ maybe_unused ]] static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTuple>(); }
 
     String getName() const override { return name; }
 
@@ -44,9 +43,28 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments.empty())
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override;
+        return std::make_shared<DataTypeTuple>(arguments);
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    {
+        size_t tuple_size = arguments.size();
+        Columns tuple_columns(tuple_size);
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            /** If tuple is mixed of constant and not constant columns,
+                *  convert all to non-constant columns,
+                *  because many places in code expect all non-constant columns in non-constant tuple.
+                */
+            tuple_columns[i] = arguments[i].column->convertToFullColumnIfConst();
+        }
+        return ColumnTuple::create(tuple_columns);
+    }
 };
 
 }
