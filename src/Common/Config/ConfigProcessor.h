@@ -143,7 +143,7 @@ private:
 #endif
 
     void hideRecursive(Poco::XML::Node * config_root);
-    XMLDocumentPtr hideElements(LoadedConfig & loaded_config);
+    XMLDocumentPtr hideElements(XMLDocumentPtr xml_tree);
 
     void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_root, const Poco::XML::Node * with_root);
 
