@@ -22,50 +22,39 @@ def start_cluster():
         cluster.shutdown()
 
 
-def get_profile_event_for_query(node, query, profile_event):
+def check_profile_event_for_query(node, file, profile_event, amount=1):
     node.query("system flush logs")
-    query = query.replace("'", "\\'")
-    return int(
-        node.query(
-            f"select ProfileEvents['{profile_event}'] from system.query_log where query='{query}' and type = 'QueryFinish' order by query_start_time_microseconds desc limit 1"
+    query_pattern = f"file('{file}'".replace("'", "\\'")
+    assert (
+        int(
+            node.query(
+                f"select ProfileEvents['{profile_event}'] from system.query_log where query like '%{query_pattern}%' and query not like '%ProfileEvents%' and type = 'QueryFinish' order by query_start_time_microseconds desc limit 1"
+            )
         )
+        == amount
     )
 
 
 def check_cache_misses(node, file, amount=1):
-    assert (
-        get_profile_event_for_query(
-            node, f"desc file('{file}')", "SchemaInferenceCacheMisses"
-        )
-        == amount
-    )
+    check_profile_event_for_query(node, file, "SchemaInferenceCacheMisses", amount)
 
 
 def check_cache_hits(node, file, amount=1):
-    assert (
-        get_profile_event_for_query(
-            node, f"desc file('{file}')", "SchemaInferenceCacheHits"
-        )
-        == amount
-    )
+    check_profile_event_for_query(node, file, "SchemaInferenceCacheHits", amount)
 
 
 def check_cache_invalidations(node, file, amount=1):
-    assert (
-        get_profile_event_for_query(
-            node, f"desc file('{file}')", "SchemaInferenceCacheInvalidations"
-        )
-        == amount
+    check_profile_event_for_query(
+        node, file, "SchemaInferenceCacheInvalidations", amount
     )
 
 
 def check_cache_evictions(node, file, amount=1):
-    assert (
-        get_profile_event_for_query(
-            node, f"desc file('{file}')", "SchemaInferenceCacheEvictions"
-        )
-        == amount
-    )
+    check_profile_event_for_query(node, file, "SchemaInferenceCacheEvictions", amount)
+
+
+def check_cache_num_rows_hits(node, file, amount=1):
+    check_profile_event_for_query(node, file, "SchemaInferenceCacheNumRowsHits", amount)
 
 
 def check_cache(node, expected_files):
@@ -149,3 +138,62 @@ def test(start_cluster):
 
     node.query("desc file('data*.jsonl')")
     check_cache_misses(node, "data*.jsonl", 4)
+
+    node.query("system drop schema cache")
+    check_cache(node, [])
+
+    node.query("insert into function file('data.csv') select * from numbers(100)")
+    time.sleep(1)
+
+    res = node.query("select count() from file('data.csv', auto, 'x UInt64')")
+    assert int(res) == 100
+    check_cache(node, ["data.csv"])
+    check_cache_misses(node, "data.csv")
+
+    res = node.query("select count() from file('data.csv', auto, 'x UInt64')")
+    assert int(res) == 100
+    check_cache_hits(node, "data.csv")
+
+    node.query(
+        "insert into function file('data.csv', auto, 'x UInt64') select * from numbers(100)"
+    )
+    time.sleep(1)
+
+    res = node.query("select count() from file('data.csv', auto, 'x UInt64')")
+    assert int(res) == 200
+    check_cache_invalidations(node, "data.csv")
+
+    node.query("insert into function file('data1.csv') select * from numbers(100)")
+    time.sleep(1)
+
+    res = node.query("select count() from file('data1.csv', auto, 'x UInt64')")
+    assert int(res) == 100
+    check_cache(node, ["data.csv", "data1.csv"])
+    check_cache_misses(node, "data1.csv")
+
+    res = node.query("select count() from file('data1.csv', auto, 'x UInt64')")
+    assert int(res) == 100
+    check_cache_hits(node, "data1.csv")
+
+    res = node.query("select count() from file('data*.csv', auto, 'x UInt64')")
+    assert int(res) == 300
+    check_cache_hits(node, "data*.csv", 2)
+
+    node.query("system drop schema cache for file")
+    check_cache(node, [])
+
+    res = node.query("select count() from file('data*.csv', auto, 'x UInt64')")
+    assert int(res) == 300
+    check_cache_misses(node, "data*.csv", 2)
+
+    node.query("system drop schema cache for file")
+    check_cache(node, [])
+
+    node.query("insert into function file('data.parquet') select * from numbers(100)")
+    time.sleep(1)
+
+    res = node.query("select count() from file('data.parquet')")
+    assert int(res) == 100
+    check_cache_misses(node, "data.parquet")
+    check_cache_hits(node, "data.parquet")
+    check_cache_num_rows_hits(node, "data.parquet")

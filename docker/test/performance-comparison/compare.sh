@@ -644,7 +644,7 @@ function report
 rm -r report ||:
 mkdir report report/tmp ||:
 
-rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv run-errors.tsv ||:
+rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv all-queries.tsv run-errors.tsv ||:
 
 cat analyze/errors.log >> report/errors.log ||:
 cat profile-errors.log >> report/errors.log ||:
@@ -809,12 +809,6 @@ create table test_perf_changes_report engine File(TSV, 'report/test-perf-changes
 create view total_client_time_per_query as select *
     from file('analyze/client-times.tsv', TSV,
         'test text, query_index int, client float, server float');
-
-create table slow_on_client_report engine File(TSV, 'report/slow-on-client.tsv')
-    as select client, server, round(client/server, 3) p,
-        test, query_display_name
-    from total_client_time_per_query left join query_display_names using (test, query_index)
-    where p > round(1.02, 3) order by p desc;
 
 create table wall_clock_time_per_test engine Memory as select *
     from file('wall-clock-times.tsv', TSV, 'test text, real float, user float, system float');

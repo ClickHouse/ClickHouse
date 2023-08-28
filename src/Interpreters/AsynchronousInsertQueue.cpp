@@ -251,6 +251,7 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
             return PushResult
             {
                 .status = PushResult::TOO_MUCH_DATA,
+                .future = {},
                 .insert_data_buffer = std::make_unique<ConcatReadBuffer>(std::move(buffers)),
             };
         }
@@ -318,6 +319,7 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     {
         .status = PushResult::OK,
         .future = std::move(insert_future),
+        .insert_data_buffer = nullptr,
     };
 }
 

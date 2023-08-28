@@ -101,6 +101,12 @@ bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
     out.close();
     err.close();
 
+    for (auto & [_, fd] : write_fds)
+        fd.close();
+
+    for (auto & [_, fd] : read_fds)
+        fd.close();
+
     return waitForPid(pid, timeout_in_seconds);
 }
 
@@ -286,6 +292,12 @@ int ShellCommand::tryWait()
     in.close();
     out.close();
     err.close();
+
+    for (auto & [_, fd] : write_fds)
+        fd.close();
+
+    for (auto & [_, fd] : read_fds)
+        fd.close();
 
     LOG_TRACE(getLogger(), "Will wait for shell command pid {}", pid);
 
