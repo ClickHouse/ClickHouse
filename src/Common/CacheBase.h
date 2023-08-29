@@ -51,11 +51,10 @@ public:
     {
         auto on_weight_loss_function = [&](size_t weight_loss) { onRemoveOverflowWeightLoss(weight_loss); };
 
+        static constexpr std::string_view default_cache_policy = "SLRU";
+
         if (cache_policy_name.empty())
-        {
-            static constexpr auto default_cache_policy = "SLRU";
             cache_policy_name = default_cache_policy;
-        }
 
         if (cache_policy_name == "LRU")
         {
@@ -151,7 +150,7 @@ public:
         std::lock_guard cache_lock(mutex);
 
         /// Insert the new value only if the token is still in present in insert_tokens.
-        /// (The token may be absent because of a concurrent clear() call).
+        /// (The token may be absent because of a concurrent reset() call).
         bool result = false;
         auto token_it = insert_tokens.find(key);
         if (token_it != insert_tokens.end() && token_it->second.get() == token)
@@ -179,13 +178,13 @@ public:
         return cache_policy->dump();
     }
 
-    void clear()
+    void reset()
     {
         std::lock_guard lock(mutex);
         insert_tokens.clear();
         hits = 0;
         misses = 0;
-        cache_policy->clear(lock);
+        cache_policy->reset(lock);
     }
 
     void remove(const Key & key)

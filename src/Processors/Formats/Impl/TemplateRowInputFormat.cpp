@@ -490,7 +490,7 @@ TemplateSchemaReader::TemplateSchemaReader(
     setColumnNames(row_format.column_names);
 }
 
-std::optional<DataTypes> TemplateSchemaReader::readRowAndGetDataTypes()
+DataTypes TemplateSchemaReader::readRowAndGetDataTypes()
 {
     if (first_row)
         format_reader.readPrefix();

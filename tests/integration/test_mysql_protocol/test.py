@@ -207,7 +207,7 @@ def test_mysql_client(started_cluster):
     expected_msg = "\n".join(
         [
             "mysql: [Warning] Using a password on the command line interface can be insecure.",
-            "ERROR 81 (00000) at line 1: Code: 81. DB::Exception: Database system2 does not exist",
+            "ERROR 81 (00000) at line 1: Code: 81. DB::Exception: Database system2 doesn't exist",
         ]
     )
     assert stderr[: len(expected_msg)].decode() == expected_msg
@@ -369,22 +369,6 @@ def test_mysql_replacement_query(started_cluster):
     assert stdout.decode().lower() in [
         "currentdatabase()\ndefault\n",
         "database()\ndefault\n",
-    ]
-
-    # SELECT SCHEMA().
-    code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
-        """
-        mysql --protocol tcp -h {host} -P {port} default -u default
-        --password=123 -e "select schema();"
-    """.format(
-            host=started_cluster.get_instance_ip("node"), port=server_port
-        ),
-        demux=True,
-    )
-    assert code == 0
-    assert stdout.decode().lower() in [
-        "currentdatabase()\ndefault\n",
-        "schema()\ndefault\n",
     ]
 
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
@@ -637,7 +621,7 @@ def test_python_client(started_cluster):
         client.select_db("system2")
 
     assert exc_info.value.args[1].startswith(
-        "Code: 81. DB::Exception: Database system2 does not exist"
+        "Code: 81. DB::Exception: Database system2 doesn't exist"
     ), exc_info.value.args[1]
 
     cursor = client.cursor(pymysql.cursors.DictCursor)
@@ -662,7 +646,7 @@ def test_golang_client(started_cluster, golang_container):
     )
 
     assert code == 1
-    assert stderr.decode() == "Error 81: Database abc does not exist\n"
+    assert stderr.decode() == "Error 81: Database abc doesn't exist\n"
 
     code, (stdout, stderr) = golang_container.exec_run(
         "./main --host {host} --port {port} --user default --password 123 --database "
@@ -695,7 +679,7 @@ def test_php_client(started_cluster, php_container):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "tables\ntables\ntables\n"
+    assert stdout.decode() == "tables\ntables\n"
 
     code, (stdout, stderr) = php_container.exec_run(
         "php -f test_ssl.php {host} {port} default 123".format(
@@ -704,7 +688,7 @@ def test_php_client(started_cluster, php_container):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "tables\ntables\ntables\n"
+    assert stdout.decode() == "tables\ntables\n"
 
     code, (stdout, stderr) = php_container.exec_run(
         "php -f test.php {host} {port} user_with_double_sha1 abacaba".format(
@@ -713,7 +697,7 @@ def test_php_client(started_cluster, php_container):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "tables\ntables\ntables\n"
+    assert stdout.decode() == "tables\ntables\n"
 
     code, (stdout, stderr) = php_container.exec_run(
         "php -f test_ssl.php {host} {port} user_with_double_sha1 abacaba".format(
@@ -722,7 +706,7 @@ def test_php_client(started_cluster, php_container):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "tables\ntables\ntables\n"
+    assert stdout.decode() == "tables\ntables\n"
 
 
 def test_mysqljs_client(started_cluster, nodejs_container):

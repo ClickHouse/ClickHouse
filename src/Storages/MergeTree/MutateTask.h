@@ -45,7 +45,7 @@ public:
         return promise.get_future();
     }
 
-    const HardlinkedFiles & getHardlinkedFiles() const;
+    const MergeTreeData::HardlinkedFiles & getHardlinkedFiles() const;
 
 private:
 

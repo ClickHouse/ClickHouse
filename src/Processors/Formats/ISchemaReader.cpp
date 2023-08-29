@@ -115,24 +115,21 @@ NamesAndTypesList IRowSchemaReader::readSchema()
             "Cannot read rows to determine the schema, the maximum number of rows (or bytes) to read is set to 0. "
             "Most likely setting input_format_max_rows_to_read_for_schema_inference or input_format_max_bytes_to_read_for_schema_inference is set to 0");
 
-    auto data_types_maybe = readRowAndGetDataTypes();
+    DataTypes data_types = readRowAndGetDataTypes();
 
     /// Check that we read at list one column.
-    if (!data_types_maybe)
+    if (data_types.empty())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot read rows from the data");
 
-    DataTypes data_types = std::move(*data_types_maybe);
-
     /// If column names weren't set, use default names 'c1', 'c2', ...
-    bool use_default_column_names = column_names.empty();
-    if (use_default_column_names)
+    if (column_names.empty())
     {
         column_names.reserve(data_types.size());
         for (size_t i = 0; i != data_types.size(); ++i)
             column_names.push_back("c" + std::to_string(i + 1));
     }
     /// If column names were set, check that the number of names match the number of types.
-    else if (column_names.size() != data_types.size() && !allowVariableNumberOfColumns())
+    else if (column_names.size() != data_types.size())
     {
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
@@ -140,9 +137,6 @@ NamesAndTypesList IRowSchemaReader::readSchema()
     }
     else
     {
-        if (column_names.size() != data_types.size())
-            data_types.resize(column_names.size());
-
         std::unordered_set<std::string_view> names_set;
         for (const auto & name : column_names)
         {
@@ -161,39 +155,13 @@ NamesAndTypesList IRowSchemaReader::readSchema()
 
     for (rows_read = 1; rows_read < max_rows_to_read && in.count() < max_bytes_to_read; ++rows_read)
     {
-        auto new_data_types_maybe = readRowAndGetDataTypes();
-        if (!new_data_types_maybe)
+        DataTypes new_data_types = readRowAndGetDataTypes();
+        if (new_data_types.empty())
             /// We reached eof.
             break;
 
-        DataTypes new_data_types = std::move(*new_data_types_maybe);
-
         if (new_data_types.size() != data_types.size())
-        {
-            if (!allowVariableNumberOfColumns())
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Rows have different amount of values");
-
-            if (use_default_column_names)
-            {
-                /// Current row contains new columns, add new default names.
-                if (new_data_types.size() > data_types.size())
-                {
-                    for (size_t i = data_types.size(); i < new_data_types.size(); ++i)
-                        column_names.push_back("c" + std::to_string(i + 1));
-                    data_types.resize(new_data_types.size());
-                }
-                /// Current row contain less columns than previous rows.
-                else
-                {
-                    new_data_types.resize(data_types.size());
-                }
-            }
-            /// If names were explicitly set, ignore all extra columns.
-            else
-            {
-                new_data_types.resize(column_names.size());
-            }
-        }
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Rows have different amount of values");
 
         for (field_index = 0; field_index != data_types.size(); ++field_index)
         {

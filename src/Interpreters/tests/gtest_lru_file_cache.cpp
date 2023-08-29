@@ -209,7 +209,7 @@ TEST_F(FileCacheTest, get)
 
     {
         std::cerr << "Step 1\n";
-        auto cache = DB::FileCache("1", settings);
+        auto cache = DB::FileCache(settings);
         cache.initialize();
         auto key = cache.createKeyForPath("key1");
 
@@ -470,7 +470,6 @@ TEST_F(FileCacheTest, get)
 
                 auto & file_segment2 = get(holder2, 2);
                 ASSERT_TRUE(file_segment2.getOrSetDownloader() != FileSegment::getCallerId());
-                ASSERT_EQ(file_segment2.state(), State::DOWNLOADING);
 
                 {
                     std::lock_guard lock(mutex);
@@ -479,7 +478,8 @@ TEST_F(FileCacheTest, get)
                 cv.notify_one();
 
                 file_segment2.wait(file_segment2.range().right);
-                ASSERT_EQ(file_segment2.getDownloadedSize(false), file_segment2.range().size());
+                file_segment2.complete();
+                ASSERT_TRUE(file_segment2.state() == State::DOWNLOADED);
             });
 
             {
@@ -488,7 +488,7 @@ TEST_F(FileCacheTest, get)
             }
 
             download(file_segment);
-            ASSERT_EQ(file_segment.state(), State::DOWNLOADED);
+            ASSERT_TRUE(file_segment.state() == State::DOWNLOADED);
 
             other_1.join();
 
@@ -544,8 +544,8 @@ TEST_F(FileCacheTest, get)
                 cv.notify_one();
 
                 file_segment2.wait(file_segment2.range().left);
-                ASSERT_EQ(file_segment2.state(), DB::FileSegment::State::EMPTY);
-                ASSERT_EQ(file_segment2.getOrSetDownloader(), DB::FileSegment::getCallerId());
+                ASSERT_TRUE(file_segment2.state() == DB::FileSegment::State::PARTIALLY_DOWNLOADED);
+                ASSERT_TRUE(file_segment2.getOrSetDownloader() == DB::FileSegment::getCallerId());
                 download(file_segment2);
             });
 
@@ -568,7 +568,7 @@ TEST_F(FileCacheTest, get)
     {
         /// Test LRUCache::restore().
 
-        auto cache2 = DB::FileCache("2", settings);
+        auto cache2 = DB::FileCache(settings);
         cache2.initialize();
         auto key = cache2.createKeyForPath("key1");
 
@@ -587,7 +587,7 @@ TEST_F(FileCacheTest, get)
         settings2.max_file_segment_size = 10;
         settings2.base_path = caches_dir / "cache2";
         fs::create_directories(settings2.base_path);
-        auto cache2 = DB::FileCache("3", settings2);
+        auto cache2 = DB::FileCache(settings2);
         cache2.initialize();
         auto key = cache2.createKeyForPath("key1");
 
@@ -600,10 +600,11 @@ TEST_F(FileCacheTest, get)
 
     std::cerr << "Step 13\n";
     {
-        /// Test delayed cleanup
+        /// Test delated cleanup
 
-        auto cache = FileCache("4", settings);
+        auto cache = FileCache(settings);
         cache.initialize();
+        cache.cleanup();
         const auto key = cache.createKeyForPath("key10");
         const auto key_path = cache.getPathInLocalCache(key);
 
@@ -618,15 +619,21 @@ TEST_F(FileCacheTest, get)
 
         cache.removeAllReleasable();
         ASSERT_EQ(cache.getUsedCacheSize(), 0);
-        ASSERT_TRUE(!fs::exists(key_path));
+        ASSERT_TRUE(fs::exists(key_path));
         ASSERT_TRUE(!fs::exists(cache.getPathInLocalCache(key, 0, FileSegmentKind::Regular)));
+
+        cache.cleanup();
+        ASSERT_TRUE(!fs::exists(key_path));
+        ASSERT_TRUE(!fs::exists(fs::path(key_path).parent_path()));
     }
 
     std::cerr << "Step 14\n";
     {
         /// Test background thread delated cleanup
 
-        auto cache = DB::FileCache("5", settings);
+        auto settings2{settings};
+        settings2.delayed_cleanup_interval_ms = 0;
+        auto cache = DB::FileCache(settings2);
         cache.initialize();
         const auto key = cache.createKeyForPath("key10");
         const auto key_path = cache.getPathInLocalCache(key);
@@ -655,7 +662,7 @@ TEST_F(FileCacheTest, writeBuffer)
     settings.max_file_segment_size = 5;
     settings.base_path = cache_base_path;
 
-    FileCache cache("6", settings);
+    FileCache cache(settings);
     cache.initialize();
 
     auto write_to_cache = [&cache](const String & key, const Strings & data, bool flush)
@@ -760,7 +767,7 @@ TEST_F(FileCacheTest, temporaryData)
     settings.max_file_segment_size = 1_KiB;
     settings.base_path = cache_base_path;
 
-    DB::FileCache file_cache("7", settings);
+    DB::FileCache file_cache(settings);
     file_cache.initialize();
 
     auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(nullptr, &file_cache, 0);
@@ -901,7 +908,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     wb->next();
     wb->finalize();
 
-    auto cache = std::make_shared<DB::FileCache>("8", settings);
+    auto cache = std::make_shared<DB::FileCache>(settings);
     cache->initialize();
     auto key = cache->createKeyForPath(file_path);
 

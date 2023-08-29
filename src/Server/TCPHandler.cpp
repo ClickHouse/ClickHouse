@@ -184,17 +184,14 @@ void TCPHandler::runImpl()
     try
     {
         receiveHello();
-
-        /// In interserver mode queries are executed without a session context.
-        if (!is_interserver_mode)
-            session->makeSessionContext();
-
         sendHello();
         if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             receiveAddendum();
 
-        if (!is_interserver_mode)
+        if (!is_interserver_mode) /// In interserver mode queries are executed without a session context.
         {
+            session->makeSessionContext();
+
             /// If session created, then settings in session context has been updated.
             /// So it's better to update the connection settings for flexibility.
             extractConnectionSettingsFromContext(session->sessionContext());
@@ -263,17 +260,6 @@ void TCPHandler::runImpl()
         std::unique_ptr<DB::Exception> exception;
         bool network_error = false;
         bool query_duration_already_logged = false;
-        auto log_query_duration = [this, &query_duration_already_logged]()
-        {
-            if (query_duration_already_logged)
-                return;
-            query_duration_already_logged = true;
-            auto elapsed_sec = state.watch.elapsedSeconds();
-            /// We already logged more detailed info if we read some rows
-            if (elapsed_sec < 1.0 && state.progress.read_rows)
-                return;
-            LOG_DEBUG(log, "Processed in {} sec.", elapsed_sec);
-        };
 
         try
         {
@@ -503,7 +489,9 @@ void TCPHandler::runImpl()
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
             query_scope->logPeakMemoryUsage();
-            log_query_duration();
+
+            LOG_DEBUG(log, "Processed in {} sec.", state.watch.elapsedSeconds());
+            query_duration_already_logged = true;
 
             if (state.is_connection_closed)
                 break;
@@ -625,7 +613,10 @@ void TCPHandler::runImpl()
             LOG_WARNING(log, "Can't skip data packets after query failure.");
         }
 
-        log_query_duration();
+        if (!query_duration_already_logged)
+        {
+            LOG_DEBUG(log, "Processed in {} sec.", state.watch.elapsedSeconds());
+        }
 
         /// QueryState should be cleared before QueryScope, since otherwise
         /// the MemoryTracker will be wrong for possible deallocations.
@@ -1186,11 +1177,21 @@ std::unique_ptr<Session> TCPHandler::makeSession()
 
     auto res = std::make_unique<Session>(server.context(), interface, socket().secure(), certificate);
 
-    res->setForwardedFor(forwarded_for);
-    res->setClientName(client_name);
-    res->setClientVersion(client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
-    res->setConnectionClientVersion(client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
-    res->setClientInterface(interface);
+    auto & client_info = res->getClientInfo();
+    client_info.forwarded_for = forwarded_for;
+    client_info.client_name = client_name;
+    client_info.client_version_major = client_version_major;
+    client_info.client_version_minor = client_version_minor;
+    client_info.client_version_patch = client_version_patch;
+    client_info.client_tcp_protocol_version = client_tcp_protocol_version;
+
+    client_info.connection_client_version_major = client_version_major;
+    client_info.connection_client_version_minor = client_version_minor;
+    client_info.connection_client_version_patch = client_version_patch;
+    client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
+
+    client_info.quota_key = quota_key;
+    client_info.interface = interface;
 
     return res;
 }
@@ -1252,7 +1253,7 @@ void TCPHandler::receiveHello()
     }
 
     session = makeSession();
-    const auto & client_info = session->getClientInfo();
+    auto & client_info = session->getClientInfo();
 
 #if USE_SSL
     /// Authentication with SSL user certificate
@@ -1282,10 +1283,11 @@ void TCPHandler::receiveHello()
 void TCPHandler::receiveAddendum()
 {
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY)
+    {
         readStringBinary(quota_key, *in);
-
-    if (!is_interserver_mode)
-        session->setQuotaClientKey(quota_key);
+        if (!is_interserver_mode)
+            session->getClientInfo().quota_key = quota_key;
+    }
 }
 
 
@@ -1309,16 +1311,16 @@ void TCPHandler::receiveUnexpectedHello()
 void TCPHandler::sendHello()
 {
     writeVarUInt(Protocol::Server::Hello, *out);
-    writeStringBinary(VERSION_NAME, *out);
-    writeVarUInt(VERSION_MAJOR, *out);
-    writeVarUInt(VERSION_MINOR, *out);
+    writeStringBinary(DBMS_NAME, *out);
+    writeVarUInt(DBMS_VERSION_MAJOR, *out);
+    writeVarUInt(DBMS_VERSION_MINOR, *out);
     writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
         writeStringBinary(server_display_name, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
-        writeVarUInt(VERSION_PATCH, *out);
+        writeVarUInt(DBMS_VERSION_PATCH, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
     {
         auto rules = server.context()->getAccessControl().getPasswordComplexityRules();
@@ -1598,12 +1600,12 @@ void TCPHandler::receiveQuery()
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         /// Throw an exception if the passed settings violate the constraints.
-        query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
+        query_context->checkSettingsConstraints(settings_changes);
     }
     else
     {
         /// Quietly clamp to the constraints if it's not an initial query.
-        query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
+        query_context->clampToSettingsConstraints(settings_changes);
     }
     query_context->applySettingsChanges(settings_changes);
 
@@ -1903,18 +1905,17 @@ void TCPHandler::sendData(const Block & block)
 {
     initBlockOutput(block);
 
-    size_t prev_bytes_written_out = out->count();
-    size_t prev_bytes_written_compressed_out = state.maybe_compressed_out->count();
+    auto prev_bytes_written_out = out->count();
+    auto prev_bytes_written_compressed_out = state.maybe_compressed_out->count();
 
     try
     {
         /// For testing hedged requests
         if (unknown_packet_in_send_data)
         {
-            constexpr UInt64 marker = (1ULL<<63) - 1;
             --unknown_packet_in_send_data;
             if (unknown_packet_in_send_data == 0)
-                writeVarUInt(marker, *out);
+                writeVarUInt(VAR_UINT_MAX, *out);
         }
 
         writeVarUInt(Protocol::Server::Data, *out);

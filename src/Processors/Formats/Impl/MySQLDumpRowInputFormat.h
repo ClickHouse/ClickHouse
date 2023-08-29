@@ -33,7 +33,7 @@ public:
 
 private:
     NamesAndTypesList readSchema() override;
-    std::optional<DataTypes> readRowAndGetDataTypes() override;
+    DataTypes readRowAndGetDataTypes() override;
 
     String table_name;
 };

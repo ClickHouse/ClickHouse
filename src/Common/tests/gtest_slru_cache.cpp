@@ -1,4 +1,5 @@
 #include <iomanip>
+#include <iostream>
 #include <gtest/gtest.h>
 #include <Common/CacheBase.h>
 
@@ -92,7 +93,7 @@ TEST(SLRUCache, removeFromProtected)
     ASSERT_TRUE(value == nullptr);
 }
 
-TEST(SLRUCache, clear)
+TEST(SLRUCache, reset)
 {
     using SimpleCacheBase = DB::CacheBase<int, int>;
     auto slru_cache = SimpleCacheBase("SLRU", /*max_size_in_bytes=*/10, /*max_count=*/0, /*size_ratio*/0.5);
@@ -101,7 +102,7 @@ TEST(SLRUCache, clear)
 
     slru_cache.set(2, std::make_shared<int>(4)); /// add to protected_queue
 
-    slru_cache.clear();
+    slru_cache.reset();
 
     auto value = slru_cache.get(1);
     ASSERT_TRUE(value == nullptr);

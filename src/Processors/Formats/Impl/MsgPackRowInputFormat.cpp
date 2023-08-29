@@ -326,8 +326,8 @@ static void insertUUID(IColumn & column, DataTypePtr type, const char * value, s
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack UUID into column with type {}.", type->getName());
     ReadBufferFromMemory buf(value, size);
     UUID uuid;
-    readBinaryBigEndian(UUIDHelpers::getHighBytes(uuid), buf);
-    readBinaryBigEndian(UUIDHelpers::getLowBytes(uuid), buf);
+    readBinaryBigEndian(uuid.toUnderType().items[0], buf);
+    readBinaryBigEndian(uuid.toUnderType().items[1], buf);
     assert_cast<ColumnUUID &>(column).insertValue(uuid);
 }
 
@@ -634,7 +634,7 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
     UNREACHABLE();
 }
 
-std::optional<DataTypes> MsgPackSchemaReader::readRowAndGetDataTypes()
+DataTypes MsgPackSchemaReader::readRowAndGetDataTypes()
 {
     if (buf.eof())
         return {};

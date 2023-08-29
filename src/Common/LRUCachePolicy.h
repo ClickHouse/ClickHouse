@@ -7,8 +7,9 @@
 
 namespace DB
 {
-/// Cache policy LRU evicts entries which are not used for a long time. Also see cache policy SLRU for reference.
-/// WeightFunction is a functor that takes Mapped as a parameter and returns "weight" (approximate size) of that value.
+/// Cache policy LRU evicts entries which are not used for a long time.
+/// WeightFunction is a functor that takes Mapped as a parameter and returns "weight" (approximate size)
+/// of that value.
 /// Cache starts to evict entries when their total weight exceeds max_size_in_bytes.
 /// Value weight should not change after insertion.
 /// To work with the thread-safe implementation of this class use a class "CacheBase" with first parameter "LRU"
@@ -23,12 +24,11 @@ public:
     using typename Base::OnWeightLossFunction;
 
     /** Initialize LRUCachePolicy with max_size_in_bytes and max_count.
-     *  max_size_in_bytes == 0 means the cache accepts no entries.
       * max_count == 0 means no elements size restrictions.
       */
     LRUCachePolicy(size_t max_size_in_bytes_, size_t max_count_, OnWeightLossFunction on_weight_loss_function_)
         : Base(std::make_unique<NoCachePolicyUserQuota>())
-        , max_size_in_bytes(max_size_in_bytes_)
+        , max_size_in_bytes(std::max(1uz, max_size_in_bytes_))
         , max_count(max_count_)
         , on_weight_loss_function(on_weight_loss_function_)
     {
@@ -49,19 +49,7 @@ public:
         return max_size_in_bytes;
     }
 
-    void setMaxCount(size_t max_count_, std::lock_guard<std::mutex> & /* cache_lock */) override
-    {
-        max_count = max_count_;
-        removeOverflow();
-    }
-
-    void setMaxSize(size_t max_size_in_bytes_, std::lock_guard<std::mutex> & /* cache_lock */) override
-    {
-        max_size_in_bytes = max_size_in_bytes_;
-        removeOverflow();
-    }
-
-    void clear(std::lock_guard<std::mutex> & /* cache_lock */) override
+    void reset(std::lock_guard<std::mutex> & /* cache_lock */) override
     {
         queue.clear();
         cells.clear();
@@ -167,8 +155,8 @@ private:
 
     /// Total weight of values.
     size_t current_size_in_bytes = 0;
-    size_t max_size_in_bytes;
-    size_t max_count;
+    const size_t max_size_in_bytes;
+    const size_t max_count;
 
     WeightFunction weight_function;
     OnWeightLossFunction on_weight_loss_function;
@@ -184,7 +172,10 @@ private:
 
             auto it = cells.find(key);
             if (it == cells.end())
-                std::terminate(); // Queue became inconsistent
+            {
+                // Queue became inconsistent
+                abort();
+            }
 
             const auto & cell = it->second;
 
@@ -199,7 +190,10 @@ private:
         on_weight_loss_function(current_weight_lost);
 
         if (current_size_in_bytes > (1ull << 63))
-            std::terminate(); // Queue became inconsistent
+        {
+            // Queue became inconsistent
+            abort();
+        }
     }
 };
 
