@@ -6154,6 +6154,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
         LOG_DEBUG(log, "Attached part {} as {}", old_name, loaded_parts[i]->name);
 
         results.push_back(PartitionCommandResultInfo{
+            .command_type = "ATTACH PART",
             .partition_id = loaded_parts[i]->info.partition_id,
             .part_name = loaded_parts[i]->name,
             .old_part_name = old_name,

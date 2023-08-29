@@ -136,9 +136,7 @@ add_contrib (aws-cmake
 )
 
 add_contrib (base64-cmake base64)
-if (NOT ARCH_S390X)
 add_contrib (simdjson-cmake simdjson)
-endif()
 add_contrib (rapidjson-cmake rapidjson)
 add_contrib (fastops-cmake fastops)
 add_contrib (libuv-cmake libuv)

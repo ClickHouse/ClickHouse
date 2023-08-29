@@ -618,6 +618,9 @@ class SettingsRandomizer:
                 "America/Mazatlan",
                 "America/Hermosillo",
                 "Mexico/BajaSur",
+                # These timezones had DST transitions on some unusual dates (e.g. 2000-01-15 12:00:00).
+                "Africa/Khartoum",
+                "Africa/Juba",
                 # server default that is randomized across all timezones
                 # NOTE: due to lots of trickery we cannot use empty timezone here, but this should be the same.
                 get_localzone(),
