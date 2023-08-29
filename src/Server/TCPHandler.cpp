@@ -121,7 +121,6 @@ NameToNameMap convertToQueryParameters(const Settings & passed_params)
 // "ClickHouse" or "ClickHouse " was sent with the query message.
 void correctQueryClientInfo(ClientInfo & client_info)
 {
-    
     if (client_info.getVersionNumber() <= VersionNumber(23, 8, 1) &&
         (client_info.client_name == "ClickHouse" || client_info.client_name == "ClickHouse "))
     {
