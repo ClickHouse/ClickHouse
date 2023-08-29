@@ -9,6 +9,7 @@
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Throttler_fwd.h>
+#include <Common/SettingSource.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -85,6 +86,7 @@ struct Progress;
 struct FileProgress;
 class Clusters;
 class QueryCache;
+class ISystemLog;
 class QueryLog;
 class QueryThreadLog;
 class QueryViewsLog;
@@ -134,6 +136,7 @@ using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
+class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 
@@ -200,6 +203,10 @@ using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
+
+class SessionTracker;
+
+struct ServerSettings;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -484,6 +491,7 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
     String getUserScriptsPath() const;
+    String getFilesystemCachesPath() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
@@ -493,6 +501,8 @@ public:
     TemporaryDataOnDiskScopePtr getTempDataOnDisk() const;
     TemporaryDataOnDiskScopePtr getSharedTempDataOnDisk() const;
     void setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_);
+
+    void setFilesystemCachesPath(const String & path);
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
@@ -530,15 +540,11 @@ public:
 
     /// Sets the current user assuming that he/she is already authenticated.
     /// WARNING: This function doesn't check password!
-    void setUser(const UUID & user_id_, bool set_current_profiles_ = true, bool set_current_roles_ = true, bool set_current_database_ = true);
+    void setUser(const UUID & user_id_, const std::optional<const std::vector<UUID>> & current_roles_ = {});
     UserPtr getUser() const;
 
-    void setUserID(const UUID & user_id_);
     std::optional<UUID> getUserID() const;
-
     String getUserName() const;
-
-    void setQuotaKey(String quota_key_);
 
     void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();
@@ -734,11 +740,11 @@ public:
     void applySettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
-    void checkSettingsConstraints(const SettingsProfileElements & profile_elements) const;
-    void checkSettingsConstraints(const SettingChange & change) const;
-    void checkSettingsConstraints(const SettingsChanges & changes) const;
-    void checkSettingsConstraints(SettingsChanges & changes) const;
-    void clampToSettingsConstraints(SettingsChanges & changes) const;
+    void checkSettingsConstraints(const SettingsProfileElements & profile_elements, SettingSource source) const;
+    void checkSettingsConstraints(const SettingChange & change, SettingSource source) const;
+    void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source) const;
+    void checkSettingsConstraints(SettingsChanges & changes, SettingSource source) const;
+    void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source) const;
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to default value
@@ -860,6 +866,8 @@ public:
 
     OvercommitTracker * getGlobalOvercommitTracker() const;
 
+    SessionTracker & getSessionTracker();
+
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
 
@@ -888,7 +896,6 @@ public:
     void setClientProtocolVersion(UInt64 version);
 
 #if USE_ROCKSDB
-    MergeTreeMetadataCachePtr getMergeTreeMetadataCache() const;
     MergeTreeMetadataCachePtr tryGetMergeTreeMetadataCache() const;
 #endif
 
@@ -913,44 +920,38 @@ public:
 
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 
-    /// Create a cache of uncompressed blocks of specified size. This can be done only once.
-    void setUncompressedCache(const String & uncompressed_cache_policy, size_t max_size_in_bytes);
-    std::shared_ptr<UncompressedCache> getUncompressedCache() const;
-    void dropUncompressedCache() const;
+    /// --- Caches ------------------------------------------------------------------------------------------
 
-    /// Create a cache of marks of specified size. This can be done only once.
-    void setMarkCache(const String & mark_cache_policy, size_t cache_size_in_bytes);
+    void setUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
+    void updateUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<UncompressedCache> getUncompressedCache() const;
+    void clearUncompressedCache() const;
+
+    void setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
+    void updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<MarkCache> getMarkCache() const;
-    void dropMarkCache() const;
+    void clearMarkCache() const;
     ThreadPool & getLoadMarksThreadpool() const;
 
-    ThreadPool & getPrefetchThreadpool() const;
-
-    /// Note: prefetchThreadpool is different from threadpoolReader
-    /// in the way that its tasks are - wait for marks to be loaded
-    /// and make a prefetch by putting a read task to threadpoolReader.
-    size_t getPrefetchThreadpoolSize() const;
-
-    /// Create a cache of index uncompressed blocks of specified size. This can be done only once.
-    void setIndexUncompressedCache(size_t max_size_in_bytes);
+    void setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
+    void updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
-    void dropIndexUncompressedCache() const;
+    void clearIndexUncompressedCache() const;
 
-    /// Create a cache of index marks of specified size. This can be done only once.
-    void setIndexMarkCache(size_t cache_size_in_bytes);
+    void setIndexMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
+    void updateIndexMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<MarkCache> getIndexMarkCache() const;
-    void dropIndexMarkCache() const;
+    void clearIndexMarkCache() const;
 
-    /// Create a cache of mapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
-    void setMMappedFileCache(size_t cache_size_in_num_entries);
+    void setMMappedFileCache(size_t max_cache_size_in_num_entries);
+    void updateMMappedFileCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<MMappedFileCache> getMMappedFileCache() const;
-    void dropMMappedFileCache() const;
+    void clearMMappedFileCache() const;
 
-    /// Create a cache of query results for statements which run repeatedly.
-    void setQueryCache(const Poco::Util::AbstractConfiguration & config);
+    void setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows);
     void updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<QueryCache> getQueryCache() const;
-    void dropQueryCache() const;
+    void clearQueryCache() const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
@@ -958,7 +959,16 @@ public:
       *  (when deleting a table - it is necessary, since in its place another can appear)
       * const - because the change in the cache is not considered significant.
       */
-    void dropCaches() const;
+    void clearCaches() const;
+
+    /// -----------------------------------------------------------------------------------------------------
+
+    ThreadPool & getPrefetchThreadpool() const;
+
+    /// Note: prefetchThreadpool is different from threadpoolReader
+    /// in the way that its tasks are - wait for marks to be loaded
+    /// and make a prefetch by putting a read task to threadpoolReader.
+    size_t getPrefetchThreadpoolSize() const;
 
     /// Settings for MergeTree background tasks stored in config.xml
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
@@ -997,6 +1007,9 @@ public:
     void initializeMergeTreeMetadataCache(const String & dir, size_t size);
 #endif
 
+    /// Call after unexpected crash happen.
+    void handleCrash() const;
+
     bool hasTraceCollector() const;
 
     /// Nullptr if the query log is not ready for this moment.
@@ -1015,6 +1028,8 @@ public:
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
+
+    std::vector<ISystemLog *> getSystemLogs() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
@@ -1056,6 +1071,13 @@ public:
     using ConfigReloadCallback = std::function<void()>;
     void setConfigReloadCallback(ConfigReloadCallback && callback);
     void reloadConfig() const;
+
+    using StartStopServersCallback = std::function<void(const ServerType &)>;
+    void setStartServersCallback(StartStopServersCallback && callback);
+    void setStopServersCallback(StartStopServersCallback && callback);
+
+    void startServers(const ServerType & server_type) const;
+    void stopServers(const ServerType & server_type) const;
 
     void shutdown();
 
@@ -1155,9 +1177,6 @@ public:
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;
 
-    /** Get settings for reading from filesystem for BACKUPs. */
-    ReadSettings getBackupReadSettings() const;
-
     /** Get settings for writing to filesystem. */
     WriteSettings getWriteSettings() const;
 
@@ -1177,10 +1196,14 @@ public:
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
 
+    const ServerSettings & getServerSettings() const;
+
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 
     void initGlobal();
+
+    void setUserID(const UUID & user_id_);
 
     template <typename... Args>
     void checkAccessImpl(const Args &... args) const;

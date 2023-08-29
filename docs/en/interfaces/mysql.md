@@ -6,7 +6,34 @@ sidebar_label: MySQL Interface
 
 # MySQL Interface
 
-ClickHouse supports MySQL wire protocol. To enable the MySQL wire protocol, add the [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d` folder:
+ClickHouse supports the MySQL wire protocol. This allow tools that are MySQL-compatible to interact with ClickHouse seamlessly (e.g. [Looker Studio](../integrations/data-visualization/looker-studio-and-clickhouse.md)).
+
+## Enabling the MySQL Interface On ClickHouse Cloud
+
+1. After creating your ClickHouse Cloud Service, on the credentials screen, select the MySQL tab
+
+![Credentials screen - Prompt](./images/mysql1.png)
+
+2. Toggle the switch to enable the MySQL interface for this specific service. This will expose port `3306` for this service and prompt you with your MySQL connection screen that include your unique MySQL username. The password will be the same as the service's default user password.
+
+![Credentials screen - Enabled MySQL](./images/mysql2.png)
+
+Alternatively, in order to enable the MySQL interface for an existing service:
+
+1. Ensure your service is in `Running` state then click on the "View connection string" button for the service you want to enable the MySQL interface for
+
+![Connection screen - Prompt MySQL](./images/mysql3.png)
+
+2. Toggle the switch to enable the MySQL interface for this specific service. This will prompt you to enter the default password.
+
+![Connection screen - Prompt MySQL](./images/mysql4.png)
+
+3. After entering the password, you will get prompted the MySQL connection string for this service
+![Connection screen -  MySQL Enabled](./images/mysql5.png)
+
+## Enabling the MySQL Interface On Self-managed ClickHouse
+
+Add the [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d/` [folder](../operations/configuration-files):
 
 ``` xml
 <clickhouse>
@@ -20,7 +47,7 @@ Startup your ClickHouse server and look for a log message similar to the followi
 {} <Information> Application: Listening for MySQL compatibility protocol: 127.0.0.1:9004
 ```
 
-## Connect mysql to ClickHouse
+## Connect MySQL to ClickHouse
 
 The following command demonstrates how to connect the MySQL client `mysql` to ClickHouse:
 

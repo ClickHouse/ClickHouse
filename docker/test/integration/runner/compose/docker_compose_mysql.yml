@@ -9,10 +9,10 @@ services:
             DATADIR: /mysql/
         expose:
             - ${MYSQL_PORT:-3306}
-        command: --server_id=100 
-            --log-bin='mysql-bin-1.log' 
-            --default-time-zone='+3:00' 
-            --gtid-mode="ON" 
+        command: --server_id=100
+            --log-bin='mysql-bin-1.log'
+            --default-time-zone='+3:00'
+            --gtid-mode="ON"
             --enforce-gtid-consistency
             --log-error-verbosity=3
             --log-error=/mysql/error.log
