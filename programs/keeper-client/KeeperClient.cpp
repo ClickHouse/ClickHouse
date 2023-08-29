@@ -224,7 +224,7 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     else
         default_log_level = "information";
 
-    Poco::Logger::root().setLevel( config().getString("log-level", default_log_level));
+    Poco::Logger::root().setLevel(config().getString("log-level", default_log_level));
 
     EventNotifier::init();
 }
@@ -330,26 +330,33 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     config_processor.registerEmbeddedConfig("config.xml", "<clickhouse/>");
     auto clickhouse_config = config_processor.loadConfig();
 
-    String host;
-    String port;
-    String prefix = "zookeeper.node[0].";
+    Poco::Util::AbstractConfiguration::Keys keys;
+    clickhouse_config.configuration->keys("zookeeper", keys);
 
-    if (!config().has("host") && !config().has("port") && clickhouse_config.configuration->has(prefix + "host"))
+    if (!config().has("host") && !config().has("port") && !keys.empty())
     {
         LOG_INFO(&Poco::Logger::get("KeeperClient"), "Found keeper node in the config.xml, will use it for connection");
-        if (clickhouse_config.configuration->has(prefix + "secure"))
-            host = "secure://";
 
-        host += clickhouse_config.configuration->getString(prefix + "host");
-        port = clickhouse_config.configuration->getString(prefix + "port");
+        for (const auto & key : keys)
+        {
+            String prefix = "zookeeper." + key;
+            String host = clickhouse_config.configuration->getString(prefix + ".host");
+            String port = clickhouse_config.configuration->getString(prefix + ".port");
+
+            if (clickhouse_config.configuration->has(prefix + ".secure"))
+                host = "secure://" + host;
+
+            zk_args.hosts.push_back(host + ":" + port);
+        }
     }
     else
     {
-        host = config().getString("host", "localhost");
-        port = config().getString("port", "9181");
+        String host = config().getString("host", "localhost");
+        String port = config().getString("port", "9181");
+
+        zk_args.hosts.push_back(host + ":" + port);
     }
 
-    zk_args.hosts = {host + ":" + port};
     zk_args.connection_timeout_ms = config().getInt("connection-timeout", 10) * 1000;
     zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
     zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
