@@ -113,17 +113,20 @@ template <typename Distance>
 MergeTreeIndexAggregatorAnnoy<Distance>::MergeTreeIndexAggregatorAnnoy(
     const String & index_name_,
     const Block & index_sample_block_,
-    UInt64 trees_)
+    UInt64 trees_,
+    size_t max_threads_for_creation_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , trees(trees_)
+    , max_threads_for_creation(max_threads_for_creation_)
 {}
 
 template <typename Distance>
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorAnnoy<Distance>::getGranuleAndReset()
 {
     // NOLINTNEXTLINE(*)
-    index->build(static_cast<int>(trees), /*number_of_threads=*/1);
+    int threads = (max_threads_for_creation == 0) ? -1 : static_cast<int>(max_threads_for_creation);
+    index->build(static_cast<int>(trees), threads);
     auto granule = std::make_shared<MergeTreeIndexGranuleAnnoy<Distance>>(index_name, index_sample_block, index);
     index = nullptr;
     return granule;
@@ -313,13 +316,13 @@ MergeTreeIndexGranulePtr MergeTreeIndexAnnoy::createIndexGranule() const
     std::unreachable();
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator(const MergeTreeWriterSettings & settings) const
 {
     /// TODO: Support more metrics. Available metrics: https://github.com/spotify/annoy/blob/master/src/annoymodule.cc#L151-L171
     if (distance_function == DISTANCE_FUNCTION_L2)
-        return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Euclidean>>(index.name, index.sample_block, trees);
+        return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Euclidean>>(index.name, index.sample_block, trees, settings.max_threads_for_annoy_index_creation);
     else if (distance_function == DISTANCE_FUNCTION_COSINE)
-        return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Angular>>(index.name, index.sample_block, trees);
+        return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Angular>>(index.name, index.sample_block, trees, settings.max_threads_for_annoy_index_creation);
     std::unreachable();
 }
 
