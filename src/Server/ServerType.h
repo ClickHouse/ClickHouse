@@ -1,13 +1,14 @@
 #pragma once
 
 #include <base/types.h>
+#include <unordered_set>
+
 namespace DB
 {
 
 class ServerType
 {
 public:
-
     enum Type
     {
         TCP,
@@ -28,8 +29,20 @@ public:
         END
     };
 
+    using Types = std::unordered_set<Type>;
+    using CustomNames = std::unordered_set<String>;
+
     ServerType() = default;
-    explicit ServerType(Type type_, const std::string & custom_name_ = "") : type(type_), custom_name(custom_name_) {}
+
+    explicit ServerType(
+        Type type_,
+        const std::string & custom_name_ = "",
+        const Types & exclude_types_ = {},
+        const CustomNames exclude_custom_names_ = {})
+        : type(type_),
+          custom_name(custom_name_),
+          exclude_types(exclude_types_),
+          exclude_custom_names(exclude_custom_names_) {}
 
     static const char * serverTypeToString(Type type);
 
@@ -39,6 +52,9 @@ public:
 
     Type type;
     std::string custom_name;
+
+    Types exclude_types;
+    CustomNames exclude_custom_names;
 };
 
 }
