@@ -319,10 +319,11 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 #if USE_SSL
             for (const auto & key : getSSHKeys())
                 node->children.push_back(std::make_shared<ASTPublicSSHKey>(key.getBase64(), key.getKeyAlgorithm()));
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
-#endif
+
             break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
+#endif
         }
 
         case AuthenticationType::NO_PASSWORD: [[fallthrough]];
