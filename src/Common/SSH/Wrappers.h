@@ -1,10 +1,14 @@
 #pragma once
+#include <Common/Exception.h>
 #include "config.h"
 #if USE_SSL
 #    include <string_view>
 #    include <base/types.h>
 
 using ssh_key = struct ssh_key_struct *;
+
+namespace DB
+{
 
 namespace ssh
 {
@@ -32,6 +36,9 @@ public:
 
     bool isPublic() const;
     bool isPrivate() const;
+
+    String getBase64() const;
+    String getKeyAlgorithm() const;
 
     friend SSHKeyFactory;
 private:
@@ -63,3 +70,5 @@ public:
 };
 }
 #endif
+
+}

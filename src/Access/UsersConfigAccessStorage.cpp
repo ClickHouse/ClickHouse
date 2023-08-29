@@ -235,15 +235,15 @@ namespace
                     {
                         keys.emplace_back(ssh::SSHKeyFactory::makePublicFromBase64(base64_key, algorithm));
                     }
-                    catch (const std::invalid_argument&)
+                    catch (const std::invalid_argument &)
                     {
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad ssh key in entry: {}", entry);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad SSH key in entry: {}", entry);
                     }
                 }
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ssh_key entry pattern type: {}", entry);
             }
-            user->auth_data.setSshKeys(std::move(keys));
+            user->auth_data.setSSHKeys(std::move(keys));
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
 #endif

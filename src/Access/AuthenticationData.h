@@ -58,8 +58,8 @@ public:
     const boost::container::flat_set<String> & getSSLCertificateCommonNames() const { return ssl_certificate_common_names; }
     void setSSLCertificateCommonNames(boost::container::flat_set<String> common_names_);
 
-    const std::vector<ssh::SSHKey> & getSshKeys() const { return ssh_keys; }
-    void setSshKeys(std::vector<ssh::SSHKey>&& ssh_keys_) { ssh_keys = std::forward<std::vector<ssh::SSHKey>>(ssh_keys_); }
+    const std::vector<ssh::SSHKey> & getSSHKeys() const { return ssh_keys; }
+    void setSSHKeys(std::vector<ssh::SSHKey> && ssh_keys_) { ssh_keys = std::forward<std::vector<ssh::SSHKey>>(ssh_keys_); }
 
     friend bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs);
     friend bool operator !=(const AuthenticationData & lhs, const AuthenticationData & rhs) { return !(lhs == rhs); }

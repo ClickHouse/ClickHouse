@@ -42,6 +42,14 @@ private:
 
 }
 
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int LIBSSH_ERROR;
+}
+
 namespace ssh
 {
 
@@ -51,7 +59,7 @@ SSHKey SSHKeyFactory::makePrivateFromFile(String filename, String passphrase)
     int rc = ssh_pki_import_privkey_file(filename.c_str(), passphrase.c_str(), nullptr, nullptr, &key);
     if (rc != SSH_OK)
     {
-        throw std::runtime_error("Can't import ssh private key from file");
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Can't import SSH private key from file");
     }
     return SSHKey(key);
 }
@@ -61,7 +69,7 @@ SSHKey SSHKeyFactory::makePublicFromFile(String filename)
     ssh_key key;
     int rc = ssh_pki_import_pubkey_file(filename.c_str(), &key);
     if (rc != SSH_OK)
-        throw std::runtime_error("Can't import ssh public key from file");
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Can't import SSH public key from file");
 
     return SSHKey(key);
 }
@@ -72,7 +80,7 @@ SSHKey SSHKeyFactory::makePublicFromBase64(String base64_key, String type_name)
     auto key_type = ssh_key_type_from_name(type_name.c_str());
     int rc = ssh_pki_import_pubkey_base64(base64_key.c_str(), key_type, &key);
     if (rc != SSH_OK)
-        throw std::invalid_argument("Bad ssh public key provided");
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Bad SSH public key provided");
 
     return SSHKey(key);
 }
@@ -103,7 +111,7 @@ String SSHKey::signString(std::string_view input) const
     ssh_string c_output = nullptr;
     int rc = pki_sign_string(key, input_str.get(), &c_output);
     if (rc != SSH_OK)
-        throw std::runtime_error("Error singing with ssh key");
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Error singing with ssh key");
 
     SSHString output(c_output);
     return output.toString();
@@ -126,11 +134,30 @@ bool SSHKey::isPublic() const
     return ssh_key_is_public(key);
 }
 
+String SSHKey::getBase64() const
+{
+    char *b64_key;
+    auto rc = ssh_pki_export_pubkey_base64(key, &b64_key);
+
+    if (rc < 0)
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Can't export public SSH key");
+
+    String base64_result(b64_key);
+    free(b64_key);
+    return base64_result;
+}
+
+String SSHKey::getKeyAlgorithm() const
+{
+    return ssh_key_type_to_char(ssh_key_type(key));
+}
+
 SSHKey::~SSHKey()
 {
     ssh_key_free(key); // it's safe free from libssh
 }
 
+}
 }
 
 #endif

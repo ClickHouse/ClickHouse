@@ -5,6 +5,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/Access/ASTPublicSSHKey.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Common/OpenSSLHelpers.h>
@@ -315,7 +316,10 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         }
         case AuthenticationType::SSH_KEY:
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented.");
+            for (const auto & key : getSSHKeys())
+                node->children.push_back(std::make_shared<ASTPublicSSHKey>(key.getBase64(), key.getKeyAlgorithm()));
+
+            break;
         }
 
         case AuthenticationType::NO_PASSWORD: [[fallthrough]];
@@ -331,6 +335,37 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 {
     if (query.type && query.type == AuthenticationType::NO_PASSWORD)
         return AuthenticationData();
+
+    /// For this type of authentication we have ASTPublicSSHKey as children for ASTAuthenticationData
+    if (query.type && query.type == AuthenticationType::SSH_KEY)
+    {
+#if USE_SSL
+        AuthenticationData auth_data(*query.type);
+        std::vector<ssh::SSHKey> keys;
+
+        size_t args_size = query.children.size();
+        for (size_t i = 0; i < args_size; ++i)
+        {
+            const auto & ssh_key = query.children[i]->as<ASTPublicSSHKey &>();
+            const auto & key_base64 = ssh_key.key_base64;
+            const auto & algorithm = ssh_key.algorithm;
+
+            try
+            {
+                keys.emplace_back(ssh::SSHKeyFactory::makePublicFromBase64(key_base64, algorithm));
+            }
+            catch (const std::invalid_argument &)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad SSH key in entry: {} with algorithm {}", key_base64, algorithm);
+            }
+        }
+
+        auth_data.setSSHKeys(std::move(keys));
+        return auth_data;
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
+#endif
+    }
 
     size_t args_size = query.children.size();
     ASTs args(args_size);
