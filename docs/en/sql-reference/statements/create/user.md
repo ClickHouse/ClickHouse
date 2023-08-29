@@ -40,14 +40,31 @@ There are multiple ways of user identification:
 - `IDENTIFIED WITH ssl_certificate CN 'mysite.com:user'`
 - `IDENTIFIED BY 'qwerty'`
 
-If a password is defined, by default it must meet the following complexity requirements:
+:::note
+In ClickHouse Cloud, by default, passwords must meet the following complexity requirements:
 - Be at least 12 characters long
 - Contain at least 1 numeric character
 - Contain at least 1 uppercase character
 - Contain at least 1 lowercase character
 - Contain at least 1 special character
+:::
 
-Password complexity requirements can be edited in [config.xml](/docs/en/operations/configuration-files).
+Password complexity requirements can be edited in [config.xml](/docs/en/operations/configuration-files). Below is an example configuration that requires passwords to be at least 12 characters long and contain 1 number. Each password complexity rule requires a regex to match against passwords and a description of the rule.
+
+```xml
+<clickhouse>
+    <password_complexity>
+        <rule>
+            <pattern>.{12}</pattern>
+            <message>be at least 12 characters long</message>
+        </rule>
+        <rule>
+            <pattern>\p{N}</pattern>
+            <message>contain at least 1 numeric character</message>
+        </rule>
+    </password_complexity>
+</clickhouse>
+```
 
 ## Examples
 
