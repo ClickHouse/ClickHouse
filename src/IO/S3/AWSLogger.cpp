@@ -2,7 +2,10 @@
 
 #if USE_AWS_S3
 
+#include <Core/SettingsEnums.h>
+#include <Common/logger_useful.h>
 #include <aws/core/utils/logging/LogLevel.h>
+#include <Poco/Logger.h>
 
 namespace
 {

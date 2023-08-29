@@ -4,6 +4,8 @@
 #include <bit>
 #include <cstdint>
 
+#include <base/simd.h>
+
 #include <Core/Defines.h>
 
 
@@ -502,14 +504,7 @@ inline bool memoryIsZeroSmallAllowOverflow15(const void * data, size_t size)
 #elif defined(__aarch64__) && defined(__ARM_NEON)
 
 #    include <arm_neon.h>
-#    ifdef HAS_RESERVED_IDENTIFIER
-#        pragma clang diagnostic ignored "-Wreserved-identifier"
-#    endif
-
-inline uint64_t getNibbleMask(uint8x16_t res)
-{
-    return vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(res), 4)), 0);
-}
+#      pragma clang diagnostic ignored "-Wreserved-identifier"
 
 template <typename Char>
 inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char * b, size_t b_size)

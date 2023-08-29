@@ -40,6 +40,8 @@ The documentation contains information about all the aspects of the ClickHouse l
 
 At the moment, [documentation](https://clickhouse.com/docs) exists in English, Russian, and Chinese. We store the reference documentation besides the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs), and user guides in a separate repo [Clickhouse/clickhouse-docs](https://github.com/ClickHouse/clickhouse-docs).
 
+To get the latter launch the `get-clickhouse-docs.sh` script.
+
 Each language lies in the corresponding folder. Files that are not translated from English are symbolic links to the English ones.
 
 <a name="how-to-contribute"/>
@@ -198,8 +200,8 @@ Templates:
 - [Server Setting](_description_templates/template-server-setting.md)
 - [Database or Table engine](_description_templates/template-engine.md)
 - [System table](_description_templates/template-system-table.md)
-- [Data type](_description_templates/data-type.md)
-- [Statement](_description_templates/statement.md)
+- [Data type](_description_templates/template-data-type.md)
+- [Statement](_description_templates/template-statement.md)
 
 
 <a name="how-to-build-docs"/>

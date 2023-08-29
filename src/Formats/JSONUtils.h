@@ -20,6 +20,9 @@ namespace JSONUtils
     std::pair<bool, size_t> fileSegmentationEngineJSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows);
     std::pair<bool, size_t> fileSegmentationEngineJSONCompactEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows);
 
+    void skipRowForJSONEachRow(ReadBuffer & in);
+    void skipRowForJSONCompactEachRow(ReadBuffer & in);
+
     /// Read row in JSONEachRow format and try to determine type for each field.
     /// Return list of names and types.
     /// If cannot determine the type of some field, return nullptr for it.
@@ -73,7 +76,8 @@ namespace JSONUtils
         WriteBuffer & out,
         const std::optional<String> & name = std::nullopt,
         size_t indent = 0,
-        const char * title_after_delimiter = " ");
+        const char * title_after_delimiter = " ",
+        bool pretty_json = false);
 
     void writeColumns(
         const Columns & columns,

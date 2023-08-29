@@ -1,6 +1,4 @@
-#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
 
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
@@ -295,7 +293,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
     const char * dest_start = dest;
 
     const UInt32 items_count = source_size / sizeof(ValueType);
-    unalignedStoreLE<UInt32>(dest, items_count);
+    unalignedStoreLittleEndian<UInt32>(dest, items_count);
     dest += sizeof(items_count);
 
     ValueType prev_value{};
@@ -303,8 +301,8 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 
     if (source < source_end)
     {
-        prev_value = unalignedLoadLE<ValueType>(source);
-        unalignedStoreLE<ValueType>(dest, prev_value);
+        prev_value = unalignedLoadLittleEndian<ValueType>(source);
+        unalignedStoreLittleEndian<ValueType>(dest, prev_value);
 
         source += sizeof(prev_value);
         dest += sizeof(prev_value);
@@ -312,10 +310,10 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 
     if (source < source_end)
     {
-        const ValueType curr_value = unalignedLoadLE<ValueType>(source);
+        const ValueType curr_value = unalignedLoadLittleEndian<ValueType>(source);
 
         prev_delta = curr_value - prev_value;
-        unalignedStoreLE<UnsignedDeltaType>(dest, prev_delta);
+        unalignedStoreLittleEndian<UnsignedDeltaType>(dest, prev_delta);
 
         source += sizeof(curr_value);
         dest += sizeof(prev_delta);
@@ -327,7 +325,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
     int item = 2;
     for (; source < source_end; source += sizeof(ValueType), ++item)
     {
-        const ValueType curr_value = unalignedLoadLE<ValueType>(source);
+        const ValueType curr_value = unalignedLoadLittleEndian<ValueType>(source);
 
         const UnsignedDeltaType delta = curr_value - prev_value;
         const UnsignedDeltaType double_delta = delta - prev_delta;
@@ -371,7 +369,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
     if (source + sizeof(UInt32) > source_end)
         return;
 
-    const UInt32 items_count = unalignedLoadLE<UInt32>(source);
+    const UInt32 items_count = unalignedLoadLittleEndian<UInt32>(source);
     source += sizeof(items_count);
 
     ValueType prev_value{};
@@ -381,10 +379,10 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
     if (source + sizeof(ValueType) > source_end || items_count < 1)
         return;
 
-    prev_value = unalignedLoadLE<ValueType>(source);
+    prev_value = unalignedLoadLittleEndian<ValueType>(source);
     if (dest + sizeof(prev_value) > output_end)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress the data");
-    unalignedStoreLE<ValueType>(dest, prev_value);
+    unalignedStoreLittleEndian<ValueType>(dest, prev_value);
 
     source += sizeof(prev_value);
     dest += sizeof(prev_value);
@@ -393,11 +391,11 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
     if (source + sizeof(UnsignedDeltaType) > source_end || items_count < 2)
         return;
 
-    prev_delta = unalignedLoadLE<UnsignedDeltaType>(source);
+    prev_delta = unalignedLoadLittleEndian<UnsignedDeltaType>(source);
     prev_value = prev_value + static_cast<ValueType>(prev_delta);
     if (dest + sizeof(prev_value) > output_end)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress the data");
-    unalignedStoreLE<ValueType>(dest, prev_value);
+    unalignedStoreLittleEndian<ValueType>(dest, prev_value);
 
     source += sizeof(prev_delta);
     dest += sizeof(prev_value);
@@ -430,7 +428,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
         const ValueType curr_value = prev_value + delta;
         if (dest + sizeof(curr_value) > output_end)
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress the data");
-        unalignedStoreLE<ValueType>(dest, curr_value);
+        unalignedStoreLittleEndian<ValueType>(dest, curr_value);
         dest += sizeof(curr_value);
 
         prev_delta = curr_value - prev_value;

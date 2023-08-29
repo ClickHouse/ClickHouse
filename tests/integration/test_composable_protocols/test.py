@@ -63,7 +63,6 @@ def netcat(hostname, port, content):
 
 
 def test_connections():
-
     client = Client(server.ip_address, 9000, command=cluster.client_bin_path)
     assert client.query("SELECT 1") == "1\n"
 

@@ -22,6 +22,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <base/getThreadId.h>
@@ -90,7 +91,7 @@ namespace
         const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
         stack_trace = StackTrace(signal_context);
 
-        std::string_view query_id = CurrentThread::getQueryId();
+        auto query_id = CurrentThread::getQueryId();
         query_id_size = std::min(query_id.size(), max_query_id_size);
         if (!query_id.empty())
             memcpy(query_id_data, query_id.data(), query_id_size);
@@ -262,6 +263,9 @@ Pipe StorageSystemStackTrace::read(
 {
     storage_snapshot->check(column_names);
 
+    int pipe_read_timeout_ms = static_cast<int>(
+        context->getSettingsRef().storage_system_stack_trace_pipe_read_timeout_ms.totalMilliseconds());
+
     /// It shouldn't be possible to do concurrent reads from this table.
     std::lock_guard lock(mutex);
 
@@ -270,15 +274,6 @@ Pipe StorageSystemStackTrace::read(
     NameSet names_set(column_names.begin(), column_names.end());
 
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
-
-    std::vector<UInt8> columns_mask(sample_block.columns());
-    for (size_t i = 0, size = columns_mask.size(); i < size; ++i)
-    {
-        if (names_set.contains(sample_block.getByPosition(i).name))
-        {
-            columns_mask[i] = 1;
-        }
-    }
 
     bool send_signal = names_set.contains("trace") || names_set.contains("query_id");
     bool read_thread_names = names_set.contains("thread_name");
@@ -334,7 +329,7 @@ Pipe StorageSystemStackTrace::read(
             }
 
             /// Just in case we will wait for pipe with timeout. In case signal didn't get processed.
-            if (send_signal && wait(100) && sig_value.sival_int == data_ready_num.load(std::memory_order_acquire))
+            if (send_signal && wait(pipe_read_timeout_ms) && sig_value.sival_int == data_ready_num.load(std::memory_order_acquire))
             {
                 size_t stack_trace_size = stack_trace.getSize();
                 size_t stack_trace_offset = stack_trace.getOffset();

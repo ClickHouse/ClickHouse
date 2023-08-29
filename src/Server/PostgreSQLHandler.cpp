@@ -58,7 +58,7 @@ void PostgreSQLHandler::run()
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::POSTGRESQL);
     SCOPE_EXIT({ session.reset(); });
 
-    session->getClientInfo().connection_id = connection_id;
+    session->setClientConnectionId(connection_id);
 
     try
     {
@@ -317,6 +317,9 @@ void PostgreSQLHandler::processQuery()
 bool PostgreSQLHandler::isEmptyQuery(const String & query)
 {
     if (query.empty())
+        return true;
+    /// golang driver pgx sends ";"
+    if (query == ";")
         return true;
 
     Poco::RegularExpression regex(R"(\A\s*\z)");

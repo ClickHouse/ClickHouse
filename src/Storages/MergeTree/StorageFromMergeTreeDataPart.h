@@ -3,6 +3,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -28,6 +29,7 @@ public:
     explicit StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
         : IStorage(getIDFromPart(part_))
         , parts({part_})
+        , alter_conversions({part_->storage.getAlterConversionsForPart(part_)})
         , storage(part_->storage)
         , partition_id(part_->info.partition_id)
     {
@@ -54,7 +56,7 @@ public:
             parts.begin(), parts.end(),
             storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
 
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns);
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns));
     }
 
     void read(
@@ -67,9 +69,10 @@ public:
         size_t max_block_size,
         size_t num_streams) override
     {
-        query_plan = std::move(*MergeTreeDataSelectExecutor(storage)
+        query_plan.addStep(MergeTreeDataSelectExecutor(storage)
                                               .readFromParts(
                                                   parts,
+                                                  alter_conversions,
                                                   column_names,
                                                   storage_snapshot,
                                                   query_info,
@@ -85,6 +88,8 @@ public:
     bool supportsIndexForIn() const override { return true; }
 
     bool supportsDynamicSubcolumns() const override { return true; }
+
+    bool supportsSubcolumns() const override { return true; }
 
     bool mayBenefitFromIndexForIn(
         const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override
@@ -107,6 +112,12 @@ public:
         return storage.getPartitionIDFromQuery(ast, context);
     }
 
+    StorageSnapshotPtr getStorageSnapshotForQuery(
+        const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context) const override
+    {
+        return storage.getStorageSnapshot(metadata_snapshot, query_context);
+    }
+
     bool materializeTTLRecalculateOnly() const
     {
         if (parts.empty())
@@ -126,6 +137,7 @@ public:
 
 private:
     const MergeTreeData::DataPartsVector parts;
+    const std::vector<AlterConversionsPtr> alter_conversions;
     const MergeTreeData & storage;
     const String partition_id;
     const MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr;

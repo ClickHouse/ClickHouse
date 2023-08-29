@@ -34,8 +34,12 @@ class SelectStreamFactory;
 ///   - optimize_skip_unused_shards_nesting
 ///
 /// @return new Context with adjusted settings
-ContextMutablePtr updateSettingsForCluster(
-    const Cluster & cluster, ContextPtr context, const Settings & settings, const StorageID & main_table, const SelectQueryInfo * query_info = nullptr, Poco::Logger * log = nullptr);
+ContextMutablePtr updateSettingsForCluster(bool interserver_mode,
+    ContextPtr context,
+    const Settings & settings,
+    const StorageID & main_table,
+    const SelectQueryInfo * query_info = nullptr,
+    Poco::Logger * log = nullptr);
 
 using AdditionalShardFilterGenerator = std::function<ASTPtr(uint64_t)>;
 /// Execute a distributed query, creating a query plan, from which the query pipeline can be built.

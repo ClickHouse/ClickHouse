@@ -16,15 +16,15 @@ The `CHECK TABLE` query compares actual file sizes with the expected values whic
 The query response contains the `result` column with a single row. The row has a value of
 [Boolean](../../sql-reference/data-types/boolean.md) type:
 
--   0 - The data in the table is corrupted.
--   1 - The data maintains integrity.
+- 0 - The data in the table is corrupted.
+- 1 - The data maintains integrity.
 
 The `CHECK TABLE` query supports the following table engines:
 
--   [Log](../../engines/table-engines/log-family/log.md)
--   [TinyLog](../../engines/table-engines/log-family/tinylog.md)
--   [StripeLog](../../engines/table-engines/log-family/stripelog.md)
--   [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
+- [Log](../../engines/table-engines/log-family/log.md)
+- [TinyLog](../../engines/table-engines/log-family/tinylog.md)
+- [StripeLog](../../engines/table-engines/log-family/stripelog.md)
+- [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
 
 Performed over the tables with another table engines causes an exception.
 

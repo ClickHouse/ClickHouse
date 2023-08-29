@@ -5,8 +5,6 @@ from helpers.cluster import ClickHouseCluster
 import helpers.keeper_utils as keeper_utils
 import random
 import string
-import os
-import time
 from kazoo.client import KazooClient, KazooState
 
 
@@ -17,7 +15,6 @@ node = cluster.add_instance(
     "node",
     main_configs=["configs/enable_keeper.xml"],
     stay_alive=True,
-    with_zookeeper=True,
 )
 
 
@@ -60,30 +57,47 @@ def test_mntr_data_size_after_restart(started_cluster):
                 "/test_mntr_data_size/node" + str(i), random_string(123).encode()
             )
 
-        def get_line_with_size():
-            return next(
-                filter(
-                    lambda line: "zk_approximate_data_size" in line,
-                    keeper_utils.send_4lw_cmd(started_cluster, node, "mntr").split(
-                        "\n"
-                    ),
-                ),
-                None,
-            )
-
-        line_size_before = get_line_with_size()
-        assert line_size_before != None
-
         node_zk.stop()
         node_zk.close()
         node_zk = None
 
+        def get_line_from_mntr(mntr_str, key):
+            return next(
+                filter(
+                    lambda line: key in line,
+                    mntr_str.split("\n"),
+                ),
+                None,
+            )
+
+        mntr_result = keeper_utils.send_4lw_cmd(started_cluster, node, "mntr")
+        line_size_before = get_line_from_mntr(mntr_result, "zk_approximate_data_size")
+        node_count_before = get_line_from_mntr(mntr_result, "zk_znode_count")
+        assert (
+            get_line_from_mntr(mntr_result, "zk_ephemerals_count")
+            == "zk_ephemerals_count\t0"
+        )
+        assert line_size_before != None
+
         restart_clickhouse()
 
-        assert get_line_with_size() == line_size_before
+        def assert_mntr_stats():
+            mntr_result = keeper_utils.send_4lw_cmd(started_cluster, node, "mntr")
+            assert (
+                get_line_from_mntr(mntr_result, "zk_ephemerals_count")
+                == "zk_ephemerals_count\t0"
+            )
+            assert (
+                get_line_from_mntr(mntr_result, "zk_znode_count") == node_count_before
+            )
+            assert (
+                get_line_from_mntr(mntr_result, "zk_approximate_data_size")
+                == line_size_before
+            )
 
+        assert_mntr_stats()
         keeper_utils.send_4lw_cmd(started_cluster, node, "rclc")
-        assert get_line_with_size() == line_size_before
+        assert_mntr_stats()
     finally:
         try:
             if node_zk is not None:

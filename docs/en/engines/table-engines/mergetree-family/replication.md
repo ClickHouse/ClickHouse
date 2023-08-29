@@ -8,24 +8,31 @@ sidebar_label: Data Replication
 
 :::note
 In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
+
+```sql
+ENGINE = ReplicatedReplacingMergeTree(
+    '/clickhouse/tables/{shard}/table_name',
+    '{replica}',
+    ver
+)
 ```
-ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', ver)
-```
+
 with:
-```
+
+```sql
 ENGINE = ReplicatedReplacingMergeTree
 ```
 :::
 
 Replication is only supported for tables in the MergeTree family:
 
--   ReplicatedMergeTree
--   ReplicatedSummingMergeTree
--   ReplicatedReplacingMergeTree
--   ReplicatedAggregatingMergeTree
--   ReplicatedCollapsingMergeTree
--   ReplicatedVersionedCollapsingMergeTree
--   ReplicatedGraphiteMergeTree
+- ReplicatedMergeTree
+- ReplicatedSummingMergeTree
+- ReplicatedReplacingMergeTree
+- ReplicatedAggregatingMergeTree
+- ReplicatedCollapsingMergeTree
+- ReplicatedVersionedCollapsingMergeTree
+- ReplicatedGraphiteMergeTree
 
 Replication works at the level of an individual table, not the entire server. A server can store both replicated and non-replicated tables at the same time.
 
@@ -35,15 +42,15 @@ Compressed data for `INSERT` and `ALTER` queries is replicated (for more informa
 
 `CREATE`, `DROP`, `ATTACH`, `DETACH` and `RENAME` queries are executed on a single server and are not replicated:
 
--   The `CREATE TABLE` query creates a new replicatable table on the server where the query is run. If this table already exists on other servers, it adds a new replica.
--   The `DROP TABLE` query deletes the replica located on the server where the query is run.
--   The `RENAME` query renames the table on one of the replicas. In other words, replicated tables can have different names on different replicas.
+- The `CREATE TABLE` query creates a new replicatable table on the server where the query is run. If this table already exists on other servers, it adds a new replica.
+- The `DROP TABLE` query deletes the replica located on the server where the query is run.
+- The `RENAME` query renames the table on one of the replicas. In other words, replicated tables can have different names on different replicas.
 
-ClickHouse uses [ClickHouse Keeper](/docs/en/guides/sre/keeper/clickhouse-keeper.md) for storing replicas meta information. It is possible to use ZooKeeper version 3.4.5 or newer, but ClickHouse Keeper is recommended.
+ClickHouse uses [ClickHouse Keeper](/docs/en/guides/sre/keeper/index.md) for storing replicas meta information. It is possible to use ZooKeeper version 3.4.5 or newer, but ClickHouse Keeper is recommended.
 
 To use replication, set parameters in the [zookeeper](/docs/en/operations/server-configuration-parameters/settings.md/#server-settings_zookeeper) server configuration section.
 
-:::warning
+:::note
 Don’t neglect the security setting. ClickHouse supports the `digest` [ACL scheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) of the ZooKeeper security subsystem.
 :::
 
@@ -112,7 +119,7 @@ For each `INSERT` query, approximately ten entries are added to ZooKeeper throug
 
 For very large clusters, you can use different ZooKeeper clusters for different shards. However, from our experience this has not proven necessary based on production clusters with approximately 300 servers.
 
-Replication is asynchronous and multi-master. `INSERT` queries (as well as `ALTER`) can be sent to any available server. Data is inserted on the server where the query is run, and then it is copied to the other servers. Because it is asynchronous, recently inserted data appears on the other replicas with some latency. If part of the replicas are not available, the data is written when they become available. If a replica is available, the latency is the amount of time it takes to transfer the block of compressed data over the network. The number of threads performing background tasks for replicated tables can be set by [background_schedule_pool_size](/docs/en/operations/settings/settings.md/#background_schedule_pool_size) setting.
+Replication is asynchronous and multi-master. `INSERT` queries (as well as `ALTER`) can be sent to any available server. Data is inserted on the server where the query is run, and then it is copied to the other servers. Because it is asynchronous, recently inserted data appears on the other replicas with some latency. If part of the replicas are not available, the data is written when they become available. If a replica is available, the latency is the amount of time it takes to transfer the block of compressed data over the network. The number of threads performing background tasks for replicated tables can be set by [background_schedule_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_schedule_pool_size) setting.
 
 `ReplicatedMergeTree` engine uses a separate thread pool for replicated fetches. Size of the pool is limited by the [background_fetches_pool_size](/docs/en/operations/settings/settings.md/#background_fetches_pool_size) setting which can be tuned with a server restart.
 
@@ -144,7 +151,7 @@ ENGINE = ReplicatedReplacingMergeTree
 The `Replicated` prefix is added to the table engine name. For example:`ReplicatedMergeTree`.
 
 :::tip
-Adding `Replicated` is optional in ClickHouse Cloud, as all of the tables are replicated.  
+Adding `Replicated` is optional in ClickHouse Cloud, as all of the tables are replicated.
 :::
 
 ### Replicated\*MergeTree parameters
@@ -309,8 +316,8 @@ Create a MergeTree table with a different name. Move all the data from the direc
 
 If you want to get rid of a `ReplicatedMergeTree` table without launching the server:
 
--   Delete the corresponding `.sql` file in the metadata directory (`/var/lib/clickhouse/metadata/`).
--   Delete the corresponding path in ClickHouse Keeper (`/path_to_table/replica_name`).
+- Delete the corresponding `.sql` file in the metadata directory (`/var/lib/clickhouse/metadata/`).
+- Delete the corresponding path in ClickHouse Keeper (`/path_to_table/replica_name`).
 
 After this, you can launch the server, create a `MergeTree` table, move the data to its directory, and then restart the server.
 
@@ -320,8 +327,8 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
 
 **See Also**
 
--   [background_schedule_pool_size](/docs/en/operations/settings/settings.md/#background_schedule_pool_size)
--   [background_fetches_pool_size](/docs/en/operations/settings/settings.md/#background_fetches_pool_size)
--   [execute_merges_on_single_replica_time_threshold](/docs/en/operations/settings/settings.md/#execute-merges-on-single-replica-time-threshold)
--   [max_replicated_fetches_network_bandwidth](/docs/en/operations/settings/merge-tree-settings.md/#max_replicated_fetches_network_bandwidth)
--   [max_replicated_sends_network_bandwidth](/docs/en/operations/settings/merge-tree-settings.md/#max_replicated_sends_network_bandwidth)
+- [background_schedule_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_schedule_pool_size)
+- [background_fetches_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_fetches_pool_size)
+- [execute_merges_on_single_replica_time_threshold](/docs/en/operations/settings/settings.md/#execute-merges-on-single-replica-time-threshold)
+- [max_replicated_fetches_network_bandwidth](/docs/en/operations/settings/merge-tree-settings.md/#max_replicated_fetches_network_bandwidth)
+- [max_replicated_sends_network_bandwidth](/docs/en/operations/settings/merge-tree-settings.md/#max_replicated_sends_network_bandwidth)

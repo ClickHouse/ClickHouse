@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/url-functions
-sidebar_position: 54
+sidebar_position: 200
 sidebar_label: URLs
 ---
 
@@ -28,7 +28,7 @@ domain(url)
 
 **Arguments**
 
--   `url` — URL. Type: [String](../../sql-reference/data-types/string.md).
+- `url` — URL. Type: [String](../../sql-reference/data-types/string.md).
 
 The URL can be specified with or without a scheme. Examples:
 
@@ -48,8 +48,8 @@ clickhouse.com
 
 **Returned values**
 
--   Host name. If ClickHouse can parse the input string as a URL.
--   Empty string. If ClickHouse can’t parse the input string as a URL.
+- Host name. If ClickHouse can parse the input string as a URL.
+- Empty string. If ClickHouse can’t parse the input string as a URL.
 
 Type: `String`.
 
@@ -79,7 +79,7 @@ topLevelDomain(url)
 
 **Arguments**
 
--   `url` — URL. Type: [String](../../sql-reference/data-types/string.md).
+- `url` — URL. Type: [String](../../sql-reference/data-types/string.md).
 
 The URL can be specified with or without a scheme. Examples:
 
@@ -91,8 +91,8 @@ https://clickhouse.com/time/
 
 **Returned values**
 
--   Domain name. If ClickHouse can parse the input string as a URL.
--   Empty string. If ClickHouse cannot parse the input string as a URL.
+- Domain name. If ClickHouse can parse the input string as a URL.
+- Empty string. If ClickHouse cannot parse the input string as a URL.
 
 Type: `String`.
 
@@ -118,9 +118,9 @@ Returns the part of the domain that includes top-level subdomains up to the “f
 
 For example:
 
--   `cutToFirstSignificantSubdomain('https://news.clickhouse.com.tr/') = 'clickhouse.com.tr'`.
--   `cutToFirstSignificantSubdomain('www.tr') = 'tr'`.
--   `cutToFirstSignificantSubdomain('tr') = ''`.
+- `cutToFirstSignificantSubdomain('https://news.clickhouse.com.tr/') = 'clickhouse.com.tr'`.
+- `cutToFirstSignificantSubdomain('www.tr') = 'tr'`.
+- `cutToFirstSignificantSubdomain('tr') = ''`.
 
 ### cutToFirstSignificantSubdomainWithWWW
 
@@ -128,9 +128,9 @@ Returns the part of the domain that includes top-level subdomains up to the “f
 
 For example:
 
--   `cutToFirstSignificantSubdomain('https://news.clickhouse.com.tr/') = 'clickhouse.com.tr'`.
--   `cutToFirstSignificantSubdomain('www.tr') = 'www.tr'`.
--   `cutToFirstSignificantSubdomain('tr') = ''`.
+- `cutToFirstSignificantSubdomain('https://news.clickhouse.com.tr/') = 'clickhouse.com.tr'`.
+- `cutToFirstSignificantSubdomain('www.tr') = 'www.tr'`.
+- `cutToFirstSignificantSubdomain('tr') = ''`.
 
 ### cutToFirstSignificantSubdomainCustom
 
@@ -157,12 +157,12 @@ cutToFirstSignificantSubdomain(URL, TLD)
 
 **Parameters**
 
--   `URL` — URL. [String](../../sql-reference/data-types/string.md).
--   `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   Part of the domain that includes top-level subdomains up to the first significant subdomain.
+- Part of the domain that includes top-level subdomains up to the first significant subdomain.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -184,7 +184,7 @@ Result:
 
 **See Also**
 
--   [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [firstSignificantSubdomain](#firstsignificantsubdomain).
 
 ### cutToFirstSignificantSubdomainCustomWithWWW
 
@@ -211,12 +211,12 @@ cutToFirstSignificantSubdomainCustomWithWWW(URL, TLD)
 
 **Parameters**
 
--   `URL` — URL. [String](../../sql-reference/data-types/string.md).
--   `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`.
+- Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -238,7 +238,7 @@ Result:
 
 **See Also**
 
--   [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [firstSignificantSubdomain](#firstsignificantsubdomain).
 
 ### firstSignificantSubdomainCustom
 
@@ -265,12 +265,12 @@ firstSignificantSubdomainCustom(URL, TLD)
 
 **Parameters**
 
--   `URL` — URL. [String](../../sql-reference/data-types/string.md).
--   `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+- `URL` — URL. [String](../../sql-reference/data-types/string.md).
+- `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   First significant subdomain.
+- First significant subdomain.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -292,7 +292,7 @@ Result:
 
 **See Also**
 
--   [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [firstSignificantSubdomain](#firstsignificantsubdomain).
 
 ### port(URL\[, default_port = 0\])
 
@@ -418,11 +418,11 @@ netloc(URL)
 
 **Arguments**
 
--   `url` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   `username:password@host:port`.
+- `username:password@host:port`.
 
 Type: `String`.
 
@@ -474,12 +474,12 @@ cutURLParameter(URL, name)
 
 **Arguments**
 
--   `url` — URL. [String](../../sql-reference/data-types/string.md).
--   `name` — name of URL parameter. [String](../../sql-reference/data-types/string.md) or [Array](../../sql-reference/data-types/array.md) of Strings.
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
+- `name` — name of URL parameter. [String](../../sql-reference/data-types/string.md) or [Array](../../sql-reference/data-types/array.md) of Strings.
 
 **Returned value**
 
--   URL with `name` URL parameter removed.
+- URL with `name` URL parameter removed.
 
 Type: `String`.
 

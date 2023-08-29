@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-USER_FILES_PATH=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
+USER_FILES_PATH=$(clickhouse client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 
 DATA_FILE=$USER_FILES_PATH/data_02293
 
@@ -17,13 +17,13 @@ echo "JSONColumns"
 $CLICKHOUSE_CLIENT -q "select * from test_02293 order by a format JSONColumns"
 $CLICKHOUSE_CLIENT -q "select * from test_02293 order by a format JSONColumns" > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "desc file(data_02293, JSONColumns)"
-$CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONColumns)"
+$CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONColumns) order by a"
 
 echo "JSONCompactColumns"
 $CLICKHOUSE_CLIENT -q "select * from test_02293 order by a format JSONCompactColumns"
 $CLICKHOUSE_CLIENT -q "select * from test_02293 order by a format JSONCompactColumns" > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "desc file(data_02293, JSONCompactColumns)"
-$CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONCompactColumns)"
+$CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONCompactColumns) order by c1, c2, c3"
 
 echo "JSONColumnsWithMetadata"
 $CLICKHOUSE_CLIENT -q "select sum(a) as sum, avg(a) as avg from test_02293 group by a % 4 with totals order by tuple(sum, avg) format JSONColumnsWithMetadata" --extremes=1 | grep -v "elapsed"
@@ -49,9 +49,9 @@ echo '
 ' > $DATA_FILE
 
 $CLICKHOUSE_CLIENT -q "desc file(data_02293, JSONColumns)"
-$CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONColumns)"
-$CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONColumns, 'a UInt32, t String') settings input_format_skip_unknown_fields=0" 2>&1 | grep -F -q 'INCORRECT_DATA' && echo 'OK' || echo 'FAIL'
-$CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONColumns, 'a UInt32, t String') settings input_format_skip_unknown_fields=1"
+$CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONColumns) order by b, a, c, d"
+$CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONColumns, 'a UInt32, t String') order by a, t settings input_format_skip_unknown_fields=0" 2>&1 | grep -F -q 'INCORRECT_DATA' && echo 'OK' || echo 'FAIL'
+$CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONColumns, 'a UInt32, t String') order by a, t settings input_format_skip_unknown_fields=1"
 
 echo '
 [
@@ -75,8 +75,8 @@ echo '
 ' > $DATA_FILE
 
 $CLICKHOUSE_CLIENT -q "desc file(data_02293, JSONCompactColumns)"
-$CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONCompactColumns)"
-$CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONCompactColumns, 'a UInt32, t UInt32')" 2>&1 | grep -F -q 'INCORRECT_DATA' && echo 'OK' || echo 'FAIL'
+$CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONCompactColumns) order by c1, c2, c3"
+$CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONCompactColumns, 'a UInt32, t UInt32') order by a, t" 2>&1 | grep -F -q 'INCORRECT_DATA' && echo 'OK' || echo 'FAIL'
 
 echo '
 {

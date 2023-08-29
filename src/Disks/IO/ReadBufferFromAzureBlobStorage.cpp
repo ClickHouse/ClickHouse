@@ -35,6 +35,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     size_t max_single_read_retries_,
     size_t max_single_download_retries_,
     bool use_external_buffer_,
+    bool restricted_seek_,
     size_t read_until_position_)
     : ReadBufferFromFileBase(use_external_buffer_ ? 0 : read_settings_.remote_fs_buffer_size, nullptr, 0)
     , blob_container_client(blob_container_client_)
@@ -44,6 +45,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     , read_settings(read_settings_)
     , tmp_buffer_size(read_settings.remote_fs_buffer_size)
     , use_external_buffer(use_external_buffer_)
+    , restricted_seek(restricted_seek_)
     , read_until_position(read_until_position_)
 {
     if (!use_external_buffer)
@@ -54,12 +56,20 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     }
 }
 
-SeekableReadBuffer::Range ReadBufferFromAzureBlobStorage::getRemainingReadRange() const
+
+void ReadBufferFromAzureBlobStorage::setReadUntilEnd()
 {
-    return Range{
-        .left = static_cast<size_t>(offset),
-        .right = read_until_position ? std::optional{read_until_position - 1} : std::nullopt
-    };
+    if (read_until_position)
+    {
+        read_until_position = 0;
+        if (initialized)
+        {
+            offset = getPosition();
+            resetWorkingBuffer();
+            initialized = false;
+        }
+    }
+
 }
 
 void ReadBufferFromAzureBlobStorage::setReadUntilPosition(size_t position)
@@ -92,6 +102,19 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
     size_t bytes_read = 0;
 
     size_t sleep_time_with_backoff_milliseconds = 100;
+
+    auto handle_exception = [&, this](const auto & e, size_t i)
+    {
+        LOG_INFO(log, "Exception caught during Azure Read for file {} at attempt {}/{}: {}", path, i + 1, max_single_read_retries, e.Message);
+        if (i + 1 == max_single_read_retries)
+            throw;
+
+        sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+        sleep_time_with_backoff_milliseconds *= 2;
+        initialized = false;
+        initialize();
+    };
+
     for (size_t i = 0; i < max_single_read_retries; ++i)
     {
         try
@@ -101,16 +124,13 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
                 read_settings.remote_throttler->add(bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
             break;
         }
+        catch (const Azure::Core::Http::TransportException & e)
+        {
+            handle_exception(e, i);
+        }
         catch (const Azure::Storage::StorageException & e)
         {
-            LOG_INFO(log, "Exception caught during Azure Read for file {} at attempt {}: {}", path, i, e.Message);
-            if (i + 1 == max_single_read_retries)
-                throw;
-
-            sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
-            sleep_time_with_backoff_milliseconds *= 2;
-            initialized = false;
-            initialize();
+            handle_exception(e, i);
         }
     }
 
@@ -126,8 +146,17 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
 
 off_t ReadBufferFromAzureBlobStorage::seek(off_t offset_, int whence)
 {
-    if (initialized)
-        throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Seek is allowed only before first read attempt from the buffer.");
+    if (offset_ == getPosition() && whence == SEEK_SET)
+        return offset_;
+
+    if (initialized && restricted_seek)
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
+            "Seek is allowed only before first read attempt from the buffer (current offset: "
+            "{}, new offset: {}, reading until position: {}, available: {})",
+            getPosition(), offset_, read_until_position, available());
+    }
 
     if (whence != SEEK_SET)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
@@ -135,8 +164,36 @@ off_t ReadBufferFromAzureBlobStorage::seek(off_t offset_, int whence)
     if (offset_ < 0)
         throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}", offset_);
 
-    offset = offset_;
+    if (!restricted_seek)
+    {
+        if (!working_buffer.empty()
+            && static_cast<size_t>(offset_) >= offset - working_buffer.size()
+            && offset_ < offset)
+        {
+            pos = working_buffer.end() - (offset - offset_);
+            assert(pos >= working_buffer.begin());
+            assert(pos < working_buffer.end());
 
+            return getPosition();
+        }
+
+        off_t position = getPosition();
+        if (initialized && offset_ > position)
+        {
+            size_t diff = offset_ - position;
+            if (diff < read_settings.remote_read_min_bytes_for_seek)
+            {
+                ignore(diff);
+                return offset_;
+            }
+        }
+
+        resetWorkingBuffer();
+        if (initialized)
+            initialized = false;
+    }
+
+    offset = offset_;
     return offset;
 }
 
@@ -160,9 +217,21 @@ void ReadBufferFromAzureBlobStorage::initialize()
 
     download_options.Range = {static_cast<int64_t>(offset), length};
 
-    blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
+    if (!blob_client)
+        blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
 
     size_t sleep_time_with_backoff_milliseconds = 100;
+
+    auto handle_exception = [&, this](const auto & e, size_t i)
+    {
+        LOG_INFO(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
+        if (i + 1 == max_single_download_retries)
+            throw;
+
+        sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+        sleep_time_with_backoff_milliseconds *= 2;
+    };
+
     for (size_t i = 0; i < max_single_download_retries; ++i)
     {
         try
@@ -171,14 +240,13 @@ void ReadBufferFromAzureBlobStorage::initialize()
             data_stream = std::move(download_response.Value.BodyStream);
             break;
         }
+        catch (const Azure::Core::Http::TransportException & e)
+        {
+            handle_exception(e, i);
+        }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            LOG_INFO(log, "Exception caught during Azure Download for file {} at offset {} at attempt {} : {}", path, offset, i + 1, e.Message);
-            if (i + 1 == max_single_download_retries)
-                throw;
-
-            sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
-            sleep_time_with_backoff_milliseconds *= 2;
+            handle_exception(e,i);
         }
     }
 
@@ -188,6 +256,18 @@ void ReadBufferFromAzureBlobStorage::initialize()
     total_size = data_stream->Length() + offset;
 
     initialized = true;
+}
+
+size_t ReadBufferFromAzureBlobStorage::getFileSize()
+{
+    if (!blob_client)
+        blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
+
+    if (file_size.has_value())
+        return *file_size;
+
+    file_size = blob_client->GetProperties().Value.BlobSize;
+    return *file_size;
 }
 
 }

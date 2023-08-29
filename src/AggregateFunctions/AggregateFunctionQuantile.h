@@ -26,9 +26,11 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
 template <typename> class QuantileTiming;
+template <typename> class QuantileGK;
 
 
 /** Generic aggregate function for calculation of quantiles.
@@ -60,6 +62,7 @@ private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
 
     static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
+    static constexpr bool is_quantile_gk = std::is_same_v<Data, QuantileGK<Value>>;
     static_assert(!is_decimal<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
@@ -67,21 +70,56 @@ private:
     /// Used when there are single level to get.
     Float64 level = 0.5;
 
+    /// Used for the approximate version of the algorithm (Greenwald-Khanna)
+    ssize_t accuracy = 10000;
+
     DataTypePtr & argument_type;
 
 public:
     AggregateFunctionQuantile(const DataTypes & argument_types_, const Array & params)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>(
             argument_types_, params, createResultType(argument_types_))
-        , levels(params, returns_many)
+        , levels(is_quantile_gk && !params.empty() ? Array(params.begin() + 1, params.end()) : params, returns_many)
         , level(levels.levels[0])
         , argument_type(this->argument_types[0])
     {
         if (!returns_many && levels.size() > 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require one parameter or less", getName());
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires one level parameter or less", getName());
+
+        if constexpr (is_quantile_gk)
+        {
+            if (params.empty())
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at least one param", getName());
+
+            const auto & accuracy_field = params[0];
+            if (!isInt64OrUInt64FieldType(accuracy_field.getType()))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} requires accuracy parameter with integer type", getName());
+
+            if (accuracy_field.getType() == Field::Types::Int64)
+                accuracy = accuracy_field.get<Int64>();
+            else
+                accuracy = accuracy_field.get<UInt64>();
+
+            if (accuracy <= 0)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Aggregate function {} requires accuracy parameter with positive value but is {}",
+                    getName(),
+                    accuracy);
+        }
     }
 
     String getName() const override { return Name::name; }
+
+    void create(AggregateDataPtr __restrict place) const override /// NOLINT
+    {
+        if constexpr (is_quantile_gk)
+            new (place) Data(accuracy);
+        else
+            new (place) Data;
+    }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_)
     {
@@ -125,8 +163,11 @@ public:
         if constexpr (std::is_same_v<Data, QuantileTiming<Value>>)
         {
             /// QuantileTiming only supports unsigned integers. Too large values are also meaningless.
+#   pragma clang diagnostic push
+#   pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
             if (isNaN(value) || value > std::numeric_limits<Int64>::max() || value < 0)
                 return;
+#   pragma clang diagnostic pop
         }
 
         if constexpr (has_second_arg)
@@ -249,5 +290,8 @@ struct NameQuantileBFloat16 { static constexpr auto name = "quantileBFloat16"; }
 struct NameQuantilesBFloat16 { static constexpr auto name = "quantilesBFloat16"; };
 struct NameQuantileBFloat16Weighted { static constexpr auto name = "quantileBFloat16Weighted"; };
 struct NameQuantilesBFloat16Weighted { static constexpr auto name = "quantilesBFloat16Weighted"; };
+
+struct NameQuantileGK { static constexpr auto name = "quantileGK"; };
+struct NameQuantilesGK { static constexpr auto name = "quantilesGK"; };
 
 }

@@ -73,18 +73,6 @@
 #    endif
 #endif
 
-#if defined(ADDRESS_SANITIZER)
-#    define BOOST_USE_ASAN 1
-#    define BOOST_USE_UCONTEXT 1
-#endif
-
-#if defined(THREAD_SANITIZER)
-#    define BOOST_USE_TSAN 1
-#    define BOOST_USE_UCONTEXT 1
-#endif
-
-/// TODO: Strange enough, there is no way to detect UB sanitizer.
-
 /// Explicitly allow undefined behaviour for certain functions. Use it as a function attribute.
 /// It is useful in case when compiler cannot see (and exploit) it, but UBSan can.
 /// Example: multiplication of signed integers with possibility of overflow when both sides are from user input.
@@ -127,8 +115,15 @@
 /// because SIGABRT is easier to debug than SIGTRAP (the second one makes gdb crazy)
 #if !defined(chassert)
     #if defined(ABORT_ON_LOGICAL_ERROR)
+        // clang-format off
+        #include <base/types.h>
+        namespace DB
+        {
+            void abortOnFailedAssertion(const String & description);
+        }
         #define chassert(x) static_cast<bool>(x) ? void(0) : ::DB::abortOnFailedAssertion(#x)
         #define UNREACHABLE() abort()
+        // clang-format off
     #else
         /// Here sizeof() trick is used to suppress unused warning for result,
         /// since simple "(void)x" will evaluate the expression, while

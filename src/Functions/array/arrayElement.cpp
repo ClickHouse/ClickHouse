@@ -1065,7 +1065,7 @@ DataTypePtr FunctionArrayElement::getReturnTypeImpl(const DataTypes & arguments)
             getName(), arguments[0]->getName());
     }
 
-    if (!isInteger(arguments[1]))
+    if (!isNativeInteger(arguments[1]))
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Second argument for function '{}' must be integer, got '{}' instead",
@@ -1179,11 +1179,14 @@ ColumnPtr FunctionArrayElement::perform(const ColumnsWithTypeAndName & arguments
             || (res = executeArgument<Int16>(arguments, result_type, builder, input_rows_count))
             || (res = executeArgument<Int32>(arguments, result_type, builder, input_rows_count))
             || (res = executeArgument<Int64>(arguments, result_type, builder, input_rows_count))))
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must have UInt or Int type.", getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must have UInt or Int type", getName());
     }
     else
     {
         Field index = (*arguments[1].column)[0];
+
+        if (index.getType() != Field::Types::UInt64 && index.getType() != Field::Types::Int64)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must have UInt or Int type", getName());
 
         if (builder)
             builder.initSink(input_rows_count);

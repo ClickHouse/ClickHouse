@@ -93,7 +93,11 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
 
                 for (auto & grouping_set_key_node : grouping_set_keys_list_node_typed.getNodes())
                 {
-                    group_by_with_constant_keys |= (grouping_set_key_node->as<ConstantNode>() != nullptr);
+                    auto is_constant_key = grouping_set_key_node->as<ConstantNode>() != nullptr;
+                    group_by_with_constant_keys |= is_constant_key;
+
+                    if (is_constant_key && !aggregates_descriptions.empty())
+                        continue;
 
                     auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, grouping_set_key_node);
                     aggregation_keys.reserve(expression_dag_nodes.size());
@@ -139,21 +143,27 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
         else
         {
             for (auto & group_by_key_node : query_node.getGroupBy().getNodes())
-                group_by_with_constant_keys |= (group_by_key_node->as<ConstantNode>() != nullptr);
-
-            auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, query_node.getGroupByNode());
-            aggregation_keys.reserve(expression_dag_nodes.size());
-
-            for (auto & expression_dag_node : expression_dag_nodes)
             {
-                if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
+                auto is_constant_key = group_by_key_node->as<ConstantNode>() != nullptr;
+                group_by_with_constant_keys |= is_constant_key;
+
+                if (is_constant_key && !aggregates_descriptions.empty())
                     continue;
 
-                auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                available_columns_after_aggregation.emplace_back(nullptr, expression_type_after_aggregation, expression_dag_node->result_name);
-                aggregation_keys.push_back(expression_dag_node->result_name);
-                before_aggregation_actions->getOutputs().push_back(expression_dag_node);
-                before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
+                auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, group_by_key_node);
+                aggregation_keys.reserve(expression_dag_nodes.size());
+
+                for (auto & expression_dag_node : expression_dag_nodes)
+                {
+                    if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
+                        continue;
+
+                    auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
+                    available_columns_after_aggregation.emplace_back(nullptr, expression_type_after_aggregation, expression_dag_node->result_name);
+                    aggregation_keys.push_back(expression_dag_node->result_name);
+                    before_aggregation_actions->getOutputs().push_back(expression_dag_node);
+                    before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
+                }
             }
         }
     }

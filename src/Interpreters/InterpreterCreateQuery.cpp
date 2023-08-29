@@ -9,6 +9,7 @@
 #include <Common/Macros.h>
 #include <Common/randomSeed.h>
 #include <Common/atomicRename.h>
+#include <Common/logger_useful.h>
 #include <base/hex.h>
 
 #include <Core/Defines.h>
@@ -71,7 +72,6 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeFixedString.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -227,13 +227,23 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         metadata_path = metadata_path / "metadata" / database_name_escaped;
     }
 
+    if (create.storage->engine->name == "Replicated" && !internal && !create.attach && create.storage->engine->arguments)
+    {
+        /// Fill in default parameters
+        if (create.storage->engine->arguments->children.size() == 1)
+            create.storage->engine->arguments->children.push_back(std::make_shared<ASTLiteral>("{shard}"));
+
+        if (create.storage->engine->arguments->children.size() == 2)
+            create.storage->engine->arguments->children.push_back(std::make_shared<ASTLiteral>("{replica}"));
+    }
+
     if ((create.storage->engine->name == "MaterializeMySQL" || create.storage->engine->name == "MaterializedMySQL")
         && !getContext()->getSettingsRef().allow_experimental_database_materialized_mysql
         && !internal && !create.attach)
     {
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                         "MaterializedMySQL is an experimental database engine. "
-                        "Enable allow_experimental_database_materialized_mysql to use it.");
+                        "Enable allow_experimental_database_materialized_mysql to use it");
     }
 
     if (create.storage->engine->name == "Replicated"
@@ -242,7 +252,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                         "Replicated is an experimental database engine. "
-                        "Enable allow_experimental_database_replicated to use it.");
+                        "Enable allow_experimental_database_replicated to use it");
     }
 
     if (create.storage->engine->name == "MaterializedPostgreSQL"
@@ -251,7 +261,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                         "MaterializedPostgreSQL is an experimental database engine. "
-                        "Enable allow_experimental_database_materialized_postgresql to use it.");
+                        "Enable allow_experimental_database_materialized_postgresql to use it");
     }
 
     bool need_write_metadata = !create.attach || !fs::exists(metadata_file_path);
@@ -561,6 +571,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     bool sanity_check_compression_codecs = !attach && !context_->getSettingsRef().allow_suspicious_codecs;
     bool allow_experimental_codecs = attach || context_->getSettingsRef().allow_experimental_codecs;
+    bool enable_deflate_qpl_codec = attach || context_->getSettingsRef().enable_deflate_qpl_codec;
 
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
@@ -621,7 +632,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.default_specifier == "ALIAS")
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs);
+                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec);
         }
 
         if (col_decl.ttl)
@@ -693,6 +704,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 if (index_desc.type == "annoy" && !settings.allow_experimental_annoy_index)
                     throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index is disabled. Turn on allow_experimental_annoy_index");
 
+                if (index_desc.type == "usearch" && !settings.allow_experimental_usearch_index)
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "USearch index is disabled. Turn on allow_experimental_usearch_index");
+
                 properties.indices.push_back(index_desc);
             }
         if (create.columns_list->projections)
@@ -753,7 +767,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// Table function without columns list.
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
-        properties.columns = table_function->getActualTableStructure(getContext());
+        properties.columns = table_function->getActualTableStructure(getContext(), /*is_insert_query*/ true);
     }
     else if (create.is_dictionary)
     {
@@ -838,21 +852,6 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
         }
     }
 
-    if (!create.attach && !settings.allow_experimental_geo_types)
-    {
-        for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
-        {
-            const auto & type = name_and_type_pair.type->getName();
-            if (type == "MultiPolygon" || type == "Polygon" || type == "Ring" || type == "Point")
-            {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot create table with column '{}' which type is '{}' "
-                                "because experimental geo types are not allowed. "
-                                "Set setting allow_experimental_geo_types = 1 in order to allow it",
-                                name_and_type_pair.name, type);
-            }
-        }
-    }
-
     if (!create.attach && !settings.allow_experimental_object_type)
     {
         for (const auto & [name, type] : properties.columns.getAllPhysical())
@@ -885,46 +884,24 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
 }
 
-String InterpreterCreateQuery::getTableEngineName(DefaultTableEngine default_table_engine)
+namespace
 {
-    switch (default_table_engine)
+    void checkTemporaryTableEngineName(const String& name)
     {
-        case DefaultTableEngine::Log:
-            return "Log";
-
-        case DefaultTableEngine::StripeLog:
-            return "StripeLog";
-
-        case DefaultTableEngine::MergeTree:
-            return "MergeTree";
-
-        case DefaultTableEngine::ReplacingMergeTree:
-            return "ReplacingMergeTree";
-
-        case DefaultTableEngine::ReplicatedMergeTree:
-            return "ReplicatedMergeTree";
-
-        case DefaultTableEngine::ReplicatedReplacingMergeTree:
-            return "ReplicatedReplacingMergeTree";
-
-        case DefaultTableEngine::Memory:
-            return "Memory";
-
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "default_table_engine is set to unknown value");
+        if (name.starts_with("Replicated") || name == "KeeperMap")
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated or KeeperMap table engines");
     }
-}
 
-void InterpreterCreateQuery::setDefaultTableEngine(ASTStorage & storage, ContextPtr local_context)
-{
-    if (local_context->getSettingsRef().default_table_engine.value == DefaultTableEngine::None)
-        throw Exception(ErrorCodes::ENGINE_REQUIRED, "Table engine is not specified in CREATE query");
+    void setDefaultTableEngine(ASTStorage &storage, DefaultTableEngine engine)
+    {
+        if (engine == DefaultTableEngine::None)
+            throw Exception(ErrorCodes::ENGINE_REQUIRED, "Table engine is not specified in CREATE query");
 
-    auto engine_ast = std::make_shared<ASTFunction>();
-    auto default_table_engine = local_context->getSettingsRef().default_table_engine.value;
-    engine_ast->name = getTableEngineName(default_table_engine);
-    engine_ast->no_empty_args = true;
-    storage.set(storage.engine, engine_ast);
+        auto engine_ast = std::make_shared<ASTFunction>();
+        engine_ast->name = SettingFieldDefaultTableEngine(engine).toString();
+        engine_ast->no_empty_args = true;
+        storage.set(storage.engine, engine_ast);
+    }
 }
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
@@ -940,32 +917,23 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
     if (create.temporary)
     {
-        /// It's possible if some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not.
-        /// It makes sense when default_table_engine setting is used, but not for temporary tables.
-        /// For temporary tables we ignore this setting to allow CREATE TEMPORARY TABLE query without specifying ENGINE
+        /// Some part of storage definition is specified, but ENGINE is not: just set the one from default_temporary_table_engine setting.
 
         if (!create.cluster.empty())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with ON CLUSTER clause");
 
-        if (create.storage)
+        if (!create.storage)
         {
-            if (create.storage->engine)
-            {
-                if (create.storage->engine->name.starts_with("Replicated") || create.storage->engine->name == "KeeperMap")
-                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated or KeeperMap table engines");
-            }
-            else
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Invalid storage definition for temporary table");
-        }
-        else
-        {
-            auto engine_ast = std::make_shared<ASTFunction>();
-            engine_ast->name = "Memory";
-            engine_ast->no_empty_args = true;
             auto storage_ast = std::make_shared<ASTStorage>();
-            storage_ast->set(storage_ast->engine, engine_ast);
             create.set(create.storage, storage_ast);
         }
+
+        if (!create.storage->engine)
+        {
+            setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_temporary_table_engine.value);
+        }
+
+        checkTemporaryTableEngineName(create.storage->engine->name);
         return;
     }
 
@@ -973,7 +941,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     {
         /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
         if (!create.storage->engine)
-            setDefaultTableEngine(*create.storage, getContext());
+            setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_table_engine.value);
         return;
     }
 
@@ -1012,7 +980,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     }
 
     create.set(create.storage, std::make_shared<ASTStorage>());
-    setDefaultTableEngine(*create.storage, getContext());
+    setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_table_engine.value);
 }
 
 static void generateUUIDForTable(ASTCreateQuery & create)
@@ -1107,12 +1075,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         /// For short syntax of ATTACH query we have to lock table name here, before reading metadata
         /// and hold it until table is attached
-        ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
+        if (likely(need_ddl_guard))
+            ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
 
         bool if_not_exists = create.if_not_exists;
 
         // Table SQL definition is available even if the table is detached (even permanently)
         auto query = database->getCreateTableQuery(create.getTable(), getContext());
+        FunctionNameNormalizer().visit(query.get());
         auto create_query = query->as<ASTCreateQuery &>();
 
         if (!create.is_dictionary && create_query.is_dictionary)
@@ -1201,7 +1171,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create);
 
     /// Check type compatible for materialized dest table and select columns
-    if (create.select && create.is_materialized_view && create.to_table_id)
+    if (create.select && create.is_materialized_view && create.to_table_id && !create.attach)
     {
         if (StoragePtr to_table = DatabaseCatalog::instance().tryGetTable(
             {create.to_table_id.database_name, create.to_table_id.table_name, create.to_table_id.uuid},
@@ -1312,7 +1282,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         return true;
     }
 
-    if (!ddl_guard)
+    if (!ddl_guard && likely(need_ddl_guard))
         ddl_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
 
     String data_path;
@@ -1362,10 +1332,32 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     data_path = database->getTableDataPath(create);
+    auto full_data_path = fs::path{getContext()->getPath()} / data_path;
 
-    if (!create.attach && !data_path.empty() && fs::exists(fs::path{getContext()->getPath()} / data_path))
-        throw Exception(storage_already_exists_error_code,
-            "Directory for {} data {} already exists", Poco::toLower(storage_name), String(data_path));
+    if (!create.attach && !data_path.empty() && fs::exists(full_data_path))
+    {
+        if (getContext()->getZooKeeperMetadataTransaction() &&
+            !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery() &&
+            !DatabaseCatalog::instance().hasUUIDMapping(create.uuid) &&
+            Context::getGlobalContextInstance()->isServerCompletelyStarted() &&
+            Context::getGlobalContextInstance()->getConfigRef().getBool("allow_moving_table_directory_to_trash", false))
+        {
+            /// This is a secondary query from a Replicated database. It cannot be retried with another UUID, we must execute it as is.
+            /// We don't have a table with this UUID (and all metadata is loaded),
+            /// so the existing directory probably contains some leftovers from previous unsuccessful attempts to create the table
+
+            fs::path trash_path = fs::path{getContext()->getPath()} / "trash" / data_path / getHexUIntLowercase(thread_local_rng());
+            LOG_WARNING(&Poco::Logger::get("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
+                        Poco::toLower(storage_name), String(data_path), trash_path);
+            fs::create_directories(trash_path.parent_path());
+            renameNoReplace(full_data_path, trash_path);
+        }
+        else
+        {
+            throw Exception(storage_already_exists_error_code,
+                "Directory for {} data {} already exists", Poco::toLower(storage_name), String(data_path));
+        }
+    }
 
     bool from_path = create.attach_from_path.has_value();
     String actual_data_path = data_path;

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-parallel, no-fasttest
+# Tags: no-random-settings, no-fasttest, no-parallel
+# For unknown reason this test is flaky without no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,7 +18,7 @@ DROP TABLE IF EXISTS wv;
 
 CREATE TABLE dst(time DateTime, colA String, colB String) Engine=MergeTree ORDER BY tuple();
 CREATE TABLE mt(colA String, colB String) ENGINE=MergeTree ORDER BY tuple();
-CREATE WINDOW VIEW wv TO dst AS SELECT tumbleStart(w_id) AS time, colA, colB FROM mt GROUP BY tumble(now(), INTERVAL '10' SECOND, 'US/Samoa') AS w_id, colA, colB;
+CREATE WINDOW VIEW wv TO dst AS SELECT tumbleStart(w_id) AS time, colA, colB FROM mt GROUP BY tumble(now('US/Samoa'), INTERVAL '10' SECOND, 'US/Samoa') AS w_id, colA, colB;
 
 INSERT INTO mt VALUES ('test1', 'test2');
 EOF

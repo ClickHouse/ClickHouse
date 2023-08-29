@@ -10,6 +10,8 @@
 
 #include <Parsers/ASTWithAlias.h>
 
+#include <boost/functional/hash.hpp>
+
 namespace DB
 {
 
@@ -229,10 +231,7 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
         }
     }
 
-    Hash result;
-    hash_state.get128(result);
-
-    return result;
+    return getSipHash128AsPair(hash_state);
 }
 
 QueryTreeNodePtr IQueryTreeNode::clone() const
@@ -331,9 +330,9 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const QueryTreeNodePtr & node_t
     return cloneAndReplace(replacement_map);
 }
 
-ASTPtr IQueryTreeNode::toAST() const
+ASTPtr IQueryTreeNode::toAST(const ConvertToASTOptions & options) const
 {
-    auto converted_node = toASTImpl();
+    auto converted_node = toASTImpl(options);
 
     if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(converted_node.get()))
         converted_node->setAlias(alias);

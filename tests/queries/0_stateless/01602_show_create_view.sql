@@ -18,15 +18,9 @@ CREATE MATERIALIZED VIEW test_1602.vv (`EventDate` DateTime, `CounterID` UInt32,
 
 CREATE VIEW test_1602.VIEW AS SELECT * FROM test_1602.tbl; 
 
-SET allow_experimental_live_view=1;
-
-CREATE LIVE VIEW test_1602.vvv AS SELECT * FROM test_1602.tbl;
-
 SHOW CREATE VIEW test_1602.v;
 
 SHOW CREATE VIEW test_1602.vv;
-
-SHOW CREATE VIEW test_1602.vvv;
 
 SHOW CREATE VIEW test_1602.not_exist_view; -- { serverError 390 }
 

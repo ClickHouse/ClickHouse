@@ -13,6 +13,9 @@
   * (~ 700 MB/sec, 15 million strings per second)
   */
 
+#include "TransformEndianness.hpp"
+
+#include <bit>
 #include <string>
 #include <type_traits>
 #include <Core/Defines.h>
@@ -21,23 +24,20 @@
 #include <base/unaligned.h>
 #include <Common/Exception.h>
 
-namespace DB
-{
-namespace ErrorCodes
+#include <city.h>
+
+namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
-}
-
-#define ROTL(x, b) static_cast<UInt64>(((x) << (b)) | ((x) >> (64 - (b))))
 
 #define SIPROUND                                                  \
     do                                                            \
     {                                                             \
-        v0 += v1; v1 = ROTL(v1, 13); v1 ^= v0; v0 = ROTL(v0, 32); \
-        v2 += v3; v3 = ROTL(v3, 16); v3 ^= v2;                    \
-        v0 += v3; v3 = ROTL(v3, 21); v3 ^= v0;                    \
-        v2 += v1; v1 = ROTL(v1, 17); v1 ^= v2; v2 = ROTL(v2, 32); \
+        v0 += v1; v1 = std::rotl(v1, 13); v1 ^= v0; v0 = std::rotl(v0, 32); \
+        v2 += v3; v3 = std::rotl(v3, 16); v3 ^= v2;                    \
+        v0 += v3; v3 = std::rotl(v3, 21); v3 ^= v0;                    \
+        v2 += v1; v1 = std::rotl(v1, 17); v1 ^= v2; v2 = std::rotl(v2, 32); \
     } while(0)
 
 /// Define macro CURRENT_BYTES_IDX for building index used in current_bytes array
@@ -136,7 +136,7 @@ public:
 
         while (data + 8 <= end)
         {
-            current_word = unalignedLoadLE<UInt64>(data);
+            current_word = unalignedLoadLittleEndian<UInt64>(data);
 
             v3 ^= current_word;
             SIPROUND;
@@ -161,62 +161,50 @@ public:
         }
     }
 
-    template <typename T>
+    template <typename Transform = void, typename T>
     ALWAYS_INLINE void update(const T & x)
     {
-        update(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
+        if constexpr (std::endian::native == std::endian::big)
+        {
+            auto transformed_x = x;
+            if constexpr (!std::is_same_v<Transform, void>)
+                transformed_x = Transform()(x);
+            else
+                DB::transformEndianness<std::endian::little>(transformed_x);
+
+            update(reinterpret_cast<const char *>(&transformed_x), sizeof(transformed_x)); /// NOLINT
+        }
+        else
+            update(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
     }
 
-    ALWAYS_INLINE void update(const std::string & x)
-    {
-        update(x.data(), x.length());
-    }
+    ALWAYS_INLINE void update(const std::string & x) { update(x.data(), x.length()); }
+    ALWAYS_INLINE void update(const std::string_view x) { update(x.data(), x.size()); }
+    ALWAYS_INLINE void update(const char * s) { update(std::string_view(s)); }
 
-    ALWAYS_INLINE void update(const std::string_view x)
-    {
-        update(x.data(), x.size());
-    }
-
-    /// Get the result in some form. This can only be done once!
-
-    void get128(char * out)
-    {
-        finalize();
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        unalignedStore<UInt64>(out + 8, v0 ^ v1);
-        unalignedStore<UInt64>(out, v2 ^ v3);
-#else
-        unalignedStore<UInt64>(out, v0 ^ v1);
-        unalignedStore<UInt64>(out + 8, v2 ^ v3);
-#endif
-    }
-
-    template <typename T>
-    ALWAYS_INLINE void get128(T & lo, T & hi)
-    {
-        static_assert(sizeof(T) == 8);
-        finalize();
-        lo = v0 ^ v1;
-        hi = v2 ^ v3;
-    }
-
-    template <typename T>
-    ALWAYS_INLINE void get128(T & dst)
-    {
-        static_assert(sizeof(T) == 16);
-        get128(reinterpret_cast<char *>(&dst));
-    }
-
-    UInt64 get64()
+    ALWAYS_INLINE UInt64 get64()
     {
         finalize();
         return v0 ^ v1 ^ v2 ^ v3;
     }
 
-    UInt128 get128()
+    template <typename T>
+    requires (sizeof(T) == 8)
+    ALWAYS_INLINE void get128(T & lo, T & hi)
+    {
+        finalize();
+        lo = v0 ^ v1;
+        hi = v2 ^ v3;
+    }
+
+    ALWAYS_INLINE UInt128 get128()
     {
         UInt128 res;
-        get128(res);
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        get128(res.items[1], res.items[0]);
+#else
+        get128(res.items[0], res.items[1]);
+#endif
         return res;
     }
 
@@ -233,14 +221,14 @@ public:
         SIPROUND;
         SIPROUND;
         auto hi = v0 ^ v1 ^ v2 ^ v3;
+
         if constexpr (std::endian::native == std::endian::big)
         {
-            lo = __builtin_bswap64(lo);
-            hi = __builtin_bswap64(hi);
-            auto tmp = hi;
-            hi = lo;
-            lo = tmp;
+            lo = std::byteswap(lo);
+            hi = std::byteswap(hi);
+            std::swap(lo, hi);
         }
+
         UInt128 res = hi;
         res <<= 64;
         res |= lo;
@@ -254,11 +242,18 @@ public:
 
 #include <cstddef>
 
-inline void sipHash128(const char * data, const size_t size, char * out)
+inline std::array<char, 16> getSipHash128AsArray(SipHash & sip_hash)
 {
-    SipHash hash;
-    hash.update(data, size);
-    hash.get128(out);
+    std::array<char, 16> arr;
+    *reinterpret_cast<UInt128*>(arr.data()) = sip_hash.get128();
+    return arr;
+}
+
+inline CityHash_v1_0_2::uint128 getSipHash128AsPair(SipHash & sip_hash)
+{
+    CityHash_v1_0_2::uint128 result;
+    sip_hash.get128(result.low64, result.high64);
+    return result;
 }
 
 inline UInt128 sipHash128Keyed(UInt64 key0, UInt64 key1, const char * data, const size_t size)
@@ -298,7 +293,7 @@ inline UInt64 sipHash64(const char * data, const size_t size)
 }
 
 template <typename T>
-UInt64 sipHash64(const T & x)
+inline UInt64 sipHash64(const T & x)
 {
     SipHash hash;
     hash.update(x);

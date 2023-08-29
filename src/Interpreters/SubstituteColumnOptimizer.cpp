@@ -32,13 +32,13 @@ public:
 
     struct Data
     {
-        const ComparisonGraph & graph;
+        const ComparisonGraph<ASTPtr> & graph;
         std::set<UInt64> & components;
         std::unordered_map<String, String> & old_name;
         std::unordered_map<String, UInt64> & component;
         UInt64 & current_id;
 
-        Data(const ComparisonGraph & graph_,
+        Data(const ComparisonGraph<ASTPtr> & graph_,
              std::set<UInt64> & components_,
              std::unordered_map<String, String> & old_name_,
              std::unordered_map<String, UInt64> & component_,
@@ -165,7 +165,7 @@ ColumnPrice calculatePrice(
 /// price of all columns on which ast depends.
 /// TODO: branch-and-bound
 void bruteforce(
-    const ComparisonGraph & graph,
+    const ComparisonGraph<ASTPtr> & graph,
     const std::vector<UInt64> & components,
     size_t current_component,
     const ColumnPriceByName & column_prices,

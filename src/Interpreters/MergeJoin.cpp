@@ -3,6 +3,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 
+#include <Common/logger_useful.h>
 #include <Core/SortCursor.h>
 #include <Formats/TemporaryFileStreamLegacy.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -668,7 +669,7 @@ Block MergeJoin::modifyRightBlock(const Block & src_block) const
     return block;
 }
 
-bool MergeJoin::addJoinedBlock(const Block & src_block, bool)
+bool MergeJoin::addBlockToJoin(const Block & src_block, bool)
 {
     Block block = modifyRightBlock(src_block);
 
@@ -1033,7 +1034,7 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
     {
         auto load_func = [&]() -> std::shared_ptr<Block>
         {
-            TemporaryFileStreamLegacy input(flushed_right_blocks[pos]->getPath(), materializeBlock(right_sample_block));
+            TemporaryFileStreamLegacy input(flushed_right_blocks[pos]->getAbsolutePath(), materializeBlock(right_sample_block));
             return std::make_shared<Block>(input.block_in->read());
         };
 
@@ -1045,7 +1046,7 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
 
 void MergeJoin::initRightTableWriter()
 {
-    disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, table_join->getTemporaryVolume(),
+    disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, table_join->getGlobalTemporaryVolume(),
                     right_sample_block, right_sort_description, max_rows_in_right_block, max_files_to_merge,
                     table_join->temporaryFilesCodec());
     disk_writer->addBlocks(right_blocks);

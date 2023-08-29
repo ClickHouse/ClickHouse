@@ -326,7 +326,7 @@ void load(const char * src, T * buf, UInt32 tail = 64)
         /// as little-endian types on big-endian machine (s390x, etc).
         for (UInt32 i = 0; i < tail; ++i)
         {
-            buf[i] = unalignedLoadLE<T>(src + i * sizeof(T));
+            buf[i] = unalignedLoadLittleEndian<T>(src + i * sizeof(T));
         }
     }
 }
@@ -378,6 +378,13 @@ void transpose(const T * src, char * dst, UInt32 num_bits, UInt32 tail = 64)
 
 /// UInt64[N] transposed matrix -> UIntX[64]
 template <typename T, bool full = false>
+#if defined(__s390x__)
+
+/* Compiler Bug for S390x :- https://github.com/llvm/llvm-project/issues/62572
+ * Please remove this after the fix is backported
+ */
+        __attribute__((noinline))
+#endif
 void reverseTranspose(const char * src, T * buf, UInt32 num_bits, UInt32 tail = 64)
 {
     UInt64 matrix[64] = {};

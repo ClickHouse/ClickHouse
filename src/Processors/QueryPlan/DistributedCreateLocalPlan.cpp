@@ -55,6 +55,10 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     auto query_plan = std::make_unique<QueryPlan>();
     auto new_context = Context::createCopy(context);
 
+    /// Do not push down limit to local plan, as it will break `rows_before_limit_at_least` counter.
+    if (processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
+        processed_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
+
     /// Do not apply AST optimizations, because query
     /// is already optimized and some optimizations
     /// can be applied only for non-distributed tables
@@ -68,14 +72,10 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     if (coordinator)
     {
         new_context->parallel_reading_coordinator = coordinator;
-        new_context->getClientInfo().interface = ClientInfo::Interface::LOCAL;
-        new_context->getClientInfo().collaborate_with_initiator = true;
-        new_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-        new_context->getClientInfo().count_participating_replicas = replica_count;
-        new_context->getClientInfo().number_of_current_replica = replica_num;
-        new_context->getClientInfo().connection_client_version_major = DBMS_VERSION_MAJOR;
-        new_context->getClientInfo().connection_client_version_minor = DBMS_VERSION_MINOR;
-        new_context->getClientInfo().connection_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
+        new_context->setClientInterface(ClientInfo::Interface::LOCAL);
+        new_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+        new_context->setReplicaInfo(true, replica_count, replica_num);
+        new_context->setConnectionClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
         new_context->setParallelReplicasGroupUUID(group_uuid);
         new_context->setMergeTreeAllRangesCallback([coordinator](InitialAllRangesAnnouncement announcement)
         {

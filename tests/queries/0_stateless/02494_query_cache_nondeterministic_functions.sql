@@ -1,8 +1,6 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
-SET allow_experimental_query_cache = true;
-
 SYSTEM DROP QUERY CACHE;
 
 -- rand() is non-deterministic, with default settings no entry in the query cache should be created

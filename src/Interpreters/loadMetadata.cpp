@@ -16,15 +16,23 @@
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <Common/escapeForFileName.h>
 
+#include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
-#include <filesystem>
 #include <Common/logger_useful.h>
+#include <Common/CurrentMetrics.h>
+
+#include <filesystem>
 
 #define ORDINARY_TO_ATOMIC_PREFIX ".tmp_convert."
 
 namespace fs = std::filesystem;
+
+namespace CurrentMetrics
+{
+    extern const Metric StartupSystemTablesThreads;
+    extern const Metric StartupSystemTablesThreadsActive;
+}
 
 namespace DB
 {
@@ -37,10 +45,10 @@ namespace ErrorCodes
 
 namespace ActionLocks
 {
-    extern StorageActionBlockType PartsMerge;
-    extern StorageActionBlockType PartsFetch;
-    extern StorageActionBlockType PartsSend;
-    extern StorageActionBlockType DistributedSend;
+    extern const StorageActionBlockType PartsMerge;
+    extern const StorageActionBlockType PartsFetch;
+    extern const StorageActionBlockType PartsSend;
+    extern const StorageActionBlockType DistributedSend;
 }
 
 static void executeCreateQuery(
@@ -242,6 +250,9 @@ static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & dat
 {
     String path = context->getPath() + "metadata/" + database_name;
     String metadata_file = path + ".sql";
+    if (fs::exists(metadata_file + ".tmp"))
+        fs::remove(metadata_file + ".tmp");
+
     if (fs::exists(fs::path(metadata_file)))
     {
         /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
@@ -366,7 +377,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         if (!tables_started)
         {
             /// It's not quite correct to run DDL queries while database is not started up.
-            ThreadPool pool;
+            ThreadPool pool(CurrentMetrics::StartupSystemTablesThreads, CurrentMetrics::StartupSystemTablesThreadsActive);
             DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, LoadingStrictnessLevel::FORCE_RESTORE);
         }
 
@@ -461,7 +472,7 @@ void convertDatabasesEnginesIfNeed(ContextMutablePtr context)
 
 void startupSystemTables()
 {
-    ThreadPool pool;
+    ThreadPool pool(CurrentMetrics::StartupSystemTablesThreads, CurrentMetrics::StartupSystemTablesThreadsActive);
     DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, LoadingStrictnessLevel::FORCE_RESTORE);
 }
 
