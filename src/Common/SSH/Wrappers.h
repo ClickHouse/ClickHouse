@@ -59,6 +59,7 @@ public:
 };
 
 }
+}
 
 #else
 namespace ssh
@@ -70,5 +71,3 @@ public:
 };
 }
 #endif
-
-}
