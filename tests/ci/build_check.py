@@ -10,6 +10,7 @@ import sys
 import time
 
 from ci_config import CI_CONFIG, BuildConfig
+from ccache_utils import CargoCache
 from docker_pull_helper import get_image_with_version
 from env_helper import (
     GITHUB_JOB,
@@ -53,6 +54,7 @@ def get_packager_cmd(
     build_config: BuildConfig,
     packager_path: str,
     output_path: Path,
+    cargo_cache_dir: Path,
     build_version: str,
     image_version: str,
     official: bool,
@@ -75,6 +77,7 @@ def get_packager_cmd(
     cmd += " --cache=sccache"
     cmd += " --s3-rw-access"
     cmd += f" --s3-bucket={S3_BUILDS_BUCKET}"
+    cmd += f" --cargo-cache-dir={cargo_cache_dir}"
 
     if build_config.additional_pkgs:
         cmd += " --additional-pkgs"
@@ -287,11 +290,16 @@ def main():
 
     build_output_path = temp_path / build_name
     os.makedirs(build_output_path, exist_ok=True)
+    cargo_cache = CargoCache(
+        temp_path / "cargo_cache" / "registry", temp_path, s3_helper
+    )
+    cargo_cache.download()
 
     packager_cmd = get_packager_cmd(
         build_config,
         os.path.join(REPO_COPY, "docker/packager"),
         build_output_path,
+        cargo_cache.directory,
         version.string,
         image_version,
         official_flag,
@@ -309,6 +317,9 @@ def main():
         f"sudo chown -R ubuntu:ubuntu {build_output_path}", shell=True
     )
     logging.info("Build finished with %s, log path %s", success, log_path)
+    if success:
+        cargo_cache.upload()
+
     if not success:
         # We check if docker works, because if it's down, it's infrastructure
         try:

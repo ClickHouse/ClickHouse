@@ -331,6 +331,9 @@ StorageDistributed::StorageDistributed(
     , distributed_settings(distributed_settings_)
     , rng(randomSeed())
 {
+    if (!distributed_settings.flush_on_detach && distributed_settings.monitor_batch_inserts)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and monitor_batch_inserts=1 are incompatible");
+
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
     {
@@ -691,7 +694,11 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
         if (remote_storage_id.hasDatabase())
             resolved_remote_storage_id = query_context->resolveStorageID(remote_storage_id);
 
-        auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_snapshot->metadata->getColumns(), distributed_storage_snapshot->object_columns);
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+
+        auto column_names_and_types = distributed_storage_snapshot->getColumns(get_column_options);
+
+        auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, ColumnsDescription{column_names_and_types});
         auto table_node = std::make_shared<TableNode>(std::move(storage), query_context);
 
         if (table_expression_modifiers)
@@ -1459,9 +1466,18 @@ void StorageDistributed::flushClusterNodesAllData(ContextPtr local_context)
             directory_monitors.push_back(node.second.directory_monitor);
     }
 
+    bool need_flush = getDistributedSettingsRef().flush_on_detach;
+    if (!need_flush)
+        LOG_INFO(log, "Skip flushing data (due to flush_on_detach=0)");
+
     /// TODO: Maybe it should be executed in parallel
     for (auto & node : directory_monitors)
-        node->flushAllData();
+    {
+        if (need_flush)
+            node->flushAllData();
+        else
+            node->shutdownWithoutFlush();
+    }
 }
 
 void StorageDistributed::rename(const String & new_path_to_table_data, const StorageID & new_table_id)

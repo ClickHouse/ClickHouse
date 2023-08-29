@@ -122,6 +122,9 @@ public:
     /// Otherwise return information about secondary index size on disk.
     IndexSize getSecondaryIndexSize(const String & secondary_index_name) const;
 
+    /// Returns true if there is materialized index with specified name in part.
+    bool hasSecondaryIndex(const String & index_name) const;
+
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const { return total_columns_size; }
 
@@ -261,6 +264,8 @@ public:
     /// Some old parts don't have metadata version, so we set it to the current table's version when loading the part
     bool old_part_with_no_metadata_version_on_disk = false;
 
+    bool new_part_was_committed_to_zookeeper_after_rename_on_disk = false;
+
     using TTLInfo = MergeTreeDataPartTTLInfo;
     using TTLInfos = MergeTreeDataPartTTLInfos;
 
@@ -368,7 +373,8 @@ public:
     virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists);
 
     /// Makes clone of a part in detached/ directory via hard links
-    virtual DataPartStoragePtr makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
+    virtual DataPartStoragePtr makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot,
+                                                   const DiskTransactionPtr & disk_transaction) const;
 
     /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
     MutableDataPartStoragePtr makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
