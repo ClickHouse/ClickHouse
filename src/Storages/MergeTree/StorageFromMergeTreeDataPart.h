@@ -89,6 +89,8 @@ public:
 
     bool supportsDynamicSubcolumns() const override { return true; }
 
+    bool supportsSubcolumns() const override { return true; }
+
     bool mayBenefitFromIndexForIn(
         const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override
     {
@@ -108,6 +110,12 @@ public:
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const
     {
         return storage.getPartitionIDFromQuery(ast, context);
+    }
+
+    StorageSnapshotPtr getStorageSnapshotForQuery(
+        const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context) const override
+    {
+        return storage.getStorageSnapshot(metadata_snapshot, query_context);
     }
 
     bool materializeTTLRecalculateOnly() const
