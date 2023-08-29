@@ -17,13 +17,11 @@ public:
     {
         command_name = "copy";
         command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
-        description = "Recursively copy data containing at `from_path` to `to_path`\nPath should be in format './' or './path' or 'path'";
+        description = "Recursively copy data from `FROM_PATH` to `TO_PATH`";
         usage = "copy [OPTION]... <FROM_PATH> <TO_PATH>";
         command_option_description->add_options()
-            ("diskFrom", po::value<String>(), "set name for disk from which we do operations")
-            ("diskTo", po::value<String>(), "set name for disk to which we do operations")
-            ;
-
+            ("diskFrom", po::value<String>(), "disk from which we copy")
+            ("diskTo", po::value<String>(), "disk to which we copy");
     }
 
     void processOptions(
