@@ -114,6 +114,26 @@ void AsynchronousBoundedReadBuffer::setReadUntilPosition(size_t position)
 {
     if (!read_until_position || position != *read_until_position)
     {
+        if (position < file_offset_of_buffer_end)
+        {
+            /// file has been read beyond new read until position already
+            if (working_buffer.size() >= file_offset_of_buffer_end - position)
+            {
+                /// new read until position is inside working buffer
+                file_offset_of_buffer_end = position;
+            }
+            else
+            {
+                /// new read until position is before working buffer begin
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Attempt to set read until position before already read data ({} > {}, info: {})",
+                    position,
+                    getPosition(),
+                    impl->getInfoForLog());
+            }
+        }
+
         read_until_position = position;
 
         /// We must wait on future and reset the prefetch here, because otherwise there might be
@@ -248,7 +268,6 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
         {
             /// Position is still inside the buffer.
             /// Probably it is at the end of the buffer - then we will load data on the following 'next' call.
-
             pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
             assert(pos >= working_buffer.begin());
             assert(pos <= working_buffer.end());
