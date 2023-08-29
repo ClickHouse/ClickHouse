@@ -27,6 +27,7 @@ public:
 template <unum::usearch::metric_kind_t Metric>
 using USearchIndexWithSerializationPtr = std::shared_ptr<USearchIndexWithSerialization<Metric>>;
 
+
 template <unum::usearch::metric_kind_t Metric>
 struct MergeTreeIndexGranuleUSearch final : public IMergeTreeIndexGranule
 {
@@ -44,6 +45,7 @@ struct MergeTreeIndexGranuleUSearch final : public IMergeTreeIndexGranule
     const Block index_sample_block;
     USearchIndexWithSerializationPtr<Metric> index;
 };
+
 
 template <unum::usearch::metric_kind_t Metric>
 struct MergeTreeIndexAggregatorUSearch final : IMergeTreeIndexAggregator
@@ -64,7 +66,11 @@ struct MergeTreeIndexAggregatorUSearch final : IMergeTreeIndexAggregator
 class MergeTreeIndexConditionUSearch final : public IMergeTreeIndexConditionApproximateNearestNeighbor
 {
 public:
-    MergeTreeIndexConditionUSearch(const IndexDescription & index_description, const SelectQueryInfo & query, const String & distance_function, ContextPtr context);
+    MergeTreeIndexConditionUSearch(
+        const IndexDescription & index_description,
+        const SelectQueryInfo & query,
+        const String & distance_function,
+        ContextPtr context);
 
     ~MergeTreeIndexConditionUSearch() override = default;
 
@@ -97,7 +103,6 @@ public:
 private:
     const String distance_function;
 };
-
 
 }
 
