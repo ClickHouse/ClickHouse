@@ -64,7 +64,7 @@ public:
         AlterConversionsPtr alter_conversions;
         /// Column names to read during PREWHERE and WHERE
         Columns task_columns;
-        /// Shared initialied size predictor. It is copied for each new task.
+        /// Shared initialized size predictor. It is copied for each new task.
         MergeTreeBlockSizePredictorPtr shared_size_predictor;
     };
 
