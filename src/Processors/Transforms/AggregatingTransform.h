@@ -170,7 +170,8 @@ public:
     void work() override;
     Processors expandPipeline() override;
 
-    PartialResultStatus getPartialResultProcessorSupportStatus() const override {
+    PartialResultStatus getPartialResultProcessorSupportStatus() const override
+    {
         /// Currently AggregatingPartialResultTransform support only single-thread aggregation without key.
 
         /// TODO: check that insert results from aggregator.prepareBlockAndFillWithoutKey return values without
