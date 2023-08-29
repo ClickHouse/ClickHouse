@@ -403,7 +403,7 @@ These codecs are designed to make compression more effective by using specific f
 
 #### GCD
 
-`GCD(bytes_size)` - Calculates the greatest common denominator (GCD) of all values in the column, then divides each value by the GCD. This codec is for data preparation and is not suitable for use without an additional codec. GCD-codec can be used with Integers, Decimals and DateTime. Possible `bytes_size` values: 1, 2, 4, 8, 16, 32 the default value is `sizeof(type)` if equal to 1, 2, 4, 8, 16, or 32. A good use case would be to store timestamps or monetary values with high precision.
+`GCD()` - Calculates the greatest common denominator (GCD) of all values in the column, then divides each value by the GCD. This codec is for data preparation and is not suitable for use without an additional codec. GCD-codec can be used with Integers, Decimals and DateTime. A good use case would be to store timestamps or monetary values with high precision.
 
 #### Gorilla
 
