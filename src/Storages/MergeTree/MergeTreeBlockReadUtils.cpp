@@ -330,8 +330,10 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     {
         Names step_column_names = step.actions->getActionsDAG().getRequiredColumnsNames();
 
-        injectRequiredColumns(
-            data_part_info_for_reader, storage_snapshot, with_subcolumns, step_column_names);
+        if (!step_column_names.empty())
+            injectRequiredColumns(
+                data_part_info_for_reader, storage_snapshot,
+                with_subcolumns, step_column_names);
 
         Names columns_to_read_in_step;
         for (const auto & name : step_column_names)
