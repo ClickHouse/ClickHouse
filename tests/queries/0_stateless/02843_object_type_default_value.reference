@@ -1,1 +1,40 @@
-app1	2023-08-17 10:10:43	('value')	(1)
+{
+	"meta":
+	[
+		{
+			"name": "appname",
+			"type": "String"
+		},
+		{
+			"name": "datetime",
+			"type": "DateTime"
+		},
+		{
+			"name": "app1",
+			"type": "Tuple(key String)"
+		},
+		{
+			"name": "app2",
+			"type": "Tuple(_dummy UInt8)"
+		}
+	],
+
+	"data":
+	[
+		{
+			"appname": "app1",
+			"datetime": "2023-08-17 10:10:43",
+			"app1": {"key":"value"},
+			"app2": {"_dummy":0}
+		}
+	],
+
+	"rows": 1,
+
+	"statistics":
+	{
+		"elapsed": 0.003143904,
+		"rows_read": 1,
+		"bytes_read": 32
+	}
+}

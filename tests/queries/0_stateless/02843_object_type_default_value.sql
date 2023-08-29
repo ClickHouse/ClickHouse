@@ -15,6 +15,6 @@ ORDER BY (
 
 INSERT INTO ingest (appname, datetime, app1) VALUES ('app1', '2023-08-17 10:10:43', '{"key": "value"}');
 
-SELECT * FROM ingest;
+SELECT * FROM ingest FORMAT JSON;
 
 DROP TABLE ingest;

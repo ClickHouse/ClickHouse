@@ -46,7 +46,7 @@ String DataTypeObject::doGetName() const
 
 Field DataTypeObject::getDefault() const
 {
-    return Object{{"dummy", 1}};
+    return Object{{ColumnObject::COLUMN_NAME_DUMMY, 0}};
 }
 
 static DataTypePtr create(const ASTPtr & arguments)
