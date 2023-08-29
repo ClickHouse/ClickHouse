@@ -441,6 +441,7 @@ static ExecuteTTLType shouldExecuteTTL(const StorageMetadataPtr & metadata_snaps
 /// Return set of indices which should be recalculated during mutation also
 /// wraps input stream into additional expression stream
 static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
+    const MergeTreeDataPartPtr & source_part,
     QueryPipelineBuilder & builder,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
@@ -451,10 +452,15 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     ASTPtr indices_recalc_expr_list = std::make_shared<ASTExpressionList>();
     const auto & indices = metadata_snapshot->getSecondaryIndices();
+    bool is_full_part_storage = isFullPartStorage(source_part->getDataPartStorage());
 
     for (const auto & index : indices)
     {
-        if (materialized_indices.contains(index.name))
+        bool need_recalculate =
+            materialized_indices.contains(index.name)
+            || (!is_full_part_storage && source_part->hasSecondaryIndex(index.name));
+
+        if (need_recalculate)
         {
             if (indices_to_recalc.insert(index_factory.get(index)).second)
             {
@@ -484,15 +490,23 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
 }
 
 static std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
+    const MergeTreeDataPartPtr & source_part,
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & materialized_projections)
 {
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
+    bool is_full_part_storage = isFullPartStorage(source_part->getDataPartStorage());
+
     for (const auto & projection : metadata_snapshot->getProjections())
     {
-        if (materialized_projections.contains(projection.name))
+        bool need_recalculate =
+            materialized_projections.contains(projection.name)
+            || (!is_full_part_storage && source_part->hasProjection(projection.name));
+
+        if (need_recalculate)
             projections_to_recalc.insert(&projection);
     }
+
     return projections_to_recalc;
 }
 
@@ -1265,14 +1279,20 @@ private:
                 removed_indices.insert(command.column_name);
         }
 
+        bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
+
         MergeTreeIndices skip_indices;
         for (const auto & idx : indices)
         {
             if (removed_indices.contains(idx.name))
                 continue;
 
-            if (ctx->materialized_indices.contains(idx.name))
+            bool need_recalculate =
+                ctx->materialized_indices.contains(idx.name)
+                || (!is_full_part_storage && ctx->source_part->hasSecondaryIndex(idx.name));
+
+            if (need_recalculate)
             {
                 skip_indices.push_back(MergeTreeIndexFactory::instance().get(idx));
             }
@@ -1305,7 +1325,11 @@ private:
             if (removed_projections.contains(projection.name))
                 continue;
 
-            if (ctx->materialized_projections.contains(projection.name))
+            bool need_recalculate =
+                ctx->materialized_projections.contains(projection.name)
+                || (!is_full_part_storage && ctx->source_part->hasProjection(projection.name));
+
+            if (need_recalculate)
             {
                 ctx->projections_to_build.push_back(&projection);
             }
@@ -1900,9 +1924,16 @@ bool MutateTask::prepare()
     else /// TODO: check that we modify only non-key columns in this case.
     {
         ctx->indices_to_recalc = MutationHelpers::getIndicesToRecalculate(
-            ctx->mutating_pipeline_builder, ctx->metadata_snapshot, ctx->context, ctx->materialized_indices);
+            ctx->source_part,
+            ctx->mutating_pipeline_builder,
+            ctx->metadata_snapshot,
+            ctx->context,
+            ctx->materialized_indices);
 
-        ctx->projections_to_recalc = MutationHelpers::getProjectionsToRecalculate(ctx->metadata_snapshot, ctx->materialized_projections);
+        ctx->projections_to_recalc = MutationHelpers::getProjectionsToRecalculate(
+            ctx->source_part,
+            ctx->metadata_snapshot,
+            ctx->materialized_projections);
 
         ctx->files_to_skip = MutationHelpers::collectFilesToSkip(
             ctx->source_part,
