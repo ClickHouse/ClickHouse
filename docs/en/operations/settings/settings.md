@@ -4652,7 +4652,7 @@ If `true`, an exception will be thrown on invalid client information from the TC
 
 If `false`, the data will not be validated. The server will work with clients of all versions.
 
-The default value is `true`.
+The default value is `false`.
 
 **Example**
 

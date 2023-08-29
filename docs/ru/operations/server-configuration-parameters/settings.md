@@ -1932,10 +1932,10 @@ ClickHouse использует ZooKeeper для хранения метадан
 
 Если `false`, то данные не будут валидироваться. Сервер будет работать с клиентами всех версий.
 
-Значение по умолчанию: `true`.
+Значение по умолчанию: `false`.
 
 **Пример**
 
 ``` xml
-<validate_tcp_client_information>false</validate_tcp_client_information>
+<validate_tcp_client_information>true</validate_tcp_client_information>
 ```
