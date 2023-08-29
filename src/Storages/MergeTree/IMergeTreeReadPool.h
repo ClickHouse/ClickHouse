@@ -21,7 +21,7 @@ public:
     /// Returns true if tasks are returned in the same order as the order of ranges passed to pool
     virtual bool preservesOrderOfRanges() const = 0;
 
-    /// task_idx is an implentation defined identifier that helps
+    /// task_idx is an implementation defined identifier that helps
     /// to get required task. E.g. it may be number of thread, index of
     virtual MergeTreeReadTaskPtr getTask(size_t task_idx, MergeTreeReadTask * previous_task) = 0;
     virtual void profileFeedback(ReadBufferFromFileBase::ProfileInfo info) = 0;
