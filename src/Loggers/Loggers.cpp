@@ -10,7 +10,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
 
-#ifndef WITHOUT_TEXT_LOG
+#ifdef WITH_TEXT_LOG
     #include <Interpreters/TextLog.h>
 #endif
 
@@ -34,7 +34,7 @@ static std::string createDirectory(const std::string & file)
     return path;
 }
 
-#ifndef WITHOUT_TEXT_LOG
+#ifdef WITH_TEXT_LOG
 void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
 {
     text_log = log;
@@ -44,14 +44,14 @@ void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
 {
-#ifndef WITHOUT_TEXT_LOG
+#ifdef WITH_TEXT_LOG
     if (split)
         if (auto log = text_log.lock())
             split->addTextLog(log, text_log_max_priority);
 #endif
 
     auto current_logger = config.getString("logger", "");
-    if (config_logger.has_value() && *config_logger == current_logger)
+    if (config_logger == current_logger) //-V1051
         return;
 
     config_logger = current_logger;
@@ -99,8 +99,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
         Poco::AutoPtr<OwnPatternFormatter> pf;
 
-        if (config.getString("logger.formatting.type", "") == "json")
-            pf = new OwnJSONPatternFormatter(config);
+        if (config.getString("logger.formatting", "") == "json")
+            pf = new OwnJSONPatternFormatter;
         else
             pf = new OwnPatternFormatter;
 
@@ -140,8 +140,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
         Poco::AutoPtr<OwnPatternFormatter> pf;
 
-        if (config.getString("logger.formatting.type", "") == "json")
-            pf = new OwnJSONPatternFormatter(config);
+        if (config.getString("logger.formatting", "") == "json")
+            pf = new OwnJSONPatternFormatter;
         else
             pf = new OwnPatternFormatter;
 
@@ -184,8 +184,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
         Poco::AutoPtr<OwnPatternFormatter> pf;
 
-        if (config.getString("logger.formatting.type", "") == "json")
-            pf = new OwnJSONPatternFormatter(config);
+        if (config.getString("logger.formatting", "") == "json")
+            pf = new OwnJSONPatternFormatter;
         else
             pf = new OwnPatternFormatter;
 
@@ -211,8 +211,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         }
 
         Poco::AutoPtr<OwnPatternFormatter> pf;
-        if (config.getString("logger.formatting.type", "") == "json")
-            pf = new OwnJSONPatternFormatter(config);
+        if (config.getString("logger.formatting", "") == "json")
+            pf = new OwnJSONPatternFormatter;
         else
             pf = new OwnPatternFormatter(color_enabled);
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel);

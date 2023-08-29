@@ -37,7 +37,6 @@ ColumnTypeSpec convertTypeIndexToPostgresColumnTypeSpec(TypeIndex type_index)
         case TypeIndex::Decimal32:
         case TypeIndex::Decimal64:
         case TypeIndex::Decimal128:
-        case TypeIndex::Decimal256:
             return {ColumnType::NUMERIC, -1};
 
         case TypeIndex::UUID:

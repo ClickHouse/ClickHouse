@@ -25,8 +25,9 @@ class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
 /// The case of an explicit enumeration of values.
-FutureSetPtr makeExplicitSet(
-    const ASTFunction * node, const ActionsDAG & actions, ContextPtr context, PreparedSets & prepared_sets);
+SetPtr makeExplicitSet(
+    const ASTFunction * node, const ActionsDAG & actions, bool create_ordered_set,
+    ContextPtr context, const SizeLimits & limits, PreparedSets & prepared_sets);
 
 /** For ActionsVisitor
   * A stack of ExpressionActions corresponding to nested lambda expressions.
@@ -128,18 +129,18 @@ public:
         bool no_subqueries;
         bool no_makeset;
         bool only_consts;
+        bool create_source_for_in;
         size_t visit_depth;
         ScopeStack actions_stack;
         AggregationKeysInfo aggregation_keys_info;
         bool build_expression_with_window_functions;
-        bool is_create_parameterized_view;
 
         /*
          * Remember the last unique column suffix to avoid quadratic behavior
          * when we add lots of column with same prefix. One counter for all
          * prefixes is good enough.
          */
-        size_t next_unique_suffix;
+        int next_unique_suffix;
 
         Data(
             ContextPtr context_,
@@ -151,9 +152,9 @@ public:
             bool no_subqueries_,
             bool no_makeset_,
             bool only_consts_,
+            bool create_source_for_in_,
             AggregationKeysInfo aggregation_keys_info_,
-            bool build_expression_with_window_functions_ = false,
-            bool is_create_parameterized_view_ = false);
+            bool build_expression_with_window_functions_ = false);
 
         /// Does result of the calculation already exists in the block.
         bool hasColumn(const String & column_name) const;
@@ -216,7 +217,7 @@ private:
     static void visit(const ASTLiteral & literal, const ASTPtr & ast, Data & data);
     static void visit(ASTExpressionList & expression_list, const ASTPtr & ast, Data & data);
 
-    static FutureSetPtr makeSet(const ASTFunction & node, Data & data, bool no_subqueries);
+    static SetPtr makeSet(const ASTFunction & node, Data & data, bool no_subqueries);
     static ASTs doUntuple(const ASTFunction * function, ActionsMatcher::Data & data);
     static std::optional<NameAndTypePair> getNameAndTypeFromAST(const ASTPtr & ast, Data & data);
 };

@@ -12,16 +12,17 @@ namespace ErrorCodes
 DataTypePtr FunctionArrayStringConcat::getReturnTypeImpl(const DataTypes & arguments) const
 {
     if (arguments.size() != 1 && arguments.size() != 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
-            getName(), arguments.size());
+        throw Exception(
+            "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
+                + ", should be 1 or 2.",
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
     if (!array_type)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an array.", getName());
+        throw Exception("First argument for function " + getName() + " must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     if (arguments.size() == 2 && !isString(arguments[1]))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be constant string.", getName());
+        throw Exception("Second argument for function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return std::make_shared<DataTypeString>();
 }
@@ -29,9 +30,7 @@ DataTypePtr FunctionArrayStringConcat::getReturnTypeImpl(const DataTypes & argum
 REGISTER_FUNCTION(StringArray)
 {
     factory.registerFunction<FunctionExtractAll>();
-
-    factory.registerFunction<FunctionSplitByAlpha>();
-    factory.registerAlias("splitByAlpha", FunctionSplitByAlpha::name);
+    factory.registerFunction<FunctionAlphaTokens>();
     factory.registerFunction<FunctionSplitByNonAlpha>();
     factory.registerFunction<FunctionSplitByWhitespace>();
     factory.registerFunction<FunctionSplitByChar>();

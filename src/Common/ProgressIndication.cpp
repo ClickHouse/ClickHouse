@@ -2,19 +2,32 @@
 #include <algorithm>
 #include <cstddef>
 #include <numeric>
-#include <filesystem>
 #include <cmath>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <base/types.h>
 #include "Common/formatReadable.h"
 #include <Common/TerminalSize.h>
 #include <Common/UnicodeBar.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+#include "IO/WriteBufferFromString.h"
+#include <Databases/DatabaseMemory.h>
 
-/// http://en.wikipedia.org/wiki/ANSI_escape_code
-#define CLEAR_TO_END_OF_LINE "\033[K"
 
+namespace
+{
+    constexpr UInt64 ALL_THREADS = 0;
+
+    UInt64 aggregateCPUUsageNs(DB::ThreadIdToTimeMap times)
+    {
+        constexpr UInt64 us_to_ns = 1000;
+        return us_to_ns * std::accumulate(times.begin(), times.end(), 0ull,
+        [](UInt64 acc, const auto & elem)
+        {
+            if (elem.first == ALL_THREADS)
+                return acc;
+            return acc + elem.second.time();
+        });
+    }
+}
 
 namespace DB
 {
@@ -31,6 +44,15 @@ bool ProgressIndication::updateProgress(const Progress & value)
     return progress.incrementPiecewiseAtomically(value);
 }
 
+void ProgressIndication::clearProgressOutput()
+{
+    if (written_progress_chars)
+    {
+        written_progress_chars = 0;
+        std::cerr << "\r" CLEAR_TO_END_OF_LINE;
+    }
+}
+
 void ProgressIndication::resetProgress()
 {
     watch.restart();
@@ -41,32 +63,54 @@ void ProgressIndication::resetProgress()
     {
         std::lock_guard lock(profile_events_mutex);
         cpu_usage_meter.reset(getElapsedNanoseconds());
-        hosts_data.clear();
+        thread_data.clear();
     }
 }
 
-void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, WriteBufferFromFileDescriptor & message)
+void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, bool write_progress_on_update_)
 {
+    write_progress_on_update = write_progress_on_update_;
     context->setFileProgressCallback([&](const FileProgress & file_progress)
     {
         progress.incrementPiecewiseAtomically(Progress(file_progress));
-        writeProgress(message);
+
+        if (write_progress_on_update)
+            writeProgress();
     });
 }
 
-void ProgressIndication::updateThreadEventData(HostToTimesMap & new_hosts_data)
+void ProgressIndication::addThreadIdToList(String const & host, UInt64 thread_id)
 {
     std::lock_guard lock(profile_events_mutex);
 
-    constexpr UInt64 us_to_ns = 1000;
+    auto & thread_to_times = thread_data[host];
+    if (thread_to_times.contains(thread_id))
+        return;
+    thread_to_times[thread_id] = {};
+}
+
+void ProgressIndication::updateThreadEventData(HostToThreadTimesMap & new_thread_data)
+{
+    std::lock_guard lock(profile_events_mutex);
 
     UInt64 total_cpu_ns = 0;
-    for (auto & new_host : new_hosts_data)
+    for (auto & new_host_map : new_thread_data)
     {
-        total_cpu_ns += us_to_ns * new_host.second.time();
-        hosts_data[new_host.first] = new_host.second;
+        total_cpu_ns += aggregateCPUUsageNs(new_host_map.second);
+        thread_data[new_host_map.first] = std::move(new_host_map.second);
     }
     cpu_usage_meter.add(getElapsedNanoseconds(), total_cpu_ns);
+}
+
+size_t ProgressIndication::getUsedThreadsCount() const
+{
+    std::lock_guard lock(profile_events_mutex);
+
+    return std::accumulate(thread_data.cbegin(), thread_data.cend(), 0,
+        [] (size_t acc, auto const & threads)
+        {
+            return acc + threads.second.size();
+        });
 }
 
 double ProgressIndication::getCPUUsage()
@@ -79,10 +123,16 @@ ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
 {
     std::lock_guard lock(profile_events_mutex);
 
-    return std::accumulate(hosts_data.cbegin(), hosts_data.cend(), MemoryUsage{},
+    return std::accumulate(thread_data.cbegin(), thread_data.cend(), MemoryUsage{},
         [](MemoryUsage const & acc, auto const & host_data)
         {
-            UInt64 host_usage = host_data.second.memory_usage;
+            UInt64 host_usage = 0;
+            // In ProfileEvents packets thread id 0 specifies common profiling information
+            // for all threads executing current query on specific host. So instead of summing per thread
+            // memory consumption it's enough to look for data with thread id 0.
+            if (auto it = host_data.second.find(ALL_THREADS); it != host_data.second.end())
+                host_usage = it->second.memory_usage;
+
             return MemoryUsage{.total = acc.total + host_usage, .max = std::max(acc.max, host_usage)};
         });
 }
@@ -103,9 +153,12 @@ void ProgressIndication::writeFinalProgress()
         std::cout << ". ";
 }
 
-void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
+void ProgressIndication::writeProgress()
 {
     std::lock_guard lock(progress_mutex);
+
+    /// Output all progress bar commands to stderr at once to avoid flicker.
+    WriteBufferFromFileDescriptor message(STDERR_FILENO, 1024);
 
     static size_t increment = 0;
     static const char * indicators[8] = {
@@ -263,16 +316,6 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
     ++increment;
 
     message.next();
-}
-
-void ProgressIndication::clearProgressOutput(WriteBufferFromFileDescriptor & message)
-{
-    if (written_progress_chars)
-    {
-        written_progress_chars = 0;
-        message << "\r" CLEAR_TO_END_OF_LINE;
-        message.next();
-    }
 }
 
 }

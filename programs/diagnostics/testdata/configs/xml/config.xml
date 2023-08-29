@@ -1,3 +1,4 @@
+<?xml version="1.0"?>
 <!--
   NOTE: User and query level settings are set up in "users.xml" file.
   If you have accidentally specified user-level settings here, server won't start.
@@ -1260,12 +1261,8 @@
                 <access_key_id>REPLACE_ME</access_key_id>
                 <secret_access_key>REPLACE_ME</secret_access_key>
                 <region></region>
-                <header>Authorization: Bearer SOME-TOKEN</header>
                 <server_side_encryption_customer_key_base64>your_base64_encoded_customer_key
                 </server_side_encryption_customer_key_base64>
-                <server_side_encryption_kms_key_id>REPLACE_ME</server_side_encryption_kms_key_id>
-                <server_side_encryption_kms_encryption_context>REPLACE_ME</server_side_encryption_kms_encryption_context>
-                <server_side_encryption_kms_bucket_key_enabled>true</server_side_encryption_kms_bucket_key_enabled>
                 <proxy>
                     <uri>http://proxy1</uri>
                     <uri>http://proxy2</uri>

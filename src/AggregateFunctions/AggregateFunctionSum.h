@@ -13,7 +13,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include "config.h"
+#include <Common/config.h>
 #include <Common/TargetSpecific.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -59,7 +59,7 @@ struct AggregateFunctionSumData
     }
 
     /// Vectorized version
-    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+    MULTITARGET_FUNCTION_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(
     template <typename Value>
     void NO_SANITIZE_UNDEFINED NO_INLINE
@@ -107,25 +107,12 @@ struct AggregateFunctionSumData
     void NO_INLINE addMany(const Value * __restrict ptr, size_t start, size_t end)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
-        {
-            addManyImplAVX512BW(ptr, start, end);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX512F))
-        {
-            addManyImplAVX512F(ptr, start, end);
-            return;
-        }
-
         if (isArchSupported(TargetArch::AVX2))
         {
             addManyImplAVX2(ptr, start, end);
             return;
         }
-
-        if (isArchSupported(TargetArch::SSE42))
+        else if (isArchSupported(TargetArch::SSE42))
         {
             addManyImplSSE42(ptr, start, end);
             return;
@@ -135,7 +122,7 @@ struct AggregateFunctionSumData
         addManyImpl(ptr, start, end);
     }
 
-    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+    MULTITARGET_FUNCTION_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(
     template <typename Value, bool add_if_zero>
     void NO_SANITIZE_UNDEFINED NO_INLINE
@@ -211,25 +198,12 @@ struct AggregateFunctionSumData
     void NO_INLINE addManyConditionalInternal(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
-        {
-            addManyConditionalInternalImplAVX512BW<Value, add_if_zero>(ptr, condition_map, start, end);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX512F))
-        {
-            addManyConditionalInternalImplAVX512F<Value, add_if_zero>(ptr, condition_map, start, end);
-            return;
-        }
-
         if (isArchSupported(TargetArch::AVX2))
         {
             addManyConditionalInternalImplAVX2<Value, add_if_zero>(ptr, condition_map, start, end);
             return;
         }
-
-        if (isArchSupported(TargetArch::SSE42))
+        else if (isArchSupported(TargetArch::SSE42))
         {
             addManyConditionalInternalImplSSE42<Value, add_if_zero>(ptr, condition_map, start, end);
             return;
@@ -433,25 +407,27 @@ public:
             return "sumWithOverflow";
         else if constexpr (Type == AggregateFunctionTypeSumKahan)
             return "sumKahan";
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     explicit AggregateFunctionSum(const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>(argument_types_, {}, createResultType(0))
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>(argument_types_, {})
+        , scale(0)
     {}
 
     AggregateFunctionSum(const IDataType & data_type, const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>(argument_types_, {}, createResultType(getDecimalScale(data_type)))
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>(argument_types_, {})
+        , scale(getDecimalScale(data_type))
     {}
 
-    static DataTypePtr createResultType(UInt32 scale_)
+    DataTypePtr getReturnType() const override
     {
         if constexpr (!is_decimal<T>)
             return std::make_shared<DataTypeNumber<TResult>>();
         else
         {
             using DataType = DataTypeDecimal<TResult>;
-            return std::make_shared<DataType>(DataType::maxPrecision(), scale_);
+            return std::make_shared<DataType>(DataType::maxPrecision(), scale);
         }
     }
 
@@ -572,7 +548,7 @@ public:
         for (const auto & argument_type : this->argument_types)
             can_be_compiled &= canBeNativeType(*argument_type);
 
-        auto return_type = this->getResultType();
+        auto return_type = getReturnType();
         can_be_compiled &= canBeNativeType(*return_type);
 
         return can_be_compiled;
@@ -582,22 +558,25 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, this->getResultType());
-        auto * aggregate_sum_ptr = aggregate_data_ptr;
+        auto * return_type = toNativeType(b, getReturnType());
+        auto * aggregate_sum_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
 
         b.CreateStore(llvm::Constant::getNullValue(return_type), aggregate_sum_ptr);
     }
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, this->getResultType());
+        auto * return_type = toNativeType(b, getReturnType());
 
-        auto * sum_value_ptr = aggregate_data_ptr;
+        auto * sum_value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
         auto * sum_value = b.CreateLoad(return_type, sum_value_ptr);
 
-        auto * value_cast_to_result = nativeCast(b, arguments[0], this->getResultType());
+        const auto & argument_type = arguments_types[0];
+        const auto & argument_value = argument_values[0];
+
+        auto * value_cast_to_result = nativeCast(b, argument_type, argument_value, return_type);
         auto * sum_result_value = sum_value->getType()->isIntegerTy() ? b.CreateAdd(sum_value, value_cast_to_result) : b.CreateFAdd(sum_value, value_cast_to_result);
 
         b.CreateStore(sum_result_value, sum_value_ptr);
@@ -607,12 +586,12 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, this->getResultType());
+        auto * return_type = toNativeType(b, getReturnType());
 
-        auto * sum_value_dst_ptr = aggregate_data_dst_ptr;
+        auto * sum_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, return_type->getPointerTo());
         auto * sum_value_dst = b.CreateLoad(return_type, sum_value_dst_ptr);
 
-        auto * sum_value_src_ptr = aggregate_data_src_ptr;
+        auto * sum_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, return_type->getPointerTo());
         auto * sum_value_src = b.CreateLoad(return_type, sum_value_src_ptr);
 
         auto * sum_return_value = sum_value_dst->getType()->isIntegerTy() ? b.CreateAdd(sum_value_dst, sum_value_src) : b.CreateFAdd(sum_value_dst, sum_value_src);
@@ -623,8 +602,8 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, this->getResultType());
-        auto * sum_value_ptr = aggregate_data_ptr;
+        auto * return_type = toNativeType(b, getReturnType());
+        auto * sum_value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
 
         return b.CreateLoad(return_type, sum_value_ptr);
     }
@@ -632,6 +611,8 @@ public:
 #endif
 
 private:
+    UInt32 scale;
+
     static constexpr auto & castColumnToResult(IColumn & to)
     {
         if constexpr (is_decimal<T>)

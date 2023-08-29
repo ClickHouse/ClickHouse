@@ -1,6 +1,3 @@
----
-slug: /zh/engines/database-engines/replicated
----
 # [experimental] Replicated {#replicated}
 
 该引擎基于[Atomic](../../engines/database-engines/atomic.md)引擎。它支持通过将DDL日志写入ZooKeeper并在给定数据库的所有副本上执行的元数据复制。
@@ -19,6 +16,7 @@ CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_na
 -   `shard_name` — 分片的名字。数据库副本按`shard_name`分组到分片中。
 -   `replica_name` — 副本的名字。同一分片的所有副本的副本名称必须不同。
 
+!!! note "警告"
 对于[ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table_engines-replication)表，如果没有提供参数，则使用默认参数:`/clickhouse/tables/{uuid}/{shard}`和`{replica}`。这些可以在服务器设置[default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path)和[default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name)中更改。宏`{uuid}`被展开到表的uuid， `{shard}`和`{replica}`被展开到服务器配置的值，而不是数据库引擎参数。但是在将来，可以使用Replicated数据库的`shard_name`和`replica_name`。
 
 ## 使用方式 {#specifics-and-recommendations}
@@ -33,7 +31,7 @@ CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_na
 
 当创建数据库的新副本时，该副本会自己创建表。如果副本已经不可用很长一段时间，并且已经滞后于复制日志-它用ZooKeeper中的当前元数据检查它的本地元数据，将带有数据的额外表移动到一个单独的非复制数据库(以免意外地删除任何多余的东西)，创建缺失的表，如果表名已经被重命名，则更新表名。数据在`ReplicatedMergeTree`级别被复制，也就是说，如果表没有被复制，数据将不会被复制(数据库只负责元数据)。
 
-允许[`ALTER TABLE ATTACH|FETCH|DROP|DROP DETACHED|DETACH PARTITION|PART`](../../sql-reference/statements/alter/partition.mdx)查询，但不允许复制。数据库引擎将只向当前副本添加/获取/删除分区/部件。但是，如果表本身使用了Replicated表引擎，那么数据将在使用`ATTACH`后被复制。
+允许[`ALTER TABLE ATTACH|FETCH|DROP|DROP DETACHED|DETACH PARTITION|PART`](../../sql-reference/statements/alter/partition.md)查询，但不允许复制。数据库引擎将只向当前副本添加/获取/删除分区/部件。但是，如果表本身使用了Replicated表引擎，那么数据将在使用`ATTACH`后被复制。
 ## 使用示例 {#usage-example}
 
 创建三台主机的集群:
@@ -51,8 +49,8 @@ CREATE TABLE r.rmt (n UInt64) ENGINE=ReplicatedMergeTree ORDER BY n;
 ```
 
 ``` text
-┌─────hosts────────────┬──status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
-│ shard1|replica1      │    0    │       │          2          │        0         │
+┌─────hosts────────────┬──status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐ 
+│ shard1|replica1      │    0    │       │          2          │        0         │ 
 │ shard1|other_replica │    0    │       │          1          │        0         │
 │ other_shard|r1       │    0    │       │          0          │        0         │
 └──────────────────────┴─────────┴───────┴─────────────────────┴──────────────────┘
@@ -61,13 +59,13 @@ CREATE TABLE r.rmt (n UInt64) ENGINE=ReplicatedMergeTree ORDER BY n;
 显示系统表:
 
 ``` sql
-SELECT cluster, shard_num, replica_num, host_name, host_address, port, is_local
+SELECT cluster, shard_num, replica_num, host_name, host_address, port, is_local 
 FROM system.clusters WHERE cluster='r';
 ```
 
 ``` text
-┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐
-│ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │
+┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐ 
+│ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │ 
 │ r       │     2     │      1      │   node2   │  127.0.0.1   │ 9001 │     0    │
 │ r       │     2     │      2      │   node1   │  127.0.0.1   │ 9000 │     1    │
 └─────────┴───────────┴─────────────┴───────────┴──────────────┴──────┴──────────┘
@@ -82,9 +80,9 @@ node1 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY
 ```
 
 ``` text
-┌─hosts─┬─groupArray(n)─┐
-│ node1 │  [1,3,5,7,9]  │
-│ node2 │  [0,2,4,6,8]  │
+┌─hosts─┬─groupArray(n)─┐ 
+│ node1 │  [1,3,5,7,9]  │   
+│ node2 │  [0,2,4,6,8]  │    
 └───────┴───────────────┘
 ```
 
@@ -97,8 +95,8 @@ node4 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','other_shard','r2');
 集群配置如下所示:
 
 ``` text
-┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐
-│ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │
+┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐ 
+│ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │ 
 │ r       │     1     │      2      │   node4   │  127.0.0.1   │ 9003 │     0    │
 │ r       │     2     │      1      │   node2   │  127.0.0.1   │ 9001 │     0    │
 │ r       │     2     │      2      │   node1   │  127.0.0.1   │ 9000 │     1    │
@@ -112,8 +110,8 @@ node2 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY
 ```
 
 ```text
-┌─hosts─┬─groupArray(n)─┐
-│ node2 │  [1,3,5,7,9]  │
-│ node4 │  [0,2,4,6,8]  │
+┌─hosts─┬─groupArray(n)─┐ 
+│ node2 │  [1,3,5,7,9]  │   
+│ node4 │  [0,2,4,6,8]  │    
 └───────┴───────────────┘
 ```

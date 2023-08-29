@@ -14,11 +14,6 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <Common/HashTable/Hash.h>
-#include <Common/WeakHash.h>
-
-#include <base/FnTraits.h>
-
 namespace DB
 {
 
@@ -160,14 +155,16 @@ static ColumnPtr tryConvertColumnToNullable(ColumnPtr col)
 
     if (col->lowCardinality())
     {
-        const ColumnLowCardinality & col_lc = assert_cast<const ColumnLowCardinality &>(*col);
-        if (col_lc.nestedIsNullable())
+        auto mut_col = IColumn::mutate(std::move(col));
+        ColumnLowCardinality * col_lc = assert_cast<ColumnLowCardinality *>(mut_col.get());
+        if (col_lc->nestedIsNullable())
         {
-            return col;
+            return mut_col;
         }
-        else if (col_lc.nestedCanBeInsideNullable())
+        else if (col_lc->nestedCanBeInsideNullable())
         {
-            return col_lc.cloneNullable();
+            col_lc->nestedToNullable();
+            return mut_col;
         }
     }
     else if (const ColumnConst * col_const = checkAndGetColumn<ColumnConst>(*col))
@@ -230,7 +227,11 @@ void removeColumnNullability(ColumnWithTypeAndName & column)
 
         if (column.column && column.column->lowCardinality())
         {
-            column.column = assert_cast<const ColumnLowCardinality *>(column.column.get())->cloneWithDefaultOnNull();
+            auto mut_col = IColumn::mutate(std::move(column.column));
+            ColumnLowCardinality * col_as_lc = typeid_cast<ColumnLowCardinality *>(mut_col.get());
+            if (col_as_lc && col_as_lc->nestedIsNullable())
+                col_as_lc->nestedRemoveNullable();
+            column.column = std::move(mut_col);
         }
     }
     else
@@ -318,20 +319,17 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
     return ptrs;
 }
 
-ColumnPtrMap materializeColumnsInplaceMap(const Block & block, const Names & names)
+ColumnRawPtrMap materializeColumnsInplaceMap(Block & block, const Names & names)
 {
-    ColumnPtrMap ptrs;
+    ColumnRawPtrMap ptrs;
     ptrs.reserve(names.size());
 
     for (const auto & column_name : names)
     {
-        ColumnPtr column = block.getByName(column_name).column;
-
-        column = column->convertToFullColumnIfConst();
-        column = recursiveRemoveLowCardinality(column);
-        column = recursiveRemoveSparse(column);
-
-        ptrs[column_name] = column;
+        auto & column = block.getByName(column_name);
+        column.column = recursiveRemoveLowCardinality(column.column->convertToFullColumnIfConst());
+        column.type = recursiveRemoveLowCardinality(column.type);
+        ptrs[column_name] = column.column.get();
     }
 
     return ptrs;
@@ -480,7 +478,7 @@ void createMissedColumns(Block & block)
     for (size_t i = 0; i < block.columns(); ++i)
     {
         auto & column = block.getByPosition(i);
-        if (!column.column)
+        if (!column.column) //-V1051
             column.column = column.type->createColumn();
     }
 }
@@ -526,24 +524,24 @@ bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
 JoinMask getColumnAsMask(const Block & block, const String & column_name)
 {
     if (column_name.empty())
-        return JoinMask(true, block.rows());
+        return JoinMask(true);
 
     const auto & src_col = block.getByName(column_name);
 
     DataTypePtr col_type = recursiveRemoveLowCardinality(src_col.type);
     if (isNothing(col_type))
-        return JoinMask(false, block.rows());
+        return JoinMask(false);
 
     if (const auto * const_cond = checkAndGetColumn<ColumnConst>(*src_col.column))
     {
-        return JoinMask(const_cond->getBool(0), block.rows());
+        return JoinMask(const_cond->getBool(0));
     }
 
     ColumnPtr join_condition_col = recursiveRemoveLowCardinality(src_col.column->convertToFullColumnIfConst());
     if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(join_condition_col.get()))
     {
         if (isNothing(assert_cast<const DataTypeNullable &>(*col_type).getNestedType()))
-            return JoinMask(false, block.rows());
+            return JoinMask(false);
 
         /// Return nested column with NULL set to false
         const auto & nest_col = assert_cast<const ColumnUInt8 &>(nullable_col->getNestedColumn());
@@ -573,110 +571,6 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
             block_others.erase(column_name);
         }
     }
-}
-
-template <Fn<size_t(size_t)> Sharder>
-static IColumn::Selector hashToSelector(const WeakHash32 & hash, Sharder sharder)
-{
-    const auto & hashes = hash.getData();
-    size_t num_rows = hashes.size();
-
-    IColumn::Selector selector(num_rows);
-    for (size_t i = 0; i < num_rows; ++i)
-        selector[i] = sharder(intHashCRC32(hashes[i]));
-    return selector;
-}
-
-template <Fn<size_t(size_t)> Sharder>
-static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Block & block, size_t num_shards, Sharder sharder)
-{
-    size_t num_rows = block.rows();
-    size_t num_cols = block.columns();
-
-    /// Use non-standard initial value so as not to degrade hash map performance inside shard that uses the same CRC32 algorithm.
-    WeakHash32 hash(num_rows);
-    for (const auto & key_name : key_columns_names)
-    {
-        ColumnPtr key_col = materializeColumn(block, key_name);
-        key_col->updateWeakHash32(hash);
-    }
-    auto selector = hashToSelector(hash, sharder);
-
-    Blocks result;
-    result.reserve(num_shards);
-    for (size_t i = 0; i < num_shards; ++i)
-    {
-        result.emplace_back(block.cloneEmpty());
-    }
-
-    for (size_t i = 0; i < num_cols; ++i)
-    {
-        auto dispatched_columns = block.getByPosition(i).column->scatter(num_shards, selector);
-        assert(result.size() == dispatched_columns.size());
-        for (size_t block_index = 0; block_index < num_shards; ++block_index)
-        {
-            result[block_index].getByPosition(i).column = std::move(dispatched_columns[block_index]);
-        }
-    }
-    return result;
-}
-
-static Blocks scatterBlockByHashPow2(const Strings & key_columns_names, const Block & block, size_t num_shards)
-{
-    size_t mask = num_shards - 1;
-    return scatterBlockByHashImpl(key_columns_names, block, num_shards, [mask](size_t hash) { return hash & mask; });
-}
-
-static Blocks scatterBlockByHashGeneric(const Strings & key_columns_names, const Block & block, size_t num_shards)
-{
-    return scatterBlockByHashImpl(key_columns_names, block, num_shards, [num_shards](size_t hash) { return hash % num_shards; });
-}
-
-Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards)
-{
-    if (num_shards == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of shards must be positive");
-    if (likely(isPowerOf2(num_shards)))
-        return scatterBlockByHashPow2(key_columns_names, block, num_shards);
-    return scatterBlockByHashGeneric(key_columns_names, block, num_shards);
-}
-
-template<typename T>
-static Blocks scatterBlockByHashForList(const Strings & key_columns_names, const T & blocks, size_t num_shards)
-{
-    std::vector<Blocks> scattered_blocks(num_shards);
-    for (const auto & block : blocks)
-    {
-        if (block.rows() == 0)
-            continue;
-        auto scattered = scatterBlockByHash(key_columns_names, block, num_shards);
-        for (size_t i = 0; i < num_shards; ++i)
-            scattered_blocks[i].emplace_back(std::move(scattered[i]));
-    }
-
-    Blocks result;
-    result.reserve(num_shards);
-    for (size_t i = 0; i < num_shards; ++i)
-    {
-        result.emplace_back(concatenateBlocks(scattered_blocks[i]));
-    }
-    return result;
-}
-
-Blocks scatterBlockByHash(const Strings & key_columns_names, const Blocks & blocks, size_t num_shards)
-{
-    return scatterBlockByHashForList(key_columns_names, blocks, num_shards);
-}
-
-Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & blocks, size_t num_shards)
-{
-    return scatterBlockByHashForList(key_columns_names, blocks, num_shards);
-}
-
-bool hasNonJoinedBlocks(const TableJoin & table_join)
-{
-    return table_join.strictness() != JoinStrictness::Asof && table_join.strictness() != JoinStrictness::Semi
-        && isRightOrFull(table_join.kind());
 }
 
 ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter)
@@ -714,12 +608,11 @@ ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter,
 NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
                      const Block & result_sample_block_,
                      size_t left_columns_count,
-                     const TableJoin & table_join)
+                     const LeftToRightKeyRemap & left_to_right_key_remap)
     : filler(std::move(filler_))
     , saved_block_sample(filler->getEmptyBlock())
     , result_sample_block(materializeBlock(result_sample_block_))
 {
-    const auto & left_to_right_key_remap = table_join.leftToRightKeyRemap();
     for (size_t left_pos = 0; left_pos < left_columns_count; ++left_pos)
     {
         /// We need right 'x' for 'RIGHT JOIN ... USING(x)'
@@ -736,21 +629,14 @@ NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
 
     /// `saved_block_sample` may contains non unique column names, get any of them
     /// (e.g. in case of `... JOIN (SELECT a, a, b FROM table) as t2`)
-    for (const auto & [right_name, right_pos] : saved_block_sample.getNamesToIndexesMap())
+    for (const auto & [name, right_pos] : saved_block_sample.getNamesToIndexesMap())
     {
-        String column_name(right_name);
-        if (table_join.getStorageJoin())
-        {
-            /// StorageJoin operates with original non qualified column names, so apply renaming here
-            column_name = table_join.renamedRightColumnName(column_name);
-        }
-
         /// Start from left_columns_count to don't remap left keys twice. We need only qualified right keys here
         /// `result_sample_block` may contains non unique column names, need to set index for all of them
         for (size_t result_pos = left_columns_count; result_pos < result_sample_block.columns(); ++result_pos)
         {
             const auto & result_name = result_sample_block.getByPosition(result_pos).name;
-            if (result_name == column_name)
+            if (result_name == name)
                 setRightIndex(right_pos, result_pos);
         }
     }
@@ -849,7 +735,7 @@ void NotJoinedBlocks::copySameKeys(Block & block) const
     }
 }
 
-Block NotJoinedBlocks::nextImpl()
+Block NotJoinedBlocks::read()
 {
     Block result_block = result_sample_block.cloneEmpty();
     {

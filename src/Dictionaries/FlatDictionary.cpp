@@ -357,7 +357,7 @@ void FlatDictionary::blockToAttributes(const Block & block)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "{}: identifier should be less than {}",
                     getFullName(),
-                    configuration.max_array_size);
+                    toString(configuration.max_array_size));
 
             if (key >= loaded_keys.size())
             {
@@ -505,7 +505,7 @@ void FlatDictionary::calculateBytesAllocated()
         bytes_allocated += hierarchical_index_bytes_allocated;
     }
 
-    bytes_allocated += string_arena.allocatedBytes();
+    bytes_allocated += string_arena.size();
 }
 
 FlatDictionary::Attribute FlatDictionary::createAttribute(const DictionaryAttribute & dictionary_attribute)
@@ -572,7 +572,7 @@ void FlatDictionary::resize(Attribute & attribute, UInt64 key)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "{}: identifier should be less than {}",
             getFullName(),
-            configuration.max_array_size);
+            toString(configuration.max_array_size));
 
     auto & container = std::get<ContainerType<T>>(attribute.container);
 
@@ -617,7 +617,7 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
         }
         else
         {
-            container[key] = static_cast<ValueType>(attribute_value);
+            container[key] = attribute_value;
         }
     };
 

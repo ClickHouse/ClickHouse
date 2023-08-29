@@ -1,6 +1,4 @@
 #include <IO/ZstdInflatingReadBuffer.h>
-#include <IO/WithFileName.h>
-#include <zstd_errors.h>
 
 
 namespace DB
@@ -58,18 +56,9 @@ bool ZstdInflatingReadBuffer::nextImpl()
 
         /// Decompress data and check errors.
         size_t ret = ZSTD_decompressStream(dctx, &output, &input);
-        if (ZSTD_getErrorCode(ret))
-        {
+        if (ZSTD_isError(ret))
             throw Exception(
-                ErrorCodes::ZSTD_DECODER_FAILED,
-                "ZSTD stream decoding failed: error '{}'{}; ZSTD version: {}{}",
-                ZSTD_getErrorName(ret),
-                ZSTD_error_frameParameter_windowTooLarge == ret
-                    ? ". You can increase the maximum window size with the 'zstd_window_log_max' setting in ClickHouse. Example: 'SET zstd_window_log_max = 31'"
-                    : "",
-                ZSTD_VERSION_STRING,
-                getExceptionEntryWithFileName(*in));
-        }
+                ErrorCodes::ZSTD_DECODER_FAILED, "Zstd stream encoding failed: error '{}'; zstd version: {}", ZSTD_getErrorName(ret), ZSTD_VERSION_STRING);
 
         /// Check that something has changed after decompress (input or output position)
         assert(in->eof() || output.pos > 0 || in->position() < in->buffer().begin() + input.pos);

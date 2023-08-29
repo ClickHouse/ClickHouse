@@ -83,7 +83,7 @@ template <is_decimal T>
 UInt64 ColumnDecimal<T>::get64([[maybe_unused]] size_t n) const
 {
     if constexpr (sizeof(T) > sizeof(UInt64))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method get64 is not supported for {}", getFamilyName());
+        throw Exception(String("Method get64 is not supported for ") + getFamilyName(), ErrorCodes::NOT_IMPLEMENTED);
     else
         return static_cast<NativeT>(data[n]);
 }
@@ -100,8 +100,8 @@ void ColumnDecimal<T>::updateWeakHash32(WeakHash32 & hash) const
     auto s = data.size();
 
     if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
+        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
+                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
 
     const T * begin = data.data();
     const T * end = begin + s;
@@ -109,7 +109,7 @@ void ColumnDecimal<T>::updateWeakHash32(WeakHash32 & hash) const
 
     while (begin < end)
     {
-        *hash_data = static_cast<UInt32>(intHashCRC32(*begin, *hash_data));
+        *hash_data = intHashCRC32(*begin, *hash_data);
         ++begin;
         ++hash_data;
     }
@@ -251,9 +251,9 @@ void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t
     const ColumnDecimal & src_vec = assert_cast<const ColumnDecimal &>(src);
 
     if (start + length > src_vec.data.size())
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound "
-                        "in ColumnDecimal<T>::insertRangeFrom method (data.size() = {}).",
-                        toString(start), toString(length), toString(src_vec.data.size()));
+        throw Exception("Parameters start = " + toString(start) + ", length = " + toString(length) +
+            " are out of bound in ColumnDecimal<T>::insertRangeFrom method (data.size() = " + toString(src_vec.data.size()) + ").",
+            ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
     size_t old_size = data.size();
     data.resize(old_size + length);
@@ -341,7 +341,7 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
 {
     size_t size = data.size();
     if (size != offsets.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
+        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     auto res = this->create(0, scale);
     if (0 == size)
@@ -386,11 +386,11 @@ ColumnPtr ColumnDecimal<T>::compress() const
 
     const size_t compressed_size = compressed->size();
     return ColumnCompressed::create(data_size, compressed_size,
-        [my_compressed = std::move(compressed), column_size = data_size, my_scale = this->scale]
+        [compressed = std::move(compressed), column_size = data_size, scale = this->scale]
         {
-            auto res = ColumnDecimal<T>::create(column_size, my_scale);
+            auto res = ColumnDecimal<T>::create(column_size, scale);
             ColumnCompressed::decompressBuffer(
-                my_compressed->data(), res->getData().data(), my_compressed->size(), column_size * sizeof(T));
+                compressed->data(), res->getData().data(), compressed->size(), column_size * sizeof(T));
             return res;
         });
 }

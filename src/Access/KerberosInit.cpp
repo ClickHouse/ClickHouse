@@ -71,7 +71,7 @@ void KerberosInit::init(const String & keytab_file, const String & principal, co
     const char *deftype = nullptr;
 
     if (!std::filesystem::exists(keytab_file))
-        throw Exception(ErrorCodes::KERBEROS_ERROR, "Keytab file does not exist");
+        throw Exception("Keytab file does not exist", ErrorCodes::KERBEROS_ERROR);
 
     ret = krb5_init_context(&k5.ctx);
     if (ret)
@@ -81,7 +81,7 @@ void KerberosInit::init(const String & keytab_file, const String & principal, co
     {
         ret = krb5_cc_resolve(k5.ctx, cache_name.c_str(), &k5.out_cc);
         if (ret)
-            throw Exception(ErrorCodes::KERBEROS_ERROR, "Error in resolving cache: {}", fmtError(ret));
+            throw Exception("Error in resolving cache" + fmtError(ret), ErrorCodes::KERBEROS_ERROR);
         LOG_TRACE(log,"Resolved cache");
     }
     else
@@ -89,7 +89,7 @@ void KerberosInit::init(const String & keytab_file, const String & principal, co
         // Resolve the default cache and get its type and default principal (if it is initialized).
         ret = krb5_cc_default(k5.ctx, &defcache);
         if (ret)
-            throw Exception(ErrorCodes::KERBEROS_ERROR, "Error while getting default cache: {}", fmtError(ret));
+            throw Exception("Error while getting default cache" + fmtError(ret), ErrorCodes::KERBEROS_ERROR);
         LOG_TRACE(log,"Resolved default cache");
         deftype = krb5_cc_get_type(k5.ctx, defcache);
         if (krb5_cc_get_principal(k5.ctx, defcache, &defcache_princ) != 0)
@@ -99,7 +99,7 @@ void KerberosInit::init(const String & keytab_file, const String & principal, co
     // Use the specified principal name.
     ret = krb5_parse_name_flags(k5.ctx, principal.c_str(), 0, &k5.me);
     if (ret)
-        throw Exception(ErrorCodes::KERBEROS_ERROR, "Error when parsing principal name ({}): {}", principal, fmtError(ret));
+        throw Exception("Error when parsing principal name " + principal + fmtError(ret), ErrorCodes::KERBEROS_ERROR);
 
     // Cache related commands
     if (k5.out_cc == nullptr && krb5_cc_support_switch(k5.ctx, deftype))
@@ -107,7 +107,7 @@ void KerberosInit::init(const String & keytab_file, const String & principal, co
         // Use an existing cache for the client principal if we can.
         ret = krb5_cc_cache_match(k5.ctx, k5.me, &k5.out_cc);
         if (ret && ret != KRB5_CC_NOTFOUND)
-            throw Exception(ErrorCodes::KERBEROS_ERROR, "Error while searching for cache for ({}): {}", principal, fmtError(ret));
+            throw Exception("Error while searching for cache for " + principal + fmtError(ret), ErrorCodes::KERBEROS_ERROR);
         if (0 == ret)
         {
             LOG_TRACE(log,"Using default cache: {}", krb5_cc_get_name(k5.ctx, k5.out_cc));
@@ -118,7 +118,7 @@ void KerberosInit::init(const String & keytab_file, const String & principal, co
             // Create a new cache to avoid overwriting the initialized default cache.
             ret = krb5_cc_new_unique(k5.ctx, deftype, nullptr, &k5.out_cc);
             if (ret)
-                throw Exception(ErrorCodes::KERBEROS_ERROR, "Error while generating new cache: {}", fmtError(ret));
+                throw Exception("Error while generating new cache" + fmtError(ret), ErrorCodes::KERBEROS_ERROR);
             LOG_TRACE(log,"Using default cache: {}", krb5_cc_get_name(k5.ctx, k5.out_cc));
             k5.switch_to_cache = 1;
         }
@@ -134,24 +134,24 @@ void KerberosInit::init(const String & keytab_file, const String & principal, co
 
     ret = krb5_unparse_name(k5.ctx, k5.me, &k5.name);
     if (ret)
-        throw Exception(ErrorCodes::KERBEROS_ERROR, "Error when unparsing name: {}", fmtError(ret));
+        throw Exception("Error when unparsing name" + fmtError(ret), ErrorCodes::KERBEROS_ERROR);
     LOG_TRACE(log,"Using principal: {}", k5.name);
 
     // Allocate a new initial credential options structure.
     ret = krb5_get_init_creds_opt_alloc(k5.ctx, &options);
     if (ret)
-        throw Exception(ErrorCodes::KERBEROS_ERROR, "Error in options allocation: {}", fmtError(ret));
+        throw Exception("Error in options allocation" + fmtError(ret), ErrorCodes::KERBEROS_ERROR);
 
     // Resolve keytab
     ret = krb5_kt_resolve(k5.ctx, keytab_file.c_str(), &keytab);
     if (ret)
-        throw Exception(ErrorCodes::KERBEROS_ERROR, "Error in resolving keytab ({}): {}", keytab_file, fmtError(ret));
+        throw Exception("Error in resolving keytab "+keytab_file + fmtError(ret), ErrorCodes::KERBEROS_ERROR);
     LOG_TRACE(log,"Using keytab: {}", keytab_file);
 
     // Set an output credential cache in initial credential options.
     ret = krb5_get_init_creds_opt_set_out_ccache(k5.ctx, options, k5.out_cc);
     if (ret)
-        throw Exception(ErrorCodes::KERBEROS_ERROR, "Error in setting output credential cache: {}", fmtError(ret));
+        throw Exception("Error in setting output credential cache" + fmtError(ret), ErrorCodes::KERBEROS_ERROR);
 
     // Action: init or renew
     LOG_TRACE(log,"Trying to renew credentials");
@@ -165,7 +165,7 @@ void KerberosInit::init(const String & keytab_file, const String & principal, co
         // Request KDC for an initial credentials using keytab.
         ret = krb5_get_init_creds_keytab(k5.ctx, &my_creds, k5.me, keytab, 0, nullptr, options);
         if (ret)
-            throw Exception(ErrorCodes::KERBEROS_ERROR, "Error in getting initial credentials: {}", fmtError(ret));
+            throw Exception("Error in getting initial credentials" + fmtError(ret), ErrorCodes::KERBEROS_ERROR);
         else
             LOG_TRACE(log,"Got initial credentials");
     }
@@ -175,7 +175,7 @@ void KerberosInit::init(const String & keytab_file, const String & principal, co
         // Initialize a credential cache. Destroy any existing contents of cache and initialize it for the default principal.
         ret = krb5_cc_initialize(k5.ctx, k5.out_cc, k5.me);
         if (ret)
-            throw Exception(ErrorCodes::KERBEROS_ERROR, "Error when initializing cache: {}", fmtError(ret));
+            throw Exception("Error when initializing cache" + fmtError(ret), ErrorCodes::KERBEROS_ERROR);
         LOG_TRACE(log,"Initialized cache");
         // Store credentials in a credential cache.
         ret = krb5_cc_store_cred(k5.ctx, k5.out_cc, &my_creds);
@@ -189,7 +189,7 @@ void KerberosInit::init(const String & keytab_file, const String & principal, co
         // Make a credential cache the primary cache for its collection.
         ret = krb5_cc_switch(k5.ctx, k5.out_cc);
         if (ret)
-            throw Exception(ErrorCodes::KERBEROS_ERROR, "Error while switching to new cache: {}", fmtError(ret));
+            throw Exception("Error while switching to new cache" + fmtError(ret), ErrorCodes::KERBEROS_ERROR);
     }
 
     LOG_TRACE(log,"Authenticated to Kerberos v5");

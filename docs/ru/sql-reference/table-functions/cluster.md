@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/table-functions/cluster
 sidebar_position: 50
 sidebar_label: cluster
 ---

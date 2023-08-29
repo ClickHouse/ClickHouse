@@ -3,15 +3,17 @@
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 
+#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/ReadBufferFromWebServer.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <Disks/IO/getThreadPoolReader.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -28,6 +30,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int FILE_DOESNT_EXIST;
     extern const int NETWORK_ERROR;
 }
 
@@ -39,19 +42,12 @@ void WebObjectStorage::initialize(const String & uri_path) const
     try
     {
         Poco::Net::HTTPBasicCredentials credentials{};
-
-
         ReadWriteBufferFromHTTP metadata_buf(
             Poco::URI(fs::path(uri_path) / ".index"),
             Poco::Net::HTTPRequest::HTTP_GET,
             ReadWriteBufferFromHTTP::OutStreamCallback(),
-            ConnectionTimeouts::getHTTPTimeouts(
-                getContext()->getSettingsRef(),
-                {getContext()->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}),
-            credentials,
-            /* max_redirects= */ 0,
-            /* buffer_size_= */ DBMS_DEFAULT_BUFFER_SIZE,
-            getContext()->getReadSettings());
+            ConnectionTimeouts::getHTTPTimeouts(getContext()),
+            credentials);
 
         String file_name;
         FileData file_data{};
@@ -87,15 +83,6 @@ void WebObjectStorage::initialize(const String & uri_path) const
 
         files.emplace(std::make_pair(dir_name, FileData({ .type = FileType::Directory })));
     }
-    catch (HTTPException & e)
-    {
-        /// 404 - no files
-        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
-            return;
-
-        e.addMessage("while loading disk metadata");
-        throw;
-    }
     catch (Exception & e)
     {
         e.addMessage("while loading disk metadata");
@@ -118,7 +105,7 @@ WebObjectStorage::WebObjectStorage(
 
 bool WebObjectStorage::exists(const StoredObject & object) const
 {
-    const auto & path = object.remote_path;
+    const auto & path = object.absolute_path;
 
     LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Checking existence of path: {}", path);
 
@@ -166,11 +153,25 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     std::optional<size_t>,
     std::optional<size_t>) const
 {
+    const auto & path = object.absolute_path;
+    LOG_TRACE(log, "Read from path: {}", path);
+
+    auto iter = files.find(path);
+    if (iter == files.end())
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File path {} does not exist", path);
+
+    auto fs_path = fs::path(url) / path;
+    auto remote_path = fs_path.parent_path() / (escapeForFileName(fs_path.stem()) + fs_path.extension().string());
+    remote_path = remote_path.string().substr(url.size());
+
+    StoredObjects objects;
+    objects.emplace_back(remote_path, iter->second.size);
+
     auto read_buffer_creator =
          [this, read_settings]
-         (const std::string & path_, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
+         (const std::string & path_, size_t read_until_position) -> std::shared_ptr<ReadBufferFromFileBase>
      {
-         return std::make_unique<ReadBufferFromWebServer>(
+         return std::make_shared<ReadBufferFromWebServer>(
              fs::path(url) / path_,
              getContext(),
              read_settings,
@@ -178,33 +179,27 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
              read_until_position);
      };
 
-    auto global_context = Context::getGlobalContextInstance();
+    auto web_impl = std::make_unique<ReadBufferFromRemoteFSGather>(std::move(read_buffer_creator), objects, read_settings);
 
-    switch (read_settings.remote_fs_method)
+    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
-        case RemoteFSReadMethod::read:
-        {
-            return std::make_unique<ReadBufferFromRemoteFSGather>(
-                std::move(read_buffer_creator),
-                StoredObjects{object},
-                read_settings,
-                global_context->getFilesystemCacheLog(),
-                /* use_external_buffer */false);
-        }
-        case RemoteFSReadMethod::threadpool:
-        {
-            auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-                std::move(read_buffer_creator),
-                StoredObjects{object},
-                read_settings,
-                global_context->getFilesystemCacheLog(),
-                /* use_external_buffer */true);
+        auto reader = IObjectStorage::getThreadPoolReader();
+        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings, std::move(web_impl), min_bytes_for_seek);
+    }
+    else
+    {
+        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(web_impl));
+        return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), min_bytes_for_seek);
+    }
+}
 
-            auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-            return std::make_unique<AsynchronousBoundedReadBuffer>(
-                std::move(impl), reader, read_settings,
-                global_context->getAsyncReadCounters(),
-                global_context->getFilesystemReadPrefetchesLog());
+void WebObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
+{
+    for (const auto & [file_path, file_info] : files)
+    {
+        if (file_info.type == FileType::File && file_path.starts_with(path))
+        {
+            children.emplace_back(file_path, file_info.size);
         }
     }
 }
@@ -218,6 +213,7 @@ std::unique_ptr<WriteBufferFromFileBase> WebObjectStorage::writeObject( /// NOLI
     const StoredObject & /* object */,
     WriteMode /* mode */,
     std::optional<ObjectAttributes> /* attributes */,
+    FinalizeCallback && /* finalize_callback */,
     size_t /* buf_size */,
     const WriteSettings & /* write_settings */)
 {

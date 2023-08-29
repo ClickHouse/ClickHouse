@@ -2,13 +2,17 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
-#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 
 namespace
 {
@@ -19,9 +23,109 @@ namespace
     }
 
 
-    void formatAuthenticationData(const ASTAuthenticationData & auth_data, const IAST::FormatSettings & settings)
+    void formatAuthenticationData(const AuthenticationData & auth_data, bool show_password, const IAST::FormatSettings & settings)
     {
-        auth_data.format(settings);
+        auto auth_type = auth_data.getType();
+        if (auth_type == AuthenticationType::NO_PASSWORD)
+        {
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " NOT IDENTIFIED"
+                          << (settings.hilite ? IAST::hilite_none : "");
+            return;
+        }
+
+        String auth_type_name = AuthenticationTypeInfo::get(auth_type).name;
+        String value_prefix;
+        std::optional<String> value;
+        std::optional<String> salt;
+        const boost::container::flat_set<String> * values = nullptr;
+
+        if (show_password ||
+            auth_type == AuthenticationType::LDAP ||
+            auth_type == AuthenticationType::KERBEROS ||
+            auth_type == AuthenticationType::SSL_CERTIFICATE)
+        {
+            switch (auth_type)
+            {
+                case AuthenticationType::PLAINTEXT_PASSWORD:
+                {
+                    value_prefix = "BY";
+                    value = auth_data.getPassword();
+                    break;
+                }
+                case AuthenticationType::SHA256_PASSWORD:
+                {
+                    auth_type_name = "sha256_hash";
+                    value_prefix = "BY";
+                    value = auth_data.getPasswordHashHex();
+                    if (!auth_data.getSalt().empty())
+                    {
+                        salt = auth_data.getSalt();
+                    }
+                    break;
+                }
+                case AuthenticationType::DOUBLE_SHA1_PASSWORD:
+                {
+                    auth_type_name = "double_sha1_hash";
+                    value_prefix = "BY";
+                    value = auth_data.getPasswordHashHex();
+                    break;
+                }
+                case AuthenticationType::LDAP:
+                {
+                    value_prefix = "SERVER";
+                    value = auth_data.getLDAPServerName();
+                    break;
+                }
+                case AuthenticationType::KERBEROS:
+                {
+                    const auto & realm = auth_data.getKerberosRealm();
+                    if (!realm.empty())
+                    {
+                        value_prefix = "REALM";
+                        value = realm;
+                    }
+                    break;
+                }
+
+                case AuthenticationType::SSL_CERTIFICATE:
+                {
+                    value_prefix = "CN";
+                    values = &auth_data.getSSLCertificateCommonNames();
+                    break;
+                }
+
+                case AuthenticationType::NO_PASSWORD: [[fallthrough]];
+                case AuthenticationType::MAX:
+                    throw Exception("AST: Unexpected authentication type " + toString(auth_type), ErrorCodes::LOGICAL_ERROR);
+            }
+        }
+
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED WITH " << auth_type_name
+                      << (settings.hilite ? IAST::hilite_none : "");
+
+        if (!value_prefix.empty())
+        {
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << value_prefix
+                          << (settings.hilite ? IAST::hilite_none : "");
+        }
+
+        if (value)
+        {
+            settings.ostr << " " << quoteString(*value);
+            if (salt)
+                settings.ostr << " SALT " << quoteString(*salt);
+        }
+        else if (values)
+        {
+            settings.ostr << " ";
+            bool need_comma = false;
+            for (const auto & item : *values)
+            {
+                if (std::exchange(need_comma, true))
+                    settings.ostr << ", ";
+                settings.ostr << quoteString(item);
+            }
+        }
     }
 
 
@@ -158,31 +262,7 @@ String ASTCreateUserQuery::getID(char) const
 
 ASTPtr ASTCreateUserQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateUserQuery>(*this);
-    res->children.clear();
-
-    if (names)
-        res->names = std::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
-
-    if (default_roles)
-        res->default_roles = std::static_pointer_cast<ASTRolesOrUsersSet>(default_roles->clone());
-
-    if (default_database)
-        res->default_database = std::static_pointer_cast<ASTDatabaseOrNone>(default_database->clone());
-
-    if (grantees)
-        res->grantees = std::static_pointer_cast<ASTRolesOrUsersSet>(grantees->clone());
-
-    if (settings)
-        res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
-
-    if (auth_data)
-    {
-        res->auth_data = std::static_pointer_cast<ASTAuthenticationData>(auth_data->clone());
-        res->children.push_back(res->auth_data);
-    }
-
-    return res;
+    return std::make_shared<ASTCreateUserQuery>(*this);
 }
 
 
@@ -214,7 +294,7 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
         formatRenameTo(*new_name, format);
 
     if (auth_data)
-        formatAuthenticationData(*auth_data, format);
+        formatAuthenticationData(*auth_data, show_password, format);
 
     if (hosts)
         formatHosts(nullptr, *hosts, format);
@@ -235,5 +315,4 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
     if (grantees)
         formatGrantees(*grantees, format);
 }
-
 }

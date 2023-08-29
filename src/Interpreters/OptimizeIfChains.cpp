@@ -1,10 +1,8 @@
 #include <Common/typeid_cast.h>
-#include <Common/checkStackSize.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Interpreters/OptimizeIfChains.h>
 #include <IO/WriteHelpers.h>
-
 
 namespace DB
 {
@@ -19,8 +17,6 @@ void OptimizeIfChainsVisitor::visit(ASTPtr & current_ast)
 {
     if (!current_ast)
         return;
-
-    checkStackSize();
 
     for (ASTPtr & child : current_ast->children)
     {
@@ -61,15 +57,13 @@ ASTs OptimizeIfChainsVisitor::ifChain(const ASTPtr & child)
 {
     const auto * function_node = child->as<ASTFunction>();
     if (!function_node || !function_node->arguments)
-        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST for function 'if'");
+        throw Exception("Unexpected AST for function 'if'", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
     const auto * function_args = function_node->arguments->as<ASTExpressionList>();
-    chassert(function_args);
 
     if (!function_args || function_args->children.size() != 3)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Wrong number of arguments for function 'if' ({} instead of 3)",
-                        function_args->children.size());
+        throw Exception("Wrong number of arguments for function 'if' (" + toString(function_args->children.size()) + " instead of 3)",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const auto * else_arg = function_args->children[2]->as<ASTFunction>();
 

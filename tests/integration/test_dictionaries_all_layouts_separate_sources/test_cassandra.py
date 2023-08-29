@@ -2,11 +2,6 @@ import os
 import math
 import pytest
 
-# FIXME This test is too flaky
-# https://github.com/ClickHouse/ClickHouse/issues/33006
-
-pytestmark = pytest.mark.skip
-
 from .common import *
 
 from helpers.cluster import ClickHouseCluster

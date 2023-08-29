@@ -28,10 +28,10 @@ void CachedCompressedReadBuffer::initInput()
 }
 
 
-void CachedCompressedReadBuffer::prefetch(Priority priority)
+void CachedCompressedReadBuffer::prefetch()
 {
     initInput();
-    file_in->prefetch(priority);
+    file_in->prefetch();
 }
 
 
@@ -47,8 +47,8 @@ bool CachedCompressedReadBuffer::nextImpl()
 
         auto cell = std::make_shared<UncompressedCacheCell>();
 
-        size_t size_decompressed = 0;
-        size_t size_compressed_without_checksum = 0;
+        size_t size_decompressed;
+        size_t size_compressed_without_checksum;
         cell->compressed_size = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
 
         if (cell->compressed_size)
@@ -69,8 +69,9 @@ bool CachedCompressedReadBuffer::nextImpl()
     /// nextimpl_working_buffer_offset is set in the seek function (lazy seek). So we have to
     /// check that we are not seeking beyond working buffer.
     if (nextimpl_working_buffer_offset > working_buffer.size())
-        throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is beyond the decompressed block (pos: "
-        "{}, block size: {})", nextimpl_working_buffer_offset, toString(working_buffer.size()));
+        throw Exception("Seek position is beyond the decompressed block"
+        " (pos: " + toString(nextimpl_working_buffer_offset) + ", block size: " + toString(working_buffer.size()) + ")",
+        ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
 
     file_pos += owned_cell->compressed_size;
 

@@ -11,7 +11,6 @@ SELECT * FROM test OFFSET 20; -- 5 rows
 SELECT * FROM (SELECT i FROM test LIMIT 10 OFFSET 50) TMP; -- 5 rows
 SELECT * FROM test LIMIT 4 OFFSET 192; -- 4 rows
 SELECT * FROM test LIMIT 10 OFFSET 195; -- 5 rows
-SELECT * FROM test LIMIT 2*2 OFFSET 192;
 
 -- Only set offset
 SET limit = 0;
@@ -22,8 +21,6 @@ SELECT * FROM test LIMIT 100; -- no result
 SET offset = 10;
 SELECT * FROM test LIMIT 20 OFFSET 100; -- 10 rows
 SELECT * FROM test LIMIT 11 OFFSET 100; -- 1 rows
-SELECT * FROM test LIMIT 20 OFFSET 10*10;
-SELECT * FROM test LIMIT 4*5 OFFSET 10*10;
 
 -- offset and limit together
 SET limit = 10;

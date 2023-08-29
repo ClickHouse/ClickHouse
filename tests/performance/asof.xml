@@ -41,34 +41,4 @@
         ON (visits.fingerprint = origins.fingerprint AND visits.date &gt;= origins.date)
         FORMAT Null
     </query>
-
-    <substitutions>
-        <substitution>
-            <name>num_rows</name>
-            <values>
-                <value>1000000</value>
-            </values>
-        </substitution>
-    </substitutions>
-
-    <query>
-        SELECT COUNT(*) AS count
-        FROM
-        (
-            SELECT
-                number AS id,
-                number AS visitor_id
-            FROM system.numbers
-            LIMIT {num_rows}
-        ) AS sessions
-        ASOF LEFT JOIN
-        (
-            SELECT
-                number AS visitor_id,
-                number AS starting_session_id
-            FROM system.numbers
-            LIMIT {num_rows}
-        ) AS visitors
-        ON visitors.visitor_id = sessions.visitor_id AND visitors.starting_session_id &lt; sessions.id
-    </query>
 </test>

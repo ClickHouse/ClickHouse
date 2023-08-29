@@ -3,7 +3,6 @@
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ProfileEvents.h>
-#include <base/defines.h>
 #include <cerrno>
 
 
@@ -25,15 +24,15 @@ namespace ErrorCodes
 
 
 AsynchronousReadBufferFromFile::AsynchronousReadBufferFromFile(
-    IAsynchronousReader & reader_,
-    Priority priority_,
+    AsynchronousReaderPtr reader_,
+    Int32 priority_,
     const std::string & file_name_,
     size_t buf_size,
     int flags,
     char * existing_memory,
     size_t alignment,
     std::optional<size_t> file_size_)
-    : AsynchronousReadBufferFromFileDescriptor(reader_, priority_, -1, buf_size, existing_memory, alignment, file_size_)
+    : AsynchronousReadBufferFromFileDescriptor(std::move(reader_), priority_, -1, buf_size, existing_memory, alignment, file_size_)
     , file_name(file_name_)
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
@@ -59,15 +58,15 @@ AsynchronousReadBufferFromFile::AsynchronousReadBufferFromFile(
 
 
 AsynchronousReadBufferFromFile::AsynchronousReadBufferFromFile(
-    IAsynchronousReader & reader_,
-    Priority priority_,
+    AsynchronousReaderPtr reader_,
+    Int32 priority_,
     int & fd_,
     const std::string & original_file_name,
     size_t buf_size,
     char * existing_memory,
     size_t alignment,
     std::optional<size_t> file_size_)
-    : AsynchronousReadBufferFromFileDescriptor(reader_, priority_, fd_, buf_size, existing_memory, alignment, file_size_)
+    : AsynchronousReadBufferFromFileDescriptor(std::move(reader_), priority_, fd_, buf_size, existing_memory, alignment, file_size_)
     , file_name(original_file_name.empty() ? "(fd = " + toString(fd_) + ")" : original_file_name)
 {
     fd_ = -1;
@@ -82,8 +81,7 @@ AsynchronousReadBufferFromFile::~AsynchronousReadBufferFromFile()
     if (fd < 0)
         return;
 
-    int err = ::close(fd);
-    chassert(!err || errno == EINTR);
+    ::close(fd);
 }
 
 
@@ -93,7 +91,7 @@ void AsynchronousReadBufferFromFile::close()
         return;
 
     if (0 != ::close(fd))
-        throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");
+        throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
 
     fd = -1;
 }
@@ -107,3 +105,4 @@ AsynchronousReadBufferFromFileWithDescriptorsCache::~AsynchronousReadBufferFromF
 
 
 }
+

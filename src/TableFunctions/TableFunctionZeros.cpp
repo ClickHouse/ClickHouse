@@ -34,7 +34,7 @@ StoragePtr TableFunctionZeros<multithreaded>::executeImpl(const ASTPtr & ast_fun
         auto arguments = function->arguments->children;
 
         if (arguments.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 'length'.", getName());
+            throw Exception("Table function '" + getName() + "' requires 'length'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 
         UInt64 length = evaluateArgument(context, arguments[0]);
@@ -43,35 +43,13 @@ StoragePtr TableFunctionZeros<multithreaded>::executeImpl(const ASTPtr & ast_fun
         res->startup();
         return res;
     }
-    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 'limit'.", getName());
+    throw Exception("Table function '" + getName() + "' requires 'limit'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
 
 void registerTableFunctionZeros(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionZeros<true>>({.documentation = {
-            .description=R"(
-                Generates a stream of zeros (a table with one column 'zero' of type 'UInt8') of specified size.
-                This table function is used in performance tests, where you want to spend as little time as possible to data generation while testing some other parts of queries.
-                In contrast to the `zeros_mt`, this table function is using single thread for data generation.
-                Example:
-                [example:1]
-                This query will test the speed of `randomPrintableASCII` function using single thread.
-                See also the `system.zeros` table.)",
-            .examples={{"1", "SELECT count() FROM zeros(100000000) WHERE NOT ignore(randomPrintableASCII(10))", ""}}
-    }});
-
-    factory.registerFunction<TableFunctionZeros<false>>({.documentation = {
-            .description=R"(
-                Generates a stream of zeros (a table with one column 'zero' of type 'UInt8') of specified size.
-                This table function is used in performance tests, where you want to spend as little time as possible to data generation while testing some other parts of queries.
-                In contrast to the `zeros`, this table function is using multiple threads for data generation, according to the `max_threads` setting.
-                Example:
-                [example:1]
-                This query will test the speed of `randomPrintableASCII` function using multiple threads.
-                See also the `system.zeros` table.
-                )",
-            .examples={{"1", "SELECT count() FROM zeros_mt(1000000000) WHERE NOT ignore(randomPrintableASCII(10))", ""}}
-}});
+    factory.registerFunction<TableFunctionZeros<true>>();
+    factory.registerFunction<TableFunctionZeros<false>>();
 }
 
 template <bool multithreaded>

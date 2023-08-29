@@ -1,14 +1,12 @@
-#include <string_view>
 #include <Access/SettingsConstraints.h>
-#include <Access/resolveSetting.h>
 #include <Access/AccessControl.h>
 #include <Core/Settings.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <boost/range/algorithm_ext/erase.hpp>
+
 
 namespace DB
 {
@@ -19,6 +17,7 @@ namespace ErrorCodes
     extern const int SETTING_CONSTRAINT_VIOLATION;
     extern const int UNKNOWN_SETTING;
 }
+
 
 SettingsConstraints::SettingsConstraints(const AccessControl & access_control_) : access_control(&access_control_)
 {
@@ -34,113 +33,93 @@ SettingsConstraints::~SettingsConstraints() = default;
 void SettingsConstraints::clear()
 {
     constraints.clear();
-    settings_alias_cache.clear();
 }
 
-void SettingsConstraints::set(const String & full_name, const Field & min_value, const Field & max_value, SettingConstraintWritability writability)
+
+void SettingsConstraints::setMinValue(std::string_view setting_name, const Field & min_value)
 {
-    std::string resolved_name{resolveSettingName(full_name)};
-
-    auto & constraint = constraints[resolved_name];
-
-    if (full_name != resolved_name)
-        settings_alias_cache[full_name] = resolved_name;
-
-    if (!min_value.isNull())
-        constraint.min_value = settingCastValueUtil(resolved_name, min_value);
-    if (!max_value.isNull())
-        constraint.max_value = settingCastValueUtil(resolved_name, max_value);
-    constraint.writability = writability;
+    getConstraintRef(setting_name).min_value = Settings::castValueUtil(setting_name, min_value);
 }
 
-void SettingsConstraints::get(const Settings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, SettingConstraintWritability & writability) const
+Field SettingsConstraints::getMinValue(std::string_view setting_name) const
 {
-    // NOTE: for `Settings` short name is equal to full name
-    auto checker = getChecker(current_settings, short_name);
-    min_value = checker.constraint.min_value;
-    max_value = checker.constraint.max_value;
-    writability = checker.constraint.writability;
+    const auto * ptr = tryGetConstraint(setting_name);
+    if (ptr)
+        return ptr->min_value;
+    else
+        return {};
 }
 
-void SettingsConstraints::get(const MergeTreeSettings &, std::string_view short_name, Field & min_value, Field & max_value, SettingConstraintWritability & writability) const
+
+void SettingsConstraints::setMaxValue(std::string_view setting_name, const Field & max_value)
 {
-    auto checker = getMergeTreeChecker(short_name);
-    min_value = checker.constraint.min_value;
-    max_value = checker.constraint.max_value;
-    writability = checker.constraint.writability;
+    getConstraintRef(setting_name).max_value = Settings::castValueUtil(setting_name, max_value);
+}
+
+Field SettingsConstraints::getMaxValue(std::string_view setting_name) const
+{
+    const auto * ptr = tryGetConstraint(setting_name);
+    if (ptr)
+        return ptr->max_value;
+    else
+        return {};
+}
+
+
+void SettingsConstraints::setReadOnly(std::string_view setting_name, bool read_only)
+{
+    getConstraintRef(setting_name).read_only = read_only;
+}
+
+bool SettingsConstraints::isReadOnly(std::string_view setting_name) const
+{
+    const auto * ptr = tryGetConstraint(setting_name);
+    if (ptr)
+        return ptr->read_only;
+    else
+        return false;
+}
+
+
+void SettingsConstraints::set(std::string_view setting_name, const Field & min_value, const Field & max_value, bool read_only)
+{
+    auto & ref = getConstraintRef(setting_name);
+    ref.min_value = Settings::castValueUtil(setting_name, min_value);
+    ref.max_value = Settings::castValueUtil(setting_name, max_value);
+    ref.read_only = read_only;
+}
+
+void SettingsConstraints::get(std::string_view setting_name, Field & min_value, Field & max_value, bool & read_only) const
+{
+    const auto * ptr = tryGetConstraint(setting_name);
+    if (ptr)
+    {
+        min_value = ptr->min_value;
+        max_value = ptr->max_value;
+        read_only = ptr->read_only;
+    }
+    else
+    {
+        min_value = Field{};
+        max_value = Field{};
+        read_only = false;
+    }
 }
 
 void SettingsConstraints::merge(const SettingsConstraints & other)
 {
-    if (access_control->doesSettingsConstraintsReplacePrevious())
+    for (const auto & [other_name, other_constraint] : other.constraints)
     {
-        for (const auto & [other_name, other_constraint] : other.constraints)
-        {
-            constraints[other_name] = other_constraint;
-        }
-    }
-    else
-    {
-        for (const auto & [other_name, other_constraint] : other.constraints)
-        {
-            auto & constraint = constraints[other_name];
-            if (!other_constraint.min_value.isNull())
-                constraint.min_value = other_constraint.min_value;
-            if (!other_constraint.max_value.isNull())
-                constraint.max_value = other_constraint.max_value;
-            if (other_constraint.writability == SettingConstraintWritability::CONST)
-                constraint.writability = SettingConstraintWritability::CONST; // NOTE: In this mode <readonly/> flag cannot be overridden to be false
-        }
-    }
-
-    for (const auto & [other_alias, other_resolved_name] : settings_alias_cache)
-        settings_alias_cache.try_emplace(other_alias, other_resolved_name);
-}
-
-
-void SettingsConstraints::check(const Settings & current_settings, const SettingsProfileElements & profile_elements) const
-{
-    for (const auto & element : profile_elements)
-    {
-        if (SettingsProfileElements::isAllowBackupSetting(element.setting_name))
-            continue;
-
-        if (element.value)
-        {
-            SettingChange value(element.setting_name, *element.value);
-            check(current_settings, value);
-        }
-
-        if (element.min_value)
-        {
-            SettingChange value(element.setting_name, *element.min_value);
-            check(current_settings, value);
-        }
-
-        if (element.max_value)
-        {
-            SettingChange value(element.setting_name, *element.max_value);
-            check(current_settings, value);
-        }
-
-        SettingConstraintWritability new_value = SettingConstraintWritability::WRITABLE;
-        SettingConstraintWritability old_value = SettingConstraintWritability::WRITABLE;
-
-        if (element.writability)
-            new_value = *element.writability;
-
-        auto setting_name = Settings::Traits::resolveName(element.setting_name);
-        auto it = constraints.find(setting_name);
-        if (it != constraints.end())
-            old_value = it->second.writability;
-
-        if (new_value != old_value)
-        {
-            if (old_value == SettingConstraintWritability::CONST)
-                throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
-        }
+        auto & constraint = getConstraintRef(other_name);
+        if (!other_constraint.min_value.isNull())
+            constraint.min_value = other_constraint.min_value;
+        if (!other_constraint.max_value.isNull())
+            constraint.max_value = other_constraint.max_value;
+        if (other_constraint.read_only)
+            constraint.read_only = true;
     }
 }
+
 
 void SettingsConstraints::check(const Settings & current_settings, const SettingChange & change) const
 {
@@ -163,17 +142,6 @@ void SettingsConstraints::check(const Settings & current_settings, SettingsChang
         });
 }
 
-void SettingsConstraints::check(const MergeTreeSettings & current_settings, const SettingChange & change) const
-{
-    checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION);
-}
-
-void SettingsConstraints::check(const MergeTreeSettings & current_settings, const SettingsChanges & changes) const
-{
-    for (const auto & change : changes)
-        check(current_settings, change);
-}
-
 void SettingsConstraints::clamp(const Settings & current_settings, SettingsChanges & changes) const
 {
     boost::range::remove_erase_if(
@@ -184,43 +152,53 @@ void SettingsConstraints::clamp(const Settings & current_settings, SettingsChang
         });
 }
 
-template <class T>
-bool getNewValueToCheck(const T & current_settings, SettingChange & change, Field & new_value, bool throw_on_failure)
-{
-    Field current_value;
-    bool has_current_value = current_settings.tryGet(change.name, current_value);
-
-    /// Setting isn't checked if value has not changed.
-    if (has_current_value && change.value == current_value)
-        return false;
-
-    if (throw_on_failure)
-        new_value = T::castValueUtil(change.name, change.value);
-    else
-    {
-        try
-        {
-            new_value = T::castValueUtil(change.name, change.value);
-        }
-        catch (...)
-        {
-            return false;
-        }
-    }
-
-    /// Setting isn't checked if value has not changed.
-    if (has_current_value && new_value == current_value)
-        return false;
-
-    return true;
-}
 
 bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
 {
-    std::string_view setting_name = Settings::Traits::resolveName(change.name);
+    const String & setting_name = change.name;
 
     if (setting_name == "profile")
         return true;
+
+    bool cannot_cast;
+    auto cast_value = [&](const Field & x) -> Field
+    {
+        cannot_cast = false;
+        if (reaction == THROW_ON_VIOLATION)
+            return Settings::castValueUtil(setting_name, x);
+        else
+        {
+            try
+            {
+                return Settings::castValueUtil(setting_name, x);
+            }
+            catch (...)
+            {
+                cannot_cast = true;
+                return {};
+            }
+        }
+    };
+
+    bool cannot_compare = false;
+    auto less = [&](const Field & left, const Field & right)
+    {
+        cannot_compare = false;
+        if (reaction == THROW_ON_VIOLATION)
+            return applyVisitor(FieldVisitorAccurateLess{}, left, right);
+        else
+        {
+            try
+            {
+                return applyVisitor(FieldVisitorAccurateLess{}, left, right);
+            }
+            catch (...)
+            {
+                cannot_compare = true;
+                return false;
+            }
+        }
+    };
 
     if (reaction == THROW_ON_VIOLATION)
     {
@@ -234,7 +212,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
             {
                 if (const auto hints = current_settings.getHints(change.name); !hints.empty())
                 {
-                    e.addMessage(fmt::format("Maybe you meant {}", toString(hints)));
+                      e.addMessage(fmt::format("Maybe you meant {}", toString(hints)));
                 }
             }
             throw;
@@ -243,144 +221,133 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
     else if (!access_control->isSettingNameAllowed(setting_name))
         return false;
 
-    Field new_value;
-    if (!getNewValueToCheck(current_settings, change, new_value, reaction == THROW_ON_VIOLATION))
-        return false;
+    Field current_value, new_value;
+    if (current_settings.tryGet(setting_name, current_value))
+    {
+        /// Setting isn't checked if value has not changed.
+        if (change.value == current_value)
+            return false;
 
-    return getChecker(current_settings, setting_name).check(change, new_value, reaction);
-}
+        new_value = cast_value(change.value);
+        if ((new_value == current_value) || cannot_cast)
+            return false;
+    }
+    else
+    {
+        new_value = cast_value(change.value);
+        if (cannot_cast)
+            return false;
+    }
 
-bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
-{
-    Field new_value;
-    if (!getNewValueToCheck(current_settings, change, new_value, reaction == THROW_ON_VIOLATION))
-        return false;
-    return getMergeTreeChecker(change.name).check(change, new_value, reaction);
-}
-
-bool SettingsConstraints::Checker::check(SettingChange & change, const Field & new_value, ReactionOnViolation reaction) const
-{
-    if (!explain.empty())
+    if (!current_settings.allow_ddl && setting_name == "allow_ddl")
     {
         if (reaction == THROW_ON_VIOLATION)
-            throw Exception::createDeprecated(explain, code);
+            throw Exception("Cannot modify 'allow_ddl' setting when DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
         else
             return false;
     }
 
-    std::string_view setting_name = setting_name_resolver(change.name);
-
-    auto less_or_cannot_compare = [=](const Field & left, const Field & right)
+    /** The `readonly` value is understood as follows:
+      * 0 - everything allowed.
+      * 1 - only read queries can be made; you can not change the settings.
+      * 2 - You can only do read queries and you can change the settings, except for the `readonly` setting.
+      */
+    if (current_settings.readonly == 1)
     {
         if (reaction == THROW_ON_VIOLATION)
-            return applyVisitor(FieldVisitorAccurateLess{}, left, right);
-        try
-        {
-            return applyVisitor(FieldVisitorAccurateLess{}, left, right);
-        }
-        catch (...)
-        {
-            return true;
-        }
-    };
-
-
-    if (constraint.writability == SettingConstraintWritability::CONST)
-    {
-        if (reaction == THROW_ON_VIOLATION)
-            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
+            throw Exception("Cannot modify '" + setting_name + "' setting in readonly mode", ErrorCodes::READONLY);
         else
             return false;
     }
 
-    const auto & min_value = constraint.min_value;
-    const auto & max_value = constraint.max_value;
-
-    if (!min_value.isNull() && !max_value.isNull() && less_or_cannot_compare(max_value, min_value))
+    if (current_settings.readonly > 1 && setting_name == "readonly")
     {
         if (reaction == THROW_ON_VIOLATION)
-            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
+            throw Exception("Cannot modify 'readonly' setting in readonly mode", ErrorCodes::READONLY);
         else
             return false;
     }
 
-    if (!min_value.isNull() && less_or_cannot_compare(new_value, min_value))
+    const Constraint * constraint = tryGetConstraint(setting_name);
+    if (constraint)
     {
-        if (reaction == THROW_ON_VIOLATION)
+        if (constraint->read_only)
         {
-            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be less than {}",
-                setting_name, applyVisitor(FieldVisitorToString(), min_value));
+            if (reaction == THROW_ON_VIOLATION)
+                throw Exception("Setting " + setting_name + " should not be changed", ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
+            else
+                return false;
         }
-        else
-            change.value = min_value;
-    }
 
-    if (!max_value.isNull() && less_or_cannot_compare(max_value, new_value))
-    {
-        if (reaction == THROW_ON_VIOLATION)
+        const Field & min_value = constraint->min_value;
+        const Field & max_value = constraint->max_value;
+        if (!min_value.isNull() && !max_value.isNull() && (less(max_value, min_value) || cannot_compare))
         {
-            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be greater than {}",
-                setting_name, applyVisitor(FieldVisitorToString(), max_value));
+            if (reaction == THROW_ON_VIOLATION)
+                throw Exception("Setting " + setting_name + " should not be changed", ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
+            else
+                return false;
         }
-        else
-            change.value = max_value;
+
+        if (!min_value.isNull() && (less(new_value, min_value) || cannot_compare))
+        {
+            if (reaction == THROW_ON_VIOLATION)
+            {
+                throw Exception(
+                    "Setting " + setting_name + " shouldn't be less than " + applyVisitor(FieldVisitorToString(), constraint->min_value),
+                    ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
+            }
+            else
+                change.value = min_value;
+        }
+
+        if (!max_value.isNull() && (less(max_value, new_value) || cannot_compare))
+        {
+            if (reaction == THROW_ON_VIOLATION)
+            {
+                throw Exception(
+                    "Setting " + setting_name + " shouldn't be greater than " + applyVisitor(FieldVisitorToString(), constraint->max_value),
+                    ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
+            }
+            else
+                change.value = max_value;
+        }
     }
 
     return true;
 }
 
-std::string_view SettingsConstraints::resolveSettingNameWithCache(std::string_view name) const
+
+SettingsConstraints::Constraint & SettingsConstraints::getConstraintRef(std::string_view setting_name)
 {
-    if (auto it = settings_alias_cache.find(name); it != settings_alias_cache.end())
-        return it->second;
-    return name;
-}
-
-SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & current_settings, std::string_view setting_name) const
-{
-    auto resolved_name = resolveSettingNameWithCache(setting_name);
-    if (!current_settings.allow_ddl && resolved_name == "allow_ddl")
-        return Checker("Cannot modify 'allow_ddl' setting when DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
-
-    /** The `readonly` value is understood as follows:
-      * 0 - no read-only restrictions.
-      * 1 - only read requests, as well as changing settings with `changable_in_readonly` flag.
-      * 2 - only read requests, as well as changing settings, except for the `readonly` setting.
-      */
-
-    if (current_settings.readonly > 1 && resolved_name == "readonly")
-        return Checker("Cannot modify 'readonly' setting in readonly mode", ErrorCodes::READONLY);
-
-    auto it = constraints.find(resolved_name);
-    if (current_settings.readonly == 1)
-    {
-        if (it == constraints.end() || it->second.writability != SettingConstraintWritability::CHANGEABLE_IN_READONLY)
-            return Checker("Cannot modify '" + String(setting_name) + "' setting in readonly mode", ErrorCodes::READONLY);
-    }
-    else // For both readonly=0 and readonly=2
-    {
-        if (it == constraints.end())
-            return Checker(Settings::Traits::resolveName); // Allowed
-    }
-    return Checker(it->second, Settings::Traits::resolveName);
-}
-
-SettingsConstraints::Checker SettingsConstraints::getMergeTreeChecker(std::string_view short_name) const
-{
-    auto full_name = settingFullName<MergeTreeSettings>(short_name);
-    auto it = constraints.find(resolveSettingNameWithCache(full_name));
+    auto it = constraints.find(setting_name);
     if (it == constraints.end())
-        return Checker(MergeTreeSettings::Traits::resolveName); // Allowed
-    return Checker(it->second, MergeTreeSettings::Traits::resolveName);
+    {
+        auto setting_name_ptr = std::make_shared<const String>(setting_name);
+        Constraint new_constraint;
+        new_constraint.setting_name = setting_name_ptr;
+        it = constraints.emplace(*setting_name_ptr, std::move(new_constraint)).first;
+    }
+    return it->second;
 }
+
+const SettingsConstraints::Constraint * SettingsConstraints::tryGetConstraint(std::string_view setting_name) const
+{
+    auto it = constraints.find(setting_name);
+    if (it == constraints.end())
+        return nullptr;
+    return &it->second;
+}
+
 
 bool SettingsConstraints::Constraint::operator==(const Constraint & other) const
 {
-    return writability == other.writability && min_value == other.min_value && max_value == other.max_value;
+    return (read_only == other.read_only) && (min_value == other.min_value) && (max_value == other.max_value)
+        && (*setting_name == *other.setting_name);
 }
 
 bool operator ==(const SettingsConstraints & left, const SettingsConstraints & right)
 {
-    return left.constraints == right.constraints;
+    return (left.constraints == right.constraints);
 }
 }

@@ -16,9 +16,15 @@ DROP TABLE t2;
 CREATE TABLE t3 AS numbers(10);
 DROP TABLE t3;
 
+-- live view
+SET allow_experimental_live_view=1;
+CREATE LIVE VIEW lv AS SELECT * FROM t1;
+CREATE TABLE t3 AS lv; -- { serverError 80; }
+DROP TABLE lv;
+
 -- view
 CREATE VIEW v AS SELECT * FROM t1;
-CREATE TABLE t3 AS v; -- { serverError 80 }
+CREATE TABLE t3 AS v; -- { serverError 80; }
 DROP TABLE v;
 
 -- dictionary
@@ -37,7 +43,7 @@ SOURCE(CLICKHOUSE(
     TABLE 'dict_data' DB 'test_01056_dict_data' USER 'default' PASSWORD ''))
 LIFETIME(MIN 0 MAX 0)
 LAYOUT(SPARSE_HASHED());
-CREATE TABLE t3 AS dict; -- { serverError 80 }
+CREATE TABLE t3 AS dict; -- { serverError 80; }
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t3;

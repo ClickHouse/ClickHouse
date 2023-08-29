@@ -53,7 +53,7 @@ function check_exception_detected()
 export -f check_exception_detected;
 timeout 30 bash -c check_exception_detected 2> /dev/null
 
-$CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = 'dictdb_01041_01040' AND name = 'invalidate'" 2>&1 | grep -Eo "dictdb_01041_01040.dict_invalidate.*UNKNOWN_TABLE" | wc -l
+$CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = 'dictdb_01041_01040' AND name = 'invalidate'" 2>&1 | grep -Eo "Table dictdb_01041_01040.dict_invalidate .* exist"
 
 $CLICKHOUSE_CLIENT --query "
 CREATE TABLE dictdb_01041_01040.dict_invalidate

@@ -1,14 +1,14 @@
 #pragma once
 
+#include <shared_mutex>
 #include <Core/Block.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
-#include <Interpreters/SetKeys.h>
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
 
-#include <Common/SharedMutex.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -18,9 +18,8 @@ struct Range;
 
 class Context;
 class IFunctionBase;
-using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
+using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
-class Chunk;
 
 /** Data structure for implementation of IN expression.
   */
@@ -31,9 +30,9 @@ public:
     /// (that is useful only for checking that some value is in the set and may not store the original values),
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
-    Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
+    Set(const SizeLimits & limits_, bool fill_set_elements_, bool transform_null_in_)
         : log(&Poco::Logger::get("Set")),
-        limits(limits_), max_elements_to_fill(max_elements_to_fill_), transform_null_in(transform_null_in_)
+        limits(limits_), fill_set_elements(fill_set_elements_), transform_null_in(transform_null_in_)
     {
     }
 
@@ -46,20 +45,11 @@ public:
     void setHeader(const ColumnsWithTypeAndName & header);
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
-    bool insertFromColumns(const Columns & columns);
     bool insertFromBlock(const ColumnsWithTypeAndName & columns);
-
-    void fillSetElements();
-    bool insertFromColumns(const Columns & columns, SetKeyColumns & holder);
-    void appendSetElements(SetKeyColumns & holder);
-
     /// Call after all blocks were inserted. To get the information that set is already created.
     void finishInsert() { is_created = true; }
 
-    /// finishInsert and isCreated are thread-safe
-    bool isCreated() const { return is_created.load(); }
-
-    void checkIsCreated() const;
+    bool isCreated() const { return is_created; }
 
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
@@ -73,14 +63,12 @@ public:
     const DataTypes & getDataTypes() const { return data_types; }
     const DataTypes & getElementsTypes() const { return set_elements_types; }
 
-    bool hasExplicitSetElements() const { return fill_set_elements || (!set_elements.empty() && set_elements.front()->size() == data.getTotalRowCount()); }
-    Columns getSetElements() const { checkIsCreated(); return { set_elements.begin(), set_elements.end() }; }
+    bool hasExplicitSetElements() const { return fill_set_elements; }
+    Columns getSetElements() const { return { set_elements.begin(), set_elements.end() }; }
 
     void checkColumnsNumber(size_t num_key_columns) const;
     bool areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
     void checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
-
-    static DataTypes getElementTypes(DataTypes types, bool transform_null_in);
 
 private:
     size_t keys_size = 0;
@@ -117,14 +105,13 @@ private:
     SizeLimits limits;
 
     /// Do we need to additionally store all elements of the set in explicit form for subsequent use for index.
-    bool fill_set_elements = false;
-    size_t max_elements_to_fill;
+    bool fill_set_elements;
 
     /// If true, insert NULL values to set.
     bool transform_null_in;
 
     /// Check if set contains all the data.
-    std::atomic<bool> is_created = false;
+    bool is_created = false;
 
     /// If in the left part columns contains the same types as the elements of the set.
     void executeOrdinary(
@@ -140,7 +127,7 @@ private:
     /** Protects work with the set in the functions `insertFromBlock` and `execute`.
       * These functions can be called simultaneously from different threads only when using StorageSet,
       */
-    mutable SharedMutex rwlock;
+    mutable std::shared_mutex rwlock;
 
     template <typename Method>
     void insertFromBlockImpl(

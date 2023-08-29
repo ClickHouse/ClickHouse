@@ -7,15 +7,14 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Common/ZooKeeper/ZooKeeperArgs.h>
+#include <Common/GetPriorityForLoadBalancing.h>
 #include <Common/thread_local_rng.h>
-#include <Coordination/KeeperFeatureFlags.h>
 #include <unistd.h>
 #include <random>
 
@@ -33,12 +32,6 @@ namespace CurrentMetrics
 namespace DB
 {
     class ZooKeeperLog;
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 }
 
 namespace zkutil
@@ -50,8 +43,8 @@ constexpr size_t MULTI_BATCH_SIZE = 100;
 struct ShuffleHost
 {
     String host;
-    Priority priority;
-    UInt64 random = 0;
+    Int64 priority = 0;
+    UInt32 random = 0;
 
     void randomize()
     {
@@ -65,102 +58,7 @@ struct ShuffleHost
     }
 };
 
-struct RemoveException
-{
-    explicit RemoveException(std::string_view path_ = "", bool remove_subtree_ = true)
-        : path(path_)
-        , remove_subtree(remove_subtree_)
-    {}
-
-    std::string_view path;
-    // whether we should keep the child node and its subtree or just the child node
-    bool remove_subtree;
-};
-
 using GetPriorityForLoadBalancing = DB::GetPriorityForLoadBalancing;
-
-template <typename T>
-concept ZooKeeperResponse = std::derived_from<T, Coordination::Response>;
-
-template <ZooKeeperResponse ResponseType, bool try_multi>
-struct MultiReadResponses
-{
-    MultiReadResponses() = default;
-
-    template <typename TResponses>
-    explicit MultiReadResponses(TResponses responses_) : responses(std::move(responses_))
-    {}
-
-    size_t size() const
-    {
-        return std::visit(
-            [&]<typename TResponses>(const TResponses & resp) -> size_t
-            {
-                if constexpr (std::same_as<TResponses, std::monostate>)
-                    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No responses set for MultiRead");
-                else
-                    return resp.size();
-            },
-            responses);
-    }
-
-    ResponseType & operator[](size_t index)
-    {
-        return std::visit(
-            [&]<typename TResponses>(TResponses & resp) -> ResponseType &
-            {
-                if constexpr (std::same_as<TResponses, RegularResponses>)
-                {
-                    return dynamic_cast<ResponseType &>(*resp[index]);
-                }
-                else if constexpr (std::same_as<TResponses, ResponsesWithFutures>)
-                {
-                    if constexpr (try_multi)
-                    {
-                        /// We should not ignore errors except ZNONODE
-                        /// for consistency with exists, tryGet and tryGetChildren
-                        const auto & error = resp[index].error;
-                        if (error != Coordination::Error::ZOK && error != Coordination::Error::ZNONODE)
-                            throw KeeperException(error);
-                    }
-                    return resp[index];
-                }
-                else
-                {
-                    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No responses set for MultiRead");
-                }
-            },
-            responses);
-    }
-
-private:
-    using RegularResponses = std::vector<Coordination::ResponsePtr>;
-    using FutureResponses = std::vector<std::future<ResponseType>>;
-
-    struct ResponsesWithFutures
-    {
-        ResponsesWithFutures(FutureResponses future_responses_) : future_responses(std::move(future_responses_))
-        {
-            cached_responses.resize(future_responses.size());
-        }
-
-        FutureResponses future_responses;
-        std::vector<std::optional<ResponseType>> cached_responses;
-
-        ResponseType & operator[](size_t index)
-        {
-            if (cached_responses[index].has_value())
-                return *cached_responses[index];
-
-            cached_responses[index] = future_responses[index].get();
-            return *cached_responses[index];
-        }
-
-        size_t size() const { return future_responses.size(); }
-    };
-
-    std::variant<std::monostate, RegularResponses, ResponsesWithFutures> responses;
-};
 
 /// ZooKeeper session. The interface is substantially different from the usual libzookeeper API.
 ///
@@ -174,11 +72,24 @@ private:
 class ZooKeeper
 {
 public:
-
     using Ptr = std::shared_ptr<ZooKeeper>;
-    using ErrorsList = std::initializer_list<Coordination::Error>;
 
-    explicit ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
+    /// hosts_string -- comma separated [secure://]host:port list
+    explicit ZooKeeper(const std::string & hosts_string, const std::string & identity_ = "",
+              int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
+              int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
+              const std::string & chroot_ = "",
+              const std::string & implementation_ = "zookeeper",
+              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
+              const GetPriorityForLoadBalancing & get_priority_load_balancing_ = {});
+
+    explicit ZooKeeper(const Strings & hosts_, const std::string & identity_ = "",
+              int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
+              int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
+              const std::string & chroot_ = "",
+              const std::string & implementation_ = "zookeeper",
+              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
+              const GetPriorityForLoadBalancing & get_priority_load_balancing_ = {});
 
     /** Config of the form:
         <zookeeper>
@@ -216,7 +127,7 @@ public:
     /// Returns true, if the session has expired.
     bool expired();
 
-    bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const;
+    DB::KeeperApiVersion getApiVersion();
 
     /// Create a znode.
     /// Throw an exception if something went wrong.
@@ -238,8 +149,6 @@ public:
     /// Does not create the node itself.
     void createAncestors(const std::string & path);
 
-    void checkExistsAndGetCreateAncestorsOps(const std::string & path, Coordination::Requests & requests);
-
     /// Remove the node if the version matches. (if version == -1, remove any version).
     void remove(const std::string & path, int32_t version = -1);
 
@@ -252,64 +161,16 @@ public:
     bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
     bool existsWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
 
-    using MultiExistsResponse = MultiReadResponses<Coordination::ExistsResponse, true>;
-    template <typename TIter>
-    MultiExistsResponse exists(TIter start, TIter end)
-    {
-        return multiRead<Coordination::ExistsResponse, true>(
-            start, end, zkutil::makeExistsRequest, [&](const auto & path) { return asyncExists(path); });
-    }
-
-    MultiExistsResponse exists(const std::vector<std::string> & paths)
-    {
-        return exists(paths.begin(), paths.end());
-    }
-
     std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
     std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
 
-    using MultiGetResponse = MultiReadResponses<Coordination::GetResponse, false>;
-    using MultiTryGetResponse = MultiReadResponses<Coordination::GetResponse, true>;
-
-    template <typename TIter>
-    MultiGetResponse get(TIter start, TIter end)
-    {
-        return multiRead<Coordination::GetResponse, false>(
-            start, end, zkutil::makeGetRequest, [&](const auto & path) { return asyncGet(path); });
-    }
-
-    MultiGetResponse get(const std::vector<std::string> & paths)
-    {
-        return get(paths.begin(), paths.end());
-    }
-
     /// Doesn't not throw in the following cases:
     /// * The node doesn't exist. Returns false in this case.
-    bool tryGet(
-        const std::string & path,
-        std::string & res,
-        Coordination::Stat * stat = nullptr,
-        const EventPtr & watch = nullptr,
-        Coordination::Error * code = nullptr);
+    bool tryGet(const std::string & path, std::string & res, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr,
+                Coordination::Error * code = nullptr);
 
-    bool tryGetWatch(
-        const std::string & path,
-        std::string & res,
-        Coordination::Stat * stat,
-        Coordination::WatchCallback watch_callback,
-        Coordination::Error * code = nullptr);
-
-    template <typename TIter>
-    MultiTryGetResponse tryGet(TIter start, TIter end)
-    {
-        return multiRead<Coordination::GetResponse, true>(
-            start, end, zkutil::makeGetRequest, [&](const auto & path) { return asyncTryGet(path); });
-    }
-
-    MultiTryGetResponse tryGet(const std::vector<std::string> & paths)
-    {
-        return tryGet(paths.begin(), paths.end());
-    }
+    bool tryGetWatch(const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback,
+                     Coordination::Error * code = nullptr);
 
     void set(const std::string & path, const std::string & data,
              int32_t version = -1, Coordination::Stat * stat = nullptr);
@@ -333,58 +194,17 @@ public:
                              Coordination::WatchCallback watch_callback,
                              Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
-    using MultiGetChildrenResponse = MultiReadResponses<Coordination::ListResponse, false>;
-    using MultiTryGetChildrenResponse = MultiReadResponses<Coordination::ListResponse, true>;
-
-    template <typename TIter>
-    MultiGetChildrenResponse
-    getChildren(TIter start, TIter end, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
-    {
-        return multiRead<Coordination::ListResponse, false>(
-            start,
-            end,
-            [list_request_type](const auto & path) { return zkutil::makeListRequest(path, list_request_type); },
-            [&](const auto & path) { return asyncGetChildren(path, {}, list_request_type); });
-    }
-
-    MultiGetChildrenResponse
-    getChildren(const std::vector<std::string> & paths, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
-    {
-        return getChildren(paths.begin(), paths.end(), list_request_type);
-    }
-
     /// Doesn't not throw in the following cases:
     /// * The node doesn't exist.
-    Coordination::Error tryGetChildren(
-        const std::string & path,
-        Strings & res,
-        Coordination::Stat * stat = nullptr,
-        const EventPtr & watch = nullptr,
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+    Coordination::Error tryGetChildren(const std::string & path, Strings & res,
+                           Coordination::Stat * stat = nullptr,
+                           const EventPtr & watch = nullptr,
+                           Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
-    Coordination::Error tryGetChildrenWatch(
-        const std::string & path,
-        Strings & res,
-        Coordination::Stat * stat,
-        Coordination::WatchCallback watch_callback,
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
-
-    template <typename TIter>
-    MultiTryGetChildrenResponse
-    tryGetChildren(TIter start, TIter end, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
-    {
-        return multiRead<Coordination::ListResponse, true>(
-            start,
-            end,
-            [list_request_type](const auto & path) { return zkutil::makeListRequest(path, list_request_type); },
-            [&](const auto & path) { return asyncTryGetChildren(path, list_request_type); });
-    }
-
-    MultiTryGetChildrenResponse
-    tryGetChildren(const std::vector<std::string> & paths, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
-    {
-        return tryGetChildren(paths.begin(), paths.end(), list_request_type);
-    }
+    Coordination::Error tryGetChildrenWatch(const std::string & path, Strings & res,
+                                Coordination::Stat * stat,
+                                Coordination::WatchCallback watch_callback,
+                                Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     /// Performs several operations in a transaction.
     /// Throws on every error.
@@ -412,13 +232,13 @@ public:
     void tryRemoveRecursive(const std::string & path);
 
     /// Similar to removeRecursive(...) and tryRemoveRecursive(...), but does not remove path itself.
-    /// Node defined as RemoveException will not be deleted.
-    void removeChildrenRecursive(const std::string & path, RemoveException keep_child = RemoveException{});
+    /// If keep_child_node is not empty, this method will not remove path/keep_child_node (but will remove its subtree).
+    /// It can be useful to keep some child node as a flag which indicates that path is currently removing.
+    void removeChildrenRecursive(const std::string & path, const String & keep_child_node = {});
     /// If probably_flat is true, this method will optimistically try to remove children non-recursive
     /// and will fall back to recursive removal if it gets ZNOTEMPTY for some child.
     /// Returns true if no kind of fallback happened.
-    /// Node defined as RemoveException will not be deleted.
-    bool tryRemoveChildrenRecursive(const std::string & path, bool probably_flat = false, RemoveException keep_child= RemoveException{});
+    bool tryRemoveChildrenRecursive(const std::string & path, bool probably_flat = false, const String & keep_child_node = {});
 
     /// Remove all children nodes (non recursive).
     void removeChildren(const std::string & path);
@@ -430,11 +250,9 @@ public:
     /// The function returns true if waited and false if waiting was interrupted by condition.
     bool waitForDisappear(const std::string & path, const WaitCondition & condition = {});
 
-    /// Checks if a the ephemeral node exists. These nodes are removed automatically by ZK when the session ends
-    /// If the node exists and its value is equal to fast_delete_if_equal_value it will remove it
-    /// If the node exists and its value is different, it will wait for it to disappear. It will throw a LOGICAL_ERROR if the node doesn't
-    /// disappear automatically after 3x session_timeout.
-    void handleEphemeralNodeExistence(const std::string & path, const std::string & fast_delete_if_equal_value);
+    /// Wait for the ephemeral node created in previous session to disappear.
+    /// Throws LOGICAL_ERROR if node still exists after 2x session_timeout.
+    void waitForEphemeralToDisappearIfAny(const std::string & path);
 
     /// Async interface (a small subset of operations is implemented).
     ///
@@ -510,29 +328,17 @@ public:
     /// * The node doesn't exist
     FutureGet asyncTryGet(const std::string & path);
 
-    /// Doesn't throw in the following cases:
-    /// * The node doesn't exist
-    FutureGetChildren asyncTryGetChildren(
-        const std::string & path,
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
-
     void finalize(const String & reason);
 
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
-    UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
-
-    void setServerCompletelyStarted();
-
-    String getConnectedZooKeeperHost() const { return connected_zk_host; }
-    UInt16 getConnectedZooKeeperPort() const { return connected_zk_port; }
-    size_t getConnectedZooKeeperIndex() const { return connected_zk_index; }
-    UInt64 getConnectedTime() const { return connected_time; }
-
-    const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return impl->getKeeperFeatureFlags(); }
+    UInt32 getSessionUptime() const { return session_uptime.elapsedSeconds(); }
 
 private:
-    void init(ZooKeeperArgs args_);
+    friend class EphemeralNodeHolder;
+
+    void init(const std::string & implementation_, const Strings & hosts_, const std::string & identity_,
+              int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_, const GetPriorityForLoadBalancing & get_priority_load_balancing_);
 
     /// The following methods don't any throw exceptions but return error codes.
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
@@ -550,59 +356,21 @@ private:
     Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallback watch_callback);
     Coordination::Error syncImpl(const std::string & path, std::string & returned_path);
 
-    using RequestFactory = std::function<Coordination::RequestPtr(const std::string &)>;
-    template <typename TResponse>
-    using AsyncFunction = std::function<std::future<TResponse>(const std::string &)>;
-
-    template <typename TResponse, bool try_multi, typename TIter>
-    MultiReadResponses<TResponse, try_multi> multiRead(TIter start, TIter end, RequestFactory request_factory, AsyncFunction<TResponse> async_fun)
-    {
-        if (isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ))
-        {
-            Coordination::Requests requests;
-            for (auto it = start; it != end; ++it)
-                requests.push_back(request_factory(*it));
-
-            if constexpr (try_multi)
-            {
-                Coordination::Responses responses;
-                tryMulti(requests, responses);
-                return MultiReadResponses<TResponse, try_multi>{std::move(responses)};
-            }
-            else
-            {
-                auto responses = multi(requests);
-                return MultiReadResponses<TResponse, try_multi>{std::move(responses)};
-            }
-        }
-
-        auto responses_size = std::distance(start, end);
-        std::vector<std::future<TResponse>> future_responses;
-
-        if (responses_size == 0)
-            return MultiReadResponses<TResponse, try_multi>(std::move(future_responses));
-
-        future_responses.reserve(responses_size);
-
-        for (auto it = start; it != end; ++it)
-            future_responses.push_back(async_fun(*it));
-
-        return MultiReadResponses<TResponse, try_multi>{std::move(future_responses)};
-    }
-
     std::unique_ptr<Coordination::IKeeper> impl;
 
-    ZooKeeperArgs args;
-
-    String connected_zk_host;
-    UInt16 connected_zk_port;
-    size_t connected_zk_index;
-    UInt64 connected_time = timeInSeconds(std::chrono::system_clock::now());
+    Strings hosts;
+    std::string identity;
+    int32_t session_timeout_ms;
+    int32_t operation_timeout_ms;
+    std::string chroot;
+    std::string implementation;
 
     std::mutex mutex;
 
     Poco::Logger * log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;
+
+    GetPriorityForLoadBalancing get_priority_load_balancing;
 
     AtomicStopwatch session_uptime;
 };
@@ -660,7 +428,7 @@ public:
         catch (...)
         {
             ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
-            DB::tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove " + path);
+            DB::tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove " + path + ": ");
         }
     }
 
@@ -680,27 +448,5 @@ String extractZooKeeperName(const String & path);
 String extractZooKeeperPath(const String & path, bool check_starts_with_slash, Poco::Logger * log = nullptr);
 
 String getSequentialNodeName(const String & prefix, UInt64 number);
-
-void validateZooKeeperConfig(const Poco::Util::AbstractConfiguration & config);
-
-bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config);
-
-String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config);
-
-template <typename Client>
-void addCheckNotExistsRequest(Coordination::Requests & requests, const Client & client, const std::string & path)
-{
-    if (client.isFeatureEnabled(DB::KeeperFeatureFlag::CHECK_NOT_EXISTS))
-    {
-        auto request = std::make_shared<Coordination::CheckRequest>();
-        request->path = path;
-        request->not_exists = true;
-        requests.push_back(std::move(request));
-        return;
-    }
-
-    requests.push_back(makeCreateRequest(path, "", zkutil::CreateMode::Persistent));
-    requests.push_back(makeRemoveRequest(path, -1));
-}
 
 }

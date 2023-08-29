@@ -1,3 +1,4 @@
+-- Tags: no-fasttest
 
 WITH '{ "v":1.1}' AS raw
 SELECT

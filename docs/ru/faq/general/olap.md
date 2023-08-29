@@ -1,5 +1,4 @@
 ---
-slug: /ru/faq/general/olap
 title: Что такое OLAP?
 sidebar_position: 100
 ---

@@ -13,7 +13,8 @@ ExpressionTransform
                 Copy 1 → 2
                   (Expression)
                   ExpressionTransform
-                    (ReadFromMemoryStorage)
+                    (ReadFromStorage)
+                    Memory 0 → 1
 1	0	1	4500
 1	0	3	4700
 1	0	5	4900

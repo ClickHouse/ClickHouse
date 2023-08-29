@@ -1,20 +1,11 @@
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_HDFS
 
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/HDFS/HDFSCommon.h>
-#include <IO/ResourceGuard.h>
 #include <Common/Throttler.h>
-#include <Common/safe_cast.h>
 #include <hdfs/hdfs.h>
-
-
-namespace ProfileEvents
-{
-    extern const Event RemoteWriteThrottlerBytes;
-    extern const Event RemoteWriteThrottlerSleepMicroseconds;
-}
 
 namespace DB
 {
@@ -25,6 +16,7 @@ extern const int NETWORK_ERROR;
 extern const int CANNOT_OPEN_FILE;
 extern const int CANNOT_FSYNC;
 }
+
 
 struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
 {
@@ -52,8 +44,8 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
 
         if (fout == nullptr)
         {
-            throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Unable to open HDFS file: {} error: {}",
-                path, std::string(hdfsGetLastError()));
+            throw Exception("Unable to open HDFS file: " + path + " error: " + std::string(hdfsGetLastError()),
+                ErrorCodes::CANNOT_OPEN_FILE);
         }
     }
 
@@ -63,30 +55,15 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     }
 
 
-    int write(const char * start, size_t size)
+    int write(const char * start, size_t size) const
     {
-        ResourceGuard rlock(write_settings.resource_link, size);
-        int bytes_written;
-        try
-        {
-            bytes_written = hdfsWrite(fs.get(), fout, start, safe_cast<int>(size));
-        }
-        catch (...)
-        {
-            write_settings.resource_link.accumulate(size); // We assume no resource was used in case of failure
-            throw;
-        }
-        rlock.unlock();
+        int bytes_written = hdfsWrite(fs.get(), fout, start, size);
+        if (write_settings.remote_throttler)
+            write_settings.remote_throttler->add(bytes_written);
 
         if (bytes_written < 0)
-        {
-            write_settings.resource_link.accumulate(size); // We assume no resource was used in case of failure
-            throw Exception(ErrorCodes::NETWORK_ERROR, "Fail to write HDFS file: {} {}", hdfs_uri, std::string(hdfsGetLastError()));
-        }
-        write_settings.resource_link.adjust(size, bytes_written);
-
-        if (write_settings.remote_throttler)
-            write_settings.remote_throttler->add(bytes_written, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+            throw Exception("Fail to write HDFS file: " + hdfs_uri + " " + std::string(hdfsGetLastError()),
+                ErrorCodes::NETWORK_ERROR);
 
         return bytes_written;
     }
@@ -107,9 +84,8 @@ WriteBufferFromHDFS::WriteBufferFromHDFS(
         const WriteSettings & write_settings_,
         size_t buf_size_,
         int flags_)
-    : WriteBufferFromFileBase(buf_size_, nullptr, 0)
+    : BufferWithOwnMemory<WriteBuffer>(buf_size_)
     , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_name_, config_, replication_, write_settings_, flags_))
-    , filename(hdfs_name_)
 {
 }
 

@@ -29,12 +29,7 @@ String ASTDropAccessEntityQuery::getID(char) const
 
 ASTPtr ASTDropAccessEntityQuery::clone() const
 {
-    auto res = std::make_shared<ASTDropAccessEntityQuery>(*this);
-
-    if (row_policy_names)
-        res->row_policy_names = std::static_pointer_cast<ASTRowPolicyNames>(row_policy_names->clone());
-
-    return res;
+    return std::make_shared<ASTDropAccessEntityQuery>(*this);
 }
 
 

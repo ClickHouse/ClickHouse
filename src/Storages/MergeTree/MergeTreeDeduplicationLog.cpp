@@ -5,7 +5,6 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Disks/WriteMode.h>
 #include <Disks/IDisk.h>
@@ -161,10 +160,7 @@ void MergeTreeDeduplicationLog::rotate()
     existing_logs.emplace(current_log_number, log_description);
 
     if (current_writer)
-    {
-        current_writer->finalize();
         current_writer->sync();
-    }
 
     current_writer = disk->writeFile(log_description.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
 }
@@ -231,12 +227,12 @@ std::pair<MergeTreePartInfo, bool> MergeTreeDeduplicationLog::addPart(const std:
         return std::make_pair(info, false);
     }
 
-    chassert(current_writer != nullptr);
+    assert(current_writer != nullptr);
 
     /// Create new record
     MergeTreeDeduplicationLogRecord record;
     record.operation = MergeTreeDeduplicationOp::ADD;
-    record.part_name = part_info.getPartNameAndCheckFormat(format_version);
+    record.part_name = part_info.getPartName();
     record.block_id = block_id;
     /// Write it to disk
     writeRecord(record, *current_writer);
@@ -261,7 +257,7 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
     if (deduplication_window == 0)
         return;
 
-    chassert(current_writer != nullptr);
+    assert(current_writer != nullptr);
 
     for (auto itr = deduplication_map.begin(); itr != deduplication_map.end(); /* no increment here, we erasing from map */)
     {
@@ -273,7 +269,7 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
             /// Create drop record
             MergeTreeDeduplicationLogRecord record;
             record.operation = MergeTreeDeduplicationOp::DROP;
-            record.part_name = part_info.getPartNameAndCheckFormat(format_version);
+            record.part_name = part_info.getPartName();
             record.block_id = itr->key;
             /// Write it to disk
             writeRecord(record, *current_writer);

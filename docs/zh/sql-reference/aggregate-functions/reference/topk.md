@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/topk
 sidebar_position: 108
 ---
 
@@ -7,7 +6,7 @@ sidebar_position: 108
 
 返回指定列中近似最常见值的数组。 生成的数组按值的近似频率降序排序（而不是值本身）。
 
-实现了[过滤节省空间](https://doi.org/10.1016/j.ins.2010.08.024)算法， 使用基于reduce-and-combine的算法，借鉴[并行节省空间](https://doi.org/10.1016/j.ins.2015.09.003)。
+实现了[过滤节省空间](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf)算法， 使用基于reduce-and-combine的算法，借鉴[并行节省空间](https://arxiv.org/pdf/1401.0702.pdf)。
 
 **语法**
 

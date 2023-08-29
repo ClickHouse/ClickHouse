@@ -55,8 +55,9 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled) const
         {
             if (!params.client_key.empty())
                 return params.client_key;
-            throw Exception(ErrorCodes::QUOTA_REQUIRES_CLIENT_KEY, "Quota {} (for user {}) requires a client supplied key.",
-                quota->getName(), params.user_name);
+            throw Exception(
+                "Quota " + quota->getName() + " (for user " + params.user_name + ") requires a client supplied key.",
+                ErrorCodes::QUOTA_REQUIRES_CLIENT_KEY);
         }
         case QuotaKeyType::CLIENT_KEY_OR_USER_NAME:
         {
@@ -72,7 +73,7 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled) const
         }
         case QuotaKeyType::MAX: break;
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected quota key type: {}", static_cast<int>(quota->key_type));
+    throw Exception("Unexpected quota key type: " + std::to_string(static_cast<int>(quota->key_type)), ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -300,5 +301,4 @@ std::vector<QuotaUsage> QuotaCache::getAllQuotasUsage() const
     }
     return all_usage;
 }
-
 }

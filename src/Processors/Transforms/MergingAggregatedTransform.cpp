@@ -1,7 +1,6 @@
 #include <Processors/Transforms/MergingAggregatedTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -34,7 +33,7 @@ void MergingAggregatedTransform::consume(Chunk chunk)
 
     const auto & info = chunk.getChunkInfo();
     if (!info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in MergingAggregatedTransform.");
+        throw Exception("Chunk info was not set for chunk in MergingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);
 
     if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get()))
     {
@@ -59,7 +58,7 @@ void MergingAggregatedTransform::consume(Chunk chunk)
         bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(block));
     }
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo in MergingAggregatedTransform.");
+        throw Exception("Chunk should have AggregatedChunkInfo in MergingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);
 }
 
 Chunk MergingAggregatedTransform::generate()

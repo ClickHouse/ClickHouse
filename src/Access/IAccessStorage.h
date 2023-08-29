@@ -42,25 +42,14 @@ public:
     /// Returns true if this entity is readonly.
     virtual bool isReadOnly(const UUID &) const { return isReadOnly(); }
 
-    /// Starts periodic reloading and updating of entities in this storage.
+    /// Reloads and updates entities in this storage. This function is used to implement SYSTEM RELOAD CONFIG.
+    virtual void reload() {}
+
+    /// Starts periodic reloading and update of entities in this storage.
     virtual void startPeriodicReloading() {}
 
-    /// Stops periodic reloading and updating of entities in this storage.
+    /// Stops periodic reloading and update of entities in this storage.
     virtual void stopPeriodicReloading() {}
-
-    enum class ReloadMode
-    {
-        /// Try to reload all access storages (including users.xml, local(disk) access storage, replicated(in zk) access storage.
-        /// This mode is invoked by the SYSTEM RELOAD USERS command.
-        ALL,
-
-        /// Only reloads users.xml
-        /// This mode is invoked by the SYSTEM RELOAD CONFIG command.
-        USERS_CONFIG_ONLY,
-    };
-
-    /// Makes this storage to reload and update access entities right now.
-    virtual void reload(ReloadMode /* reload_mode */) {}
 
     /// Returns the identifiers of all the entities of a specified type contained in the storage.
     std::vector<UUID> findAll(AccessEntityType type) const;
@@ -188,7 +177,6 @@ protected:
     static UUID generateRandomID();
     Poco::Logger * getLogger() const;
     static String formatEntityTypeWithName(AccessEntityType type, const String & name) { return AccessEntityTypeInfo::get(type).formatEntityNameWithType(name); }
-    static void clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, const Poco::Logger * log_);
     [[noreturn]] void throwNotFound(const UUID & id) const;
     [[noreturn]] void throwNotFound(AccessEntityType type, const String & name) const;
     [[noreturn]] static void throwBadCast(const UUID & id, AccessEntityType type, const String & name, AccessEntityType required_type);

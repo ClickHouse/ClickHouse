@@ -1,11 +1,10 @@
 #pragma once
 
-#include "config.h"
+#include "config_formats.h"
 #if USE_CAPNP
 
 #include <Core/Block.h>
-#include <Formats/CapnProtoSchema.h>
-#include <Formats/CapnProtoSerializer.h>
+#include <Formats/CapnProtoUtils.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 
@@ -34,8 +33,10 @@ private:
     kj::Array<capnp::word> readMessage();
 
     std::shared_ptr<CapnProtoSchemaParser> parser;
-    capnp::StructSchema schema;
-    std::unique_ptr<CapnProtoSerializer> serializer;
+    capnp::StructSchema root;
+    const FormatSettings format_settings;
+    DataTypes column_types;
+    Names column_names;
 };
 
 class CapnProtoSchemaReader : public IExternalSchemaReader

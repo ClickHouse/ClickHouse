@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Backups/BackupEntryWithChecksumCalculation.h>
+#include <Backups/BackupEntryFromMemory.h>
 
 
 namespace DB
@@ -10,28 +10,25 @@ using DiskPtr = std::shared_ptr<IDisk>;
 
 /// Represents a file prepared to be included in a backup,
 /// assuming that the file is small and can be easily loaded into memory.
-class BackupEntryFromSmallFile : public BackupEntryWithChecksumCalculation<IBackupEntry>
+class BackupEntryFromSmallFile : public BackupEntryFromMemory
 {
 public:
-    explicit BackupEntryFromSmallFile(const String & file_path_);
-    BackupEntryFromSmallFile(const DiskPtr & disk_, const String & file_path_, bool copy_encrypted_ = false);
+    /// The constructor is allowed to not set `checksum_`, in that case it will be calculated from the data.
+    explicit BackupEntryFromSmallFile(
+        const String & file_path_,
+        const std::optional<UInt128> & checksum_ = {});
 
-    std::unique_ptr<SeekableReadBuffer> getReadBuffer(const ReadSettings &) const override;
-    UInt64 getSize() const override { return data.size(); }
+    BackupEntryFromSmallFile(
+        const DiskPtr & disk_,
+        const String & file_path_,
+        const std::optional<UInt128> & checksum_ = {});
 
-    DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
-    bool isEncryptedByDisk() const override { return copy_encrypted; }
-
-    bool isFromFile() const override { return true; }
-    DiskPtr getDisk() const override { return disk; }
-    String getFilePath() const override { return file_path; }
+    String getFilePath() const { return file_path; }
+    DiskPtr getDisk() const { return disk; }
 
 private:
     const DiskPtr disk;
     const String file_path;
-    const DataSourceDescription data_source_description;
-    const bool copy_encrypted = false;
-    const String data;
 };
 
 }

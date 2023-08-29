@@ -78,7 +78,7 @@ public:
 protected:
     void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported by MySQLParser::ASTAlterCommand.");
+        throw Exception("Method formatImpl is not supported by MySQLParser::ASTAlterCommand.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void forEachPointerToChild(std::function<void(void**)> f) override

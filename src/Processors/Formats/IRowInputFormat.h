@@ -65,16 +65,10 @@ protected:
     ///  and collect as much as possible diagnostic information about error.
     /// If not implemented, returns empty string.
     virtual std::string getDiagnosticInfo() { return {}; }
-    /// Get diagnostic info and raw data for a row
-    virtual std::pair<std::string, std::string> getDiagnosticAndRawData() { return std::make_pair("", ""); }
-
-    void logError();
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
     size_t getTotalRows() const { return total_rows; }
-
-    size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
     Serializations serializations;
 
@@ -85,7 +79,6 @@ private:
     size_t num_errors = 0;
 
     BlockMissingValues block_missing_values;
-    size_t approx_bytes_read_for_chunk;
 };
 
 }

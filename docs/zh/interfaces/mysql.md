@@ -1,5 +1,4 @@
 ---
-slug: /zh/interfaces/mysql
 sidebar_position: 20
 sidebar_label: MySQL接口
 ---
@@ -44,3 +43,5 @@ mysql>
 -   不支持prepared queries
 
 -   某些数据类型以字符串形式发送
+
+[原始文章](https://clickhouse.com/docs/en/interfaces/mysql/) <!--hide-->

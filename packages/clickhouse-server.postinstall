@@ -11,6 +11,8 @@ CLICKHOUSE_DATADIR=${CLICKHOUSE_DATADIR:=/var/lib/clickhouse}
 CLICKHOUSE_LOGDIR=${CLICKHOUSE_LOGDIR:=/var/log/clickhouse-server}
 CLICKHOUSE_BINDIR=${CLICKHOUSE_BINDIR:=/usr/bin}
 CLICKHOUSE_GENERIC_PROGRAM=${CLICKHOUSE_GENERIC_PROGRAM:=clickhouse}
+EXTRACT_FROM_CONFIG=${CLICKHOUSE_GENERIC_PROGRAM}-extract-from-config
+CLICKHOUSE_CONFIG=$CLICKHOUSE_CONFDIR/config.xml
 CLICKHOUSE_PIDDIR=/var/run/$PROGRAM
 
 [ -f /usr/share/debconf/confmodule ] && . /usr/share/debconf/confmodule

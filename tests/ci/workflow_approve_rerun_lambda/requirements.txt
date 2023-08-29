@@ -1,1 +1,3 @@
-../lambda_shared_package[token]
+requests
+PyJWT
+cryptography

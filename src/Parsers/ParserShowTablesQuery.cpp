@@ -18,14 +18,13 @@ namespace DB
 bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_show("SHOW");
-    ParserKeyword s_full("FULL");
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_tables("TABLES");
     ParserKeyword s_databases("DATABASES");
     ParserKeyword s_clusters("CLUSTERS");
     ParserKeyword s_cluster("CLUSTER");
     ParserKeyword s_dictionaries("DICTIONARIES");
-    ParserKeyword s_caches("FILESYSTEM CACHES");
+    ParserKeyword s_caches("CACHES");
     ParserKeyword s_settings("SETTINGS");
     ParserKeyword s_changed("CHANGED");
     ParserKeyword s_from("FROM");
@@ -46,11 +45,6 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (!s_show.ignore(pos, expected))
         return false;
-
-    if (s_full.ignore(pos, expected))
-    {
-        query->full = true;
-    }
 
     if (s_databases.ignore(pos, expected))
     {
@@ -149,8 +143,10 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         }
 
         if (s_from.ignore(pos, expected) || s_in.ignore(pos, expected))
+        {
             if (!name_p.parse(pos, database, expected))
                 return false;
+        }
 
         if (s_not.ignore(pos, expected))
             query->not_like = true;
@@ -166,22 +162,27 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         else if (query->not_like)
             return false;
         else if (s_where.ignore(pos, expected))
+        {
             if (!exp_elem.parse(pos, query->where_expression, expected))
                 return false;
+        }
 
         if (s_limit.ignore(pos, expected))
+        {
             if (!exp_elem.parse(pos, query->limit_length, expected))
                 return false;
+        }
     }
 
     tryGetIdentifierNameInto(database, query->from);
 
     if (like)
-        query->like = like->as<ASTLiteral &>().value.safeGet<const String &>();
+        query->like = safeGet<const String &>(like->as<ASTLiteral &>().value);
 
     node = query;
 
     return true;
 }
+
 
 }

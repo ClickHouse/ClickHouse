@@ -37,7 +37,7 @@ using RWLock = std::shared_ptr<RWLockImpl>;
 ///
 /// NOTE: it is dangerous to acquire lock with NO_QUERY, because FastPath doesn't
 /// exist for this case and deadlock, described in previous note,
-/// may occur in case of recursive locking.
+/// may accur in case of recursive locking.
 class RWLockImpl : public std::enable_shared_from_this<RWLockImpl>
 {
 public:
@@ -56,7 +56,7 @@ public:
 
     /// Empty query_id means the lock is acquired from outside of query context (e.g. in a background thread).
     LockHolder getLock(Type type, const String & query_id,
-                       const std::chrono::milliseconds & lock_timeout_ms = std::chrono::milliseconds(0), bool throw_in_fast_path = true);
+                       const std::chrono::milliseconds & lock_timeout_ms = std::chrono::milliseconds(0));
 
     /// Use as query_id to acquire a lock outside the query context.
     inline static const String NO_QUERY = String();

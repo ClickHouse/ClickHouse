@@ -1,6 +1,5 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemClusters.h>
@@ -25,41 +24,46 @@ NamesAndTypesList StorageSystemClusters::getNamesAndTypes()
         {"default_database", std::make_shared<DataTypeString>()},
         {"errors_count", std::make_shared<DataTypeUInt32>()},
         {"slowdowns_count", std::make_shared<DataTypeUInt32>()},
-        {"estimated_recovery_time", std::make_shared<DataTypeUInt32>()},
-        {"database_shard_name", std::make_shared<DataTypeString>()},
-        {"database_replica_name", std::make_shared<DataTypeString>()},
-        {"is_active", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())},
+        {"estimated_recovery_time", std::make_shared<DataTypeUInt32>()}
     };
 }
 
 
 void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    for (const auto & name_and_cluster : context->getClusters())
-        writeCluster(res_columns, name_and_cluster, {});
+    for (const auto & name_and_cluster : context->getClusters()->getContainer())
+        writeCluster(res_columns, name_and_cluster);
 
     const auto databases = DatabaseCatalog::instance().getDatabases();
     for (const auto & name_and_database : databases)
     {
         if (const auto * replicated = typeid_cast<const DatabaseReplicated *>(name_and_database.second.get()))
         {
-
-            if (auto database_cluster = replicated->tryGetCluster())
-                writeCluster(res_columns, {name_and_database.first, database_cluster},
-                             replicated->tryGetAreReplicasActive(database_cluster));
+            // A quick fix for stateless tests with DatabaseReplicated. Its ZK
+            // node can be destroyed at any time. If another test lists
+            // system.clusters to get client command line suggestions, it will
+            // get an error when trying to get the info about DB from ZK.
+            // Just ignore these inaccessible databases. A good example of a
+            // failing test is `01526_client_start_and_exit`.
+            try
+            {
+                writeCluster(res_columns, {name_and_database.first, replicated->getCluster()});
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
         }
     }
 }
 
-void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const NameAndCluster & name_and_cluster,
-                                         const std::vector<UInt8> & is_active)
+void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const NameAndCluster & name_and_cluster)
 {
     const String & cluster_name = name_and_cluster.first;
     const ClusterPtr & cluster = name_and_cluster.second;
     const auto & shards_info = cluster->getShardsInfo();
     const auto & addresses_with_failover = cluster->getShardsAddresses();
 
-    size_t replica_idx = 0;
     for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
     {
         const auto & shard_info = shards_info[shard_index];
@@ -85,12 +89,6 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const Nam
             res_columns[i++]->insert(pool_status[replica_index].error_count);
             res_columns[i++]->insert(pool_status[replica_index].slowdown_count);
             res_columns[i++]->insert(pool_status[replica_index].estimated_recovery_time.count());
-            res_columns[i++]->insert(address.database_shard_name);
-            res_columns[i++]->insert(address.database_replica_name);
-            if (is_active.empty())
-                res_columns[i++]->insertDefault();
-            else
-                res_columns[i++]->insert(is_active[replica_idx++]);
         }
     }
 }

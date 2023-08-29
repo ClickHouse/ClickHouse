@@ -57,7 +57,7 @@ Pipe StorageInput::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
-    size_t /*num_streams*/)
+    unsigned /*num_streams*/)
 {
     Pipes pipes;
     auto query_context = context->getQueryContext();
@@ -70,7 +70,7 @@ Pipe StorageInput::read(
     }
 
     if (pipe.empty())
-        throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "Input stream is not initialized, input() must be used only in INSERT SELECT query");
+        throw Exception("Input stream is not initialized, input() must be used only in INSERT SELECT query", ErrorCodes::INVALID_USAGE_OF_INPUT);
 
     return std::move(pipe);
 }

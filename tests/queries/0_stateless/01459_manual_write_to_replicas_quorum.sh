@@ -12,7 +12,7 @@ NUM_REPLICAS=10
 
 for i in $(seq 1 $NUM_REPLICAS); do
     $CLICKHOUSE_CLIENT -n -q "
-        DROP TABLE IF EXISTS r$i SYNC;
+        DROP TABLE IF EXISTS r$i;
         CREATE TABLE r$i (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/r', 'r$i') ORDER BY x;
     "
 done
@@ -22,7 +22,7 @@ valid_exceptions_to_retry='Quorum for previous write has not been satisfied yet|
 function thread {
     for x in {0..99}; do
         while true; do
-            $CLICKHOUSE_CLIENT --insert_quorum 5 --insert_quorum_parallel 0 --insert_keeper_fault_injection_probability=0 --query "INSERT INTO r$1 SELECT $x" 2>&1 | grep -qE "$valid_exceptions_to_retry" || break
+            $CLICKHOUSE_CLIENT --insert_quorum 5 --insert_quorum_parallel 0 --query "INSERT INTO r$1 SELECT $x" 2>&1 | grep -qE "$valid_exceptions_to_retry" || break
         done
     done
 }
@@ -40,5 +40,5 @@ for i in $(seq 1 $NUM_REPLICAS); do
 done
 
 for i in $(seq 1 $NUM_REPLICAS); do
-    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS r$i SYNC;"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS r$i;"
 done

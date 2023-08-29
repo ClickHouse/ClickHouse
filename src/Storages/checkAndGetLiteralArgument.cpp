@@ -36,5 +36,5 @@ template UInt64 checkAndGetLiteralArgument(const ASTPtr &, const String &);
 template UInt8 checkAndGetLiteralArgument(const ASTPtr &, const String &);
 template bool checkAndGetLiteralArgument(const ASTPtr &, const String &);
 template String checkAndGetLiteralArgument(const ASTLiteral &, const String &);
-template UInt64 checkAndGetLiteralArgument(const ASTLiteral &, const String &);
+
 }

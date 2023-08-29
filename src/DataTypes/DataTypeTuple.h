@@ -33,7 +33,6 @@ public:
     TypeIndex getTypeId() const override { return TypeIndex::Tuple; }
     std::string doGetName() const override;
     const char * getFamilyName() const override { return "Tuple"; }
-    String getSQLCompatibleName() const override { return "JSON"; }
 
     bool canBeInsideNullable() const override { return false; }
     bool supportsSparseSerialization() const override { return true; }
@@ -51,7 +50,6 @@ public:
     bool isComparable() const override;
     bool textCanContainOnlyValidUTF8() const override;
     bool haveMaximumSizeOfValue() const override;
-    bool hasDynamicSubcolumns() const override;
     size_t getMaximumSizeOfValueInMemory() const override;
     size_t getSizeOfValueInMemory() const override;
 

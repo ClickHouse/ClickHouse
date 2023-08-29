@@ -9,11 +9,7 @@ from pyhdfs import HdfsClient
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
-    main_configs=[
-        "configs/macro.xml",
-        "configs/schema_cache.xml",
-        "configs/cluster.xml",
-    ],
+    main_configs=["configs/macro.xml", "configs/schema_cache.xml"],
     with_hdfs=True,
 )
 
@@ -640,7 +636,7 @@ def get_profile_event_for_query(node, query, profile_event):
     query = query.replace("'", "\\'")
     return int(
         node.query(
-            f"select ProfileEvents['{profile_event}'] from system.query_log where query='{query}' and type = 'QueryFinish' order by query_start_time_microseconds desc limit 1"
+            f"select ProfileEvents['{profile_event}'] from system.query_log where query='{query}' and type = 'QueryFinish' order by event_time desc limit 1"
         )
     )
 
@@ -785,85 +781,6 @@ def test_schema_inference_cache(started_cluster):
 
     run_describe_query(node1, files)
     check_cache_misses(node1, files, 4)
-
-
-def test_hdfsCluster_skip_unavailable_shards(started_cluster):
-    # Although skip_unavailable_shards is not set, cluster table functions should always skip unavailable shards.
-    hdfs_api = started_cluster.hdfs_api
-    node = started_cluster.instances["node1"]
-    data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
-    hdfs_api.write_data("/skip_unavailable_shards", data)
-
-    assert (
-        node1.query(
-            "select * from hdfsCluster('cluster_non_existent_port', 'hdfs://hdfs1:9000/skip_unavailable_shards', 'TSV', 'id UInt64, text String, number Float64') settings skip_unavailable_shards = 1"
-        )
-        == data
-    )
-
-
-def test_hdfsCluster_unset_skip_unavailable_shards(started_cluster):
-    hdfs_api = started_cluster.hdfs_api
-    node = started_cluster.instances["node1"]
-    data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
-    hdfs_api.write_data("/unskip_unavailable_shards", data)
-
-    assert (
-        node1.query(
-            "select * from hdfsCluster('cluster_non_existent_port', 'hdfs://hdfs1:9000/skip_unavailable_shards', 'TSV', 'id UInt64, text String, number Float64')"
-        )
-        == data
-    )
-
-
-def test_skip_empty_files(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    node.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet', TSVRaw) select * from numbers(0) settings hdfs_truncate_on_insert=1"
-    )
-
-    node.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/skip_empty_files2.parquet') select * from numbers(1) settings hdfs_truncate_on_insert=1"
-    )
-
-    node.query_and_get_error(
-        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet') settings hdfs_skip_empty_files=0"
-    )
-
-    node.query_and_get_error(
-        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet', auto, 'number UINt64') settings hdfs_skip_empty_files=0"
-    )
-
-    node.query_and_get_error(
-        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet') settings hdfs_skip_empty_files=1"
-    )
-
-    res = node.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files1.parquet', auto, 'number UInt64') settings hdfs_skip_empty_files=1"
-    )
-
-    assert len(res) == 0
-
-    node.query_and_get_error(
-        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files*.parquet') settings hdfs_skip_empty_files=0"
-    )
-
-    node.query_and_get_error(
-        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files*.parquet', auto, 'number UInt64') settings hdfs_skip_empty_files=0"
-    )
-
-    res = node.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files*.parquet') settings hdfs_skip_empty_files=1"
-    )
-
-    assert int(res) == 0
-
-    res = node.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/skip_empty_files*.parquet', auto, 'number UInt64') settings hdfs_skip_empty_files=1"
-    )
-
-    assert int(res) == 0
 
 
 if __name__ == "__main__":

@@ -1,7 +1,6 @@
 #include <Processors/Formats/Impl/CustomSeparatedRowInputFormat.h>
 #include <Processors/Formats/Impl/TemplateRowInputFormat.h>
 #include <Formats/EscapingRuleUtils.h>
-#include <Formats/SchemaInferenceUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/Operators.h>
 
@@ -13,6 +12,16 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+static FormatSettings updateFormatSettings(const FormatSettings & settings)
+{
+    if (settings.custom.escaping_rule != FormatSettings::EscapingRule::CSV || settings.custom.field_delimiter.empty())
+        return settings;
+
+    auto updated = settings;
+    updated.csv.delimiter = settings.custom.field_delimiter.front();
+    return updated;
+}
+
 CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
     const Block & header_,
     ReadBuffer & in_buf_,
@@ -22,7 +31,7 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
     bool ignore_spaces_,
     const FormatSettings & format_settings_)
     : CustomSeparatedRowInputFormat(
-        header_, std::make_unique<PeekableReadBuffer>(in_buf_), params_, with_names_, with_types_, ignore_spaces_, format_settings_)
+        header_, std::make_unique<PeekableReadBuffer>(in_buf_), params_, with_names_, with_types_, ignore_spaces_, updateFormatSettings(format_settings_))
 {
 }
 
@@ -42,9 +51,8 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
         with_names_,
         with_types_,
         format_settings_,
-        std::make_unique<CustomSeparatedFormatReader>(*buf_, ignore_spaces_, format_settings_),
-        format_settings_.custom.try_detect_header)
-    , buf(std::move(buf_)), ignore_spaces(ignore_spaces_)
+        std::make_unique<CustomSeparatedFormatReader>(*buf_, ignore_spaces_, format_settings_))
+    , buf(std::move(buf_))
 {
     /// In case of CustomSeparatedWithNames(AndTypes) formats and enabled setting input_format_with_names_use_header we don't know
     /// the exact number of columns in data (because it can contain unknown columns). So, if field_delimiter and row_after_delimiter are
@@ -54,26 +62,11 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
         && format_settings_.custom.row_between_delimiter.empty())
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Input format CustomSeparatedWithNames(AndTypes) cannot work properly with enabled setting "
-                        "input_format_with_names_use_header, when format_custom_field_delimiter and "
-                        "format_custom_row_after_delimiter are the same "
-                        "and format_custom_row_between_delimiter is empty.");
+                        "Input format CustomSeparatedWithNames(AndTypes) cannot work properly with enabled setting input_format_with_names_use_header, "
+                        "when format_custom_field_delimiter and format_custom_row_after_delimiter are the same and format_custom_row_between_delimiter is empty.");
     }
 }
 
-void CustomSeparatedRowInputFormat::readPrefix()
-{
-    RowInputFormatWithNamesAndTypes::readPrefix();
-
-    /// Provide better error message for unsupported delimiters
-    for (const auto & column_index : column_mapping->column_indexes_for_input_fields)
-    {
-        if (column_index)
-            checkSupportedDelimiterAfterField(format_settings.custom.escaping_rule, format_settings.custom.field_delimiter, data_types[*column_index]);
-        else
-            checkSupportedDelimiterAfterField(format_settings.custom.escaping_rule, format_settings.custom.field_delimiter, nullptr);
-    }
-}
 
 bool CustomSeparatedRowInputFormat::allowSyncAfterError() const
 {
@@ -91,7 +84,8 @@ void CustomSeparatedRowInputFormat::syncAfterError()
 
 void CustomSeparatedRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf->setSubBuffer(in_);
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    RowInputFormatWithNamesAndTypes::setReadBuffer(*buf);
 }
 
 CustomSeparatedFormatReader::CustomSeparatedFormatReader(
@@ -163,38 +157,19 @@ bool CustomSeparatedFormatReader::checkEndOfRow()
     return checkForSuffixImpl(true);
 }
 
-template <CustomSeparatedFormatReader::ReadFieldMode mode>
-String CustomSeparatedFormatReader::readFieldIntoString(bool is_first, bool is_last, bool is_unknown)
+template <bool is_header>
+String CustomSeparatedFormatReader::readFieldIntoString(bool is_first)
 {
     if (!is_first)
         skipFieldDelimiter();
     skipSpaces();
-    updateFormatSettings(is_last);
-    if constexpr (mode != ReadFieldMode::AS_FIELD)
-    {
-        /// If the number of columns is unknown and we use CSV escaping rule,
-        /// we don't know what delimiter to expect after the value,
-        /// so we should read until we meet field_delimiter or row_after_delimiter.
-        if (is_unknown && format_settings.custom.escaping_rule == FormatSettings::EscapingRule::CSV)
-            return readCSVStringWithTwoPossibleDelimiters(
-                *buf, format_settings.csv, format_settings.custom.field_delimiter, format_settings.custom.row_after_delimiter);
-
-        if constexpr (mode == ReadFieldMode::AS_STRING)
-            return readStringByEscapingRule(*buf, format_settings.custom.escaping_rule, format_settings);
-        else
-            return readStringOrFieldByEscapingRule(*buf, format_settings.custom.escaping_rule, format_settings);
-    }
+    if constexpr (is_header)
+        return readStringByEscapingRule(*buf, format_settings.custom.escaping_rule, format_settings);
     else
-    {
-        if (is_unknown && format_settings.custom.escaping_rule == FormatSettings::EscapingRule::CSV)
-            return readCSVFieldWithTwoPossibleDelimiters(
-                *buf, format_settings.csv, format_settings.custom.field_delimiter, format_settings.custom.row_after_delimiter);
-
         return readFieldByEscapingRule(*buf, format_settings.custom.escaping_rule, format_settings);
-    }
 }
 
-template <CustomSeparatedFormatReader::ReadFieldMode mode>
+template <bool is_header>
 std::vector<String> CustomSeparatedFormatReader::readRowImpl()
 {
     std::vector<String> values;
@@ -204,14 +179,14 @@ std::vector<String> CustomSeparatedFormatReader::readRowImpl()
     {
         do
         {
-            values.push_back(readFieldIntoString<mode>(values.empty(), false, true));
+            values.push_back(readFieldIntoString<is_header>(values.empty()));
         } while (!checkEndOfRow());
         columns = values.size();
     }
     else
     {
         for (size_t i = 0; i != columns; ++i)
-            values.push_back(readFieldIntoString<mode>(i == 0, i + 1 == columns, false));
+            values.push_back(readFieldIntoString<is_header>(i == 0));
     }
 
     skipRowEndDelimiter();
@@ -235,41 +210,9 @@ void CustomSeparatedFormatReader::skipHeaderRow()
     skipRowEndDelimiter();
 }
 
-void CustomSeparatedFormatReader::updateFormatSettings(bool is_last_column)
-{
-    if (format_settings.custom.escaping_rule != FormatSettings::EscapingRule::CSV)
-        return;
-
-    /// Clean custom delimiter from previous delimiter.
-    format_settings.csv.custom_delimiter.clear();
-
-    /// If delimiter has length = 1, it will be more efficient to use csv.delimiter.
-    /// If we have some complex delimiter, normal CSV reading will now work properly if we will
-    /// use just the first character of delimiter (for example, if delimiter='||' and we have data 'abc|d||')
-    /// We have special implementation for such case that uses custom delimiter, it's not so efficient,
-    /// but works properly.
-
-    if (is_last_column)
-    {
-        /// If field delimiter has length = 1, it will be more efficient to use csv.delimiter.
-        if (format_settings.custom.row_after_delimiter.size() == 1)
-            format_settings.csv.delimiter = format_settings.custom.row_after_delimiter.front();
-        else
-            format_settings.csv.custom_delimiter = format_settings.custom.row_after_delimiter;
-    }
-    else
-    {
-        if (format_settings.custom.field_delimiter.size() == 1)
-            format_settings.csv.delimiter = format_settings.custom.field_delimiter.front();
-        else
-            format_settings.csv.custom_delimiter = format_settings.custom.field_delimiter;
-    }
-}
-
-bool CustomSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String &)
+bool CustomSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool, const String &)
 {
     skipSpaces();
-    updateFormatSettings(is_last_file_column);
     return deserializeFieldByEscapingRule(type, serialization, column, *buf, format_settings.custom.escaping_rule, format_settings);
 }
 
@@ -281,10 +224,6 @@ bool CustomSeparatedFormatReader::checkForSuffixImpl(bool check_eof)
         if (!check_eof)
             return false;
 
-        /// Allow optional \n before eof.
-        checkChar('\n', *buf);
-        if (format_settings.custom.skip_trailing_empty_lines)
-            while (checkChar('\n', *buf) || checkChar('\r', *buf));
         return buf->eof();
     }
 
@@ -294,10 +233,6 @@ bool CustomSeparatedFormatReader::checkForSuffixImpl(bool check_eof)
         if (!check_eof)
             return true;
 
-        /// Allow optional \n before eof.
-        checkChar('\n', *buf);
-        if (format_settings.custom.skip_trailing_empty_lines)
-            while (checkChar('\n', *buf) || checkChar('\r', *buf));
         if (buf->eof())
             return true;
     }
@@ -351,7 +286,7 @@ bool CustomSeparatedFormatReader::parseRowBetweenDelimiterWithDiagnosticInfo(Wri
 void CustomSeparatedFormatReader::setReadBuffer(ReadBuffer & in_)
 {
     buf = assert_cast<PeekableReadBuffer *>(&in_);
-    FormatWithNamesAndTypesReader::setReadBuffer(*buf);
+    FormatWithNamesAndTypesReader::setReadBuffer(in_);
 }
 
 CustomSeparatedSchemaReader::CustomSeparatedSchemaReader(
@@ -362,20 +297,16 @@ CustomSeparatedSchemaReader::CustomSeparatedSchemaReader(
         with_names_,
         with_types_,
         &reader,
-        getDefaultDataTypeForEscapingRule(format_setting_.custom.escaping_rule),
-        format_setting_.custom.try_detect_header)
+        getDefaultDataTypeForEscapingRule(format_setting_.custom.escaping_rule))
     , buf(in_)
-    , reader(buf, ignore_spaces_, format_setting_)
+    , reader(buf, ignore_spaces_, updateFormatSettings(format_setting_))
 {
 }
 
-std::pair<std::vector<String>, DataTypes> CustomSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
+DataTypes CustomSeparatedSchemaReader::readRowAndGetDataTypes()
 {
-    if (no_more_data || reader.checkForSuffix())
-    {
-        no_more_data = true;
+    if (reader.checkForSuffix())
         return {};
-    }
 
     if (!first_row || with_names || with_types)
         reader.skipRowBetweenDelimiter();
@@ -384,18 +315,12 @@ std::pair<std::vector<String>, DataTypes> CustomSeparatedSchemaReader::readRowAn
         first_row = false;
 
     auto fields = reader.readRow();
-    auto data_types = tryInferDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule(), &json_inference_info);
-    return {fields, data_types};
+    return determineDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule());
 }
 
-DataTypes CustomSeparatedSchemaReader::readRowAndGetDataTypesImpl()
+void CustomSeparatedSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t)
 {
-    return readRowAndGetFieldsAndDataTypes().second;
-}
-
-void CustomSeparatedSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
-{
-    transformInferredTypesByEscapingRuleIfNeeded(type, new_type, format_settings, reader.getEscapingRule(), &json_inference_info);
+    transformInferredTypesIfNeeded(type, new_type, format_settings, reader.getEscapingRule());
 }
 
 void registerInputFormatCustomSeparated(FormatFactory & factory)
@@ -428,24 +353,19 @@ void registerCustomSeparatedSchemaReader(FormatFactory & factory)
             {
                 return std::make_shared<CustomSeparatedSchemaReader>(buf, with_names, with_types, ignore_spaces, settings);
             });
-            if (!with_types)
+            factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [](const FormatSettings & settings)
             {
-                factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names](const FormatSettings & settings)
-                {
-                    String result = getAdditionalFormatInfoByEscapingRule(settings, settings.custom.escaping_rule);
-                    if (!with_names)
-                        result += fmt::format(", column_names_for_schema_inference={}, try_detect_header={}", settings.column_names_for_schema_inference, settings.custom.try_detect_header);
-                    return result + fmt::format(
-                            ", result_before_delimiter={}, row_before_delimiter={}, field_delimiter={},"
-                            " row_after_delimiter={}, row_between_delimiter={}, result_after_delimiter={}",
-                            settings.custom.result_before_delimiter,
-                            settings.custom.row_before_delimiter,
-                            settings.custom.field_delimiter,
-                            settings.custom.row_after_delimiter,
-                            settings.custom.row_between_delimiter,
-                            settings.custom.result_after_delimiter);
-                });
-            }
+                String result = getAdditionalFormatInfoByEscapingRule(settings, settings.custom.escaping_rule);
+                return result + fmt::format(
+                        ", result_before_delimiter={}, row_before_delimiter={}, field_delimiter={},"
+                        " row_after_delimiter={}, row_between_delimiter={}, result_after_delimiter={}",
+                        settings.custom.result_before_delimiter,
+                        settings.custom.row_before_delimiter,
+                        settings.custom.field_delimiter,
+                        settings.custom.row_after_delimiter,
+                        settings.custom.row_between_delimiter,
+                        settings.custom.result_after_delimiter);
+            });
         };
 
         registerWithNamesAndTypes(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", register_func);

@@ -1,4 +1,9 @@
-set(ENABLE_GRPC_DEFAULT ${ENABLE_LIBRARIES})
+# disable grpc due to conflicts of abseil (required by grpc) dynamic annotations with libtsan.a
+if (SANITIZE STREQUAL "thread" AND COMPILER_GCC)
+  set(ENABLE_GRPC_DEFAULT OFF)
+else()
+  set(ENABLE_GRPC_DEFAULT ${ENABLE_LIBRARIES})
+endif()
 option(ENABLE_GRPC "Use gRPC" ${ENABLE_GRPC_DEFAULT})
 
 if(NOT ENABLE_GRPC)
@@ -42,9 +47,6 @@ set(gRPC_ABSL_PROVIDER "clickhouse" CACHE STRING "" FORCE)
 
 # We don't want to build C# extensions.
 set(gRPC_BUILD_CSHARP_EXT OFF)
-
-# TODO: Remove this. We generally like to compile with C++23 but grpc isn't ready yet.
-set (CMAKE_CXX_STANDARD 20)
 
 set(_gRPC_CARES_LIBRARIES ch_contrib::c-ares)
 set(gRPC_CARES_PROVIDER "clickhouse" CACHE STRING "" FORCE)

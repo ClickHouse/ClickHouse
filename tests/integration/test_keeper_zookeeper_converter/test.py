@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 import pytest
 from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
-from kazoo.client import KazooClient
-from kazoo.retry import KazooRetry
-from kazoo.security import make_acl
-from kazoo.handlers.threading import KazooTimeoutError
+from kazoo.client import KazooClient, KazooState
+from kazoo.security import ACL, make_digest_acl, make_acl
+from kazoo.exceptions import (
+    AuthFailedError,
+    InvalidACLError,
+    NoAuthError,
+    KazooException,
+)
 import os
 import time
 
@@ -24,11 +27,6 @@ def start_zookeeper():
 
 def stop_zookeeper():
     node.exec_in_container(["bash", "-c", "/opt/zookeeper/bin/zkServer.sh stop"])
-    timeout = time.time() + 60
-    while node.get_process_pid("zookeeper") != None:
-        if time.time() > timeout:
-            raise Exception("Failed to stop ZooKeeper in 60 secs")
-        time.sleep(0.2)
 
 
 def clear_zookeeper():
@@ -39,46 +37,6 @@ def restart_and_clear_zookeeper():
     stop_zookeeper()
     clear_zookeeper()
     start_zookeeper()
-
-
-def restart_zookeeper():
-    stop_zookeeper()
-    start_zookeeper()
-
-
-def generate_zk_snapshot():
-    for _ in range(100):
-        stop_zookeeper()
-        start_zookeeper()
-        time.sleep(2)
-        stop_zookeeper()
-
-        # get last snapshot
-        last_snapshot = node.exec_in_container(
-            [
-                "bash",
-                "-c",
-                "find /zookeeper/version-2 -name 'snapshot.*' -printf '%T@ %p\n' | sort -n | awk 'END {print $2}'",
-            ]
-        ).strip()
-
-        print(f"Latest snapshot: {last_snapshot}")
-
-        try:
-            # verify last snapshot
-            # zkSnapShotToolkit is a tool to inspect generated snapshots - if it's broken, an exception is thrown
-            node.exec_in_container(
-                [
-                    "bash",
-                    "-c",
-                    f"/opt/zookeeper/bin/zkSnapShotToolkit.sh {last_snapshot}",
-                ]
-            )
-            return
-        except Exception as err:
-            print(f"Got error while reading snapshot: {err}")
-
-    raise Exception("Failed to generate a ZooKeeper snapshot")
 
 
 def clear_clickhouse_data():
@@ -92,14 +50,6 @@ def clear_clickhouse_data():
 
 
 def convert_zookeeper_data():
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "tar -cvzf /var/lib/clickhouse/zk-data.tar.gz /zookeeper/version-2",
-        ]
-    )
-
     cmd = "/usr/bin/clickhouse keeper-converter --zookeeper-logs-dir /zookeeper/version-2/ --zookeeper-snapshots-dir  /zookeeper/version-2/ --output-dir /var/lib/clickhouse/coordination/snapshots"
     node.exec_in_container(["bash", "-c", cmd])
 
@@ -110,13 +60,13 @@ def stop_clickhouse():
 
 def start_clickhouse():
     node.start_clickhouse()
-    keeper_utils.wait_until_connected(cluster, node)
 
 
 def copy_zookeeper_data(make_zk_snapshots):
+    stop_zookeeper()
+
     if make_zk_snapshots:  # force zookeeper to create snapshot
-        generate_zk_snapshot()
-    else:
+        start_zookeeper()
         stop_zookeeper()
 
     stop_clickhouse()
@@ -146,25 +96,11 @@ def get_fake_zk(timeout=60.0):
 
 
 def get_genuine_zk(timeout=60.0):
-    CONNECTION_RETRIES = 100
-    for i in range(CONNECTION_RETRIES):
-        try:
-            _genuine_zk_instance = KazooClient(
-                hosts=cluster.get_instance_ip("node") + ":2181",
-                timeout=timeout,
-                connection_retry=KazooRetry(max_tries=20),
-            )
-            _genuine_zk_instance.start()
-            return _genuine_zk_instance
-        except KazooTimeoutError:
-            if i == CONNECTION_RETRIES - 1:
-                raise
-
-            print(
-                "Failed to connect to ZK cluster because of timeout. Restarting cluster and trying again."
-            )
-            time.sleep(0.2)
-            restart_zookeeper()
+    _genuine_zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip("node") + ":2181", timeout=timeout
+    )
+    _genuine_zk_instance.start()
+    return _genuine_zk_instance
 
 
 def compare_stats(stat1, stat2, path, ignore_pzxid=False):
@@ -287,12 +223,6 @@ def test_smoke(started_cluster, create_snapshots):
 
     compare_states(genuine_connection, fake_connection)
 
-    genuine_connection.stop()
-    genuine_connection.close()
-
-    fake_connection.stop()
-    fake_connection.close()
-
 
 def get_bytes(s):
     return s.encode()
@@ -377,12 +307,6 @@ def test_simple_crud_requests(started_cluster, create_snapshots):
     second_children = list(sorted(fake_connection.get_children("/test_sequential")))
     assert first_children == second_children, "Childrens are not equal on path " + path
 
-    genuine_connection.stop()
-    genuine_connection.close()
-
-    fake_connection.stop()
-    fake_connection.close()
-
 
 @pytest.mark.parametrize(("create_snapshots"), [True, False])
 def test_multi_and_failed_requests(started_cluster, create_snapshots):
@@ -453,12 +377,6 @@ def test_multi_and_failed_requests(started_cluster, create_snapshots):
     assert eph1 == eph2
     compare_stats(stat1, stat2, "/test_multitransactions", ignore_pzxid=True)
 
-    genuine_connection.stop()
-    genuine_connection.close()
-
-    fake_connection.stop()
-    fake_connection.close()
-
 
 @pytest.mark.parametrize(("create_snapshots"), [True, False])
 def test_acls(started_cluster, create_snapshots):
@@ -526,9 +444,3 @@ def test_acls(started_cluster, create_snapshots):
             "user2:lo/iTtNMP+gEZlpUNaCqLYO3i5U=",
             "user3:wr5Y0kEs9nFX3bKrTMKxrlcFeWo=",
         )
-
-    genuine_connection.stop()
-    genuine_connection.close()
-
-    fake_connection.stop()
-    fake_connection.close()

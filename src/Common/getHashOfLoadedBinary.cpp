@@ -4,7 +4,7 @@
 
 #include <link.h>
 #include <array>
-#include <base/hex.h>
+#include <Common/hex.h>
 
 
 static int callback(dl_phdr_info * info, size_t, void * data)
@@ -37,7 +37,7 @@ SipHash getHashOfLoadedBinary()
 std::string getHashOfLoadedBinaryHex()
 {
     SipHash hash = getHashOfLoadedBinary();
-    UInt128 checksum;
+    std::array<UInt64, 2> checksum;
     hash.get128(checksum);
     return getHexUIntUppercase(checksum);
 }

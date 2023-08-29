@@ -8,7 +8,7 @@ services:
             MYSQL_ROOT_HOST: ${MYSQL_CLUSTER_ROOT_HOST}
             DATADIR: /mysql/
         expose:
-            - ${MYSQL_CLUSTER_PORT:-3306}
+            - ${MYSQL_CLUSTER_PORT}
         command: --server_id=100 
             --log-bin='mysql-bin-2.log' 
             --default-time-zone='+3:00' 
@@ -30,7 +30,7 @@ services:
             MYSQL_ROOT_HOST: ${MYSQL_CLUSTER_ROOT_HOST}
             DATADIR: /mysql/
         expose:
-            - ${MYSQL_CLUSTER_PORT:-3306}
+            - ${MYSQL_CLUSTER_PORT}
         command: --server_id=100 
             --log-bin='mysql-bin-3.log' 
             --default-time-zone='+3:00' 
@@ -52,7 +52,7 @@ services:
             MYSQL_ROOT_HOST: ${MYSQL_CLUSTER_ROOT_HOST}
             DATADIR: /mysql/
         expose:
-            - ${MYSQL_CLUSTER_PORT:-3306}
+            - ${MYSQL_CLUSTER_PORT}
         command: --server_id=100 
             --log-bin='mysql-bin-4.log' 
             --default-time-zone='+3:00' 

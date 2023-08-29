@@ -41,7 +41,6 @@ protected:
         /// Ref count modified in constructor/descructor of Entry
         /// but also read in pool code.
         std::atomic<int> ref_count = 0;
-        std::atomic<bool> removed_from_pool = false;
     };
 
 public:

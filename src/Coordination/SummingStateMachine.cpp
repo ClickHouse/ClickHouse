@@ -37,7 +37,7 @@ nuraft::ptr<nuraft::buffer> SummingStateMachine::commit(const uint64_t log_idx, 
 
 bool SummingStateMachine::apply_snapshot(nuraft::snapshot & s)
 {
-    std::lock_guard ll(snapshots_lock);
+    std::lock_guard<std::mutex> ll(snapshots_lock);
     auto entry = snapshots.find(s.get_last_log_idx());
     if (entry == snapshots.end())
         return false;
@@ -50,7 +50,7 @@ bool SummingStateMachine::apply_snapshot(nuraft::snapshot & s)
 nuraft::ptr<nuraft::snapshot> SummingStateMachine::last_snapshot()
 {
     // Just return the latest snapshot.
-    std::lock_guard ll(snapshots_lock);
+    std::lock_guard<std::mutex> ll(snapshots_lock);
     auto entry = snapshots.rbegin();
     if (entry == snapshots.rend())
         return nullptr;
@@ -71,10 +71,10 @@ void SummingStateMachine::createSnapshotInternal(nuraft::snapshot & s)
     snapshots[s.get_last_log_idx()] = ctx;
 
     // Maintain last 3 snapshots only.
-    ssize_t num = snapshots.size();
+    int num = snapshots.size();
     auto entry = snapshots.begin();
 
-    for (ssize_t ii = 0; ii < num - MAX_SNAPSHOTS; ++ii)
+    for (int ii = 0; ii < num - MAX_SNAPSHOTS; ++ii)
     {
         if (entry == snapshots.end())
             break;
@@ -100,7 +100,7 @@ void SummingStateMachine::save_logical_snp_obj(
         nuraft::buffer_serializer bs(data);
         int64_t local_value = static_cast<int64_t>(bs.get_u64());
 
-        std::lock_guard ll(snapshots_lock);
+        std::lock_guard<std::mutex> ll(snapshots_lock);
         auto entry = snapshots.find(s.get_last_log_idx());
         assert(entry != snapshots.end());
         entry->second->value = local_value;
@@ -118,7 +118,7 @@ int SummingStateMachine::read_logical_snp_obj(
 {
     nuraft::ptr<SingleValueSnapshotContext> ctx = nullptr;
     {
-        std::lock_guard ll(snapshots_lock);
+        std::lock_guard<std::mutex> ll(snapshots_lock);
         auto entry = snapshots.find(s.get_last_log_idx());
         if (entry == snapshots.end())
         {
@@ -155,7 +155,7 @@ void SummingStateMachine::create_snapshot(
     nuraft::async_result<bool>::handler_type & when_done)
 {
     {
-        std::lock_guard ll(snapshots_lock);
+        std::lock_guard<std::mutex> ll(snapshots_lock);
         createSnapshotInternal(s);
     }
     nuraft::ptr<std::exception> except(nullptr);

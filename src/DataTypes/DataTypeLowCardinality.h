@@ -12,7 +12,6 @@ class DataTypeLowCardinality : public IDataType
 private:
     DataTypePtr dictionary_type;
 
-
 public:
     explicit DataTypeLowCardinality(DataTypePtr dictionary_type_);
 
@@ -23,8 +22,6 @@ public:
         return "LowCardinality(" + dictionary_type->getName() + ")";
     }
     const char * getFamilyName() const override { return "LowCardinality"; }
-    String getSQLCompatibleName() const override { return dictionary_type->getSQLCompatibleName(); }
-
     TypeIndex getTypeId() const override { return TypeIndex::LowCardinality; }
 
     MutableColumnPtr createColumn() const override;
@@ -89,6 +86,6 @@ DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type);
 ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column);
 
 /// Convert column of type from_type to type to_type by converting nested LowCardinality columns.
-ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type);
+ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type);
 
 }

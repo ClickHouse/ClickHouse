@@ -1,5 +1,4 @@
 ---
-slug: /en/operations/settings/query-complexity
 sidebar_position: 59
 sidebar_label: Restrictions on Query Complexity
 ---
@@ -26,7 +25,7 @@ It can take one of two values: `throw` or `break`. Restrictions on aggregation (
 
 The maximum amount of RAM to use for running a query on a single server.
 
-The default setting is unlimited (set to `0`).
+In the default configuration file, the maximum is 10 GB.
 
 The setting does not consider the volume of available memory or the total volume of memory on the machine.
 The restriction applies to a single query within a single server.
@@ -101,8 +100,8 @@ Enables or disables execution of `GROUP BY` clauses in external memory. See [GRO
 
 Possible values:
 
-- Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](../../sql-reference/statements/select/group-by.md#select-group-by-clause) operation.
-- 0 — `GROUP BY` in external memory disabled.
+-   Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](../../sql-reference/statements/select/group-by.md#select-group-by-clause) operation.
+-   0 — `GROUP BY` in external memory disabled.
 
 Default value: 0.
 
@@ -257,8 +256,8 @@ ClickHouse can proceed with different actions when the limit is reached. Use the
 
 Possible values:
 
-- Positive integer.
-- 0 — Unlimited number of rows.
+-   Positive integer.
+-   0 — Unlimited number of rows.
 
 Default value: 0.
 
@@ -266,7 +265,7 @@ Default value: 0.
 
 Limits the size in bytes of the hash table used when joining tables.
 
-This setting applies to [SELECT … JOIN](../../sql-reference/statements/select/join.md#select-join) operations and [Join table engine](../../engines/table-engines/special/join.md).
+This settings applies to [SELECT … JOIN](../../sql-reference/statements/select/join.md#select-join) operations and [Join table engine](../../engines/table-engines/special/join.md).
 
 If the query contains joins, ClickHouse checks this setting for every intermediate result.
 
@@ -274,8 +273,8 @@ ClickHouse can proceed with different actions when the limit is reached. Use [jo
 
 Possible values:
 
-- Positive integer.
-- 0 — Memory control is disabled.
+-   Positive integer.
+-   0 — Memory control is disabled.
 
 Default value: 0.
 
@@ -283,27 +282,27 @@ Default value: 0.
 
 Defines what action ClickHouse performs when any of the following join limits is reached:
 
-- [max_bytes_in_join](#settings-max_bytes_in_join)
-- [max_rows_in_join](#settings-max_rows_in_join)
+-   [max_bytes_in_join](#settings-max_bytes_in_join)
+-   [max_rows_in_join](#settings-max_rows_in_join)
 
 Possible values:
 
-- `THROW` — ClickHouse throws an exception and breaks operation.
-- `BREAK` — ClickHouse breaks operation and does not throw an exception.
+-   `THROW` — ClickHouse throws an exception and breaks operation.
+-   `BREAK` — ClickHouse breaks operation and does not throw an exception.
 
 Default value: `THROW`.
 
 **See Also**
 
-- [JOIN clause](../../sql-reference/statements/select/join.md#select-join)
-- [Join table engine](../../engines/table-engines/special/join.md)
+-   [JOIN clause](../../sql-reference/statements/select/join.md#select-join)
+-   [Join table engine](../../engines/table-engines/special/join.md)
 
 ## max_partitions_per_insert_block {#max-partitions-per-insert-block}
 
 Limits the maximum number of partitions in a single inserted block.
 
-- Positive integer.
-- 0 — Unlimited number of partitions.
+-   Positive integer.
+-   0 — Unlimited number of partitions.
 
 Default value: 100.
 
@@ -313,17 +312,4 @@ When inserting data, ClickHouse calculates the number of partitions in the inser
 
 > “Too many partitions for single INSERT block (more than” + toString(max_parts) + “). The limit is controlled by ‘max_partitions_per_insert_block’ setting. A large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc).”
 
-## max_temporary_data_on_disk_size_for_user {#settings_max_temporary_data_on_disk_size_for_user}
-
-The maximum amount of data consumed by temporary files on disk in bytes for all concurrently running user queries.
-Zero means unlimited.
-
-Default value: 0.
-
-
-## max_temporary_data_on_disk_size_for_query {#settings_max_temporary_data_on_disk_size_for_query}
-
-The maximum amount of data consumed by temporary files on disk in bytes for all concurrently running queries.
-Zero means unlimited.
-
-Default value: 0.
+[Original article](https://clickhouse.com/docs/en/operations/settings/query_complexity/) <!--hide-->

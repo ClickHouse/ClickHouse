@@ -95,7 +95,6 @@ private:
     {
         const bool use_index_for_in_with_subqueries;
         const SizeLimits size_limits_for_set;
-        const SizeLimits size_limits_for_set_used_with_index;
         const UInt64 distributed_group_by_no_merge;
 
         explicit ExtractedSettings(const Settings & settings_);
@@ -120,9 +119,8 @@ public:
     ActionsDAGPtr getActionsDAG(bool add_aliases, bool project_result = true);
     ExpressionActionsPtr getActions(bool add_aliases, bool project_result = true, CompileExpressions compile_expressions = CompileExpressions::no);
 
-    /// Get actions to evaluate a constant expression. The function adds constants and applies functions that depend only on constants.
+    /// Actions that can be performed on an empty block: adding constants and applying functions that depend only on constants.
     /// Does not execute subqueries.
-    ActionsDAGPtr getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs = {});
     ExpressionActionsPtr getConstActions(const ColumnsWithTypeAndName & constant_inputs = {});
 
     /** Sets that require a subquery to be create.
@@ -141,6 +139,11 @@ public:
     void makeWindowDescriptionFromAST(const Context & context, const WindowDescriptions & existing_descriptions, WindowDescription & desc, const IAST * ast);
     void makeWindowDescriptions(ActionsDAGPtr actions);
 
+    /** Create Set from a subquery or a table expression in the query. The created set is suitable for using the index.
+      * The set will not be created if its size hits the limit.
+      */
+    void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name, const SelectQueryOptions & query_options = {});
+
     /** Checks if subquery is not a plain StorageSet.
       * Because while making set we will read data from StorageSet which is not allowed.
       * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
@@ -155,15 +158,13 @@ protected:
         size_t subquery_depth_,
         bool do_global_,
         bool is_explain_,
-        PreparedSetsPtr prepared_sets_,
-        bool is_create_parameterized_view_ = false);
+        PreparedSetsPtr prepared_sets_);
 
     ASTPtr query;
     const ExtractedSettings settings;
     size_t subquery_depth;
 
     TreeRewriterResultPtr syntax;
-    bool is_create_parameterized_view;
 
     const ConstStoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
     const TableJoin & analyzedJoin() const { return *syntax->analyzed_join; }
@@ -196,7 +197,7 @@ protected:
 
     const ASTSelectQuery * getSelectQuery() const;
 
-    bool isRemoteStorage() const;
+    bool isRemoteStorage() const { return syntax->is_remote_storage; }
 
     NamesAndTypesList getColumnsAfterArrayJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
     NamesAndTypesList analyzeJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
@@ -306,7 +307,7 @@ public:
         const TreeRewriterResultPtr & syntax_analyzer_result_,
         ContextPtr context_,
         const StorageMetadataPtr & metadata_snapshot_,
-        const Names & required_result_columns_ = {},
+        const NameSet & required_result_columns_ = {},
         bool do_global_ = false,
         const SelectQueryOptions & options_ = {},
         PreparedSetsPtr prepared_sets_ = nullptr)
@@ -317,8 +318,7 @@ public:
             options_.subquery_depth,
             do_global_,
             options_.is_explain,
-            prepared_sets_,
-            options_.is_create_parameterized_view)
+            prepared_sets_)
         , metadata_snapshot(metadata_snapshot_)
         , required_result_columns(required_result_columns_)
         , query_options(options_)
@@ -358,10 +358,13 @@ public:
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
     ActionsDAGPtr appendProjectResult(ExpressionActionsChain & chain) const;
 
+    /// Create Set-s that we make from IN section to use index on them.
+    void makeSetsForIndex(const ASTPtr & node);
+
 private:
     StorageMetadataPtr metadata_snapshot;
     /// If non-empty, ignore all expressions not from this list.
-    Names required_result_columns;
+    NameSet required_result_columns;
     SelectQueryOptions query_options;
 
     JoinPtr makeJoin(

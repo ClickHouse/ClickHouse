@@ -1,3 +1,6 @@
+include(configure_config.cmake)
+configure_file(config_functions.h.in ${ConfigIncludePath}/config_functions.h)
+
 add_subdirectory(divide)
 
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
@@ -22,21 +25,13 @@ list (APPEND PUBLIC_LIBS
         ch_contrib::metrohash
         ch_contrib::murmurhash
         ch_contrib::hashidsxx
-        ch_contrib::morton_nd
 )
 
 list (APPEND PRIVATE_LIBS
         ch_contrib::zlib
         boost::filesystem
         divide_impl
-        ch_contrib::xxHash
 )
-
-if (TARGET ch_rust::blake3)
-    list (APPEND PUBLIC_LIBS
-        ch_rust::blake3
-    )
-endif()
 
 if (TARGET OpenSSL::Crypto)
     list (APPEND PUBLIC_LIBS OpenSSL::Crypto)
@@ -54,6 +49,10 @@ if (TARGET ch_contrib::fastops)
     list (APPEND PRIVATE_LIBS ch_contrib::fastops)
 endif ()
 
+if (ENABLE_EXAMPLES)
+    add_subdirectory(examples)
+endif ()
+
 if (TARGET ch_contrib::llvm)
     list (APPEND PRIVATE_LIBS ch_contrib::llvm)
 endif ()
@@ -61,6 +60,8 @@ endif ()
 if (TARGET ch_contrib::base64)
     list (APPEND PRIVATE_LIBS ch_contrib::base64)
 endif()
+
+list (APPEND PRIVATE_LIBS ch_contrib::lz4)
 
 if (ENABLE_NLP)
     list (APPEND PRIVATE_LIBS ch_contrib::cld2)
@@ -82,10 +83,6 @@ if (TARGET ch_contrib::rapidjson)
     list (APPEND PRIVATE_LIBS ch_contrib::rapidjson)
 endif()
 
-if (TARGET ch_contrib::crc32-vpmsum)
-    list (APPEND PUBLIC_LIBS ch_contrib::crc32-vpmsum)
-endif()
-
 add_subdirectory(GatherUtils)
 list (APPEND PRIVATE_LIBS clickhouse_functions_gatherutils)
 
@@ -95,16 +92,8 @@ list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_url>)
 add_subdirectory(array)
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_array>)
 
-if (TARGET ch_contrib::datasketches)
-    add_subdirectory(UniqTheta)
-    list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_uniqtheta>)
-endif()
-
 add_subdirectory(JSONPath)
 list (APPEND PRIVATE_LIBS clickhouse_functions_jsonpath)
-
-add_subdirectory(keyvaluepair)
-list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_extractkeyvaluepairs>)
 
 # Signed integer overflow on user-provided data inside boost::geometry - ignore.
 set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)
@@ -115,7 +104,12 @@ endif ()
 
 target_link_libraries(clickhouse_functions_obj PUBLIC ${PUBLIC_LIBS} PRIVATE ${PRIVATE_LIBS})
 
-# Used to forward the linking information to the final binaries such as clickhouse / unit_tests_dbms,
-# since such information are lost after we convert to OBJECT target
-add_library(clickhouse_functions INTERFACE)
-target_link_libraries(clickhouse_functions INTERFACE ${OBJECT_LIBS} ${PUBLIC_LIBS} ${PRIVATE_LIBS})
+if (USE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
+    # Used to forward the linking information to the final binaries such as clickhouse / unit_tests_dbms,
+    # since such information are lost after we convert to OBJECT target
+    add_library(clickhouse_functions INTERFACE)
+    target_link_libraries(clickhouse_functions INTERFACE ${OBJECT_LIBS} ${PUBLIC_LIBS} ${PRIVATE_LIBS})
+else()
+    add_library(clickhouse_functions SHARED ${OBJECT_LIBS})
+    target_link_libraries(clickhouse_functions PUBLIC ${PUBLIC_LIBS} PRIVATE ${PRIVATE_LIBS})
+endif ()

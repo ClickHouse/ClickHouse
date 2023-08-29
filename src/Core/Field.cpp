@@ -51,18 +51,6 @@ inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
             readBinary(value, buf);
             return value;
         }
-        case Field::Types::IPv4:
-        {
-            IPv4 value;
-            readBinary(value, buf);
-            return value;
-        }
-        case Field::Types::IPv6:
-        {
-            IPv6 value;
-            readBinary(value.toUnderType(), buf);
-            return value;
-        }
         case Field::Types::Int64:
         {
             Int64 value;
@@ -260,17 +248,6 @@ void writeText(const Object & x, WriteBuffer & buf)
     writeFieldText(Field(x), buf);
 }
 
-void writeBinary(const CustomType & x, WriteBuffer & buf)
-{
-    writeBinary(std::string_view(x.getTypeName()), buf);
-    writeBinary(x.toString(), buf);
-}
-
-void writeText(const CustomType & x, WriteBuffer & buf)
-{
-    writeFieldText(Field(x), buf);
-}
-
 template <typename T>
 void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
 {
@@ -284,7 +261,7 @@ void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
     {
         scale = 0;
         if (common::mulOverflow(value.value, DecimalUtils::scaleMultiplier<T>(exponent), value.value))
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
     }
     else
         scale = -exponent;
@@ -313,7 +290,7 @@ Field Field::restoreFromDump(std::string_view dump_)
 {
     auto show_error = [&dump_]
     {
-        throw Exception(ErrorCodes::CANNOT_RESTORE_FROM_FIELD_DUMP, "Couldn't restore Field from dump: {}", String{dump_});
+        throw Exception("Couldn't restore Field from dump: " + String{dump_}, ErrorCodes::CANNOT_RESTORE_FROM_FIELD_DUMP);
     };
 
     std::string_view dump = dump_;
@@ -515,7 +492,7 @@ Field Field::restoreFromDump(std::string_view dump_)
     }
 
     show_error();
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 
@@ -606,9 +583,6 @@ String fieldTypeToString(Field::Types::Which type)
         case Field::Types::Which::UInt128: return "UInt128";
         case Field::Types::Which::UInt256: return "UInt256";
         case Field::Types::Which::UUID: return "UUID";
-        case Field::Types::Which::IPv4: return "IPv4";
-        case Field::Types::Which::IPv6: return "IPv6";
-        case Field::Types::Which::CustomType: return "CustomType";
     }
 }
 

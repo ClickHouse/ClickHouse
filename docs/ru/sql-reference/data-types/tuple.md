@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/data-types/tuple
 sidebar_position: 54
 sidebar_label: Tuple(T1, T2, ...)
 ---
@@ -34,7 +33,7 @@ SELECT tuple(1,'a') AS x, toTypeName(x)
 
 ## Особенности работы с типами данных {#osobennosti-raboty-s-tipami-dannykh}
 
-При создании кортежа «на лету» ClickHouse автоматически определяет тип всех аргументов как минимальный из типов, который может сохранить значение аргумента. Если аргумент — [NULL](../../sql-reference/data-types/tuple.md#null-literal), то тип элемента кортежа — [Nullable](nullable.md).
+При создании кортежа «на лету» ClickHouse автоматически определяет тип каждого аргументов как минимальный из типов, который может сохранить значение аргумента. Если аргумент — [NULL](../../sql-reference/data-types/tuple.md#null-literal), то тип элемента кортежа — [Nullable](nullable.md).
 
 Пример автоматического определения типа данных:
 

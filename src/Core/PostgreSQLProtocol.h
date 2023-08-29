@@ -307,7 +307,7 @@ private:
             case LOG:
                 return 'N';
         }
-        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown severity type {}", std::to_string(severity));
+        throw Exception("Unknown severity type " + std::to_string(severity), ErrorCodes::UNKNOWN_TYPE);
     }
 
 public:
@@ -336,12 +336,7 @@ public:
     Int32 size() const override
     {
         // message length part + (1 + sizes of other fields + 1) + null byte in the end of the message
-        return static_cast<Int32>(
-            4 +
-            (1 + enum_to_string[severity].size() + 1) +
-            (1 + sql_state.size() + 1) +
-            (1 + message.size() + 1) +
-            1);
+        return 4 + (1 + enum_to_string[severity].size() + 1) + (1 + sql_state.size() + 1) + (1 + message.size() + 1) + 1;
     }
 
     MessageType getMessageType() const override
@@ -423,9 +418,11 @@ public:
 
             if (payload_size < 0)
             {
-                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                                "Size of payload is larger than one declared in the message of type {}.",
-                                static_cast<UInt64>(getMessageType()));
+                throw Exception(
+                        Poco::format(
+                                "Size of payload is larger than one declared in the message of type %d.",
+                                getMessageType()),
+                        ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
             }
         }
         in.ignore();
@@ -521,7 +518,7 @@ public:
 
     Int32 size() const override
     {
-        return static_cast<Int32>(4 + name.size() + 1 + value.size() + 1);
+        return 4 + name.size() + 1 + value.size() + 1;
     }
 
     MessageType getMessageType() const override
@@ -636,7 +633,7 @@ public:
         // + object ID of the table (Int32 and always zero) + attribute number of the column (Int16 and always zero)
         // + type object id (Int32) + data type size (Int16)
         // + type modifier (Int32 and always -1) + format code (Int16)
-        return static_cast<Int32>((name.size() + 1) + 4 + 2 + 4 + 2 + 4 + 2);
+        return (name.size() + 1) + 4 + 2 + 4 + 2 + 4 + 2;
     }
 };
 
@@ -685,7 +682,7 @@ public:
 
     Int32 size() const override
     {
-        return static_cast<Int32>(str.size());
+        return str.size();
     }
 };
 
@@ -765,7 +762,7 @@ public:
 
     Int32 size() const override
     {
-        return static_cast<Int32>(4 + value.size() + 1);
+        return 4 + value.size() + 1;
     }
 
     MessageType getMessageType() const override
@@ -869,9 +866,11 @@ public:
             return setPassword(user_name, password->password, session, mt, address);
         }
         else
-            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
-                    "Client sent wrong message or closed the connection. Message byte was {}.",
-                    static_cast<Int32>(type));
+            throw Exception(
+                Poco::format(
+                    "Client sent wrong message or closed the connection. Message byte was %d.",
+                    static_cast<Int32>(type)),
+                ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
     }
 
     AuthenticationType getType() const override
@@ -914,7 +913,7 @@ public:
             Messaging::ErrorOrNoticeResponse(Messaging::ErrorOrNoticeResponse::ERROR, "0A000", "Authentication method is not supported"),
             true);
 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Authentication type {} is not supported.", user_auth_type);
+        throw Exception(Poco::format("Authentication type %d is not supported.", user_auth_type), ErrorCodes::NOT_IMPLEMENTED);
     }
 };
 }

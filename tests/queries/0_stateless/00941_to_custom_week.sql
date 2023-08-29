@@ -41,38 +41,12 @@ SELECT toDateTime(toDate('2016-12-22') + number, 'Asia/Istanbul' ) AS d,
 FROM numbers(21);
 
 -- toStartOfWeek
-WITH
-    toDate('2018-12-25') + number AS d,
-    toDate32(d) AS d32,
-    toDateTime(d) AS dt,
-    toDateTime64(d, 0) AS dt64
 SELECT
-    dt64,
-    toStartOfWeek(d) AS wd_sun,
-    toStartOfWeek(d32) AS wd32_sun,
-    toStartOfWeek(dt) AS wdt_sun,
-    toStartOfWeek(dt64) AS wdt64_sun,
-    toStartOfWeek(d, 1) AS wd_mon,
-    toStartOfWeek(d32, 1) AS wd32_mon,
-    toStartOfWeek(dt, 1) AS wdt_mon,
-    toStartOfWeek(dt64, 1) AS wdt64_mon
-FROM numbers(10);
-
--- toLastDayOfWeek
-WITH
-    toDate('2018-12-25') + number AS d,
-    toDate32(d) AS d32,
-    toDateTime(d) AS dt,
-    toDateTime64(d, 0) AS dt64
-SELECT
-    dt64,
-    toLastDayOfWeek(d) AS wd_sun,
-    toLastDayOfWeek(d32) AS wd32_sun,
-    toLastDayOfWeek(dt) AS wdt_sun,
-    toLastDayOfWeek(dt64) AS wdt64_sun,
-    toLastDayOfWeek(d, 1) AS wd_mon,
-    toLastDayOfWeek(d32, 1) AS wd32_mon,
-    toLastDayOfWeek(dt, 1) AS wdt_mon,
-    toLastDayOfWeek(dt64, 1) AS wdt64_mon
+    toDate('2018-12-25') + number AS x,
+    toDateTime(x) AS x_t,
+    toStartOfWeek(x) AS w0,
+    toStartOfWeek(x_t) AS wt0,
+    toStartOfWeek(x, 3) AS w3,
+    toStartOfWeek(x_t, 3) AS wt3
 FROM numbers(10);
 

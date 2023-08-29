@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-random-merge-tree-settings
 set -ue
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

@@ -96,13 +96,9 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 }
             }
 
-            if (cleanup)
-                out << "\ncleanup: " << cleanup;
-
             break;
 
         case DROP_RANGE:
-        case DROP_PART:
             if (detach)
                 out << "detach\n";
             else
@@ -169,22 +165,14 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
     out << '\n';
 
-    using PartType = MergeTreeDataPartType;
-    using StorageType = MergeTreeDataPartStorageType;
-
-    auto part_type = new_part_format.part_type;
-    if (part_type != PartType::Wide && part_type != PartType::Unknown)
-        out << "part_type: " << part_type.toString() << "\n";
-
-    auto storage_type = new_part_format.storage_type;
-    if (storage_type != StorageType::Full && storage_type != StorageType::Unknown)
-        out << "storage_type: " << storage_type.toString() << "\n";
+    if (new_part_type != MergeTreeDataPartType::Wide && new_part_type != MergeTreeDataPartType::Unknown)
+        out << "part_type: " << new_part_type.toString() << "\n";
 
     if (quorum)
         out << "quorum: " << quorum << '\n';
 }
 
-void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFormatVersion partition_format_version)
+void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 {
     UInt8 format_version = 0;
     String type_str;
@@ -199,7 +187,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
     {
         LocalDateTime create_time_dt;
         in >> "create_time: " >> create_time_dt >> "\n";
-        create_time = DateLUT::serverTimezoneInstance().makeDateTime(
+        create_time = DateLUT::instance().makeDateTime(
             create_time_dt.year(), create_time_dt.month(), create_time_dt.day(),
             create_time_dt.hour(), create_time_dt.minute(), create_time_dt.second());
     }
@@ -252,7 +240,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
 
                 if (checkString("merge_type: ", in))
                 {
-                    UInt32 value;
+                    UInt64 value;
                     in >> value;
                     merge_type = checkAndGetMergeType(value);
                 }
@@ -272,22 +260,16 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
 
                     deduplicate_by_columns = std::move(new_deduplicate_by_columns);
                 }
-                else if (checkString("cleanup: ", in))
-                    in >> cleanup;
                 else
                     trailing_newline_found = true;
             }
         }
-
     }
     else if (type_str == "drop" || type_str == "detach")
     {
         type = DROP_RANGE;
         detach = type_str == "detach";
         in >> new_part_name;
-        auto drop_range_info = MergeTreePartInfo::fromPartName(new_part_name, partition_format_version);
-        if (!drop_range_info.isFakeDropRangePart())
-            type = DROP_PART;
     }
     else if (type_str == "clear_column") /// NOTE: Deprecated.
     {
@@ -360,21 +342,13 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
 
     if (checkString("part_type: ", in))
     {
+        String part_type_str;
         in >> type_str;
-        new_part_format.part_type.fromString(type_str);
+        new_part_type.fromString(type_str);
         in >> "\n";
     }
     else
-        new_part_format.part_type = MergeTreeDataPartType::Wide;
-
-    if (checkString("storage_type: ", in))
-    {
-        in >> type_str;
-        new_part_format.storage_type.fromString(type_str);
-        in >> "\n";
-    }
-    else
-        new_part_format.storage_type = MergeTreeDataPartStorageType::Full;
+        new_part_type = MergeTreeDataPartType::Wide;
 
     /// Optional field.
     if (!in.eof())
@@ -436,12 +410,11 @@ String ReplicatedMergeTreeLogEntryData::toString() const
     return out.str();
 }
 
-ReplicatedMergeTreeLogEntry::Ptr ReplicatedMergeTreeLogEntry::parse(const String & s, const Coordination::Stat & stat,
-                                                                    MergeTreeDataFormatVersion format_version)
+ReplicatedMergeTreeLogEntry::Ptr ReplicatedMergeTreeLogEntry::parse(const String & s, const Coordination::Stat & stat)
 {
     ReadBufferFromString in(s);
     Ptr res = std::make_shared<ReplicatedMergeTreeLogEntry>();
-    res->readText(in, format_version);
+    res->readText(in);
     assertEOF(in);
 
     if (!res->create_time)
@@ -453,9 +426,6 @@ ReplicatedMergeTreeLogEntry::Ptr ReplicatedMergeTreeLogEntry::parse(const String
 std::optional<String> ReplicatedMergeTreeLogEntryData::getDropRange(MergeTreeDataFormatVersion format_version) const
 {
     if (type == DROP_RANGE)
-        return new_part_name;
-
-    if (type == DROP_PART)
         return new_part_name;
 
     if (type == REPLACE_RANGE)
@@ -471,9 +441,14 @@ std::optional<String> ReplicatedMergeTreeLogEntryData::getDropRange(MergeTreeDat
     return {};
 }
 
-bool ReplicatedMergeTreeLogEntryData::isDropPart(MergeTreeDataFormatVersion) const
+bool ReplicatedMergeTreeLogEntryData::isDropPart(MergeTreeDataFormatVersion format_version) const
 {
-    return type == DROP_PART;
+    if (type == DROP_RANGE)
+    {
+        auto drop_range_info = MergeTreePartInfo::fromPartName(new_part_name, format_version);
+        return !drop_range_info.isFakeDropRangePart();
+    }
+    return false;
 }
 
 Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormatVersion format_version) const
@@ -484,7 +459,30 @@ Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormat
 
     /// DROP_RANGE does not add a real part, but we must disable merges in that range
     if (type == DROP_RANGE)
+    {
+        auto drop_range_part_info = MergeTreePartInfo::fromPartName(new_part_name, format_version);
+
+        /// It's DROP PART and we don't want to add it into virtual parts
+        /// because it can lead to intersecting parts on stale replicas and this
+        /// problem is fundamental. So we have very weak guarantees for DROP
+        /// PART. If any concurrent merge will be assigned then DROP PART will
+        /// delete nothing and part will be successfully merged into bigger part.
+        ///
+        /// dropPart used in the following cases:
+        /// 1) Remove empty parts after TTL.
+        /// 2) Remove parts after move between shards.
+        /// 3) User queries: ALTER TABLE DROP PART 'part_name'.
+        ///
+        /// In the first case merge of empty part is even better than DROP. In
+        /// the second case part UUIDs used to forbid merges for moding parts so
+        /// there is no problem with concurrent merges. The third case is quite
+        /// rare and we give very weak guarantee: there will be no active part
+        /// with this name, but possibly it was merged to some other part.
+        if (!drop_range_part_info.isFakeDropRangePart())
+            return {};
+
         return {new_part_name};
+    }
 
     if (type == REPLACE_RANGE)
     {
@@ -494,25 +492,6 @@ Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormat
             res.emplace_back(*drop_range);
         return res;
     }
-
-    /// It's DROP PART and we don't want to add it into virtual parts
-    /// because it can lead to intersecting parts on stale replicas and this
-    /// problem is fundamental. So we have very weak guarantees for DROP
-    /// PART. If any concurrent merge will be assigned then DROP PART will
-    /// delete nothing and part will be successfully merged into bigger part.
-    ///
-    /// dropPart used in the following cases:
-    /// 1) Remove empty parts after TTL.
-    /// 2) Remove parts after move between shards.
-    /// 3) User queries: ALTER TABLE DROP PART 'part_name'.
-    ///
-    /// In the first case merge of empty part is even better than DROP. In
-    /// the second case part UUIDs used to forbid merges for moding parts so
-    /// there is no problem with concurrent merges. The third case is quite
-    /// rare and we give very weak guarantee: there will be no active part
-    /// with this name, but possibly it was merged to some other part.
-    if (type == DROP_PART)
-        return {};
 
     /// Doesn't produce any part.
     if (type == SYNC_PINNED_PART_UUIDS)

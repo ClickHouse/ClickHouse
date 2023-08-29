@@ -1,10 +1,8 @@
-#include <Parsers/IAST.h>
-
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-#include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
+#include <Parsers/IAST.h>
 
 
 namespace DB
@@ -108,7 +106,7 @@ size_t IAST::checkSize(size_t max_size) const
         res += child->checkSize(max_size);
 
     if (res > max_size)
-        throw Exception(ErrorCodes::TOO_BIG_AST, "AST is too big. Maximum: {}", max_size);
+        throw Exception("AST is too big. Maximum: " + toString(max_size), ErrorCodes::TOO_BIG_AST);
 
     return res;
 }
@@ -140,48 +138,24 @@ void IAST::updateTreeHashImpl(SipHash & hash_state) const
 }
 
 
-size_t IAST::checkDepthImpl(size_t max_depth) const
+size_t IAST::checkDepthImpl(size_t max_depth, size_t level) const
 {
-    std::vector<std::pair<ASTPtr, size_t>> stack;
-    stack.reserve(children.size());
-
-    for (const auto & i: children)
-        stack.push_back({i, 1});
-
-    size_t res = 0;
-
-    while (!stack.empty())
+    size_t res = level + 1;
+    for (const auto & child : children)
     {
-        auto top = stack.back();
-        stack.pop_back();
-
-        if (top.second >= max_depth)
-            throw Exception(ErrorCodes::TOO_DEEP_AST, "AST is too deep. Maximum: {}", max_depth);
-
-        res = std::max(res, top.second);
-
-        for (const auto & i: top.first->children)
-            stack.push_back({i, top.second + 1});
+        if (level >= max_depth)
+            throw Exception("AST is too deep. Maximum: " + toString(max_depth), ErrorCodes::TOO_DEEP_AST);
+        res = std::max(res, child->checkDepthImpl(max_depth, level + 1));
     }
 
     return res;
 }
 
-String IAST::formatWithPossiblyHidingSensitiveData(size_t max_length, bool one_line, bool show_secrets) const
+std::string IAST::formatForErrorMessage() const
 {
     WriteBufferFromOwnString buf;
-    format({buf, one_line, show_secrets});
-    return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
-}
-
-bool IAST::childrenHaveSecretParts() const
-{
-    for (const auto & child : children)
-    {
-        if (child->hasSecretParts())
-            return true;
-    }
-    return false;
+    format(FormatSettings(buf, true /* one line */));
+    return buf.str();
 }
 
 void IAST::cloneChildren()
@@ -214,9 +188,8 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
         case IdentifierQuotingStyle::None:
         {
             if (always_quote_identifiers)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Incompatible arguments: always_quote_identifiers = true && "
-                                "identifier_quoting_style == IdentifierQuotingStyle::None");
+                throw Exception("Incompatible arguments: always_quote_identifiers = true && identifier_quoting_style == IdentifierQuotingStyle::None",
+                    ErrorCodes::BAD_ARGUMENTS);
             writeString(name, ostr);
             break;
         }
@@ -255,7 +228,7 @@ void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
     writeChar('\n', ostr);
     for (const auto & child : children)
     {
-        if (!child) throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_AST, "Can't dump nullptr child");
+        if (!child) throw Exception("Can't dump nullptr child", ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
         child->dumpTree(ostr, indent + 1);
     }
 }

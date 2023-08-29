@@ -17,7 +17,7 @@ public:
         const String & comment,
         UInt64 max_array_length,
         UInt64 max_string_length,
-        const std::optional<UInt64> & random_seed);
+        std::optional<UInt64> random_seed);
 
     std::string getName() const override { return "GenerateRandom"; }
 
@@ -28,7 +28,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams) override;
+        unsigned num_streams) override;
 
     bool supportsTransactions() const override { return true; }
 private:

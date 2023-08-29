@@ -125,7 +125,7 @@ def get_ccache_if_not_exists(
 def upload_ccache(path_to_ccache_dir, s3_helper, current_pr_number, temp_path):
     logging.info("Uploading cache %s for pr %s", path_to_ccache_dir, current_pr_number)
     ccache_name = os.path.basename(path_to_ccache_dir)
-    compressed_cache_path = os.path.join(temp_path, ccache_name + ".tar.zst")
+    compressed_cache_path = os.path.join(temp_path, ccache_name + ".tar.gz")
     compress_fast(path_to_ccache_dir, compressed_cache_path)
 
     s3_path = (

@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
-from typing import List
-import json
-import logging
 import time
+import logging
+import json
 
 import requests  # type: ignore
-
 from get_robot_token import get_parameter_from_ssm
-from pr_info import PRInfo
-from report import TestResults
 
 
 class InsertException(Exception):
@@ -41,8 +37,12 @@ class ClickHouseHelper:
                     url, params=params, data=json_str, headers=auth
                 )
             except Exception as e:
-                error = f"Received exception while sending data to {url} on {i} attempt: {e}"
-                logging.warning(error)
+                logging.warning(
+                    "Received exception while sending data to %s on %s attempt: %s",
+                    url,
+                    i,
+                    e,
+                )
                 continue
 
             logging.info("Response content '%s'", response.content)
@@ -133,14 +133,15 @@ class ClickHouseHelper:
 
 
 def prepare_tests_results_for_clickhouse(
-    pr_info: PRInfo,
-    test_results: TestResults,
-    check_status: str,
-    check_duration: float,
-    check_start_time: str,
-    report_url: str,
-    check_name: str,
-) -> List[dict]:
+    pr_info,
+    test_results,
+    check_status,
+    check_duration,
+    check_start_time,
+    report_url,
+    check_name,
+):
+
     pull_request_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
     base_ref = "master"
     head_ref = "master"
@@ -175,26 +176,21 @@ def prepare_tests_results_for_clickhouse(
     result = [common_properties]
     for test_result in test_results:
         current_row = common_properties.copy()
-        test_name = test_result.name
-        test_status = test_result.status
+        test_name = test_result[0]
+        test_status = test_result[1]
 
-        test_time = test_result.time or 0
-        current_row["test_duration_ms"] = int(test_time * 1000)
+        test_time = 0
+        if len(test_result) > 2 and test_result[2]:
+            test_time = test_result[2]
+        current_row["test_duration_ms"] = int(float(test_time) * 1000)
         current_row["test_name"] = test_name
         current_row["test_status"] = test_status
-        if test_result.raw_logs:
-            # Protect from too big blobs that contain garbage
-            current_row["test_context_raw"] = test_result.raw_logs[: 32 * 1024]
-        else:
-            current_row["test_context_raw"] = ""
         result.append(current_row)
 
     return result
 
 
-def mark_flaky_tests(
-    clickhouse_helper: ClickHouseHelper, check_name: str, test_results: TestResults
-) -> None:
+def mark_flaky_tests(clickhouse_helper, check_name, test_results):
     try:
         query = f"""SELECT DISTINCT test_name
 FROM checks
@@ -210,7 +206,7 @@ WHERE
         logging.info("Found flaky tests: %s", ", ".join(master_failed_tests))
 
         for test_result in test_results:
-            if test_result.status == "FAIL" and test_result.name in master_failed_tests:
-                test_result.status = "FLAKY"
+            if test_result[1] == "FAIL" and test_result[0] in master_failed_tests:
+                test_result[1] = "FLAKY"
     except Exception as ex:
         logging.error("Exception happened during flaky tests fetch %s", ex)

@@ -348,6 +348,7 @@ class RangedLayoutTester(BaseLayoutTester):
         self.layouts = LAYOUTS_RANGED
 
     def execute(self, layout_name, node):
+
         if layout_name not in self.layout_to_dictionary:
             raise RuntimeError("Source doesn't support layout: {}".format(layout_name))
 

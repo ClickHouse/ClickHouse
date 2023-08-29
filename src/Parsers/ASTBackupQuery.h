@@ -8,7 +8,6 @@ namespace DB
 {
 using Strings = std::vector<String>;
 using DatabaseAndTableName = std::pair<String, String>;
-class ASTFunction;
 
 
 /** BACKUP { TABLE [db.]table_name [AS [db.]table_name_in_backup] [PARTITION[S] partition_expr [,...]] |
@@ -78,13 +77,13 @@ public:
 
     Elements elements;
 
-    ASTFunction * backup_name = nullptr;
+    ASTPtr backup_name;
 
     ASTPtr settings;
 
     /// Base backup. Only differences made after the base backup will be included in a newly created backup,
     /// so this setting allows to make an incremental backup.
-    ASTFunction * base_backup_name = nullptr;
+    ASTPtr base_backup_name;
 
     /// List of cluster's hosts' IDs if this is a BACKUP/RESTORE ON CLUSTER command.
     ASTPtr cluster_host_ids;
@@ -93,7 +92,6 @@ public:
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override;
-    QueryKind getQueryKind() const override;
 
     void forEachPointerToChild(std::function<void(void**)> f) override
     {

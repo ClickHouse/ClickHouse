@@ -2,7 +2,6 @@
 #include <IO/ReadHelpers.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
-#include <Formats/JSONUtils.h>
 
 namespace DB
 {
@@ -13,19 +12,34 @@ JSONColumnsReader::JSONColumnsReader(ReadBuffer & in_) : JSONColumnsReaderBase(i
 
 void JSONColumnsReader::readChunkStart()
 {
-    JSONUtils::skipObjectStart(*in);
+    skipWhitespaceIfAny(*in);
+    assertChar('{', *in);
+    skipWhitespaceIfAny(*in);
 }
 
 std::optional<String> JSONColumnsReader::readColumnStart()
 {
-    auto name = JSONUtils::readFieldName(*in);
-    JSONUtils::skipArrayStart(*in);
+    skipWhitespaceIfAny(*in);
+    String name;
+    readJSONString(name, *in);
+    skipWhitespaceIfAny(*in);
+    assertChar(':', *in);
+    skipWhitespaceIfAny(*in);
+    assertChar('[', *in);
+    skipWhitespaceIfAny(*in);
     return name;
 }
 
 bool JSONColumnsReader::checkChunkEnd()
 {
-    return JSONUtils::checkAndSkipObjectEnd(*in);
+    skipWhitespaceIfAny(*in);
+    if (!in->eof() && *in->position() == '}')
+    {
+        ++in->position();
+        skipWhitespaceIfAny(*in);
+        return true;
+    }
+    return false;
 }
 
 
@@ -55,7 +69,7 @@ void registerJSONColumnsSchemaReader(FormatFactory & factory)
     );
     factory.registerAdditionalInfoForSchemaCacheGetter("JSONColumns", [](const FormatSettings & settings)
     {
-        return getAdditionalFormatInfoForAllRowBasedFormats(settings) + getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
+        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
     });
 }
 

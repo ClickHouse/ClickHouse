@@ -6,15 +6,14 @@
 namespace DB
 {
 
-WriteBufferFromPointer NullOutputFormat::empty_buffer(nullptr, 0);
-
-NullOutputFormat::NullOutputFormat(const Block & header) : IOutputFormat(header, empty_buffer) {}
+WriteBuffer NullOutputFormat::empty_buffer(nullptr, 0);
 
 void registerOutputFormatNull(FormatFactory & factory)
 {
     factory.registerOutputFormat("Null", [](
         WriteBuffer &,
         const Block & sample,
+        const RowOutputFormatParams &,
         const FormatSettings &)
     {
         return std::make_shared<NullOutputFormat>(sample);

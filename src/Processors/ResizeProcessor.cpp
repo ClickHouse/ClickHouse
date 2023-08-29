@@ -138,11 +138,11 @@ ResizeProcessor::Status ResizeProcessor::prepare()
     while (!is_end_input() && !is_end_output())
     {
         auto output = get_next_out();
-        auto input = get_next_input();
 
         if (output == outputs.end())
             return get_status_if_no_outputs();
 
+        auto input = get_next_input();
 
         if (input == inputs.end())
             return get_status_if_no_inputs();
@@ -164,10 +164,7 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
         initialized = true;
 
         for (auto & input : inputs)
-        {
-            input.setNeeded();
             input_ports.push_back({.port = &input, .status = InputStatus::NotActive});
-        }
 
         for (auto & output : outputs)
             output_ports.push_back({.port = &output, .status = OutputStatus::NotActive});
@@ -195,6 +192,13 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
                 waiting_outputs.push(output_number);
             }
         }
+    }
+
+    if (!is_reading_started && !waiting_outputs.empty())
+    {
+        for (auto & input : inputs)
+            input.setNeeded();
+        is_reading_started = true;
     }
 
     if (num_finished_outputs == outputs.size())
@@ -343,12 +347,12 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
         inputs_with_data.pop();
 
         if (input_with_data.waiting_output == -1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No associated output for input with data");
+            throw Exception("No associated output for input with data", ErrorCodes::LOGICAL_ERROR);
 
         auto & waiting_output = output_ports[input_with_data.waiting_output];
 
         if (waiting_output.status == OutputStatus::NotActive)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid status NotActive for associated output");
+            throw Exception("Invalid status NotActive for associated output", ErrorCodes::LOGICAL_ERROR);
 
         if (waiting_output.status != OutputStatus::Finished)
         {

@@ -7,7 +7,9 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 
-#include "config.h"
+#include <Poco/Version.h>
+
+#include <Common/config.h>
 
 #if USE_SSL
 #    include <Poco/Net/AcceptCertificateHandler.h>
@@ -47,7 +49,11 @@ namespace
 {
     void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
     {
+#if defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION >= 0x02000000
         session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
+#else
+        session.setTimeout(std::max({timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout}));
+#endif
         session.setKeepAliveTimeout(timeouts.http_keep_alive_timeout);
     }
 
@@ -58,7 +64,7 @@ namespace
         else if (uri.getScheme() == "http")
             return false;
         else
-            throw Exception(ErrorCodes::UNSUPPORTED_URI_SCHEME, "Unsupported scheme in URI '{}'", uri.toString());
+            throw Exception("Unsupported scheme in URI '" + uri.toString() + "'", ErrorCodes::UNSUPPORTED_URI_SCHEME);
     }
 
     HTTPSessionPtr makeHTTPSessionImpl(const std::string & host, UInt16 port, bool https, bool keep_alive, bool resolve_host = true)
@@ -68,15 +74,14 @@ namespace
         if (https)
         {
 #if USE_SSL
-            /// Cannot resolve host in advance, otherwise SNI won't work in Poco.
-            /// For more information about SNI, see the https://en.wikipedia.org/wiki/Server_Name_Indication
+            String resolved_host = resolve_host ? DNSResolver::instance().resolveHost(host).toString() : host;
             auto https_session = std::make_shared<Poco::Net::HTTPSClientSession>(host, port);
             if (resolve_host)
                 https_session->setResolvedHost(DNSResolver::instance().resolveHost(host).toString());
 
             session = std::move(https_session);
 #else
-            throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without HTTPS support");
+            throw Exception("ClickHouse was built without HTTPS support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 #endif
         }
         else
@@ -88,7 +93,12 @@ namespace
         ProfileEvents::increment(ProfileEvents::CreatedHTTPConnections);
 
         /// doesn't work properly without patch
+#if defined(POCO_CLICKHOUSE_PATCH)
         session->setKeepAlive(keep_alive);
+#else
+        (void)keep_alive; // Avoid warning: unused parameter
+#endif
+
         return session;
     }
 
@@ -97,14 +107,12 @@ namespace
     private:
         const std::string host;
         const UInt16 port;
-        const bool https;
+        bool https;
         const String proxy_host;
         const UInt16 proxy_port;
-        const bool proxy_https;
-        const bool resolve_host;
-
+        bool proxy_https;
+        bool resolve_host;
         using Base = PoolBase<Poco::Net::HTTPClientSession>;
-
         ObjectPtr allocObject() override
         {
             auto session = makeHTTPSessionImpl(host, port, https, true, resolve_host);
@@ -114,25 +122,27 @@ namespace
                 session->setProxyHost(proxy_host);
                 session->setProxyPort(proxy_port);
 
+#if defined(POCO_CLICKHOUSE_PATCH)
                 session->setProxyProtocol(proxy_scheme);
 
                 /// Turn on tunnel mode if proxy scheme is HTTP while endpoint scheme is HTTPS.
                 session->setProxyTunnel(!proxy_https && https);
+#endif
             }
             return session;
         }
 
     public:
         SingleEndpointHTTPSessionPool(
-            const std::string & host_,
-            UInt16 port_,
-            bool https_,
-            const std::string & proxy_host_,
-            UInt16 proxy_port_,
-            bool proxy_https_,
-            size_t max_pool_size_,
-            bool resolve_host_ = true)
-            : Base(static_cast<unsigned>(max_pool_size_), &Poco::Logger::get("HTTPSessionPool"))
+                const std::string & host_,
+                UInt16 port_,
+                bool https_,
+                const std::string & proxy_host_,
+                UInt16 proxy_port_,
+                bool proxy_https_,
+                size_t max_pool_size_,
+                bool resolve_host_ = true)
+            : Base(max_pool_size_, &Poco::Logger::get("HTTPSessionPool"))
             , host(host_)
             , port(port_)
             , https(https_)
@@ -184,24 +194,6 @@ namespace
 
         std::mutex mutex;
         std::unordered_map<Key, PoolPtr, Hasher> endpoints_pool;
-
-        void updateHostIfIpChanged(Entry & session, const String & new_ip)
-        {
-            const auto old_ip = session->getResolvedHost().empty() ? session->getHost() : session->getResolvedHost();
-
-            if (new_ip != old_ip)
-            {
-                session->reset();
-                if (session->getResolvedHost().empty())
-                {
-                    session->setHost(new_ip);
-                }
-                else
-                {
-                    session->setResolvedHost(new_ip);
-                }
-            }
-        }
 
     protected:
         HTTPSessionPool() = default;
@@ -257,7 +249,13 @@ namespace
 
                     if (resolve_host)
                     {
-                        updateHostIfIpChanged(session, DNSResolver::instance().resolveHost(host).toString());
+                        /// Host can change IP
+                        const auto ip = DNSResolver::instance().resolveHost(host).toString();
+                        if (ip != session->getHost())
+                        {
+                            session->reset();
+                            session->setHost(ip);
+                        }
                     }
                 }
                 /// Reset the message, once it has been printed,
@@ -273,7 +271,7 @@ namespace
     };
 }
 
-void setResponseDefaultHeaders(HTTPServerResponse & response, size_t keep_alive_timeout)
+void setResponseDefaultHeaders(HTTPServerResponse & response, unsigned keep_alive_timeout)
 {
     if (!response.getKeepAlive())
         return;
@@ -325,30 +323,15 @@ void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPR
         || status == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT /// Reading with Range header was successful.
         || (isRedirect(status) && allow_redirects)))
     {
-        int code = status == Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS
-            ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
-            : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+        std::stringstream error_message;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        error_message.exceptions(std::ios::failbit);
+        error_message << "Received error from remote server " << request.getURI() << ". HTTP status code: " << status << " "
+                      << response.getReason() << ", body: " << istr.rdbuf();
 
-        std::stringstream body; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        body.exceptions(std::ios::failbit);
-        body << istr.rdbuf();
-
-        throw HTTPException(code, request.getURI(), status, response.getReason(), body.str());
+        throw Exception(error_message.str(),
+            status == HTTP_TOO_MANY_REQUESTS ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
+                                             : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
     }
-}
-
-Exception HTTPException::makeExceptionMessage(
-    int code,
-    const std::string & uri,
-    Poco::Net::HTTPResponse::HTTPStatus http_status,
-    const std::string & reason,
-    const std::string & body)
-{
-    return Exception(code,
-        "Received error from remote server {}. "
-        "HTTP status code: {} {}, "
-        "body: {}",
-        uri, static_cast<int>(http_status), reason, body);
 }
 
 }

@@ -42,7 +42,7 @@ void IndexOfBlockForNativeFormat::write(WriteBuffer & ostr) const
 IndexOfBlockForNativeFormat IndexOfBlockForNativeFormat::extractIndexForColumns(const NameSet & required_columns) const
 {
     if (num_columns < required_columns.size())
-        throw Exception(ErrorCodes::INCORRECT_INDEX, "Index contain less than required columns");
+        throw Exception("Index contain less than required columns", ErrorCodes::INCORRECT_INDEX);
 
     IndexOfBlockForNativeFormat res;
     for (size_t i = 0; i < num_columns; ++i)
@@ -53,9 +53,9 @@ IndexOfBlockForNativeFormat IndexOfBlockForNativeFormat::extractIndexForColumns(
     }
 
     if (res.columns.size() < required_columns.size())
-        throw Exception(ErrorCodes::INCORRECT_INDEX, "Index contain less than required columns");
+        throw Exception("Index contain less than required columns", ErrorCodes::INCORRECT_INDEX);
     if (res.columns.size() > required_columns.size())
-        throw Exception(ErrorCodes::INCORRECT_INDEX, "Index contain duplicate columns");
+        throw Exception("Index contain duplicate columns", ErrorCodes::INCORRECT_INDEX);
 
     res.num_columns = res.columns.size();
     res.num_rows = num_rows;

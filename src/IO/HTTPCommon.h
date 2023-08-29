@@ -17,45 +17,28 @@
 namespace DB
 {
 
+constexpr int HTTP_TOO_MANY_REQUESTS = 429;
+
 class HTTPServerResponse;
 
-class HTTPException : public Exception
+class SingleEndpointHTTPSessionPool : public PoolBase<Poco::Net::HTTPClientSession>
 {
-public:
-    HTTPException(
-        int code,
-        const std::string & uri,
-        Poco::Net::HTTPResponse::HTTPStatus http_status_,
-        const std::string & reason,
-        const std::string & body
-    )
-        : Exception(makeExceptionMessage(code, uri, http_status_, reason, body))
-        , http_status(http_status_)
-    {}
-
-    HTTPException * clone() const override { return new HTTPException(*this); }
-    void rethrow() const override { throw *this; }
-
-    int getHTTPStatus() const { return http_status; }
-
 private:
-    Poco::Net::HTTPResponse::HTTPStatus http_status{};
+    const std::string host;
+    const UInt16 port;
+    const bool https;
+    using Base = PoolBase<Poco::Net::HTTPClientSession>;
 
-    static Exception makeExceptionMessage(
-        int code,
-        const std::string & uri,
-        Poco::Net::HTTPResponse::HTTPStatus http_status,
-        const std::string & reason,
-        const std::string & body);
+    ObjectPtr allocObject() override;
 
-    const char * name() const noexcept override { return "DB::HTTPException"; }
-    const char * className() const noexcept override { return "DB::HTTPException"; }
+public:
+    SingleEndpointHTTPSessionPool(const std::string & host_, UInt16 port_, bool https_, size_t max_pool_size_);
 };
 
-using PooledHTTPSessionPtr = PoolBase<Poco::Net::HTTPClientSession>::Entry; // SingleEndpointHTTPSessionPool::Entry
+using PooledHTTPSessionPtr = SingleEndpointHTTPSessionPool::Entry;
 using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 
-void setResponseDefaultHeaders(HTTPServerResponse & response, size_t keep_alive_timeout);
+void setResponseDefaultHeaders(HTTPServerResponse & response, unsigned keep_alive_timeout);
 
 /// Create session object to perform requests and set required parameters.
 HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, bool resolve_host = true);

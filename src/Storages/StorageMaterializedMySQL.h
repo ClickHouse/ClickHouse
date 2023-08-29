@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 
@@ -24,15 +24,10 @@ public:
     bool needRewriteQueryWithFinal(const Names & column_names) const override;
 
     void read(
-        QueryPlan & query_plan,
-        const Names & column_names,
-        const StorageSnapshotPtr & metadata_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size, size_t num_streams) override;
+        QueryPlan & query_plan, const Names & column_names, const StorageSnapshotPtr & metadata_snapshot, SelectQueryInfo & query_info,
+        ContextPtr context, QueryProcessingStage::Enum processed_stage, size_t max_block_size, unsigned num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, bool) override { throwNotAllowed(); }
+    SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr) override { throwNotAllowed(); }
 
     NamesAndTypesList getVirtuals() const override;
     ColumnSizeByName getColumnSizes() const override;
@@ -44,7 +39,7 @@ public:
 private:
     [[noreturn]] static void throwNotAllowed()
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This method is not allowed for MaterializedMySQL");
+        throw Exception("This method is not allowed for MaterializedMySQL", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     StoragePtr nested_storage;

@@ -72,16 +72,16 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
 {
     const auto * index_definition = definition_ast->as<ASTIndexDeclaration>();
     if (!index_definition)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create skip index from non ASTIndexDeclaration AST");
+        throw Exception("Cannot create skip index from non ASTIndexDeclaration AST", ErrorCodes::LOGICAL_ERROR);
 
     if (index_definition->name.empty())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index must have name in definition.");
+        throw Exception("Skip index must have name in definition.", ErrorCodes::INCORRECT_QUERY);
 
     if (!index_definition->type)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "TYPE is required for index");
+        throw Exception("TYPE is required for index", ErrorCodes::INCORRECT_QUERY);
 
     if (index_definition->type->parameters && !index_definition->type->parameters->children.empty())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Index type cannot have parameters");
+        throw Exception("Index type cannot have parameters", ErrorCodes::INCORRECT_QUERY);
 
     IndexDescription result;
     result.definition_ast = index_definition->clone();
@@ -94,15 +94,14 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
 
     auto syntax = TreeRewriter(context).analyze(expr_list, columns.getAllPhysical());
     result.expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
-    result.sample_block = result.expression->getSampleBlock();
+    Block block_without_columns = result.expression->getSampleBlock();
 
-    for (auto & elem : result.sample_block)
+    for (size_t i = 0; i < block_without_columns.columns(); ++i)
     {
-        if (!elem.column)
-            elem.column = elem.type->createColumn();
-
-        result.column_names.push_back(elem.name);
-        result.data_types.push_back(elem.type);
+        const auto & column = block_without_columns.getByPosition(i);
+        result.column_names.emplace_back(column.name);
+        result.data_types.emplace_back(column.type);
+        result.sample_block.insert(ColumnWithTypeAndName(column.type->createColumn(), column.type, column.name));
     }
 
     const auto & definition_arguments = index_definition->type->arguments;
@@ -112,7 +111,7 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
         {
             const auto * argument = definition_arguments->children[i]->as<ASTLiteral>();
             if (!argument)
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only literals can be skip index arguments");
+                throw Exception("Only literals can be skip index arguments", ErrorCodes::INCORRECT_QUERY);
             result.arguments.emplace_back(argument->value);
         }
     }

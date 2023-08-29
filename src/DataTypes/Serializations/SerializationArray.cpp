@@ -1,5 +1,4 @@
 #include <DataTypes/Serializations/SerializationArray.h>
-#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeArray.h>
@@ -28,38 +27,30 @@ static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
 static constexpr size_t MAX_ARRAYS_SIZE = 1ULL << 40;
 
 
-void SerializationArray::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationArray::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    const Array & a = field.get<const Array &>();
+    const Array & a = get<const Array &>(field);
     writeVarUInt(a.size(), ostr);
-    for (const auto & i : a)
+    for (size_t i = 0; i < a.size(); ++i)
     {
-        nested->serializeBinary(i, ostr, settings);
+        nested->serializeBinary(a[i], ostr);
     }
 }
 
 
-void SerializationArray::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationArray::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
     size_t size;
     readVarUInt(size, istr);
-    if (settings.max_binary_array_size && size > settings.max_binary_array_size)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-            "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
-            "format_binary_max_array_size",
-            size,
-            settings.max_binary_array_size);
-
     field = Array();
-    Array & arr = field.get<Array &>();
+    Array & arr = get<Array &>(field);
     arr.reserve(size);
     for (size_t i = 0; i < size; ++i)
-        nested->deserializeBinary(arr.emplace_back(), istr, settings);
+        nested->deserializeBinary(arr.emplace_back(), istr);
 }
 
 
-void SerializationArray::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationArray::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
     const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
@@ -72,24 +63,17 @@ void SerializationArray::serializeBinary(const IColumn & column, size_t row_num,
 
     const IColumn & nested_column = column_array.getData();
     for (size_t i = offset; i < next_offset; ++i)
-        nested->serializeBinary(nested_column, i, ostr, settings);
+        nested->serializeBinary(nested_column, i, ostr);
 }
 
 
-void SerializationArray::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationArray::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
     ColumnArray & column_array = assert_cast<ColumnArray &>(column);
     ColumnArray::Offsets & offsets = column_array.getOffsets();
 
     size_t size;
     readVarUInt(size, istr);
-    if (settings.max_binary_array_size && size > settings.max_binary_array_size)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-            "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
-            "format_binary_max_array_size",
-            size,
-            settings.max_binary_array_size);
 
     IColumn & nested_column = column_array.getData();
 
@@ -97,7 +81,7 @@ void SerializationArray::deserializeBinary(IColumn & column, ReadBuffer & istr, 
     try
     {
         for (; i < size; ++i)
-            nested->deserializeBinary(nested_column, istr, settings);
+            nested->deserializeBinary(nested_column, istr);
     }
     catch (...)
     {
@@ -181,30 +165,30 @@ namespace
 
         return column_offsets;
     }
+}
 
-    ColumnPtr arrayOffsetsToSizes(const IColumn & column)
-    {
-        const auto & column_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(column);
-        MutableColumnPtr column_sizes = column_offsets.cloneEmpty();
+ColumnPtr arrayOffsetsToSizes(const IColumn & column)
+{
+    const auto & column_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(column);
+    MutableColumnPtr column_sizes = column_offsets.cloneEmpty();
 
-        if (column_offsets.empty())
-            return column_sizes;
-
-        const auto & offsets_data = column_offsets.getData();
-        auto & sizes_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_sizes).getData();
-
-        sizes_data.resize(offsets_data.size());
-
-        IColumn::Offset prev_offset = 0;
-        for (size_t i = 0, size = offsets_data.size(); i < size; ++i)
-        {
-            auto current_offset = offsets_data[i];
-            sizes_data[i] = current_offset - prev_offset;
-            prev_offset = current_offset;
-        }
-
+    if (column_offsets.empty())
         return column_sizes;
+
+    const auto & offsets_data = column_offsets.getData();
+    auto & sizes_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_sizes).getData();
+
+    sizes_data.resize(offsets_data.size());
+
+    IColumn::Offset prev_offset = 0;
+    for (size_t i = 0, size = offsets_data.size(); i < size; ++i)
+    {
+        auto current_offset = offsets_data[i];
+        sizes_data[i] = current_offset - prev_offset;
+        prev_offset =  current_offset;
     }
+
+    return column_sizes;
 }
 
 DataTypePtr SerializationArray::SubcolumnCreator::create(const DataTypePtr & prev) const
@@ -223,52 +207,49 @@ ColumnPtr SerializationArray::SubcolumnCreator::create(const ColumnPtr & prev) c
 }
 
 void SerializationArray::enumerateStreams(
-    EnumerateStreamsSettings & settings,
+    SubstreamPath & path,
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
     const auto * type_array = data.type ? &assert_cast<const DataTypeArray &>(*data.type) : nullptr;
     const auto * column_array = data.column ? &assert_cast<const ColumnArray &>(*data.column) : nullptr;
-    auto offsets = column_array ? column_array->getOffsetsPtr() : nullptr;
+    auto offsets_column = column_array ? column_array->getOffsetsPtr() : nullptr;
 
-    auto offsets_serialization =
+    path.push_back(Substream::ArraySizes);
+    path.back().data =
+    {
         std::make_shared<SerializationNamed>(
             std::make_shared<SerializationNumber<UInt64>>(),
-                "size" + std::to_string(getArrayLevel(settings.path)), false);
+                "size" + std::to_string(getArrayLevel(path)), false),
+        data.type ? std::make_shared<DataTypeUInt64>() : nullptr,
+        offsets_column ? arrayOffsetsToSizes(*offsets_column) : nullptr,
+        data.serialization_info,
+    };
 
-    auto offsets_column = offsets && !settings.position_independent_encoding
-        ? arrayOffsetsToSizes(*offsets)
-        : offsets;
+    callback(path);
 
-    settings.path.push_back(Substream::ArraySizes);
-    settings.path.back().data = SubstreamData(offsets_serialization)
-        .withType(type_array ? std::make_shared<DataTypeUInt64>() : nullptr)
-        .withColumn(std::move(offsets_column))
-        .withSerializationInfo(data.serialization_info);
+    path.back() = Substream::ArrayElements;
+    path.back().data = data;
+    path.back().creator = std::make_shared<SubcolumnCreator>(offsets_column);
 
-    callback(settings.path);
+    SubstreamData next_data =
+    {
+        nested,
+        type_array ? type_array->getNestedType() : nullptr,
+        column_array ? column_array->getDataPtr() : nullptr,
+        data.serialization_info,
+    };
 
-    settings.path.back() = Substream::ArrayElements;
-    settings.path.back().data = data;
-    settings.path.back().creator = std::make_shared<SubcolumnCreator>(offsets);
-
-    auto next_data = SubstreamData(nested)
-        .withType(type_array ? type_array->getNestedType() : nullptr)
-        .withColumn(column_array ? column_array->getDataPtr() : nullptr)
-        .withSerializationInfo(data.serialization_info);
-
-    nested->enumerateStreams(settings, callback, next_data);
-    settings.path.pop_back();
+    nested->enumerateStreams(path, callback, next_data);
+    path.pop_back();
 }
 
 void SerializationArray::serializeBinaryBulkStatePrefix(
-    const IColumn & column,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::ArrayElements);
-    const auto & column_array = assert_cast<const ColumnArray &>(column);
-    nested->serializeBinaryBulkStatePrefix(column_array.getData(), settings, state);
+    nested->serializeBinaryBulkStatePrefix(settings, state);
     settings.path.pop_back();
 }
 
@@ -373,7 +354,7 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     /// Number of values corresponding with `offset_values` must be read.
     size_t last_offset = offset_values.back();
     if (last_offset < nested_column->size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Nested column is longer than last offset");
+        throw Exception("Nested column is longer than last offset", ErrorCodes::LOGICAL_ERROR);
     size_t nested_limit = last_offset - nested_column->size();
 
     if (unlikely(nested_limit > MAX_ARRAYS_SIZE))
@@ -389,8 +370,8 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     /// Check consistency between offsets and elements subcolumns.
     /// But if elements column is empty - it's ok for columns of Nested types that was added by ALTER.
     if (!nested_column->empty() && nested_column->size() != last_offset)
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all array values: read just {} of {}",
-            toString(nested_column->size()), toString(last_offset));
+        throw ParsingException("Cannot read all array values: read just " + toString(nested_column->size()) + " of " + toString(last_offset),
+            ErrorCodes::CANNOT_READ_ALL_DATA);
 
     column = std::move(mutable_column);
 }
@@ -520,45 +501,13 @@ void SerializationArray::serializeTextJSON(const IColumn & column, size_t row_nu
     writeChar(']', ostr);
 }
 
-void SerializationArray::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
-{
-    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
-    const ColumnArray::Offsets & offsets = column_array.getOffsets();
-
-    size_t offset = offsets[row_num - 1];
-    size_t next_offset = offsets[row_num];
-
-    const IColumn & nested_column = column_array.getData();
-
-    if (offset == next_offset)
-    {
-        writeCString("[]", ostr);
-        return;
-    }
-
-    writeCString("[\n", ostr);
-    for (size_t i = offset; i < next_offset; ++i)
-    {
-        if (i != offset)
-            writeCString(",\n", ostr);
-        writeChar(' ', (indent + 1) * 4, ostr);
-        nested->serializeTextJSONPretty(nested_column, i, ostr, settings, indent + 1);
-    }
-    writeChar('\n', ostr);
-    writeChar(' ', indent * 4, ostr);
-    writeChar(']', ostr);
-}
-
 
 void SerializationArray::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeTextImpl(column, istr,
         [&](IColumn & nested_column)
         {
-            if (settings.null_as_default)
-                SerializationNullable::deserializeTextJSONImpl(nested_column, istr, settings, nested);
-            else
-                nested->deserializeTextJSON(nested_column, istr, settings);
+            nested->deserializeTextJSON(nested_column, istr, settings);
         }, false);
 }
 

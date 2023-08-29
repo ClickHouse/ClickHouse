@@ -132,7 +132,6 @@ QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & bl
     ShellCommandSourceConfiguration command_configuration;
     command_configuration.read_fixed_number_of_rows = true;
     command_configuration.number_of_rows_to_read = block.rows();
-    command_configuration.check_exit_code = true;
 
     Pipes shell_input_pipes;
     shell_input_pipes.emplace_back(std::move(shell_input_pipe));
@@ -194,9 +193,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
         /// It's OK for dictionaries created by administrator from xml-file, but
         /// maybe dangerous for dictionaries created from DDL-queries.
         if (created_from_ddl && global_context->getApplicationType() != Context::ApplicationType::LOCAL)
-            throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED,
-                            "Dictionaries with executable pool dictionary source are not allowed "
-                            "to be created from DDL query");
+            throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED, "Dictionaries with executable pool dictionary source are not allowed to be created from DDL query");
 
         ContextMutablePtr context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
 

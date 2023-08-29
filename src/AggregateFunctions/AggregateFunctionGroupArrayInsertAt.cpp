@@ -22,7 +22,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArrayInsertAt(
     assertBinary(name, argument_types);
 
     if (argument_types.size() != 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function groupArrayInsertAt requires two arguments.");
+        throw Exception("Aggregate function groupArrayInsertAt requires two arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     return std::make_shared<AggregateFunctionGroupArrayInsertAtGeneric>(argument_types, parameters);
 }

@@ -1,6 +1,5 @@
 #include "TaskStatsInfoGetter.h"
 #include <Common/Exception.h>
-#include <base/defines.h>
 #include <base/types.h>
 
 #include <unistd.h>
@@ -9,8 +8,6 @@
 
 #include "hasLinuxCapability.h"
 #include <base/unaligned.h>
-#include <base/getThreadId.h>
-#include <Common/logger_useful.h>
 
 #include <cerrno>
 #include <cstdio>
@@ -121,7 +118,7 @@ struct NetlinkMessage
             }
 
             if (bytes_sent > request_size)
-                throw Exception(ErrorCodes::NETLINK_ERROR, "Wrong result of sendto system call: bytes_sent is greater than request size");
+                throw Exception("Wrong result of sendto system call: bytes_sent is greater than request size", ErrorCodes::NETLINK_ERROR);
 
             if (bytes_sent == request_size)
                 break;
@@ -136,10 +133,10 @@ struct NetlinkMessage
         ssize_t bytes_received = ::recv(fd, this, sizeof(*this), 0);
 
         if (header.nlmsg_type == NLMSG_ERROR)
-            throw Exception(ErrorCodes::NETLINK_ERROR, "Can't receive Netlink response: error {}", std::to_string(error.error));
+            throw Exception("Can't receive Netlink response: error " + std::to_string(error.error), ErrorCodes::NETLINK_ERROR);
 
         if (!is_nlmsg_ok(&header, bytes_received))
-            throw Exception(ErrorCodes::NETLINK_ERROR, "Can't receive Netlink response: wrong number of bytes received");
+            throw Exception("Can't receive Netlink response: wrong number of bytes received", ErrorCodes::NETLINK_ERROR);
     }
 };
 
@@ -188,7 +185,7 @@ UInt16 getFamilyIdImpl(int fd)
     const NetlinkMessage::Attribute * attr = answer.payload.attribute.next();
 
     if (attr->header.nla_type != CTRL_ATTR_FAMILY_ID)
-        throw Exception(ErrorCodes::NETLINK_ERROR, "Received wrong attribute as an answer to GET_FAMILY Netlink command");
+        throw Exception("Received wrong attribute as an answer to GET_FAMILY Netlink command", ErrorCodes::NETLINK_ERROR);
 
     return unalignedLoad<UInt16>(attr->payload);
 }
@@ -203,26 +200,10 @@ bool checkPermissionsImpl()
     /// Check that we can successfully initialize TaskStatsInfoGetter.
     /// It will ask about family id through Netlink.
     /// On some LXC containers we have capability but we still cannot use Netlink.
-    /// There is an evidence that Linux fedora-riscv 6.1.22 gives something strange instead of the expected result.
 
     try
     {
-        ::taskstats stats{};
-        TaskStatsInfoGetter().getStat(stats, static_cast<pid_t>(getThreadId()));
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::NETLINK_ERROR)
-        {
-            /// This error happens all the time when running inside Docker - consider it ok,
-            /// don't create noise with this error.
-            LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
-        }
-        else
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-        return false;
+        TaskStatsInfoGetter();
     }
     catch (...)
     {
@@ -284,10 +265,7 @@ TaskStatsInfoGetter::TaskStatsInfoGetter()
     catch (...)
     {
         if (netlink_socket_fd >= 0)
-        {
-            int err = close(netlink_socket_fd);
-            chassert(!err || errno == EINTR);
-        }
+            close(netlink_socket_fd);
         throw;
     }
 }
@@ -299,32 +277,29 @@ void TaskStatsInfoGetter::getStat(::taskstats & out_stats, pid_t tid) const
 
     const NetlinkMessage::Attribute * attr = &answer.payload.attribute;
     if (attr->header.nla_type != TASKSTATS_TYPE_AGGR_PID)
-        throw Exception(ErrorCodes::NETLINK_ERROR, "Expected TASKSTATS_TYPE_AGGR_PID");
+        throw Exception("Expected TASKSTATS_TYPE_AGGR_PID", ErrorCodes::NETLINK_ERROR);
 
     /// TASKSTATS_TYPE_AGGR_PID
     const NetlinkMessage::Attribute * nested_attr = reinterpret_cast<const NetlinkMessage::Attribute *>(attr->payload);
     if (nested_attr->header.nla_type != TASKSTATS_TYPE_PID)
-        throw Exception(ErrorCodes::NETLINK_ERROR, "Expected TASKSTATS_TYPE_PID");
+        throw Exception("Expected TASKSTATS_TYPE_PID", ErrorCodes::NETLINK_ERROR);
     if (nested_attr == nested_attr->next())
-        throw Exception(ErrorCodes::NETLINK_ERROR, "No TASKSTATS_TYPE_STATS packet after TASKSTATS_TYPE_PID");
+        throw Exception("No TASKSTATS_TYPE_STATS packet after TASKSTATS_TYPE_PID", ErrorCodes::NETLINK_ERROR);
     nested_attr = nested_attr->next();
     if (nested_attr->header.nla_type != TASKSTATS_TYPE_STATS)
-        throw Exception(ErrorCodes::NETLINK_ERROR, "Expected TASKSTATS_TYPE_STATS");
+        throw Exception("Expected TASKSTATS_TYPE_STATS", ErrorCodes::NETLINK_ERROR);
 
     out_stats = unalignedLoad<::taskstats>(nested_attr->payload);
 
     if (attr->next() != answer.end())
-        throw Exception(ErrorCodes::NETLINK_ERROR, "Unexpected end of response");
+        throw Exception("Unexpected end of response", ErrorCodes::NETLINK_ERROR);
 }
 
 
 TaskStatsInfoGetter::~TaskStatsInfoGetter()
 {
     if (netlink_socket_fd >= 0)
-    {
-        int err = close(netlink_socket_fd);
-        chassert(!err || errno == EINTR);
-    }
+        close(netlink_socket_fd);
 }
 
 }

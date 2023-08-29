@@ -19,7 +19,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeTuple.h>
 
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -38,8 +37,35 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
-    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+
+template <typename T>
+ColumnPtr getOffsetsPtr(const T & column)
+{
+    if constexpr (std::is_same_v<T, ColumnArray>)
+    {
+        return column.getOffsetsPtr();
+    }
+    else // ColumnMap
+    {
+        return column.getNestedColumn().getOffsetsPtr();
+    }
+}
+
+template <typename T>
+const IColumn::Offsets & getOffsets(const T & column)
+{
+    if constexpr (std::is_same_v<T, ColumnArray>)
+    {
+        return column.getOffsets();
+    }
+    else // ColumnMap
+    {
+        return column.getNestedColumn().getOffsets();
+    }
 }
 
 /** Higher-order functions for arrays.
@@ -49,10 +75,6 @@ namespace ErrorCodes
   * Examples:
   * arrayMap(x1,...,xn -> expression, array1,...,arrayn) - apply the expression to each element of the array (or set of parallel arrays).
   * arrayFilter(x -> predicate, array) - leave in the array only the elements for which the expression is true.
-  *
-  * It is possible for the functions to require fixed number of positional arguments:
-  * arrayPartialSort(limit, arr)
-  * arrayPartialSort(x -> predicate, limit, arr)
   *
   * For some functions arrayCount, arrayExists, arrayAll, an overload of the form f(array) is available,
   *  which works in the same way as f(x -> x, array).
@@ -64,11 +86,12 @@ class FunctionArrayMapped : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static constexpr size_t num_fixed_params = []{ if constexpr (requires { Impl::num_fixed_params; }) return Impl::num_fixed_params; else return 0; }();
-
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayMapped>(); }
 
-    String getName() const override { return name; }
+    String getName() const override
+    {
+        return name;
+    }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -79,147 +102,84 @@ public:
     void getLambdaArgumentTypes(DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} needs at least one argument, passed {}",
-                getName(),
-                arguments.size());
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Function {} needs at least one argument, passed {}", getName(), arguments.size());
 
-        if (arguments.size() <= 1 + num_fixed_params)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} needs at least {} argument{} with data",
-                getName(),
-                num_fixed_params + 1,
-                (num_fixed_params + 1 == 1) ? "" : "s");
+        if (arguments.size() == 1)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Function {} needs at least one argument with data", getName());
 
-        if (arguments.size() > 2 + num_fixed_params && Impl::needOneArray())
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} needs {} argument{} with data",
-                getName(),
-                num_fixed_params + 1,
-                (num_fixed_params + 1 == 1) ? "" : "s");
+        if (arguments.size() > 2 && Impl::needOneArray())
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Function {} needs one argument with data", getName());
 
-        bool is_single_array_argument = arguments.size() == num_fixed_params + 2;
-        size_t tuple_argument_size = 0;
-
-        size_t num_nested_types = arguments.size() - num_fixed_params - 1;
-        DataTypes nested_types(num_nested_types);
-
-        for (size_t i = 0; i < num_nested_types; ++i)
+        size_t nested_types_count = std::is_same_v<typename Impl::data_type, DataTypeMap> ? (arguments.size() - 1) * 2 : (arguments.size() - 1);
+        DataTypes nested_types(nested_types_count);
+        for (size_t i = 0; i < arguments.size() - 1; ++i)
         {
-            const auto * array_type = checkAndGetDataType<DataTypeArray>(&*arguments[i + 1 + num_fixed_params]);
+            const auto * array_type = checkAndGetDataType<typename Impl::data_type>(&*arguments[i + 1]);
             if (!array_type)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument {} of function {} must be Array. Found {} instead",
-                    i + 2 + num_fixed_params,
-                    getName(),
-                    arguments[i + 1 + num_fixed_params]->getName());
-
-            if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(array_type->getNestedType().get()))
-                tuple_argument_size = tuple_type->getElements().size();
-
-            nested_types[i] = recursiveRemoveLowCardinality(array_type->getNestedType());
+                throw Exception("Argument " + toString(i + 2) + " of function " + getName() + " must be array. Found "
+                                + arguments[i + 1]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            if constexpr (std::is_same_v<typename Impl::data_type, DataTypeMap>)
+            {
+                nested_types[2 * i] = recursiveRemoveLowCardinality(array_type->getKeyType());
+                nested_types[2 * i + 1] = recursiveRemoveLowCardinality(array_type->getValueType());
+            }
+            else if constexpr (std::is_same_v<typename Impl::data_type, DataTypeArray>)
+            {
+                nested_types[i] = recursiveRemoveLowCardinality(array_type->getNestedType());
+            }
         }
 
-        const auto * function_type = checkAndGetDataType<DataTypeFunction>(arguments[0].get());
-        if (!function_type)
+        const DataTypeFunction * function_type = checkAndGetDataType<DataTypeFunction>(arguments[0].get());
+        if (!function_type || function_type->getArgumentTypes().size() != nested_types.size())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for this overload of {} must be a function with {} arguments, found {} instead",
-                getName(),
-                nested_types.size(),
-                arguments[0]->getName());
-
-        size_t num_function_arguments = function_type->getArgumentTypes().size();
-        if (is_single_array_argument
-            && tuple_argument_size > 1
-            && tuple_argument_size == num_function_arguments)
-        {
-            assert(nested_types.size() == 1);
-
-            auto argument_type = nested_types[0];
-            const auto & tuple_type = assert_cast<const DataTypeTuple &>(*argument_type);
-
-            nested_types.clear();
-            nested_types.reserve(tuple_argument_size);
-
-            for (const auto & element : tuple_type.getElements())
-                nested_types.push_back(element);
-        }
-
-        if (num_function_arguments != nested_types.size())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for this overload of {} must be a function with {} arguments, found {} instead",
-                getName(),
-                nested_types.size(),
-                arguments[0]->getName());
+                getName(), nested_types.size(), arguments[0]->getName());
 
         arguments[0] = std::make_shared<DataTypeFunction>(nested_types);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        size_t min_args = (Impl::needExpression() ? 2 : 1) + num_fixed_params ;
+        size_t min_args = Impl::needExpression() ? 2 : 1;
         if (arguments.size() < min_args)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} needs at least {} argument{}, passed {}",
-                getName(),
-                min_args,
-                (min_args > 1 ? "s" : ""),
-                arguments.size());
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Function {} needs at least {} argument, passed {}",
+                            getName(), min_args, arguments.size());
 
-        if (arguments.size() == 1 + num_fixed_params)
+        if ((arguments.size() == 1) && std::is_same_v<typename Impl::data_type, DataTypeArray>)
         {
-            const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[num_fixed_params].type.get());
+            const auto * data_type = checkAndGetDataType<typename Impl::data_type>(arguments[0].type.get());
 
-            if (!array_type)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The {}{}{} argument for function {} must be array. Found {} instead",
-                    num_fixed_params + 1,
-                    getOrdinalSuffix(num_fixed_params + 1),
-                    (num_fixed_params == 0 ? " and only" : ""),
-                    getName(),
-                    arguments[num_fixed_params].type->getName());
+            if (!data_type)
+                throw Exception("The only argument for function " + getName() + " must be array. Found "
+                                + arguments[0].type->getName() + " instead", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            if constexpr (num_fixed_params)
-                Impl::checkArguments(getName(), arguments.data());
-
-            DataTypePtr nested_type = array_type->getNestedType();
+            DataTypePtr nested_type = data_type->getNestedType();
 
             if (Impl::needBoolean() && !isUInt8(nested_type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The {}{}{} argument for function {} must be array of UInt8. Found {} instead",
-                    num_fixed_params + 1,
-                    getOrdinalSuffix(num_fixed_params + 1),
-                    (num_fixed_params == 0 ? " and only" : ""),
-                    getName(),
-                    arguments[num_fixed_params].type->getName());
+                throw Exception("The only argument for function " + getName() + " must be array of UInt8. Found "
+                                + arguments[0].type->getName() + " instead", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            return Impl::getReturnType(nested_type, nested_type);
+            if constexpr (std::is_same_v<typename Impl::data_type, DataTypeArray>)
+                return Impl::getReturnType(nested_type, nested_type);
+            else
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unreachable code reached");
         }
         else
         {
-            if (arguments.size() > 2 + num_fixed_params && Impl::needOneArray())
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs one argument with data", getName());
+            if (arguments.size() > 2 && Impl::needOneArray())
+                throw Exception("Function " + getName() + " needs one argument with data",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
             const auto * data_type_function = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
 
             if (!data_type_function)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be a function. Actual {}",
-                    getName(),
-                    arguments[0].type->getName());
-
-            if constexpr (num_fixed_params)
-                Impl::checkArguments(getName(), arguments.data() + 1);
+                throw Exception("First argument for function " + getName() + " must be a function",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
 
@@ -231,145 +191,138 @@ public:
             ///  - lambda may return Nothing or Nullable(Nothing) because of default implementation of functions
             ///    for these types. In this case we will just create UInt8 const column full of 0.
             if (Impl::needBoolean() && !isUInt8(removeNullable(return_type)) && !isNothing(removeNullable(return_type)))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Expression for function {} must return UInt8 or Nullable(UInt8), found {}",
-                    getName(),
-                    return_type->getName());
+                throw Exception("Expression for function " + getName() + " must return UInt8 or Nullable(UInt8), found "
+                                + return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            if (arguments.size() < 2 + num_fixed_params)
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect number of arguments: {}", arguments.size());
+            static_assert(
+                std::is_same_v<typename Impl::data_type, DataTypeMap> ||
+                std::is_same_v<typename Impl::data_type, DataTypeArray>,
+                "unsupported type");
 
-            const auto * first_array_type = checkAndGetDataType<DataTypeArray>(arguments[1 + num_fixed_params].type.get());
+            if (arguments.size() < 2)
+            {
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "{}", arguments.size());
+            }
+
+            const auto * first_array_type = checkAndGetDataType<typename Impl::data_type>(arguments[1].type.get());
+
             if (!first_array_type)
-                throw DB::Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported type {}", arguments[1 + num_fixed_params].type->getName());
+                throw DB::Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported type {}", arguments[1].type->getName());
 
-            return Impl::getReturnType(return_type, first_array_type->getNestedType());
+            if constexpr (std::is_same_v<typename Impl::data_type, DataTypeArray>)
+                return Impl::getReturnType(return_type, first_array_type->getNestedType());
+
+            if constexpr (std::is_same_v<typename Impl::data_type, DataTypeMap>)
+                return Impl::getReturnType(return_type, first_array_type->getKeyValueTypes());
+
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unreachable code reached");
         }
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        if (arguments.size() == 1 + num_fixed_params)
+        if (arguments.size() == 1)
         {
-            ColumnPtr column_array_ptr = arguments[num_fixed_params].column;
-            const auto * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
+            ColumnPtr column_array_ptr = arguments[0].column;
+            const auto * column_array = checkAndGetColumn<typename Impl::column_type>(column_array_ptr.get());
 
             if (!column_array)
             {
-                const auto * column_const_array = checkAndGetColumnConst<ColumnArray>(column_array_ptr.get());
+                const ColumnConst * column_const_array = checkAndGetColumnConst<typename Impl::column_type>(column_array_ptr.get());
                 if (!column_const_array)
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_COLUMN, "Expected Array column, found {}", column_array_ptr->getName());
-
+                    throw Exception("Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
                 column_array_ptr = column_const_array->convertToFullColumn();
-                column_array = assert_cast<const ColumnArray *>(column_array_ptr.get());
+                column_array = assert_cast<const typename Impl::column_type *>(column_array_ptr.get());
             }
 
-            if constexpr (num_fixed_params)
-                return Impl::execute(
-                    *column_array,
-                    column_array->getDataPtr(),
-                    arguments.data());
+            if constexpr (std::is_same_v<typename Impl::column_type, ColumnMap>)
+            {
+                return Impl::execute(*column_array, column_array->getNestedColumn().getDataPtr());
+            }
             else
+            {
                 return Impl::execute(*column_array, column_array->getDataPtr());
+            }
         }
         else
         {
             const auto & column_with_type_and_name = arguments[0];
 
             if (!column_with_type_and_name.column)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a function.", getName());
+                throw Exception("First argument for function " + getName() + " must be a function.",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             const auto * column_function = typeid_cast<const ColumnFunction *>(column_with_type_and_name.column.get());
-            if (!column_function)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a function.", getName());
 
-            const auto & type_function = assert_cast<const DataTypeFunction &>(*arguments[0].type);
-            size_t num_function_arguments = type_function.getArgumentTypes().size();
+            if (!column_function)
+                throw Exception("First argument for function " + getName() + " must be a function.",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             ColumnPtr offsets_column;
+
             ColumnPtr column_first_array_ptr;
-            const ColumnArray * column_first_array = nullptr;
+            const typename Impl::column_type * column_first_array = nullptr;
 
             ColumnsWithTypeAndName arrays;
-            arrays.reserve(arguments.size() - 1 - num_fixed_params);
+            arrays.reserve(arguments.size() - 1);
 
-            bool is_single_array_argument = arguments.size() == num_fixed_params + 2;
-            for (size_t i = 1 + num_fixed_params; i < arguments.size(); ++i)
+            for (size_t i = 1; i < arguments.size(); ++i)
             {
                 const auto & array_with_type_and_name = arguments[i];
 
-                auto column_array_ptr = array_with_type_and_name.column;
-                const auto * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
+                ColumnPtr column_array_ptr = array_with_type_and_name.column;
+                const auto * column_array = checkAndGetColumn<typename Impl::column_type>(column_array_ptr.get());
 
-                const auto & array_type_ptr = array_with_type_and_name.type;
-                const auto * array_type = checkAndGetDataType<DataTypeArray>(array_type_ptr.get());
+                const DataTypePtr & array_type_ptr = array_with_type_and_name.type;
+                const auto * array_type = checkAndGetDataType<typename Impl::data_type>(array_type_ptr.get());
 
                 if (!column_array)
                 {
-                    const auto * column_const_array = checkAndGetColumnConst<ColumnArray>(column_array_ptr.get());
+                    const ColumnConst * column_const_array = checkAndGetColumnConst<typename Impl::column_type>(column_array_ptr.get());
                     if (!column_const_array)
-                        throw Exception(
-                            ErrorCodes::ILLEGAL_COLUMN, "Expected Array column, found {}", column_array_ptr->getName());
-
+                        throw Exception("Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
                     column_array_ptr = recursiveRemoveLowCardinality(column_const_array->convertToFullColumn());
-                    column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
+                    column_array = checkAndGetColumn<typename Impl::column_type>(column_array_ptr.get());
                 }
 
                 if (!array_type)
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected Array type, found {}", array_type_ptr->getName());
+                    throw Exception("Expected array type, found " + array_type_ptr->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
                 if (!offsets_column)
                 {
-                    offsets_column = column_array->getOffsetsPtr();
+                    offsets_column = getOffsetsPtr(*column_array);
                 }
                 else
                 {
                     /// The first condition is optimization: do not compare data if the pointers are equal.
-                    if (column_array->getOffsetsPtr() != offsets_column
-                        && column_array->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData())
-                        throw Exception(
-                            ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                                "Arrays passed to {} must have equal size", getName());
+                    if (getOffsetsPtr(*column_array) != offsets_column
+                        && getOffsets(*column_array) != typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData())
+                        throw Exception("Arrays passed to " + getName() + " must have equal size", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
                 }
 
-                const auto * column_tuple = checkAndGetColumn<ColumnTuple>(&column_array->getData());
-                size_t tuple_size = column_tuple ? column_tuple->getColumns().size() : 0;
-
-                if (is_single_array_argument && tuple_size > 1 && tuple_size == num_function_arguments)
-                {
-                    const auto & type_tuple = assert_cast<const DataTypeTuple &>(*array_type->getNestedType());
-                    const auto & tuple_names = type_tuple.getElementNames();
-
-                    arrays.reserve(column_tuple->getColumns().size());
-                    for (size_t j = 0; j < tuple_size; ++j)
-                    {
-                        arrays.emplace_back(
-                            column_tuple->getColumnPtr(j),
-                            recursiveRemoveLowCardinality(type_tuple.getElement(j)),
-                            array_with_type_and_name.name + "." + tuple_names[j]);
-                    }
-                }
-                else
-                {
-                    arrays.emplace_back(
-                        column_array->getDataPtr(),
-                        recursiveRemoveLowCardinality(array_type->getNestedType()),
-                        array_with_type_and_name.name);
-                }
-
-                if (i == 1 + num_fixed_params)
+                if (i == 1)
                 {
                     column_first_array_ptr = column_array_ptr;
                     column_first_array = column_array;
                 }
+
+                if constexpr (std::is_same_v<DataTypeMap, typename Impl::data_type>)
+                {
+                    arrays.emplace_back(ColumnWithTypeAndName(
+                        column_array->getNestedData().getColumnPtr(0), recursiveRemoveLowCardinality(array_type->getKeyType()), array_with_type_and_name.name+".key"));
+                    arrays.emplace_back(ColumnWithTypeAndName(
+                        column_array->getNestedData().getColumnPtr(1), recursiveRemoveLowCardinality(array_type->getValueType()), array_with_type_and_name.name+".value"));
+                }
+                else
+                {
+                    arrays.emplace_back(ColumnWithTypeAndName(column_array->getDataPtr(),
+                                                            recursiveRemoveLowCardinality(array_type->getNestedType()),
+                                                            array_with_type_and_name.name));
+                }
             }
 
             /// Put all the necessary columns multiplied by the sizes of arrays into the columns.
-            auto replicated_column_function_ptr = IColumn::mutate(column_function->replicate(column_first_array->getOffsets()));
+            auto replicated_column_function_ptr = IColumn::mutate(column_function->replicate(getOffsets(*column_first_array)));
             auto * replicated_column_function = typeid_cast<ColumnFunction *>(replicated_column_function_ptr.get());
             replicated_column_function->appendArguments(arrays);
 
@@ -419,13 +372,7 @@ public:
                 }
             }
 
-            if constexpr (num_fixed_params)
-                return Impl::execute(
-                    *column_first_array,
-                    lambda_result.column,
-                    arguments.data() + 1);
-            else
-                return Impl::execute(*column_first_array, lambda_result.column);
+            return Impl::execute(*column_first_array, lambda_result.column);
         }
     }
 };

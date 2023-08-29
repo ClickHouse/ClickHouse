@@ -30,7 +30,7 @@ faster_queries = 0
 slower_queries = 0
 unstable_queries = 0
 very_unstable_queries = 0
-unstable_backward_incompatible_queries = 0
+unstable_partial_queries = 0
 
 # max seconds to run one query by itself, not counting preparation
 allowed_single_run_time = 2
@@ -378,13 +378,13 @@ if args.report == "main":
             ]
         )
 
-    def add_backward_incompatible():
+    def add_partial():
         rows = tsvRows("report/partial-queries-report.tsv")
         if not rows:
             return
 
-        global unstable_backward_incompatible_queries, slow_average_tests, tables
-        text = tableStart("Backward-incompatible queries")
+        global unstable_partial_queries, slow_average_tests, tables
+        text = tableStart("Partial Queries")
         columns = ["Median time, s", "Relative time variance", "Test", "#", "Query"]
         text += tableHeader(columns)
         attrs = ["" for c in columns]
@@ -392,7 +392,7 @@ if args.report == "main":
             anchor = f"{currentTableAnchor()}.{row[2]}.{row[3]}"
             if float(row[1]) > 0.10:
                 attrs[1] = f'style="background: {color_bad}"'
-                unstable_backward_incompatible_queries += 1
+                unstable_partial_queries += 1
                 errors_explained.append(
                     [
                         f"<a href=\"#{anchor}\">The query no. {row[3]} of test '{row[2]}' has excessive variance of run time. Keep it below 10%</a>"
@@ -414,7 +414,7 @@ if args.report == "main":
         text += tableEnd()
         tables.append(text)
 
-    add_backward_incompatible()
+    add_partial()
 
     def add_changes():
         rows = tsvRows("report/changed-perf.tsv")
@@ -626,14 +626,12 @@ if args.report == "main":
         message_array.append(str(faster_queries) + " faster")
 
     if slower_queries:
-        # This threshold should be synchronized with the value in https://github.com/ClickHouse/ClickHouse/blob/master/tests/ci/performance_comparison_check.py#L225
-        # False positives rate should be < 1%: https://shorturl.at/CDEK8
-        if slower_queries > 5:
+        if slower_queries > 3:
             status = "failure"
         message_array.append(str(slower_queries) + " slower")
 
-    if unstable_backward_incompatible_queries:
-        very_unstable_queries += unstable_backward_incompatible_queries
+    if unstable_partial_queries:
+        very_unstable_queries += unstable_partial_queries
         status = "failure"
 
     # Don't show mildly unstable queries, only the very unstable ones we
@@ -672,6 +670,7 @@ if args.report == "main":
     )
 
 elif args.report == "all-queries":
+
     print((header_template.format()))
 
     add_tested_commits()

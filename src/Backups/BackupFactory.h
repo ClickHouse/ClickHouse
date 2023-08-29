@@ -34,7 +34,6 @@ public:
         bool is_internal_backup = false;
         std::shared_ptr<IBackupCoordination> backup_coordination;
         std::optional<UUID> backup_uuid;
-        bool deduplicate_files = true;
     };
 
     static BackupFactory & instance();

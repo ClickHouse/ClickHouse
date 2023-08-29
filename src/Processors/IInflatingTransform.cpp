@@ -67,7 +67,7 @@ void IInflatingTransform::work()
     if (can_generate)
     {
         if (generated)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "IInflatingTransform cannot consume chunk because it already was generated");
+            throw Exception("IInflatingTransform cannot consume chunk because it already was generated", ErrorCodes::LOGICAL_ERROR);
 
         current_chunk = generate();
         generated = true;
@@ -76,7 +76,7 @@ void IInflatingTransform::work()
     else
     {
         if (!has_input)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "IInflatingTransform cannot consume chunk because it wasn't read");
+            throw Exception("IInflatingTransform cannot consume chunk because it wasn't read", ErrorCodes::LOGICAL_ERROR);
 
         consume(std::move(current_chunk));
         has_input = false;

@@ -80,6 +80,9 @@ extern const char empty_pod_array[empty_pod_array_size];
 /** Base class that depend only on size of element, not on element itself.
   * You can static_cast to this class if you want to insert some data regardless to the actual type T.
   */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnull-dereference"
+
 template <size_t ELEMENT_SIZE, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 class PODArrayBase : private boost::noncopyable, private TAllocator    /// empty base optimization
 {
@@ -107,7 +110,7 @@ protected:
     {
         size_t amount;
         if (__builtin_mul_overflow(num_elements, ELEMENT_SIZE, &amount))
-            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Amount of memory requested to allocate is more than allowed");
+            throw Exception("Amount of memory requested to allocate is more than allowed", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
         return amount;
     }
 
@@ -116,7 +119,7 @@ protected:
     {
         size_t amount;
         if (__builtin_add_overflow(byte_size(num_elements), pad_left + pad_right, &amount))
-            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Amount of memory requested to allocate is more than allowed");
+            throw Exception("Amount of memory requested to allocate is more than allowed", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
         return amount;
     }
 
@@ -228,7 +231,9 @@ public:
     void clear() { c_end = c_start; }
 
     template <typename ... TAllocatorParams>
+#if defined(__clang__)
     ALWAYS_INLINE /// Better performance in clang build, worse performance in gcc build.
+#endif
     void reserve(size_t n, TAllocatorParams &&... allocator_params)
     {
         if (n > capacity())
@@ -434,7 +439,7 @@ public:
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
 
         new (t_end()) T(std::forward<U>(x));
-        this->c_end += sizeof(T);
+        this->c_end += this->byte_size(1);
     }
 
     /** This method doesn't allow to pass parameters for Allocator,
@@ -447,12 +452,12 @@ public:
             this->reserveForNextSize();
 
         new (t_end()) T(std::forward<Args>(args)...);
-        this->c_end += sizeof(T);
+        this->c_end += this->byte_size(1);
     }
 
     void pop_back() /// NOLINT
     {
-        this->c_end -= sizeof(T);
+        this->c_end -= this->byte_size(1);
     }
 
     /// Do not insert into the array a piece of itself. Because with the resize, the iterators on themselves can be invalidated.
@@ -499,7 +504,7 @@ public:
     template <typename It1, typename It2, typename ... TAllocatorParams>
     void insertSmallAllowReadWriteOverflow15(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
     {
-        static_assert(pad_right_ >= PADDING_FOR_SIMD - 1);
+        static_assert(pad_right_ >= 15);
         static_assert(sizeof(T) == sizeof(*from_begin));
         insertPrepare(from_begin, from_end, std::forward<TAllocatorParams>(allocator_params)...);
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
@@ -771,16 +776,18 @@ void swap(PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & lhs, P
 {
     lhs.swap(rhs);
 }
+#pragma GCC diagnostic pop
 
 /// Prevent implicit template instantiation of PODArray for common numeric types
 
-extern template class PODArray<UInt8, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
-extern template class PODArray<UInt16, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
-extern template class PODArray<UInt32, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
-extern template class PODArray<UInt64, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+extern template class PODArray<UInt8, 4096, Allocator<false>, 15, 16>;
+extern template class PODArray<UInt16, 4096, Allocator<false>, 15, 16>;
+extern template class PODArray<UInt32, 4096, Allocator<false>, 15, 16>;
+extern template class PODArray<UInt64, 4096, Allocator<false>, 15, 16>;
 
-extern template class PODArray<Int8, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
-extern template class PODArray<Int16, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
-extern template class PODArray<Int32, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
-extern template class PODArray<Int64, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+extern template class PODArray<Int8, 4096, Allocator<false>, 15, 16>;
+extern template class PODArray<Int16, 4096, Allocator<false>, 15, 16>;
+extern template class PODArray<Int32, 4096, Allocator<false>, 15, 16>;
+extern template class PODArray<Int64, 4096, Allocator<false>, 15, 16>;
+
 }

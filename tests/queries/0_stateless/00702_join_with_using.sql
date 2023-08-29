@@ -7,7 +7,7 @@ CREATE TABLE using2(a UInt8, b UInt8) ENGINE=Memory;
 INSERT INTO using1 VALUES (1, 1) (2, 2) (3, 3);
 INSERT INTO using2 VALUES (4, 4) (2, 2) (3, 3);
 
-SELECT * FROM using1 ALL LEFT JOIN (SELECT * FROM using2) js2 USING (a, b) ORDER BY a;
+SELECT * FROM using1 ALL LEFT JOIN (SELECT * FROM using2) js2 USING (a, a, a, b, b, b, a, a) ORDER BY a;
 
 DROP TABLE using1;
 DROP TABLE using2;

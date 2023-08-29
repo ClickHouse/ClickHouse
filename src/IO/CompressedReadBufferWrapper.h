@@ -19,7 +19,7 @@ public:
     const ReadBuffer & getWrappedReadBuffer() const { return *in; }
     ReadBuffer & getWrappedReadBuffer() { return *in; }
 
-    void prefetch(Priority priority) override { in->prefetch(priority); }
+    void prefetch() override { in->prefetch(); }
 
 protected:
     std::unique_ptr<ReadBuffer> in;

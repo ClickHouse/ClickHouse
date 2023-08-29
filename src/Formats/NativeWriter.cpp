@@ -11,8 +11,9 @@
 #include <Formats/NativeWriter.h>
 
 #include <Common/typeid_cast.h>
-#include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/NestedUtils.h>
+#include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 namespace DB
@@ -34,7 +35,7 @@ NativeWriter::NativeWriter(
     {
         ostr_concrete = typeid_cast<CompressedWriteBuffer *>(&ostr);
         if (!ostr_concrete)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "When need to write index for NativeWriter, ostr must be CompressedWriteBuffer.");
+            throw Exception("When need to write index for NativeWriter, ostr must be CompressedWriteBuffer.", ErrorCodes::LOGICAL_ERROR);
     }
 }
 
@@ -55,19 +56,17 @@ static void writeData(const ISerialization & serialization, const ColumnPtr & co
     ISerialization::SerializeBinaryBulkSettings settings;
     settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
     settings.position_independent_encoding = false;
-    settings.low_cardinality_max_dictionary_size = 0;
+    settings.low_cardinality_max_dictionary_size = 0; //-V1048
 
     ISerialization::SerializeBinaryBulkStatePtr state;
-    serialization.serializeBinaryBulkStatePrefix(*full_column, settings, state);
+    serialization.serializeBinaryBulkStatePrefix(settings, state);
     serialization.serializeBinaryBulkWithMultipleStreams(*full_column, offset, limit, settings, state);
     serialization.serializeBinaryBulkStateSuffix(settings, state);
 }
 
 
-size_t NativeWriter::write(const Block & block)
+void NativeWriter::write(const Block & block)
 {
-    size_t written_before = ostr.count();
-
     /// Additional information about the block.
     if (client_revision > 0)
         block.info.write(ostr);
@@ -117,7 +116,19 @@ size_t NativeWriter::write(const Block & block)
         writeStringBinary(column.name, ostr);
 
         bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
-        setVersionToAggregateFunctions(column.type, include_version, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
+        const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
+        if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
+        {
+            if (include_version)
+            {
+                auto version = aggregate_function_data_type->getVersionFromRevision(client_revision);
+                aggregate_function_data_type->setVersion(version, /* if_empty */true);
+            }
+            else
+            {
+                aggregate_function_data_type->setVersion(0, /* if_empty */false);
+            }
+        }
 
         /// Type
         String type_name = column.type->getName();
@@ -163,10 +174,6 @@ size_t NativeWriter::write(const Block & block)
 
     if (index)
         index->blocks.emplace_back(std::move(index_block));
-
-    size_t written_after = ostr.count();
-    size_t written_size = written_after - written_before;
-    return written_size;
 }
 
 }

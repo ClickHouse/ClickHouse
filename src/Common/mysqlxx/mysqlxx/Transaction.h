@@ -8,8 +8,8 @@
 namespace mysqlxx
 {
 
-/** Transaction RAII.
-  * If commit() was not called before destroy, it will be rolled back.
+/** RAII для транзакции. При инициализации, транзакция стартует.
+  * При уничтожении, если не был вызван метод commit(), будет произведёт rollback.
   */
 class Transaction : private boost::noncopyable
 {

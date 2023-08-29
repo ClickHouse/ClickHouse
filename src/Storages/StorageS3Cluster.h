@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_AWS_S3
 
@@ -22,31 +22,43 @@ class StorageS3Cluster : public IStorageCluster
 {
 public:
     StorageS3Cluster(
-        const String & cluster_name_,
-        const StorageS3::Configuration & configuration_,
+        const String & filename_,
+        const String & access_key_id_,
+        const String & secret_access_key_,
         const StorageID & table_id_,
+        String cluster_name_,
+        const String & format_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         ContextPtr context_,
-        bool structure_argument_was_provided_);
+        const String & compression_method_);
 
     std::string getName() const override { return "S3Cluster"; }
 
+    Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,
+        ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, unsigned /*num_streams*/) override;
+
+    QueryProcessingStage::Enum
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
+
     NamesAndTypesList getVirtuals() const override;
 
-    RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const override;
-
-protected:
-    void updateConfigurationIfChanged(ContextPtr local_context);
-
+    RemoteQueryExecutor::Extension getTaskIteratorExtension(ContextPtr context) const override;
+    ClusterPtr getCluster(ContextPtr context) const override;
 private:
-    void updateBeforeRead(const ContextPtr & context) override { updateConfigurationIfChanged(context); }
-
-    void addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context) override;
-
-    StorageS3::Configuration s3_configuration;
+    StorageS3::S3Configuration s3_configuration;
+    String filename;
+    String cluster_name;
+    String format_name;
+    String compression_method;
     NamesAndTypesList virtual_columns;
     Block virtual_block;
+
+    mutable ClusterPtr cluster;
+    mutable std::shared_ptr<StorageS3Source::DisclosedGlobIterator> iterator;
+    mutable std::shared_ptr<StorageS3Source::IteratorWrapper> callback;
+
+    void createIteratorAndCallback(ASTPtr query, ContextPtr context) const;
 };
 
 

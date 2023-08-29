@@ -288,7 +288,7 @@ def test_inserts_single_replica_no_internal_replication(started_cluster):
                     "prefer_localhost_replica": "0",
                 },
             )
-        assert node2.query("SELECT count(*) FROM single_replicated").strip() == "0"
+        assert node2.query("SELECT count(*) FROM single_replicated").strip() == "1"
     finally:
         node2.query("TRUNCATE TABLE single_replicated")
 

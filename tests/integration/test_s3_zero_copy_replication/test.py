@@ -8,12 +8,11 @@ from helpers.cluster import ClickHouseCluster
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
 
-cluster = ClickHouseCluster(__file__)
-
 
 @pytest.fixture(scope="module")
-def started_cluster():
+def cluster():
     try:
+        cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
             main_configs=["configs/config.d/s3.xml"],
@@ -40,9 +39,7 @@ def started_cluster():
 def get_large_objects_count(cluster, size=100, folder="data"):
     minio = cluster.minio_client
     counter = 0
-    for obj in minio.list_objects(
-        cluster.minio_bucket, "{}/".format(folder), recursive=True
-    ):
+    for obj in minio.list_objects(cluster.minio_bucket, "{}/".format(folder)):
         if obj.size is not None and obj.size >= size:
             counter = counter + 1
     return counter
@@ -97,7 +94,7 @@ def wait_for_active_parts(node, num_expected_parts, table_name, timeout=30):
 # Result of `get_large_objects_count` can be changed in other tests, so run this case at the beginning
 @pytest.mark.order(0)
 @pytest.mark.parametrize("policy", ["s3"])
-def test_s3_zero_copy_replication(started_cluster, policy):
+def test_s3_zero_copy_replication(cluster, policy):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
@@ -149,12 +146,12 @@ def test_s3_zero_copy_replication(started_cluster, policy):
     # Based on version 21.x - after cleanup - only one merged part
     wait_for_large_objects_count(cluster, 1, timeout=60)
 
-    node1.query("DROP TABLE IF EXISTS s3_test SYNC")
-    node2.query("DROP TABLE IF EXISTS s3_test SYNC")
+    node1.query("DROP TABLE IF EXISTS s3_test NO DELAY")
+    node2.query("DROP TABLE IF EXISTS s3_test NO DELAY")
 
 
 @pytest.mark.skip(reason="Test is flaky (and never was stable)")
-def test_s3_zero_copy_on_hybrid_storage(started_cluster):
+def test_s3_zero_copy_on_hybrid_storage(cluster):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
@@ -163,7 +160,7 @@ def test_s3_zero_copy_on_hybrid_storage(started_cluster):
         CREATE TABLE hybrid_test ON CLUSTER test_cluster (id UInt32, value String)
         ENGINE=ReplicatedMergeTree('/clickhouse/tables/hybrid_test', '{}')
         ORDER BY id
-        SETTINGS storage_policy='hybrid',temporary_directories_lifetime=1
+        SETTINGS storage_policy='hybrid'
         """.format(
             "{replica}"
         )
@@ -239,8 +236,8 @@ def test_s3_zero_copy_on_hybrid_storage(started_cluster):
         == "(0,'data'),(1,'data')"
     )
 
-    node1.query("DROP TABLE IF EXISTS hybrid_test SYNC")
-    node2.query("DROP TABLE IF EXISTS hybrid_test SYNC")
+    node1.query("DROP TABLE IF EXISTS hybrid_test NO DELAY")
+    node2.query("DROP TABLE IF EXISTS hybrid_test NO DELAY")
 
 
 def insert_data_time(node, table, number_of_mb, time, start=0):
@@ -269,14 +266,12 @@ def insert_large_data(node, table):
         ("tiered_copy", True, 3),
     ],
 )
-def test_s3_zero_copy_with_ttl_move(
-    started_cluster, storage_policy, large_data, iterations
-):
+def test_s3_zero_copy_with_ttl_move(cluster, storage_policy, large_data, iterations):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    node1.query("DROP TABLE IF EXISTS ttl_move_test SYNC")
-    node2.query("DROP TABLE IF EXISTS ttl_move_test SYNC")
+    node1.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
+    node2.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
 
     for i in range(iterations):
         node1.query(
@@ -325,8 +320,8 @@ def test_s3_zero_copy_with_ttl_move(
                 == "(10),(11)"
             )
 
-        node1.query("DROP TABLE IF EXISTS ttl_move_test SYNC")
-        node2.query("DROP TABLE IF EXISTS ttl_move_test SYNC")
+        node1.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
+        node2.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
 
 
 @pytest.mark.parametrize(
@@ -336,12 +331,12 @@ def test_s3_zero_copy_with_ttl_move(
         (True, 3),
     ],
 )
-def test_s3_zero_copy_with_ttl_delete(started_cluster, large_data, iterations):
+def test_s3_zero_copy_with_ttl_delete(cluster, large_data, iterations):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    node1.query("DROP TABLE IF EXISTS ttl_delete_test SYNC")
-    node2.query("DROP TABLE IF EXISTS ttl_delete_test SYNC")
+    node1.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
+    node2.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
 
     for i in range(iterations):
         node1.query(
@@ -398,8 +393,8 @@ def test_s3_zero_copy_with_ttl_delete(started_cluster, large_data, iterations):
                 == "(11)"
             )
 
-        node1.query("DROP TABLE IF EXISTS ttl_delete_test SYNC")
-        node2.query("DROP TABLE IF EXISTS ttl_delete_test SYNC")
+        node1.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
+        node2.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
 
 
 def wait_mutations(node, table, seconds):
@@ -418,28 +413,12 @@ def wait_mutations(node, table, seconds):
     assert mutations == "0\n"
 
 
-def wait_for_clean_old_parts(node, table, seconds):
-    time.sleep(1)
-    while seconds > 0:
-        seconds -= 1
-        parts = node.query(
-            f"SELECT count() FROM system.parts WHERE table='{table}' AND active=0"
-        )
-        if parts == "0\n":
-            return
-        time.sleep(1)
-    parts = node.query(
-        f"SELECT count() FROM system.parts WHERE table='{table}' AND active=0"
-    )
-    assert parts == "0\n"
-
-
 def s3_zero_copy_unfreeze_base(cluster, unfreeze_query_template):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    node1.query("DROP TABLE IF EXISTS unfreeze_test SYNC")
-    node2.query("DROP TABLE IF EXISTS unfreeze_test SYNC")
+    node1.query("DROP TABLE IF EXISTS unfreeze_test NO DELAY")
+    node2.query("DROP TABLE IF EXISTS unfreeze_test NO DELAY")
 
     node1.query(
         """
@@ -453,8 +432,6 @@ def s3_zero_copy_unfreeze_base(cluster, unfreeze_query_template):
     )
 
     node1.query("INSERT INTO unfreeze_test VALUES (0)")
-
-    wait_for_active_parts(node2, 1, "unfreeze_test")
 
     node1.query("ALTER TABLE unfreeze_test FREEZE WITH NAME 'freeze_backup1'")
     node2.query("ALTER TABLE unfreeze_test FREEZE WITH NAME 'freeze_backup2'")
@@ -489,15 +466,15 @@ def s3_zero_copy_unfreeze_base(cluster, unfreeze_query_template):
 
     check_objects_not_exisis(cluster, objects12)
 
-    node1.query("DROP TABLE IF EXISTS unfreeze_test SYNC")
-    node2.query("DROP TABLE IF EXISTS unfreeze_test SYNC")
+    node1.query("DROP TABLE IF EXISTS unfreeze_test NO DELAY")
+    node2.query("DROP TABLE IF EXISTS unfreeze_test NO DELAY")
 
 
-def test_s3_zero_copy_unfreeze_alter(started_cluster):
+def test_s3_zero_copy_unfreeze_alter(cluster):
     s3_zero_copy_unfreeze_base(cluster, "ALTER TABLE unfreeze_test UNFREEZE WITH NAME")
 
 
-def test_s3_zero_copy_unfreeze_system(started_cluster):
+def test_s3_zero_copy_unfreeze_system(cluster):
     s3_zero_copy_unfreeze_base(cluster, "SYSTEM UNFREEZE WITH NAME")
 
 
@@ -505,8 +482,8 @@ def s3_zero_copy_drop_detached(cluster, unfreeze_query_template):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    node1.query("DROP TABLE IF EXISTS drop_detached_test SYNC")
-    node2.query("DROP TABLE IF EXISTS drop_detached_test SYNC")
+    node1.query("DROP TABLE IF EXISTS drop_detached_test NO DELAY")
+    node2.query("DROP TABLE IF EXISTS drop_detached_test NO DELAY")
 
     node1.query(
         """
@@ -586,22 +563,22 @@ def s3_zero_copy_drop_detached(cluster, unfreeze_query_template):
     check_objects_not_exisis(cluster, objects1)
 
 
-def test_s3_zero_copy_drop_detached_alter(started_cluster):
+def test_s3_zero_copy_drop_detached_alter(cluster):
     s3_zero_copy_drop_detached(
         cluster, "ALTER TABLE drop_detached_test UNFREEZE WITH NAME"
     )
 
 
-def test_s3_zero_copy_drop_detached_system(started_cluster):
+def test_s3_zero_copy_drop_detached_system(cluster):
     s3_zero_copy_drop_detached(cluster, "SYSTEM UNFREEZE WITH NAME")
 
 
-def test_s3_zero_copy_concurrent_merge(started_cluster):
+def test_s3_zero_copy_concurrent_merge(cluster):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
-    node1.query("DROP TABLE IF EXISTS concurrent_merge SYNC")
-    node2.query("DROP TABLE IF EXISTS concurrent_merge SYNC")
+    node1.query("DROP TABLE IF EXISTS concurrent_merge NO DELAY")
+    node2.query("DROP TABLE IF EXISTS concurrent_merge NO DELAY")
 
     for node in (node1, node2):
         node.query(
@@ -641,119 +618,3 @@ def test_s3_zero_copy_concurrent_merge(started_cluster):
 
     for node in (node1, node2):
         assert node.query("select sum(id) from concurrent_merge").strip() == "1600"
-
-
-def test_s3_zero_copy_keeps_data_after_mutation(started_cluster):
-    node1 = cluster.instances["node1"]
-    node2 = cluster.instances["node2"]
-
-    node1.query("DROP TABLE IF EXISTS zero_copy_mutation SYNC")
-    node2.query("DROP TABLE IF EXISTS zero_copy_mutation SYNC")
-
-    node1.query(
-        """
-        CREATE TABLE zero_copy_mutation (id UInt64, value1 String, value2 String, value3 String)
-        ENGINE=ReplicatedMergeTree('/clickhouse/tables/zero_copy_mutation', '{replica}')
-        ORDER BY id
-        PARTITION BY (id % 4)
-        SETTINGS storage_policy='s3',
-        old_parts_lifetime=1000
-        """
-    )
-
-    node2.query(
-        """
-        CREATE TABLE zero_copy_mutation (id UInt64, value1 String, value2 String, value3 String)
-        ENGINE=ReplicatedMergeTree('/clickhouse/tables/zero_copy_mutation', '{replica}')
-        ORDER BY id
-        PARTITION BY (id % 4)
-        SETTINGS storage_policy='s3',
-        old_parts_lifetime=1000
-        """
-    )
-
-    node1.query(
-        """
-        INSERT INTO zero_copy_mutation
-        SELECT * FROM generateRandom('id UInt64, value1 String, value2 String, value3 String') limit 1000000
-        """
-    )
-
-    wait_for_active_parts(node2, 4, "zero_copy_mutation")
-
-    objects1 = node1.get_table_objects("zero_copy_mutation")
-    check_objects_exisis(cluster, objects1)
-
-    node1.query(
-        """
-        ALTER TABLE zero_copy_mutation
-        ADD COLUMN valueX String MATERIALIZED value1
-        """
-    )
-
-    node1.query(
-        """
-        ALTER TABLE zero_copy_mutation
-        MATERIALIZE COLUMN valueX
-        """
-    )
-
-    wait_mutations(node1, "zero_copy_mutation", 10)
-    wait_mutations(node2, "zero_copy_mutation", 10)
-
-    # If bug present at least one node has metadata with incorrect ref_count values.
-    # But it may be any node depends on mutation execution order.
-    # We can try to find one, but this required knowledge about internal metadata structure.
-    # It can be change in future, so we do not find this node here.
-    # And with the bug test may be success sometimes.
-    nodeX = node1
-    nodeY = node2
-
-    objectsY = nodeY.get_table_objects("zero_copy_mutation")
-    check_objects_exisis(cluster, objectsY)
-
-    nodeX.query(
-        """
-        ALTER TABLE zero_copy_mutation
-        DETACH PARTITION '0'
-        """
-    )
-
-    nodeX.query(
-        """
-        ALTER TABLE zero_copy_mutation
-        ATTACH PARTITION '0'
-        """
-    )
-
-    wait_mutations(node1, "zero_copy_mutation", 10)
-    wait_mutations(node2, "zero_copy_mutation", 10)
-
-    nodeX.query(
-        """
-        DROP TABLE zero_copy_mutation SYNC
-        """
-    )
-
-    # time to remove objects
-    time.sleep(10)
-
-    nodeY.query(
-        """
-        SELECT count() FROM zero_copy_mutation
-        WHERE value3 LIKE '%ab%'
-        """
-    )
-
-    check_objects_exisis(cluster, objectsY)
-
-    nodeY.query(
-        """
-        DROP TABLE zero_copy_mutation SYNC
-        """
-    )
-
-    # time to remove objects
-    time.sleep(10)
-
-    check_objects_not_exisis(cluster, objectsY)

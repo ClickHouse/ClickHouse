@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/alter/comment
 sidebar_position: 51
 sidebar_label: COMMENT
 ---

@@ -9,22 +9,14 @@ After=time-sync.target network-online.target
 Wants=time-sync.target
 
 [Service]
-Type=notify
-
-# NOTE: we leave clickhouse watchdog process enabled to be able to see OOM/SIGKILL traces in clickhouse-server.log files.
-# If you wish to disable the watchdog and rely on systemd logs just add "Environment=CLICKHOUSE_WATCHDOG_ENABLE=0" line.
+Type=simple
 User=clickhouse
 Group=clickhouse
 Restart=always
 RestartSec=30
-# Since ClickHouse is systemd aware default 1m30sec may not be enough
-TimeoutStartSec=0
-# %p is resolved to the systemd unit name
-RuntimeDirectory=%p 
-ExecStart=/usr/bin/clickhouse-server --config=/etc/clickhouse-server/config.xml --pid-file=%t/%p/%p.pid
+RuntimeDirectory=clickhouse-server
+ExecStart=/usr/bin/clickhouse-server --config=/etc/clickhouse-server/config.xml --pid-file=/run/clickhouse-server/clickhouse-server.pid
 # Minus means that this file is optional.
-EnvironmentFile=-/etc/default/%p
-# Bring back /etc/default/clickhouse for backward compatibility
 EnvironmentFile=-/etc/default/clickhouse
 LimitCORE=infinity
 LimitNOFILE=500000

@@ -2,11 +2,11 @@
 import json
 import logging
 import os
-from typing import Dict, List, Set, Union
+from typing import Dict, List, Set
 
 from unidiff import PatchSet  # type: ignore
 
-from build_download_helper import get_gh_api
+from build_download_helper import get_with_retries
 from env_helper import (
     GITHUB_REPOSITORY,
     GITHUB_SERVER_URL,
@@ -16,7 +16,6 @@ from env_helper import (
 
 FORCE_TESTS_LABEL = "force tests"
 SKIP_MERGEABLE_CHECK_LABEL = "skip mergeable check"
-NeedsDataType = Dict[str, Dict[str, Union[str, Dict[str, str]]]]
 
 DIFF_IN_DOCUMENTATION_EXT = [
     ".html",
@@ -45,7 +44,7 @@ def get_pr_for_commit(sha, ref):
         f"https://api.github.com/repos/{GITHUB_REPOSITORY}/commits/{sha}/pulls"
     )
     try:
-        response = get_gh_api(try_get_pr_url, sleep=RETRY_SLEEP)
+        response = get_with_retries(try_get_pr_url, sleep=RETRY_SLEEP)
         data = response.json()
         our_prs = []  # type: List[Dict]
         if len(data) > 1:
@@ -105,7 +104,7 @@ class PRInfo:
         # workflow completed event, used for PRs only
         if "action" in github_event and github_event["action"] == "completed":
             self.sha = github_event["workflow_run"]["head_sha"]
-            prs_for_sha = get_gh_api(
+            prs_for_sha = get_with_retries(
                 f"https://api.github.com/repos/{GITHUB_REPOSITORY}/commits/{self.sha}"
                 "/pulls",
                 sleep=RETRY_SLEEP,
@@ -117,7 +116,7 @@ class PRInfo:
             self.number = github_event["pull_request"]["number"]
             if pr_event_from_api:
                 try:
-                    response = get_gh_api(
+                    response = get_with_retries(
                         f"https://api.github.com/repos/{GITHUB_REPOSITORY}"
                         f"/pulls/{self.number}",
                         sleep=RETRY_SLEEP,
@@ -154,12 +153,12 @@ class PRInfo:
             self.body = github_event["pull_request"]["body"]
             self.labels = {
                 label["name"] for label in github_event["pull_request"]["labels"]
-            }  # type: Set[str]
+            }
 
             self.user_login = github_event["pull_request"]["user"]["login"]
             self.user_orgs = set([])
             if need_orgs:
-                user_orgs_response = get_gh_api(
+                user_orgs_response = get_with_retries(
                     github_event["pull_request"]["user"]["organizations_url"],
                     sleep=RETRY_SLEEP,
                 )
@@ -186,7 +185,7 @@ class PRInfo:
             if pull_request is None or pull_request["state"] == "closed":
                 # it's merged PR to master
                 self.number = 0
-                self.labels = set()
+                self.labels = {}
                 self.pr_html_url = f"{repo_prefix}/commits/{ref}"
                 self.base_ref = ref
                 self.base_name = self.repo_full_name
@@ -236,7 +235,7 @@ class PRInfo:
             print(json.dumps(github_event, sort_keys=True, indent=4))
             self.sha = os.getenv("GITHUB_SHA")
             self.number = 0
-            self.labels = set()
+            self.labels = {}
             repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
             self.task_url = GITHUB_RUN_URL
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
@@ -255,7 +254,7 @@ class PRInfo:
             raise TypeError("The event does not have diff URLs")
 
         for diff_url in self.diff_urls:
-            response = get_gh_api(
+            response = get_with_retries(
                 diff_url,
                 sleep=RETRY_SLEEP,
             )

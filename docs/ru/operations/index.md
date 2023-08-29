@@ -1,5 +1,4 @@
 ---
-slug: /ru/operations/
 sidebar_position: 41
 sidebar_label: "Эксплуатация"
 ---
@@ -11,7 +10,7 @@ sidebar_label: "Эксплуатация"
 - [Требования](requirements.md)
 - [Мониторинг](monitoring.md)
 - [Решение проблем](troubleshooting.md)
-- [Советы по эксплуатации](tips.mdx)
+- [Советы по эксплуатации](tips.md)
 - [Процедура обновления](update.md)
 - [Права доступа](access-rights.md)
 - [Резервное копирование](backup.md)
@@ -19,6 +18,7 @@ sidebar_label: "Эксплуатация"
 - [Квоты](quotas.md)
 - [Системные таблицы](system-tables/index.md)
 - [Конфигурационные параметры сервера](server-configuration-parameters/index.md)
-- [Тестирование серверов с помощью ClickHouse](performance-test.mdx)
+- [Тестирование серверов с помощью ClickHouse](performance-test.md)
 - [Настройки](settings/index.md#settings)
 - [Утилиты](utilities/index.md)
+

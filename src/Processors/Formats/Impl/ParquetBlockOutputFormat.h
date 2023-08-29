@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include "config_formats.h"
 
 #if USE_PARQUET
 #    include <Processors/Formats/IOutputFormat.h>
@@ -34,14 +34,8 @@ public:
     String getContentType() const override { return "application/octet-stream"; }
 
 private:
-    void consumeStaged();
     void consume(Chunk) override;
     void finalizeImpl() override;
-    void resetFormatterImpl() override;
-
-    std::vector<Chunk> staging_chunks;
-    size_t staging_rows = 0;
-    size_t staging_bytes = 0;
 
     const FormatSettings format_settings;
 

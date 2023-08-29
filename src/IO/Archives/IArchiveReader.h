@@ -2,7 +2,6 @@
 
 #include <boost/noncopyable.hpp>
 #include <base/types.h>
-#include <functional>
 #include <memory>
 
 

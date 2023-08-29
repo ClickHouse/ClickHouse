@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/quantileexact
 sidebar_position: 202
 ---
 
@@ -23,18 +22,18 @@ Alias: `medianExact`.
 
 **Arguments**
 
-- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
-- `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
-- Quantile of the specified level.
+-   Quantile of the specified level.
 
 Type:
 
-- [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
-- [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
-- [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
+-   [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
+-   [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
+-   [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
 
 **Example**
 
@@ -82,18 +81,18 @@ Alias: `medianExactLow`.
 
 **Arguments**
 
-- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
-- `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
-- Quantile of the specified level.
+-   Quantile of the specified level.
 
 Type:
 
-- [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
-- [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
-- [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
+-   [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
+-   [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
+-   [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
 
 **Example**
 
@@ -132,18 +131,18 @@ Alias: `medianExactHigh`.
 
 **Arguments**
 
-- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
-- `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
-- Quantile of the specified level.
+-   Quantile of the specified level.
 
 Type:
 
-- [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
-- [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
-- [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
+-   [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
+-   [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
+-   [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
 
 **Example**
 
@@ -179,21 +178,21 @@ quantileExactExclusive(level)(expr)
 
 **Arguments**
 
-- `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+-   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Parameters**
 
-- `level` — Level of quantile. Optional. Possible values: (0, 1) — bounds not included. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median). [Float](../../../sql-reference/data-types/float.md).
+-   `level` — Level of quantile. Optional. Possible values: (0, 1) — bounds not included. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median). [Float](../../../sql-reference/data-types/float.md).
 
 **Returned value**
 
-- Quantile of the specified level.
+-   Quantile of the specified level.
 
 Type:
 
-- [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
-- [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
-- [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
+-   [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
+-   [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
+-   [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
 
 **Example**
 
@@ -231,21 +230,21 @@ quantileExactInclusive(level)(expr)
 
 **Arguments**
 
-- `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+-   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Parameters**
 
-- `level` — Level of quantile. Optional. Possible values: [0, 1] — bounds included. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median). [Float](../../../sql-reference/data-types/float.md).
+-   `level` — Level of quantile. Optional. Possible values: [0, 1] — bounds included. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median). [Float](../../../sql-reference/data-types/float.md).
 
 **Returned value**
 
-- Quantile of the specified level.
+-   Quantile of the specified level.
 
 Type:
 
-- [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
-- [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
-- [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
+-   [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
+-   [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
+-   [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
 
 **Example**
 
@@ -267,5 +266,5 @@ Result:
 
 **See Also**
 
-- [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
-- [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
+-   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
+-   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)

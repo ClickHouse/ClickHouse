@@ -26,8 +26,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/ReverseTransform.h>
-#include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -104,19 +102,6 @@ std::unique_lock<std::mutex> StorageBuffer::Buffer::lockImpl(bool read) const
 }
 
 
-StoragePtr StorageBuffer::getDestinationTable() const
-{
-    if (!destination_id)
-        return {};
-
-    auto destination = DatabaseCatalog::instance().tryGetTable(destination_id, getContext());
-    if (destination.get() == this)
-        throw Exception(ErrorCodes::INFINITE_LOOP, "Destination table is myself. Will lead to infinite loop.");
-
-    return destination;
-}
-
-
 StorageBuffer::StorageBuffer(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
@@ -149,7 +134,6 @@ StorageBuffer::StorageBuffer(
     }
     else
         storage_metadata.setColumns(columns_);
-
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
@@ -209,8 +193,13 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
     const StorageSnapshotPtr &,
     SelectQueryInfo & query_info) const
 {
-    if (auto destination = getDestinationTable())
+    if (destination_id)
     {
+        auto destination = DatabaseCatalog::instance().getTable(destination_id, local_context);
+
+        if (destination.get() == this)
+            throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
+
         /// TODO: Find a way to support projections for StorageBuffer
         query_info.ignore_projections = true;
         const auto & destination_metadata = destination->getInMemoryMetadataPtr();
@@ -228,12 +217,17 @@ void StorageBuffer::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    size_t num_streams)
+    unsigned num_streams)
 {
     const auto & metadata_snapshot = storage_snapshot->metadata;
 
-    if (auto destination = getDestinationTable())
+    if (destination_id)
     {
+        auto destination = DatabaseCatalog::instance().getTable(destination_id, local_context);
+
+        if (destination.get() == this)
+            throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
+
         auto destination_lock = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
         auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr();
@@ -336,14 +330,6 @@ void StorageBuffer::read(
             pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, storage_snapshot));
 
         pipe_from_buffers = Pipe::unitePipes(std::move(pipes_from_buffers));
-        if (query_info.getInputOrderInfo())
-        {
-            /// Each buffer has one block, and it not guaranteed that rows in each block are sorted by order keys
-            pipe_from_buffers.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<PartialSortingTransform>(header, query_info.getInputOrderInfo()->sort_description_for_merging, 0);
-            });
-        }
     }
 
     if (pipe_from_buffers.empty())
@@ -434,7 +420,7 @@ void StorageBuffer::read(
 }
 
 
-static void appendBlock(Poco::Logger * log, const Block & from, Block & to)
+static void appendBlock(const Block & from, Block & to)
 {
     size_t rows = from.rows();
     size_t old_rows = to.rows();
@@ -456,24 +442,7 @@ static void appendBlock(Poco::Logger * log, const Block & from, Block & to)
         for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
         {
             const IColumn & col_from = *from.getByPosition(column_no).column.get();
-            {
-                /// Usually IColumn::mutate() here will simply move pointers,
-                /// however in case of parallel reading from it via SELECT, it
-                /// is possible for the full IColumn::clone() here, and in this
-                /// case it may fail due to MEMORY_LIMIT_EXCEEDED, and this
-                /// breaks the rollback, since the column got lost, it is
-                /// neither in last_col nor in "to" block.
-                ///
-                /// The safest option here, is to do a full clone every time,
-                /// however, it is overhead. And it looks like the only
-                /// exception that is possible here is MEMORY_LIMIT_EXCEEDED,
-                /// and it is better to simply suppress it, to avoid overhead
-                /// for every INSERT into Buffer (Anyway we have a
-                /// LOGICAL_ERROR in rollback that will bail if something else
-                /// will happens here).
-                LockMemoryExceptionInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
-                last_col = IColumn::mutate(std::move(to.getByPosition(column_no).column));
-            }
+            last_col = IColumn::mutate(std::move(to.getByPosition(column_no).column));
 
             /// In case of ColumnAggregateFunction aggregate states will
             /// be allocated from the query context but can be destroyed from the
@@ -485,10 +454,7 @@ static void appendBlock(Poco::Logger * log, const Block & from, Block & to)
             last_col->ensureOwnership();
             last_col->insertRangeFrom(col_from, 0, rows);
 
-            {
-                DENY_ALLOCATIONS_IN_SCOPE;
-                to.getByPosition(column_no).column = std::move(last_col);
-            }
+            to.getByPosition(column_no).column = std::move(last_col);
         }
         CurrentMetrics::add(CurrentMetrics::StorageBufferRows, rows);
         CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, to.bytes() - old_bytes);
@@ -500,9 +466,6 @@ static void appendBlock(Poco::Logger * log, const Block & from, Block & to)
         /// In case of rollback, it is better to ignore memory limits instead of abnormal server termination.
         /// So ignore any memory limits, even global (since memory tracking has drift).
         LockMemoryExceptionInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
-
-        /// But first log exception to get more details in case of LOGICAL_ERROR
-        tryLogCurrentException(log, "Caught exception while adding data to buffer, rolling back...");
 
         try
         {
@@ -518,7 +481,7 @@ static void appendBlock(Poco::Logger * log, const Block & from, Block & to)
                 }
                 /// But if there is still nothing, abort
                 if (!col_to)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "No column to rollback");
+                    throw Exception("No column to rollback", ErrorCodes::LOGICAL_ERROR);
                 if (col_to->size() != old_rows)
                     col_to = col_to->cut(0, old_rows);
             }
@@ -558,12 +521,12 @@ public:
 
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
-        StoragePtr destination = storage.getDestinationTable();
-        if (destination)
+        StoragePtr destination;
+        if (storage.destination_id)
         {
             destination = DatabaseCatalog::instance().tryGetTable(storage.destination_id, storage.getContext());
             if (destination.get() == &storage)
-                throw Exception(ErrorCodes::INFINITE_LOOP, "Destination table is myself. Write will cause infinite loop.");
+                throw Exception("Destination table is myself. Write will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
         }
 
         size_t bytes = block.bytes();
@@ -574,7 +537,7 @@ public:
         /// If the block already exceeds the maximum limit, then we skip the buffer.
         if (rows > storage.max_thresholds.rows || bytes > storage.max_thresholds.bytes)
         {
-            if (destination)
+            if (storage.destination_id)
             {
                 LOG_DEBUG(storage.log, "Writing block with {} rows, {} bytes directly.", rows, bytes);
                 storage.writeBlockToDestination(block, destination);
@@ -648,7 +611,7 @@ private:
         size_t old_rows = buffer.data.rows();
         size_t old_bytes = buffer.data.allocatedBytes();
 
-        appendBlock(storage.log, sorted_block, buffer.data);
+        appendBlock(sorted_block, buffer.data);
 
         storage.total_writes.rows += (buffer.data.rows() - old_rows);
         storage.total_writes.bytes += (buffer.data.allocatedBytes() - old_bytes);
@@ -656,7 +619,7 @@ private:
 };
 
 
-SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
+SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
     return std::make_shared<BufferSink>(*this, metadata_snapshot);
 }
@@ -665,9 +628,15 @@ SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMet
 bool StorageBuffer::mayBenefitFromIndexForIn(
     const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
-    if (auto destination = getDestinationTable())
-        return destination->mayBenefitFromIndexForIn(left_in_operand, query_context, destination->getInMemoryMetadataPtr());
-    return false;
+    if (!destination_id)
+        return false;
+
+    auto destination = DatabaseCatalog::instance().getTable(destination_id, query_context);
+
+    if (destination.get() == this)
+        throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
+
+    return destination->mayBenefitFromIndexForIn(left_in_operand, query_context, destination->getInMemoryMetadataPtr());
 }
 
 
@@ -691,7 +660,7 @@ void StorageBuffer::flush()
 
     try
     {
-        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, getContext());
+        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, getContext());
     }
     catch (...)
     {
@@ -717,20 +686,16 @@ bool StorageBuffer::optimize(
     bool final,
     bool deduplicate,
     const Names & /* deduplicate_by_columns */,
-    bool cleanup,
     ContextPtr /*context*/)
 {
     if (partition)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Partition cannot be specified when optimizing table of type Buffer");
+        throw Exception("Partition cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
 
     if (final)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FINAL cannot be specified when optimizing table of type Buffer");
+        throw Exception("FINAL cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
 
     if (deduplicate)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DEDUPLICATE cannot be specified when optimizing table of type Buffer");
-
-    if (cleanup)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CLEANUP cannot be specified when optimizing table of type Buffer");
+        throw Exception("DEDUPLICATE cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
 
     flushAllBuffers(false);
     return true;
@@ -738,8 +703,11 @@ bool StorageBuffer::optimize(
 
 bool StorageBuffer::supportsPrewhere() const
 {
-    if (auto destination = getDestinationTable())
-        return destination->supportsPrewhere();
+    if (!destination_id)
+        return false;
+    auto dest = DatabaseCatalog::instance().tryGetTable(destination_id, getContext());
+    if (dest && dest.get() != this)
+        return dest->supportsPrewhere();
     return false;
 }
 
@@ -866,7 +834,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     Stopwatch watch;
     try
     {
-        writeBlockToDestination(block_to_write, getDestinationTable());
+        writeBlockToDestination(block_to_write, DatabaseCatalog::instance().tryGetTable(destination_id, getContext()));
     }
     catch (...)
     {
@@ -879,7 +847,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
         buffer.data.swap(block_to_write);
 
-        if (!buffer.first_write_time)
+        if (!buffer.first_write_time) // -V547
             buffer.first_write_time = current_time;
 
         /// After a while, the next write attempt will happen.
@@ -1016,7 +984,7 @@ void StorageBuffer::reschedule()
 
 void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
-    std::optional<NameDependencies> name_deps{};
+    auto name_deps = getDependentViewsByColumn(local_context);
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
@@ -1027,14 +995,13 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
 
         if (command.type == AlterCommand::Type::DROP_COLUMN && !command.clear)
         {
-            if (!name_deps)
-                name_deps = getDependentViewsByColumn(local_context);
-            const auto & deps_mv = name_deps.value()[command.column_name];
+            const auto & deps_mv = name_deps[command.column_name];
             if (!deps_mv.empty())
             {
-                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER DROP column {} which is referenced by materialized view {}",
-                    backQuoteIfNeed(command.column_name), toString(deps_mv));
+                throw Exception(
+                    "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
+                        + toString(deps_mv),
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
             }
         }
     }
@@ -1043,10 +1010,14 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
 std::optional<UInt64> StorageBuffer::totalRows(const Settings & settings) const
 {
     std::optional<UInt64> underlying_rows;
-    if (auto destination = getDestinationTable())
-        underlying_rows = destination->totalRows(settings);
+    auto underlying = DatabaseCatalog::instance().tryGetTable(destination_id, getContext());
 
-    return total_writes.rows + underlying_rows.value_or(0);
+    if (underlying)
+        underlying_rows = underlying->totalRows(settings);
+    if (!underlying_rows)
+        return underlying_rows;
+
+    return total_writes.rows + *underlying_rows;
 }
 
 std::optional<UInt64> StorageBuffer::totalBytes(const Settings & /*settings*/) const
@@ -1063,7 +1034,7 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
     /// Flush all buffers to storages, so that no non-empty blocks of the old
     /// structure remain. Structure of empty blocks will be updated during first
     /// insert.
-    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, local_context);
+    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, local_context);
 
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
@@ -1087,10 +1058,9 @@ void registerStorageBuffer(StorageFactory & factory)
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.size() < 9 || engine_args.size() > 12)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage Buffer requires from 9 to 12 parameters: "
-                            " destination_database, destination_table, num_buckets, min_time, max_time, min_rows, "
-                            "max_rows, min_bytes, max_bytes[, flush_time, flush_rows, flush_bytes].");
+            throw Exception("Storage Buffer requires from 9 to 12 parameters: "
+                " destination_database, destination_table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes[, flush_time, flush_rows, flush_bytes].",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         // Table and database name arguments accept expressions, evaluate them.
         engine_args[0] = evaluateConstantExpressionForDatabaseName(engine_args[0], args.getLocalContext());

@@ -151,7 +151,7 @@ public:
         auto connection_available = pool->tryBorrowObject(connection, []() { return nullptr; }, ODBC_POOL_WAIT_TIMEOUT);
 
         if (!connection_available)
-            throw Exception(ErrorCodes::NO_FREE_CONNECTION, "Unable to fetch connection within the timeout");
+            throw Exception("Unable to fetch connection within the timeout", ErrorCodes::NO_FREE_CONNECTION);
 
         try
         {

@@ -4,8 +4,6 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Access/Common/AccessType.h>
-#include <Common/FunctionDocumentation.h>
-#include <Analyzer/IQueryTreeNode.h>
 
 #include <memory>
 #include <string>
@@ -50,37 +48,24 @@ public:
     /// Returns false if storage returned by table function supports type conversion (e.g. StorageDistributed)
     virtual bool needStructureConversion() const { return true; }
 
-    /** Return array of table function arguments indexes for which query tree analysis must be skipped.
-      * It is important for table functions that take subqueries, because otherwise analyzer will resolve them.
-      */
-    virtual std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const { return {}; }
-
     virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
 
     /// Returns actual table structure probably requested from remote server, may fail
     virtual ColumnsDescription getActualTableStructure(ContextPtr /*context*/) const = 0;
 
     /// Check if table function needs a structure hint from SELECT query in case of
-    /// INSERT INTO FUNCTION ... SELECT ... and INSERT INTO ... SELECT ... FROM table_function(...)
+    /// INSERT INTO FUNCTION ... SELECT ...
     /// It's used for schema inference.
     virtual bool needStructureHint() const { return false; }
 
     /// Set a structure hint from SELECT query in case of
-    /// INSERT INTO FUNCTION ... SELECT ... and INSERT INTO ... SELECT ... FROM table_function(...)
+    /// INSERT INTO FUNCTION ... SELECT ...
     /// This hint could be used not to repeat schema in function arguments.
     virtual void setStructureHint(const ColumnsDescription &) {}
 
-    /// Used for table functions that can use structure hint during INSERT INTO ... SELECT ... FROM table_function(...)
-    /// It returns possible virtual column names of corresponding storage. If select query contains
-    /// one of these columns, the structure from insertion table won't be used as a structure hint,
-    /// because we cannot determine which column from table correspond to this virtual column.
-    virtual std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const { return {}; }
-
-    virtual bool supportsReadingSubsetOfColumns() { return true; }
-
     /// Create storage according to the query.
     StoragePtr
-    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert = false) const;
+    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false) const;
 
     virtual ~ITableFunction() = default;
 
@@ -93,24 +78,6 @@ private:
 
     virtual const char * getStorageTypeName() const = 0;
 };
-
-/// Properties of table function that are independent of argument types and parameters.
-struct TableFunctionProperties
-{
-    FunctionDocumentation documentation;
-
-    /** It is determined by the possibility of modifying any data or making requests to arbitrary hostnames.
-      *
-      * If users can make a request to an arbitrary hostname, they can get the info from the internal network
-      * or manipulate internal APIs (say - put some data into Memcached, which is available only in the corporate network).
-      * This is named "SSRF attack".
-      * Or a user can use an open ClickHouse server to amplify DoS attacks.
-      *
-      * In those cases, the table function should not be allowed in readonly mode.
-      */
-    bool allow_readonly = false;
-};
-
 
 using TableFunctionPtr = std::shared_ptr<ITableFunction>;
 

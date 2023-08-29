@@ -5,7 +5,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/Context.h>
 
 #include <Common/assert_cast.h>
 
@@ -88,15 +87,9 @@ public:
         return std::make_unique<ExecutableFunctionNow64>(time_value);
     }
 
-    bool isDeterministic() const override
-    {
-        return false;
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override
-    {
-        return false;
-    }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
 private:
     Field time_value;
@@ -116,10 +109,7 @@ public:
     bool isVariadic() const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
-    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<Now64OverloadResolver>(context); }
-    explicit Now64OverloadResolver(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
-    {}
+    static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<Now64OverloadResolver>(); }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -128,20 +118,23 @@ public:
 
         if (arguments.size() > 2)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0, or 1, or 2", getName());
+            throw Exception("Arguments size of function " + getName() + " should be 0, or 1, or 2", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
         if (!arguments.empty())
         {
             const auto & argument = arguments[0];
             if (!isInteger(argument.type) || !argument.column || !isColumnConst(*argument.column))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 0 argument of function {}. "
-                                "Expected const integer.", argument.type->getName(), getName());
+                throw Exception("Illegal type " + argument.type->getName() +
+                                " of 0" +
+                                " argument of function " + getName() +
+                                ". Expected const integer.",
+                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            scale = static_cast<UInt32>(argument.column->get64(0));
+            scale = argument.column->get64(0);
         }
         if (arguments.size() == 2)
         {
-            timezone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, allow_nonconst_timezone_arguments);
+            timezone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
         }
 
         return std::make_shared<DataTypeDateTime64>(scale, timezone_name);
@@ -161,15 +154,13 @@ public:
 
         return std::make_unique<FunctionBaseNow64>(nowSubsecond(scale), std::move(arg_types), result_type);
     }
-private:
-    const bool allow_nonconst_timezone_arguments;
 };
 
 }
 
 REGISTER_FUNCTION(Now64)
 {
-    factory.registerFunction<Now64OverloadResolver>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<Now64OverloadResolver>(FunctionFactory::CaseInsensitive);
 }
 
 }

@@ -26,28 +26,19 @@ public:
 
     String getName() const override { return "CSVRowInputFormat"; }
 
-    void setReadBuffer(ReadBuffer & in_) override;
-    void resetParser() override;
-
 protected:
-    CSVRowInputFormat(const Block & header_, std::shared_ptr<PeekableReadBuffer> in_, const Params & params_,
-                               bool with_names_, bool with_types_, const FormatSettings & format_settings_, std::unique_ptr<FormatWithNamesAndTypesReader> format_reader_);
-
-    CSVRowInputFormat(const Block & header_, std::shared_ptr<PeekableReadBuffer> in_buf_, const Params & params_,
-                      bool with_names_, bool with_types_, const FormatSettings & format_settings_);
+    explicit CSVRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
+                      bool with_names_, bool with_types_, const FormatSettings & format_settings_, std::unique_ptr<FormatWithNamesAndTypesReader> format_reader_);
 
 private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
-
-protected:
-    std::shared_ptr<PeekableReadBuffer> buf;
 };
 
 class CSVFormatReader : public FormatWithNamesAndTypesReader
 {
 public:
-    CSVFormatReader(PeekableReadBuffer & buf_, const FormatSettings & format_settings_);
+    CSVFormatReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     bool parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out) override;
     bool parseRowEndWithDiagnosticInfo(WriteBuffer & out) override;
@@ -73,38 +64,25 @@ public:
     std::vector<String> readTypes() override { return readHeaderRow(); }
     std::vector<String> readHeaderRow() { return readRowImpl<true>(); }
     std::vector<String> readRow() { return readRowImpl<false>(); }
-    std::vector<String> readRowForHeaderDetection() override { return readHeaderRow(); }
-
-    bool checkForSuffix() override;
 
     template <bool is_header>
     std::vector<String> readRowImpl();
 
     template <bool read_string>
     String readCSVFieldIntoString();
-
-    void setReadBuffer(ReadBuffer & in_) override;
-
-    FormatSettings::EscapingRule getEscapingRule() const override { return FormatSettings::EscapingRule::CSV; }
-
-protected:
-    PeekableReadBuffer * buf;
 };
 
 class CSVSchemaReader : public FormatWithNamesAndTypesSchemaReader
 {
 public:
-    CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);
+    CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_setting_);
 
 private:
-    DataTypes readRowAndGetDataTypesImpl() override;
-    std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() override;
+    DataTypes readRowAndGetDataTypes() override;
 
-    PeekableReadBuffer buf;
     CSVFormatReader reader;
-    DataTypes buffered_types;
 };
 
-std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows);
+std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size, size_t min_rows);
 
 }

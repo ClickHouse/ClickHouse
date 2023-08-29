@@ -8,7 +8,7 @@ CREATE TABLE t_02267
 )
 ENGINE = MergeTree
 ORDER BY b
-SETTINGS index_granularity = 500, index_granularity_bytes = '10Mi';
+SETTINGS index_granularity = 500;
 
 INSERT INTO t_02267 (b, a, c) SELECT 0, ['x'],  ['1','2','3','4','5','6'] FROM numbers(1) ;
 INSERT INTO t_02267 (b, a, c) SELECT 1, [],     ['1','2','3','4','5','6'] FROM numbers(300000);
