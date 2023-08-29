@@ -27,8 +27,6 @@ public:
         const PoolSettings & settings_,
         const ContextPtr & context_);
 
-    ~MergeTreePrefetchedReadPool() override;
-
     String getName() const override { return "PrefetchedReadPool"; }
     bool preservesOrderOfRanges() const override { return false; }
     MergeTreeReadTaskPtr getTask(size_t task_idx, MergeTreeReadTask * previous_task) override;
@@ -50,14 +48,20 @@ private:
         size_t required_readers_num = 0;
     };
 
-    struct ReadersFuture
+    class PrefetechedReaders
     {
+    public:
+        PrefetechedReaders() = default;
+        PrefetechedReaders(MergeTreeReadTask::Readers readers_, Priority priority_, MergeTreePrefetchedReadPool & pool_);
+
         void wait();
         MergeTreeReadTask::Readers get();
-        bool valid() const { return main.valid(); }
+        bool valid() const { return is_valid; }
 
-        std::future<MergeTreeReaderPtr> main;
-        std::vector<std::future<MergeTreeReaderPtr>> prewhere;
+    private:
+        bool is_valid = false;
+        MergeTreeReadTask::Readers readers;
+        std::vector<std::future<void>> prefetch_futures;
     };
 
     struct ThreadTask
@@ -69,10 +73,16 @@ private:
         {
         }
 
+        ~ThreadTask()
+        {
+            if (readers_future.valid())
+                readers_future.wait();
+        }
+
         InfoPtr read_info;
         MarkRanges ranges;
         Priority priority;
-        ReadersFuture readers_future;
+        PrefetechedReaders readers_future;
     };
 
     struct TaskHolder
@@ -92,7 +102,7 @@ private:
 
     void startPrefetches();
     void createPrefetchedReadersForTask(ThreadTask & task);
-    std::future<MergeTreeReaderPtr> createPrefetchedReader(MergeTreeReaderPtr reader, Priority priority);
+    std::future<void> createPrefetchedFuture(IMergeTreeReader * reader, Priority priority);
 
     MergeTreeReadTaskPtr stealTask(size_t thread, MergeTreeReadTask * previous_task);
     MergeTreeReadTaskPtr createTask(ThreadTask & thread_task, MergeTreeReadTask * previous_task);
