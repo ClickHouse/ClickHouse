@@ -1315,7 +1315,7 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
 
     selectColumnNames(column_names_to_return, data, real_column_names, virt_column_names, sample_factor_column_queried);
 
-    LOG_TRACE(log, "Reading from parts: [{}]", partsNamesToString(parts, 100));
+    LOG_TEST(log, "Reading from parts: [{}]", partsNamesToString(parts, 100));
 
     return std::make_unique<ReadFromMergeTree>(
         std::move(parts),
