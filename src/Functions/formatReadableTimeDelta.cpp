@@ -7,6 +7,14 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
+#include <array>
+#include <cassert>
+#include <chrono>
+#include <concepts>
+#include <span>
+#include <string_view>
+#include <tuple>
+#include <utility>
 
 
 namespace DB
@@ -21,6 +29,62 @@ namespace ErrorCodes
 
 namespace
 {
+
+using simple_year = std::chrono::duration<int64_t, std::ratio<365L * 24L * 60L * 60L, 1L>>; // 365 days
+using simple_month = std::chrono::duration<int64_t, std::ratio<(30L * 24L + 12L) * 60L * 60L, 1L>>; // 30.5 days
+
+
+// This is a helper type for various chrono lengths (and it can't be inside the FunctionFormatReadableTimeDelta class)
+struct Unit {
+    int num;
+    int denom;
+
+    std::string_view name;
+
+    friend bool operator==(const Unit & lhs, const Unit & rhs) {
+        return std::tie(lhs.num, lhs.denom) == std::tie(rhs.num, rhs.denom);
+    }
+
+    friend bool operator==(const Unit & lhs, std::string_view needle) {
+        return lhs.name == needle;
+    }
+
+    UInt64 convertToUnit(std::chrono::duration<Float64> & input) const noexcept {
+        return static_cast<UInt64>(input.count() / num * denom);
+    }
+
+    std::chrono::duration<Float64> convertFromUnit(UInt64 count) const noexcept {
+        return std::chrono::duration<Float64>{static_cast<Float64>(count) * num / denom};
+    }
+
+    template <typename T> static consteval std::string_view getUnitName() {
+        if constexpr (std::same_as<simple_year, T>) {
+            return "year";
+        } else if constexpr (std::same_as<simple_month, T>) {
+            return "month";
+        } else if constexpr (std::same_as<std::chrono::days, T>) {
+            return "day";
+        } else if constexpr (std::same_as<std::chrono::hours, T>) {
+            return "hour";
+        } else if constexpr (std::same_as<std::chrono::minutes, T>) {
+            return "minute";
+        } else if constexpr (std::same_as<std::chrono::seconds, T>) {
+            return "second";
+        } else if constexpr (std::same_as<std::chrono::milliseconds, T>) {
+            return "millisecond";
+        } else if constexpr (std::same_as<std::chrono::microseconds, T>) {
+            return "microsecond";
+        } else { // if constexpr (std::same_as<std::chrono::nanoseconds, T>) {
+            static_assert(std::same_as<std::chrono::nanoseconds, T>);
+            return "nanosecond";
+        }
+    }
+
+    template <typename T, long Num, long Den> consteval Unit(std::chrono::duration<T, std::ratio<Num, Den>>): 
+        num{static_cast<int>(Num)}, 
+        denom{static_cast<int>(Den)}, 
+        name{getUnitName<std::chrono::duration<T, std::ratio<Num, Den>>>()} { }
+};
 
 /** Prints amount of seconds in form of:
   * "1 year, 2 months, 12 days, 3 hours, 1 minute and 33 seconds".
@@ -55,9 +119,9 @@ public:
                 "Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
                 getName(), arguments.size());
 
-        if (arguments.size() > 2)
+        if (arguments.size() > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be at most 2.",
+                "Number of arguments for function {} doesn't match: passed {}, should be at most 3.",
                 getName(), arguments.size());
 
         const IDataType & type = *arguments[0];
@@ -65,12 +129,20 @@ public:
         if (!isNativeNumber(type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time delta", type.getName());
 
-        if (arguments.size() == 2)
+        if (arguments.size() >= 2)
         {
-            const auto * maximum_unit_arg = arguments[1].get();
-            if (!isStringOrFixedString(maximum_unit_arg))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument maximum_unit of function {}",
-                                maximum_unit_arg->getName(), getName());
+            const auto * largest_unit_arg = arguments[1].get();
+            if (!isStringOrFixedString(largest_unit_arg))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument largest_unit of function {}",
+                                largest_unit_arg->getName(), getName());
+        }
+
+        if (arguments.size() == 3)
+        {
+            const auto * smallest_unit_arg = arguments[2].get();
+            if (!isStringOrFixedString(smallest_unit_arg))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument smallest_unit of function {}",
+                                smallest_unit_arg->getName(), getName());
         }
 
         return std::make_shared<DataTypeString>();
@@ -80,47 +152,81 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    enum Unit
-    {
-        Seconds,
-        Minutes,
-        Hours,
-        Days,
-        Months,
-        Years
+    static constexpr auto all_units = std::array{
+        Unit{simple_year()}, /// different definitions of year and month than std::chrono ones
+        Unit{simple_month()},
+        Unit{std::chrono::days()},
+        Unit{std::chrono::hours()},
+        Unit{std::chrono::minutes()},
+        Unit{std::chrono::seconds()},
+        Unit{std::chrono::milliseconds()},
+        Unit{std::chrono::microseconds()},
+        Unit{std::chrono::nanoseconds()},
     };
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-    {
-        std::string_view maximum_unit_str;
-        if (arguments.size() == 2)
-        {
-            const ColumnPtr & maximum_unit_column = arguments[1].column;
-            const ColumnConst * maximum_unit_const_col = checkAndGetColumnConstStringOrFixedString(maximum_unit_column.get());
-            if (maximum_unit_const_col)
-                maximum_unit_str = maximum_unit_const_col->getDataColumn().getDataAt(0).toView();
+    Unit convertFromString(std::string_view unit_str, std::string_view default_unit, std::string_view argument_name) const {
+        using namespace std::string_view_literals;
+
+        if (unit_str.empty())
+            unit_str = default_unit;
+
+        if (unit_str.back() == 's') {
+            unit_str.remove_suffix(1);
         }
 
-        Unit max_unit;
+        const auto unit_it = std::find(all_units.begin(), all_units.end(), unit_str);
 
-        /// Default means "use all available units".
-        if (maximum_unit_str.empty() || maximum_unit_str == "years")
-            max_unit = Years;
-        else if (maximum_unit_str == "months")
-            max_unit = Months;
-        else if (maximum_unit_str == "days")
-            max_unit = Days;
-        else if (maximum_unit_str == "hours")
-            max_unit = Hours;
-        else if (maximum_unit_str == "minutes")
-            max_unit = Minutes;
-        else if (maximum_unit_str == "seconds")
-            max_unit = Seconds;
-        else
+        if (unit_it == all_units.end()) {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Unexpected value of maximum unit argument ({}) for function {}, the only allowed values are:"
-                " 'seconds', 'minutes', 'hours', 'days', 'months', 'years'.",
-                maximum_unit_str, getName());
+                "Unexpected value of {} argument ({}) for function {}, the only allowed values are:"
+                " 'nanoseconds', 'microseconds', 'milliseconds', 'seconds', 'minutes', 'hours', 'days', 'months', 'years'.",
+                argument_name, unit_str, getName());            
+        }
+
+        return *unit_it;
+    }
+    
+    [[maybe_unused]] std::span<const Unit> selectUnitRange(const ColumnsWithTypeAndName & arguments) const {
+        using namespace std::string_view_literals;
+        
+        const auto get_unit_str = [&arguments](size_t i) -> std::string_view {
+            if (arguments.size() <= i) 
+                return {};
+            
+            const ColumnPtr & unit_column = arguments[i].column;
+            const ColumnConst * unit_const_col = checkAndGetColumnConstStringOrFixedString(unit_column.get());
+            
+            if (!unit_const_col) 
+                return {};
+            
+            return unit_const_col->getDataColumn().getDataAt(0).toView();
+        };
+
+        const std::string_view largest_unit_str = get_unit_str(1);
+        const std::string_view smallest_unit_str = get_unit_str(2);
+
+        const Unit largest_unit = convertFromString(largest_unit_str, "years"sv, "largest_unit"sv);
+        const Unit smallest_unit = convertFromString(smallest_unit_str, "seconds"sv, "smallest_unit"sv);
+
+        auto largest_unit_iter = std::find(all_units.begin(), all_units.end(), largest_unit);
+        auto smallest_unit_iter = std::find(all_units.begin(), all_units.end(), smallest_unit);
+
+        // Make sure the range of units is always from Largest to Smallest (year > seconds)
+        if (smallest_unit_iter < largest_unit_iter) {
+            std::swap(smallest_unit_iter, largest_unit_iter);
+        }
+
+        /// We are already sure we we have something as the table was used to search for Unit value
+        assert(smallest_unit_iter != all_units.end());
+
+        /// Resulting range of units
+        return std::span(largest_unit_iter, std::next(smallest_unit_iter)); 
+    }
+
+    ColumnPtr executeImpl([[maybe_unused]] const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        [[maybe_unused]] const auto selected_units = selectUnitRange(arguments);
+        assert(!selected_units.empty());
 
         auto col_to = ColumnString::create();
 
@@ -133,36 +239,11 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             /// Virtual call is Ok (negligible comparing to the rest of calculations).
-            Float64 value = arguments[0].column->getFloat64(i);
-
-            if (!isFinite(value))
-            {
-                /// Cannot decide what unit it is (years, month), just simply write inf or nan.
-                writeFloatText(value, buf_to);
-            }
-            else
-            {
-                bool is_negative = value < 0;
-                if (is_negative)
-                {
-                    writeChar('-', buf_to);
-                    value = -value;
-                }
-
-                /// To output separators between parts: ", " and " and ".
-                bool has_output = false;
-
-                switch (max_unit) /// A kind of Duff Device.
-                {
-                    case Years:     processUnit(365 * 24 * 3600, " year", 5, value, buf_to, has_output); [[fallthrough]];
-                    case Months:    processUnit(static_cast<UInt64>(30.5 * 24 * 3600), " month", 6, value, buf_to, has_output); [[fallthrough]];
-                    case Days:      processUnit(24 * 3600, " day", 4, value, buf_to, has_output); [[fallthrough]];
-                    case Hours:     processUnit(3600, " hour", 5, value, buf_to, has_output); [[fallthrough]];
-                    case Minutes:   processUnit(60, " minute", 7, value, buf_to, has_output); [[fallthrough]];
-                    case Seconds:   processUnit(1, " second", 7, value, buf_to, has_output);
-                }
-            }
-
+            [[maybe_unused]] const auto duration = std::chrono::duration<Float64>{arguments[0].column->getFloat64(i)};
+            
+            formatDurationInto(duration, selected_units, buf_to);
+            
+            /// And finish the string... (always)
             writeChar(0, buf_to);
             offsets_to[i] = buf_to.count();
         }
@@ -170,51 +251,82 @@ public:
         buf_to.finalize();
         return col_to;
     }
-
-    static void processUnit(
-        UInt64 unit_size, const char * unit_name, size_t unit_name_size,
-        Float64 & value, WriteBuffer & buf_to, bool & has_output)
-    {
-        if (unlikely(value + 1.0 == value))
+    
+    [[maybe_unused]] static void formatDurationInto(std::chrono::duration<Float64> duration, std::span<const Unit> selected_units, WriteBuffer & buf_to) {
+        if (!isFinite(duration.count()))
         {
-            /// The case when value is too large so exact representation for subsequent smaller units is not possible.
-            writeText(std::floor(value / unit_size), buf_to);
-            buf_to.write(unit_name, unit_name_size);
-            writeChar('s', buf_to);
-            has_output = true;
-            value = 0;
+            /// Cannot decide what unit it is (years, month), just simply write inf or nan.
+            writeFloatText(duration.count(), buf_to);
             return;
         }
 
-        UInt64 num_units = static_cast<UInt64>(value / unit_size);
-
-        if (!num_units)
+        const bool is_negative = duration.count() < 0;
+        if (is_negative)
         {
-            /// Zero units, no need to print. But if it's the last (seconds) and the only unit, print "0 seconds" nevertheless.
-            if (unit_size > 1 || has_output)
-                return;
+            writeChar('-', buf_to);
+            duration = abs(duration);
         }
+
+        /// To output separators between parts: ", " and " and ".
+        bool has_previous_output = false;
+
+        for (const auto & unit: selected_units.first(selected_units.size() - 1u)) 
+        {
+            if (unlikely(duration.count() + 1.0 == duration.count()))
+            {
+                /// The case when value is too large so exact representation for subsequent smaller units is not possible.
+                const UInt64 count = unit.convertToUnit(duration);
+                writeText(count, buf_to);
+                writeChar(' ', buf_to);
+                buf_to.write(unit.name.data(), unit.name.size());
+                writeChar('s', buf_to);
+                return; 
+            }
+            
+            has_previous_output |= processUnit(unit, duration, buf_to, has_previous_output);
+        }
+
+        if (has_previous_output) {
+            writeCString(" and ", buf_to);
+        }
+
+        // and print the last one (and don't skip)
+        const auto & last_unit = selected_units.back();
+        justPrintCountAndUnit(last_unit.convertToUnit(duration), last_unit.name, buf_to);
+    }
+
+    static bool processUnit(const Unit & unit, std::chrono::duration<Float64> & duration, WriteBuffer & buf_to, bool has_previous_output)
+    {
+        const std::string_view unit_name = unit.name;
+        const UInt64 duration_in_unit = unit.convertToUnit(duration);
 
         /// Remaining value to print on next iteration.
-        value -= num_units * unit_size;
+        duration -= unit.convertFromUnit(duration_in_unit); // and now substract it
 
-        if (has_output)
+        if (duration_in_unit == 0)
         {
-            /// Need delimiter between values. The last delimiter is " and ", all previous are comma.
-            if (value < 1)
-                writeCString(" and ", buf_to);
-            else
-                writeCString(", ", buf_to);
+            /// Nothing to print (skip)
+            return false;
         }
 
-        writeText(num_units, buf_to);
-        buf_to.write(unit_name, unit_name_size); /// If we just leave strlen(unit_name) here, clang-11 fails to make it compile-time.
+        if (has_previous_output)
+        {
+            /// Need delimiter between parts. The last delimiter is " and ", all previous are comma.
+            writeCString(", ", buf_to);
+        }
+
+        justPrintCountAndUnit(duration_in_unit, unit_name, buf_to);
+        return true;
+    }
+    
+    static void justPrintCountAndUnit(UInt64 count, std::string_view unit_name, WriteBuffer & buf_to) {
+        writeText(count, buf_to);
+        writeChar(' ', buf_to);
+        buf_to.write(unit_name.data(), unit_name.size());
 
         /// How to pronounce: unit vs. units.
-        if (num_units != 1)
+        if (count != 1u)
             writeChar('s', buf_to);
-
-        has_output = true;
     }
 };
 
