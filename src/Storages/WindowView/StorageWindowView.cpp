@@ -1599,7 +1599,7 @@ void StorageWindowView::shutdown()
     DatabaseCatalog::instance().removeViewDependency(select_table_id, table_id);
 }
 
-void StorageWindowView::checkTableCanBeDropped() const
+void StorageWindowView::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const
 {
     auto table_id = getStorageID();
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
