@@ -32,7 +32,7 @@ MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
 
 IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartInMemory::getReader(
     const NamesAndTypesList & columns_to_read,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     const MarkRanges & mark_ranges,
     UncompressedCache * /* uncompressed_cache */,
     MarkCache * /* mark_cache */,
@@ -45,7 +45,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartInMemory::getReader(
     auto ptr = std::static_pointer_cast<const MergeTreeDataPartInMemory>(shared_from_this());
 
     return std::make_unique<MergeTreeReaderInMemory>(
-        read_info, ptr, columns_to_read, metadata_snapshot, mark_ranges, reader_settings);
+        read_info, ptr, columns_to_read, storage_snapshot, mark_ranges, reader_settings);
 }
 
 IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartInMemory::getWriter(
