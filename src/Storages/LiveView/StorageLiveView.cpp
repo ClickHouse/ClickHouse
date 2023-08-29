@@ -263,7 +263,7 @@ NamesAndTypesList StorageLiveView::getVirtuals() const
     };
 }
 
-void StorageLiveView::checkTableCanBeDropped() const
+void StorageLiveView::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const
 {
     auto table_id = getStorageID();
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
