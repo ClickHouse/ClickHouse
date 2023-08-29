@@ -20,8 +20,6 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
 
-
-
 namespace DB
 {
 
