@@ -627,10 +627,11 @@ namespace
                         continue;
                     }
 
+                    const auto & full_path = processed_files.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), *filename));
+
                     read_files.insert(*filename);
                     read_buf = archive_reader->readFile(std::move(file_enumerator));
 
-                    const auto & full_path = processed_files.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), *filename));
                     columns_from_cache = check_schema_cache(full_path);
 
                     if (columns_from_cache)
@@ -1226,13 +1227,14 @@ public:
                 }
 
                 const Settings & settings = context->getSettingsRef();
-                chassert(!storage->paths.empty());
 
                 size_t file_num = 0;
                 if (storage->archive_info)
                     file_num = storage->archive_info->paths_to_archives.size();
                 else
                     file_num = storage->paths.size();
+
+                chassert(file_num > 0);
 
                 const auto max_parsing_threads = std::max<size_t>(settings.max_threads / file_num, 1UL);
                 input_format = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, need_only_count ? 1 : max_parsing_threads);
