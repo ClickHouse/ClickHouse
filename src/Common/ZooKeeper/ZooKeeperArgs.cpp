@@ -36,7 +36,7 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
     }
 
     if (session_timeout_ms < 0 || operation_timeout_ms < 0 || connection_timeout_ms < 0)
-        throw KeeperException("Timeout cannot be negative", Coordination::Error::ZBADARGUMENTS);
+        throw KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "Timeout cannot be negative");
 
     /// init get_priority_load_balancing
     get_priority_load_balancing.hostname_differences.resize(hosts.size());
@@ -63,7 +63,7 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
         auto tcp_port_secure = config.getString(key);
 
         if (tcp_port_secure.empty())
-            throw KeeperException("Empty tcp_port_secure in config file", Coordination::Error::ZBADARGUMENTS);
+            throw KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "Empty tcp_port_secure in config file");
     }
 
     bool secure{false};
@@ -81,7 +81,7 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
     }
 
     if (tcp_port.empty())
-        throw KeeperException("No tcp_port or tcp_port_secure in config file", Coordination::Error::ZBADARGUMENTS);
+        throw KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "No tcp_port or tcp_port_secure in config file");
 
     if (auto coordination_key = std::string{config_name} + ".coordination_settings";
         config.has(coordination_key))
@@ -213,7 +213,7 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
             };
         }
         else
-            throw KeeperException(std::string("Unknown key ") + key + " in config file", Coordination::Error::ZBADARGUMENTS);
+            throw KeeperException(Coordination::Error::ZBADARGUMENTS, "Unknown key {} in config file", key);
     }
 }
 

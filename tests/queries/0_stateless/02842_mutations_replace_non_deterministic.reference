@@ -1,0 +1,10 @@
+10	4950
+UPDATE v = _CAST(4950, \'Nullable(UInt64)\') WHERE 1
+10	[0,1,2,3,4,5,6,7,8,9]
+UPDATE v = _CAST([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], \'Array(UInt64)\') WHERE 1
+10	5
+UPDATE v = _CAST(\'\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\', \'AggregateFunction(uniqExact, UInt64)\') WHERE 1
+10	1
+UPDATE v = _CAST(timestamp, \'DateTime\') WHERE 1
+UPDATE v = (SELECT sum(number) FROM numbers(1000) WHERE number > randConstant()) WHERE 1
+20	2100-10-10 00:00:00
