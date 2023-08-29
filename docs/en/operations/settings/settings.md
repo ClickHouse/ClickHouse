@@ -4648,7 +4648,7 @@ SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_pars
 
 Determines whether validation of client information enabled when query packet is received from a client using a TCP connection.
 
-If `true`, an exception will be thrown on invalid client information from the TCP client. clickhouse-clients using version 23.7 and older are not compatible with the newer 23.8+ server version.
+If `true`, an exception will be thrown on invalid client information from the TCP client.
 
 If `false`, the data will not be validated. The server will work with clients of all versions.
 
