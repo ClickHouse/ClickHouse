@@ -32,7 +32,7 @@
 #    include <Storages/StorageS3.h>
 #    include <Storages/StorageSnapshot.h>
 #    include <Storages/VirtualColumnUtils.h>
-#    include <Storages/getVirtualsForStorage.h>
+#    include <Storages/prepareReadingFromFormat.h>
 #    include <Common/NamedCollections/NamedCollections.h>
 
 
@@ -170,15 +170,7 @@ StorageS3Queue::StorageS3Queue(
     }
 
     files_metadata = std::make_shared<S3QueueFilesMetadata>(this, *s3queue_settings);
-
-    auto default_virtuals = NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
-
-    auto columns = storage_metadata.getSampleBlock().getNamesAndTypesList();
-    virtual_columns = getVirtualsForStorage(columns, default_virtuals);
-    for (const auto & column : virtual_columns)
-        virtual_block.insert({column.type->createColumn(), column.type, column.name});
+    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 
     auto poll_thread = getContext()->getSchedulePool().createTask("S3QueueStreamingTask", [this] { threadFunc(); });
     task = std::make_shared<TaskContext>(std::move(poll_thread));
@@ -187,7 +179,7 @@ StorageS3Queue::StorageS3Queue(
 
 bool StorageS3Queue::supportsSubcolumns() const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubcolumns(configuration.format);
+    return true;
 }
 
 bool StorageS3Queue::supportsSubsetOfColumns() const
@@ -213,61 +205,25 @@ Pipe StorageS3Queue::read(
 
     auto query_configuration = updateConfigurationAndGetCopy(local_context);
 
-    Pipes pipes;
-
-    std::unordered_set<String> column_names_set(column_names.begin(), column_names.end());
-    std::vector<NameAndTypePair> requested_virtual_columns;
-
-    for (const auto & virtual_column : getVirtuals())
-    {
-        if (column_names_set.contains(virtual_column.name))
-            requested_virtual_columns.push_back(virtual_column);
-    }
-
     std::shared_ptr<StorageS3Source::IIterator> iterator_wrapper = createFileIterator(local_context, query_info.query);
 
-    ColumnsDescription columns_description;
-    Block block_for_format;
-    if (supportsSubsetOfColumns())
-    {
-        auto fetch_columns = column_names;
-        const auto & virtuals = getVirtuals();
-        std::erase_if(
-            fetch_columns,
-            [&](const String & col)
-            {
-                return std::any_of(
-                    virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col) { return col == virtual_col.name; });
-            });
-
-        if (fetch_columns.empty())
-            fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
-
-        columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
-        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-    }
-    else
-    {
-        columns_description = storage_snapshot->metadata->getColumns();
-        block_for_format = storage_snapshot->metadata->getSampleBlock();
-    }
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
 
     const size_t max_download_threads = local_context->getSettingsRef().max_download_threads;
 
     return Pipe(std::make_shared<StorageS3QueueSource>(
-        requested_virtual_columns,
+        read_from_format_info,
         configuration.format,
         getName(),
-        block_for_format,
         local_context,
         format_settings,
-        columns_description,
         max_block_size,
         query_configuration.request_settings,
         configuration.compression_method,
         query_configuration.client,
         query_configuration.url.bucket,
         query_configuration.url.version_id,
+        query_configuration.url.uri.getHost() + std::to_string(query_configuration.url.uri.getPort()),
         iterator_wrapper,
         files_metadata,
         after_processing,
@@ -425,58 +381,24 @@ void StorageS3Queue::streamToViews()
     auto column_names = block_io.pipeline.getHeader().getNames();
 
     // Create a stream for each consumer and join them in a union stream
-    std::vector<NameAndTypePair> requested_virtual_columns;
-
-    for (const auto & virtual_column : getVirtuals())
-    {
-        requested_virtual_columns.push_back(virtual_column);
-    }
 
     std::shared_ptr<StorageS3Source::IIterator> iterator_wrapper = createFileIterator(s3queue_context, nullptr);
-    ColumnsDescription columns_description;
-    Block block_for_format;
-    if (supportsSubsetOfColumns())
-    {
-        auto fetch_columns = column_names;
-        const auto & virtuals = getVirtuals();
-        std::erase_if(
-            fetch_columns,
-            [&](const String & col)
-            {
-                return std::any_of(
-                    virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col) { return col == virtual_col.name; });
-            });
-
-        if (fetch_columns.empty())
-            fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
-
-        columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
-        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-    }
-    else
-    {
-        columns_description = storage_snapshot->metadata->getColumns();
-        block_for_format = storage_snapshot->metadata->getSampleBlock();
-    }
-
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
     const size_t max_download_threads = s3queue_context->getSettingsRef().max_download_threads;
 
-    Pipes pipes;
-
     auto pipe = Pipe(std::make_shared<StorageS3QueueSource>(
-        requested_virtual_columns,
+        read_from_format_info,
         configuration.format,
         getName(),
-        block_for_format,
         s3queue_context,
         format_settings,
-        columns_description,
         block_size,
         query_configuration.request_settings,
         configuration.compression_method,
         query_configuration.client,
         query_configuration.url.bucket,
         query_configuration.url.version_id,
+        query_configuration.url.uri.getHost() + std::to_string(query_configuration.url.uri.getPort()),
         iterator_wrapper,
         files_metadata,
         after_processing,
@@ -598,7 +520,7 @@ StorageS3Queue::createFileIterator(ContextPtr local_context, ASTPtr query)
         *configuration.client,
         configuration.url,
         query,
-        virtual_block,
+        virtual_columns,
         local_context,
         s3queue_settings->s3queue_polling_size.value,
         configuration.request_settings);

@@ -149,7 +149,7 @@ def main():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    builds_for_check = CI_CONFIG["builds_report_config"][build_check_name]
+    builds_for_check = CI_CONFIG.builds_report_config[build_check_name]
     required_builds = required_builds or len(builds_for_check)
 
     # Collect reports from json artifacts

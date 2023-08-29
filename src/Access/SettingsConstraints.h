@@ -100,8 +100,8 @@ private:
     struct Constraint
     {
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
-        Field min_value;
-        Field max_value;
+        Field min_value{};
+        Field max_value{};
 
         bool operator ==(const Constraint & other) const;
         bool operator !=(const Constraint & other) const { return !(*this == other); }

@@ -57,29 +57,42 @@ def get_events_for_query(query_id: str) -> Dict[str, int]:
     }
 
 
+def format_settings(settings):
+    if not settings:
+        return ""
+    return "SETTINGS " + ",".join(f"{k}={v}" for k, v in settings.items())
+
+
 def check_backup_and_restore(
     storage_policy,
     backup_destination,
     size=1000,
-    backup_name=None,
+    backup_settings=None,
+    restore_settings=None,
+    insert_settings=None,
+    optimize_table=True,
 ):
+    optimize_table_query = "OPTIMIZE TABLE data FINAL;" if optimize_table else ""
+
     node.query(
         f"""
     DROP TABLE IF EXISTS data SYNC;
     CREATE TABLE data (key Int, value String, array Array(String)) Engine=MergeTree() ORDER BY tuple() SETTINGS storage_policy='{storage_policy}';
-    INSERT INTO data SELECT * FROM generateRandom('key Int, value String, array Array(String)') LIMIT {size};
-    OPTIMIZE TABLE data FINAL;
+    INSERT INTO data SELECT * FROM generateRandom('key Int, value String, array Array(String)') LIMIT {size} {format_settings(insert_settings)};
+    {optimize_table_query}
     """
     )
+
     try:
         backup_query_id = uuid.uuid4().hex
         node.query(
-            f"BACKUP TABLE data TO {backup_destination}", query_id=backup_query_id
+            f"BACKUP TABLE data TO {backup_destination} {format_settings(backup_settings)}",
+            query_id=backup_query_id,
         )
         restore_query_id = uuid.uuid4().hex
         node.query(
             f"""
-            RESTORE TABLE data AS data_restored FROM {backup_destination};
+            RESTORE TABLE data AS data_restored FROM {backup_destination} {format_settings(restore_settings)};
             """,
             query_id=restore_query_id,
         )
@@ -114,6 +127,7 @@ def check_system_tables():
     expected_disks = (
         ("default", "local"),
         ("disk_s3", "s3"),
+        ("disk_s3_cache", "s3"),
         ("disk_s3_other_bucket", "s3"),
         ("disk_s3_plain", "s3_plain"),
     )
@@ -184,7 +198,6 @@ def test_backup_to_s3_multipart():
         storage_policy,
         backup_destination,
         size=1000000,
-        backup_name=backup_name,
     )
     assert node.contains_in_log(
         f"copyDataToS3File: Multipart upload has completed. Bucket: root, Key: data/backups/multipart/{backup_name}"
@@ -312,3 +325,77 @@ def test_incremental_backup_append_table_def():
 
     assert node.query("SELECT count(), sum(x) FROM data") == "100\t4950\n"
     assert "parts_to_throw_insert = 100" in node.query("SHOW CREATE TABLE data")
+
+
+@pytest.mark.parametrize(
+    "in_cache_initially, allow_backup_read_cache, allow_s3_native_copy",
+    [
+        (False, True, False),
+        (True, False, False),
+        (True, True, False),
+        (True, True, True),
+    ],
+)
+def test_backup_with_fs_cache(
+    in_cache_initially, allow_backup_read_cache, allow_s3_native_copy
+):
+    storage_policy = "policy_s3_cache"
+
+    backup_name = new_backup_name()
+    backup_destination = (
+        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
+    )
+
+    insert_settings = {
+        "enable_filesystem_cache_on_write_operations": int(in_cache_initially)
+    }
+
+    backup_settings = {
+        "read_from_filesystem_cache": int(allow_backup_read_cache),
+        "allow_s3_native_copy": int(allow_s3_native_copy),
+    }
+
+    restore_settings = {"allow_s3_native_copy": int(allow_s3_native_copy)}
+
+    backup_events, restore_events = check_backup_and_restore(
+        storage_policy,
+        backup_destination,
+        size=10,
+        insert_settings=insert_settings,
+        optimize_table=False,
+        backup_settings=backup_settings,
+        restore_settings=restore_settings,
+    )
+
+    # print(f"backup_events = {backup_events}")
+    # print(f"restore_events = {restore_events}")
+
+    # BACKUP never updates the filesystem cache but it may read it if `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` allows that.
+    if allow_backup_read_cache and in_cache_initially:
+        assert backup_events["CachedReadBufferReadFromCacheBytes"] > 0
+        assert not "CachedReadBufferReadFromSourceBytes" in backup_events
+    elif allow_backup_read_cache:
+        assert not "CachedReadBufferReadFromCacheBytes" in backup_events
+        assert backup_events["CachedReadBufferReadFromSourceBytes"] > 0
+    else:
+        assert not "CachedReadBufferReadFromCacheBytes" in backup_events
+        assert not "CachedReadBufferReadFromSourceBytes" in backup_events
+
+    assert not "CachedReadBufferCacheWriteBytes" in backup_events
+    assert not "CachedWriteBufferCacheWriteBytes" in backup_events
+
+    # RESTORE doesn't use the filesystem cache during write operations.
+    # However while attaching parts it may use the cache while reading such files as "columns.txt" or "checksums.txt" or "primary.idx",
+    # see IMergeTreeDataPart::loadColumnsChecksumsIndexes()
+    if "CachedReadBufferReadFromSourceBytes" in restore_events:
+        assert (
+            restore_events["CachedReadBufferReadFromSourceBytes"]
+            == restore_events["CachedReadBufferCacheWriteBytes"]
+        )
+
+    assert not "CachedReadBufferReadFromCacheBytes" in restore_events
+
+    # "format_version.txt" is written when a table is created,
+    # see MergeTreeData::initializeDirectoriesAndFormatVersion()
+    if "CachedWriteBufferCacheWriteBytes" in restore_events:
+        assert restore_events["CachedWriteBufferCacheWriteBytes"] <= 1

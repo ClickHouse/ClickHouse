@@ -504,7 +504,6 @@ void registerInputFormatParquetMetadata(FormatFactory & factory)
         {
             return std::make_shared<ParquetMetadataInputFormat>(buf, sample, settings);
         });
-    factory.markFormatSupportsSubcolumns("ParquetMetadata");
     factory.markFormatSupportsSubsetOfColumns("ParquetMetadata");
 }
 

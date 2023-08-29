@@ -201,7 +201,7 @@ public:
 
     bool supportsIndexForIn() const override { return true; }
 
-    void checkTableCanBeDropped() const override;
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
@@ -497,6 +497,7 @@ private:
     BackgroundSchedulePool::TaskHolder queue_updating_task;
 
     BackgroundSchedulePool::TaskHolder mutations_updating_task;
+    Coordination::WatchCallbackPtr mutations_watch_callback;
 
     /// A task that selects parts to merge.
     BackgroundSchedulePool::TaskHolder merge_selecting_task;
