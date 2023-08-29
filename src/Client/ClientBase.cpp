@@ -362,7 +362,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
         std::cout << std::endl;
         WriteBufferFromOStream res_buf(std::cout, 4096);
         formatAST(*res, res_buf);
-        res_buf.next();
+        res_buf.finalize();
         std::cout << std::endl << std::endl;
     }
 
