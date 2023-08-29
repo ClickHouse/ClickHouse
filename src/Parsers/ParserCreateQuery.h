@@ -403,6 +403,13 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserForeignKeyDeclaration : public IParserBase
+{
+protected:
+    const char * getName() const override { return "foreign key declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 class ParserTablePropertyDeclaration : public IParserBase
 {
 protected:
