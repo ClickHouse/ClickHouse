@@ -225,16 +225,19 @@ struct BinaryOperation
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
 
-    template <OpCase op_case>
-    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap = nullptr)
+    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+    MULTITARGET_FUNCTION_HEADER(template <OpCase op_case> static void NO_INLINE),
+        processImpl,
+        MULTITARGET_FUNCTION_BODY((const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap = nullptr) /// NOLINT
     {
         if constexpr (op_case == OpCase::RightConstant)
         {
             if (right_nullmap && (*right_nullmap)[0])
                 return;
 
+            const B b_value = *b;
             for (size_t i = 0; i < size; ++i)
-                c[i] = Op::template apply<ResultType>(a[i], *b);
+                c[i] = Op::template apply<ResultType>(a[i], b_value);
         }
         else
         {
@@ -250,6 +253,38 @@ struct BinaryOperation
                 for (size_t i = 0; i < size; ++i)
                     apply<op_case>(a, b, c, i);
         }
+    }))
+
+    template <OpCase op_case>
+    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap = nullptr)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
+        {
+            processImplAVX512BW<op_case>(a, b, c, size, right_nullmap);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::AVX512F))
+        {
+            processImplAVX512F<op_case>(a, b, c, size, right_nullmap);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            processImplAVX2<op_case>(a, b, c, size, right_nullmap);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::SSE42))
+        {
+            processImplSSE42<op_case>(a, b, c, size, right_nullmap);
+            return;
+        }
+#endif
+
+       processImpl<op_case>(a, b, c, size, right_nullmap);
     }
 
     static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
