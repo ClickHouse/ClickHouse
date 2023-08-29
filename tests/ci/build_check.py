@@ -345,7 +345,7 @@ def main():
         os.remove(performance_path)
 
     build_urls = (
-        s3_helper.upload_build_folder_to_s3(
+        s3_helper.upload_build_directory_to_s3(
             build_output_path,
             s3_path_prefix,
             keep_dirs_in_s3_path=False,
