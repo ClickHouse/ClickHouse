@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/Aggregator.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/PartialResultTransform.h>
 
@@ -17,10 +18,12 @@ public:
 
     String getName() const override { return "AggregatingPartialResultTransform"; }
 
+    void transformPartialResult(Chunk & chunk) override;
     ShaphotResult getRealProcessorSnapshot() override;
 
 private:
     AggregatingTransformPtr aggregating_transform;
+    Aggregator transform_aggregator;
 };
 
 }

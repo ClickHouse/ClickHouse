@@ -76,7 +76,7 @@ public:
     void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit_at_least.swap(counter); }
     void setInputPortHasCounter(size_t pos) { ports_data[pos].input_port_has_counter = true; }
 
-    bool supportPartialResultProcessor() const override { return true; }
+    PartialResultStatus getPartialResultProcessorSupportStatus() const override { return PartialResultStatus::FullSupported; }
 };
 
 }

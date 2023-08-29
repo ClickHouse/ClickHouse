@@ -23,6 +23,8 @@ public:
     String getName() const override { return "LimitPartialResultTransform"; }
 
     void transformPartialResult(Chunk & chunk) override;
+    /// LimitsTransform doesn't have a state which can be snapshoted
+    ShaphotResult getRealProcessorSnapshot() override { return {{}, SnaphotStatus::Stopped}; }
 
 private:
     UInt64 limit;

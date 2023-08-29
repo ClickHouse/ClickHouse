@@ -307,8 +307,8 @@ class IColumn;
     \
     M(Bool, partial_result_on_first_cancel, false, "Allows query to return a partial result after cancel.", 0) \
     \
-    M(Milliseconds, partial_result_update_duration_ms, 0, "Duration of time in milliseconds between real-time updates of result table sent to the client during query execution.", 0) \
-    M(UInt64, max_rows_in_partial_result, 10, "Max rows displayed to user after each real-time update of output table during query execution.", 0) \
+    M(Milliseconds, partial_result_update_duration_ms, 0, "Interval (in milliseconds) for sending updates with partial data about the result table to the client (in interactive mode) during query execution. Setting to 0 disables partial results. Only supported for single-threaded GROUP BY without key, ORDER BY, LIMIT and OFFSET.", 0) \
+    M(UInt64, max_rows_in_partial_result, 10, "Maximum rows to show in the partial result after every real-time update while the query runs (use partial result limit + OFFSET as a value in case of OFFSET in the query).", 0) \
     /** Settings for testing hedged requests */ \
     M(Milliseconds, sleep_in_send_tables_status_ms, 0, "Time to sleep in sending tables status response in TCPHandler", 0) \
     M(Milliseconds, sleep_in_send_data_ms, 0, "Time to sleep in sending data in TCPHandler", 0) \

@@ -407,12 +407,13 @@ void Pipe::addExtremesSource(ProcessorPtr source)
 
 void Pipe::activatePartialResult(UInt64 partial_result_limit_, UInt64 partial_result_duration_ms_)
 {
-    if (!is_partial_result_active)
-        partial_result_ports.assign(output_ports.size(), nullptr);
+    if (is_partial_result_active)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Partial result for Pipe should be initialized only once");
 
     is_partial_result_active = true;
     partial_result_limit = partial_result_limit_;
     partial_result_duration_ms = partial_result_duration_ms_;
+    partial_result_ports.assign(output_ports.size(), nullptr);
 }
 
 static void dropPort(OutputPort *& port, Processors & processors, Processors * collected_processors)
@@ -629,12 +630,13 @@ void Pipe::addPartialResultSimpleTransform(const ProcessorPtr & transform, size_
     if (isPartialResultActive())
     {
         auto & partial_result_port = partial_result_ports[partial_result_port_id];
+        auto partial_result_status = transform->getPartialResultProcessorSupportStatus();
 
-        if (!transform->supportPartialResultProcessor())
-        {
+        if (partial_result_status == IProcessor::PartialResultStatus::NotSupported)
             dropPort(partial_result_port, *processors, collected_processors);
+
+        if (partial_result_status != IProcessor::PartialResultStatus::FullSupported)
             return;
-        }
 
         auto partial_result_transform = IProcessor::getPartialResultProcessorPtr(transform, partial_result_limit, partial_result_duration_ms);
 
@@ -651,15 +653,26 @@ void Pipe::addPartialResultTransform(const ProcessorPtr & transform)
     if (isPartialResultActive())
     {
         size_t new_outputs_size = transform->getOutputs().size();
+        auto partial_result_status = transform->getPartialResultProcessorSupportStatus();
 
-        if (!transform->supportPartialResultProcessor())
+        if (partial_result_status == IProcessor::PartialResultStatus::SkipSupported && new_outputs_size != partial_result_ports.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot skip transform {} in the partial result part of the Pipe because it has {} output ports, but the partial result part expects {} output ports",
+                transform->getName(),
+                new_outputs_size,
+                partial_result_ports.size());
+
+        if (partial_result_status == IProcessor::PartialResultStatus::NotSupported)
         {
             for (auto & partial_result_port : partial_result_ports)
                 dropPort(partial_result_port, *processors, collected_processors);
 
             partial_result_ports.assign(new_outputs_size, nullptr);
-            return;
         }
+
+        if (partial_result_status != IProcessor::PartialResultStatus::FullSupported)
+            return;
 
         auto partial_result_transform = IProcessor::getPartialResultProcessorPtr(transform, partial_result_limit, partial_result_duration_ms);
         auto & inputs = partial_result_transform->getInputs();
@@ -667,7 +680,7 @@ void Pipe::addPartialResultTransform(const ProcessorPtr & transform)
         if (inputs.size() != partial_result_ports.size())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Cannot add transform {} to Pipe because it has {} input ports, but {} expected",
+                "Cannot add partial result transform {} to Pipe because it has {} input ports, but {} expected",
                 partial_result_transform->getName(),
                 inputs.size(),
                 partial_result_ports.size());

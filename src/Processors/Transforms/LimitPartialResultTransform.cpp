@@ -29,11 +29,11 @@ void LimitPartialResultTransform::transformPartialResult(Chunk & chunk)
     /// Check if some rows should be removed
     if (length < num_rows)
     {
-        auto columns = chunk.detachColumns();
         UInt64 num_columns = chunk.getNumColumns();
+        auto columns = chunk.detachColumns();
 
         for (UInt64 i = 0; i < num_columns; ++i)
-            columns[i] = columns[i]->cut(offset, limit);
+            columns[i] = columns[i]->cut(offset, length);
 
         chunk.setColumns(std::move(columns), length);
     }

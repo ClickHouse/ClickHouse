@@ -57,6 +57,11 @@ def assertPacket(packet, expected):
     assert packet == expected, "Got: {}, expected: {}".format(packet, expected)
 
 
+class Data(object):
+    def __init__(self, key, value):
+        self.key = key
+        self.value = value
+
 class TCPClient(object):
     def __init__(self, timeout=30):
         self.timeout = timeout
@@ -301,6 +306,6 @@ class TCPClient(object):
             if need_print_info:
                 print("Column {} type {}".format(col_name, type_name))
 
-            data.append((col_name, self.readRow(type_name, rows)))
+            data.append(Data(col_name, self.readRow(type_name, rows)))
 
         return data

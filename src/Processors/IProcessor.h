@@ -237,8 +237,21 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'expandPipeline' is not implemented for {} processor", getName());
     }
 
+    enum class PartialResultStatus
+    {
+        /// Processor currently doesn't support work with the partial result pipeline.
+        NotSupported,
+
+        /// Processor can be skipped in the partial result pipeline.
+        SkipSupported,
+
+        /// Processor creates a light-weight copy of itself in the partial result pipeline.
+        /// The copy can create snapshots of the original processor or transform small blocks of data in the same way as the original processor
+        FullSupported,
+    };
+
     virtual bool isPartialResultProcessor() const { return false; }
-    virtual bool supportPartialResultProcessor() const { return false; }
+    virtual PartialResultStatus getPartialResultProcessorSupportStatus() const { return PartialResultStatus::NotSupported; }
 
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
     /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).

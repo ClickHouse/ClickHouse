@@ -17,6 +17,8 @@ public:
 
     String getName() const override { return "MergeSortingPartialResultTransform"; }
 
+    /// MergeSortingTransform always receives chunks in a sorted state, so transformation is not needed
+    void transformPartialResult(Chunk & /*chunk*/) override {}
     ShaphotResult getRealProcessorSnapshot() override;
 
 private:

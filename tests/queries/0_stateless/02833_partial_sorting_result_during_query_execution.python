@@ -11,51 +11,69 @@ sys.path.insert(0, os.path.join(CURDIR, "helpers"))
 from tcp_client import TCPClient
 
 
-def main():
+def run_query_without_errors(query, support_partial_result):
     with TCPClient() as client:
-        client.sendQuery(
-            "SELECT number FROM numbers_mt(1e7+1) ORDER BY -number LIMIT 15 SETTINGS max_threads = 1, partial_result_update_duration_ms = 1, max_rows_in_partial_result = 10"
-        )
+        client.sendQuery(query)
 
         # external tables
         client.sendEmptyBlock()
         client.readHeader()
 
         # Partial result
-        _, partial_result = client.readDataWithoutProgress()[0]
-        assert (
-            len(partial_result) > 0
-        ), "Expected at least one block with a non-empty partial result before getting the full result"
+        partial_result = client.readDataWithoutProgress()[0]
+        if support_partial_result:
+            assert (
+                len(partial_result.value) > 0
+            ), "Expected at least one block with a non-empty partial result before getting the full result"
 
-        while True:
-            assert all(
-                a >= b for a, b in zip(partial_result, partial_result[1:])
-            ), "Partial result always should be sorted for this test"
+            while True:
+                assert all(
+                    a >= b for a, b in zip(partial_result.value, partial_result.value[1:])
+                ), "Partial result always should be sorted for this test"
 
-            _, new_partial_result = client.readDataWithoutProgress(
-                need_print_info=False
-            )[0]
-            if len(new_partial_result) == 0:
-                break
+                new_partial_result = client.readDataWithoutProgress(
+                    need_print_info=False
+                )[0]
+                if len(new_partial_result.value) == 0:
+                    break
 
-            data_size = len(partial_result)
-            assert all(
-                partial_result[i] <= new_partial_result[i] for i in range(data_size)
-            ), f"New partial result values should always be greater then old one because a new block contains more information about the full data. New result {new_partial_result}. Previous result {partial_result}"
+                data_size = len(partial_result.value)
+                assert all(
+                    partial_result.value[i] <= new_partial_result.value[i] for i in range(data_size)
+                ), f"New partial result values should always be greater then old one because a new block contains more information about the full data. New result {new_partial_result}. Previous result {partial_result}"
 
-            partial_result = new_partial_result
+                partial_result = new_partial_result
+        else:
+            block_rows = len(partial_result.value)
+            assert (
+                block_rows == 0
+            ), f"Expected only empty partial result block before getting the full result, but block has {block_rows} rows"
+
 
         # Full result
-        _, full_result = client.readDataWithoutProgress()[0]
+        full_result = client.readDataWithoutProgress()[0]
 
-        data_size = len(partial_result)
+        data_size = len(partial_result.value)
         assert all(
-            partial_result[i] <= full_result[i] for i in range(data_size)
+            partial_result.value[i] <= full_result.value[i] for i in range(data_size)
         ), f"Full result values should always be greater then partial result values. Full result {full_result}. Partial result {partial_result}"
 
-        for result in full_result:
+        for result in full_result.value:
             print(result)
 
+
+def main():
+    # Request with partial result limit less then full limit
+    run_query_without_errors("SELECT number FROM numbers_mt(5e6+1) ORDER BY -number LIMIT 5 SETTINGS max_threads = 1, partial_result_update_duration_ms = 1, max_rows_in_partial_result = 3", True)
+
+    # Request with partial result limit greater then full limit
+    run_query_without_errors("SELECT number FROM numbers_mt(5e6+1) ORDER BY -number LIMIT 3 SETTINGS max_threads = 1, partial_result_update_duration_ms = 1, max_rows_in_partial_result = 5", True)
+
+    # Request with OFFSET
+    run_query_without_errors("SELECT number FROM numbers_mt(5e6+1) ORDER BY -number LIMIT 3 OFFSET 1 SETTINGS max_threads = 1, partial_result_update_duration_ms = 1, max_rows_in_partial_result = 5", True)
+
+    # Request with OFFSET greater then partial result limit (partial result pipeline use blocks with less then OFFSET, so there will be no elements in block after LimitPartialResultTransform)
+    run_query_without_errors("SELECT number FROM numbers_mt(5e6+1) ORDER BY -number LIMIT 3 OFFSET 15 SETTINGS max_threads = 1, partial_result_update_duration_ms = 1, max_rows_in_partial_result = 5", False)
 
 if __name__ == "__main__":
     main()
