@@ -402,7 +402,7 @@ struct UInt128HashCRC32 : public UInt128Hash {};
 
 struct UInt128TrivialHash
 {
-    size_t operator()(UInt128 x) const { return x.items[0]; }
+    size_t operator()(UInt128 x) const { return x.items[UInt128::_impl::little(0)]; }
 };
 
 struct UUIDTrivialHash
