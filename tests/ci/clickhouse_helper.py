@@ -67,6 +67,7 @@ class ClickHouseHelper:
         if args:
             url = args[0]
         url = kwargs.get("url", url)
+        kwargs["timeout"] = kwargs.get("timeout", 100)
 
         for i in range(5):
             try:
@@ -87,7 +88,7 @@ class ClickHouseHelper:
             )
 
             if response.status_code >= 500:
-                # A retriable error
+                # A retryable error
                 time.sleep(1)
                 continue
 

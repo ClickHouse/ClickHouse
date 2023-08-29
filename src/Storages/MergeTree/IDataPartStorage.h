@@ -242,7 +242,7 @@ public:
         MergeTreeTransactionPtr txn = NO_TRANSACTION_PTR;
         HardlinkedFiles * hardlinked_files = nullptr;
         bool copy_instead_of_hardlink = false;
-        NameSet files_to_copy_instead_of_hardlinks;
+        NameSet files_to_copy_instead_of_hardlinks = {};
         bool keep_metadata_version = false;
         bool make_source_readonly = false;
         DiskTransactionPtr external_transaction = nullptr;

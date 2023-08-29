@@ -44,7 +44,7 @@ public:
             const S3::Client & client_,
             const S3::URI & globbed_uri_,
             ASTPtr query,
-            const Block & virtual_header,
+            const NamesAndTypesList & virtual_columns,
             ContextPtr context,
             UInt64 & max_poll_size_,
             const S3Settings::RequestSettings & request_settings_ = {});
@@ -79,6 +79,7 @@ public:
         const std::shared_ptr<const S3::Client> & client_,
         const String & bucket,
         const String & version_id,
+        const String & url_host_and_port,
         std::shared_ptr<IIterator> file_iterator_,
         std::shared_ptr<S3QueueFilesMetadata> files_metadata_,
         const S3QueueAction & action_,

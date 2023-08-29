@@ -92,7 +92,7 @@ class S3Helper:
                     file_path,
                 )
             else:
-                logging.info("No content type provied for %s", file_path)
+                logging.info("No content type provided for %s", file_path)
         else:
             if re.search(r"\.(txt|log|err|out)$", s3_path) or re.search(
                 r"\.log\..*(?<!\.zst)$", s3_path
@@ -114,11 +114,12 @@ class S3Helper:
             logging.info("File is too large, do not provide content type")
 
         self.client.upload_file(file_path, bucket_name, s3_path, ExtraArgs=metadata)
-        logging.info("Upload %s to %s. Meta: %s", file_path, s3_path, metadata)
         # last two replacements are specifics of AWS urls:
         # https://jamesd3142.wordpress.com/2018/02/28/amazon-s3-and-the-plus-symbol/
         url = f"{self.download_host}/{bucket_name}/{s3_path}"
-        return url.replace("+", "%2B").replace(" ", "%20")
+        url = url.replace("+", "%2B").replace(" ", "%20")
+        logging.info("Upload %s to %s. Meta: %s", file_path, url, metadata)
+        return url
 
     def upload_test_report_to_s3(self, file_path: str, s3_path: str) -> str:
         if CI:
