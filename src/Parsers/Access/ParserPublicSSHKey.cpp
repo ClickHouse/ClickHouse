@@ -20,7 +20,7 @@ namespace
                 return false;
 
             String algorithm;
-            if (!ParserKeyword{"ALGORITHM"}.ignore(pos, expected) || !parseIdentifierOrStringLiteral(pos, expected, algorithm))
+            if (!ParserKeyword{"TYPE"}.ignore(pos, expected) || !parseIdentifierOrStringLiteral(pos, expected, algorithm))
                 return false;
 
             ast = std::make_shared<ASTPublicSSHKey>();

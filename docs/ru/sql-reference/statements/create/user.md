@@ -13,7 +13,7 @@ sidebar_label: "Пользователь"
 ``` sql
 CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
         [, name2 [ON CLUSTER cluster_name2] ...]
-    [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name'} | {WITH ssh_key BY KEY 'public_key' ALGORITHM 'ssh-rsa|...'}]
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'}]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [DEFAULT ROLE role [,...]]
     [DEFAULT DATABASE database | NONE]
@@ -38,7 +38,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
 - `IDENTIFIED WITH ldap SERVER 'server_name'`
 - `IDENTIFIED WITH kerberos` or `IDENTIFIED WITH kerberos REALM 'realm'`
 - `IDENTIFIED WITH ssl_certificate CN 'mysite.com:user'`
-- `IDENTIFIED WITH ssh_key BY KEY 'public_key' ALGORITHM 'ssh-rsa', KEY 'another_public_key' ALGORITHM 'ssh-ed25519'`
+- `IDENTIFIED WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa', KEY 'another_public_key' TYPE 'ssh-ed25519'`
 - `IDENTIFIED BY 'qwerty'`
 
 Для идентификации с sha256_hash используя `SALT` - хэш должен быть вычислен от конкатенации 'password' и 'salt'.
