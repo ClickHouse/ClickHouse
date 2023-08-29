@@ -205,16 +205,6 @@ inline const char * find_first_symbols_sse2(const char * const begin, const char
     return return_mode == ReturnMode::End ? end : nullptr;
 }
 
-template <bool positive, ReturnMode return_mode, char... symbols>
-inline const char * find_first_symbols_sse2_markdown(const char * const begin, const char * const end)
-{
-    const char * pos = begin;
-    for (; pos < end; ++pos)
-        if (maybe_negate<positive>(is_in<symbols...>(*pos)))
-            return pos;
-
-    return return_mode == ReturnMode::End ? end : nullptr;
-}
 
 template <bool positive, ReturnMode return_mode, char... symbols>
 inline const char * find_last_symbols_sse2(const char * const begin, const char * const end)
@@ -356,12 +346,6 @@ inline const char * find_first_symbols_dispatch(const std::string_view haystack,
         return find_first_symbols_sse2<positive, return_mode>(haystack.begin(), haystack.end(), symbols.str.data(), symbols.str.size());
 }
 
-template <bool positive, ReturnMode return_mode, char... symbols>
-inline const char * find_first_symbols_dispatch_markdown(const char * begin, const char * end)
-{
-    return find_first_symbols_sse2_markdown<positive, return_mode, symbols...>(begin, end);
-}
-
 }
 
 
@@ -382,12 +366,6 @@ inline char * find_first_symbols(char * begin, char * end)
 inline const char * find_first_symbols(std::string_view haystack, const SearchSymbols & symbols)
 {
     return detail::find_first_symbols_dispatch<true, detail::ReturnMode::End>(haystack, symbols);
-}
-
-template <char... symbols>
-inline const char * find_first_symbols_markdown(const char * begin, const char * end)
-{
-    return detail::find_first_symbols_dispatch_markdown<true, detail::ReturnMode::End, symbols...>(begin, end);
 }
 
 template <char... symbols>

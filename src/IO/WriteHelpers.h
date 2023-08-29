@@ -380,159 +380,143 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
     }
 }
 
-template <char quote_character, bool escape_quote_with_quote = false, bool escape_backslash_with_backslash = true>
-void writeAnyMarkdownEscapedString(const char * begin, const char * end, WriteBuffer & buf)
+/// Define special characters in Markdown according to the standards specified by CommonMark.
+inline void writeAnyMarkdownEscapedString(const char * begin, const char * end, WriteBuffer & buf)
 {
-    const char * pos = begin;
-    while (true)
+    for (const char * it = begin; it != end; ++it)
     {
-        const char * next_pos = find_first_symbols_markdown<
-            '\b',
-            '\f',
-            '\n',
-            '\r',
-            '\t',
-            '\0',
-            '\\',
-            quote_character,
-            '`',
-            '*',
-            '_',
-            '{',
-            '}',
-            '[',
-            ']',
-            '<',
-            '>',
-            '(',
-            ')',
-            '#',
-            '+',
-            '-',
-            '.',
-            '!',
-            '|'>(pos, end);
-
-        if (next_pos == end)
+        switch (*it)
         {
-            buf.write(pos, next_pos - pos);
-            break;
-        }
-        else
-        {
-            buf.write(pos, next_pos - pos);
-            pos = next_pos;
-            switch (*pos)
-            {
-                case '\b':
-                    writeChar('\\', buf);
-                    writeChar('b', buf);
-                    break;
-                case '\f':
-                    writeChar('\\', buf);
-                    writeChar('f', buf);
-                    break;
-                case '\n':
-                    writeChar('\\', buf);
-                    writeChar('n', buf);
-                    break;
-                case '\r':
-                    writeChar('\\', buf);
-                    writeChar('r', buf);
-                    break;
-                case '\t':
-                    writeChar('\\', buf);
-                    writeChar('t', buf);
-                    break;
-                case '\0':
-                    writeChar('\\', buf);
-                    writeChar('0', buf);
-                    break;
-                case '\\':
-                    if constexpr (escape_backslash_with_backslash)
-                        writeChar('\\', buf);
-                    writeChar('\\', buf);
-                    break;
-                case quote_character: {
-                    if constexpr (escape_quote_with_quote)
-                        writeChar(quote_character, buf);
-                    else
-                        writeChar('\\', buf);
-                    writeChar(quote_character, buf);
-                    break;
-                }
-                case '`':
-                    writeChar('`', buf);
-                    writeChar('`', buf);
-                    break;
-                case '*':
-                    writeChar('\\', buf);
-                    writeChar('*', buf);
-                    break;
-                case '_':
-                    writeChar('\\', buf);
-                    writeChar('_', buf);
-                    break;
-                case '{':
-                    writeChar('\\', buf);
-                    writeChar('{', buf);
-                    break;
-                case '}':
-                    writeChar('\\', buf);
-                    writeChar('}', buf);
-                    break;
-                case '[':
-                    writeChar('\\', buf);
-                    writeChar('[', buf);
-                    break;
-                case ']':
-                    writeChar('\\', buf);
-                    writeChar(']', buf);
-                    break;
-                case '<':
-                    writeChar('\\', buf);
-                    writeChar('<', buf);
-                    break;
-                case '>':
-                    writeChar('\\', buf);
-                    writeChar('>', buf);
-                    break;
-                case '(':
-                    writeChar('\\', buf);
-                    writeChar('(', buf);
-                    break;
-                case ')':
-                    writeChar('\\', buf);
-                    writeChar(')', buf);
-                    break;
-                case '#':
-                    writeChar('\\', buf);
-                    writeChar('#', buf);
-                    break;
-                case '+':
-                    writeChar('\\', buf);
-                    writeChar('+', buf);
-                    break;
-                case '-':
-                    writeChar('\\', buf);
-                    writeChar('-', buf);
-                    break;
-                case '.':
-                    writeChar('\\', buf);
-                    writeChar('.', buf);
-                    break;
-                case '!':
-                    writeChar('\\', buf);
-                    writeChar('!', buf);
-                    break;
-                case '|':
-                    writeChar('\\', buf);
-                    writeChar('|', buf);
-                    break;
-                default:
-                    writeChar(*pos, buf);
-            }
-            ++pos;
+            case '!':
+                writeChar('\\', buf);
+                writeChar('!', buf);
+                break;
+            case '"':
+                writeChar('\\', buf);
+                writeChar('"', buf);
+                break;
+            case '#':
+                writeChar('\\', buf);
+                writeChar('#', buf);
+                break;
+            case '$':
+                writeChar('\\', buf);
+                writeChar('$', buf);
+                break;
+            case '%':
+                writeChar('\\', buf);
+                writeChar('%', buf);
+                break;
+            case '&':
+                writeChar('\\', buf);
+                writeChar('&', buf);
+                break;
+            case '\'':
+                writeChar('\\', buf);
+                writeChar('\'', buf);
+                break;
+            case '(':
+                writeChar('\\', buf);
+                writeChar('(', buf);
+                break;
+            case ')':
+                writeChar('\\', buf);
+                writeChar(')', buf);
+                break;
+            case '*':
+                writeChar('\\', buf);
+                writeChar('*', buf);
+                break;
+            case '+':
+                writeChar('\\', buf);
+                writeChar('+', buf);
+                break;
+            case ',':
+                writeChar('\\', buf);
+                writeChar(',', buf);
+                break;
+            case '-':
+                writeChar('\\', buf);
+                writeChar('-', buf);
+                break;
+            case '.':
+                writeChar('\\', buf);
+                writeChar('.', buf);
+                break;
+            case '/':
+                writeChar('\\', buf);
+                writeChar('/', buf);
+                break;
+            case ':':
+                writeChar('\\', buf);
+                writeChar(':', buf);
+                break;
+            case ';':
+                writeChar('\\', buf);
+                writeChar(';', buf);
+                break;
+            case '<':
+                writeChar('\\', buf);
+                writeChar('<', buf);
+                break;
+            case '=':
+                writeChar('\\', buf);
+                writeChar('=', buf);
+                break;
+            case '>':
+                writeChar('\\', buf);
+                writeChar('>', buf);
+                break;
+            case '?':
+                writeChar('\\', buf);
+                writeChar('?', buf);
+                break;
+            case '@':
+                writeChar('\\', buf);
+                writeChar('@', buf);
+                break;
+            case '[':
+                writeChar('\\', buf);
+                writeChar('[', buf);
+                break;
+            case '\\':
+                writeChar('\\', buf);
+                writeChar('\\', buf);
+                break;
+            case ']':
+                writeChar('\\', buf);
+                writeChar(']', buf);
+                break;
+            case '^':
+                writeChar('\\', buf);
+                writeChar('^', buf);
+                break;
+            case '_':
+                writeChar('\\', buf);
+                writeChar('_', buf);
+                break;
+            case '`':
+                writeChar('\\', buf);
+                writeChar('`', buf);
+                break;
+            case '{':
+                writeChar('\\', buf);
+                writeChar('{', buf);
+                break;
+            case '|':
+                writeChar('\\', buf);
+                writeChar('|', buf);
+                break;
+            case '}':
+                writeChar('\\', buf);
+                writeChar('}', buf);
+                break;
+            case '~':
+                writeChar('\\', buf);
+                writeChar('~', buf);
+                break;
+            default:
+                writeChar(*it, buf);
         }
     }
 }
@@ -602,7 +586,7 @@ inline void writeEscapedString(std::string_view ref, WriteBuffer & buf)
 
 inline void writeMarkdownEscapedString(const char * str, size_t size, WriteBuffer & buf)
 {
-    writeAnyMarkdownEscapedString<'\''>(str, str + size, buf);
+    writeAnyMarkdownEscapedString(str, str + size, buf);
 }
 
 inline void writeMarkdownEscapedString(std::string_view ref, WriteBuffer & buf)
