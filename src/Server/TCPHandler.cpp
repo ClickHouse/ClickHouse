@@ -35,6 +35,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/StorageS3Cluster.h>
 #include <Core/ExternalTable.h>
+#include <Core/ServerSettings.h>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -1532,7 +1533,10 @@ void TCPHandler::receiveQuery()
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
     {
         client_info.read(*in, client_tcp_protocol_version);
-        validateClientInfo(session->getClientInfo(), client_info);
+
+        const auto & config_ref = Context::getGlobalContextInstance()->getServerSettings();
+        if (config_ref.validate_tcp_client_information)
+            validateClientInfo(session->getClientInfo(), client_info);
     }
 
     /// Per query settings are also passed via TCP.
