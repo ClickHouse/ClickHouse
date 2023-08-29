@@ -7,7 +7,7 @@
     <query>SELECT * FROM gcd_codec SETTINGS max_threads=1</query>
 
     <query>INSERT INTO delta_codec SELECT * FROM generateRandom() LIMIT 1337228 SETTINGS max_threads=1</query>
-    <query>SELECT * FROM delta_codec_codec SETTINGS max_threads=1</query>
+    <query>SELECT * FROM delta_codec SETTINGS max_threads=1</query>
 
     <drop_query>DROP TABLE gcd_codec</drop_query>
     <drop_query>DROP TABLE delta_codec</drop_query>
