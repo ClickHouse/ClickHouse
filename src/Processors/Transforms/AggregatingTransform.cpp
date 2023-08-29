@@ -664,13 +664,11 @@ void AggregatingTransform::consume(Chunk chunk)
     {
         auto block = getInputs().front().getHeader().cloneWithColumns(chunk.detachColumns());
         block = materializeBlock(block);
-        LOG_DEBUG(log, "AggregatingTransform::consume. Merge Block columns {}",  block.dumpNames());
         if (!params->aggregator.mergeOnBlock(block, variants, no_more_keys))
             is_consume_finished = true;
     }
     else
     {
-        LOG_DEBUG(log, "AggregatingTransform::consume. Execute Block");
         if (!params->aggregator.executeOnBlock(chunk.detachColumns(), 0, num_rows, variants, key_columns, aggregate_columns, no_more_keys))
             is_consume_finished = true;
     }
