@@ -2,7 +2,7 @@
 
 The [Laion-400M dataset](https://laion.ai/blog/laion-400-open-dataset/) contains 400 million images with English image captions. Laion nowadays provides [an even larger dataset](https://laion.ai/blog/laion-5b/) but working with it will be similar.
 
-The dataset contains the image URL, embeddings for both the image and the image caption, a similarity score betwen the image and the image caption, as well as metadata, e.g. the image width/height, the licence and a NSFW flag. We can use the dataset to demonstrate [approximate nearest neighbor search](../../engines/table-engines/mergetree-family/annindexes.md) in ClickHouse.
+The dataset contains the image URL, embeddings for both the image and the image caption, a similarity score between the image and the image caption, as well as metadata, e.g. the image width/height, the licence and a NSFW flag. We can use the dataset to demonstrate [approximate nearest neighbor search](../../engines/table-engines/mergetree-family/annindexes.md) in ClickHouse.
 
 ## Data preparation
 
@@ -59,7 +59,7 @@ To start the data preparation pipeline, run:
 seq 0 409 | xargs -P100 -I{} bash -c './download.sh {}'
 ```
 
-The dataset is splitted into 410 files, each file contains ca. 1 million rows. If you like to work with a smaller subset of the data, simply adjust the limits, e.g. `seq 0 9 | ...`.
+The dataset is split into 410 files, each file contains ca. 1 million rows. If you like to work with a smaller subset of the data, simply adjust the limits, e.g. `seq 0 9 | ...`.
 
 ## Create table
 
@@ -163,7 +163,7 @@ The speed increased significantly at the cost of less accurate results. This is 
 
 ## Creating embeddings with UDFs
 
-One usually wants to create embeddings for new images or new image captions and search for similar image / imgage caption pairs in the data. We can use [UDF](../../sql-reference/functions/index.md#sql-user-defined-functions) to create the `target` vector without leaving the client. It is important to use the same model to create the data and new embeddings for searches. The following scripts utilize the `ViT-B/32` model which also underlies the dataset.
+One usually wants to create embeddings for new images or new image captions and search for similar image / image caption pairs in the data. We can use [UDF](../../sql-reference/functions/index.md#sql-user-defined-functions) to create the `target` vector without leaving the client. It is important to use the same model to create the data and new embeddings for searches. The following scripts utilize the `ViT-B/32` model which also underlies the dataset.
 
 ### Text embeddings
 
