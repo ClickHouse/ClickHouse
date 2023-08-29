@@ -105,6 +105,17 @@ SSHKey & SSHKey::operator=(SSHKey && other) noexcept
     return *this;
 }
 
+bool SSHKey::operator==(const SSHKey & other) const
+{
+    return isEqual(other);
+}
+
+bool SSHKey::isEqual(const SSHKey & other) const
+{
+    int rc = ssh_key_cmp(key, other.key, SSH_KEY_CMP_PUBLIC);
+    return rc == 0;
+}
+
 String SSHKey::signString(std::string_view input) const
 {
     SSHString input_str(input);
@@ -134,20 +145,29 @@ bool SSHKey::isPublic() const
     return ssh_key_is_public(key);
 }
 
-String SSHKey::getBase64() const
+namespace
 {
-    char *b64_key;
-    auto rc = ssh_pki_export_pubkey_base64(key, &b64_key);
-
-    if (rc < 0)
-        throw Exception(ErrorCodes::LIBSSH_ERROR, "Can't export public SSH key");
-
-    String base64_result(b64_key);
-    free(b64_key);
-    return base64_result;
+    struct CStringDeleter
+    {
+        [[maybe_unused]] void operator()(char * ptr) const { std::free(ptr); }
+    };
 }
 
-String SSHKey::getKeyAlgorithm() const
+String SSHKey::getBase64() const
+{
+    char * buf = nullptr;
+    int rc = ssh_pki_export_pubkey_base64(key, &buf);
+
+    if (rc != SSH_OK)
+        throw DB::Exception(DB::ErrorCodes::LIBSSH_ERROR, "Failed to export public key to base64");
+
+    /// Create a String from cstring, which makes a copy of the first one and requires freeing memory after it
+    /// This is to safely manage buf memory
+    std::unique_ptr<char, CStringDeleter> buf_ptr(buf);
+    return String(buf_ptr.get());
+}
+
+String SSHKey::getKeyType() const
 {
     return ssh_key_type_to_char(ssh_key_type(key));
 }

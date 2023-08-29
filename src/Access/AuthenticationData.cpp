@@ -104,7 +104,8 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 {
     return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash)
         && (lhs.ldap_server_name == rhs.ldap_server_name) && (lhs.kerberos_realm == rhs.kerberos_realm)
-        && (lhs.ssl_certificate_common_names == rhs.ssl_certificate_common_names);
+        && (lhs.ssl_certificate_common_names == rhs.ssl_certificate_common_names)
+        && (lhs.ssh_keys == rhs.ssh_keys);
 }
 
 
@@ -318,7 +319,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         {
 #if USE_SSL
             for (const auto & key : getSSHKeys())
-                node->children.push_back(std::make_shared<ASTPublicSSHKey>(key.getBase64(), key.getKeyAlgorithm()));
+                node->children.push_back(std::make_shared<ASTPublicSSHKey>(key.getBase64(), key.getKeyType()));
 
             break;
 #else
@@ -352,15 +353,15 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         {
             const auto & ssh_key = query.children[i]->as<ASTPublicSSHKey &>();
             const auto & key_base64 = ssh_key.key_base64;
-            const auto & algorithm = ssh_key.algorithm;
+            const auto & type = ssh_key.type;
 
             try
             {
-                keys.emplace_back(ssh::SSHKeyFactory::makePublicFromBase64(key_base64, algorithm));
+                keys.emplace_back(ssh::SSHKeyFactory::makePublicFromBase64(key_base64, type));
             }
             catch (const std::invalid_argument &)
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad SSH key in entry: {} with algorithm {}", key_base64, algorithm);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad SSH key in entry: {} with type {}", key_base64, type);
             }
         }
 

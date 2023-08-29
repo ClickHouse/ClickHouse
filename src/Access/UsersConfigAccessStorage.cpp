@@ -216,13 +216,13 @@ namespace
                 const auto conf_pref = ssh_keys_config + "." + entry + ".";
                 if (entry.starts_with("ssh_key"))
                 {
-                    String algorithm, base64_key;
-                    if (config.has(conf_pref + "algorithm"))
+                    String type, base64_key;
+                    if (config.has(conf_pref + "type"))
                     {
-                        algorithm = config.getString(conf_pref + "algorithm");
+                        type = config.getString(conf_pref + "type");
                     }
                     else
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected algorithm field in {} entry", entry);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected type field in {} entry", entry);
                     if (config.has(conf_pref + "base64_key"))
                     {
                         base64_key = config.getString(conf_pref + "base64_key");
@@ -233,7 +233,7 @@ namespace
 
                     try
                     {
-                        keys.emplace_back(ssh::SSHKeyFactory::makePublicFromBase64(base64_key, algorithm));
+                        keys.emplace_back(ssh::SSHKeyFactory::makePublicFromBase64(base64_key, type));
                     }
                     catch (const std::invalid_argument &)
                     {

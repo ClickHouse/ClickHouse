@@ -10,14 +10,12 @@ class ASTPublicSSHKey : public IAST
 {
 public:
     String key_base64;
-    String algorithm;
-
-    // String toString() const;
+    String type;
 
     ASTPublicSSHKey() = default;
-    ASTPublicSSHKey(String key_base64_, String algorithm_)
+    ASTPublicSSHKey(String key_base64_, String type_)
         : key_base64(key_base64_)
-        , algorithm(algorithm_)
+        , type(type_)
     {}
     String getID(char) const override { return "PublicSSHKey"; }
     ASTPtr clone() const override { return std::make_shared<ASTPublicSSHKey>(*this); }

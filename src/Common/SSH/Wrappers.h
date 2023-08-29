@@ -30,6 +30,9 @@ public:
     SSHKey & operator=(const SSHKey & other);
     SSHKey & operator=(SSHKey && other) noexcept;
 
+    bool operator==(const SSHKey &) const;
+    bool isEqual(const SSHKey & other) const;
+
     bool isEmpty() { return key == nullptr; }
     String signString(std::string_view input) const;
     bool verifySignature(std::string_view signature, std::string_view original) const;
@@ -38,7 +41,7 @@ public:
     bool isPrivate() const;
 
     String getBase64() const;
-    String getKeyAlgorithm() const;
+    String getKeyType() const;
 
     friend SSHKeyFactory;
 private:

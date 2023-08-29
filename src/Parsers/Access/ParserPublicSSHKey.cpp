@@ -3,7 +3,6 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -19,13 +18,13 @@ namespace
             if (!ParserKeyword{"KEY"}.ignore(pos, expected) || !parseIdentifierOrStringLiteral(pos, expected, key_base64))
                 return false;
 
-            String algorithm;
-            if (!ParserKeyword{"TYPE"}.ignore(pos, expected) || !parseIdentifierOrStringLiteral(pos, expected, algorithm))
+            String type;
+            if (!ParserKeyword{"TYPE"}.ignore(pos, expected) || !parseIdentifierOrStringLiteral(pos, expected, type))
                 return false;
 
             ast = std::make_shared<ASTPublicSSHKey>();
             ast->key_base64 = std::move(key_base64);
-            ast->algorithm = std::move(algorithm);
+            ast->type = std::move(type);
             return true;
         });
     }

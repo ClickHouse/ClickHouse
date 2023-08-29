@@ -11,8 +11,9 @@
 namespace DB
 {
 
-class ASTLiteral : public ASTWithAlias
 /// Literal (atomic) - number, string, NULL
+class ASTLiteral : public ASTWithAlias
+
 {
 public:
     explicit ASTLiteral(Field value_) : value(std::move(value_)) {}

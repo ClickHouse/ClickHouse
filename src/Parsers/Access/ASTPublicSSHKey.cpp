@@ -11,7 +11,7 @@ void ASTPublicSSHKey::formatImpl(const FormatSettings & settings, FormatState &,
     settings.ostr << "KEY ";
     settings.ostr << backQuoteIfNeed(key_base64) << ' ';
     settings.ostr << "TYPE ";
-    settings.ostr << backQuoteIfNeed(algorithm);
+    settings.ostr << backQuoteIfNeed(type);
 }
 
 }
