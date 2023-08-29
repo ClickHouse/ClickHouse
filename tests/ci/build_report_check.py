@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 import atexit
+from pathlib import Path
 from typing import Dict, List, Tuple
 
 from github import Github
@@ -118,11 +119,10 @@ def get_build_name_from_file_name(file_name):
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    temp_path = TEMP_PATH
+    temp_path = Path(TEMP_PATH)
     logging.info("Reports path %s", REPORTS_PATH)
 
-    if not os.path.exists(temp_path):
-        os.makedirs(temp_path)
+    temp_path.mkdir(parents=True, exist_ok=True)
 
     build_check_name = sys.argv[1]
     needs_data = {}  # type: NeedsDataType
@@ -242,9 +242,8 @@ def main():
         commit_url,
     )
 
-    report_path = os.path.join(temp_path, "report.html")
-    with open(report_path, "w", encoding="utf-8") as fd:
-        fd.write(report)
+    report_path = temp_path / "report.html"
+    report_path.write_text(report, encoding="utf-8")
 
     logging.info("Going to upload prepared report")
     context_name_for_path = build_check_name.lower().replace(" ", "_")
