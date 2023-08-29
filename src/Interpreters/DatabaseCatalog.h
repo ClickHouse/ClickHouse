@@ -44,10 +44,7 @@ public:
         if (database)
         {
             for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
-            {
-                const auto & storage_id = table_it->table()->getStorageID();
-                result.emplace_back(storage_id.getTableName());
-            }
+                result.emplace_back(table_it->name());
         }
         return result;
     }
