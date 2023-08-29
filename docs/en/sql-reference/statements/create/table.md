@@ -401,13 +401,13 @@ These codecs are designed to make compression more effective by using specific f
 
 `DoubleDelta(bytes_size)` — Calculates delta of deltas and writes it in compact binary form. Possible `bytes_size` values: 1, 2, 4, 8, the default value is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it’s 1. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-bit deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
 
+#### GCD
+
+`GCD(bytes_size)` - Calculates the greatest common denominator (GCD) of all values in the column, then divides each value by the GCD. This codec is for data preparation and is not suitable for use without an additional codec. GCD-codec can be used with Integers, Decimals and DateTime. Possible `bytes_size` values: 1, 2, 4, 8, 16, 32 the default value is `sizeof(type)` if equal to 1, 2, 4, 8, 16, or 32. A good use case would be to store timestamps or monetary values with high precision.
+
 #### Gorilla
 
 `Gorilla(bytes_size)` — Calculates XOR between current and previous floating point value and writes it in compact binary form. The smaller the difference between consecutive values is, i.e. the slower the values of the series changes, the better the compression rate. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Possible `bytes_size` values: 1, 2, 4, 8, the default value is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it’s 1. For additional information, see section 4.1 in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078).
-
-#### GCD
-
-`GCD(bytes_size)` - Calculates GCD of all numbers, then it divides them by it. This codec is for data preparation and is not suitable for use without an additional codec. GCD-codec can be used with Integers, Decimals and DateTime. Possible `bytes_size` values: 1, 2, 4, 8, 16, 32 the default value is `sizeof(type)` if equal to 1, 2, 4, 8, 16, or 32. A good use case would be to store timestamps or monetary values with high precision.
 
 #### FPC
 
