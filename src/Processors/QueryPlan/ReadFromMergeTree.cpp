@@ -979,7 +979,7 @@ static void addMergingFinal(
 
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
-    RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names, ActionsDAGPtr & out_projection)
+    RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & origin_column_names, const Names & column_names, ActionsDAGPtr & out_projection)
 {
     const auto & settings = context->getSettingsRef();
     const auto data_settings = data.getSettings();
@@ -1141,17 +1141,16 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         if (sum_marks_in_lonely_parts < num_streams_for_lonely_parts * min_marks_for_concurrent_read && lonely_parts.size() < num_streams_for_lonely_parts)
             num_streams_for_lonely_parts = std::max((sum_marks_in_lonely_parts + min_marks_for_concurrent_read - 1) / min_marks_for_concurrent_read, lonely_parts.size());
 
-        auto pipe = read(std::move(lonely_parts), column_names, ReadFromMergeTree::ReadType::Default,
+        auto pipe = read(std::move(lonely_parts), partition_pipes.empty() ? origin_column_names : column_names, ReadFromMergeTree::ReadType::Default,
                 num_streams_for_lonely_parts, min_marks_for_concurrent_read, info.use_uncompressed_cache);
 
         /// Drop temporary columns, added by 'sorting_key_expr'
         if (!out_projection)
             out_projection = createProjection(pipe.getHeader());
 
-        pipe.addSimpleTransform([sorting_expr](const Block & header)
-        {
-            return std::make_shared<ExpressionTransform>(header, sorting_expr);
-        });
+        if (!partition_pipes.empty())
+            pipe.addSimpleTransform([sorting_expr](const Block & header)
+                                    { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
 
         partition_pipes.emplace_back(std::move(pipe));
     }
@@ -1742,7 +1741,7 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         ::sort(column_names_to_read.begin(), column_names_to_read.end());
         column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 
-        return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, column_names_to_read, result_projection);
+        return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, result.column_names_to_read, column_names_to_read, result_projection);
     }
     else if (input_order_info)
     {

@@ -1,0 +1,21 @@
+(Expression)
+ExpressionTransform × 16
+Header: max(val) UInt64: max(val) UInt64 UInt64(size = 0)
+        count() UInt64: count() UInt64 UInt64(size = 0)
+  (Aggregating)
+  Resize 4 → 16
+  Header × 16 : max(val) UInt64: max(val) UInt64 UInt64(size = 0)
+                 count() UInt64: count() UInt64 UInt64(size = 0)
+    AggregatingTransform × 4
+    Header: max(val) UInt64: max(val) UInt64 UInt64(size = 0)
+            count() UInt64: count() UInt64 UInt64(size = 0)
+      StrictResize 4 → 4
+      Header × 4 : val UInt64: val UInt64 UInt64(size = 0)
+        (Expression)
+        ExpressionTransform × 4
+        Header: val UInt64: val UInt64 UInt64(size = 0)
+          (ReadFromMergeTree)
+          ExpressionTransform × 4
+          Header: val UInt64: val UInt64 UInt64(size = 0)
+            MergeTreeThread × 4 0 → 1
+            Header: val UInt64: val UInt64 UInt64(size = 0)
