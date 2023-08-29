@@ -145,8 +145,11 @@ void SerializationUUID::serializeBinaryBulk(const IColumn & column, WriteBuffer 
 
     if constexpr (std::endian::native == std::endian::big)
     {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
         std::ranges::for_each(
             x | std::views::drop(offset) | std::views::take(limit), [&ostr](const auto & uuid) { writeBinaryLittleEndian(uuid, ostr); });
+#pragma clang diagnostic pop
     }
     else
         ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(UUID) * limit);
@@ -160,8 +163,11 @@ void SerializationUUID::deserializeBinaryBulk(IColumn & column, ReadBuffer & ist
     const size_t size = istr.readBig(reinterpret_cast<char *>(&x[initial_size]), sizeof(UUID) * limit);
     x.resize(initial_size + size / sizeof(UUID));
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
     if constexpr (std::endian::native == std::endian::big)
         std::ranges::for_each(
             x | std::views::drop(initial_size), [](auto & uuid) { transformEndianness<std::endian::big, std::endian::little>(uuid); });
+#pragma clang diagnostic pop
 }
 }
