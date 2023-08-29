@@ -19,25 +19,51 @@ EXTRA_COLUMNS=${EXTRA_COLUMNS:-"pull_request_number UInt32, commit_sha String, c
 EXTRA_COLUMNS_EXPRESSION=${EXTRA_COLUMNS_EXPRESSION:-"0 AS pull_request_number, '' AS commit_sha, now() AS check_start_time, '' AS check_name, '' AS instance_type"}
 EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name, "}
 
-function _check_logs_credentials
+function __set_connection_args
 {
-    # The function connects with given credentials, and if it's unable to execute the simplest query, returns exit code
+    # It's impossible to use generous $CONNECTION_ARGS string, it's unsafe from word splitting perspective.
+    # That's why we must stick to the generated option
+    CONNECTION_ARGS=(
+        --receive_timeout=10 --send_timeout=10 --secure
+        --user "${CLICKHOUSE_CI_LOGS_USER}" --host "${CLICKHOUSE_CI_LOGS_HOST}"
+        --password "${CLICKHOUSE_CI_LOGS_PASSWORD}"
+    )
+}
 
+function __shadow_credentials
+{
+    # The function completely screws the output, it shouldn't be used in normal functions, only in ()
     # The only way to substitute the env as a plain text is using perl 's/\Qsomething\E/another/
     exec &> >(perl -pe '
         s(\Q$ENV{CLICKHOUSE_CI_LOGS_HOST}\E)[CLICKHOUSE_CI_LOGS_HOST]g;
         s(\Q$ENV{CLICKHOUSE_CI_LOGS_USER}\E)[CLICKHOUSE_CI_LOGS_USER]g;
         s(\Q$ENV{CLICKHOUSE_CI_LOGS_PASSWORD}\E)[CLICKHOUSE_CI_LOGS_PASSWORD]g;
     ')
-    CONNECTION_ARGS=(--secure --user "${CLICKHOUSE_CI_LOGS_USER}" --host "${CLICKHOUSE_CI_LOGS_HOST}" --password "${CLICKHOUSE_CI_LOGS_PASSWORD}")
+}
+
+function check_logs_credentials
+(
+    # The function connects with given credentials, and if it's unable to execute the simplest query, returns exit code
+
+    # First check, if all necessary parameters are set
+    set +x
+    for parameter in CLICKHOUSE_CI_LOGS_HOST CLICKHOUSE_CI_LOGS_USER CLICKHOUSE_CI_LOGS_PASSWORD; do
+      export -p | grep -q "$parameter" || {
+        echo "Credentials parameter $parameter is unset"
+        return 1
+      }
+    done
+
+    __shadow_credentials
+    __set_connection_args
     local code
     # Catch both success and error to not fail on `set -e`
-    clickhouse-client "${CONNECTION_ARGS[@]}" -q 'SELECT 1' && return 0 || code=$?
+    clickhouse-client "${CONNECTION_ARGS[@]}" -q 'SELECT 1 FORMAT Null' && return 0 || code=$?
     if [ "$code" != 0 ]; then
         echo 'Failed to connect to CI Logs cluster'
         return $code
     fi
-}
+)
 
 function config_logs_export_cluster
 (
@@ -52,14 +78,9 @@ function config_logs_export_cluster
     # shellcheck disable=SC1090
     source "${CLICKHOUSE_CI_LOGS_CREDENTIALS}"
     set +a
-    # The only way to substitute the env as a plain text is using perl 's/\Qsomething\E/another/
-    exec &> >(perl -pe '
-        s(\Q$ENV{CLICKHOUSE_CI_LOGS_HOST}\E)[CLICKHOUSE_CI_LOGS_HOST]g;
-        s(\Q$ENV{CLICKHOUSE_CI_LOGS_USER}\E)[CLICKHOUSE_CI_LOGS_USER]g;
-        s(\Q$ENV{CLICKHOUSE_CI_LOGS_PASSWORD}\E)[CLICKHOUSE_CI_LOGS_PASSWORD]g;
-    ')
+    __shadow_credentials
     echo "Checking if the credentials work"
-    _check_logs_credentials || return 0
+    check_logs_credentials || return 0
     cluster_config="${1:-/etc/clickhouse-server/config.d/system_logs_export.yaml}"
     mkdir -p "$(dirname "$cluster_config")"
     echo "remote_servers:
@@ -89,17 +110,10 @@ function setup_logs_replication
     # shellcheck disable=SC1090
     source "${CLICKHOUSE_CI_LOGS_CREDENTIALS}"
     set +a
-    # The only way to substitute the env as a plain text is using perl 's/\Qsomething\E/another/
-    exec &> >(perl -pe '
-        s(\Q$ENV{CLICKHOUSE_CI_LOGS_HOST}\E)[CLICKHOUSE_CI_LOGS_HOST]g;
-        s(\Q$ENV{CLICKHOUSE_CI_LOGS_USER}\E)[CLICKHOUSE_CI_LOGS_USER]g;
-        s(\Q$ENV{CLICKHOUSE_CI_LOGS_PASSWORD}\E)[CLICKHOUSE_CI_LOGS_PASSWORD]g;
-    ')
+    __shadow_credentials
     echo "Checking if the credentials work"
-    _check_logs_credentials || return 0
-    # It's impossible to use generous $CONNECTION_ARGS string, it's unsafe from word splitting perspective.
-    # That's why we must stick to the generated option
-    CONNECTION_ARGS=(--secure --user "${CLICKHOUSE_CI_LOGS_USER}" --host "${CLICKHOUSE_CI_LOGS_HOST}" --password "${CLICKHOUSE_CI_LOGS_PASSWORD}")
+    check_logs_credentials || return 0
+    __set_connection_args
 
     echo 'Create all configured system logs'
     clickhouse-client --query "SYSTEM FLUSH LOGS"
@@ -129,7 +143,9 @@ function setup_logs_replication
 
         echo -e "Creating remote destination table ${table}_${hash} with statement:\n${statement}" >&2
 
-        echo "$statement" | clickhouse-client --distributed_ddl_task_timeout=10 --receive_timeout=10 --send_timeout=10 "${CONNECTION_ARGS[@]}" || continue
+        echo "$statement" | clickhouse-client --database_replicated_initial_query_timeout_sec=10 \
+            --distributed_ddl_task_timeout=10 --receive_timeout=10 --send_timeout=10 \
+            "${CONNECTION_ARGS[@]}" || continue
 
         echo "Creating table system.${table}_sender" >&2
 
