@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <string>
-#include <array>
 
 #if defined(__SSE2__)
     #include <emmintrin.h>

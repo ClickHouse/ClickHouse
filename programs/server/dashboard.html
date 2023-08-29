@@ -449,7 +449,7 @@ let queries = [
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32}`
+ORDER BY t`
     },
     {
       "title": "CPU Usage (cores)",
@@ -457,7 +457,7 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32}`
+ORDER BY t`
     },
     {
       "title": "Queries Running",
@@ -465,7 +465,7 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32}`
+ORDER BY t`
     },
     {
       "title": "Merges Running",
@@ -473,7 +473,7 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32}`
+ORDER BY t`
     },
     {
       "title": "Selected Bytes/second",
@@ -481,7 +481,7 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32}`
+ORDER BY t`
     },
     {
       "title": "IO Wait",
@@ -489,7 +489,7 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32}`
+ORDER BY t`
     },
     {
       "title": "CPU Wait",
@@ -497,7 +497,7 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32}`
+ORDER BY t`
     },
     {
       "title": "OS CPU Usage (Userspace)",
@@ -506,7 +506,7 @@ FROM system.asynchronous_metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 AND metric = 'OSUserTimeNormalized'
 GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32}`
+ORDER BY t`
     },
     {
       "title": "OS CPU Usage (Kernel)",
@@ -515,7 +515,7 @@ FROM system.asynchronous_metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 AND metric = 'OSSystemTimeNormalized'
 GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32}`
+ORDER BY t`
     },
     {
       "title": "Read From Disk",
@@ -523,7 +523,7 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32}`
+ORDER BY t`
     },
     {
       "title": "Read From Filesystem",
@@ -531,7 +531,7 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32}`
+ORDER BY t`
     },
     {
       "title": "Memory (tracked)",
@@ -539,7 +539,7 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32}`
+ORDER BY t`
     },
     {
       "title": "Load Average (15 minutes)",
@@ -548,7 +548,7 @@ FROM system.asynchronous_metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 AND metric = 'LoadAverage15'
 GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32}`
+ORDER BY t`
     },
     {
       "title": "Selected Rows/second",
@@ -556,7 +556,7 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32}`
+ORDER BY t`
     },
     {
       "title": "Inserted Rows/second",
@@ -564,7 +564,7 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}`
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32}`
+ORDER BY t`
     },
     {
       "title": "Total MergeTree Parts",
@@ -573,7 +573,7 @@ FROM system.asynchronous_metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 AND metric = 'TotalPartsOfMergeTreeTables'
 GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32}`
+ORDER BY t`
     },
     {
       "title": "Max Parts For Partition",
@@ -582,7 +582,7 @@ FROM system.asynchronous_metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 AND metric = 'MaxPartCountForPartition'
 GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32}`
+ORDER BY t`
     }
 ];
 

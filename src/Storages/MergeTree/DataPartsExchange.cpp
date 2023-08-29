@@ -325,7 +325,6 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         auto file_in = desc.input_buffer_getter();
         HashingWriteBuffer hashing_out(out);
         copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
-        hashing_out.finalize();
 
         if (blocker.isCancelled())
             throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
@@ -353,8 +352,14 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
 {
     /// It is important to include Outdated parts here because remote replicas cannot reliably
     /// determine the local state of the part, so queries for the parts in these states are completely normal.
-    auto part = data.getPartIfExists(
-        name, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
+    MergeTreeData::DataPartPtr part;
+
+    /// Ephemeral zero-copy lock may be lost for PreActive parts
+    bool zero_copy_enabled = data.getSettings()->allow_remote_fs_zero_copy_replication;
+    if (zero_copy_enabled)
+        part = data.getPartIfExists(name, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
+    else
+        part = data.getPartIfExists(name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
     if (part)
         return part;
 
@@ -780,7 +785,6 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
         written_files.emplace_back(output_buffer_getter(*data_part_storage, file_name, file_size));
         HashingWriteBuffer hashing_out(*written_files.back());
         copyDataWithThrottler(in, hashing_out, file_size, blocker.getCounter(), throttler);
-        hashing_out.finalize();
 
         if (blocker.isCancelled())
         {

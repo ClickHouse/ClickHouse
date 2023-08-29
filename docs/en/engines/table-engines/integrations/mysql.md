@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/mysql
-sidebar_position: 138
+sidebar_position: 4
 sidebar_label: MySQL
 ---
 
@@ -34,10 +34,6 @@ The table structure can differ from the original MySQL table structure:
 - Column names should be the same as in the original MySQL table, but you can use just some of these columns and in any order.
 - Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](../../../engines/database-engines/mysql.md#data_types-support) values to the ClickHouse data types.
 - The [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
-
-:::note
-The MySQL Table Engine is currently not available on the ClickHouse builds for MacOS ([issue](https://github.com/ClickHouse/ClickHouse/issues/21191))
-:::
 
 **Engine Parameters**
 

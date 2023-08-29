@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/kafka
-sidebar_position: 110
+sidebar_position: 8
 sidebar_label: Kafka
 ---
 

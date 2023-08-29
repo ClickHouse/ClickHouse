@@ -24,6 +24,7 @@ void MutatePlainMergeTreeTask::onCompleted()
     task_result_callback(delay);
 }
 
+
 void MutatePlainMergeTreeTask::prepare()
 {
     future_part = merge_mutate_entry->future_part;

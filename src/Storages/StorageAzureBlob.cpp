@@ -13,7 +13,6 @@
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <re2/re2.h>
@@ -490,18 +489,10 @@ public:
         cancelled = true;
     }
 
-    void onException(std::exception_ptr exception) override
+    void onException() override
     {
         std::lock_guard lock(cancel_mutex);
-        try
-        {
-            std::rethrow_exception(exception);
-        }
-        catch (...)
-        {
-            /// An exception context is needed to proper delete write buffers without finalization
-            release();
-        }
+        finalize();
     }
 
     void onFinish() override
@@ -525,15 +516,10 @@ private:
         catch (...)
         {
             /// Stop ParallelFormattingOutputFormat correctly.
-            release();
+            writer.reset();
+            write_buf->finalize();
             throw;
         }
-    }
-
-    void release()
-    {
-        writer.reset();
-        write_buf->finalize();
     }
 
     Block sample_block;

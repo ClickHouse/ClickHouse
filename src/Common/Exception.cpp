@@ -1,6 +1,5 @@
 #include "Exception.h"
 
-#include <algorithm>
 #include <cstring>
 #include <cxxabi.h>
 #include <cstdlib>
@@ -84,7 +83,6 @@ Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
     : Poco::Exception(msg_masked.msg, code)
     , remote(remote_)
 {
-    capture_thread_frame_pointers = thread_frame_pointers;
     handle_error_code(msg_masked.msg, code, remote, getStackFramePointers());
 }
 
@@ -92,14 +90,12 @@ Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
     : Poco::Exception(msg_masked.msg, code)
     , remote(remote_)
 {
-    capture_thread_frame_pointers = thread_frame_pointers;
     handle_error_code(message(), code, remote, getStackFramePointers());
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
     : Poco::Exception(exc.displayText(), ErrorCodes::POCO_EXCEPTION)
 {
-    capture_thread_frame_pointers = thread_frame_pointers;
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
     auto * stack_trace_frames = exc.get_stack_trace_frames();
     auto stack_trace_size = exc.get_stack_trace_size();
@@ -111,7 +107,6 @@ Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
 Exception::Exception(CreateFromSTDTag, const std::exception & exc)
     : Poco::Exception(demangle(typeid(exc).name()) + ": " + String(exc.what()), ErrorCodes::STD_EXCEPTION)
 {
-    capture_thread_frame_pointers = thread_frame_pointers;
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
     auto * stack_trace_frames = exc.get_stack_trace_frames();
     auto stack_trace_size = exc.get_stack_trace_size();
@@ -158,17 +153,7 @@ std::string Exception::getStackTraceString() const
     auto * stack_trace_frames = get_stack_trace_frames();
     auto stack_trace_size = get_stack_trace_size();
     __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
-    String thread_stack_trace;
-    std::for_each(capture_thread_frame_pointers.rbegin(), capture_thread_frame_pointers.rend(),
-        [&thread_stack_trace](StackTrace::FramePointers & frame_pointers)
-        {
-            thread_stack_trace +=
-                "\nJob's origin stack trace:\n" +
-                StackTrace::toString(frame_pointers.data(), 0, std::ranges::find(frame_pointers, nullptr) - frame_pointers.begin());
-        }
-    );
-
-    return StackTrace::toString(stack_trace_frames, 0, stack_trace_size) + thread_stack_trace;
+    return StackTrace::toString(stack_trace_frames, 0, stack_trace_size);
 #else
     return trace.toString();
 #endif
@@ -199,9 +184,6 @@ Exception::FramePointers Exception::getStackFramePointers() const
 #endif
     return frame_pointers;
 }
-
-thread_local bool Exception::enable_job_stack_trace = false;
-thread_local std::vector<StackTrace::FramePointers> Exception::thread_frame_pointers = {};
 
 
 void throwFromErrno(const std::string & s, int code, int the_errno)

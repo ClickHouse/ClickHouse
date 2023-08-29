@@ -1459,11 +1459,11 @@ public:
         b.CreateMemSet(aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), this->sizeOfData(), llvm::assumeAligned(this->alignOfData()));
     }
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes &, const std::vector<llvm::Value *> & argument_values) const override
     {
         if constexpr (Data::is_compilable)
         {
-            Data::compileChangeIfBetter(builder, aggregate_data_ptr, arguments[0].value);
+            Data::compileChangeIfBetter(builder, aggregate_data_ptr, argument_values[0]);
         }
         else
         {

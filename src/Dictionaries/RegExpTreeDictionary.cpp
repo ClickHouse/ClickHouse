@@ -479,7 +479,7 @@ std::pair<String, bool> processBackRefs(const String & data, const re2_st::RE2 &
     for (const auto & item : pieces)
     {
         if (item.ref_num >= 0 && item.ref_num < 10)
-            result += String{matches[item.ref_num]};
+            result += matches[item.ref_num].ToString();
         else
             result += item.literal;
     }

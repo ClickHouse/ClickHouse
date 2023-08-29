@@ -152,7 +152,8 @@ namespace
         }
         catch (...)
         {
-            sendExceptionToCoordination(coordination, Exception(getCurrentExceptionMessageAndPattern(true, true), getCurrentExceptionCode()));
+            if (coordination)
+                coordination->setError(Exception(getCurrentExceptionMessageAndPattern(true, true), getCurrentExceptionCode()));
         }
     }
 

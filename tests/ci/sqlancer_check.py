@@ -153,10 +153,10 @@ def main():
     test_results = []  # type: TestResults
     # Try to get status message saved by the SQLancer
     try:
-        with open(
-            os.path.join(workspace_path, "status.txt"), "r", encoding="utf-8"
-        ) as status_f:
-            status = status_f.readline().rstrip("\n")
+        # with open(
+        #     os.path.join(workspace_path, "status.txt"), "r", encoding="utf-8"
+        # ) as status_f:
+        #     status = status_f.readline().rstrip("\n")
         if os.path.exists(os.path.join(workspace_path, "server_crashed.log")):
             test_results.append(TestResult("Server crashed", "FAIL"))
         with open(
@@ -171,7 +171,7 @@ def main():
         ) as desc_f:
             description = desc_f.readline().rstrip("\n")
     except:
-        status = "failure"
+        # status = "failure"
         description = "Task failed: $?=" + str(retcode)
 
     description = format_description(description)

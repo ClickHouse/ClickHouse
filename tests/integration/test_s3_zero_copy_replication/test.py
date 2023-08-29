@@ -163,7 +163,7 @@ def test_s3_zero_copy_on_hybrid_storage(started_cluster):
         CREATE TABLE hybrid_test ON CLUSTER test_cluster (id UInt32, value String)
         ENGINE=ReplicatedMergeTree('/clickhouse/tables/hybrid_test', '{}')
         ORDER BY id
-        SETTINGS storage_policy='hybrid',temporary_directories_lifetime=1
+        SETTINGS storage_policy='hybrid'
         """.format(
             "{replica}"
         )

@@ -98,6 +98,8 @@ public:
     /// Is node constant
     bool isConstant() const;
 
+    bool isSubqueryOrSet() const;
+
     /** Get constant as constant column.
       * Node must be constant before calling these method, otherwise logical exception is thrown.
       */
@@ -109,13 +111,13 @@ public:
     bool tryGetConstant(Field & output_value, DataTypePtr & output_type) const;
 
     /// Try get prepared set from node
-    FutureSetPtr tryGetPreparedSet() const;
+    ConstSetPtr tryGetPreparedSet() const;
 
     /// Try get prepared set from node that match data types
-    FutureSetPtr tryGetPreparedSet(const DataTypes & data_types) const;
+    ConstSetPtr tryGetPreparedSet(const DataTypes & data_types) const;
 
     /// Try get prepared set from node that match indexes mapping and data types
-    FutureSetPtr tryGetPreparedSet(
+    ConstSetPtr tryGetPreparedSet(
         const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
         const DataTypes & data_types) const;
 

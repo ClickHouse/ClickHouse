@@ -37,8 +37,6 @@ public:
         filter_dags.push_back(std::move(filter_dag));
     }
 
-    virtual void onAddFilterFinish() {}
-
 protected:
     std::vector<ActionsDAGPtr> filter_dags;
     ActionDAGNodes filter_nodes;

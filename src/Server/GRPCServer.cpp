@@ -1299,7 +1299,7 @@ namespace
     {
         io.onException();
 
-        LOG_ERROR(log, getExceptionMessageAndPattern(exception, send_exception_with_stacktrace));
+        LOG_ERROR(log, getExceptionMessageAndPattern(exception, /* with_stacktrace */ true));
 
         if (responder && !responder_finished)
         {

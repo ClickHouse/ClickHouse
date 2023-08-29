@@ -434,13 +434,11 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
     switch (packet.type)
     {
         case Protocol::Server::MergeTreeReadTaskRequest:
-            chassert(packet.request.has_value());
-            processMergeTreeReadTaskRequest(packet.request.value());
+            processMergeTreeReadTaskRequest(packet.request);
             return ReadResult(ReadResult::Type::ParallelReplicasToken);
 
         case Protocol::Server::MergeTreeAllRangesAnnounecement:
-            chassert(packet.announcement.has_value());
-            processMergeTreeInitialReadAnnounecement(packet.announcement.value());
+            processMergeTreeInitialReadAnnounecement(packet.announcement);
             return ReadResult(ReadResult::Type::ParallelReplicasToken);
 
         case Protocol::Server::ReadTaskRequest:
@@ -512,9 +510,6 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
                 if (!profile_queue->emplace(std::move(packet.block)))
                     throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
-            break;
-
-        case Protocol::Server::TimezoneUpdate:
             break;
 
         default:
@@ -591,8 +586,8 @@ void RemoteQueryExecutor::finish()
     /// Send the request to abort the execution of the request, if not already sent.
     tryCancel("Cancelling query because enough data has been read");
 
-    /// If connections weren't created yet or query wasn't sent, nothing to do.
-    if (!connections || !sent_query)
+    /// If connections weren't created yet, query wasn't sent or was already finished, nothing to do.
+    if (!connections || !sent_query || finished)
         return;
 
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
@@ -619,9 +614,6 @@ void RemoteQueryExecutor::finish()
             if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
                 if (!profile_queue->emplace(std::move(packet.block)))
                     throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
-            break;
-
-        case Protocol::Server::TimezoneUpdate:
             break;
 
         default:

@@ -177,6 +177,14 @@ private:
         if (function.name == "lambda")
             return;
 
+        /// Parsing of INTERVALs is quite hacky. Expressions are rewritten during parsing like this:
+        /// "now() + interval 1 day" -> "now() + toIntervalDay(1)"
+        /// "select now() + INTERVAL '1 day 1 hour 1 minute'" -> "now() + (toIntervalDay(1), toIntervalHour(1), toIntervalMinute(1))"
+        /// so the AST is completely different from the original expression .
+        /// Avoid extracting these literals and simply compare tokens. It makes the template less flexible but much simpler.
+        if (function.name.starts_with("toInterval"))
+            return;
+
         FunctionOverloadResolverPtr builder = FunctionFactory::instance().get(function.name, context);
         /// Do not replace literals which must be constant
         ColumnNumbers dont_visit_children = builder->getArgumentsThatAreAlwaysConstant();
@@ -348,6 +356,31 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Array joins are not allowed in constant expressions for IN, VALUES, LIMIT and similar sections.");
 
+}
+
+String ConstantExpressionTemplate::TemplateStructure::dumpTemplate() const
+{
+    WriteBufferFromOwnString res;
+
+    size_t cur_column = 0;
+    size_t cur_token = 0;
+    size_t num_columns = literals.columns();
+    while (cur_column < num_columns)
+    {
+        size_t skip_tokens_until = token_after_literal_idx[cur_column];
+        while (cur_token < skip_tokens_until)
+            res << quote << tokens[cur_token++] << ", ";
+
+        const DataTypePtr & type = literals.getByPosition(cur_column).type;
+        res << type->getName() << ", ";
+        ++cur_column;
+    }
+
+    while (cur_token < tokens.size())
+        res << quote << tokens[cur_token++] << ", ";
+
+    res << "eof";
+    return res.str();
 }
 
 size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTPtr & expression,

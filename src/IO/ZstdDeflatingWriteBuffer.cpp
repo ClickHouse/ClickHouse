@@ -30,7 +30,11 @@ ZstdDeflatingWriteBuffer::ZstdDeflatingWriteBuffer(
     output = {nullptr, 0, 0};
 }
 
-ZstdDeflatingWriteBuffer::~ZstdDeflatingWriteBuffer() = default;
+
+ZstdDeflatingWriteBuffer::~ZstdDeflatingWriteBuffer()
+{
+    finalize();
+}
 
 void ZstdDeflatingWriteBuffer::nextImpl()
 {

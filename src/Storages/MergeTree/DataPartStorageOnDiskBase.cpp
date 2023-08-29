@@ -400,7 +400,7 @@ void DataPartStorageOnDiskBase::backup(
         if (it != checksums.files.end())
         {
             file_size = it->second.file_size;
-            file_hash = it->second.file_hash;
+            file_hash = {it->second.file_hash.first, it->second.file_hash.second};
         }
 
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromImmutableFile>(disk, filepath_on_disk, copy_encrypted, file_size, file_hash);

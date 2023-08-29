@@ -106,14 +106,12 @@ private:
     mutable std::optional<BackupCoordinationReplicatedAccess> TSA_GUARDED_BY(replicated_access_mutex) replicated_access;
     mutable std::optional<BackupCoordinationReplicatedSQLObjects> TSA_GUARDED_BY(replicated_sql_objects_mutex) replicated_sql_objects;
     mutable std::optional<BackupCoordinationFileInfos> TSA_GUARDED_BY(file_infos_mutex) file_infos;
-    std::unordered_set<size_t> TSA_GUARDED_BY(writing_files_mutex) writing_files;
 
     mutable std::mutex zookeeper_mutex;
     mutable std::mutex replicated_tables_mutex;
     mutable std::mutex replicated_access_mutex;
     mutable std::mutex replicated_sql_objects_mutex;
     mutable std::mutex file_infos_mutex;
-    mutable std::mutex writing_files_mutex;
 };
 
 }

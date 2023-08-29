@@ -40,11 +40,10 @@ struct TreeRewriterResult
     NameSet expanded_aliases;
 
     Aliases aliases;
+
     std::vector<const ASTFunction *> aggregates;
-
     std::vector<const ASTFunction *> window_function_asts;
-
-    std::vector<const ASTFunction *> expressions_with_window_function;
+    ASTs expressions_with_window_function;
 
     /// Which column is needed to be ARRAY-JOIN'ed to get the specified.
     /// For example, for `SELECT s.v ... ARRAY JOIN a AS s` will get "s.v" -> "a.v".

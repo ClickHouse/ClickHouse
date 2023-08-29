@@ -17,6 +17,8 @@ public:
 
     void nextImpl() override;
 
+    ~WriteBufferToFileSegment() override;
+
 private:
 
     std::shared_ptr<ReadBuffer> getReadBufferImpl() override;

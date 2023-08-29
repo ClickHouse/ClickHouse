@@ -15,5 +15,4 @@
     <max_concurrent_queries>500</max_concurrent_queries>
     <path>./clickhouse/</path>
     <users_config>users.xml</users_config>
-    <allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
 </clickhouse>

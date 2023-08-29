@@ -147,6 +147,8 @@ private:
 
     FileCache::QueryContextHolderPtr query_context_holder;
 
+    bool is_persistent;
+
     std::shared_ptr<FilesystemCacheLog> cache_log;
 };
 

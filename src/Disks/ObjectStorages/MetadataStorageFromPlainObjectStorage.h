@@ -63,7 +63,7 @@ public:
 
     uint32_t getHardlinkCount(const std::string & /* path */) const override
     {
-        return 0;
+        return 1;
     }
 
     bool supportsChmod() const override { return false; }

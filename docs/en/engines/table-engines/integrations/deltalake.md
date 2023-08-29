@@ -1,6 +1,5 @@
 ---
 slug: /en/engines/table-engines/integrations/deltalake
-sidebar_position: 40
 sidebar_label: DeltaLake
 ---
 

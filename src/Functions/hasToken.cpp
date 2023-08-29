@@ -16,18 +16,18 @@ struct NameHasTokenOrNull
     static constexpr auto name = "hasTokenOrNull";
 };
 
-using FunctionHasToken
-    = FunctionsStringSearch<HasTokenImpl<NameHasToken, VolnitskyCaseSensitiveToken, false>>;
-using FunctionHasTokenOrNull
-    = FunctionsStringSearch<HasTokenImpl<NameHasTokenOrNull, VolnitskyCaseSensitiveToken, false>, ExecutionErrorPolicy::Null>;
+using FunctionHasToken = DB::FunctionsStringSearch<DB::HasTokenImpl<NameHasToken, DB::VolnitskyCaseSensitiveToken, false>>;
+using FunctionHasTokenOrNull = DB::
+    FunctionsStringSearch<DB::HasTokenImpl<NameHasTokenOrNull, DB::VolnitskyCaseSensitiveToken, false>, DB::ExecutionErrorPolicy::Null>;
 
 REGISTER_FUNCTION(HasToken)
 {
     factory.registerFunction<FunctionHasToken>(FunctionDocumentation
-        {.description="Performs lookup of needle in haystack using tokenbf_v1 index."}, FunctionFactory::CaseSensitive);
+        {.description="Performs lookup of needle in haystack using tokenbf_v1 index."}, DB::FunctionFactory::CaseSensitive);
 
     factory.registerFunction<FunctionHasTokenOrNull>(FunctionDocumentation
-        {.description="Performs lookup of needle in haystack using tokenbf_v1 index. Returns null if needle is ill-formed."}, FunctionFactory::CaseSensitive);
+        {.description="Performs lookup of needle in haystack using tokenbf_v1 index. Returns null if needle is ill-formed."},
+        DB::FunctionFactory::CaseSensitive);
 }
 
 }

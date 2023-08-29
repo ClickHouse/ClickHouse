@@ -44,7 +44,6 @@ struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
         const Key & key_,
         const std::string & key_path_,
         CleanupQueue & cleanup_queue_,
-        Poco::Logger * log_,
         bool created_base_directory_ = false);
 
     enum class KeyState
@@ -71,7 +70,6 @@ private:
     KeyGuard guard;
     CleanupQueue & cleanup_queue;
     std::atomic<bool> created_base_directory = false;
-    Poco::Logger * log;
 };
 
 using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
@@ -112,9 +110,8 @@ public:
     void doCleanup();
 
 private:
-    CacheMetadataGuard::Lock lockMetadata() const;
     const std::string path; /// Cache base path
-    mutable CacheMetadataGuard guard;
+    CacheMetadataGuard guard;
     const CleanupQueuePtr cleanup_queue;
     Poco::Logger * log;
 };
@@ -164,8 +161,6 @@ struct LockedKey : private boost::noncopyable
 
     bool isLastOwnerOfFileSegment(size_t offset) const;
 
-    std::optional<FileSegment::Range> hasIntersectingRange(const FileSegment::Range & range) const;
-
     void removeFromCleanupQueue();
 
     void markAsRemoved();
@@ -175,6 +170,7 @@ struct LockedKey : private boost::noncopyable
 private:
     const std::shared_ptr<KeyMetadata> key_metadata;
     KeyGuard::Lock lock; /// `lock` must be destructed before `key_metadata`.
+    Poco::Logger * log;
 };
 
 }

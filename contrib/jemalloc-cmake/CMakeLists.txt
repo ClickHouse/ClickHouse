@@ -4,7 +4,7 @@ if (SANITIZE OR NOT (
 ))
     if (ENABLE_JEMALLOC)
         message (${RECONFIGURE_MESSAGE_LEVEL}
-                 "jemalloc is disabled implicitly: it doesn't work with sanitizers and can only be used with x86_64, aarch64, or ppc64le Linux or FreeBSD builds and RelWithDebInfo macOS builds. Use -DENABLE_JEMALLOC=0")
+                 "jemalloc is disabled implicitly: it doesn't work with sanitizers and can only be used with x86_64, aarch64, or ppc64le Linux or FreeBSD builds and RelWithDebInfo macOS builds.")
     endif ()
     set (ENABLE_JEMALLOC OFF)
 else ()

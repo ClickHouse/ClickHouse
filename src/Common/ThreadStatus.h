@@ -290,7 +290,6 @@ public:
     void flushUntrackedMemory();
 
 private:
-    void applyGlobalSettings();
     void applyQuerySettings();
 
     void initPerformanceCounters();

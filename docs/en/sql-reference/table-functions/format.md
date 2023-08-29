@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/format
-sidebar_position: 65
+sidebar_position: 56
 sidebar_label: format
 ---
 

@@ -75,8 +75,6 @@ public:
 
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
-    /// Name of corresponding data type in MySQL (exampe: Bigint, Blob, etc)
-    virtual String getSQLCompatibleName() const = 0;
 
     /// Data type id. It's used for runtime type checks.
     virtual TypeIndex getTypeId() const = 0;
@@ -110,6 +108,7 @@ public:
 
     /// TODO: support more types.
     virtual bool supportsSparseSerialization() const { return !haveSubtypes(); }
+    virtual bool canBeInsideSparseColumns() const { return supportsSparseSerialization(); }
 
     SerializationPtr getDefaultSerialization() const;
     SerializationPtr getSparseSerialization() const;
@@ -532,6 +531,11 @@ inline bool isNotDecimalButComparableToDecimal(const DataTypePtr & data_type)
 {
     WhichDataType which(data_type);
     return which.isInt() || which.isUInt() || which.isFloat();
+}
+
+inline bool isCompilableType(const DataTypePtr & data_type)
+{
+    return data_type->isValueRepresentedByNumber() && !isDecimal(data_type);
 }
 
 inline bool isBool(const DataTypePtr & data_type)

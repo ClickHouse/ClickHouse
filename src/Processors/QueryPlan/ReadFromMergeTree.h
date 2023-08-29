@@ -6,7 +6,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/MergeTree/PartitionPruner.h>
 
 namespace DB
 {
@@ -24,35 +23,6 @@ struct MergeTreeDataSelectSamplingData
     Float64 used_sample_factor = 1.0;
     std::shared_ptr<ASTFunction> filter_function;
     ActionsDAGPtr filter_expression;
-};
-
-struct UsefulSkipIndexes
-{
-    struct DataSkippingIndexAndCondition
-    {
-        MergeTreeIndexPtr index;
-        MergeTreeIndexConditionPtr condition;
-
-        DataSkippingIndexAndCondition(MergeTreeIndexPtr index_, MergeTreeIndexConditionPtr condition_)
-            : index(index_), condition(condition_)
-        {
-        }
-    };
-
-    struct MergedDataSkippingIndexAndCondition
-    {
-        std::vector<MergeTreeIndexPtr> indices;
-        MergeTreeIndexMergedConditionPtr condition;
-
-        void addIndex(const MergeTreeIndexPtr & index)
-        {
-            indices.push_back(index);
-            condition->addIndex(indices.back());
-        }
-    };
-
-    std::vector<DataSkippingIndexAndCondition> useful_indices;
-    std::vector<MergedDataSkippingIndexAndCondition> merged_indices;
 };
 
 struct MergeTreeDataSelectAnalysisResult;
@@ -164,15 +134,6 @@ public:
     UInt64 getSelectedRows() const { return selected_rows; }
     UInt64 getSelectedMarks() const { return selected_marks; }
 
-    struct Indexes
-    {
-        KeyCondition key_condition;
-        std::optional<PartitionPruner> partition_pruner;
-        std::optional<KeyCondition> minmax_idx_condition;
-        UsefulSkipIndexes skip_indexes;
-        bool use_skip_indexes;
-    };
-
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
         std::vector<AlterConversionsPtr> alter_conversions,
@@ -187,8 +148,7 @@ public:
         const MergeTreeData & data,
         const Names & real_column_names,
         bool sample_factor_column_queried,
-        Poco::Logger * log,
-        std::optional<Indexes> & indexes);
+        Poco::Logger * log);
 
     MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
@@ -204,6 +164,7 @@ public:
     bool readsInOrder() const;
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value);
+
     bool isQueryWithFinal() const;
     bool isQueryWithSampling() const;
 
@@ -226,8 +187,6 @@ public:
     size_t getNumStreams() const { return requested_num_streams; }
     bool isParallelReadingEnabled() const { return read_task_callback != std::nullopt; }
 
-    void onAddFilterFinish() override;
-
 private:
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToReadImpl(
         MergeTreeData::DataPartsVector parts,
@@ -241,8 +200,7 @@ private:
         const MergeTreeData & data,
         const Names & real_column_names,
         bool sample_factor_column_queried,
-        Poco::Logger * log,
-        std::optional<Indexes> & indexes);
+        Poco::Logger * log);
 
     int getSortDirection() const
     {
@@ -282,9 +240,6 @@ private:
     bool output_each_partition_through_separate_port = false;
 
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read;
-
-    /// Pre-computed value, needed to trigger sets creating for PK
-    mutable std::optional<Indexes> indexes;
 
     Poco::Logger * log;
     UInt64 selected_parts = 0;

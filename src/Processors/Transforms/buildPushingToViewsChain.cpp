@@ -245,10 +245,6 @@ Chain buildPushingToViewsChain(
         if (disable_deduplication_for_children)
             insert_context->setSetting("insert_deduplicate", Field{false});
 
-        // Processing of blocks for MVs is done block by block, and there will
-        // be no parallel reading after (plus it is not a costless operation)
-        select_context->setSetting("parallelize_output_from_storages", Field{false});
-
         // Separate min_insert_block_size_rows/min_insert_block_size_bytes for children
         if (insert_settings.min_insert_block_size_rows_for_materialized_views)
             insert_context->setSetting("min_insert_block_size_rows", insert_settings.min_insert_block_size_rows_for_materialized_views.value);

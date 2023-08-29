@@ -31,12 +31,12 @@ endif()
 
 set (CMAKE_CXX_STANDARD 17)
 
-set(ARROW_VERSION "11.0.0")
+set(ARROW_VERSION "6.0.1")
 string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" ARROW_BASE_VERSION "${ARROW_VERSION}")
 
-set(ARROW_VERSION_MAJOR "11")
+set(ARROW_VERSION_MAJOR "6")
 set(ARROW_VERSION_MINOR "0")
-set(ARROW_VERSION_PATCH "0")
+set(ARROW_VERSION_PATCH "1")
 
 if(ARROW_VERSION_MAJOR STREQUAL "0")
     # Arrow 0.x.y => SO version is "x", full SO version is "x.y.0"
@@ -116,79 +116,43 @@ configure_file("${ORC_SOURCE_SRC_DIR}/Adaptor.hh.in" "${ORC_BUILD_INCLUDE_DIR}/A
 # ARROW_ORC + adapters/orc/CMakefiles
 set(ORC_SRCS
         "${CMAKE_CURRENT_BINARY_DIR}/orc_proto.pb.h"
-        "${ORC_ADDITION_SOURCE_DIR}/orc_proto.pb.cc"
-        "${ORC_SOURCE_SRC_DIR}/Adaptor.cc"
-        "${ORC_SOURCE_SRC_DIR}/Adaptor.hh.in"
-        "${ORC_SOURCE_SRC_DIR}/BlockBuffer.cc"
-        "${ORC_SOURCE_SRC_DIR}/BlockBuffer.hh"
-        "${ORC_SOURCE_SRC_DIR}/BloomFilter.cc"
-        "${ORC_SOURCE_SRC_DIR}/BloomFilter.hh"
-        "${ORC_SOURCE_SRC_DIR}/Bpacking.hh"
-        "${ORC_SOURCE_SRC_DIR}/BpackingDefault.cc"
-        "${ORC_SOURCE_SRC_DIR}/BpackingDefault.hh"
-        "${ORC_SOURCE_SRC_DIR}/ByteRLE.cc"
-        "${ORC_SOURCE_SRC_DIR}/ByteRLE.hh"
-        "${ORC_SOURCE_SRC_DIR}/CMakeLists.txt"
-        "${ORC_SOURCE_SRC_DIR}/ColumnPrinter.cc"
-        "${ORC_SOURCE_SRC_DIR}/ColumnReader.cc"
-        "${ORC_SOURCE_SRC_DIR}/ColumnReader.hh"
-        "${ORC_SOURCE_SRC_DIR}/ColumnWriter.cc"
-        "${ORC_SOURCE_SRC_DIR}/ColumnWriter.hh"
-        "${ORC_SOURCE_SRC_DIR}/Common.cc"
-        "${ORC_SOURCE_SRC_DIR}/Compression.cc"
-        "${ORC_SOURCE_SRC_DIR}/Compression.hh"
-        "${ORC_SOURCE_SRC_DIR}/ConvertColumnReader.cc"
-        "${ORC_SOURCE_SRC_DIR}/ConvertColumnReader.hh"
-        "${ORC_SOURCE_SRC_DIR}/CpuInfoUtil.cc"
-        "${ORC_SOURCE_SRC_DIR}/CpuInfoUtil.hh"
-        "${ORC_SOURCE_SRC_DIR}/Dispatch.hh"
-        "${ORC_SOURCE_SRC_DIR}/Exceptions.cc"
-        "${ORC_SOURCE_SRC_DIR}/Int128.cc"
-        "${ORC_SOURCE_SRC_DIR}/LzoDecompressor.cc"
-        "${ORC_SOURCE_SRC_DIR}/LzoDecompressor.hh"
-        "${ORC_SOURCE_SRC_DIR}/MemoryPool.cc"
-        "${ORC_SOURCE_SRC_DIR}/Murmur3.cc"
-        "${ORC_SOURCE_SRC_DIR}/Murmur3.hh"
-        "${ORC_SOURCE_SRC_DIR}/Options.hh"
-        "${ORC_SOURCE_SRC_DIR}/OrcFile.cc"
-        "${ORC_SOURCE_SRC_DIR}/RLE.cc"
-        "${ORC_SOURCE_SRC_DIR}/RLE.hh"
-        "${ORC_SOURCE_SRC_DIR}/RLEV2Util.cc"
-        "${ORC_SOURCE_SRC_DIR}/RLEV2Util.hh"
-        "${ORC_SOURCE_SRC_DIR}/RLEv1.cc"
-        "${ORC_SOURCE_SRC_DIR}/RLEv1.hh"
-        "${ORC_SOURCE_SRC_DIR}/RLEv2.hh"
-        "${ORC_SOURCE_SRC_DIR}/Reader.cc"
-        "${ORC_SOURCE_SRC_DIR}/Reader.hh"
-        "${ORC_SOURCE_SRC_DIR}/RleDecoderV2.cc"
-        "${ORC_SOURCE_SRC_DIR}/RleEncoderV2.cc"
-        "${ORC_SOURCE_SRC_DIR}/SchemaEvolution.cc"
-        "${ORC_SOURCE_SRC_DIR}/SchemaEvolution.hh"
-        "${ORC_SOURCE_SRC_DIR}/Statistics.cc"
-        "${ORC_SOURCE_SRC_DIR}/Statistics.hh"
-        "${ORC_SOURCE_SRC_DIR}/StripeStream.cc"
-        "${ORC_SOURCE_SRC_DIR}/StripeStream.hh"
-        "${ORC_SOURCE_SRC_DIR}/Timezone.cc"
-        "${ORC_SOURCE_SRC_DIR}/Timezone.hh"
-        "${ORC_SOURCE_SRC_DIR}/TypeImpl.cc"
-        "${ORC_SOURCE_SRC_DIR}/TypeImpl.hh"
-        "${ORC_SOURCE_SRC_DIR}/Utils.hh"
-        "${ORC_SOURCE_SRC_DIR}/Vector.cc"
-        "${ORC_SOURCE_SRC_DIR}/Writer.cc"
-        "${ORC_SOURCE_SRC_DIR}/io/InputStream.cc"
-        "${ORC_SOURCE_SRC_DIR}/io/InputStream.hh"
-        "${ORC_SOURCE_SRC_DIR}/io/OutputStream.cc"
-        "${ORC_SOURCE_SRC_DIR}/io/OutputStream.hh"
         "${ORC_SOURCE_SRC_DIR}/sargs/ExpressionTree.cc"
-        "${ORC_SOURCE_SRC_DIR}/sargs/ExpressionTree.hh"
         "${ORC_SOURCE_SRC_DIR}/sargs/Literal.cc"
         "${ORC_SOURCE_SRC_DIR}/sargs/PredicateLeaf.cc"
-        "${ORC_SOURCE_SRC_DIR}/sargs/PredicateLeaf.hh"
         "${ORC_SOURCE_SRC_DIR}/sargs/SargsApplier.cc"
-        "${ORC_SOURCE_SRC_DIR}/sargs/SargsApplier.hh"
         "${ORC_SOURCE_SRC_DIR}/sargs/SearchArgument.cc"
-        "${ORC_SOURCE_SRC_DIR}/sargs/SearchArgument.hh"
         "${ORC_SOURCE_SRC_DIR}/sargs/TruthValue.cc"
+        "${ORC_SOURCE_SRC_DIR}/Exceptions.cc"
+        "${ORC_SOURCE_SRC_DIR}/OrcFile.cc"
+        "${ORC_SOURCE_SRC_DIR}/Reader.cc"
+        "${ORC_SOURCE_SRC_DIR}/ByteRLE.cc"
+        "${ORC_SOURCE_SRC_DIR}/ColumnPrinter.cc"
+        "${ORC_SOURCE_SRC_DIR}/ColumnReader.cc"
+        "${ORC_SOURCE_SRC_DIR}/ColumnWriter.cc"
+        "${ORC_SOURCE_SRC_DIR}/Common.cc"
+        "${ORC_SOURCE_SRC_DIR}/Compression.cc"
+        "${ORC_SOURCE_SRC_DIR}/Int128.cc"
+        "${ORC_SOURCE_SRC_DIR}/LzoDecompressor.cc"
+        "${ORC_SOURCE_SRC_DIR}/MemoryPool.cc"
+        "${ORC_SOURCE_SRC_DIR}/RLE.cc"
+        "${ORC_SOURCE_SRC_DIR}/RLEv1.cc"
+        "${ORC_SOURCE_SRC_DIR}/RleDecoderV2.cc"
+        "${ORC_SOURCE_SRC_DIR}/RleEncoderV2.cc"
+        "${ORC_SOURCE_SRC_DIR}/RLEV2Util.cc"
+        "${ORC_SOURCE_SRC_DIR}/Statistics.cc"
+        "${ORC_SOURCE_SRC_DIR}/StripeStream.cc"
+        "${ORC_SOURCE_SRC_DIR}/Timezone.cc"
+        "${ORC_SOURCE_SRC_DIR}/TypeImpl.cc"
+        "${ORC_SOURCE_SRC_DIR}/Vector.cc"
+        "${ORC_SOURCE_SRC_DIR}/Writer.cc"
+        "${ORC_SOURCE_SRC_DIR}/Adaptor.cc"
+        "${ORC_SOURCE_SRC_DIR}/BloomFilter.cc"
+        "${ORC_SOURCE_SRC_DIR}/Murmur3.cc"
+        "${ORC_SOURCE_SRC_DIR}/BlockBuffer.cc"
+        "${ORC_SOURCE_SRC_DIR}/wrap/orc-proto-wrapper.cc"
+        "${ORC_SOURCE_SRC_DIR}/io/InputStream.cc"
+        "${ORC_SOURCE_SRC_DIR}/io/OutputStream.cc"
+        "${ORC_ADDITION_SOURCE_DIR}/orc_proto.pb.cc"
         )
 
 add_library(_orc ${ORC_SRCS})
@@ -513,10 +477,6 @@ if (SANITIZE STREQUAL "undefined")
     target_compile_options(_parquet PRIVATE -fno-sanitize=undefined)
     target_compile_options(_arrow PRIVATE -fno-sanitize=undefined)
 endif ()
-
-# Define Thrift version for parquet (we use 0.16.0)
-add_definitions(-DPARQUET_THRIFT_VERSION_MAJOR=0)
-add_definitions(-DPARQUET_THRIFT_VERSION_MINOR=16)
 
 # === tools
 

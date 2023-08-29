@@ -1,6 +1,6 @@
 # docker build -t clickhouse/binary-builder .
 ARG FROM_TAG=latest
-FROM clickhouse/test-util:latest AS cctools
+FROM clickhouse/test-util:50773 AS cctools
 # The cctools are built always from the clickhouse/test-util:latest and cached inline
 # Theoretically, it should improve rebuild speed significantly
 ENV CC=clang-${LLVM_VERSION}
@@ -49,8 +49,8 @@ ENV CARGO_HOME=/rust/cargo
 ENV PATH="/rust/cargo/bin:${PATH}"
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && \
     chmod 777 -R /rust && \
-    rustup toolchain install nightly && \
-    rustup default nightly && \
+    rustup toolchain install nightly-2023-07-04 && \
+    rustup default nightly-2023-07-04 && \
     rustup component add rust-src && \
     rustup target add aarch64-unknown-linux-gnu && \
     rustup target add x86_64-apple-darwin && \

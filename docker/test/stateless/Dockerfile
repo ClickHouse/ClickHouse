@@ -20,7 +20,6 @@ RUN apt-get update -y \
             netcat-openbsd \
             nodejs \
             npm \
-            odbcinst \
             openjdk-11-jre-headless \
             openssl \
             postgresql-client \
@@ -72,7 +71,7 @@ RUN arch=${TARGETARCH:-amd64} \
     && chmod +x ./mc ./minio
 
 
-RUN wget --no-verbose 'https://dlcdn.apache.org/hadoop/common/hadoop-3.3.1/hadoop-3.3.1.tar.gz' \
+RUN wget 'https://dlcdn.apache.org/hadoop/common/hadoop-3.3.1/hadoop-3.3.1.tar.gz' \
     && tar -xvf hadoop-3.3.1.tar.gz \
     && rm -rf hadoop-3.3.1.tar.gz
 
@@ -80,8 +79,8 @@ ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
 ENV EXPORT_S3_STORAGE_POLICIES=1
 
-RUN npm install -g azurite \
-    && npm install -g tslib
+RUN npm install -g azurite
+RUN npm install tslib
 
 COPY run.sh /
 COPY setup_minio.sh /
