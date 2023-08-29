@@ -1368,19 +1368,19 @@ Pipe StorageFile::read(
     }
     else
     {
-        const std::string * p;
+        const std::vector<std::string> * p;
 
         if (archive_info.has_value())
-            p = archive_info->paths_to_archives.data();
+            p = &archive_info->paths_to_archives;
         else
-            p = paths.data();
+            p = &paths;
 
-        if (p->size() == 1 && !fs::exists(*p))
+        if (p->size() == 1 && !fs::exists(p->at(0)))
         {
             if (context->getSettingsRef().engine_file_empty_if_not_exists)
                 return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
             else
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", *p);
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", p->at(0));
         }
     }
 
