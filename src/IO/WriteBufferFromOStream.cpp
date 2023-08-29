@@ -38,9 +38,4 @@ WriteBufferFromOStream::WriteBufferFromOStream(
 {
 }
 
-WriteBufferFromOStream::~WriteBufferFromOStream()
-{
-    finalize();
-}
-
 }
