@@ -912,6 +912,19 @@ bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &ext
     return false;
 }
 
+size_t AvroRowInputFormat::countRows(size_t max_block_size)
+{
+    size_t num_rows = 0;
+    while (file_reader_ptr->hasMore() && num_rows < max_block_size)
+    {
+        file_reader_ptr->decr();
+        file_reader_ptr->decoder().drain();
+        ++num_rows;
+    }
+
+    return num_rows;
+}
+
 class AvroConfluentRowInputFormat::SchemaRegistry
 {
 public:
@@ -1011,7 +1024,7 @@ private:
 using ConfluentSchemaRegistry = AvroConfluentRowInputFormat::SchemaRegistry;
 #define SCHEMA_REGISTRY_CACHE_MAX_SIZE 1000
 /// Cache of Schema Registry URL -> SchemaRegistry
-static CacheBase<std::string, ConfluentSchemaRegistry>  schema_registry_cache(SCHEMA_REGISTRY_CACHE_MAX_SIZE);
+static CacheBase<std::string, ConfluentSchemaRegistry> schema_registry_cache(SCHEMA_REGISTRY_CACHE_MAX_SIZE);
 
 static std::shared_ptr<ConfluentSchemaRegistry> getConfluentSchemaRegistry(const FormatSettings & format_settings)
 {
@@ -1258,6 +1271,8 @@ void registerInputFormatAvro(FormatFactory & factory)
     {
         return std::make_shared<AvroConfluentRowInputFormat>(sample, buf, params, settings);
     });
+
+    factory.markFormatSupportsSubsetOfColumns("AvroConfluent");
 }
 
 void registerAvroSchemaReader(FormatFactory & factory)

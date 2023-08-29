@@ -20,9 +20,9 @@ struct QueryStatusInfo;
 struct QueryResultDetails
 {
     String query_id;
-    std::optional<String> content_type;
-    std::optional<String> format;
-    std::optional<String> timezone;
+    std::optional<String> content_type = {};
+    std::optional<String> format = {};
+    std::optional<String> timezone = {};
 };
 
 using SetResultDetailsFunc = std::function<void(const QueryResultDetails &)>;
@@ -92,6 +92,7 @@ void logQueryFinish(
     const QueryPipeline & query_pipeline,
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
+    QueryCache::Usage query_cache_usage,
     bool internal);
 
 void logQueryException(

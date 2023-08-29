@@ -139,7 +139,7 @@ public:
 
     void startup() override { getNested()->startup(); }
     void shutdown() override { getNested()->shutdown(); }
-    void flush() override { getNested()->flush(); }
+    void flushAndPrepareForShutdown() override { getNested()->flushAndPrepareForShutdown(); }
 
     ActionLock getActionLock(StorageActionBlockType action_type) override { return getNested()->getActionLock(action_type); }
 

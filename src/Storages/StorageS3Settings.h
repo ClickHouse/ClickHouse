@@ -77,6 +77,8 @@ struct S3Settings
 
         const PartUploadSettings & getUploadSettings() const { return upload_settings; }
 
+        void setStorageClassName(const String & storage_class_name) { upload_settings.storage_class_name = storage_class_name; }
+
         RequestSettings() = default;
         explicit RequestSettings(const Settings & settings);
         explicit RequestSettings(const NamedCollection & collection);

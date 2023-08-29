@@ -1118,8 +1118,54 @@ public:
         AggregateColumns & aggregate_columns, /// Passed to not create them anew for each block
         bool & no_more_keys) const;
 
+    /** This array serves two purposes.
+      *
+      * Function arguments are collected side by side, and they do not need to be collected from different places. Also the array is made zero-terminated.
+      * The inner loop (for the case without_key) is almost twice as compact; performance gain of about 30%.
+      */
+    struct AggregateFunctionInstruction
+    {
+        const IAggregateFunction * that{};
+        size_t state_offset{};
+        const IColumn ** arguments{};
+        const IAggregateFunction * batch_that{};
+        const IColumn ** batch_arguments{};
+        const UInt64 * offsets{};
+        bool has_sparse_arguments = false;
+    };
+
+    /// Used for optimize_aggregation_in_order:
+    /// - No two-level aggregation
+    /// - No external aggregation
+    /// - No without_key support (it is implemented using executeOnIntervalWithoutKey())
+    void executeOnBlockSmall(
+        AggregatedDataVariants & result,
+        size_t row_begin,
+        size_t row_end,
+        ColumnRawPtrs & key_columns,
+        AggregateFunctionInstruction * aggregate_instructions) const;
+
+    void executeOnIntervalWithoutKey(
+        AggregatedDataVariants & data_variants,
+        size_t row_begin,
+        size_t row_end,
+        AggregateFunctionInstruction * aggregate_instructions) const;
+
     /// Used for aggregate projection.
     bool mergeOnBlock(Block block, AggregatedDataVariants & result, bool & no_more_keys) const;
+
+    void mergeOnBlockSmall(
+        AggregatedDataVariants & result,
+        size_t row_begin,
+        size_t row_end,
+        const AggregateColumnsConstData & aggregate_columns_data,
+        const ColumnRawPtrs & key_columns) const;
+
+    void mergeOnIntervalWithoutKey(
+        AggregatedDataVariants & data_variants,
+        size_t row_begin,
+        size_t row_end,
+        const AggregateColumnsConstData & aggregate_columns_data) const;
 
     /** Convert the aggregation data structure into a block.
       * If overflow_row = true, then aggregates for rows that are not included in max_rows_to_group_by are put in the first block.
@@ -1178,22 +1224,6 @@ private:
 
     AggregateFunctionsPlainPtrs aggregate_functions;
 
-    /** This array serves two purposes.
-      *
-      * Function arguments are collected side by side, and they do not need to be collected from different places. Also the array is made zero-terminated.
-      * The inner loop (for the case without_key) is almost twice as compact; performance gain of about 30%.
-      */
-    struct AggregateFunctionInstruction
-    {
-        const IAggregateFunction * that{};
-        size_t state_offset{};
-        const IColumn ** arguments{};
-        const IAggregateFunction * batch_that{};
-        const IColumn ** batch_arguments{};
-        const UInt64 * offsets{};
-        bool has_sparse_arguments = false;
-    };
-
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
     using NestedColumnsHolder = std::vector<std::vector<const IColumn *>>;
 
@@ -1239,26 +1269,6 @@ private:
       */
     void destroyAllAggregateStates(AggregatedDataVariants & result) const;
 
-
-    /// Used for optimize_aggregation_in_order:
-    /// - No two-level aggregation
-    /// - No external aggregation
-    /// - No without_key support (it is implemented using executeOnIntervalWithoutKeyImpl())
-    void executeOnBlockSmall(
-        AggregatedDataVariants & result,
-        size_t row_begin,
-        size_t row_end,
-        ColumnRawPtrs & key_columns,
-        AggregateFunctionInstruction * aggregate_instructions) const;
-    void mergeOnBlockSmall(
-        AggregatedDataVariants & result,
-        size_t row_begin,
-        size_t row_end,
-        const AggregateColumnsConstData & aggregate_columns_data,
-        const ColumnRawPtrs & key_columns) const;
-
-    void mergeOnBlockImpl(Block block, AggregatedDataVariants & result, bool no_more_keys) const;
-
     void executeImpl(
         AggregatedDataVariants & result,
         size_t row_begin,
@@ -1299,17 +1309,6 @@ private:
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
         Arena * arena) const;
-
-    void executeOnIntervalWithoutKeyImpl(
-        AggregatedDataVariants & data_variants,
-        size_t row_begin,
-        size_t row_end,
-        AggregateFunctionInstruction * aggregate_instructions) const;
-    void mergeOnIntervalWithoutKeyImpl(
-        AggregatedDataVariants & data_variants,
-        size_t row_begin,
-        size_t row_end,
-        const AggregateColumnsConstData & aggregate_columns_data) const;
 
     template <typename Method>
     void writeToTemporaryFileImpl(

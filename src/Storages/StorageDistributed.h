@@ -135,7 +135,7 @@ public:
 
     void initializeFromDisk();
     void shutdown() override;
-    void flush() override;
+    void flushAndPrepareForShutdown() override;
     void drop() override;
 
     bool storesDataOnDisk() const override { return data_volume != nullptr; }

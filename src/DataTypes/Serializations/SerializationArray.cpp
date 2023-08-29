@@ -129,7 +129,7 @@ namespace
         for (size_t i = offset; i < end; ++i)
         {
             ColumnArray::Offset current_offset = offset_values[i];
-            writeIntBinary(current_offset - prev_offset, ostr);
+            writeBinaryLittleEndian(current_offset - prev_offset, ostr);
             prev_offset = current_offset;
         }
     }
@@ -145,7 +145,7 @@ namespace
         while (i < initial_size + limit && !istr.eof())
         {
             ColumnArray::Offset current_size = 0;
-            readIntBinary(current_size, istr);
+            readBinaryLittleEndian(current_size, istr);
 
             if (unlikely(current_size > MAX_ARRAY_SIZE))
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size is too large: {}", current_size);

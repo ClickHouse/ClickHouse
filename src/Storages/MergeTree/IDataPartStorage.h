@@ -221,6 +221,7 @@ public:
         const NameSet & files_without_checksums,
         const String & path_in_backup,
         const BackupSettings & backup_settings,
+        const ReadSettings & read_settings,
         bool make_temporary_hard_links,
         BackupEntries & backup_entries,
         TemporaryFilesOnDisks * temp_dirs) const = 0;
@@ -241,7 +242,7 @@ public:
         MergeTreeTransactionPtr txn = NO_TRANSACTION_PTR;
         HardlinkedFiles * hardlinked_files = nullptr;
         bool copy_instead_of_hardlink = false;
-        NameSet files_to_copy_instead_of_hardlinks;
+        NameSet files_to_copy_instead_of_hardlinks = {};
         bool keep_metadata_version = false;
         bool make_source_readonly = false;
         DiskTransactionPtr external_transaction = nullptr;

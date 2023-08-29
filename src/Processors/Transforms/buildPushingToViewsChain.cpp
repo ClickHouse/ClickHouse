@@ -281,7 +281,7 @@ Chain buildPushingToViewsChain(
         /// and switch back to the original thread_status.
         auto * original_thread = current_thread;
         SCOPE_EXIT({ current_thread = original_thread; });
-
+        current_thread = nullptr;
         std::unique_ptr<ThreadStatus> view_thread_status_ptr = std::make_unique<ThreadStatus>(/*check_current_thread_on_destruction=*/ false);
         /// Copy of a ThreadStatus should be internal.
         view_thread_status_ptr->setInternalThread();

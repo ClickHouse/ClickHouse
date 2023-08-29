@@ -812,6 +812,11 @@ bool Client::processWithFuzzing(const String & full_query)
         }
         catch (...)
         {
+            if (!ast_to_process)
+                fmt::print(stderr,
+                    "Error while forming new query: {}\n",
+                    getCurrentExceptionMessage(true));
+
             // Some functions (e.g. protocol parsers) don't throw, but
             // set last_exception instead, so we'll also do it here for
             // uniformity.
@@ -1238,6 +1243,7 @@ void Client::processConfig()
             global_context->getSettingsRef().max_insert_block_size);
     }
 
+    global_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
     global_context->setQueryKindInitial();
     global_context->setQuotaClientKey(config().getString("quota_key", ""));
     global_context->setQueryKind(query_kind);

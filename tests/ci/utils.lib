@@ -2,6 +2,11 @@
 
 function run_with_retry()
 {
+    if [[ $- =~ e ]]; then
+      set_e=true
+    else
+      set_e=false
+    fi
     set +e
 
     local total_retries="$1"
@@ -12,7 +17,9 @@ function run_with_retry()
     until [ "$retry" -ge "$total_retries" ]
     do
         if "$@"; then
-            set -e
+            if $set_e; then
+              set -e
+            fi
             return
         else
             retry=$((retry + 1))

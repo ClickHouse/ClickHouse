@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include <base/defines.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/SharedMutex.h>
@@ -39,7 +40,6 @@
 #include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index/global_fun.hpp>
 #include <boost/range/iterator_range_core.hpp>
-
 
 namespace DB
 {
@@ -85,6 +85,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+struct DataPartsLock
+{
+    std::optional<Stopwatch> wait_watch;
+    std::unique_lock<std::mutex> lock;
+    std::optional<Stopwatch> lock_watch;
+    DataPartsLock() = default;
+    explicit DataPartsLock(std::mutex & data_parts_mutex_);
+
+    ~DataPartsLock();
+};
 
 /// Data structure for *MergeTree engines.
 /// Merge tree is used for incremental sorting of data.
@@ -221,7 +231,6 @@ public:
     using MutableDataParts = std::set<MutableDataPartPtr, LessDataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;
 
-    using DataPartsLock = std::unique_lock<std::mutex>;
     DataPartsLock lockParts() const { return DataPartsLock(data_parts_mutex); }
 
     using OperationDataPartsLock = std::unique_lock<std::mutex>;
@@ -241,7 +250,7 @@ public:
     public:
         Transaction(MergeTreeData & data_, MergeTreeTransaction * txn_);
 
-        DataPartsVector commit(MergeTreeData::DataPartsLock * acquired_parts_lock = nullptr);
+        DataPartsVector commit(DataPartsLock * acquired_parts_lock = nullptr);
 
         void addPart(MutableDataPartPtr & part);
 
@@ -937,7 +946,9 @@ public:
     WriteAheadLogPtr getWriteAheadLog();
 
     constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
-    MergeTreeData::MutableDataPartPtr createEmptyPart(MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name, const MergeTreeTransactionPtr & txn);
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
+        MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
+        const String & new_part_name, const MergeTreeTransactionPtr & txn);
 
     MergeTreeDataFormatVersion format_version;
 
@@ -1349,7 +1360,7 @@ protected:
     using PartsBackupEntries = std::vector<PartBackupEntries>;
 
     /// Makes backup entries to backup the parts of this table.
-    PartsBackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ContextPtr & local_context);
+    PartsBackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ReadSettings & read_settings, const ContextPtr & local_context);
 
     class RestoredPartsHolder;
 

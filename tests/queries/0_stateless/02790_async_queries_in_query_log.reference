@@ -36,6 +36,14 @@ exception_code: 0
 
 system.query_views_log
 
+system.part_log
+Row 1:
+──────
+database:     default
+table:        async_insert_landing
+partition_id: all
+rows:         4
+
 system.query_log
 Row 1:
 ──────
@@ -85,6 +93,14 @@ written_bytes:  0
 status:         QueryFinish
 exception_code: 0
 
+system.part_log
+Row 1:
+──────
+database:     default
+table:        async_insert_landing
+partition_id: all
+rows:         3
+
 system.query_log
 Row 1:
 ──────
@@ -133,3 +149,11 @@ written_rows:   0
 written_bytes:  0
 status:         Exc*****onWhileProcessing
 exception_code: 395
+
+system.part_log
+Row 1:
+──────
+database:     default
+table:        async_insert_landing
+partition_id: all
+rows:         3

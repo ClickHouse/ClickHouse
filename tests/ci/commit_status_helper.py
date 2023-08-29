@@ -51,7 +51,8 @@ class RerunHelper:
 
 
 def override_status(status: str, check_name: str, invert: bool = False) -> str:
-    if CI_CONFIG["tests_config"].get(check_name, {}).get("force_tests", False):
+    test_config = CI_CONFIG.test_configs.get(check_name)
+    if test_config and test_config.force_tests:
         return "success"
 
     if invert:

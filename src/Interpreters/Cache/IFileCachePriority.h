@@ -88,6 +88,8 @@ public:
     /// From lowest to highest priority.
     virtual void iterate(IterateFunc && func, const CacheGuard::Lock &) = 0;
 
+    virtual void shuffle(const CacheGuard::Lock &) = 0;
+
 private:
     const size_t max_size = 0;
     const size_t max_elements = 0;

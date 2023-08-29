@@ -97,7 +97,7 @@ std::future<MergeTreeReaderPtr> MergeTreePrefetchedReadPool::createPrefetchedRea
     Priority priority) const
 {
     auto reader = data_part.getReader(
-        columns, storage_snapshot->metadata, required_ranges,
+        columns, storage_snapshot, required_ranges,
         uncompressed_cache, mark_cache, alter_conversions, reader_settings,
         IMergeTreeReader::ValueSizeMap{}, profile_callback);
 
@@ -328,7 +328,10 @@ MergeTreePrefetchedReadPool::PartsInfos MergeTreePrefetchedReadPool::getPartsInf
         for (const auto & range : part.ranges)
             part_info->sum_marks += range.end - range.begin;
 
-        part_info->approx_size_of_mark = getApproximateSizeOfGranule(*part_info->data_part, column_names);
+        const auto & columns = settings.merge_tree_determine_task_size_by_prewhere_columns && prewhere_info
+            ? prewhere_info->prewhere_actions->getRequiredColumnsNames()
+            : column_names;
+        part_info->approx_size_of_mark = getApproximateSizeOfGranule(*part_info->data_part, columns);
 
         const auto task_columns = getReadTaskColumns(
             part_reader_info,
@@ -369,9 +372,9 @@ MergeTreePrefetchedReadPool::PartsInfos MergeTreePrefetchedReadPool::getPartsInf
         }
         if (prewhere_info)
         {
-            for (const auto & columns : task_columns.pre_columns)
+            for (const auto & cols : task_columns.pre_columns)
             {
-                for (const auto & col : columns)
+                for (const auto & col : cols)
                 {
                     const size_t col_size = part.data_part->getColumnSize(col.name).data_compressed;
                     part_info->estimated_memory_usage_for_single_prefetch += std::min<size_t>(col_size, settings.prefetch_buffer_size);

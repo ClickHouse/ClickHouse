@@ -78,10 +78,10 @@ public:
     struct IndexStat
     {
         IndexType type;
-        std::string name;
-        std::string description;
-        std::string condition;
-        std::vector<std::string> used_keys;
+        std::string name = {};
+        std::string description = {};
+        std::string condition = {};
+        std::vector<std::string> used_keys = {};
         size_t num_parts_after;
         size_t num_granules_after;
     };

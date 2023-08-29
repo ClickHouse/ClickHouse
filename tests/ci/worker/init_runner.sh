@@ -12,7 +12,8 @@ echo "Running init script"
 export DEBIAN_FRONTEND=noninteractive
 export RUNNER_HOME=/home/ubuntu/actions-runner
 
-export RUNNER_URL="https://github.com/ClickHouse"
+export RUNNER_ORG="ClickHouse"
+export RUNNER_URL="https://github.com/${RUNNER_ORG}"
 # Funny fact, but metadata service has fixed IP
 INSTANCE_ID=$(ec2metadata --instance-id)
 export INSTANCE_ID
@@ -102,7 +103,8 @@ check_proceed_spot_termination() {
             runner_pid=$(pgrep Runner.Listener)
             if [ -n "$runner_pid" ]; then
                 # Kill the runner to not allow it cancelling the job
-                kill -9 "$runner_pid"
+                # shellcheck disable=SC2046
+                kill -9 $(list_children "$runner_pid")
             fi
             sudo -u ubuntu ./config.sh remove --token "$(get_runner_token)"
             terminate_and_exit
@@ -171,6 +173,7 @@ set -uo pipefail
 
 echo "Runner's public DNS: $(ec2metadata --public-hostname)"
 echo "Runner's labels: ${LABELS}"
+echo "Runner's instance type: $(ec2metadata --instance-type)"
 EOF
 
 # Create a post-run script that will restart docker daemon before the job started
@@ -234,6 +237,19 @@ is_job_assigned() {
         || return 1
 }
 
+list_children () {
+    local children
+    children=$(ps --ppid "$1" -o pid=)
+    if [ -z "$children" ]; then
+        return
+    fi
+
+    for pid in $children; do
+        list_children "$pid"
+    done
+    echo "$children"
+}
+
 while true; do
     runner_pid=$(pgrep Runner.Listener)
     echo "Got runner pid '$runner_pid'"
@@ -268,17 +284,11 @@ while true; do
             RUNNER_AGE=$(( $(date +%s) - $(stat -c +%Y /proc/"$runner_pid" 2>/dev/null || date +%s) ))
             echo "The runner is launched $RUNNER_AGE seconds ago and still has hot received the job"
             if (( 60 < RUNNER_AGE )); then
-                echo "Check if the instance should tear down"
-                if ! no_terminating_metadata; then
-                    # Another check if the worker still didn't start
-                    if is_job_assigned; then
-                        echo "During the metadata check the job was assigned, continue"
-                        continue
-                    fi
-                    kill -9 "$runner_pid"
-                    sudo -u ubuntu ./config.sh remove --token "$(get_runner_token)"
-                    terminate_on_event
-                fi
+                echo "Attempt to delete the runner for a graceful shutdown"
+                sudo -u ubuntu ./config.sh remove --token "$(get_runner_token)" \
+                    || continue
+                echo "Runner didn't launch or have assigned jobs after ${RUNNER_AGE} seconds, shutting down"
+                terminate_and_exit
             fi
         fi
         sleep 5

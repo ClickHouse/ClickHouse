@@ -1,17 +1,11 @@
-import os
-import os.path as p
 import time
-import pwd
-import re
 import pymysql.cursors
 import pytest
 from helpers.cluster import (
     ClickHouseCluster,
     ClickHouseInstance,
     get_docker_compose_path,
-    run_and_check,
 )
-import docker
 import logging
 
 from . import materialized_with_ddl
@@ -63,8 +57,6 @@ class MySQLConnection:
         user="root",
         password="clickhouse",
         ip_address=None,
-        docker_compose=None,
-        project_name=cluster.project_name,
     ):
         self.user = user
         self.port = port
@@ -552,5 +544,11 @@ def test_named_collections(started_cluster, started_mysql_8_0, clickhouse_node):
 
 def test_create_table_as_select(started_cluster, started_mysql_8_0, clickhouse_node):
     materialized_with_ddl.create_table_as_select(
+        clickhouse_node, started_mysql_8_0, "mysql80"
+    )
+
+
+def test_table_with_indexes(started_cluster, started_mysql_8_0, clickhouse_node):
+    materialized_with_ddl.table_with_indexes(
         clickhouse_node, started_mysql_8_0, "mysql80"
     )

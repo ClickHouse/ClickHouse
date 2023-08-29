@@ -19,6 +19,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Common/isLocalAddress.h>
 #include <Interpreters/Context.h>
+#include <DataTypes/DataTypeFactory.h>
 
 
 namespace DB
@@ -613,6 +614,16 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
         xml_document, structure_element, query.dictionary_attributes_list, pk_attrs);
 
     checkPrimaryKey(all_attr_names_and_types, pk_attrs);
+
+    /// If the pk size is 1 and pk's DataType is not number, we should convert to complex.
+    /// NOTE: the data type of Numeric key(simple layout) is UInt64, so if the type is not under UInt64, type casting will lead to precision loss.
+    DataTypePtr first_key_type = DataTypeFactory::instance().get(all_attr_names_and_types.find(pk_attrs[0])->second.type);
+    if ((pk_attrs.size() > 1 || (pk_attrs.size() == 1 && !isNumber(first_key_type)))
+        && !complex
+        && DictionaryFactory::instance().convertToComplex(dictionary_layout->layout_type))
+    {
+        complex = true;
+    }
 
     buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_attrs, query.dictionary_attributes_list);
 
