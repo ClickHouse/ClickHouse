@@ -1571,7 +1571,7 @@ void StorageWindowView::writeIntoWindowView(
     });
 
     auto executor = builder.execute();
-    executor->execute(builder.getNumThreads());
+    executor->execute(builder.getNumThreads(), local_context->getSettingsRef().use_concurrency_control);
 }
 
 void StorageWindowView::startup()
