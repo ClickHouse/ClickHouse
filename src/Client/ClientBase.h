@@ -271,9 +271,16 @@ protected:
 
     enum class PartialResultMode: UInt8
     {
-        NotInit, /// Query doesn't show partial result before the first block with 0 rows.
-        Active, /// Query shows partial result after the first and before the second block with 0 rows.
-        Inactive /// Query doesn't show partial result at all.
+        /// Query doesn't show partial result before the first block with 0 rows.
+        /// The first block with 0 rows initializes the output table format using its header.
+        NotInit,
+
+        /// Query shows partial result after the first and before the second block with 0 rows.
+        /// The second block with 0 rows indicates that that receiving blocks with partial result has been completed and next blocks will be with the full result.
+        Active,
+
+        /// Query doesn't show partial result at all.
+        Inactive,
     };
     PartialResultMode partial_result_mode = PartialResultMode::Inactive;
 

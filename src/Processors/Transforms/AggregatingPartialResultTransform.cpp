@@ -8,33 +8,38 @@ AggregatingPartialResultTransform::AggregatingPartialResultTransform(
     UInt64 partial_result_limit_, UInt64 partial_result_duration_ms_)
     : PartialResultTransform(input_header, output_header, partial_result_limit_, partial_result_duration_ms_)
     , aggregating_transform(std::move(aggregating_transform_))
+    , transform_aggregator(input_header, aggregating_transform->params->params)
     {}
+
+void AggregatingPartialResultTransform::transformPartialResult(Chunk & chunk)
+{
+    auto & params = aggregating_transform->params->params;
+
+    bool no_more_keys = false;
+    AggregatedDataVariants variants;
+    ColumnRawPtrs key_columns(params.keys_size);
+    Aggregator::AggregateColumns aggregate_columns(params.aggregates_size);
+
+    const UInt64 num_rows = chunk.getNumRows();
+    transform_aggregator.executeOnBlock(chunk.detachColumns(), 0, num_rows, variants, key_columns, aggregate_columns, no_more_keys);
+
+    auto transformed_block = transform_aggregator.convertToBlocks(variants, /*final*/ true, /*max_threads*/ 1).front();
+
+    chunk = convertToChunk(transformed_block);
+}
 
 PartialResultTransform::ShaphotResult AggregatingPartialResultTransform::getRealProcessorSnapshot()
 {
     std::lock_guard lock(aggregating_transform->snapshot_mutex);
-
-    auto & params = aggregating_transform->params;
-    /// Currently not supported cases
-    /// TODO: check that insert results from prepareBlockAndFillWithoutKey return values without changing of the aggregator state
-    if (params->params.keys_size != 0 /// has at least one key for aggregation
-        || params->aggregator.hasTemporaryData() /// use external storage for aggregation
-        || aggregating_transform->many_data->variants.size() > 1) /// use more then one stream for aggregation
-        return {{}, SnaphotStatus::Stopped};
-
     if (aggregating_transform->is_generate_initialized)
         return {{}, SnaphotStatus::Stopped};
 
     if (aggregating_transform->variants.empty())
         return {{}, SnaphotStatus::NotReady};
 
-    auto & aggregator = params->aggregator;
-
-    auto prepared_data = aggregator.prepareVariantsToMerge(aggregating_transform->many_data->variants);
-    AggregatedDataVariantsPtr & first = prepared_data.at(0);
-
-    aggregator.mergeWithoutKeyDataImpl(prepared_data);
-    auto block = aggregator.prepareBlockAndFillWithoutKeySnapshot(*first);
+    auto & snapshot_aggregator = aggregating_transform->params->aggregator;
+    auto & snapshot_variants = aggregating_transform->many_data->variants;
+    auto block = snapshot_aggregator.prepareBlockAndFillWithoutKeySnapshot(*snapshot_variants.at(0));
 
     return {convertToChunk(block), SnaphotStatus::Ready};
 }

@@ -26,7 +26,7 @@ public:
 
     static Block transformHeader(Block header, const ActionsDAG & expression);
 
-    bool supportPartialResultProcessor() const override { return true; }
+    PartialResultStatus getPartialResultProcessorSupportStatus() const override { return PartialResultStatus::FullSupported; }
 
 protected:
     void transform(Chunk & chunk) override;

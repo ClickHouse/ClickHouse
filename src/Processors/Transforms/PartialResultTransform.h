@@ -5,6 +5,11 @@
 namespace DB
 {
 
+/// Processors of this type are used to construct an auxiliary pipeline with processors corresponding to those in the main pipeline.
+/// These processors work in two modes:
+/// 1) Creating a snapshot of the corresponding processor from the main pipeline once per partial_result_duration_ms (period in milliseconds), and then sending the snapshot through the partial result pipeline.
+/// 2) Transforming small blocks of data in the same way as the original processor and sending the transformed data through the partial result pipeline.
+/// All processors of this type rely on the invariant that a new block from the previous processor of the partial result pipeline overwrites information about the previous block of the same previous processor.
 class PartialResultTransform : public IProcessor
 {
 public:
@@ -42,8 +47,8 @@ protected:
 
     bool finished_getting_snapshots = false;
 
-    virtual void transformPartialResult(Chunk & /*chunk*/) {}
-    virtual ShaphotResult getRealProcessorSnapshot() { return {{}, SnaphotStatus::Stopped}; }
+    virtual void transformPartialResult(Chunk & /*chunk*/) = 0;
+    virtual ShaphotResult getRealProcessorSnapshot() = 0; // { return {{}, SnaphotStatus::Stopped}; }
 
 private:
     Stopwatch watch;

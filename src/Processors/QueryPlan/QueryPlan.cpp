@@ -197,7 +197,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         else
             stack.push(Frame{.node = frame.node->children[next_child]});
 
-        if (last_pipeline && has_partial_result_setting)
+        if (has_partial_result_setting && last_pipeline && !last_pipeline->isPartialResultActive())
             last_pipeline->activatePartialResult(build_pipeline_settings.partial_result_limit, build_pipeline_settings.partial_result_duration_ms);
     }
 

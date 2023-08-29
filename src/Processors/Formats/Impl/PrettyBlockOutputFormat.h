@@ -27,6 +27,8 @@ protected:
     void consume(Chunk) override;
     void consumeTotals(Chunk) override;
     void consumeExtremes(Chunk) override;
+
+    void clearLastLines(size_t lines_number);
     void consumePartialResult(Chunk) override;
 
     size_t total_rows = 0;
