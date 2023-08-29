@@ -426,6 +426,8 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
         }
         catch (const std::logic_error &)
         {
+            if (!with_stacktrace)
+                stream << ", Stack trace:\n\n" << getExceptionStackTraceString(e);
             abortOnFailedAssertion(stream.str());
         }
         catch (...) {}
