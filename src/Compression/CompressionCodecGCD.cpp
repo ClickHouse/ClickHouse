@@ -61,7 +61,7 @@ UInt32 CompressionCodecGCD::getMaxCompressedDataSize(UInt32 uncompressed_size) c
 CompressionCodecGCD::CompressionCodecGCD(UInt8 gcd_bytes_size_)
     : gcd_bytes_size(gcd_bytes_size_)
 {
-    setCodecDescription("GCD", {std::make_shared<ASTLiteral>(static_cast<UInt64>(gcd_bytes_size))});
+    setCodecDescription("GCD", {});
 }
 
 uint8_t CompressionCodecGCD::getMethodByte() const
@@ -265,18 +265,7 @@ void registerCodecGCD(CompressionCodecFactory & factory)
 
         if (arguments && !arguments->children.empty())
         {
-            if (arguments->children.size() > 1)
-                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "GCD codec must have 1 parameter, given {}", arguments->children.size());
-
-            const auto children = arguments->children;
-            const auto * literal = children[0]->as<ASTLiteral>();
-            if (!literal || literal->value.getType() != Field::Types::Which::UInt64)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "GCD codec argument must be unsigned integer");
-
-            size_t user_bytes_size = literal->value.safeGet<UInt64>();
-            if (user_bytes_size != 1 && user_bytes_size != 2 && user_bytes_size != 4 && user_bytes_size != 8 && user_bytes_size != 16 && user_bytes_size != 32)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "GCD value for gcd codec can be 1, 2, 4, 8, 16 or 32, given {}", user_bytes_size);
-            gcd_bytes_size = static_cast<UInt8>(user_bytes_size);
+            throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "GCD codec must have 0 parameters, given {}", arguments->children.size());
         }
         else if (column_type)
         {
