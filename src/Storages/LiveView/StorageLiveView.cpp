@@ -478,7 +478,7 @@ void StorageLiveView::writeBlock(const Block & block, ContextPtr local_context)
     });
 
     auto executor = pipeline.execute();
-    executor->execute(pipeline.getNumThreads());
+    executor->execute(pipeline.getNumThreads(), local_context->getSettingsRef().use_concurrency_control);
 }
 
 void StorageLiveView::refresh()
