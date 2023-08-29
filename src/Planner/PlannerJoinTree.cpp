@@ -990,7 +990,11 @@ void joinCastPlanColumnsToNullable(QueryPlan & plan_to_add_cast, PlannerContextP
                 type_to_check = type_to_check_low_cardinality->getDictionaryType();
 
             if (type_to_check->canBeInsideNullable())
-                output_node = &cast_actions_dag->addFunction(to_nullable_function, {output_node}, output_node->result_name);
+            {
+                auto alias = output_node->result_name;
+                output_node = &cast_actions_dag->addFunction(to_nullable_function, {output_node}, {});
+                output_node = &cast_actions_dag->addAlias(*output_node, std::move(alias));
+            }
         }
     }
 

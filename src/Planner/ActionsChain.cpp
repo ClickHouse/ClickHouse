@@ -21,6 +21,42 @@ ActionsChainStep::ActionsChainStep(ActionsDAGPtr actions_,
     initialize();
 }
 
+static std::unordered_map<std::string_view, const ActionsDAG::Node *> makeNodesMap(const ActionsDAG & dag)
+{
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> res;
+    for (const auto & node : dag.getNodes())
+    {
+        if (visited.contains(&node))
+            continue;
+
+        struct Frame
+        {
+            const ActionsDAG::Node * node;
+            size_t next_child = 0;
+        };
+
+        std::stack<Frame> stack;
+        stack.push({&node});
+        while (!stack.empty())
+        {
+            auto & frame = stack.top();
+            if (frame.next_child == frame.node->children.size())
+            {
+                res[frame.node->result_name] = frame.node;
+                stack.pop();
+            }
+            else
+            {
+                stack.push({frame.node->children[frame.next_child]});
+                ++frame.next_child;
+            }
+        }
+    }
+
+    return res;
+}
+
 void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input_columns)
 {
     child_required_output_columns_names.clear();
@@ -33,8 +69,9 @@ void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input
     for (auto & output_node : actions->getOutputs())
         output_nodes_names.insert(output_node->result_name);
 
-    for (const auto & node : actions->getNodes())
+    for (const auto & [_, node_ptr] : makeNodesMap(*actions))
     {
+        const auto & node = *node_ptr;
         auto it = child_input_columns_copy.find(node.result_name);
         if (it == child_input_columns_copy.end())
             continue;
