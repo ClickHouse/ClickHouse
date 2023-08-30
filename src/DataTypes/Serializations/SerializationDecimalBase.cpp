@@ -7,6 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <ranges>
 
 namespace DB
 {
@@ -29,21 +30,13 @@ template <typename T>
 void SerializationDecimalBase<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
     const typename ColumnType::Container & x = typeid_cast<const ColumnType &>(column).getData();
-
-    size_t size = x.size();
-
-    if (limit == 0 || offset + limit > size)
+    if (const size_t size = x.size(); limit == 0 || offset + limit > size)
         limit = size - offset;
-    if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
+
+    if constexpr (std::endian::native == std::endian::big)
     {
-        for (size_t i = 0; i < limit; i++)
-        {
-            auto tmp(x[offset+i]);
-            char *start = reinterpret_cast<char*>(&tmp);
-            char *end = start + sizeof(FieldType);
-            std::reverse(start, end);
-            ostr.write(reinterpret_cast<const char *>(&tmp), sizeof(FieldType));
-        }
+        std::ranges::for_each(
+            x | std::views::drop(offset) | std::views::take(limit), [&ostr](const auto & d) { writeBinaryLittleEndian(d, ostr); });
     }
     else
         ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(FieldType) * limit);
@@ -69,20 +62,14 @@ template <typename T>
 void SerializationDecimalBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double) const
 {
     typename ColumnType::Container & x = typeid_cast<ColumnType &>(column).getData();
-    size_t initial_size = x.size();
+    const size_t initial_size = x.size();
     x.resize(initial_size + limit);
-    size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(FieldType) * limit);
-    if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
-    {
-        for (size_t i = 0; i < limit; i++)
-        {
-            char *start = reinterpret_cast<char*>(&x[initial_size + i]);
-            char *end = start + sizeof(FieldType);
-            std::reverse(start, end);
-        }
-    }
-
+    const size_t size = istr.readBig(reinterpret_cast<char *>(&x[initial_size]), sizeof(FieldType) * limit);
     x.resize(initial_size + size / sizeof(FieldType));
+
+    if constexpr (std::endian::native == std::endian::big)
+        std::ranges::for_each(
+            x | std::views::drop(initial_size), [](auto & d) { transformEndianness<std::endian::big, std::endian::little>(d); });
 }
 
 template class SerializationDecimalBase<Decimal32>;
