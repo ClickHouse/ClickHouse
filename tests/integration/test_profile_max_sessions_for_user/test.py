@@ -96,7 +96,10 @@ def threaded_run_test(sessions):
         thread.start()
 
     if len(sessions) > MAX_SESSIONS_FOR_USER:
-        assert_logs_contain_with_retry(instance, "overflown session count")
+        # High retry amount to avoid flakiness in ASAN (+Analyzer) tests
+        assert_logs_contain_with_retry(
+            instance, "overflown session count", retry_count=60
+        )
 
     instance.query(f"KILL QUERY WHERE user='{TEST_USER}' SYNC")
 
