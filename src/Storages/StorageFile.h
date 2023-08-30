@@ -90,7 +90,7 @@ public:
         std::string path_in_archive; // used when reading a single file from archive
         IArchiveReader::NameFilter filter = {}; // used when files inside archive are defined with a glob
 
-        bool readSingleFile() const
+        bool isSingleFileRead() const
         {
             return !filter;
         }
