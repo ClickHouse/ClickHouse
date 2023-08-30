@@ -53,7 +53,7 @@ void MySQLOutputFormat::writePrefix()
         for (size_t i = 0; i < header.columns(); ++i)
         {
             const auto & column_name = header.getColumnsWithTypeAndName()[i].name;
-            packet_endpoint->sendPacket(getColumnDefinition(column_name, data_types[i]->getTypeId()));
+            packet_endpoint->sendPacket(getColumnDefinition(column_name, data_types[i]));
         }
 
         if (!(client_capabilities & Capability::CLIENT_DEPRECATE_EOF) && !use_binary_result_set)

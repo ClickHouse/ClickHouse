@@ -28,8 +28,8 @@ namespace MySQLProtocol
 
             std::vector<String> serialized = std::vector<String>(columns.size());
 
-            size_t null_bitmap_size = (columns.size() + 7) / 8;
-            std::vector<char> null_bitmap = std::vector<char>(null_bitmap_size, 0);
+            size_t null_bitmap_size = (columns.size() + 7 + 2) / 8;
+            std::vector<char> null_bitmap = std::vector<char>(null_bitmap_size, static_cast<char>(0));
 
             size_t payload_size = 0;
 
