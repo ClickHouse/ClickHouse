@@ -1,9 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsComparison.h>
 #include <Functions/FunctionsLogical.h>
-
-
-
 namespace DB
 {
 
