@@ -1,20 +1,22 @@
-#include "config.h"
+#include "config_functions.h"
 
 #if USE_NLP
 
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/isValidUTF8.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTextClassification.h>
+#include <Interpreters/Context.h>
 
 #include <compact_lang_det.h>
-
 
 namespace DB
 {
@@ -81,10 +83,7 @@ struct FunctionDetectLanguageImpl
 
             if (UTF8::isValidUTF8(str, str_len))
             {
-                auto lang = CLD2::DetectLanguage(
-                    reinterpret_cast<const char *>(str),
-                    static_cast<int>(str_len),
-                    true, &is_reliable);
+                auto lang = CLD2::DetectLanguage(reinterpret_cast<const char *>(str), str_len, true, &is_reliable);
                 res = codeISO(LanguageCode(lang));
             }
             else
@@ -115,8 +114,7 @@ public:
     {
         if (!context->getSettingsRef().allow_experimental_nlp_functions)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "Natural language processing function '{}' is experimental. "
-                            "Set `allow_experimental_nlp_functions` setting to enable it", name);
+                "Natural language processing function '{}' is experimental. Set `allow_experimental_nlp_functions` setting to enable it", name);
 
         return std::make_shared<FunctionDetectLanguageMixed>();
     }
@@ -145,8 +143,9 @@ public:
         const ColumnString * col = checkAndGetColumn<ColumnString>(column.get());
 
         if (!col)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {} of arguments of function {}",
-                arguments[0].column->getName(), getName());
+            throw Exception(
+                "Illegal columns " + arguments[0].column->getName() + " of arguments of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
 
         const auto & input_data = col->getChars();
         const auto & input_offsets = col->getOffsets();
@@ -179,10 +178,7 @@ public:
 
             if (UTF8::isValidUTF8(str, str_len))
             {
-                CLD2::DetectLanguageSummary(
-                    reinterpret_cast<const char *>(str),
-                    static_cast<int>(str_len),
-                    true, result_lang_top3, pc, bytes, &is_reliable);
+                CLD2::DetectLanguageSummary(reinterpret_cast<const char *>(str), str_len, true, result_lang_top3, pc, bytes, &is_reliable);
 
                 for (size_t j = 0; j < top_N; ++j)
                 {

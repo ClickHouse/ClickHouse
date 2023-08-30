@@ -1,5 +1,4 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -29,11 +28,6 @@ const ASTSelectWithUnionQuery & TableFunctionViewIfPermitted::getSelectQuery() c
     return *create.select;
 }
 
-std::vector<size_t> TableFunctionViewIfPermitted::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
-{
-    return {0};
-}
-
 void TableFunctionViewIfPermitted::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     const auto * function = ast_function->as<ASTFunction>();
@@ -55,16 +49,16 @@ void TableFunctionViewIfPermitted::parseArguments(const ASTPtr & ast_function, C
     else_table_function = TableFunctionFactory::instance().get(else_ast, context);
 }
 
-ColumnsDescription TableFunctionViewIfPermitted::getActualTableStructure(ContextPtr context, bool is_insert_query) const
+ColumnsDescription TableFunctionViewIfPermitted::getActualTableStructure(ContextPtr context) const
 {
-    return else_table_function->getActualTableStructure(context, is_insert_query);
+    return else_table_function->getActualTableStructure(context);
 }
 
 StoragePtr TableFunctionViewIfPermitted::executeImpl(
-    const ASTPtr & /* ast_function */, ContextPtr context, const std::string & table_name, ColumnsDescription /* cached_columns */, bool is_insert_query) const
+    const ASTPtr & /* ast_function */, ContextPtr context, const std::string & table_name, ColumnsDescription /* cached_columns */) const
 {
     StoragePtr storage;
-    auto columns = getActualTableStructure(context, is_insert_query);
+    auto columns = getActualTableStructure(context);
 
     if (isPermitted(context, columns))
     {
@@ -85,15 +79,8 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
     try
     {
-        if (context->getSettingsRef().allow_experimental_analyzer)
-        {
-            sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
-        }
-        else
-        {
-            /// Will throw ACCESS_DENIED if the current user is not allowed to execute the SELECT query.
-            sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
-        }
+        /// Will throw ACCESS_DENIED if the current user is not allowed to execute the SELECT query.
+        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
     }
     catch (Exception & e)
     {
@@ -120,7 +107,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
 void registerTableFunctionViewIfPermitted(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionViewIfPermitted>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionViewIfPermitted>();
 }
 
 }

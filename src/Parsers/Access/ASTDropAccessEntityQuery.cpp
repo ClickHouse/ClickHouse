@@ -29,12 +29,7 @@ String ASTDropAccessEntityQuery::getID(char) const
 
 ASTPtr ASTDropAccessEntityQuery::clone() const
 {
-    auto res = std::make_shared<ASTDropAccessEntityQuery>(*this);
-
-    if (row_policy_names)
-        res->row_policy_names = std::static_pointer_cast<ASTRowPolicyNames>(row_policy_names->clone());
-
-    return res;
+    return std::make_shared<ASTDropAccessEntityQuery>(*this);
 }
 
 
@@ -52,11 +47,6 @@ void ASTDropAccessEntityQuery::formatImpl(const FormatSettings & settings, Forma
     }
     else
         formatNames(names, settings);
-
-    if (!storage_name.empty())
-        settings.ostr << (settings.hilite ? hilite_keyword : "")
-                      << " FROM " << (settings.hilite ? hilite_none : "")
-                      << backQuoteIfNeed(storage_name);
 
     formatOnCluster(settings);
 }

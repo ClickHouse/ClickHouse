@@ -13,12 +13,9 @@ on:  # yamllint disable-line rule:truthy
     branches:
       - master
     paths:
-      - 'CHANGELOG.md'
-      - 'README.md'
-      - 'SECURITY.md'
       - 'docker/docs/**'
       - 'docs/**'
-      - 'utils/check-style/aspell-ignore/**'
+      - 'website/**'
 jobs:
   CheckLabels:
     runs-on: [self-hosted, style-checker]
@@ -123,8 +120,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   DocsCheck:
     needs: DockerHubPush
@@ -153,8 +152,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FinishCheck:
     needs:

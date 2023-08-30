@@ -26,6 +26,7 @@ target_link_libraries(clickhouse_dictionaries
         clickhouse_common_io
         dbms
         Poco::Data
+        Poco::Data::ODBC
         Poco::MongoDB
         Poco::Redis
         string_utils
@@ -35,14 +36,6 @@ target_link_libraries(clickhouse_dictionaries PUBLIC ch_contrib::abseil_swiss_ta
 
 if (TARGET ch_contrib::cassandra)
     target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::cassandra)
-endif()
-
-if (TARGET ch_contrib::yaml_cpp)
-    target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::yaml_cpp)
-endif()
-
-if (TARGET ch_contrib::vectorscan)
-    target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::vectorscan)
 endif()
 
 add_subdirectory(Embedded)

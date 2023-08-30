@@ -10,8 +10,6 @@
 #include <Formats/ProtobufReader.h>
 #include <Core/Field.h>
 
-#include <ranges>
-
 namespace DB
 {
 
@@ -104,32 +102,32 @@ void SerializationNumber<T>::deserializeTextCSV(IColumn & column, ReadBuffer & i
 }
 
 template <typename T>
-void SerializationNumber<T>::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationNumber<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     /// ColumnVector<T>::ValueType is a narrower type. For example, UInt8, when the Field type is UInt64
-    typename ColumnVector<T>::ValueType x = static_cast<typename ColumnVector<T>::ValueType>(field.get<FieldType>());
-    writeBinaryLittleEndian(x, ostr);
+    typename ColumnVector<T>::ValueType x = get<FieldType>(field);
+    writeBinary(x, ostr);
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
+void SerializationNumber<T>::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
     typename ColumnVector<T>::ValueType x;
-    readBinaryLittleEndian(x, istr);
+    readBinary(x, istr);
     field = NearestFieldType<FieldType>(x);
 }
 
 template <typename T>
-void SerializationNumber<T>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationNumber<T>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    writeBinaryLittleEndian(assert_cast<const ColumnVector<T> &>(column).getData()[row_num], ostr);
+    writeBinary(assert_cast<const ColumnVector<T> &>(column).getData()[row_num], ostr);
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationNumber<T>::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
     typename ColumnVector<T>::ValueType x;
-    readBinaryLittleEndian(x, istr);
+    readBinary(x, istr);
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
 }
 
@@ -137,25 +135,13 @@ template <typename T>
 void SerializationNumber<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
     const typename ColumnVector<T>::Container & x = typeid_cast<const ColumnVector<T> &>(column).getData();
-    if (const size_t size = x.size(); limit == 0 || offset + limit > size)
+
+    size_t size = x.size();
+
+    if (limit == 0 || offset + limit > size)
         limit = size - offset;
 
-    if (limit == 0)
-        return;
-
-    if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
-    {
-        static constexpr auto to_little_endian = [](auto i)
-        {
-            transformEndianness<std::endian::little>(i);
-            return i;
-        };
-
-        std::ranges::for_each(
-            x | std::views::drop(offset) | std::views::take(limit) | std::views::transform(to_little_endian),
-            [&ostr](const auto & i) { ostr.write(reinterpret_cast<const char *>(&i), sizeof(typename ColumnVector<T>::ValueType)); });
-    }
-    else
+    if (limit)
         ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnVector<T>::ValueType) * limit);
 }
 
@@ -163,13 +149,10 @@ template <typename T>
 void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
     typename ColumnVector<T>::Container & x = typeid_cast<ColumnVector<T> &>(column).getData();
-    const size_t initial_size = x.size();
+    size_t initial_size = x.size();
     x.resize(initial_size + limit);
-    const size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(typename ColumnVector<T>::ValueType) * limit);
+    size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(typename ColumnVector<T>::ValueType) * limit);
     x.resize(initial_size + size / sizeof(typename ColumnVector<T>::ValueType));
-
-    if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
-        std::ranges::for_each(x | std::views::drop(initial_size), [](auto & i) { transformEndianness<std::endian::big, std::endian::little>(i); });
 }
 
 template class SerializationNumber<UInt8>;

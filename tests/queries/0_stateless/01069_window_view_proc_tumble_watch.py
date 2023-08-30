@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel
 
 import os
 import sys
@@ -20,8 +20,6 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
     client2.expect(prompt)
 
-    client1.send("SET allow_experimental_analyzer = 0")
-    client1.expect(prompt)
     client1.send("SET allow_experimental_window_view = 1")
     client1.expect(prompt)
     client1.send("SET window_view_heartbeat_interval = 1")
@@ -33,7 +31,7 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
     client1.send("DROP TABLE IF EXISTS 01069_window_view_proc_tumble_watch.mt")
     client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS 01069_window_view_proc_tumble_watch.wv SYNC")
+    client1.send("DROP TABLE IF EXISTS 01069_window_view_proc_tumble_watch.wv NO DELAY")
     client1.expect(prompt)
 
     client1.send(
@@ -67,7 +65,7 @@ with client(name="client1>", log=log) as client1, client(
     if match.groups()[1]:
         client1.send(client1.command)
         client1.expect(prompt)
-    client1.send("DROP TABLE 01069_window_view_proc_tumble_watch.wv SYNC")
+    client1.send("DROP TABLE 01069_window_view_proc_tumble_watch.wv NO DELAY")
     client1.expect(prompt)
     client1.send("DROP TABLE 01069_window_view_proc_tumble_watch.mt")
     client1.expect(prompt)

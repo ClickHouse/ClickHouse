@@ -9,7 +9,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMaterializedMySQL.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
@@ -25,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TABLE_IS_DROPPED;
 }
 
 bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot)
@@ -220,20 +220,29 @@ StoragesInfo StoragesInfoStream::next()
 
         info.storage = storages.at(std::make_pair(info.database, info.table));
 
-        /// For table not to be dropped and set of columns to remain constant.
-        info.table_lock = info.storage->tryLockForShare(query_id, settings.lock_acquire_timeout);
-
-        if (info.table_lock == nullptr)
+        try
         {
-            // Table was dropped while acquiring the lock, skipping table
-            continue;
+            /// For table not to be dropped and set of columns to remain constant.
+            info.table_lock = info.storage->lockForShare(query_id, settings.lock_acquire_timeout);
+        }
+        catch (const Exception & e)
+        {
+            /** There are case when IStorage::drop was called,
+              *  but we still own the object.
+              * Then table will throw exception at attempt to lock it.
+              * Just skip the table.
+              */
+            if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+                continue;
+
+            throw;
         }
 
         info.engine = info.storage->getName();
 
         info.data = dynamic_cast<MergeTreeData *>(info.storage.get());
         if (!info.data)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown engine {}", info.engine);
+            throw Exception("Unknown engine " + info.engine, ErrorCodes::LOGICAL_ERROR);
 
         return info;
     }
@@ -248,17 +257,28 @@ Pipe StorageSystemPartsBase::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
-    const size_t /*num_streams*/)
+    const unsigned /*num_streams*/)
 {
     bool has_state_column = hasStateColumn(column_names, storage_snapshot);
 
     StoragesInfoStream stream(query_info, context);
 
     /// Create the result.
+
+    NameSet names_set(column_names.begin(), column_names.end());
+
     Block sample = storage_snapshot->metadata->getSampleBlock();
+    Block header;
 
-    auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample, column_names);
-
+    std::vector<UInt8> columns_mask(sample.columns());
+    for (size_t i = 0; i < sample.columns(); ++i)
+    {
+        if (names_set.contains(sample.getByPosition(i).name))
+        {
+            columns_mask[i] = 1;
+            header.insert(sample.getByPosition(i));
+        }
+    }
     MutableColumns res_columns = header.cloneEmptyColumns();
     if (has_state_column)
         res_columns.push_back(ColumnString::create());
@@ -294,7 +314,6 @@ StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, Name
     /// Add aliases for old column names for backwards compatibility.
     add_alias("bytes", "bytes_on_disk");
     add_alias("marks_size", "marks_bytes");
-    add_alias("part_name", "name");
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(tmp_columns);

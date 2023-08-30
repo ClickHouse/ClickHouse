@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: distributed, no-random-settings
+# Tags: distributed
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,7 +12,7 @@ while [[ $i -lt $retries ]]; do
     opts=(
         --max_distributed_connections 20
         --max_threads 1
-        --query "SELECT sum(sleepEachRow(1)) FROM remote('127.{2..21}', system.one)"
+        --query "SELECT sleepEachRow(1) FROM remote('127.{2..21}', system.one)"
         --format Null
     )
     # 10 less then 20 seconds (20 streams), but long enough to cover possible load peaks

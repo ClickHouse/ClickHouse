@@ -141,12 +141,7 @@ String ASTCreateQuotaQuery::getID(char) const
 
 ASTPtr ASTCreateQuotaQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateQuotaQuery>(*this);
-
-    if (roles)
-        res->roles = std::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
-
-    return res;
+    return std::make_shared<ASTCreateQuotaQuery>(*this);
 }
 
 
@@ -170,12 +165,6 @@ void ASTCreateQuotaQuery::formatImpl(const FormatSettings & settings, FormatStat
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " OR REPLACE" << (settings.hilite ? hilite_none : "");
 
     formatNames(names, settings);
-
-    if (!storage_name.empty())
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "")
-                    << " IN " << (settings.hilite ? IAST::hilite_none : "")
-                    << backQuoteIfNeed(storage_name);
-
     formatOnCluster(settings);
 
     if (!new_name.empty())

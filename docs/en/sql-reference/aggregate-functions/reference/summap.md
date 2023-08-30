@@ -1,15 +1,10 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/summap
 sidebar_position: 141
 ---
 
 # sumMap
 
-Syntax: `sumMap(key <Array>, value <Array>)` [Array type](../../data-types/array.md) or `sumMap(Tuple(key <Array>, value <Array>))` [Tuple type](../../data-types/tuple.md).
-
-Arguments: 
-
-Alias: `sumMappedArrays`.
+Syntax: `sumMap(key, value)` or `sumMap(Tuple(key, value))`
 
 Totals the `value` array according to the keys specified in the `key` array.
 
@@ -31,7 +26,6 @@ CREATE TABLE sum_map(
     ),
     statusMapTuple Tuple(Array(Int32), Array(Int32))
 ) ENGINE = Log;
-
 INSERT INTO sum_map VALUES
     ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10], ([1, 2, 3], [10, 10, 10])),
     ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10], ([3, 4, 5], [10, 10, 10])),
@@ -52,7 +46,3 @@ GROUP BY timeslot
 │ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │ ([4,5,6,7,8],[10,10,20,10,10]) │
 └─────────────────────┴──────────────────────────────────────────────┴────────────────────────────────┘
 ```
-
-**See Also**
-    
-- [-Map combinator for Map datatype](../combinators.md#-map)

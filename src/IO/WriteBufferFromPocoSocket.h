@@ -4,12 +4,10 @@
 
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <Common/AsyncTaskExecutor.h>
+
 
 namespace DB
 {
-
-using AsyncCallback = std::function<void(int, Poco::Timespan, AsyncEventTimeoutType, const std::string &, uint32_t)>;
 
 /** Works with the ready Poco::Net::Socket. Blocking operations.
   */
@@ -19,8 +17,6 @@ public:
     explicit WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
     ~WriteBufferFromPocoSocket() override;
-
-    void setAsyncCallback(AsyncCallback async_callback_) { async_callback = std::move(async_callback_); }
 
 protected:
     void nextImpl() override;
@@ -32,11 +28,6 @@ protected:
       *  (getpeername will return an error).
       */
     Poco::Net::SocketAddress peer_address;
-    Poco::Net::SocketAddress our_address;
-
-private:
-    AsyncCallback async_callback;
-    std::string socket_description;
 };
 
 }

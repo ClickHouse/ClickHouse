@@ -1,4 +1,4 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-parallel
 
 SET send_logs_level = 'fatal';
 

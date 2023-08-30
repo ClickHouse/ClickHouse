@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,10 +15,10 @@ function test()
 {
     timeout 5 ${CLICKHOUSE_LOCAL} --max_execution_time 10 --query "
         SELECT DISTINCT number % 5 FROM system.numbers" ||:
-    echo -e '---'
+    echo '---'
     timeout 5 ${CLICKHOUSE_CURL} -sS --no-buffer "${CLICKHOUSE_URL}&max_execution_time=10" --data-binary "
         SELECT DISTINCT number % 5 FROM system.numbers" ||:
-    echo -e '---'
+    echo '---'
 }
 
 # The test depends on timeouts. And there is a chance that under high system load the query

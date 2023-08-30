@@ -8,7 +8,9 @@
 
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #    include <arm_neon.h>
-#      pragma clang diagnostic ignored "-Wreserved-identifier"
+#    ifdef HAS_RESERVED_IDENTIFIER
+#        pragma clang diagnostic ignored "-Wreserved-identifier"
+#    endif
 #endif
 
 namespace DB
@@ -100,7 +102,7 @@ void WriteBufferValidUTF8::nextImpl()
             break;
 #endif
 
-        UInt8 len = length_of_utf8_sequence[static_cast<unsigned char>(*p)];
+        size_t len = length_of_utf8_sequence[static_cast<unsigned char>(*p)];
 
         if (len > 4)
         { // NOLINT

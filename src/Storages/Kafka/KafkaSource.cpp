@@ -1,8 +1,7 @@
 #include <Storages/Kafka/KafkaSource.h>
 
 #include <Formats/FormatFactory.h>
-#include <IO/EmptyReadBuffer.h>
-#include <Storages/Kafka/KafkaConsumer.h>
+#include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
@@ -52,13 +51,13 @@ KafkaSource::KafkaSource(
 
 KafkaSource::~KafkaSource()
 {
-    if (!consumer)
+    if (!buffer)
         return;
 
     if (broken)
-        consumer->unsubscribe();
+        buffer->unsubscribe();
 
-    storage.pushConsumer(consumer);
+    storage.pushReadBuffer(buffer);
 }
 
 bool KafkaSource::checkTimeLimit() const
@@ -76,15 +75,15 @@ bool KafkaSource::checkTimeLimit() const
 
 Chunk KafkaSource::generateImpl()
 {
-    if (!consumer)
+    if (!buffer)
     {
         auto timeout = std::chrono::milliseconds(context->getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
-        consumer = storage.popConsumer(timeout);
+        buffer = storage.popReadBuffer(timeout);
 
-        if (!consumer)
+        if (!buffer)
             return {};
 
-        consumer->subscribe();
+        buffer->subscribe();
 
         broken = true;
     }
@@ -100,9 +99,8 @@ Chunk KafkaSource::generateImpl()
 
     auto put_error_to_stream = handle_error_mode == HandleKafkaErrorMode::STREAM;
 
-    EmptyReadBuffer empty_buf;
-    auto input_format = FormatFactory::instance().getInput(
-        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
+    auto input_format = FormatFactory::instance().getInputFormat(
+        storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
 
     std::optional<std::string> exception_message;
     size_t total_rows = 0;
@@ -132,8 +130,8 @@ Chunk KafkaSource::generateImpl()
         else
         {
             e.addMessage("while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
-                consumer->currentTopic(), consumer->currentPartition(), consumer->currentOffset());
-            throw std::move(e);
+                buffer->currentTopic(), buffer->currentPartition(), buffer->currentOffset());
+            throw;
         }
     };
 
@@ -143,31 +141,32 @@ Chunk KafkaSource::generateImpl()
     {
         size_t new_rows = 0;
         exception_message.reset();
-        if (auto buf = consumer->consume())
+        if (buffer->poll())
         {
+            // poll provide one message at a time to the input_format
             ProfileEvents::increment(ProfileEvents::KafkaMessagesRead);
-            new_rows = executor.execute(*buf);
+            new_rows = executor.execute();
         }
 
         if (new_rows)
         {
-            // In read_kafka_message(), KafkaConsumer::nextImpl()
+            // In read_kafka_message(), ReadBufferFromKafkaConsumer::nextImpl()
             // will be called, that may make something unusable, i.e. clean
-            // KafkaConsumer::messages, which is accessed from
-            // KafkaConsumer::currentTopic() (and other helpers).
-            if (consumer->isStalled())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Polled messages became unusable");
+            // ReadBufferFromKafkaConsumer::messages, which is accessed from
+            // ReadBufferFromKafkaConsumer::currentTopic() (and other helpers).
+            if (buffer->isStalled())
+                throw Exception("Polled messages became unusable", ErrorCodes::LOGICAL_ERROR);
 
             ProfileEvents::increment(ProfileEvents::KafkaRowsRead, new_rows);
 
-            consumer->storeLastReadMessageOffset();
+            buffer->storeLastReadMessageOffset();
 
-            auto topic         = consumer->currentTopic();
-            auto key           = consumer->currentKey();
-            auto offset        = consumer->currentOffset();
-            auto partition     = consumer->currentPartition();
-            auto timestamp_raw = consumer->currentTimestamp();
-            auto header_list   = consumer->currentHeaderList();
+            auto topic         = buffer->currentTopic();
+            auto key           = buffer->currentKey();
+            auto offset        = buffer->currentOffset();
+            auto partition     = buffer->currentPartition();
+            auto timestamp_raw = buffer->currentTimestamp();
+            auto header_list   = buffer->currentHeaderList();
 
             Array headers_names;
             Array headers_values;
@@ -206,7 +205,7 @@ Chunk KafkaSource::generateImpl()
                 {
                     if (exception_message)
                     {
-                        auto payload = consumer->currentPayload();
+                        auto payload = buffer->currentPayload();
                         virtual_columns[8]->insert(payload);
                         virtual_columns[9]->insert(*exception_message);
                     }
@@ -220,11 +219,11 @@ Chunk KafkaSource::generateImpl()
 
             total_rows = total_rows + new_rows;
         }
-        else if (consumer->polledDataUnusable())
+        else if (buffer->polledDataUnusable())
         {
             break;
         }
-        else if (consumer->isStalled())
+        else if (buffer->isStalled())
         {
             ++failed_poll_attempts;
         }
@@ -233,11 +232,11 @@ Chunk KafkaSource::generateImpl()
             // We came here in case of tombstone (or sometimes zero-length) messages, and it is not something abnormal
             // TODO: it seems like in case of put_error_to_stream=true we may need to process those differently
             // currently we just skip them with note in logs.
-            consumer->storeLastReadMessageOffset();
-            LOG_DEBUG(log, "Parsing of message (topic: {}, partition: {}, offset: {}) return no rows.", consumer->currentTopic(), consumer->currentPartition(), consumer->currentOffset());
+            buffer->storeLastReadMessageOffset();
+            LOG_DEBUG(log, "Parsing of message (topic: {}, partition: {}, offset: {}) return no rows.", buffer->currentTopic(), buffer->currentPartition(), buffer->currentOffset());
         }
 
-        if (!consumer->hasMorePolledMessages()
+        if (!buffer->hasMorePolledMessages()
             && (total_rows >= max_block_size || !checkTimeLimit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
         {
             break;
@@ -248,7 +247,7 @@ Chunk KafkaSource::generateImpl()
     {
         return {};
     }
-    else if (consumer->polledDataUnusable())
+    else if (buffer->polledDataUnusable())
     {
         // the rows were counted already before by KafkaRowsRead,
         // so let's count the rows we ignore separately
@@ -292,10 +291,10 @@ Chunk KafkaSource::generate()
 
 void KafkaSource::commit()
 {
-    if (!consumer)
+    if (!buffer)
         return;
 
-    consumer->commit();
+    buffer->commit();
 
     broken = false;
 }

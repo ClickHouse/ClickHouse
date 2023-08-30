@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/table-engines/log-family/stripelog
 toc_priority: 32
 toc_title: StripeLog
 ---
@@ -29,8 +28,8 @@ The `StripeLog` engine stores all the columns in one file. For each `INSERT` que
 
 For each table ClickHouse writes the files:
 
-- `data.bin` — Data file.
-- `index.mrk` — File with marks. Marks contain offsets for each column of each data block inserted.
+-   `data.bin` — Data file.
+-   `index.mrk` — File with marks. Marks contain offsets for each column of each data block inserted.
 
 The `StripeLog` engine does not support the `ALTER UPDATE` and `ALTER DELETE` operations.
 
@@ -90,3 +89,5 @@ SELECT * FROM stripe_log_table ORDER BY timestamp
 │ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
 └─────────────────────┴──────────────┴────────────────────────────┘
 ```
+
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/stripelog/) <!--hide-->

@@ -34,6 +34,7 @@ Uptime: **13 minutes and 51 seconds**
 #### ClickHouse configuration
 **result**
 ```XML
+<?xml version="1.0" encoding="utf-8"?>
 <clickhouse>
 	<logger>
 		<level>trace</level>
@@ -115,6 +116,81 @@ Uptime: **13 minutes and 51 seconds**
 	<mlock_executable>true</mlock_executable>
 	<remap_executable>false</remap_executable>
 	<remote_servers>
+		<test_shard_localhost>
+			<shard>
+				<replica>
+					<host>localhost</host>
+					<port>9000</port>
+				</replica>
+			</shard>
+		</test_shard_localhost>
+		<test_cluster_two_shards_localhost>
+			<shard>
+				<replica>
+					<host>localhost</host>
+					<port>9000</port>
+				</replica>
+			</shard>
+			<shard>
+				<replica>
+					<host>localhost</host>
+					<port>9000</port>
+				</replica>
+			</shard>
+		</test_cluster_two_shards_localhost>
+		<test_cluster_two_shards>
+			<shard>
+				<replica>
+					<host>127.0.0.1</host>
+					<port>9000</port>
+				</replica>
+			</shard>
+			<shard>
+				<replica>
+					<host>127.0.0.2</host>
+					<port>9000</port>
+				</replica>
+			</shard>
+		</test_cluster_two_shards>
+		<test_cluster_two_shards_internal_replication>
+			<shard>
+				<internal_replication>true</internal_replication>
+				<replica>
+					<host>127.0.0.1</host>
+					<port>9000</port>
+				</replica>
+			</shard>
+			<shard>
+				<internal_replication>true</internal_replication>
+				<replica>
+					<host>127.0.0.2</host>
+					<port>9000</port>
+				</replica>
+			</shard>
+		</test_cluster_two_shards_internal_replication>
+		<test_shard_localhost_secure>
+			<shard>
+				<replica>
+					<host>localhost</host>
+					<port>9440</port>
+					<secure>1</secure>
+				</replica>
+			</shard>
+		</test_shard_localhost_secure>
+		<test_unavailable_shard>
+			<shard>
+				<replica>
+					<host>localhost</host>
+					<port>9000</port>
+				</replica>
+			</shard>
+			<shard>
+				<replica>
+					<host>localhost</host>
+					<port>1</port>
+				</replica>
+			</shard>
+		</test_unavailable_shard>
 		<cluster_name>
 			<shard>
 				<replica>

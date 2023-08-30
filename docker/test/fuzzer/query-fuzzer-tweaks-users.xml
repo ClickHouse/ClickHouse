@@ -2,14 +2,6 @@
     <profiles>
         <default>
             <max_execution_time>10</max_execution_time>
-            <max_memory_usage>10G</max_memory_usage>
-
-            <!--
-                Otherwise we will get the TOO_MANY_SIMULTANEOUS_QUERIES errors,
-                they are ok, but complicate debugging.
-            -->
-            <table_function_remote_max_addresses>200</table_function_remote_max_addresses>
-
             <!--
                 Don't let the fuzzer change this setting (I've actually seen it
                 do this before).
@@ -22,15 +14,6 @@
                 <max_memory_usage>
                     <max>10G</max>
                 </max_memory_usage>
-
-                <!-- Analyzer is unstable, not ready for testing. -->
-                <allow_experimental_analyzer>
-                    <readonly/>
-                </allow_experimental_analyzer>
-
-                <table_function_remote_max_addresses>
-                    <max>200</max>
-                </table_function_remote_max_addresses>
             </constraints>
         </default>
     </profiles>

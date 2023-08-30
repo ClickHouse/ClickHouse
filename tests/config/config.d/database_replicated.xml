@@ -14,24 +14,6 @@
         </node>
     </zookeeper>
 
-    <auxiliary_zookeepers>
-        <zookeeper2>
-            <node index="1">
-                <host>localhost</host>
-                <port>9181</port>
-            </node>
-            <node index="2">
-                <host>localhost</host>
-                <port>19181</port>
-            </node>
-            <node index="3">
-                <host>localhost</host>
-                <port>29181</port>
-            </node>
-            <root>/test/chroot/auxiliary_zookeeper2</root>
-        </zookeeper2>
-    </auxiliary_zookeepers>
-
     <keeper_server>
         <tcp_port>9181</tcp_port>
         <server_id>1</server_id>
@@ -40,7 +22,7 @@
             <operation_timeout_ms>10000</operation_timeout_ms>
             <session_timeout_ms>30000</session_timeout_ms>
             <heart_beat_interval_ms>1000</heart_beat_interval_ms>
-            <election_timeout_lower_bound_ms>2000</election_timeout_lower_bound_ms>
+            <election_timeout_lower_bound_ms>4000</election_timeout_lower_bound_ms>
             <election_timeout_upper_bound_ms>5000</election_timeout_upper_bound_ms>
             <raft_logs_level>information</raft_logs_level>
             <force_sync>false</force_sync>

@@ -1,5 +1,4 @@
 ---
-slug: /zh/engines/table-engines/mergetree-family/graphitemergetree
 sidebar_position: 38
 sidebar_label: GraphiteMergeTree
 ---
@@ -164,3 +163,5 @@ CH在处理行记录时，会检查 `pattern`节点的规则。每个 `pattern`�
     </default>
 </graphite_rollup>
 ```
+
+[原始文档](https://clickhouse.com/docs/en/operations/table_engines/graphitemergetree/) <!--hide-->

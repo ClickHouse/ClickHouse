@@ -1,57 +1,44 @@
 #pragma once
 
-#include <base/defines.h>
 #include <base/types.h>
 
 namespace DB
 {
 
-enum class DataSourceType
+enum class DiskType
 {
     Local,
     RAM,
     S3,
-    S3_Plain,
     HDFS,
+    Encrypted,
     WebServer,
     AzureBlobStorage,
-    LocalBlobStorage,
+    Cache,
 };
 
-inline String toString(DataSourceType data_source_type)
+inline String toString(DiskType disk_type)
 {
-    switch (data_source_type)
+    switch (disk_type)
     {
-        case DataSourceType::Local:
+        case DiskType::Local:
             return "local";
-        case DataSourceType::RAM:
+        case DiskType::RAM:
             return "memory";
-        case DataSourceType::S3:
+        case DiskType::S3:
             return "s3";
-        case DataSourceType::S3_Plain:
-            return "s3_plain";
-        case DataSourceType::HDFS:
+        case DiskType::HDFS:
             return "hdfs";
-        case DataSourceType::WebServer:
+        case DiskType::Encrypted:
+            return "encrypted";
+        case DiskType::WebServer:
             return "web";
-        case DataSourceType::AzureBlobStorage:
+        case DiskType::AzureBlobStorage:
             return "azure_blob_storage";
-        case DataSourceType::LocalBlobStorage:
-            return "local_blob_storage";
+        case DiskType::Cache:
+            return "cache";
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
-
-struct DataSourceDescription
-{
-    DataSourceType type;
-    std::string description;
-
-    bool is_encrypted = false;
-    bool is_cached = false;
-
-    bool operator==(const DataSourceDescription & other) const;
-    bool sameKind(const DataSourceDescription & other) const;
-};
 
 }

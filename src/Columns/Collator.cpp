@@ -1,6 +1,6 @@
 #include <Columns/Collator.h>
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_ICU
 #    include <unicode/locid.h>
@@ -96,7 +96,7 @@ Collator::Collator(const std::string & locale_)
     /// We check it here, because ucol_open will fallback to default locale for
     /// almost all random names.
     if (!AvailableCollationLocales::instance().isCollationSupported(locale))
-        throw DB::Exception(DB::ErrorCodes::UNSUPPORTED_COLLATION_LOCALE, "Unsupported collation locale: {}", locale);
+        throw DB::Exception("Unsupported collation locale: " + locale, DB::ErrorCodes::UNSUPPORTED_COLLATION_LOCALE);
 
     UErrorCode status = U_ZERO_ERROR;
 
@@ -104,11 +104,10 @@ Collator::Collator(const std::string & locale_)
     if (U_FAILURE(status))
     {
         ucol_close(collator);
-        throw DB::Exception(DB::ErrorCodes::UNSUPPORTED_COLLATION_LOCALE, "Failed to open locale: {} with error: {}", locale, u_errorName(status));
+        throw DB::Exception("Failed to open locale: " + locale + " with error: " + u_errorName(status), DB::ErrorCodes::UNSUPPORTED_COLLATION_LOCALE);
     }
 #else
-    throw DB::Exception(DB::ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Collations support is disabled, because ClickHouse was built without ICU library");
+    throw DB::Exception("Collations support is disabled, because ClickHouse was built without ICU library", DB::ErrorCodes::SUPPORT_IS_DISABLED);
 #endif
 }
 
@@ -131,8 +130,8 @@ int Collator::compare(const char * str1, size_t length1, const char * str2, size
     UCollationResult compare_result = ucol_strcollIter(collator, &iter1, &iter2, &status);
 
     if (U_FAILURE(status))
-        throw DB::Exception(DB::ErrorCodes::COLLATION_COMPARISON_FAILED, "ICU collation comparison failed with error code: {}",
-                            std::string(u_errorName(status)));
+        throw DB::Exception("ICU collation comparison failed with error code: " + std::string(u_errorName(status)),
+                            DB::ErrorCodes::COLLATION_COMPARISON_FAILED);
 
     /** Values of enum UCollationResult are equals to what exactly we need:
      *     UCOL_EQUAL = 0

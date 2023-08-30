@@ -70,16 +70,16 @@ namespace ErrorCodes
 namespace
 {
 
-inline bool startsWith(const char * s, const char * end, const std::string_view prefix)
+inline bool startsWith(const char * s, const char * end, const char * prefix)
 {
-    return s + prefix.length() < end && 0 == memcmp(s, prefix.data(), prefix.length());
+    return s + strlen(prefix) < end && 0 == memcmp(s, prefix, strlen(prefix));
 }
 
-inline bool checkAndSkip(const char * __restrict & s, const char * end, const std::string_view prefix)
+inline bool checkAndSkip(const char * __restrict & s, const char * end, const char * prefix)
 {
     if (startsWith(s, end, prefix))
     {
-        s += prefix.length();
+        s += strlen(prefix);
         return true;
     }
     return false;
@@ -138,7 +138,7 @@ bool processCDATA(const char * __restrict & src, const char * end, char * __rest
     return true;
 }
 
-bool processElementAndSkipContent(const char * __restrict & src, const char * end, const std::string_view tag_name)
+bool processElementAndSkipContent(const char * __restrict & src, const char * end, const char * tag_name)
 {
     const auto * old_src = src;
 
@@ -305,8 +305,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
+            throw Exception(
+                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return arguments[0];
     }
 
@@ -314,7 +314,7 @@ public:
     {
         const ColumnString * src = checkAndGetColumn<ColumnString>(arguments[0].column.get());
         if (!src)
-             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument for function {} must be string.", getName());
+             throw Exception("First argument for function " + getName() + " must be string.", ErrorCodes::ILLEGAL_COLUMN);
 
         const ColumnString::Chars & src_chars = src->getChars();
         const ColumnString::Offsets & src_offsets = src->getOffsets();

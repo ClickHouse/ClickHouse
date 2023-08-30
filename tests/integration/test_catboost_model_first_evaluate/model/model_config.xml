@@ -1,0 +1,8 @@
+<models>
+    <model>
+        <type>catboost</type>
+        <name>titanic</name>
+        <path>/etc/clickhouse-server/model/model.bin</path>
+        <lifetime>0</lifetime>
+    </model>
+</models>

@@ -1,4 +1,4 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-parallel
 
 set allow_deprecated_syntax_for_merge_tree=1;
 set optimize_on_insert = 0;

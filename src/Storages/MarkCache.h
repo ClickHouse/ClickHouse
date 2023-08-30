@@ -5,7 +5,6 @@
 #include <Common/CacheBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
-#include <Common/HashTable/Hash.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Formats/MarkInCompressedFile.h>
 
@@ -27,7 +26,7 @@ struct MarksWeightFunction
 
     size_t operator()(const MarksInCompressedFile & marks) const
     {
-        return marks.approximateMemoryUsage() + MARK_CACHE_OVERHEAD;
+        return marks.size() * sizeof(MarkInCompressedFile) + MARK_CACHE_OVERHEAD;
     }
 };
 
@@ -41,18 +40,19 @@ private:
     using Base = CacheBase<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>;
 
 public:
-    explicit MarkCache(size_t max_size_in_bytes)
-        : Base(max_size_in_bytes) {}
-
-    MarkCache(const String & mark_cache_policy, size_t max_size_in_bytes)
-        : Base(mark_cache_policy, max_size_in_bytes) {}
+    explicit MarkCache(size_t max_size_in_bytes, const String & mark_cache_policy = "")
+        : Base(max_size_in_bytes, 0, mark_cache_policy) {}
 
     /// Calculate key from path to file and offset.
     static UInt128 hash(const String & path_to_file)
     {
+        UInt128 key;
+
         SipHash hash;
         hash.update(path_to_file.data(), path_to_file.size() + 1);
-        return hash.get128();
+        hash.get128(key);
+
+        return key;
     }
 
     template <typename LoadFunc>

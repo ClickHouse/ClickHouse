@@ -4,7 +4,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/BitHelpers.h>
-#include <Common/BinStringDecodeHelper.h>
+#include <Common/hex.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -51,7 +51,7 @@ struct HexImpl
             UInt8 byte = x >> offset;
 
             /// Skip leading zeros
-            if (byte == 0 && !was_nonzero && offset && skip_leading_zero)
+            if (byte == 0 && !was_nonzero && offset && skip_leading_zero) //-V560
                 continue;
 
             was_nonzero = true;
@@ -65,27 +65,13 @@ struct HexImpl
         }
     }
 
-    static void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out, bool reverse_order = false)
+    static void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out)
     {
-        if (!reverse_order)
+        while (pos < end)
         {
-            while (pos < end)
-            {
-                writeHexByteUppercase(*pos, out);
-                ++pos;
-                out += word_size;
-            }
-        }
-        else
-        {
-            const auto * start_pos = pos;
-            pos = end - 1;
-            while (pos >= start_pos)
-            {
-                writeHexByteUppercase(*pos, out);
-                --pos;
-                out += word_size;
-            }
+            writeHexByteUppercase(*pos, out);
+            ++pos;
+            out += word_size;
         }
         *out = '\0';
         ++out;
@@ -109,8 +95,7 @@ struct HexImpl
         for (size_t i = 0; i < size; ++i)
         {
             const UInt8 * in_pos = reinterpret_cast<const UInt8 *>(&in_vec[i]);
-            bool reverse_order = (std::endian::native == std::endian::big);
-            executeOneString(in_pos, in_pos + type_size_in_bytes, out, reverse_order);
+            executeOneString(in_pos, in_pos + type_size_in_bytes, out);
 
             pos += hex_length;
             out_offsets[i] = pos;
@@ -126,7 +111,20 @@ struct UnhexImpl
 
     static void decode(const char * pos, const char * end, char *& out)
     {
-        hexStringDecode(pos, end, out, word_size);
+        if ((end - pos) & 1)
+        {
+            *out = unhex(*pos);
+            ++out;
+            ++pos;
+        }
+        while (pos < end)
+        {
+            *out = unhex2(pos);
+            pos += word_size;
+            ++out;
+        }
+        *out = '\0';
+        ++out;
     }
 };
 
@@ -144,7 +142,7 @@ struct BinImpl
             UInt8 byte = x >> offset;
 
             /// Skip leading zeros
-            if (byte == 0 && !was_nonzero && offset && skip_leading_zero)
+            if (byte == 0 && !was_nonzero && offset && skip_leading_zero) //-V560
                 continue;
 
             was_nonzero = true;
@@ -176,9 +174,7 @@ struct BinImpl
         for (size_t i = 0; i < size; ++i)
         {
             const UInt8 * in_pos = reinterpret_cast<const UInt8 *>(&in_vec[i]);
-
-            bool reverse_order = (std::endian::native == std::endian::big);
-            executeOneString(in_pos, in_pos + type_size_in_bytes, out, reverse_order);
+            executeOneString(in_pos, in_pos + type_size_in_bytes, out);
 
             pos += hex_length;
             out_offsets[i] = pos;
@@ -186,27 +182,13 @@ struct BinImpl
         col_res = std::move(col_str);
     }
 
-    static void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out, bool reverse_order = false)
+    static void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out)
     {
-        if (!reverse_order)
+        while (pos < end)
         {
-            while (pos < end)
-            {
-                writeBinByte(*pos, out);
-                ++pos;
-                out += word_size;
-            }
-        }
-        else
-        {
-            const auto * start_pos = pos;
-            pos = end - 1;
-            while (pos >= start_pos)
-            {
-                writeBinByte(*pos, out);
-                --pos;
-                out += word_size;
-            }
+            writeBinByte(*pos, out);
+            ++pos;
+            out += word_size;
         }
         *out = '\0';
         ++out;
@@ -220,7 +202,52 @@ struct UnbinImpl
 
     static void decode(const char * pos, const char * end, char *& out)
     {
-        binStringDecode(pos, end, out);
+        if (pos == end)
+        {
+            *out = '\0';
+            ++out;
+            return;
+        }
+
+        UInt8 left = 0;
+
+        /// end - pos is the length of input.
+        /// (length & 7) to make remain bits length mod 8 is zero to split.
+        /// e.g. the length is 9 and the input is "101000001",
+        /// first left_cnt is 1, left is 0, right shift, pos is 1, left = 1
+        /// then, left_cnt is 0, remain input is '01000001'.
+        for (UInt8 left_cnt = (end - pos) & 7; left_cnt > 0; --left_cnt)
+        {
+            left = left << 1;
+            if (*pos != '0')
+                left += 1;
+            ++pos;
+        }
+
+        if (left != 0 || end - pos == 0)
+        {
+            *out = left;
+            ++out;
+        }
+
+        assert((end - pos) % 8 == 0);
+
+        while (end - pos != 0)
+        {
+            UInt8 c = 0;
+            for (UInt8 i = 0; i < 8; ++i)
+            {
+                c = c << 1;
+                if (*pos != '0')
+                    c += 1;
+                ++pos;
+            }
+            *out = c;
+            ++out;
+        }
+
+        *out = '\0';
+        ++out;
     }
 };
 
@@ -257,11 +284,9 @@ public:
             !which.isFloat() &&
             !which.isDecimal() &&
             !which.isUUID() &&
-            !which.isIPv4() &&
-            !which.isIPv6() &&
             !which.isAggregateFunction())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[0]->getName(), getName());
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
     }
@@ -299,14 +324,12 @@ public:
             tryExecuteDecimal<Decimal32>(column, res_column) ||
             tryExecuteDecimal<Decimal64>(column, res_column) ||
             tryExecuteDecimal<Decimal128>(column, res_column) ||
-            tryExecuteDecimal<Decimal256>(column, res_column) ||
-            tryExecuteUUID(column, res_column) ||
-            tryExecuteIPv4(column, res_column) ||
-            tryExecuteIPv6(column, res_column))
+            tryExecuteUUID(column, res_column))
             return res_column;
 
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                        arguments[0].column->getName(), getName());
+        throw Exception("Illegal column " + arguments[0].column->getName()
+                        + " of argument of function " + getName(),
+                        ErrorCodes::ILLEGAL_COLUMN);
     }
 
     template <typename T>
@@ -387,7 +410,7 @@ public:
                 prev_offset = new_offset;
             }
             if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column size mismatch (internal logical error)");
+                throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
 
             col_res = std::move(col_str);
             return true;
@@ -449,7 +472,7 @@ public:
             }
 
             if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column size mismatch (internal logical error)");
+                throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
 
             col_res = std::move(col_str);
             return true;
@@ -523,88 +546,6 @@ public:
             return false;
         }
     }
-
-    bool tryExecuteIPv6(const IColumn * col, ColumnPtr & col_res) const
-    {
-        const ColumnIPv6 * col_vec = checkAndGetColumn<ColumnIPv6>(col);
-
-        static constexpr size_t MAX_LENGTH = sizeof(IPv6) * word_size + 1;    /// Including trailing zero byte.
-
-        if (!col_vec)
-            return false;
-
-        auto col_str = ColumnString::create();
-        ColumnString::Chars & out_vec = col_str->getChars();
-        ColumnString::Offsets & out_offsets = col_str->getOffsets();
-
-        const typename ColumnIPv6::Container & in_vec = col_vec->getData();
-        const IPv6* ip = in_vec.data();
-
-        size_t size = in_vec.size();
-        out_offsets.resize(size);
-        out_vec.resize(size * (word_size+1) + MAX_LENGTH); /// word_size+1 is length of one byte in hex/bin plus zero byte.
-
-        size_t pos = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            /// Manual exponential growth, so as not to rely on the linear amortized work time of `resize` (no one guarantees it).
-            if (pos + MAX_LENGTH > out_vec.size())
-                out_vec.resize(out_vec.size() * word_size + MAX_LENGTH);
-
-            char * begin = reinterpret_cast<char *>(&out_vec[pos]);
-            char * end = begin;
-
-            Impl::executeOneString(reinterpret_cast<const UInt8 *>(&ip[i].toUnderType().items[0]), reinterpret_cast<const UInt8 *>(&ip[i].toUnderType().items[2]), end);
-
-            pos += end - begin;
-            out_offsets[i] = pos;
-        }
-        out_vec.resize(pos);
-
-        col_res = std::move(col_str);
-        return true;
-    }
-
-    bool tryExecuteIPv4(const IColumn * col, ColumnPtr & col_res) const
-    {
-        const ColumnIPv4 * col_vec = checkAndGetColumn<ColumnIPv4>(col);
-
-        static constexpr size_t MAX_LENGTH = sizeof(IPv4) * word_size + 1;    /// Including trailing zero byte.
-
-        if (!col_vec)
-            return false;
-
-        auto col_str = ColumnString::create();
-        ColumnString::Chars & out_vec = col_str->getChars();
-        ColumnString::Offsets & out_offsets = col_str->getOffsets();
-
-        const typename ColumnIPv4::Container & in_vec = col_vec->getData();
-        const IPv4* ip = in_vec.data();
-
-        size_t size = in_vec.size();
-        out_offsets.resize(size);
-        out_vec.resize(size * (word_size+1) + MAX_LENGTH); /// word_size+1 is length of one byte in hex/bin plus zero byte.
-
-        size_t pos = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            /// Manual exponential growth, so as not to rely on the linear amortized work time of `resize` (no one guarantees it).
-            if (pos + MAX_LENGTH > out_vec.size())
-                out_vec.resize(out_vec.size() * word_size + MAX_LENGTH);
-
-            char * begin = reinterpret_cast<char *>(&out_vec[pos]);
-            char * end = begin;
-
-            Impl::executeOneUIntOrInt(ip[i].toUnderType(), end);
-
-            pos += end - begin;
-            out_offsets[i] = pos;
-        }
-        out_vec.resize(pos);
-
-        col_res = std::move(col_str);
-        return true;
-    }
 };
 
 /// Decode number or string from string with binary or hexadecimal representation
@@ -625,10 +566,9 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        WhichDataType which(arguments[0]);
-        if (!which.isStringOrFixedString())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[0]->getName(), getName());
+        if (!isString(arguments[0]))
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
     }
@@ -672,53 +612,21 @@ public:
 
             return col_res;
         }
-        else if (const ColumnFixedString * col_fix_string = checkAndGetColumn<ColumnFixedString>(column.get()))
-        {
-            auto col_res = ColumnString::create();
-
-            ColumnString::Chars & out_vec = col_res->getChars();
-            ColumnString::Offsets & out_offsets = col_res->getOffsets();
-
-            const ColumnString::Chars & in_vec = col_fix_string->getChars();
-            size_t n = col_fix_string->getN();
-
-            size_t size = col_fix_string->size();
-            out_offsets.resize(size);
-            out_vec.resize(in_vec.size() / word_size + size);
-
-            char * begin = reinterpret_cast<char *>(out_vec.data());
-            char * pos = begin;
-            size_t prev_offset = 0;
-
-            for (size_t i = 0; i < size; ++i)
-            {
-                size_t new_offset = prev_offset + n;
-
-                Impl::decode(reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset]), pos);
-
-                out_offsets[i] = pos - begin;
-
-                prev_offset = new_offset;
-            }
-
-            out_vec.resize(pos - begin);
-
-            return col_res;
-        }
         else
         {
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                            arguments[0].column->getName(), getName());
+            throw Exception("Illegal column " + arguments[0].column->getName()
+                            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
         }
     }
 };
 
 REGISTER_FUNCTION(BinaryRepr)
 {
-    factory.registerFunction<EncodeToBinaryRepresentation<HexImpl>>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<DecodeFromBinaryRepresentation<UnhexImpl>>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<EncodeToBinaryRepresentation<BinImpl>>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<DecodeFromBinaryRepresentation<UnbinImpl>>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<EncodeToBinaryRepresentation<HexImpl>>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<DecodeFromBinaryRepresentation<UnhexImpl>>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<EncodeToBinaryRepresentation<BinImpl>>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<DecodeFromBinaryRepresentation<UnbinImpl>>(FunctionFactory::CaseInsensitive);
 }
 
 }

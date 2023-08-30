@@ -17,6 +17,8 @@ namespace DB
     {
         extern const int ILLEGAL_COLUMN;
         extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+        extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+        extern const int CANNOT_PARSE_DATE;
     }
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
@@ -50,8 +52,9 @@ namespace DB
             }
             else
             {
-                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                                 col_from->getName(), Name::name);
+                 throw Exception("Illegal column " + col_from->getName()
+                                 + " of first argument of function " + Name::name,
+                                 ErrorCodes::ILLEGAL_COLUMN);
             }
 
             using ColVecTo = typename ToDataType::ColumnType;
@@ -76,18 +79,27 @@ namespace DB
 
                 if constexpr (nullOnErrors)
                 {
-                    GregorianDate date;
-
-                    int64_t res = 0;
-                    bool success = date.tryInit(read_buffer) && date.tryToModifiedJulianDay(res);
-
-                    vec_to[i] = static_cast<typename ToDataType::FieldType>(res);
-                    vec_null_map_to[i] = !success;
+                    try
+                    {
+                        const GregorianDate<> date(read_buffer);
+                        vec_to[i] = date.toModifiedJulianDay<typename ToDataType::FieldType>();
+                        vec_null_map_to[i] = false;
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED || e.code() == ErrorCodes::CANNOT_PARSE_DATE)
+                        {
+                            vec_to[i] = static_cast<Int32>(0);
+                            vec_null_map_to[i] = true;
+                        }
+                        else
+                            throw;
+                    }
                 }
                 else
                 {
-                    const GregorianDate date(read_buffer);
-                    vec_to[i] = static_cast<typename ToDataType::FieldType>(date.toModifiedJulianDay());
+                    const GregorianDate<> date(read_buffer);
+                    vec_to[i] = date.toModifiedJulianDay<typename ToDataType::FieldType>();
                 }
             }
 
@@ -145,7 +157,7 @@ namespace DB
 
         Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
         {
-            return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
+            return { .is_monotonic = true, .is_always_monotonic = true };
         }
 
     private:
@@ -180,8 +192,8 @@ namespace DB
         {
             if (!isStringOrFixedString(arguments[0]))
             {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be String or FixedString",
-                    getName());
+                throw Exception(
+                    "The argument of function " + getName() + " must be String or FixedString", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }
 
             DataTypePtr base_type = std::make_shared<ToDataType>();

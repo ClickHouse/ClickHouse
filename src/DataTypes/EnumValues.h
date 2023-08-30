@@ -37,7 +37,7 @@ public:
     {
         const auto it = value_to_name_map.find(value);
         if (it == std::end(value_to_name_map))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(value));
+            throw Exception{"Unexpected value " + toString(value) + " in enum", ErrorCodes::BAD_ARGUMENTS};
 
         return it;
     }

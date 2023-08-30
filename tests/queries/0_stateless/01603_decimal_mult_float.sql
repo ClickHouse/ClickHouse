@@ -1,5 +1,3 @@
-SET optimize_arithmetic_operations_in_aggregate_functions = 0;
-
 SELECT toDecimal32(2, 2) * 1.2;
 SELECT toDecimal64(0.5, 2) * 20.33;
 SELECT 0.00001 * toDecimal32(12, 2);

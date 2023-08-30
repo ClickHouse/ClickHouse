@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Tags: long, no-parallel, no-ordinary-database
 # Test is too heavy, avoid parallel run in Flaky Check
-# shellcheck disable=SC2119
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -131,7 +130,7 @@ kill -TERM $PID_6
 kill -TERM $PID_7
 kill -TERM $PID_8
 wait
-wait_for_queries_to_finish 40
+wait_for_queries_to_finish
 
 $CLICKHOUSE_CLIENT --multiquery --query "
 BEGIN TRANSACTION;

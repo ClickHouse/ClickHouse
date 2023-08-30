@@ -83,13 +83,3 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE template1";
 $CLICKHOUSE_CLIENT --query="DROP TABLE template2";
 rm "$CURDIR"/00938_template_input_format_resultset.tmp "$CURDIR"/00938_template_input_format_row.tmp
 
-echo -ne '\${a:Escaped},\${b:Escaped}\n' > "$CURDIR"/00938_template_input_format_row.tmp
-echo -ne "a,b\nc,d\n" | $CLICKHOUSE_LOCAL --structure "a String, b String"  --input-format Template \
-    --format_template_row "$CURDIR"/00938_template_input_format_row.tmp --format_template_rows_between_delimiter '' \
-    -q 'select * from table' 2>&1| grep -Fac "'Escaped' serialization requires delimiter"
-echo -ne '\${a:Escaped},\${:Escaped}\n' > "$CURDIR"/00938_template_input_format_row.tmp
-echo -ne "a,b\nc,d\n" | $CLICKHOUSE_LOCAL --structure "a String"  --input-format Template \
-    --format_template_row "$CURDIR"/00938_template_input_format_row.tmp --format_template_rows_between_delimiter '' \
-    -q 'select * from table' 2>&1| grep -Fac "'Escaped' serialization requires delimiter"
-rm "$CURDIR"/00938_template_input_format_row.tmp
-

@@ -5,7 +5,7 @@
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -36,19 +36,24 @@ private:
 
 public:
     AggregateFunctionIf(AggregateFunctionPtr nested, const DataTypes & types, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionIf>(types, params_, nested->getResultType())
+        : IAggregateFunctionHelper<AggregateFunctionIf>(types, params_)
         , nested_func(nested), num_arguments(types.size())
     {
         if (num_arguments == 0)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require at least one argument", getName());
+            throw Exception("Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!isUInt8(types.back()) && !types.back()->onlyNull())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Last argument for aggregate function {} must be UInt8", getName());
+        if (!isUInt8(types.back()))
+            throw Exception("Last argument for aggregate function " + getName() + " must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     String getName() const override
     {
         return nested_func->getName() + "If";
+    }
+
+    DataTypePtr getReturnType() const override
+    {
+        return nested_func->getReturnType();
     }
 
     const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
@@ -152,13 +157,6 @@ public:
         nested_func->merge(place, rhs, arena);
     }
 
-    bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }
-
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena * arena) const override
-    {
-        nested_func->merge(place, rhs, thread_pool, arena);
-    }
-
     void mergeBatch(
         size_t row_begin,
         size_t row_end,
@@ -185,11 +183,6 @@ public:
         nested_func->insertResultInto(place, to, arena);
     }
 
-    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
-    {
-        nested_func->insertMergeResultInto(place, to, arena);
-    }
-
     bool allocatesMemoryInArena() const override
     {
         return nested_func->allocatesMemoryInArena();
@@ -206,16 +199,12 @@ public:
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 
-    std::unordered_set<size_t> getArgumentsThatCanBeOnlyNull() const override
-    {
-        return {num_arguments - 1};
-    }
 
 #if USE_EMBEDDED_COMPILER
 
     bool isCompilable() const override
     {
-        return canBeNativeType(*this->argument_types.back()) && nested_func->isCompilable();
+        return nested_func->isCompilable();
     }
 
     void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
@@ -223,12 +212,12 @@ public:
         nested_func->compileCreate(builder, aggregate_data_ptr);
     }
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        const auto & predicate_type = arguments.back().type;
-        auto * predicate_value = arguments.back().value;
+        const auto & predicate_type = arguments_types[argument_values.size() - 1];
+        auto * predicate_value = argument_values[argument_values.size() - 1];
 
         auto * head = b.GetInsertBlock();
 
@@ -242,9 +231,21 @@ public:
 
         b.SetInsertPoint(if_true);
 
-        ValuesWithType arguments_without_predicate = arguments;
-        arguments_without_predicate.pop_back();
-        nested_func->compileAdd(builder, aggregate_data_ptr, arguments_without_predicate);
+        size_t arguments_size_without_predicate = arguments_types.size() - 1;
+
+        DataTypes argument_types_without_predicate;
+        std::vector<llvm::Value *> argument_values_without_predicate;
+
+        argument_types_without_predicate.resize(arguments_size_without_predicate);
+        argument_values_without_predicate.resize(arguments_size_without_predicate);
+
+        for (size_t i = 0; i < arguments_size_without_predicate; ++i)
+        {
+            argument_types_without_predicate[i] = arguments_types[i];
+            argument_values_without_predicate[i] = argument_values[i];
+        }
+
+        nested_func->compileAdd(builder, aggregate_data_ptr, argument_types_without_predicate, argument_values_without_predicate);
 
         b.CreateBr(join_block);
 

@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/statements/create/database
 sidebar_position: 35
 sidebar_label: DATABASE
 ---
@@ -18,8 +17,8 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(..
 
 If the `db_name` database already exists, then ClickHouse does not create a new database and:
 
-- Doesn’t throw an exception if clause is specified.
-- Throws an exception if clause isn’t specified.
+-   Doesn’t throw an exception if clause is specified.
+-   Throws an exception if clause isn’t specified.
 
 ### ON CLUSTER
 
@@ -31,7 +30,7 @@ By default, ClickHouse uses its own [Atomic](../../../engines/database-engines/a
 
 ### COMMENT
 
-You can add a comment to the database when you are creating it.
+You can add a comment to the database when you creating it.
 
 The comment is supported for all database engines.
 

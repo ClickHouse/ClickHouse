@@ -28,7 +28,6 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     ParserKeyword s_partition("PARTITION");
     ParserKeyword s_final("FINAL");
     ParserKeyword s_deduplicate("DEDUPLICATE");
-    ParserKeyword s_cleanup("CLEANUP");
     ParserKeyword s_by("BY");
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p(true);
@@ -39,7 +38,6 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     ASTPtr partition;
     bool final = false;
     bool deduplicate = false;
-    bool cleanup = false;
     String cluster_str;
 
     if (!s_optimize_table.ignore(pos, expected))
@@ -70,9 +68,6 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     if (s_deduplicate.ignore(pos, expected))
         deduplicate = true;
 
-    if (s_cleanup.ignore(pos, expected))
-        cleanup = true;
-
     ASTPtr deduplicate_by_columns;
     if (deduplicate && s_by.ignore(pos, expected))
     {
@@ -90,7 +85,6 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     query->final = final;
     query->deduplicate = deduplicate;
     query->deduplicate_by_columns = deduplicate_by_columns;
-    query->cleanup = cleanup;
     query->database = database;
     query->table = table;
 

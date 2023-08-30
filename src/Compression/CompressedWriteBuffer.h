@@ -13,7 +13,7 @@
 namespace DB
 {
 
-class CompressedWriteBuffer final : public BufferWithOwnMemory<WriteBuffer>
+class CompressedWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
     explicit CompressedWriteBuffer(

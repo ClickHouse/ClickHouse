@@ -23,8 +23,3 @@
 1M without 0	1048576
 1M with 0	1048575
 fuzz2	0123	4
-1		0
-2	\0	1
-3	\0\0\0\0	4
-4	abrac\0dabra\0	12
-abrac\0dabra\0	12

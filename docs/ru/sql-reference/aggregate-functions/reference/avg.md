@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/avg
 sidebar_position: 5
 ---
 
@@ -61,3 +60,4 @@ SELECT avg(t) FROM test;
 │    nan │
 └────────┘
 ```
+

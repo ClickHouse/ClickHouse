@@ -28,10 +28,9 @@ protected:
 
     bool isCompression() const override { return false; }
     bool isGenericCompression() const override { return false; }
-    bool isDeltaCompression() const override { return true; }
 
 private:
-    const UInt8 delta_bytes_size;
+    UInt8 delta_bytes_size;
 };
 
 
@@ -69,8 +68,8 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
     if (source_size % sizeof(T) != 0)
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot delta compress, data size {}  is not aligned to {}", source_size, sizeof(T));
 
-    T prev_src = 0;
-    const char * const source_end = source + source_size;
+    T prev_src{};
+    const char * source_end = source + source_size;
     while (source < source_end)
     {
         T curr_src = unalignedLoad<T>(source);
@@ -85,17 +84,17 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
 template <typename T>
 void decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
 {
-    const char * const output_end = dest + output_size;
+    const char * output_end = dest + output_size;
 
     if (source_size % sizeof(T) != 0)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot delta decompress, data size {}  is not aligned to {}", source_size, sizeof(T));
 
     T accumulator{};
-    const char * const source_end = source + source_size;
+    const char * source_end = source + source_size;
     while (source < source_end)
     {
         accumulator += unalignedLoad<T>(source);
-        if (dest + sizeof(accumulator) > output_end) [[unlikely]]
+        if (dest + sizeof(accumulator) > output_end)
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress the data");
         unalignedStore<T>(dest, accumulator);
 
@@ -134,21 +133,18 @@ UInt32 CompressionCodecDelta::doCompressData(const char * source, UInt32 source_
 void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     if (source_size < 2)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has wrong header");
-
-    if (uncompressed_size == 0)
-        return;
+        throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     UInt8 bytes_size = source[0];
 
-    if (!(bytes_size == 1 || bytes_size == 2 || bytes_size == 4 || bytes_size == 8))
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has wrong header");
+    if (bytes_size == 0)
+        throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
     UInt32 output_size = uncompressed_size - bytes_to_skip;
 
     if (static_cast<UInt32>(2 + bytes_to_skip) > source_size)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has wrong header");
+        throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     memcpy(dest, &source[2], bytes_to_skip);
     UInt32 source_size_no_header = source_size - bytes_to_skip - 2;
@@ -191,24 +187,23 @@ UInt8 getDeltaBytesSize(const IDataType * column_type)
 void registerCodecDelta(CompressionCodecFactory & factory)
 {
     UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::Delta);
-    auto codec_builder = [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
+    factory.registerCompressionCodecWithType("Delta", method_code, [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
-        /// Default bytes size is 1.
-        UInt8 delta_bytes_size = 1;
+        UInt8 delta_bytes_size = 0;
 
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() > 1)
-                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "Delta codec must have 1 parameter, given {}", arguments->children.size());
+                throw Exception("Delta codec must have 1 parameter, given " + std::to_string(arguments->children.size()), ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
-            if (!literal || literal->value.getType() != Field::Types::Which::UInt64)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Delta codec argument must be unsigned integer");
+            if (!literal)
+                throw Exception("Delta codec argument must be integer", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
 
             size_t user_bytes_size = literal->value.safeGet<UInt64>();
             if (user_bytes_size != 1 && user_bytes_size != 2 && user_bytes_size != 4 && user_bytes_size != 8)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Delta value for delta codec can be 1, 2, 4 or 8, given {}", user_bytes_size);
+                throw Exception("Delta value for delta codec can be 1, 2, 4 or 8, given " + toString(user_bytes_size), ErrorCodes::ILLEGAL_CODEC_PARAMETER);
             delta_bytes_size = static_cast<UInt8>(user_bytes_size);
         }
         else if (column_type)
@@ -217,8 +212,7 @@ void registerCodecDelta(CompressionCodecFactory & factory)
         }
 
         return std::make_shared<CompressionCodecDelta>(delta_bytes_size);
-    };
-    factory.registerCompressionCodecWithType("Delta", method_code, codec_builder);
+    });
 }
 
 CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size)

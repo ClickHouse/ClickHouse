@@ -1,5 +1,4 @@
 ---
-slug: /zh/getting-started/example-datasets/criteo
 sidebar_position: 18
 sidebar_label: Terabyte Click Logs from Criteo
 ---
@@ -76,3 +75,5 @@ INSERT INTO criteo SELECT date, clicked, int1, int2, int3, int4, int5, int6, int
 
 DROP TABLE criteo_log;
 ```
+
+[原始文章](https://clickhouse.com/docs/en/getting_started/example_datasets/criteo/) <!--hide-->

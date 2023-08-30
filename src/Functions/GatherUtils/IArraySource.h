@@ -26,13 +26,16 @@ struct IArraySource
 
     virtual void accept(ArraySourceVisitor &)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Accept not implemented for {}", demangle(typeid(*this).name()));
+        throw Exception("Accept not implemented for " + demangle(typeid(*this).name()), ErrorCodes::NOT_IMPLEMENTED);
     }
 };
+
+#pragma GCC visibility push(hidden)
 
 template <typename Derived>
 class ArraySourceImpl : public Visitable<Derived, IArraySource, ArraySourceVisitor> {};
 
+#pragma GCC visibility pop
 }
 
 }

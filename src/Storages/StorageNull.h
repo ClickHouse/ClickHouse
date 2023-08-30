@@ -35,18 +35,16 @@ public:
         SelectQueryInfo &,
         ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processing_stage*/,
-        size_t /*max_block_size*/,
-        size_t /*num_streams*/) override
+        size_t,
+        unsigned) override
     {
         return Pipe(
             std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
     }
 
-    bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
-
     bool supportsParallelInsert() const override { return true; }
 
-    SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, bool) override
+    SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr) override
     {
         return std::make_shared<NullSinkToStorage>(metadata_snapshot->getSampleBlock());
     }

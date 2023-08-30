@@ -30,16 +30,11 @@ void ASTRowPolicyName::replaceEmptyDatabase(const String & current_database)
         full_name.database = current_database;
 }
 
-String ASTRowPolicyNames::tableOrAsterisk(const String & table_name) const
-{
-    return table_name == RowPolicyName::ANY_TABLE_MARK ? "*" : backQuoteIfNeed(table_name);
-}
-
 
 void ASTRowPolicyNames::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     if (full_names.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No names of row policies in AST");
+        throw Exception("No names of row policies in AST", ErrorCodes::LOGICAL_ERROR);
 
     bool same_short_name = true;
     if (full_names.size() > 1)
@@ -78,7 +73,7 @@ void ASTRowPolicyNames::formatImpl(const FormatSettings & settings, FormatState 
             const String & table_name = full_name.table_name;
             if (!database.empty())
                 settings.ostr << backQuoteIfNeed(database) + ".";
-            settings.ostr << tableOrAsterisk(table_name);
+            settings.ostr << backQuoteIfNeed(table_name);
         }
     }
     else if (same_db_and_table_name)
@@ -97,7 +92,7 @@ void ASTRowPolicyNames::formatImpl(const FormatSettings & settings, FormatState 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
         if (!database.empty())
             settings.ostr << backQuoteIfNeed(database) + ".";
-        settings.ostr << tableOrAsterisk(table_name);
+        settings.ostr << backQuoteIfNeed(table_name);
     }
     else
     {
@@ -113,7 +108,7 @@ void ASTRowPolicyNames::formatImpl(const FormatSettings & settings, FormatState 
                           << (settings.hilite ? hilite_none : "");
             if (!database.empty())
                 settings.ostr << backQuoteIfNeed(database) + ".";
-            settings.ostr << tableOrAsterisk(table_name);
+            settings.ostr << backQuoteIfNeed(table_name);
         }
     }
 

@@ -7,9 +7,9 @@
 
 #include <initializer_list>
 #include <list>
+#include <map>
 #include <set>
 #include <vector>
-#include <sparsehash/dense_hash_map>
 
 
 namespace DB
@@ -93,10 +93,7 @@ public:
     Names getNames() const;
     DataTypes getDataTypes() const;
     Names getDataTypeNames() const;
-
-    /// Hash table match `column name -> position in the block`.
-    using NameMap = ::google::dense_hash_map<StringRef, size_t, StringRefHash>;
-    NameMap getNamesToIndexesMap() const;
+    std::unordered_map<String, size_t> getNamesToIndexesMap() const;
 
     Serializations getSerializations() const;
 

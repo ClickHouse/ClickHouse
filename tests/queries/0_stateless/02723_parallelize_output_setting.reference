@@ -1,7 +1,0 @@
--- { echoOn }
-set parallelize_output_from_storages=1;
-select startsWith(trimLeft(explain),'Resize') as resize from (explain pipeline select * from file(data_02723.csv)) where resize;
-1
--- no Resize in pipeline
-set parallelize_output_from_storages=0;
-select startsWith(trimLeft(explain),'Resize') as resize from (explain pipeline select * from file(data_02723.csv)) where resize;

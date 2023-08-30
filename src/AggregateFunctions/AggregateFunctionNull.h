@@ -10,7 +10,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -77,16 +77,12 @@ protected:
 
     static bool getFlag(ConstAggregateDataPtr __restrict place) noexcept
     {
-        if constexpr (result_is_nullable)
-            return place[0];
-        else
-            return true;
+        return result_is_nullable ? place[0] : true;
     }
 
 public:
     AggregateFunctionNullBase(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionHelper<Derived>(arguments, params, createResultType(nested_function_))
-        , nested_function{nested_function_}
+        : IAggregateFunctionHelper<Derived>(arguments, params), nested_function{nested_function_}
     {
         if constexpr (result_is_nullable)
             prefix_size = nested_function->alignOfData();
@@ -100,12 +96,11 @@ public:
         return nested_function->getName();
     }
 
-    static DataTypePtr createResultType(const AggregateFunctionPtr & nested_function_)
+    DataTypePtr getReturnType() const override
     {
-        if constexpr (result_is_nullable)
-            return makeNullable(nested_function_->getResultType());
-        else
-            return nested_function_->getResultType();
+        return result_is_nullable
+            ? makeNullable(nested_function->getReturnType())
+            : nested_function->getReturnType();
     }
 
     void create(AggregateDataPtr __restrict place) const override
@@ -141,18 +136,10 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        if constexpr (result_is_nullable)
-            if (getFlag(rhs))
-                setFlag(place);
+        if (result_is_nullable && getFlag(rhs))
+            setFlag(place);
 
         nested_function->merge(nestedPlace(place), nestedPlace(rhs), arena);
-    }
-
-    bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
-
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena * arena) const override
-    {
-        nested_function->merge(nestedPlace(place), nestedPlace(rhs), thread_pool, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
@@ -176,18 +163,14 @@ public:
         }
     }
 
-    template <bool merge>
-    void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         if constexpr (result_is_nullable)
         {
             ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
             if (getFlag(place))
             {
-                if constexpr (merge)
-                    nested_function->insertMergeResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
-                else
-                    nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
+                nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
                 to_concrete.getNullMapData().push_back(0);
             }
             else
@@ -197,21 +180,8 @@ public:
         }
         else
         {
-            if constexpr (merge)
-                nested_function->insertMergeResultInto(nestedPlace(place), to, arena);
-            else
-                nested_function->insertResultInto(nestedPlace(place), to, arena);
+            nested_function->insertResultInto(nestedPlace(place), to, arena);
         }
-    }
-
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
-    {
-        insertResultIntoImpl<false>(place, to, arena);
-    }
-
-    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
-    {
-        insertResultIntoImpl<true>(place, to, arena);
     }
 
     bool allocatesMemoryInArena() const override
@@ -255,7 +225,7 @@ public:
         if constexpr (result_is_nullable)
             b.CreateMemSet(aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), this->prefix_size, llvm::assumeAligned(this->alignOfData()));
 
-        auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_ptr, this->prefix_size);
+        auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_ptr, this->prefix_size);
         this->nested_function->compileCreate(b, aggregate_data_ptr_with_prefix_size_offset);
     }
 
@@ -265,16 +235,16 @@ public:
 
         if constexpr (result_is_nullable)
         {
-            auto * aggregate_data_is_null_dst_value = b.CreateLoad(b.getInt8Ty(), aggregate_data_dst_ptr);
-            auto * aggregate_data_is_null_src_value = b.CreateLoad(b.getInt8Ty(), aggregate_data_src_ptr);
+            auto * aggregate_data_is_null_dst_value = b.CreateLoad(aggregate_data_dst_ptr);
+            auto * aggregate_data_is_null_src_value = b.CreateLoad(aggregate_data_src_ptr);
 
             auto * is_src_null = nativeBoolCast(b, std::make_shared<DataTypeUInt8>(), aggregate_data_is_null_src_value);
             auto * is_null_result_value = b.CreateSelect(is_src_null, llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_is_null_dst_value);
             b.CreateStore(is_null_result_value, aggregate_data_dst_ptr);
         }
 
-        auto * aggregate_data_dst_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_dst_ptr, this->prefix_size);
-        auto * aggregate_data_src_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_src_ptr, this->prefix_size);
+        auto * aggregate_data_dst_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_dst_ptr, this->prefix_size);
+        auto * aggregate_data_src_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_src_ptr, this->prefix_size);
 
         this->nested_function->compileMerge(b, aggregate_data_dst_ptr_with_prefix_size_offset, aggregate_data_src_ptr_with_prefix_size_offset);
     }
@@ -283,7 +253,7 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, this->getResultType());
+        auto * return_type = toNativeType(b, this->getReturnType());
 
         llvm::Value * result = nullptr;
 
@@ -308,7 +278,7 @@ public:
             b.CreateBr(join_block);
 
             b.SetInsertPoint(if_not_null);
-            auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_ptr, this->prefix_size);
+            auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_ptr, this->prefix_size);
             auto * nested_result = this->nested_function->compileGetResult(builder, aggregate_data_ptr_with_prefix_size_offset);
             b.CreateStore(b.CreateInsertValue(nullable_value, nested_result, {0}), nullable_value_ptr);
             b.CreateBr(join_block);
@@ -378,12 +348,12 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        const auto & nullable_type = arguments[0].type;
-        const auto & nullable_value = arguments[0].value;
+        const auto & nullable_type = arguments_types[0];
+        const auto & nullable_value = argument_values[0];
 
         auto * wrapped_value = b.CreateExtractValue(nullable_value, {0});
         auto * is_null_value = b.CreateExtractValue(nullable_value, {1});
@@ -404,8 +374,8 @@ public:
         if constexpr (result_is_nullable)
             b.CreateStore(llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_ptr);
 
-        auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_ptr, this->prefix_size);
-        this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, { ValueWithType(wrapped_value, removeNullable(nullable_type)) });
+        auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_ptr, this->prefix_size);
+        this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, { removeNullable(nullable_type) }, { wrapped_value });
         b.CreateBr(join_block);
 
         b.SetInsertPoint(join_block);
@@ -416,25 +386,23 @@ public:
 };
 
 
-template <bool result_is_nullable, bool serialize_flag>
-class AggregateFunctionNullVariadic final : public AggregateFunctionNullBase<
-                                                result_is_nullable,
-                                                serialize_flag,
-                                                AggregateFunctionNullVariadic<result_is_nullable, serialize_flag>>
+template <bool result_is_nullable, bool serialize_flag, bool null_is_skipped>
+class AggregateFunctionNullVariadic final
+    : public AggregateFunctionNullBase<result_is_nullable, serialize_flag,
+        AggregateFunctionNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>
 {
 public:
     AggregateFunctionNullVariadic(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
-        : AggregateFunctionNullBase<result_is_nullable, serialize_flag, AggregateFunctionNullVariadic<result_is_nullable, serialize_flag>>(
-            std::move(nested_function_), arguments, params)
-        , number_of_arguments(arguments.size())
+        : AggregateFunctionNullBase<result_is_nullable, serialize_flag,
+            AggregateFunctionNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>(std::move(nested_function_), arguments, params),
+        number_of_arguments(arguments.size())
     {
         if (number_of_arguments == 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: single argument is passed to AggregateFunctionNullVariadic");
+            throw Exception("Logical error: single argument is passed to AggregateFunctionNullVariadic", ErrorCodes::LOGICAL_ERROR);
 
         if (number_of_arguments > MAX_ARGS)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Maximum number of arguments for aggregate function with Nullable types is {}",
-                size_t(MAX_ARGS));
+            throw Exception("Maximum number of arguments for aggregate function with Nullable types is " + toString(size_t(MAX_ARGS)),
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (size_t i = 0; i < number_of_arguments; ++i)
             is_nullable[i] = arguments[i]->isNullable();
@@ -450,7 +418,7 @@ public:
             if (is_nullable[i])
             {
                 const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[i]);
-                if (nullable_col.isNullAt(row_num))
+                if (null_is_skipped && nullable_col.isNullAt(row_num))
                 {
                     /// If at least one column has a null value in the current row,
                     /// we don't process this row.
@@ -466,167 +434,86 @@ public:
         this->nested_function->add(this->nestedPlace(place), nested_columns, row_num, arena);
     }
 
-    void addBatchSinglePlace(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos) const final
-    {
-        /// We are going to merge all the flags into a single one to be able to call the nested batching functions
-        std::vector<const UInt8 *> nullable_filters;
-        const IColumn * nested_columns[number_of_arguments];
-
-        std::unique_ptr<UInt8[]> final_flags = nullptr;
-        const UInt8 * final_flags_ptr = nullptr;
-
-        if (if_argument_pos >= 0)
-        {
-            final_flags = std::make_unique<UInt8[]>(row_end);
-            final_flags_ptr = final_flags.get();
-
-            size_t included_elements = 0;
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t i = row_begin; i < row_end; i++)
-            {
-                final_flags[i] = !flags.data()[i];
-                included_elements += !!flags.data()[i];
-            }
-
-            if (included_elements == 0)
-                return;
-            if (included_elements != (row_end - row_begin))
-            {
-                nullable_filters.push_back(final_flags_ptr);
-            }
-        }
-
-        for (size_t i = 0; i < number_of_arguments; ++i)
-        {
-            if (is_nullable[i])
-            {
-                const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[i]);
-                nested_columns[i] = &nullable_col.getNestedColumn();
-                const ColumnUInt8 & nullmap_column = nullable_col.getNullMapColumn();
-                nullable_filters.push_back(nullmap_column.getData().data());
-            }
-            else
-            {
-                nested_columns[i] = columns[i];
-            }
-        }
-
-        chassert(nullable_filters.size() > 0);
-        bool found_one = false;
-        if (nullable_filters.size() == 1)
-        {
-            /// We can avoid making copies of the only filter but we still need to check that there is data to be added
-            final_flags_ptr = nullable_filters[0];
-            for (size_t i = row_begin; i < row_end; i++)
-            {
-                if (!final_flags_ptr[i])
-                {
-                    found_one = true;
-                    break;
-                }
-            }
-        }
-        else
-        {
-            if (!final_flags)
-            {
-                final_flags = std::make_unique<UInt8[]>(row_end);
-                final_flags_ptr = final_flags.get();
-            }
-
-            const size_t filter_start = nullable_filters[0] == final_flags_ptr ? 1 : 0;
-            for (size_t filter = filter_start; filter < nullable_filters.size(); filter++)
-            {
-                for (size_t i = row_begin; i < row_end; i++)
-                    final_flags[i] |= nullable_filters[filter][i];
-            }
-
-            for (size_t i = row_begin; i < row_end; i++)
-            {
-                if (!final_flags_ptr[i])
-                {
-                    found_one = true;
-                    break;
-                }
-            }
-        }
-
-        if (!found_one)
-            return; // Nothing to do and nothing to mark
-
-        this->setFlag(place);
-        this->nested_function->addBatchSinglePlaceNotNull(
-            row_begin, row_end, this->nestedPlace(place), nested_columns, final_flags_ptr, arena, -1);
-    }
-
 
 #if USE_EMBEDDED_COMPILER
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        size_t arguments_size = arguments.size();
+        size_t arguments_size = arguments_types.size();
 
-        ValuesWithType wrapped_arguments;
-        wrapped_arguments.reserve(arguments_size);
+        DataTypes non_nullable_types;
+        std::vector<llvm::Value * > wrapped_values;
+        std::vector<llvm::Value * > is_null_values;
 
-        std::vector<llvm::Value *> is_null_values;
-        is_null_values.reserve(arguments_size);
+        non_nullable_types.resize(arguments_size);
+        wrapped_values.resize(arguments_size);
+        is_null_values.resize(arguments_size);
 
         for (size_t i = 0; i < arguments_size; ++i)
         {
-            const auto & argument_value = arguments[i].value;
-            const auto & argument_type = arguments[i].type;
+            const auto & argument_value = argument_values[i];
 
             if (is_nullable[i])
             {
                 auto * wrapped_value = b.CreateExtractValue(argument_value, {0});
-                is_null_values.emplace_back(b.CreateExtractValue(argument_value, {1}));
-                wrapped_arguments.emplace_back(wrapped_value, removeNullable(argument_type));
+
+                if constexpr (null_is_skipped)
+                    is_null_values[i] = b.CreateExtractValue(argument_value, {1});
+
+                wrapped_values[i] = wrapped_value;
+                non_nullable_types[i] = removeNullable(arguments_types[i]);
             }
             else
             {
-                wrapped_arguments.emplace_back(argument_value, argument_type);
+                wrapped_values[i] = argument_value;
+                non_nullable_types[i] = arguments_types[i];
             }
         }
 
-        auto * head = b.GetInsertBlock();
-
-        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
-        auto * if_null = llvm::BasicBlock::Create(head->getContext(), "if_null", head->getParent());
-        auto * if_not_null = llvm::BasicBlock::Create(head->getContext(), "if_not_null", head->getParent());
-
-        auto * values_have_null_ptr = b.CreateAlloca(b.getInt1Ty());
-        b.CreateStore(b.getInt1(false), values_have_null_ptr);
-
-        for (auto * is_null_value : is_null_values)
+        if constexpr (null_is_skipped)
         {
-            auto * values_have_null = b.CreateLoad(b.getInt1Ty(), values_have_null_ptr);
-            b.CreateStore(b.CreateOr(values_have_null, is_null_value), values_have_null_ptr);
+            auto * head = b.GetInsertBlock();
+
+            auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+            auto * if_null = llvm::BasicBlock::Create(head->getContext(), "if_null", head->getParent());
+            auto * if_not_null = llvm::BasicBlock::Create(head->getContext(), "if_not_null", head->getParent());
+
+            auto * values_have_null_ptr = b.CreateAlloca(b.getInt1Ty());
+            b.CreateStore(b.getInt1(false), values_have_null_ptr);
+
+            for (auto * is_null_value : is_null_values)
+            {
+                if (!is_null_value)
+                    continue;
+
+                auto * values_have_null = b.CreateLoad(b.getInt1Ty(), values_have_null_ptr);
+                b.CreateStore(b.CreateOr(values_have_null, is_null_value), values_have_null_ptr);
+            }
+
+            b.CreateCondBr(b.CreateLoad(b.getInt1Ty(), values_have_null_ptr), if_null, if_not_null);
+
+            b.SetInsertPoint(if_null);
+            b.CreateBr(join_block);
+
+            b.SetInsertPoint(if_not_null);
+
+            if constexpr (result_is_nullable)
+                b.CreateStore(llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_ptr);
+
+            auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_ptr, this->prefix_size);
+            this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, arguments_types, wrapped_values);
+            b.CreateBr(join_block);
+
+            b.SetInsertPoint(join_block);
         }
-
-        b.CreateCondBr(b.CreateLoad(b.getInt1Ty(), values_have_null_ptr), if_null, if_not_null);
-
-        b.SetInsertPoint(if_null);
-        b.CreateBr(join_block);
-
-        b.SetInsertPoint(if_not_null);
-
-        if constexpr (result_is_nullable)
+        else
+        {
             b.CreateStore(llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_ptr);
-
-        auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_ptr, this->prefix_size);
-        this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, wrapped_arguments);
-        b.CreateBr(join_block);
-
-        b.SetInsertPoint(join_block);
+            auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_ptr, this->prefix_size);
+            this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, non_nullable_types, wrapped_values);
+        }
     }
 
 #endif

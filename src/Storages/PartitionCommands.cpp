@@ -67,7 +67,7 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
                 res.move_destination_type = PartitionCommand::MoveDestinationType::SHARD;
                 break;
             case DataDestinationType::DELETE:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "ALTER with this destination type is not handled. This is a bug.");
+                throw Exception("ALTER with this destination type is not handled. This is a bug.", ErrorCodes::LOGICAL_ERROR);
         }
         if (res.move_destination_type != PartitionCommand::MoveDestinationType::TABLE)
             res.move_destination_name = command_ast->move_destination_name;
@@ -163,7 +163,7 @@ std::string PartitionCommand::typeToString() const
     case PartitionCommand::Type::REPLACE_PARTITION:
         return "REPLACE PARTITION";
     default:
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Uninitialized partition command");
+        throw Exception("Uninitialized partition command", ErrorCodes::LOGICAL_ERROR);
     }
 }
 

@@ -1,43 +1,40 @@
----
-slug: /en/operations/system-tables/replicated_fetches
----
 # replicated_fetches
 
 Contains information about currently running background fetches.
 
 Columns:
 
-- `database` ([String](../../sql-reference/data-types/string.md)) — Name of the database.
+-   `database` ([String](../../sql-reference/data-types/string.md)) — Name of the database.
 
-- `table` ([String](../../sql-reference/data-types/string.md)) — Name of the table.
+-   `table` ([String](../../sql-reference/data-types/string.md)) — Name of the table.
 
-- `elapsed` ([Float64](../../sql-reference/data-types/float.md)) — The time elapsed (in seconds) since showing currently running background fetches started.
+-   `elapsed` ([Float64](../../sql-reference/data-types/float.md)) — The time elapsed (in seconds) since showing currently running background fetches started.
 
-- `progress` ([Float64](../../sql-reference/data-types/float.md)) — The percentage of completed work from 0 to 1.
+-   `progress` ([Float64](../../sql-reference/data-types/float.md)) — The percentage of completed work from 0 to 1.
 
-- `result_part_name` ([String](../../sql-reference/data-types/string.md)) — The name of the part that will be formed as the result of showing currently running background fetches.
+-   `result_part_name` ([String](../../sql-reference/data-types/string.md)) — The name of the part that will be formed as the result of showing currently running background fetches.
 
-- `result_part_path` ([String](../../sql-reference/data-types/string.md)) — Absolute path to the part that will be formed as the result of showing currently running background fetches.
+-   `result_part_path` ([String](../../sql-reference/data-types/string.md)) — Absolute path to the part that will be formed as the result of showing currently running background fetches.
 
-- `partition_id` ([String](../../sql-reference/data-types/string.md)) — ID of the partition.
+-   `partition_id` ([String](../../sql-reference/data-types/string.md)) — ID of the partition.
 
-- `total_size_bytes_compressed` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The total size (in bytes) of the compressed data in the result part.
+-   `total_size_bytes_compressed` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The total size (in bytes) of the compressed data in the result part.
 
-- `bytes_read_compressed` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The number of compressed bytes read from the result part.
+-   `bytes_read_compressed` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The number of compressed bytes read from the result part.
 
-- `source_replica_path` ([String](../../sql-reference/data-types/string.md)) — Absolute path to the source replica.
+-   `source_replica_path` ([String](../../sql-reference/data-types/string.md)) — Absolute path to the source replica.
 
-- `source_replica_hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the source replica.
+-   `source_replica_hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the source replica.
 
-- `source_replica_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — Port number of the source replica.
+-   `source_replica_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — Port number of the source replica.
 
-- `interserver_scheme` ([String](../../sql-reference/data-types/string.md)) — Name of the interserver scheme.
+-   `interserver_scheme` ([String](../../sql-reference/data-types/string.md)) — Name of the interserver scheme.
 
-- `URI` ([String](../../sql-reference/data-types/string.md)) — Uniform resource identifier.
+-   `URI` ([String](../../sql-reference/data-types/string.md)) — Uniform resource identifier.
 
-- `to_detached` ([UInt8](../../sql-reference/data-types/int-uint.md)) — The flag indicates whether the currently running background fetch is being performed using the `TO DETACHED` expression.
+-   `to_detached` ([UInt8](../../sql-reference/data-types/int-uint.md)) — The flag indicates whether the currently running background fetch is being performed using the `TO DETACHED` expression.
 
-- `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
+-   `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
 
 **Example**
 
@@ -68,4 +65,6 @@ thread_id:                   54
 
 **See Also**
 
-- [Managing ReplicatedMergeTree Tables](../../sql-reference/statements/system.md/#managing-replicatedmergetree-tables)
+-   [Managing ReplicatedMergeTree Tables](../../sql-reference/statements/system/#query-language-system-replicated)
+
+[Original article](https://clickhouse.com/docs/en/operations/system_tables/replicated_fetches) <!--hide-->

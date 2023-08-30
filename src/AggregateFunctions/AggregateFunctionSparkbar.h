@@ -1,33 +1,22 @@
 #pragma once
 
-#include <base/arithmeticOverflow.h>
-
-#include <array>
-#include <string_view>
 #include <DataTypes/DataTypeString.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <base/range.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnString.h>
-#include <Common/PODArray.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/HashTable/HashMap.h>
-#include <Columns/IColumn.h>
-
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 template<typename X, typename Y>
 struct AggregateFunctionSparkbarData
 {
-    /// TODO: calculate histogram instead of storing all points
+
     using Points = HashMap<X, Y>;
     Points points;
 
@@ -37,38 +26,20 @@ struct AggregateFunctionSparkbarData
     Y min_y = std::numeric_limits<Y>::max();
     Y max_y = std::numeric_limits<Y>::lowest();
 
-    Y insert(const X & x, const Y & y)
+    void insert(const X & x, const Y & y)
     {
-        if (isNaN(y) || y <= 0)
-            return 0;
-
-        auto [it, inserted] = points.insert({x, y});
-        if (!inserted)
-        {
-            if constexpr (std::is_floating_point_v<Y>)
-            {
-                it->getMapped() += y;
-                return it->getMapped();
-            }
-            else
-            {
-                Y res;
-                bool has_overfllow = common::addOverflow(it->getMapped(), y, res);
-                it->getMapped() = has_overfllow ? std::numeric_limits<Y>::max() : res;
-            }
-        }
-        return it->getMapped();
+        auto result = points.insert({x, y});
+        if (!result.second)
+            result.first->getMapped() += y;
     }
 
     void add(X x, Y y)
     {
-        auto new_y = insert(x, y);
-
+        insert(x, y);
         min_x = std::min(x, min_x);
         max_x = std::max(x, max_x);
-
         min_y = std::min(y, min_y);
-        max_y = std::max(new_y, max_y);
+        max_y = std::max(y, max_y);
     }
 
     void merge(const AggregateFunctionSparkbarData & other)
@@ -77,14 +48,10 @@ struct AggregateFunctionSparkbarData
             return;
 
         for (auto & point : other.points)
-        {
-            auto new_y = insert(point.getKey(), point.getMapped());
-            max_y = std::max(new_y, max_y);
-        }
+            insert(point.getKey(), point.getMapped());
 
         min_x = std::min(other.min_x, min_x);
         max_x = std::max(other.max_x, max_x);
-
         min_y = std::min(other.min_y, min_y);
         max_y = std::max(other.max_y, max_y);
     }
@@ -113,6 +80,7 @@ struct AggregateFunctionSparkbarData
         size_t size;
         readVarUInt(size, buf);
 
+        /// TODO Protection against huge size
         X x;
         Y y;
         for (size_t i = 0; i < size; ++i)
@@ -122,6 +90,7 @@ struct AggregateFunctionSparkbarData
             insert(x, y);
         }
     }
+
 };
 
 template<typename X, typename Y>
@@ -130,154 +99,183 @@ class AggregateFunctionSparkbar final
 {
 
 private:
-    static constexpr size_t BAR_LEVELS = 8;
-    const size_t width = 0;
+    size_t width;
+    X min_x;
+    X max_x;
+    bool specified_min_max_x;
 
-    /// Range for x specified in parameters.
-    const bool is_specified_range_x = false;
-    const X begin_x = std::numeric_limits<X>::min();
-    const X end_x = std::numeric_limits<X>::max();
-
-    size_t updateFrame(ColumnString::Chars & frame, Y value) const
+    template <class T>
+    String getBar(const T value) const
     {
-        static constexpr std::array<std::string_view, BAR_LEVELS + 1> bars{" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
-        const auto & bar = (isNaN(value) || value < 1 || static_cast<Y>(BAR_LEVELS) < value) ? bars[0] : bars[static_cast<UInt8>(value)];
-        frame.insert(bar.begin(), bar.end());
-        return bar.size();
+        if (isNaN(value) || value > 8 || value < 1)
+            return " ";
+
+        // ▁▂▃▄▅▆▇█
+        switch (static_cast<UInt8>(value))
+        {
+            case 1: return "▁";
+            case 2: return "▂";
+            case 3: return "▃";
+            case 4: return "▄";
+            case 5: return "▅";
+            case 6: return "▆";
+            case 7: return "▇";
+            case 8: return "█";
+        }
+        return " ";
     }
 
     /**
      *  The minimum value of y is rendered as the lowest height "▁",
      *  the maximum value of y is rendered as the highest height "█", and the middle value will be rendered proportionally.
      *  If a bucket has no y value, it will be rendered as " ".
+     *  If the actual number of buckets is greater than the specified bucket, it will be compressed by width.
+     *  For example, there are actually 11 buckets, specify 10 buckets, and divide the 11 buckets as follows (11/10):
+     *  0.0-1.1, 1.1-2.2, 2.2-3.3, 3.3-4.4, 4.4-5.5, 5.5-6.6, 6.6-7.7, 7.7-8.8, 8.8-9.9, 9.9-11.
+     *  The y value of the first bucket will be calculated as follows:
+     *  the actual y value of the first position + the actual second position y*0.1, and the remaining y*0.9 is reserved for the next bucket.
+     *  The next bucket will use the last y*0.9 + the actual third position y*0.2, and the remaining y*0.8 will be reserved for the next bucket. And so on.
      */
-    void render(ColumnString & to_column, const AggregateFunctionSparkbarData<X, Y> & data) const
+    String render(const AggregateFunctionSparkbarData<X, Y> & data) const
     {
-        auto & values = to_column.getChars();
-        auto & offsets = to_column.getOffsets();
+        String value;
+        if (data.points.empty() || !width)
+            return value;
 
-        if (data.points.empty())
+        size_t diff_x;
+        X min_x_local;
+        if (specified_min_max_x)
         {
-            values.push_back('\0');
-            offsets.push_back(offsets.empty() ? 1 : offsets.back() + 1);
-            return;
+            diff_x = max_x - min_x;
+            min_x_local = min_x;
+        }
+        else
+        {
+            diff_x = data.max_x - data.min_x;
+            min_x_local = data.min_x;
         }
 
-        auto from_x = is_specified_range_x ? begin_x : data.min_x;
-        auto to_x = is_specified_range_x ? end_x : data.max_x;
-
-        if (from_x >= to_x)
+        if ((diff_x + 1) <= width)
         {
-            size_t sz = updateFrame(values, 8);
-            values.push_back('\0');
-            offsets.push_back(offsets.empty() ? sz + 1 : offsets.back() + sz + 1);
-            return;
-        }
+            Y min_y = data.min_y;
+            Y max_y = data.max_y;
+            Float64 diff_y = max_y - min_y;
 
-        PaddedPODArray<Y> histogram(width, 0);
-        PaddedPODArray<UInt64> count_histogram(width, 0); /// The number of points in each bucket
-
-        for (const auto & point : data.points)
-        {
-            if (point.getKey() < from_x || to_x < point.getKey())
-                continue;
-
-            X delta = to_x - from_x;
-            if (delta < std::numeric_limits<X>::max())
-                delta = delta + 1;
-
-            X value = point.getKey() - from_x;
-            Float64 w = histogram.size();
-            size_t index = std::min<size_t>(static_cast<size_t>(w / delta * value), histogram.size() - 1);
-
-            Y res;
-            bool has_overfllow = false;
-            if constexpr (std::is_floating_point_v<Y>)
-                res = histogram[index] + point.getMapped();
-            else
-                has_overfllow = common::addOverflow(histogram[index], point.getMapped(), res);
-
-            if (unlikely(has_overfllow))
+            if (diff_y)
             {
-                /// In case of overflow, just saturate
-                /// Do not count new values, because we do not know how many of them were added
-                histogram[index] = std::numeric_limits<Y>::max();
+                for (size_t i = 0; i <= diff_x; ++i)
+                {
+                    auto it = data.points.find(min_x_local + i);
+                    bool found = it != data.points.end();
+                    value += getBar(found ? std::round(((it->getMapped() - min_y) / diff_y) * 7) + 1 : 0.0);
+                }
             }
             else
             {
-                histogram[index] = res;
-                count_histogram[index] += 1;
+                for (size_t i = 0; i <= diff_x; ++i)
+                    value += getBar(data.points.has(min_x_local + i) ? 1 : 0);
             }
         }
-
-        for (size_t i = 0; i < histogram.size(); ++i)
+        else
         {
-            if (count_histogram[i] > 0)
-                histogram[i] /= count_histogram[i];
-        }
+            // begin reshapes to width buckets
+            Float64 multiple_d = (diff_x + 1) / static_cast<Float64>(width);
 
-        Y y_max = 0;
-        for (auto & y : histogram)
-        {
-            if (isNaN(y) || y <= 0)
-                continue;
-            y_max = std::max(y_max, y);
-        }
+            std::optional<Float64> min_y;
+            std::optional<Float64> max_y;
 
-        if (y_max == 0)
-        {
-            values.push_back('\0');
-            offsets.push_back(offsets.empty() ? 1 : offsets.back() + 1);
-            return;
-        }
+            std::optional<Float64> new_y;
+            std::vector<std::optional<Float64>> new_points;
+            new_points.reserve(width);
 
-        /// Scale the histogram to the range [0, BAR_LEVELS]
-        for (auto & y : histogram)
-        {
-            if (isNaN(y) || y <= 0)
+            std::pair<size_t, Float64> bound{0, 0.0};
+            size_t cur_bucket_num = 0;
+            // upper bound for bucket
+            auto upper_bound = [&](size_t bucket_num)
             {
-                y = 0;
-                continue;
-            }
-
-            constexpr auto levels_num = static_cast<Y>(BAR_LEVELS - 1);
-            if constexpr (std::is_floating_point_v<Y>)
+                bound.second = (bucket_num + 1) * multiple_d;
+                bound.first = std::floor(bound.second);
+            };
+            upper_bound(cur_bucket_num);
+            for (size_t i = 0; i <= (diff_x + 1); ++i)
             {
-                y = y / (y_max / levels_num) + 1;
-            }
-            else
-            {
-                Y scaled;
-                bool has_overfllow = common::mulOverflow<Y>(y, levels_num, scaled);
+                if (i == bound.first) // is bound
+                {
+                    Float64 proportion = bound.second - bound.first;
+                    auto it = data.points.find(min_x_local + i);
+                    bool found = (it != data.points.end());
+                    if (found && proportion > 0)
+                        new_y = new_y.value_or(0) + it->getMapped() * proportion;
 
-                if (has_overfllow)
-                    y = y / (y_max / levels_num) + 1;
+                    if (new_y)
+                    {
+                        Float64 avg_y = new_y.value() / multiple_d;
+
+                        new_points.emplace_back(avg_y);
+                        // If min_y has no value, or if the avg_y of the current bucket is less than min_y, update it.
+                        if (!min_y || avg_y < min_y)
+                            min_y = avg_y;
+                        if (!max_y || avg_y > max_y)
+                            max_y = avg_y;
+                    }
+                    else
+                    {
+                        new_points.emplace_back();
+                    }
+
+                    // next bucket
+                    new_y = found ? ((1 - proportion) * it->getMapped()) : std::optional<Float64>();
+                    upper_bound(++cur_bucket_num);
+                }
                 else
-                    y = scaled / y_max + 1;
+                {
+                    auto it = data.points.find(min_x_local + i);
+                    if (it != data.points.end())
+                        new_y = new_y.value_or(0) + it->getMapped();
+                }
             }
+
+            if (!min_y || !max_y) // No value is set
+                return {};
+
+            Float64 diff_y = max_y.value() - min_y.value();
+
+            auto get_bars = [&] (const std::optional<Float64> & point_y)
+            {
+                value += getBar(point_y ? std::round(((point_y.value() - min_y.value()) / diff_y) * 7) + 1 : 0);
+            };
+            auto get_bars_for_constant = [&] (const std::optional<Float64> & point_y)
+            {
+                value += getBar(point_y ? 1 : 0);
+            };
+
+            if (diff_y)
+                std::for_each(new_points.begin(), new_points.end(), get_bars);
+            else
+                std::for_each(new_points.begin(), new_points.end(), get_bars_for_constant);
         }
-
-        size_t sz = 0;
-        for (const auto & y : histogram)
-            sz += updateFrame(values, y);
-
-        values.push_back('\0');
-        offsets.push_back(offsets.empty() ? sz + 1 : offsets.back() + sz + 1);
+        return value;
     }
+
 
 public:
     AggregateFunctionSparkbar(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionSparkbarData<X, Y>, AggregateFunctionSparkbar>(arguments, params, std::make_shared<DataTypeString>())
-        , width(params.empty() ? 0 : params.at(0).safeGet<UInt64>())
-        , is_specified_range_x(params.size() >= 3)
-        , begin_x(is_specified_range_x ? static_cast<X>(params.at(1).safeGet<X>()) : std::numeric_limits<X>::min())
-        , end_x(is_specified_range_x ? static_cast<X>(params.at(2).safeGet<X>()) : std::numeric_limits<X>::max())
+        : IAggregateFunctionDataHelper<AggregateFunctionSparkbarData<X, Y>, AggregateFunctionSparkbar>(
+        arguments, params)
     {
-        if (width < 2 || 1024 < width)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter width must be in range [2, 1024]");
-
-        if (begin_x >= end_x)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter `min_x` must be less than `max_x`");
+        width = params.at(0).safeGet<UInt64>();
+        if (params.size() == 3)
+        {
+            specified_min_max_x = true;
+            min_x = params.at(1).safeGet<X>();
+            max_x = params.at(2).safeGet<X>();
+        }
+        else
+        {
+            specified_min_max_x = false;
+            min_x = std::numeric_limits<X>::min();
+            max_x = std::numeric_limits<X>::max();
+        }
     }
 
     String getName() const override
@@ -285,10 +283,15 @@ public:
         return "sparkbar";
     }
 
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * /*arena*/) const override
     {
         X x = assert_cast<const ColumnVector<X> *>(columns[0])->getData()[row_num];
-        if (begin_x <= x && x <= end_x)
+        if (min_x <= x && x <= max_x)
         {
             Y y = assert_cast<const ColumnVector<Y> *>(columns[1])->getData()[row_num];
             this->data(place).add(x, y);
@@ -316,7 +319,8 @@ public:
     {
         auto & to_column = assert_cast<ColumnString &>(to);
         const auto & data = this->data(place);
-        render(to_column, data);
+        const String & value = render(data);
+        to_column.insertData(value.data(), value.size());
     }
 };
 

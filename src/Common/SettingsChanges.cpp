@@ -46,30 +46,4 @@ Field * SettingsChanges::tryGet(std::string_view name)
     return &change->value;
 }
 
-bool SettingsChanges::insertSetting(std::string_view name, const Field & value)
-{
-    auto it = std::find_if(begin(), end(), [&name](const SettingChange & change) { return change.name == name; });
-    if (it != end())
-        return false;
-    emplace_back(name, value);
-    return true;
-}
-
-void SettingsChanges::setSetting(std::string_view name, const Field & value)
-{
-    if (auto * setting_value = tryGet(name))
-        *setting_value = value;
-    else
-        insertSetting(name, value);
-}
-
-bool SettingsChanges::removeSetting(std::string_view name)
-{
-    auto it = std::find_if(begin(), end(), [&name](const SettingChange & change) { return change.name == name; });
-    if (it == end())
-        return false;
-    erase(it);
-    return true;
-}
-
 }

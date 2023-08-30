@@ -36,7 +36,7 @@ void checkNoOldLeaders(Poco::Logger * log, ZooKeeper & zookeeper, const String p
         if (code == Coordination::Error::ZNONODE)
             return;
         else if (code != Coordination::Error::ZOK)
-            throw KeeperException::fromPath(code, path);
+            throw KeeperException(code, path);
 
         Coordination::Requests ops;
 

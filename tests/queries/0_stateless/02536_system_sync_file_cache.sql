@@ -1,1 +1,0 @@
-system sync file cache;

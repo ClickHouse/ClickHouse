@@ -49,15 +49,7 @@ String ASTCreateSettingsProfileQuery::getID(char) const
 
 ASTPtr ASTCreateSettingsProfileQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateSettingsProfileQuery>(*this);
-
-    if (to_roles)
-        res->to_roles = std::static_pointer_cast<ASTRolesOrUsersSet>(to_roles->clone());
-
-    if (settings)
-        res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
-
-    return res;
+    return std::make_shared<ASTCreateSettingsProfileQuery>(*this);
 }
 
 
@@ -81,12 +73,6 @@ void ASTCreateSettingsProfileQuery::formatImpl(const FormatSettings & format, Fo
         format.ostr << (format.hilite ? hilite_keyword : "") << " OR REPLACE" << (format.hilite ? hilite_none : "");
 
     formatNames(names, format);
-
-    if (!storage_name.empty())
-        format.ostr << (format.hilite ? IAST::hilite_keyword : "")
-                    << " IN " << (format.hilite ? IAST::hilite_none : "")
-                    << backQuoteIfNeed(storage_name);
-
     formatOnCluster(format);
 
     if (!new_name.empty())

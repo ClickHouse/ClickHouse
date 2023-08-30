@@ -30,7 +30,7 @@ public:
 protected:
     void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported by MySQLParser::ASTAlterQuery.");
+        throw Exception("Method formatImpl is not supported by MySQLParser::ASTAlterQuery.", ErrorCodes::NOT_IMPLEMENTED);
     }
 };
 

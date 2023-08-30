@@ -76,46 +76,6 @@ struct ToStartOfWeekImpl
     {
         return time_zone.toFirstDayNumOfWeek(DayNum(d), week_mode);
     }
-    static inline Int64 executeExtendedResult(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-    }
-    static inline Int32 executeExtendedResult(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
-    }
-
-    using FactorTransform = ZeroTransform;
-};
-
-struct ToLastDayOfWeekImpl
-{
-    static constexpr auto name = "toLastDayOfWeek";
-
-    static inline UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-    }
-    static inline UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-    }
-    static inline UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
-    }
-    static inline UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toLastDayNumOfWeek(DayNum(d), week_mode);
-    }
-    static inline Int64 executeExtendedResult(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-    }
-    static inline Int32 executeExtendedResult(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
-    }
 
     using FactorTransform = ZeroTransform;
 };
@@ -149,7 +109,7 @@ struct ToWeekImpl
     using FactorTransform = ToStartOfYearImpl;
 };
 
-template <typename FromType, typename ToType, typename Transform, bool is_extended_result = false>
+template <typename FromType, typename ToType, typename Transform>
 struct WeekTransformer
 {
     explicit WeekTransformer(Transform transform_)
@@ -160,17 +120,11 @@ struct WeekTransformer
     void
     vector(const FromVectorType & vec_from, ToVectorType & vec_to, UInt8 week_mode, const DateLUTImpl & time_zone) const
     {
-        using ValueType = typename ToVectorType::value_type;
         size_t size = vec_from.size();
         vec_to.resize(size);
 
         for (size_t i = 0; i < size; ++i)
-        {
-            if constexpr (is_extended_result)
-                vec_to[i] = static_cast<ValueType>(transform.executeExtendedResult(vec_from[i], week_mode, time_zone));
-            else
-                vec_to[i] = static_cast<ValueType>(transform.execute(vec_from[i], week_mode, time_zone));
-        }
+            vec_to[i] = transform.execute(vec_from[i], week_mode, time_zone);
     }
 
 private:
@@ -178,13 +132,13 @@ private:
 };
 
 
-template <typename FromDataType, typename ToDataType, bool is_extended_result = false>
+template <typename FromDataType, typename ToDataType>
 struct CustomWeekTransformImpl
 {
     template <typename Transform>
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/, Transform transform = {})
     {
-        const auto op = WeekTransformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform, is_extended_result>{std::move(transform)};
+        const auto op = WeekTransformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform>{std::move(transform)};
 
         UInt8 week_mode = DEFAULT_WEEK_MODE;
         if (arguments.size() > 1)
@@ -203,9 +157,10 @@ struct CustomWeekTransformImpl
         }
         else
         {
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of function {}",
-                arguments[0].column->getName(), Transform::name);
+            throw Exception(
+                "Illegal column " + arguments[0].column->getName() + " of first argument of function "
+                    + Transform::name,
+                ErrorCodes::ILLEGAL_COLUMN);
         }
     }
 };

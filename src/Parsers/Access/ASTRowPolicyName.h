@@ -45,8 +45,5 @@ public:
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTRowPolicyNames>(clone()); }
 
     void replaceEmptyDatabase(const String & current_database);
-
-private:
-    String tableOrAsterisk(const String & table_name) const;
 };
 }

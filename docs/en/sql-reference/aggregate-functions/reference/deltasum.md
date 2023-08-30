@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/deltasum
 sidebar_position: 141
 ---
 
@@ -19,7 +18,7 @@ deltaSum(value)
 
 **Arguments**
 
-- `value` — Input values, must be [Integer](../../data-types/int-uint.md) or [Float](../../data-types/float.md) type.
+-   `value` — Input values, must be [Integer](../../data-types/int-uint.md) or [Float](../../data-types/float.md) type.
 
 **Returned value**
 
@@ -71,4 +70,4 @@ Result:
 
 ## See Also
 
-- [runningDifference](../../functions/other-functions.md#other_functions-runningdifference)
+-   [runningDifference](../../functions/other-functions.md#other_functions-runningdifference)

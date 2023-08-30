@@ -18,9 +18,6 @@ enum EncryptionMethod
     MAX_ENCRYPTION_METHOD
 };
 
-/// Get encryption method for string name. Throw exception for wrong name.
-EncryptionMethod toEncryptionMethod(const std::string & name);
-
 /** This codec encrypts and decrypts blocks with AES-128 in
     * GCM-SIV mode (RFC-8452), which is the only cipher currently
     * supported. Although it is implemented as a compression codec
@@ -47,7 +44,7 @@ EncryptionMethod toEncryptionMethod(const std::string & name);
     * as otherwise our engines like ReplicatedMergeTree cannot
     * deduplicate data blocks.
     */
-class CompressionCodecEncrypted final : public ICompressionCodec
+class CompressionCodecEncrypted : public ICompressionCodec
 {
 public:
     /** If a key is available, the server is supposed to

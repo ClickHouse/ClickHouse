@@ -11,17 +11,12 @@ namespace DB
 struct AccessRightsElement
 {
     AccessFlags access_flags;
-
     String database;
     String table;
     Strings columns;
-    String parameter;
-
     bool any_database = true;
     bool any_table = true;
     bool any_column = true;
-    bool any_parameter = false;
-
     bool grant_option = false;
     bool is_partial_revoke = false;
 
@@ -49,26 +44,14 @@ struct AccessRightsElement
 
     bool empty() const { return !access_flags || (!any_column && columns.empty()); }
 
-    auto toTuple() const { return std::tie(access_flags, any_database, database, any_table, table, any_column, columns, any_parameter, parameter, grant_option, is_partial_revoke); }
+    auto toTuple() const { return std::tie(access_flags, any_database, database, any_table, table, any_column, columns, grant_option, is_partial_revoke); }
     friend bool operator==(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() == right.toTuple(); }
     friend bool operator!=(const AccessRightsElement & left, const AccessRightsElement & right) { return !(left == right); }
 
-    bool sameDatabaseAndTableAndParameter(const AccessRightsElement & other) const
-    {
-        return sameDatabaseAndTable(other) && sameParameter(other);
-    }
-
-    bool sameParameter(const AccessRightsElement & other) const
-    {
-        return (parameter == other.parameter) && (any_parameter == other.any_parameter)
-            && (access_flags.getParameterType() == other.access_flags.getParameterType())
-            && (isGlobalWithParameter() == other.isGlobalWithParameter());
-    }
-
     bool sameDatabaseAndTable(const AccessRightsElement & other) const
     {
-        return (database == other.database) && (any_database == other.any_database)
-            && (table == other.table) && (any_table == other.any_table);
+        return (database == other.database) && (any_database == other.any_database) && (table == other.table)
+            && (any_table == other.any_table);
     }
 
     bool sameOptions(const AccessRightsElement & other) const
@@ -84,8 +67,6 @@ struct AccessRightsElement
     /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
     void replaceEmptyDatabase(const String & current_database);
 
-    bool isGlobalWithParameter() const { return access_flags.isGlobalWithParameter(); }
-
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
     String toStringWithoutOptions() const;
@@ -100,7 +81,6 @@ public:
     using Base::Base;
 
     bool empty() const;
-    bool sameDatabaseAndTableAndParameter() const;
     bool sameDatabaseAndTable() const;
     bool sameOptions() const;
 

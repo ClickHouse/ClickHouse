@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/functions/url-functions
----
 # URL函数 {#urlhan-shu}
 
 所有这些功能都不遵循RFC。它们被最大程度简化以提高性能。
@@ -117,3 +114,5 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 ### cutURLParameter(URL,name) {#cuturlparameterurl-name}
 
 删除URL中名称为’name’的参数。改函数假设参数名称以及参数值经过URL相同的编码。
+
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/url_functions/) <!--hide-->

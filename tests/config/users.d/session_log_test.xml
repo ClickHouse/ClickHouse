@@ -1,3 +1,4 @@
+<?xml version="1.0"?>
 <!-- User and profile to be used in sesson_log tests, to make sure that list of user's profiles is logged correctly -->
 <clickhouse>
     <profiles>
@@ -17,7 +18,7 @@
 
     <users>
         <session_log_test_xml_user>
-            <no_password></no_password>
+            <password></password>
             <networks incl="networks" replace="replace">
                 <ip>::1</ip>
                 <ip>127.0.0.1</ip>

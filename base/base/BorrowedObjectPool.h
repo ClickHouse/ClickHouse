@@ -10,7 +10,7 @@
 #include <base/MoveOrCopyIfThrow.h>
 
 /** Pool for limited size objects that cannot be used from different threads simultaneously.
-  * The main use case is to have fixed size of objects that can be reused in different threads during their lifetime
+  * The main use case is to have fixed size of objects that can be reused in difference threads during their lifetime
   * and have to be initialized on demand.
   * Two main properties of pool are allocated objects size and borrowed objects size.
   * Allocated objects size is size of objects that are currently allocated by the pool.
