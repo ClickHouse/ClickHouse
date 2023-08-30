@@ -1358,252 +1358,251 @@ static void AugmentMappings(const Options & options, CrashedProcess * crashinfo,
 
 namespace Minidump2Core
 {
-    /// Mimic minidump-2-core.cc to generate coredump from minidump, but run in-process
-    int generate(const char * minidump_path, const char * coredump_path)
+/// Mimic minidump-2-core.cc to generate coredump from minidump, but run in-process
+int generate(const char * minidump_path, const char * coredump_path)
+{
+    MemoryMappedFile mapped_file(minidump_path, 0);
+    if (!mapped_file.data())
     {
+        fprintf(stderr, "Failed to mmap dump file: %s: %s\n", minidump_path, strerror(errno));
+        return 1;
+    }
 
-        MemoryMappedFile mapped_file(minidump_path, 0);
-        if (!mapped_file.data())
+    Options options;
+    options.out_fd = open(coredump_path, O_WRONLY | O_CREAT | O_TRUNC, 0664);
+    options.verbose = false;
+    if (options.out_fd == -1)
+    {
+        fprintf(stderr, "Could not open output %s: %s\n", coredump_path, strerror(errno));
+        return 1;
+    }
+
+    MinidumpMemoryRange dump(mapped_file.data(), mapped_file.size());
+
+    const MDRawHeader * header = dump.GetData<MDRawHeader>(0);
+
+    CrashedProcess crashinfo;
+
+    // Always check the system info first, as that allows us to tell whether
+    // this is a minidump file that is compatible with our converter.
+    bool ok = false;
+    for (unsigned i = 0; i < header->stream_count; ++i)
+    {
+        const MDRawDirectory * dirent = dump.GetArrayElement<MDRawDirectory>(header->stream_directory_rva, i);
+        switch (dirent->stream_type)
         {
-            fprintf(stderr, "Failed to mmap dump file: %s: %s\n", minidump_path, strerror(errno));
-            return 1;
+            case MD_SYSTEM_INFO_STREAM:
+                ParseSystemInfo(options, &crashinfo, dump.Subrange(dirent->location), dump);
+                ok = true;
+                break;
+            default:
+                break;
         }
+    }
+    if (!ok)
+    {
+        fprintf(stderr, "Cannot determine input file format.\n");
+        return 1;
+    }
 
-        Options options;
-        options.out_fd = open(coredump_path, O_WRONLY | O_CREAT | O_TRUNC, 0664);
-        options.verbose = false;
-        if (options.out_fd == -1)
+    for (unsigned i = 0; i < header->stream_count; ++i)
+    {
+        const MDRawDirectory * dirent = dump.GetArrayElement<MDRawDirectory>(header->stream_directory_rva, i);
+        switch (dirent->stream_type)
         {
-            fprintf(stderr, "Could not open output %s: %s\n", coredump_path, strerror(errno));
-            return 1;
+            case MD_THREAD_LIST_STREAM:
+                ParseThreadList(options, &crashinfo, dump.Subrange(dirent->location), dump);
+                break;
+            case MD_LINUX_CPU_INFO:
+                ParseCPUInfo(options, &crashinfo, dump.Subrange(dirent->location));
+                break;
+            case MD_LINUX_PROC_STATUS:
+                ParseProcessStatus(options, &crashinfo, dump.Subrange(dirent->location));
+                break;
+            case MD_LINUX_LSB_RELEASE:
+                ParseLSBRelease(options, &crashinfo, dump.Subrange(dirent->location));
+                break;
+            case MD_LINUX_ENVIRON:
+                ParseEnvironment(options, &crashinfo, dump.Subrange(dirent->location));
+                break;
+            case MD_LINUX_MAPS:
+                ParseMaps(options, &crashinfo, dump.Subrange(dirent->location));
+                break;
+            case MD_LINUX_AUXV:
+                ParseAuxVector(options, &crashinfo, dump.Subrange(dirent->location));
+                break;
+            case MD_LINUX_CMD_LINE:
+                ParseCmdLine(options, &crashinfo, dump.Subrange(dirent->location));
+                break;
+            case MD_LINUX_DSO_DEBUG:
+                ParseDSODebugInfo(options, &crashinfo, dump.Subrange(dirent->location), dump);
+                break;
+            case MD_EXCEPTION_STREAM:
+                ParseExceptionStream(options, &crashinfo, dump.Subrange(dirent->location), dump);
+                break;
+            case MD_MODULE_LIST_STREAM:
+                ParseModuleStream(options, &crashinfo, dump.Subrange(dirent->location), dump);
+                break;
+            default:
+                if (options.verbose)
+                    fprintf(stderr, "Skipping %x\n", dirent->stream_type);
         }
+    }
 
-        MinidumpMemoryRange dump(mapped_file.data(), mapped_file.size());
+    AugmentMappings(options, &crashinfo, dump);
 
-        const MDRawHeader * header = dump.GetData<MDRawHeader>(0);
+    // Write the ELF header. The file will look like:
+    //   ELF header
+    //   Phdr for the PT_NOTE
+    //   Phdr for each of the thread stacks
+    //   PT_NOTE
+    //   each of the thread stacks
+    Ehdr ehdr;
+    memset(&ehdr, 0, sizeof(Ehdr));
+    ehdr.e_ident[0] = ELFMAG0;
+    ehdr.e_ident[1] = ELFMAG1;
+    ehdr.e_ident[2] = ELFMAG2;
+    ehdr.e_ident[3] = ELFMAG3;
+    ehdr.e_ident[4] = ELF_CLASS;
+    ehdr.e_ident[5] = sex() ? ELFDATA2MSB : ELFDATA2LSB;
+    ehdr.e_ident[6] = EV_CURRENT;
+    ehdr.e_type = ET_CORE;
+    ehdr.e_machine = ELF_ARCH;
+    ehdr.e_version = EV_CURRENT;
+    ehdr.e_phoff = sizeof(Ehdr);
+    ehdr.e_ehsize = sizeof(Ehdr);
+    ehdr.e_phentsize = sizeof(Phdr);
+    ehdr.e_phnum = 1 + // PT_NOTE
+        crashinfo.mappings.size(); // memory mappings
+    ehdr.e_shentsize = sizeof(Shdr);
+    if (!writea(options.out_fd, &ehdr, sizeof(Ehdr)))
+        return 1;
 
-        CrashedProcess crashinfo;
+    size_t offset = sizeof(Ehdr) + ehdr.e_phnum * sizeof(Phdr);
+    size_t filesz = sizeof(Nhdr) + 8 + sizeof(prpsinfo) +
+        // sizeof(Nhdr) + 8 + sizeof(user) +
+        sizeof(Nhdr) + 8 + crashinfo.auxv_length
+        + crashinfo.threads.size()
+            * ((sizeof(Nhdr) + 8 + sizeof(prstatus))
+#if defined(__i386__) || defined(__x86_64__)
+               + sizeof(Nhdr) + 8 + sizeof(user_fpregs_struct)
+#endif
+#if defined(__i386__)
+               + sizeof(Nhdr) + 8 + sizeof(user_fpxregs_struct)
+#endif
+            );
 
-        // Always check the system info first, as that allows us to tell whether
-        // this is a minidump file that is compatible with our converter.
-        bool ok = false;
-        for (unsigned i = 0; i < header->stream_count; ++i)
+    Phdr phdr;
+    memset(&phdr, 0, sizeof(Phdr));
+    phdr.p_type = PT_NOTE;
+    phdr.p_offset = offset;
+    phdr.p_filesz = filesz;
+    if (!writea(options.out_fd, &phdr, sizeof(phdr)))
+        return 1;
+
+    phdr.p_type = PT_LOAD;
+    phdr.p_align = 4096;
+    size_t note_align = phdr.p_align - ((offset + filesz) % phdr.p_align);
+    if (note_align == phdr.p_align)
+        note_align = 0;
+    offset += note_align;
+
+    for (std::map<uint64_t, CrashedProcess::Mapping>::const_iterator iter = crashinfo.mappings.begin(); iter != crashinfo.mappings.end();
+         ++iter)
+    {
+        const CrashedProcess::Mapping & mapping = iter->second;
+        if (mapping.permissions == 0xFFFFFFFF)
         {
-            const MDRawDirectory * dirent = dump.GetArrayElement<MDRawDirectory>(header->stream_directory_rva, i);
-            switch (dirent->stream_type)
-            {
-                case MD_SYSTEM_INFO_STREAM:
-                    ParseSystemInfo(options, &crashinfo, dump.Subrange(dirent->location), dump);
-                    ok = true;
-                    break;
-                default:
-                    break;
-            }
+            // This is a map that we found in MD_MODULE_LIST_STREAM (as opposed to
+            // MD_LINUX_MAPS). It lacks some of the information that we would like
+            // to include.
+            phdr.p_flags = PF_R;
         }
-        if (!ok)
+        else
         {
-            fprintf(stderr, "Cannot determine input file format.\n");
-            return 1;
+            phdr.p_flags = mapping.permissions;
         }
-
-        for (unsigned i = 0; i < header->stream_count; ++i)
+        phdr.p_vaddr = mapping.start_address;
+        phdr.p_memsz = mapping.end_address - mapping.start_address;
+        if (mapping.data.size())
         {
-            const MDRawDirectory * dirent = dump.GetArrayElement<MDRawDirectory>(header->stream_directory_rva, i);
-            switch (dirent->stream_type)
-            {
-                case MD_THREAD_LIST_STREAM:
-                    ParseThreadList(options, &crashinfo, dump.Subrange(dirent->location), dump);
-                    break;
-                case MD_LINUX_CPU_INFO:
-                    ParseCPUInfo(options, &crashinfo, dump.Subrange(dirent->location));
-                    break;
-                case MD_LINUX_PROC_STATUS:
-                    ParseProcessStatus(options, &crashinfo, dump.Subrange(dirent->location));
-                    break;
-                case MD_LINUX_LSB_RELEASE:
-                    ParseLSBRelease(options, &crashinfo, dump.Subrange(dirent->location));
-                    break;
-                case MD_LINUX_ENVIRON:
-                    ParseEnvironment(options, &crashinfo, dump.Subrange(dirent->location));
-                    break;
-                case MD_LINUX_MAPS:
-                    ParseMaps(options, &crashinfo, dump.Subrange(dirent->location));
-                    break;
-                case MD_LINUX_AUXV:
-                    ParseAuxVector(options, &crashinfo, dump.Subrange(dirent->location));
-                    break;
-                case MD_LINUX_CMD_LINE:
-                    ParseCmdLine(options, &crashinfo, dump.Subrange(dirent->location));
-                    break;
-                case MD_LINUX_DSO_DEBUG:
-                    ParseDSODebugInfo(options, &crashinfo, dump.Subrange(dirent->location), dump);
-                    break;
-                case MD_EXCEPTION_STREAM:
-                    ParseExceptionStream(options, &crashinfo, dump.Subrange(dirent->location), dump);
-                    break;
-                case MD_MODULE_LIST_STREAM:
-                    ParseModuleStream(options, &crashinfo, dump.Subrange(dirent->location), dump);
-                    break;
-                default:
-                    if (options.verbose)
-                        fprintf(stderr, "Skipping %x\n", dirent->stream_type);
-            }
+            offset += filesz;
+            filesz = mapping.data.size();
+            phdr.p_filesz = mapping.data.size();
+            phdr.p_offset = offset;
         }
-
-        AugmentMappings(options, &crashinfo, dump);
-
-        // Write the ELF header. The file will look like:
-        //   ELF header
-        //   Phdr for the PT_NOTE
-        //   Phdr for each of the thread stacks
-        //   PT_NOTE
-        //   each of the thread stacks
-        Ehdr ehdr;
-        memset(&ehdr, 0, sizeof(Ehdr));
-        ehdr.e_ident[0] = ELFMAG0;
-        ehdr.e_ident[1] = ELFMAG1;
-        ehdr.e_ident[2] = ELFMAG2;
-        ehdr.e_ident[3] = ELFMAG3;
-        ehdr.e_ident[4] = ELF_CLASS;
-        ehdr.e_ident[5] = sex() ? ELFDATA2MSB : ELFDATA2LSB;
-        ehdr.e_ident[6] = EV_CURRENT;
-        ehdr.e_type = ET_CORE;
-        ehdr.e_machine = ELF_ARCH;
-        ehdr.e_version = EV_CURRENT;
-        ehdr.e_phoff = sizeof(Ehdr);
-        ehdr.e_ehsize = sizeof(Ehdr);
-        ehdr.e_phentsize = sizeof(Phdr);
-        ehdr.e_phnum = 1 + // PT_NOTE
-            crashinfo.mappings.size(); // memory mappings
-        ehdr.e_shentsize = sizeof(Shdr);
-        if (!writea(options.out_fd, &ehdr, sizeof(Ehdr)))
-            return 1;
-
-        size_t offset = sizeof(Ehdr) + ehdr.e_phnum * sizeof(Phdr);
-        size_t filesz = sizeof(Nhdr) + 8 + sizeof(prpsinfo) +
-            // sizeof(Nhdr) + 8 + sizeof(user) +
-            sizeof(Nhdr) + 8 + crashinfo.auxv_length
-            + crashinfo.threads.size()
-                * ((sizeof(Nhdr) + 8 + sizeof(prstatus))
-    #if defined(__i386__) || defined(__x86_64__)
-                + sizeof(Nhdr) + 8 + sizeof(user_fpregs_struct)
-    #endif
-    #if defined(__i386__)
-                + sizeof(Nhdr) + 8 + sizeof(user_fpxregs_struct)
-    #endif
-                );
-
-        Phdr phdr;
-        memset(&phdr, 0, sizeof(Phdr));
-        phdr.p_type = PT_NOTE;
-        phdr.p_offset = offset;
-        phdr.p_filesz = filesz;
+        else
+        {
+            phdr.p_filesz = 0;
+            phdr.p_offset = 0;
+        }
         if (!writea(options.out_fd, &phdr, sizeof(phdr)))
             return 1;
-
-        phdr.p_type = PT_LOAD;
-        phdr.p_align = 4096;
-        size_t note_align = phdr.p_align - ((offset + filesz) % phdr.p_align);
-        if (note_align == phdr.p_align)
-            note_align = 0;
-        offset += note_align;
-
-        for (std::map<uint64_t, CrashedProcess::Mapping>::const_iterator iter = crashinfo.mappings.begin(); iter != crashinfo.mappings.end();
-            ++iter)
-        {
-            const CrashedProcess::Mapping & mapping = iter->second;
-            if (mapping.permissions == 0xFFFFFFFF)
-            {
-                // This is a map that we found in MD_MODULE_LIST_STREAM (as opposed to
-                // MD_LINUX_MAPS). It lacks some of the information that we would like
-                // to include.
-                phdr.p_flags = PF_R;
-            }
-            else
-            {
-                phdr.p_flags = mapping.permissions;
-            }
-            phdr.p_vaddr = mapping.start_address;
-            phdr.p_memsz = mapping.end_address - mapping.start_address;
-            if (mapping.data.size())
-            {
-                offset += filesz;
-                filesz = mapping.data.size();
-                phdr.p_filesz = mapping.data.size();
-                phdr.p_offset = offset;
-            }
-            else
-            {
-                phdr.p_filesz = 0;
-                phdr.p_offset = 0;
-            }
-            if (!writea(options.out_fd, &phdr, sizeof(phdr)))
-                return 1;
-        }
-
-        Nhdr nhdr;
-        memset(&nhdr, 0, sizeof(nhdr));
-        nhdr.n_namesz = 5;
-        nhdr.n_descsz = sizeof(prpsinfo);
-        nhdr.n_type = NT_PRPSINFO;
-        if (!writea(options.out_fd, &nhdr, sizeof(nhdr)) || !writea(options.out_fd, "CORE\0\0\0\0", 8)
-            || !writea(options.out_fd, &crashinfo.prps, sizeof(prpsinfo)))
-        {
-            return 1;
-        }
-
-        nhdr.n_descsz = crashinfo.auxv_length;
-        nhdr.n_type = NT_AUXV;
-        if (!writea(options.out_fd, &nhdr, sizeof(nhdr)) || !writea(options.out_fd, "CORE\0\0\0\0", 8)
-            || !writea(options.out_fd, crashinfo.auxv, crashinfo.auxv_length))
-        {
-            return 1;
-        }
-
-        for (const auto & current_thread : crashinfo.threads)
-        {
-            if (current_thread.tid == crashinfo.exception.tid)
-            {
-                // Use the exception record's context for the crashed thread instead of
-                // the thread's own context. For the crashed thread the thread's own
-                // context is the state inside the exception handler. Using it would not
-                // result in the expected stack trace from the time of the crash.
-                // The stack memory has already been provided by current_thread.
-                WriteThread(options, crashinfo.exception, crashinfo.fatal_signal);
-                break;
-            }
-        }
-
-        for (const auto & current_thread : crashinfo.threads)
-        {
-            if (current_thread.tid != crashinfo.exception.tid)
-                WriteThread(options, current_thread, 0);
-        }
-
-        if (note_align)
-        {
-            google_breakpad::scoped_array<char> scratch(new char[note_align]);
-            memset(scratch.get(), 0, note_align);
-            if (!writea(options.out_fd, scratch.get(), note_align))
-                return 1;
-        }
-
-        for (std::map<uint64_t, CrashedProcess::Mapping>::const_iterator iter = crashinfo.mappings.begin(); iter != crashinfo.mappings.end();
-            ++iter)
-        {
-            const CrashedProcess::Mapping & mapping = iter->second;
-            if (mapping.data.size())
-            {
-                if (!writea(options.out_fd, mapping.data.c_str(), mapping.data.size()))
-                    return 1;
-            }
-        }
-
-        if (options.out_fd != STDOUT_FILENO)
-        {
-            close(options.out_fd);
-        }
-
-        return 0;
     }
+
+    Nhdr nhdr;
+    memset(&nhdr, 0, sizeof(nhdr));
+    nhdr.n_namesz = 5;
+    nhdr.n_descsz = sizeof(prpsinfo);
+    nhdr.n_type = NT_PRPSINFO;
+    if (!writea(options.out_fd, &nhdr, sizeof(nhdr)) || !writea(options.out_fd, "CORE\0\0\0\0", 8)
+        || !writea(options.out_fd, &crashinfo.prps, sizeof(prpsinfo)))
+    {
+        return 1;
+    }
+
+    nhdr.n_descsz = crashinfo.auxv_length;
+    nhdr.n_type = NT_AUXV;
+    if (!writea(options.out_fd, &nhdr, sizeof(nhdr)) || !writea(options.out_fd, "CORE\0\0\0\0", 8)
+        || !writea(options.out_fd, crashinfo.auxv, crashinfo.auxv_length))
+    {
+        return 1;
+    }
+
+    for (const auto & current_thread : crashinfo.threads)
+    {
+        if (current_thread.tid == crashinfo.exception.tid)
+        {
+            // Use the exception record's context for the crashed thread instead of
+            // the thread's own context. For the crashed thread the thread's own
+            // context is the state inside the exception handler. Using it would not
+            // result in the expected stack trace from the time of the crash.
+            // The stack memory has already been provided by current_thread.
+            WriteThread(options, crashinfo.exception, crashinfo.fatal_signal);
+            break;
+        }
+    }
+
+    for (const auto & current_thread : crashinfo.threads)
+    {
+        if (current_thread.tid != crashinfo.exception.tid)
+            WriteThread(options, current_thread, 0);
+    }
+
+    if (note_align)
+    {
+        google_breakpad::scoped_array<char> scratch(new char[note_align]);
+        memset(scratch.get(), 0, note_align);
+        if (!writea(options.out_fd, scratch.get(), note_align))
+            return 1;
+    }
+
+    for (std::map<uint64_t, CrashedProcess::Mapping>::const_iterator iter = crashinfo.mappings.begin(); iter != crashinfo.mappings.end();
+         ++iter)
+    {
+        const CrashedProcess::Mapping & mapping = iter->second;
+        if (mapping.data.size())
+        {
+            if (!writea(options.out_fd, mapping.data.c_str(), mapping.data.size()))
+                return 1;
+        }
+    }
+
+    if (options.out_fd != STDOUT_FILENO)
+    {
+        close(options.out_fd);
+    }
+
+    return 0;
+}
 }

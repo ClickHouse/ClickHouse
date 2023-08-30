@@ -1,12 +1,9 @@
-
 #include "MinidumpWriter.h"
+#include <filesystem>
+#include <memory>
 #include <fmt/ostream.h>
 #include <sys/wait.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <filesystem>
-#include <memory>
-
-
 
 namespace MinidumpWriter
 {
