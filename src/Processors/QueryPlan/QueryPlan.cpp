@@ -168,7 +168,6 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 
     QueryPipelineBuilderPtr last_pipeline;
 
-
     std::stack<Frame> stack;
     stack.push(Frame{.node = root});
 

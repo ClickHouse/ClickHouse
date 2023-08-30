@@ -16,7 +16,6 @@
 #include <base/IPv4andIPv6.h>
 #include <base/DayNum.h>
 
-
 namespace DB
 {
 
@@ -285,6 +284,11 @@ decltype(auto) castToNearestFieldType(T && x)
         return U(x);
 }
 
+template <typename T>
+concept not_field_or_bool_or_stringlike
+    = (!std::is_same_v<std::decay_t<T>, Field> && !std::is_same_v<std::decay_t<T>, bool>
+       && !std::is_same_v<NearestFieldType<std::decay_t<T>>, String>);
+
 /** 32 is enough. Round number is used for alignment and for better arithmetic inside std::vector.
   * NOTE: Actually, sizeof(std::string) is 32 when using libc++, so Field is 40 bytes.
   */
@@ -347,13 +351,6 @@ public:
             || which == Types::Decimal256;
     }
 
-    /// Templates to avoid ambiguity.
-    template <typename T, typename Z = void *>
-    using enable_if_not_field_or_bool_or_stringlike_t = std::enable_if_t<
-        !std::is_same_v<std::decay_t<T>, Field> &&
-        !std::is_same_v<std::decay_t<T>, bool> &&
-        !std::is_same_v<NearestFieldType<std::decay_t<T>>, String>, Z>;
-
     Field() : Field(Null{}) {}
 
     /** Despite the presence of a template constructor, this constructor is still needed,
@@ -370,7 +367,8 @@ public:
     }
 
     template <typename T>
-    Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T> = nullptr); /// NOLINT
+    requires not_field_or_bool_or_stringlike<T>
+    Field(T && rhs); /// NOLINT
 
     Field(bool rhs) : Field(castToNearestFieldType(rhs)) /// NOLINT
     {
@@ -425,7 +423,8 @@ public:
     /// 1. float <--> int needs explicit cast
     /// 2. customized types needs explicit cast
     template <typename T>
-    enable_if_not_field_or_bool_or_stringlike_t<T, Field> & /// NOLINT
+    requires not_field_or_bool_or_stringlike<T>
+    Field & /// NOLINT
     operator=(T && rhs);
 
     Field & operator= (bool rhs)
@@ -896,14 +895,16 @@ auto & Field::safeGet()
 
 
 template <typename T>
-Field::Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T>)
+requires not_field_or_bool_or_stringlike<T>
+Field::Field(T && rhs)
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
     createConcrete(std::forward<decltype(val)>(val));
 }
 
 template <typename T>
-Field::enable_if_not_field_or_bool_or_stringlike_t<T, Field> & /// NOLINT
+requires not_field_or_bool_or_stringlike<T>
+Field & /// NOLINT
 Field::operator=(T && rhs)
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
@@ -1005,7 +1006,6 @@ void writeFieldText(const Field & x, WriteBuffer & buf);
 String toString(const Field & x);
 
 std::string_view fieldTypeToString(Field::Types::Which type);
-
 }
 
 template <>
