@@ -450,11 +450,11 @@ void checkForUsersNotInMainConfig(
 
 /// Unused in other builds
 #if defined(OS_LINUX)
-static String readString(const String & path)
+static String readLine(const String & path)
 {
     ReadBufferFromFile in(path);
     String contents;
-    readStringUntilEOF(contents, in);
+    readStringUntilNewlineInto(contents, in);
     return contents;
 }
 
@@ -479,9 +479,16 @@ static void sanityChecks(Server & server)
 #if defined(OS_LINUX)
     try
     {
+        const std::unordered_set<std::string> fastClockSources = {
+            // ARM clock
+            "arch_sys_counter",
+            // KVM guest clock
+            "kvm-clock",
+            // X86 clock
+            "tsc",
+        };
         const char * filename = "/sys/devices/system/clocksource/clocksource0/current_clocksource";
-        String clocksource = readString(filename);
-        if (clocksource.find("tsc") == std::string::npos && clocksource.find("kvm-clock") == std::string::npos)
+        if (!fastClockSources.contains(readLine(filename)))
             server.context()->addWarningMessage("Linux is not using a fast clock source. Performance can be degraded. Check " + String(filename));
     }
     catch (...)
@@ -501,7 +508,7 @@ static void sanityChecks(Server & server)
     try
     {
         const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
-        if (readString(filename).find("[always]") != std::string::npos)
+        if (readLine(filename).find("[always]") != std::string::npos)
             server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\". Check " + String(filename));
     }
     catch (...)
