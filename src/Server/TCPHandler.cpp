@@ -115,13 +115,14 @@ NameToNameMap convertToQueryParameters(const Settings & passed_params)
     return query_parameters;
 }
 
-//This function corrects the wrong client_name from the old client.
+// This function corrects the wrong client_name from the old client.
 // Old clients 28.7 and some intermediate versions of 28.7 were sending different ClientInfo.client_name
 // "ClickHouse client" was sent with the hello message.
 // "ClickHouse" or "ClickHouse " was sent with the query message.
-void correctQueryClientInfo(ClientInfo & client_info)
+void correctQueryClientInfo(const ClientInfo & session_client_info, ClientInfo & client_info)
 {
     if (client_info.getVersionNumber() <= VersionNumber(23, 8, 1) &&
+        session_client_info.client_name == "ClickHouse client" &&
         (client_info.client_name == "ClickHouse" || client_info.client_name == "ClickHouse "))
     {
         client_info.client_name = "ClickHouse client";
@@ -1547,7 +1548,7 @@ void TCPHandler::receiveQuery()
     {
         client_info.read(*in, client_tcp_protocol_version);
 
-        correctQueryClientInfo(client_info);
+        correctQueryClientInfo(session->getClientInfo(), client_info);
         const auto & config_ref = Context::getGlobalContextInstance()->getServerSettings();
         if (config_ref.validate_tcp_client_information)
             validateClientInfo(session->getClientInfo(), client_info);
