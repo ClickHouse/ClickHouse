@@ -21,7 +21,7 @@ def start_cluster():
         cluster.shutdown()
 
 
-def back_table_up(backup_name):
+def backup_table(backup_name):
     instance.query("CREATE DATABASE test")
     instance.query("CREATE TABLE test.table(x UInt32) ENGINE=MergeTree ORDER BY x")
     instance.query("INSERT INTO test.table SELECT number FROM numbers(10)")
@@ -36,7 +36,7 @@ def test_backup_log():
     backup_name = "File('/backups/test_backup/')"
     assert instance.query("SELECT * FROM system.tables WHERE name = 'backup_log'") == ""
 
-    backup_id = back_table_up(backup_name)
+    backup_id = backup_table(backup_name)
     assert instance.query(
         f"SELECT status, error FROM system.backup_log WHERE id='{backup_id}' ORDER BY event_date, event_time_microseconds"
     ) == TSV([["CREATING_BACKUP", ""], ["BACKUP_CREATED", ""]])
