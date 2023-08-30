@@ -4,6 +4,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Functions/FunctionsComparison.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/isNull.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ActionsDAG.h>
@@ -67,6 +68,9 @@ static ActionsDAGPtr buildFilterDefaultDAG(const Block & in_header, const Block 
     FunctionOverloadResolverPtr func_builder_equals
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(false));
 
+    FunctionOverloadResolverPtr func_builder_is_null
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIsNull>());
+
     dag->getOutputs().reserve(1 + in_header.columns());
     dag->getOutputs().push_back(nullptr);
 
@@ -80,10 +84,18 @@ static ActionsDAGPtr buildFilterDefaultDAG(const Block & in_header, const Block 
         const ActionsDAG::Node * atom = &dag->addInput(*out_col);
         dag->getOutputs().push_back(atom);
 
-        ColumnPtr default_col = out_col->type->createColumnConstWithDefaultValue(0);
-        const ActionsDAG::Node * default_node = &dag->addColumn({default_col, out_col->type, {}});
+        if (atom->result_type->isNullable())
+        {
+            atom = &dag->addFunction(func_builder_is_null, {atom}, {});
+        }
+        else
+        {
+            ColumnPtr default_col = out_col->type->createColumnConstWithDefaultValue(0);
+            const ActionsDAG::Node * default_node = &dag->addColumn({default_col, out_col->type, {}});
 
-        atom = &dag->addFunction(func_builder_equals, {atom, default_node}, {});
+            atom = &dag->addFunction(func_builder_equals, {atom, default_node}, {});
+        }
+
         atoms.push_back(atom);
     }
 
@@ -138,15 +150,15 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     {
         const auto & in_header = getInputStreams()[*filter_defaults_idx].header;
         const auto & out_header = getOutputStream().header;
-        std::cerr << in_header.dumpStructure() << std::endl;
-        std::cerr << out_header.dumpStructure() << std::endl;
+        // std::cerr << in_header.dumpStructure() << std::endl;
+        // std::cerr << out_header.dumpStructure() << std::endl;
 
         if (auto filter_defaults = buildFilterDefaultDAG(in_header, out_header))
         {
             auto filter_defaults_expr = std::make_shared<ExpressionActions>(filter_defaults, settings.getActionsSettings());
-            std::cerr << "===================== filter_defaults\n";
-            std::cerr << res->getHeader().dumpStructure() << std::endl;
-            std::cerr << filter_defaults_expr->dumpActions() << std::endl;
+            // std::cerr << "===================== filter_defaults\n";
+            // std::cerr << res->getHeader().dumpStructure() << std::endl;
+            // std::cerr << filter_defaults_expr->dumpActions() << std::endl;
             res->addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
             {
                 bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
