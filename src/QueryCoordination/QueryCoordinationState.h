@@ -6,15 +6,15 @@
 namespace DB
 {
 
-class PlanFragment;
+class Fragment;
 
-using PlanFragmentPtr = std::shared_ptr<PlanFragment>;
-using PlanFragmentPtrs = std::vector<PlanFragmentPtr>;
+using FragmentPtr = std::shared_ptr<Fragment>;
+using FragmentPtrs = std::vector<FragmentPtr>;
 
 class QueryCoordinationState {
 
 public:
-    PlanFragmentPtrs fragments;
+    FragmentPtrs fragments;
     Pipelines pipelines;
     std::unordered_map<String, IConnectionPool::Entry> remote_host_connection;
     StorageLimitsList storage_limits;

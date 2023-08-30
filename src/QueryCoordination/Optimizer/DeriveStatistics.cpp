@@ -18,10 +18,10 @@ Statistics DeriveStatistics::visitDefault()
     return statistics;
 }
 
-Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
+Statistics DeriveStatistics::visit(ReadFromMergeTree & /*step*/)
 {
     Statistics statistics;
-    statistics.setOutputRowSize(step.getAnalysisResult().selected_rows);
+    statistics.setOutputRowSize(/*step.getAnalysisResult().selected_rows*/ 100000);
     return statistics;
 }
 

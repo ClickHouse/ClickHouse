@@ -2,7 +2,7 @@
 
 #include <Interpreters/Cluster.h>
 #include <QueryCoordination/IO/FragmentsRequest.h>
-//#include <QueryCoordination/Fragments/PlanFragment.h>
+#include <QueryCoordination/Fragments/Fragment.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -11,14 +11,14 @@ namespace DB
 using Hosts = std::vector<String>;
 using FragmentID = Int32;
 
-using HostToFragments = std::unordered_map<String, PlanFragmentPtrs>;
+using HostToFragments = std::unordered_map<String, FragmentPtrs>;
 using FragmentToHosts = std::unordered_map<FragmentID , Hosts>;
 
 
 class Coordinator
 {
 public:
-    Coordinator(const PlanFragmentPtrs & fragments_, ContextMutablePtr context_, String query_)
+    Coordinator(const FragmentPtrs & fragments_, ContextMutablePtr context_, String query_)
         : log(&Poco::Logger::get("Coordinator"))
         , fragments(fragments_)
         , context(context_)
@@ -41,15 +41,15 @@ private:
 
     void sendBeginExecutePipelines();
 
-    std::unordered_map<FragmentID, FragmentRequest> buildFragmentRequest();
+    std::unordered_map<UInt32, FragmentRequest> buildFragmentRequest();
 
     Poco::Logger * log;
 
-    const PlanFragmentPtrs & fragments;
+    const FragmentPtrs & fragments;
 
     HostToFragments host_fragments;
     FragmentToHosts fragment_hosts;
-    std::unordered_map<FragmentID , PlanFragmentPtr> id_fragment;
+    std::unordered_map<UInt32 , FragmentPtr> id_fragment;
 
     // all dest
     std::unordered_map<String, IConnectionPool::Entry> host_connection;

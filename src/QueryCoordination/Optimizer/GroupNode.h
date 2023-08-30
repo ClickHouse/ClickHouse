@@ -26,87 +26,45 @@ public:
 
     using PropAndChildrenProp = std::unordered_map<PhysicalProperties, ChildrenPropCost, PhysicalProperties::HashFunction>;
 
-    GroupNode() = default;
+    GroupNode(QueryPlanStepPtr step_, const std::vector<Group *> & children_, bool is_enforce_node_ = false);
 
-    explicit GroupNode(QueryPlanStepPtr step_) : step(step_) {}
-    GroupNode(QueryPlanStepPtr step_, bool is_enforce_node_) : step(step_), is_enforce_node(is_enforce_node_) {}
+    ~GroupNode();
 
-    GroupNode(QueryPlanStepPtr step_, const std::vector<Group *> & children_) : step(step_), children(children_) {}
+    GroupNode(GroupNode &&) noexcept;
 
-    ~GroupNode() = default;
-    GroupNode(GroupNode &&) noexcept = default;
-    GroupNode & operator=(GroupNode &&) noexcept = default;
+    void addChild(Group & child);
 
-    void addChild(Group & group)
-    {
-        children.emplace_back(&group);
-    }
+    size_t childSize() const;
 
-    size_t childSize() const
-    {
-        return children.size();
-    }
+    std::vector<Group *> getChildren() const;
 
-    std::vector<Group *> getChildren() const
-    {
-        return children;
-    }
+    QueryPlanStepPtr getStep() const;
 
-    void replaceChildren(const std::vector<Group *> & children_)
-    {
-        children = children_;
-    }
+    Group & getGroup();
 
-    QueryPlanStepPtr getStep() const
-    {
-        return step;
-    }
+    void setGroup(Group * group_);
 
     void updateBestChild(const PhysicalProperties & physical_properties, const std::vector<PhysicalProperties> & child_properties, Float64 child_cost);
 
     const std::vector<PhysicalProperties> & getChildrenProp(const PhysicalProperties & physical_properties);
 
-    void addRequiredChildrenProp(ChildrenProp & child_pro)
-    {
-        required_children_prop.emplace_back(child_pro);
-    }
+    void addRequiredChildrenProp(ChildrenProp & child_pro);
 
-    AlternativeChildrenProp & getRequiredChildrenProp()
-    {
-        return required_children_prop;
-    }
+    AlternativeChildrenProp & getRequiredChildrenProp();
 
-    bool hasRequiredChildrenProp() const
-    {
-        return !required_children_prop.empty();
-    }
+    bool hasRequiredChildrenProp() const;
 
-    bool isEnforceNode() const
-    {
-        return is_enforce_node;
-    }
+    bool isEnforceNode() const;
 
     String toString() const;
 
-    UInt32 getId() const
-    {
-        return id;
-    }
+    UInt32 getId() const;
 
-    void setId(UInt32 id_)
-    {
-        id = id_;
-    }
+    void setId(UInt32 id_);
 
-    void setDerivedStat()
-    {
-        is_derived_stat = true;
-    }
+    void setDerivedStat();
 
-    bool isDerivedStat() const
-    {
-        return is_derived_stat;
-    }
+    bool isDerivedStat() const;
 
     template <class Visitor>
     typename Visitor::ResultType accept(Visitor & visitor)
@@ -115,20 +73,22 @@ public:
     }
 
 private:
-    UInt32 id = 0;
-
     QueryPlanStepPtr step;
 
-    bool is_enforce_node = false;
+    UInt32 id;
+
+    Group * group;
 
     std::vector<Group *> children;
+
+    bool is_enforce_node;
 
     /// output properties and input properties
     PropAndChildrenProp prop_to_best_child;
 
     AlternativeChildrenProp required_children_prop;
 
-    bool is_derived_stat = false;
+    bool is_derived_stat;
 };
 
 }

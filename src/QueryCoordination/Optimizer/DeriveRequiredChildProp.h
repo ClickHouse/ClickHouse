@@ -34,6 +34,16 @@ public:
 
     AlternativeChildrenProp visit(ExchangeDataStep & step) override;
 
+    AlternativeChildrenProp visit(CreatingSetStep & step) override;
+
+    AlternativeChildrenProp visit(ExtremesStep & step) override;
+
+    AlternativeChildrenProp visit(RollupStep & step) override;
+
+    AlternativeChildrenProp visit(CubeStep & step) override;
+
+    AlternativeChildrenProp visit(TotalsHavingStep & step) override;
+
 private:
     GroupNode & group_node;
 };

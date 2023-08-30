@@ -78,6 +78,26 @@ public:
         {
             return visit(*expression_step);
         }
+        else if (auto * creating_set_step = typeid_cast<CreatingSetStep *>(step.get()))
+        {
+            return visit(*creating_set_step);
+        }
+        else if (auto * extremes_Step = typeid_cast<ExtremesStep *>(step.get()))
+        {
+            return visit(*extremes_Step);
+        }
+        else if (auto * rollup_step = typeid_cast<RollupStep *>(step.get()))
+        {
+            return visit(*rollup_step);
+        }
+        else if (auto * cube_step = typeid_cast<CubeStep *>(step.get()))
+        {
+            return visit(*cube_step);
+        }
+        else if (auto * totals_having_step = typeid_cast<TotalsHavingStep *>(step.get()))
+        {
+            return visit(*totals_having_step);
+        }
         else
         {
             return visitDefault();
@@ -108,6 +128,15 @@ public:
 
     virtual R visit(ExchangeDataStep & /*step*/) { return visitDefault(); }
 
+    virtual R visit(CreatingSetStep & /*step*/) { return visitDefault(); }
+
+    virtual R visit(ExtremesStep & /*step*/) { return visitDefault(); }
+
+    virtual R visit(RollupStep & /*step*/) { return visitDefault(); }
+
+    virtual R visit(CubeStep & /*step*/) { return visitDefault(); }
+
+    virtual R visit(TotalsHavingStep & /*step*/) { return visitDefault(); }
 };
 
 }

@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/WindowStep.h>
 #include <QueryCoordination/Optimizer/GroupNode.h>
 #include <QueryCoordination/Optimizer/StepTree.h>
+#include <QueryCoordination/Optimizer/GroupStep.h>
 #include <Common/typeid_cast.h>
 
 
@@ -24,7 +25,8 @@ std::vector<StepTree> trySplitLimit(GroupNode & group_node, ContextPtr context)
     if (limit_step->getType() != LimitStep::Type::Unknown)
         return {};
 
-    std::vector<StepTree> res;
+    Group * child_group = group_node.getChildren()[0];
+    auto child_step = std::make_shared<GroupStep>(limit_step->getInputStreams()[0], *child_group);
 
     auto pre_limit = std::make_shared<LimitStep>(limit_step->getInputStreams().front(), limit_step->getLimitForSorting(), 0, context->getSettings().exact_rows_before_limit);
     pre_limit->setType(LimitStep::Type::Local);
@@ -32,11 +34,13 @@ std::vector<StepTree> trySplitLimit(GroupNode & group_node, ContextPtr context)
     auto final_limit = std::make_shared<LimitStep>(limit_step->getInputStreams().front(), limit_step->getLimit(), limit_step->getOffset(), context->getSettings().exact_rows_before_limit);
     final_limit->setType(LimitStep::Type::Global);
 
-    StepTree sub_query_plan;
-    sub_query_plan.addStep(pre_limit);
-    sub_query_plan.addStep(final_limit);
+    StepTree step_tree;
+    step_tree.addStep(child_step);
+    step_tree.addStep(pre_limit);
+    step_tree.addStep(final_limit);
 
-    res.emplace_back(std::move(sub_query_plan));
+    std::vector<StepTree> res;
+    res.emplace_back(std::move(step_tree));
     return res;
 }
 

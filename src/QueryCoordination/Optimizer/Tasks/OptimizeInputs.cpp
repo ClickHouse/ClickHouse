@@ -78,7 +78,7 @@ void OptimizeInputs::execute()
         if (frame->child_idx == static_cast<Int32>(group_node.getChildren().size()))
         {
             /// derivation output prop by required_prop and children_prop
-            DeriveOutputProp output_prop_visitor(required_prop, frame->actual_children_prop);
+            DeriveOutputProp output_prop_visitor(required_prop, frame->actual_children_prop, task_context->getQueryContext());
             auto output_prop = group_node.accept(output_prop_visitor);
 
             Float64 child_cost = frame->total_cost - frame->local_cost;
@@ -106,30 +106,8 @@ Float64 OptimizeInputs::enforceGroupNode(
     const PhysicalProperties & required_prop,
     const PhysicalProperties & output_prop)
 {
-    std::shared_ptr<ExchangeDataStep> exchange_step;
-
-    switch (required_prop.distribution.type)
-    {
-        case PhysicalProperties::DistributionType::Singleton: {
-            exchange_step = std::make_shared<ExchangeDataStep>(
-                PhysicalProperties::DistributionType::Singleton, group_node.getStep()->getOutputStream());
-            break;
-        }
-        case PhysicalProperties::DistributionType::Replicated: {
-            exchange_step = std::make_shared<ExchangeDataStep>(
-                PhysicalProperties::DistributionType::Replicated, group_node.getStep()->getOutputStream());
-            // exchange_step = std::make_shared<ExchangeDataStep>(Replicated);
-            break;
-        }
-        case PhysicalProperties::DistributionType::Hashed: {
-            exchange_step
-                = std::make_shared<ExchangeDataStep>(PhysicalProperties::DistributionType::Hashed, group_node.getStep()->getOutputStream());
-            // exchange_step = std::make_shared<ExchangeDataStep>(Hashed);
-            break;
-        }
-        default:
-            break;
-    }
+    std::shared_ptr<ExchangeDataStep> exchange_step
+        = std::make_shared<ExchangeDataStep>(required_prop.distribution, group_node.getStep()->getOutputStream());
 
     if (!output_prop.sort_description.empty())
     {
@@ -151,12 +129,12 @@ Float64 OptimizeInputs::enforceGroupNode(
             exchange_step->setSortInfo(sort_info);
         }
     }
-
-    GroupNode group_enforce_node(exchange_step, true);
-    group_enforce_node.setId(task_context->getMemo().fetchGroupNodeId());
-
     auto & group = task_context->getCurrentGroup();
-    auto & added_node = group.addGroupNode(group_enforce_node);
+
+    GroupNode group_enforce_node(exchange_step, {}, true);
+
+    auto group_node_id = task_context->getMemo().fetchGroupNodeId();
+    auto & added_node = group.addGroupNode(group_enforce_node, group_node_id);
 
     auto child_cost = group.getCostByProp(output_prop);
 

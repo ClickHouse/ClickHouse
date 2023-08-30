@@ -5,17 +5,47 @@ namespace DB
 
 bool PhysicalProperties::operator==(const PhysicalProperties & other) const
 {
-    bool sort_same = sort_description.size() == commonPrefix(sort_description, other.sort_description).size();
-    bool distribution_same = distribution.type == other.distribution.type && distribution.keys == other.distribution.keys;
-    return sort_same && distribution_same;
+    if (sort_description.size() != other.sort_description.size())
+        return false;
+
+    if (sort_description.size() != commonPrefix(sort_description, other.sort_description).size())
+        return false;
+
+    if (other.distribution.keys.size() != distribution.keys.size())
+        return false;
+
+    if (other.distribution.distribution_by_buket_num != distribution.distribution_by_buket_num)
+        return false;
+
+    for (const auto & key : distribution.keys)
+    {
+        if (std::count(other.distribution.keys.begin(), other.distribution.keys.end(), key) != 1)
+            return false;
+    }
+
+    return distribution.type == other.distribution.type;
 }
 
 bool PhysicalProperties::satisfy(const PhysicalProperties & required) const
 {
+    bool sort_satisfy = required.sort_description.size() == commonPrefix(sort_description, required.sort_description).size();
+
+    if (!sort_satisfy)
+        return false;
+
     if (required.distribution.type == DistributionType::Any)
         return true;
 
-    return *this == required;
+    if (required.distribution.distribution_by_buket_num != distribution.distribution_by_buket_num)
+        return false;
+
+    for (const auto & key : distribution.keys)
+    {
+        if (std::count(required.distribution.keys.begin(), required.distribution.keys.end(), key) != 1)
+            return false;
+    }
+
+    return distribution.type == required.distribution.type;
 }
 
 String PhysicalProperties::toString() const

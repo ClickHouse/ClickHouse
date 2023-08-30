@@ -16,7 +16,7 @@ namespace DB
 class ExchangeDataSource final : public ISource, public std::enable_shared_from_this<ExchangeDataSource>
 {
 public:
-    ExchangeDataSource(const DataStream & data_stream, Int32 fragment_id_, Int32 plan_id_, const String & source_)
+    ExchangeDataSource(const DataStream & data_stream, UInt32 fragment_id_, UInt32 plan_id_, const String & source_)
         : ISource(data_stream.header, false), fragment_id(fragment_id_), plan_id(plan_id_), source(source_)
     {
         const auto & sample = getPort().getHeader();
@@ -48,7 +48,7 @@ public:
 
     void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) override;
 
-    Int32 getPlanId() const
+    UInt32 getPlanId() const
     {
         return plan_id;
     }
@@ -73,9 +73,9 @@ private:
 
     BlocksList block_list;
 
-    Int32 fragment_id;
+    UInt32 fragment_id;
 
-    Int32 plan_id;
+    UInt32 plan_id;
 
     String source;
 

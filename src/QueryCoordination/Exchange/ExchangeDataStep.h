@@ -25,17 +25,17 @@ public:
     {
     }
 
-    ExchangeDataStep(PhysicalProperties::DistributionType type_, const DataStream & data_stream)
-        : ISourceStep(data_stream), type(type_)
+    ExchangeDataStep(PhysicalProperties::Distribution distribution_, const DataStream & data_stream)
+        : ISourceStep(data_stream), distribution(distribution_)
     {
-        setStepDescription(PhysicalProperties::distributionType(type));
+        setStepDescription(PhysicalProperties::distributionType(distribution.type));
     }
 
     String getName() const override { return "ExchangeData"; }
 
     void initializePipeline(QueryPipelineBuilder & /*pipeline*/, const BuildQueryPipelineSettings & /*settings*/) override;
 
-    void setPlanID(Int32 plan_id_)
+    void setPlanID(UInt32 plan_id_)
     {
         plan_id = plan_id_;
     }
@@ -61,27 +61,42 @@ public:
         return sort_info.result_description;
     }
 
-    PhysicalProperties::DistributionType getDistributionType()
+    PhysicalProperties::DistributionType getDistributionType() const
     {
-        return type;
+        return distribution.type;
+    }
+
+    bool isSingleton() const
+    {
+        return distribution.type == PhysicalProperties::DistributionType::Singleton;
+    }
+
+    const PhysicalProperties::Distribution & getDistribution() const
+    {
+        return distribution;
+    }
+
+    void setFragmentId(UInt32 fragment_id_)
+    {
+        fragment_id = fragment_id_;
     }
 
 private:
     void mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_);
 
-    Int32 fragment_id;
+    UInt32 fragment_id;
 
     std::shared_ptr<const StorageLimitsList> storage_limits;
 
     std::vector<String> sources;
 
-    Int32 plan_id;
+    UInt32 plan_id;
 
     bool has_sort_info = false;
 
     SortInfo sort_info;
 
-    PhysicalProperties::DistributionType type;
+    PhysicalProperties::Distribution distribution;
 };
 
 }

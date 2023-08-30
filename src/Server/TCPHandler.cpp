@@ -447,7 +447,13 @@ void TCPHandler::runImpl()
             if (state.fragments_request && query_context->getSettingsRef().allow_experimental_query_coordination
                 && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
             {
-                state.io.query_coord_state.pipelines = fragmentsToPipelines(state.io.query_coord_state.fragments, state.fragments_request->fragmentsRequest(), query_context->getCurrentQueryId(), query_context->getSettingsRef());
+                auto specified_cluster = query_context->getClusters().find(query_context->getQueryCoordinationMetaInfo().cluster_name)->second;
+                state.io.query_coord_state.pipelines = fragmentsToPipelines(
+                    state.io.query_coord_state.fragments,
+                    state.fragments_request->fragmentsRequest(),
+                    query_context->getCurrentQueryId(),
+                    query_context->getSettingsRef(),
+                    specified_cluster);
 
                 /// send ready
                 writeVarUInt(Protocol::Server::PipelinesReady, *out);
@@ -1722,6 +1728,12 @@ void TCPHandler::receiveFragments()
     fragments_request.query = state.query;
     fragments_request.read(*in);
     state.fragments_request.emplace(fragments_request);
+
+    QueryCoordinationMetaInfo meta_info;
+    meta_info.read(*in);
+
+    LOG_DEBUG(log, "Receive QueryCoordinationMetaInfo {}", meta_info.toString());
+    query_context->addQueryCoordinationMetaInfo(meta_info.cluster_name, meta_info.storages, meta_info.sharding_keys);
 }
 
 void TCPHandler::receiveQuery()

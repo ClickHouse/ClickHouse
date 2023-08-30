@@ -9,6 +9,9 @@
 #include <QueryCoordination/Fragments/DistributedFragmentBuilder.h>
 #include <QueryCoordination/Pipelines/PipelinesBuilder.h>
 #include <QueryCoordination/fragmentsToPipelines.h>
+#include <QueryCoordination/QueryCoordinationMetaInfo.h>
+#include <QueryCoordination/Exchange/ExchangeDataStep.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -46,7 +49,7 @@ void Coordinator::schedulePrepareDistributedPipelines()
 
 String Coordinator::assignFragmentToHost()
 {
-    std::unordered_map<FragmentID, std::vector<String>> scan_fragment_hosts;
+    std::unordered_map<UInt32, std::vector<String>> scan_fragment_hosts;
     String local_host_port;
     for (const auto & fragment : fragments)
     {
@@ -57,7 +60,8 @@ String Coordinator::assignFragmentToHost()
         {
             if (auto * read_step = dynamic_cast<ReadFromMergeTree *>(node.step.get()))
             {
-                for (const auto & shard_info : fragment->getCluster()->getShardsInfo())
+                auto cluster = context->getClusters().find(context->getQueryCoordinationMetaInfo().cluster_name)->second;
+                for (const auto & shard_info : cluster->getShardsInfo())
                 {
                     const auto & table_name = read_step->getStorageSnapshot()->storage.getStorageID().getQualifiedName();
 
@@ -105,9 +109,9 @@ String Coordinator::assignFragmentToHost()
 
     auto process_other_fragment
         = [this, &local_host_port](
-              std::unordered_map<FragmentID, std::vector<String>> & fragment_hosts_) -> std::unordered_map<FragmentID, std::vector<String>>
+              std::unordered_map<UInt32, std::vector<String>> & fragment_hosts_) -> std::unordered_map<UInt32, std::vector<String>>
     {
-        std::unordered_map<FragmentID, std::vector<String>> this_fragment_hosts;
+        std::unordered_map<UInt32, std::vector<String>> this_fragment_hosts;
         for (const auto & [fragment_id, hosts] : fragment_hosts_)
         {
             auto dest_fragment_id = id_fragment[fragment_id]->getDestFragmentID();
@@ -127,7 +131,7 @@ String Coordinator::assignFragmentToHost()
             if (fragment_hosts_.contains(dest_fragment->getFragmentID()))
                 return this_fragment_hosts;
 
-            if (!dest_fragment->isPartitioned())
+            if (typeid_cast<ExchangeDataStep *>(id_fragment[fragment_id]->getDestExchangeNode()->step.get())->isSingleton())
             {
                 if (!dest_fragment->hasDestFragment()) /// root fragment
                 {
@@ -160,10 +164,10 @@ String Coordinator::assignFragmentToHost()
         return this_fragment_hosts;
     };
 
-    std::optional<std::unordered_map<FragmentID, std::vector<String>>> fragment_hosts_(scan_fragment_hosts);
+    std::optional<std::unordered_map<UInt32, std::vector<String>>> fragment_hosts_(scan_fragment_hosts);
     while (!fragment_hosts_->empty())
     {
-        std::unordered_map<FragmentID, std::vector<String>> tmp_fragment_hosts = process_other_fragment(fragment_hosts_.value());
+        std::unordered_map<UInt32, std::vector<String>> tmp_fragment_hosts = process_other_fragment(fragment_hosts_.value());
         fragment_hosts_->swap(tmp_fragment_hosts);
     }
 
@@ -206,9 +210,9 @@ bool Coordinator::isUpToDate(const QualifiedTableName & table_name)
     return is_up_to_date;
 }
 
-std::unordered_map<FragmentID, FragmentRequest> Coordinator::buildFragmentRequest()
+std::unordered_map<UInt32, FragmentRequest> Coordinator::buildFragmentRequest()
 {
-    std::unordered_map<FragmentID, FragmentRequest> fragment_requests;
+    std::unordered_map<UInt32, FragmentRequest> fragment_requests;
 
     /// assign fragment id
     for (auto & [fragment_id, _] : fragment_hosts)
@@ -224,11 +228,11 @@ std::unordered_map<FragmentID, FragmentRequest> Coordinator::buildFragmentReques
 
         auto fragment = id_fragment[fragment_id];
         auto dest_fragment = id_fragment[fragment->getDestFragmentID()];
-        auto dest_exchange_id = fragment->getDestExchangeID();
 
         Destinations data_to;
         if (dest_fragment)
         {
+            auto dest_exchange_id = fragment->getDestExchangeID();
             auto dest_fragment_id = dest_fragment->getFragmentID();
             data_to = fragment_hosts[dest_fragment_id];
 
@@ -247,7 +251,7 @@ std::unordered_map<FragmentID, FragmentRequest> Coordinator::buildFragmentReques
 
 void Coordinator::sendFragmentsToPreparePipelines()
 {
-    const std::unordered_map<FragmentID, FragmentRequest> & fragment_requests = buildFragmentRequest();
+    const std::unordered_map<UInt32, FragmentRequest> & fragment_requests = buildFragmentRequest();
 
     for (const auto & [f_id, request] : fragment_requests)
     {
@@ -275,7 +279,8 @@ void Coordinator::sendFragmentsToPreparePipelines()
         if (host == local_host)
         {
             /// local direct to pipelines
-            pipelines = fragmentsToPipelines(fragments, fragments_request.fragmentsRequest(), context->getCurrentQueryId(), context->getSettingsRef());
+            auto cluster = context->getClusters().find(context->getQueryCoordinationMetaInfo().cluster_name)->second;
+            pipelines = fragmentsToPipelines(fragments, fragments_request.fragmentsRequest(), context->getCurrentQueryId(), context->getSettingsRef(), cluster);
         }
         else
         {
@@ -287,7 +292,8 @@ void Coordinator::sendFragmentsToPreparePipelines()
                 QueryProcessingStage::Complete,
                 &context->getSettingsRef(),
                 &modified_client_info,
-                fragments_request);
+                fragments_request,
+                context->getQueryCoordinationMetaInfo());
         }
     }
 
@@ -297,6 +303,9 @@ void Coordinator::sendFragmentsToPreparePipelines()
         if (host != local_host)
         {
             auto package = host_connection[host]->receivePacket();
+
+            if (package.type == Protocol::Server::Exception)
+                package.exception->rethrow();
 
             size_t max_try_num = 5;
             size_t try_num = 0;

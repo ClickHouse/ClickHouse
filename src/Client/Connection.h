@@ -36,6 +36,7 @@ class NativeReader;
 class NativeWriter;
 class FragmentsRequest;
 struct ExchangeDataRequest;
+class QueryCoordinationMetaInfo;
 
 
 /** Connection with database server, to use by client.
@@ -128,7 +129,8 @@ public:
         UInt64 stage,
         const Settings * settings,
         const ClientInfo * client_info,
-        const FragmentsRequest & fragment);
+        const FragmentsRequest & fragment,
+        const QueryCoordinationMetaInfo & meta_info);
 
     void sendBeginExecutePipelines(const String & query_id_);
 

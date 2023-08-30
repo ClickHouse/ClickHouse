@@ -1,5 +1,6 @@
 #include <QueryCoordination/Optimizer/Cost/CostCalculator.h>
 
+
 namespace DB
 {
 
@@ -11,17 +12,17 @@ Float64 CostCalculator::visit(QueryPlanStepPtr step)
 Float64 CostCalculator::visit(ReadFromMergeTree & /*step*/)
 {
     /// TODO get rows by statistics
-    return 3 * statistics.getOutputRowSize();
+    return std::max(size_t(1), 3 * statistics.getOutputRowSize());
 }
 
 Float64 CostCalculator::visitDefault()
 {
-    return 3 * input_statistics.front().getOutputRowSize();
+    return std::max(size_t(1), 3 * input_statistics.front().getOutputRowSize());
 }
 
 Float64 CostCalculator::visit(AggregatingStep & step)
 {
-    if (step.isFinal())
+    if (step.isFinal() || step.withTotalsOrCubeOrRollup())
     {
         /// TODO get rows, cardinality by statistics
         if (child_prop.front().distribution.type == PhysicalProperties::DistributionType::Hashed)
@@ -54,9 +55,9 @@ Float64 CostCalculator::visit(ExchangeDataStep & step)
     /// TODO by type
     if (step.getDistributionType() == PhysicalProperties::DistributionType::Replicated)
     {
-        return 2 * (statistics.getOutputRowSize() * 3/*shard_num*/);
+        return std::max(size_t(1), 2 * (statistics.getOutputRowSize() * 3/*shard_num*/));
     }
-    return 2 * statistics.getOutputRowSize();
+    return std::max(size_t(1), 2 * statistics.getOutputRowSize());
 }
 
 Float64 CostCalculator::visit(SortingStep & /*step*/)

@@ -4,6 +4,7 @@
 #include <Client/Connection.h>
 #include <QueryCoordination/DataPartition.h>
 #include <QueryCoordination/IO/ExchangeDataRequest.h>
+#include <QueryCoordination/Optimizer/PhysicalProperties.h>
 #include <Client/ConnectionPool.h>
 
 namespace DB
@@ -31,8 +32,8 @@ public:
         DataPartition & partition,
         String local_host,
         String query_id,
-        Int32 fragment_id,
-        Int32 exchange_id)
+        UInt32 fragment_id,
+        UInt32 exchange_id)
         : ISink(std::move(header))
         , log(&Poco::Logger::get("ExchangeDataSink"))
         , channels(channels_)
@@ -43,11 +44,30 @@ public:
             calculateKeysPositions();
     }
 
+
+    ExchangeDataSink(
+        Block header,
+        std::vector<Channel> & channels_,
+        const PhysicalProperties::Distribution & distribution,
+        String local_host,
+        String query_id,
+        UInt32 fragment_id,
+        UInt32 exchange_id)
+        : ISink(std::move(header))
+        , log(&Poco::Logger::get("ExchangeDataSink"))
+        , channels(channels_)
+        , output_distribution(distribution)
+        , request(ExchangeDataRequest{.from_host = local_host, .query_id = query_id, .fragment_id = fragment_id, .exchange_id = exchange_id})
+    {
+        if (!distribution.keys.empty())
+            calculateKeysPositions();
+    }
+
     String getName() const override { return "ExchangeDataSink"; }
 
     size_t getNumReadRows() const { return num_rows; }
 
-protected:
+private:
     void consume(Chunk chunk) override;
 
     void onFinish() override;
@@ -56,12 +76,16 @@ protected:
 
     void calculateKeysPositions();
 
+    void calcKeysPositions();
+
 private:
     Poco::Logger * log;
 
     std::vector<Channel> channels;
     size_t num_rows = 0;
     DataPartition output_partition;
+
+    PhysicalProperties::Distribution output_distribution;
 
     ExchangeDataRequest request;
 

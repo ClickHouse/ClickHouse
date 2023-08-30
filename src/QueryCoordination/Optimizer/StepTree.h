@@ -44,9 +44,9 @@ public:
 
     void unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<StepTree>> plans);
 
-    const Node & getRoot() const
+    Node * getRoot() const
     {
-        return *root;
+        return root;
     }
 
     void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options) const;

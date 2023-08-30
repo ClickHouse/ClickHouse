@@ -17,7 +17,7 @@ class FragmentRequest
 public:
     void write(WriteBuffer & out) const
     {
-        writeVarInt(fragment_id, out);
+        writeVarUInt(fragment_id, out);
 
         size_t to_size = data_to.size();
         writeVarUInt(to_size, out);
@@ -46,7 +46,7 @@ public:
 
     void read(ReadBuffer & in)
     {
-        readVarInt(fragment_id, in);
+        readVarUInt(fragment_id, in);
 
         size_t to_size = 0;
         readVarUInt(to_size, in);
@@ -105,7 +105,7 @@ public:
         return fragment + data_to_str + data_from_str;
     }
 
-    Int64 fragment_id;
+    UInt32 fragment_id;
     Destinations data_to;
     Sources data_from;
 };

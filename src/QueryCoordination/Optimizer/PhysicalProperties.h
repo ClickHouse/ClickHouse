@@ -36,7 +36,9 @@ public:
     struct Distribution
     {
         DistributionType type;
-        Names keys; /// keys for partition
+        Names keys; /// keys for Hashed
+
+        bool distribution_by_buket_num = false;
     };
 
     bool operator==(const PhysicalProperties & other) const;
@@ -47,12 +49,12 @@ public:
         {
             SipHash hash;
             hash.update(int8_t(properties.distribution.type));
-            for (auto key : properties.distribution.keys)
+            for (const auto & key : properties.distribution.keys)
             {
                 hash.update(key);
             }
 
-            for (auto sort : properties.sort_description)
+            for (const auto & sort : properties.sort_description)
             {
                 hash.update(sort.dump());
             }

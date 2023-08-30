@@ -79,7 +79,7 @@ public:
 
     std::vector<ClusterPtr> clusters;
 
-    std::vector<String> sharding_key_columns;
+    std::vector<String> sharding_keys;
 
     bool has_distributed_table = false;
     bool has_local_table = false;
@@ -150,7 +150,7 @@ private:
         }
 
         auto table = DatabaseCatalog::instance().getTable(table_id, context);
-        if (auto * distributed_table = dynamic_cast<StorageDistributed *>(table.get()))
+        if (auto * distributed_table = typeid_cast<StorageDistributed *>(table.get()))
         {
             auto database_name = distributed_table->getRemoteDatabaseName();
             auto table_name = distributed_table->getRemoteTableName();
@@ -164,7 +164,16 @@ private:
 
             storages.emplace_back(local_table);
             clusters.emplace_back(distributed_table->getCluster());
-//            sharding_key_columns.emplace_back(distributed_table->sharding_key); TODO
+
+            if (auto sharding_key = distributed_table->getShardingKey())
+            {
+                WriteBufferFromOwnString write_buffer;
+                IAST::FormatSettings settings(write_buffer, true, false, true);
+                sharding_key->format(settings);
+                sharding_keys.emplace_back(write_buffer.str());
+            }
+            else
+                sharding_keys.emplace_back();
 
             has_distributed_table = true;
         }

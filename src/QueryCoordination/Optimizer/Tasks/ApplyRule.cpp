@@ -20,16 +20,13 @@ void ApplyRule::execute()
 
     auto sub_query_plans = transform_rule.apply(group_node, getQueryContext());
 
-    if (!sub_query_plans.empty())
+    for (auto & sub_query_plan : sub_query_plans)
     {
-        for (auto & sub_query_plan : sub_query_plans)
-        {
-            auto & group = task_context->getCurrentGroup();
-            auto & added_node = task_context->getMemo().addPlanNodeToGroup(sub_query_plan.getRoot(), group);
+        auto & group = task_context->getCurrentGroup();
+        auto & added_node = task_context->getMemo().addPlanNodeToGroup(*sub_query_plan.getRoot(), &group);
 
-            pushTask(std::make_unique<OptimizeInputs>(added_node, task_context));
-            pushTask(std::make_unique<OptimizeNode>(added_node, task_context));
-        }
+        pushTask(std::make_unique<OptimizeInputs>(added_node, task_context));
+        pushTask(std::make_unique<OptimizeNode>(added_node, task_context));
     }
 }
 

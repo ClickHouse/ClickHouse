@@ -18,13 +18,13 @@ public:
 
     Group() = default;
 
-    Group(GroupNode & group_plan_node, UInt32 id_);
+    Group(UInt32 id_);
 
     ~Group() = default;
     Group(Group &&) noexcept = default;
     Group & operator=(Group &&) noexcept = default;
 
-    GroupNode & addGroupNode(GroupNode & group_plan_node);
+    GroupNode & addGroupNode(GroupNode & group_plan_node, UInt32 group_node_id);
 
     GroupNode & getOneGroupNode();
 

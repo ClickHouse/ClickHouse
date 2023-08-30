@@ -18,14 +18,16 @@ AlternativeChildrenProp DeriveRequiredChildProp::visitDefault()
 {
     AlternativeChildrenProp res;
     std::vector<PhysicalProperties> required_child_prop;
-    required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
+    for (size_t i = 0; i < group_node.childSize(); ++i)
+    {
+        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
+    }
     res.emplace_back(required_child_prop);
     return res;
 }
 
 AlternativeChildrenProp DeriveRequiredChildProp::visit(ReadFromMergeTree & /*step*/)
 {
-    //    TODO sort_description by pk, DistributionType by distributed table
     AlternativeChildrenProp res;
     res.emplace_back();
     return res;
@@ -35,27 +37,26 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(AggregatingStep & step)
 {
     AlternativeChildrenProp res;
 
-    if (step.isFinal())
+    if (step.isFinal() || step.withTotalsOrCubeOrRollup())
     {
-        std::vector<PhysicalProperties> required_child_prop;
-        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
+        std::vector<PhysicalProperties> required_singleton_prop;
+        required_singleton_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
+        res.emplace_back(required_singleton_prop);
 
-        res.emplace_back(required_child_prop);
-
-        std::vector<PhysicalProperties> required_child_prop1;
-        required_child_prop1.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Hashed}});
-
-        res.emplace_back(required_child_prop1);
-
-        return res;
+        std::vector<PhysicalProperties> required_hashed_prop;
+        PhysicalProperties hashed_prop;
+        hashed_prop.distribution.type = PhysicalProperties::DistributionType::Hashed;
+        hashed_prop.distribution.keys = step.getParams().keys;
+        required_hashed_prop.push_back(hashed_prop);
+        res.emplace_back(required_hashed_prop);
     }
     else
     {
         std::vector<PhysicalProperties> required_child_prop;
         required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
         res.emplace_back(required_child_prop);
-        return res;
     }
+    return res;
 }
 
 AlternativeChildrenProp DeriveRequiredChildProp::visit(MergingAggregatedStep & step)
@@ -69,8 +70,10 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(MergingAggregatedStep & s
     }
     else
     {
-        /// TODO Hashed by bucket
-        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Hashed}});
+        PhysicalProperties hashed_prop;
+        hashed_prop.distribution.type = PhysicalProperties::DistributionType::Hashed;
+        hashed_prop.distribution.distribution_by_buket_num = true;
+        required_child_prop.push_back(hashed_prop);
     }
 
     res.emplace_back(required_child_prop);
@@ -89,20 +92,15 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(ExpressionStep & /*step*/
 AlternativeChildrenProp DeriveRequiredChildProp::visit(SortingStep & /*step*/)
 {
     AlternativeChildrenProp res;
-    //    const auto & sort_description = step.getSortDescription();
-    //    PhysicalProperties properties{.distribution = {.type = PhysicalProperties::DistributionType::Any}, .sort_description = sort_description};
-
     std::vector<PhysicalProperties> required_child_prop;
     required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
     res.emplace_back(required_child_prop);
     return res;
 }
 
-
 AlternativeChildrenProp DeriveRequiredChildProp::visit(LimitStep & step)
 {
     AlternativeChildrenProp res;
-
     std::vector<PhysicalProperties> required_child_prop;
 
     if (step.getType() == LimitStep::Type::Local)
@@ -118,27 +116,27 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(LimitStep & step)
     return res;
 }
 
-AlternativeChildrenProp DeriveRequiredChildProp::visit(JoinStep & /*step*/)
+AlternativeChildrenProp DeriveRequiredChildProp::visit(JoinStep & step)
 {
     AlternativeChildrenProp res;
 
     /// broadcast join
-
-    AlternativeChildrenProp alternative_properties;
-
-    std::vector<PhysicalProperties> required_child_prop;
-    required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
-    required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Replicated}});
-
-    res.emplace_back(required_child_prop);
+    std::vector<PhysicalProperties> broadcast_join_properties;
+    broadcast_join_properties.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
+    broadcast_join_properties.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Replicated}});
+    res.emplace_back(broadcast_join_properties);
 
     /// shaffle join
-    AlternativeChildrenProp alternative_properties1;
-    std::vector<PhysicalProperties> required_child_prop1;
-    required_child_prop1.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Hashed}});
-    required_child_prop1.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Hashed}});
-
-    res.emplace_back(required_child_prop1);
+    JoinPtr join = step.getJoin();
+    const TableJoin & table_join = join->getTableJoin();
+    if (table_join.getClauses().size() == 1 && table_join.strictness() != JoinStrictness::Asof) /// broadcast join. Asof support != condition
+    {
+        auto join_clause = table_join.getOnlyClause(); /// must be equals condition
+        std::vector<PhysicalProperties> shaffle_join_prop;
+        shaffle_join_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Hashed, .keys = join_clause.key_names_left}});
+        shaffle_join_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Hashed, .keys = join_clause.key_names_right}});
+        res.emplace_back(shaffle_join_prop);
+    }
 
     return res;
 }
@@ -157,6 +155,51 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(ExchangeDataStep & step)
         required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
     }
 
+    res.emplace_back(required_child_prop);
+    return res;
+}
+
+AlternativeChildrenProp DeriveRequiredChildProp::visit(ExtremesStep & /*step*/)
+{
+    AlternativeChildrenProp res;
+    std::vector<PhysicalProperties> required_child_prop;
+    required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
+    res.emplace_back(required_child_prop);
+    return res;
+}
+
+AlternativeChildrenProp DeriveRequiredChildProp::visit(RollupStep & /*step*/)
+{
+    AlternativeChildrenProp res;
+    std::vector<PhysicalProperties> required_child_prop;
+    required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
+    res.emplace_back(required_child_prop);
+    return res;
+}
+
+AlternativeChildrenProp DeriveRequiredChildProp::visit(CubeStep & /*step*/)
+{
+    AlternativeChildrenProp res;
+    std::vector<PhysicalProperties> required_child_prop;
+    required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
+    res.emplace_back(required_child_prop);
+    return res;
+}
+
+AlternativeChildrenProp DeriveRequiredChildProp::visit(TotalsHavingStep & /*step*/)
+{
+    AlternativeChildrenProp res;
+    std::vector<PhysicalProperties> required_child_prop;
+    required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
+    res.emplace_back(required_child_prop);
+    return res;
+}
+
+AlternativeChildrenProp DeriveRequiredChildProp::visit(CreatingSetStep & /*step*/)
+{
+    AlternativeChildrenProp res;
+    std::vector<PhysicalProperties> required_child_prop;
+    required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Replicated}});
     res.emplace_back(required_child_prop);
     return res;
 }

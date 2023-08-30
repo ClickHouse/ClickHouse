@@ -24,7 +24,7 @@ Pipelines PipelinesBuilder::build()
         /// for data sink
         std::vector<ExchangeDataSink::Channel> channels;
         String local_host; /// for DataSink, we need tell peer who am i.
-        for (const auto & shard_info : fragment->getCluster()->getShardsInfo())
+        for (const auto & shard_info : cluster->getShardsInfo())
         {
             if (shard_info.isLocal())
             {

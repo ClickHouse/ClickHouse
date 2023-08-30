@@ -7,7 +7,7 @@
 namespace DB
 {
 
-QueryPlan Optimizer::optimize(QueryPlan && plan, ContextPtr query_context)
+StepTree Optimizer::optimize(QueryPlan && plan, ContextPtr query_context)
 {
     /// rewrite plan by rule
 
@@ -32,10 +32,8 @@ QueryPlan Optimizer::optimize(QueryPlan && plan, ContextPtr query_context)
     scheduler.pushTask(std::make_unique<OptimizeGroup>(task_context));
     scheduler.run();
 
-    QueryPlan res_plan;
-    memo.extractPlan();
-
-    return res_plan;
+    memo.dump();
+    return memo.extractPlan();
 }
 
 }

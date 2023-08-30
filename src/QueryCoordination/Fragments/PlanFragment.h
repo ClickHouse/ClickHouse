@@ -304,6 +304,11 @@ public:
     {
     }
 
+    PlanFragment(FragmentID fragment_id_, ContextMutablePtr & context_)
+        : fragment_id(fragment_id_), context(context_)
+    {
+    }
+
 
     struct ExplainPlanOptions
     {
@@ -397,6 +402,7 @@ public:
 
     QueryPipeline buildQueryPipeline(std::vector<ExchangeDataSink::Channel> & channels, const String & local_host);
 
+    void mergePlanFragments(QueryPlanStepPtr step, std::vector<std::shared_ptr<PlanFragment>> fragments);
     void unitePlanFragments(QueryPlanStepPtr step, std::vector<std::shared_ptr<PlanFragment>> fragments, StorageLimitsList storage_limits_ = {});
     void unitePlanFragments(
         QueryPlanStepPtr root_step,

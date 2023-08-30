@@ -156,10 +156,13 @@ public:
     /// Used by ClusterCopier
     size_t getShardCount() const;
 
+    ASTPtr getShardingKey() const { return sharding_key; }
+
 private:
     void renameOnDisk(const String & new_path_to_table_data);
 
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
+
     const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
     const String & getRelativeDataPath() const { return relative_data_path; }
 
@@ -227,6 +230,7 @@ private:
     /// Is empty if this storage implements TableFunctionRemote.
     const String cluster_name;
 
+    ASTPtr sharding_key;
     bool has_sharding_key;
     bool sharding_key_is_deterministic = false;
     ExpressionActionsPtr sharding_key_expr;

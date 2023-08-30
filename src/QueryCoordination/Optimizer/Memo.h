@@ -12,13 +12,11 @@ class Memo
 public:
     Memo(QueryPlan && plan, ContextPtr context_);
 
-    GroupNode & addPlanNodeToGroup(const QueryPlan::Node & node, Group & target_group);
+    GroupNode & addPlanNodeToGroup(const QueryPlan::Node & node, Group * target_group);
 
     Group & buildGroup(const QueryPlan::Node & node);
 
-    Group & buildGroup(const QueryPlan::Node & node, const std::vector<Group *> children_groups);
-
-    void dump(Group & group);
+    void dump();
 
     void transform();
 

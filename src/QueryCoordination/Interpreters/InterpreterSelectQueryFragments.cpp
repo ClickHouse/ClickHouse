@@ -19,7 +19,7 @@
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 
-#include <Interpreters/PreparedSets.h>
+#include <Columns/ColumnSet.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <QueryCoordination/Interpreters/InterpreterSelectQueryFragments.h>
@@ -1185,6 +1185,45 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
     return false;
 }
 
+void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
+                                           ContextPtr context,
+                                           const PreparedSetsPtr & prepared_sets,
+                                           const std::vector<ActionsDAGPtr> & result_actions_to_execute)
+{
+    PreparedSets::Subqueries subqueries;
+    for (const auto & actions_to_execute : result_actions_to_execute)
+    {
+        if (!actions_to_execute)
+            continue;
+
+        for (const auto & node : actions_to_execute->getNodes())
+        {
+            const auto & set_column = node.column;
+
+            for (auto & future_set_from_subquery : prepared_sets->getSubqueries())
+            {
+                if (const auto * set_column_ptr = dynamic_cast<const ColumnSet *>(set_column.get()))
+                {
+                    const auto * set_from_subquery = dynamic_cast<const FutureSetFromSubquery *>(set_column_ptr->getData().get());
+                    if (set_from_subquery->getSetAndKey()->key == future_set_from_subquery->getSetAndKey()->key)
+                    {
+                        subqueries.emplace_back(future_set_from_subquery);
+                    }
+                }
+            }
+        }
+    }
+
+    if (!subqueries.empty())
+    {
+        auto step = std::make_unique<DelayedCreatingSetsStep>(
+            query_plan.getCurrentDataStream(),
+            std::move(subqueries),
+            context);
+
+        query_plan.addStep(std::move(step));
+    }
+}
 
 void InterpreterSelectQueryFragments::executeSinglePlan(QueryPlan & query_plan, std::optional<Pipe> prepared_pipe)
 {
@@ -1276,6 +1315,11 @@ void InterpreterSelectQueryFragments::executeSinglePlan(QueryPlan & query_plan, 
         }
 
         executeFetchColumns(query_plan);
+
+        if (query_info.prewhere_info && query_info.prewhere_info->prewhere_actions)
+        {
+            addBuildSubqueriesForSetsStepIfNeeded(query_plan, context, prepared_sets, {query_info.prewhere_info->prewhere_actions});
+        }
     }
 
     if (query_info.projection && query_info.projection->input_order_info && query_info.input_order_info)
@@ -1555,7 +1599,7 @@ void InterpreterSelectQueryFragments::executeSinglePlan(QueryPlan & query_plan, 
 
     executeOffset(query_plan);
 
-//    executeSubqueriesInSetsAndJoins(query_plan);
+    //    executeSubqueriesInSetsAndJoins(query_plan);
 }
 
 static std::shared_ptr<MergingAggregatedStep> executeMergeAggregatedImpl(
@@ -2170,42 +2214,6 @@ void InterpreterSelectQueryFragments::executeFetchColumns(QueryPlan & query_plan
         auto table_aliases = std::make_shared<ExpressionStep>(query_plan.getCurrentDataStream(), alias_actions);
         table_aliases->setStepDescription("Add table aliases");
         query_plan.addStep(std::move(table_aliases));
-    }
-}
-
-void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
-                                           ContextPtr context,
-                                           const PreparedSetsPtr & prepared_sets,
-                                           const std::vector<ActionsDAGPtr> & result_actions_to_execute)
-{
-    PreparedSets::Subqueries subqueries;
-    for (const auto & actions_to_execute : result_actions_to_execute)
-    {
-        if (!actions_to_execute)
-            continue;
-
-        for (const auto & node : actions_to_execute->getNodes())
-        {
-            const auto & set_key = node.result_name;
-
-            for (auto & future_set_from_subquery : prepared_sets->getSubqueries())
-            {
-                if (set_key == future_set_from_subquery->getSetAndKey()->key)
-                {
-                    subqueries.emplace_back(future_set_from_subquery);
-                }
-            }
-        }
-    }
-
-    if (!subqueries.empty())
-    {
-        auto step = std::make_unique<DelayedCreatingSetsStep>(
-            query_plan.getCurrentDataStream(),
-            std::move(subqueries),
-            context);
-
-        query_plan.addStep(std::move(step));
     }
 }
 

@@ -4,6 +4,45 @@
 namespace DB
 {
 
+GroupNode::GroupNode(
+    QueryPlanStepPtr step_, const std::vector<Group *> & children_, bool is_enforce_node_)
+    : step(step_), id(0), group(nullptr), children(children_), is_enforce_node(is_enforce_node_), is_derived_stat(false)
+{
+}
+
+GroupNode::~GroupNode() = default;
+GroupNode::GroupNode(GroupNode &&) noexcept = default;
+
+void GroupNode::addChild(Group & child)
+{
+    children.emplace_back(&child);
+}
+
+size_t GroupNode::childSize() const
+{
+    return children.size();
+}
+
+std::vector<Group *> GroupNode::getChildren() const
+{
+    return children;
+}
+
+QueryPlanStepPtr GroupNode::getStep() const
+{
+    return step;
+}
+
+Group & GroupNode::getGroup()
+{
+    return *group;
+}
+
+void GroupNode::setGroup(Group * group_)
+{
+    group = group_;
+}
+
 void GroupNode::updateBestChild(const PhysicalProperties & physical_properties, const std::vector<PhysicalProperties> & child_properties, Float64 child_cost)
 {
     if (!prop_to_best_child.contains(physical_properties) || child_cost < prop_to_best_child[physical_properties].cost)
@@ -15,6 +54,46 @@ void GroupNode::updateBestChild(const PhysicalProperties & physical_properties, 
 const std::vector<PhysicalProperties> & GroupNode::getChildrenProp(const PhysicalProperties & physical_properties)
 {
     return prop_to_best_child[physical_properties].child_prop;
+}
+
+void GroupNode::addRequiredChildrenProp(ChildrenProp & child_pro)
+{
+    required_children_prop.emplace_back(child_pro);
+}
+
+AlternativeChildrenProp & GroupNode::getRequiredChildrenProp()
+{
+    return required_children_prop;
+}
+
+bool GroupNode::hasRequiredChildrenProp() const
+{
+    return !required_children_prop.empty();
+}
+
+bool GroupNode::isEnforceNode() const
+{
+    return is_enforce_node;
+}
+
+UInt32 GroupNode::getId() const
+{
+    return id;
+}
+
+void GroupNode::setId(UInt32 id_)
+{
+    id = id_;
+}
+
+void GroupNode::setDerivedStat()
+{
+    is_derived_stat = true;
+}
+
+bool GroupNode::isDerivedStat() const
+{
+    return is_derived_stat;
 }
 
 String GroupNode::toString() const

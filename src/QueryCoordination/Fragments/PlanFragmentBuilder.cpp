@@ -28,7 +28,6 @@
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <QueryCoordination/Interpreters/InDepthPlanNodeVisitor.h>
 
 namespace DB
 {

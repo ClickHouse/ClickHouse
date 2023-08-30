@@ -113,6 +113,16 @@ public:
 
     std::shared_ptr<MergingAggregatedStep> makeMergingAggregatedStep(const DataStream & input_stream_, const Settings & settings) const;
 
+    bool isSplit() const
+    {
+        return is_split;
+    }
+
+    bool setSplit()
+    {
+        return is_split = true;
+    }
+
 private:
     void updateOutputStream() override;
 
@@ -149,6 +159,8 @@ private:
     Processors finalizing;
 
     Processors aggregating;
+
+    bool is_split = false;
 };
 
 class AggregatingProjectionStep : public IQueryPlanStep

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <QueryCoordination/Fragments/PlanFragment.h>
+#include <QueryCoordination/Fragments/Fragment.h>
 #include <QueryCoordination/IO/FragmentRequest.h>
 #include <QueryCoordination/IO/ExchangeDataRequest.h>
 #include <Core/Block.h>
@@ -13,17 +13,17 @@ namespace DB
 class DistributedFragment
 {
 public:
-    DistributedFragment(PlanFragmentPtr fragment_, Destinations & data_to_, Sources & data_from_)
+    DistributedFragment(FragmentPtr fragment_, Destinations & data_to_, Sources & data_from_)
         : fragment(fragment_), data_to(data_to_), data_from(data_from_)
     {
     }
 
-    static String receiverKey(PlanID exchange_id, const String & source)
+    static String receiverKey(UInt32 exchange_id, const String & source)
     {
         return source + "_" + toString(exchange_id);
     }
 
-    PlanFragmentPtr getFragment() const
+    FragmentPtr getFragment() const
     {
         return fragment;
     }
@@ -39,7 +39,7 @@ public:
     }
 
 private:
-    PlanFragmentPtr fragment;
+    FragmentPtr fragment;
     Destinations data_to;
     Sources data_from;
 

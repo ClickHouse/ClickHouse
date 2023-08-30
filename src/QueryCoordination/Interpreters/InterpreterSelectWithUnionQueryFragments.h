@@ -2,6 +2,7 @@
 
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
+#include <QueryCoordination/Fragments/Fragment.h>
 
 namespace DB
 {
@@ -33,7 +34,7 @@ public:
     /// Builds QueryPlan for current query.
     void buildQueryPlan(QueryPlan & query_plan) override;
 
-    PlanFragmentPtrs buildFragments();
+    FragmentPtrs buildFragments();
 
     BlockIO execute() override;
 

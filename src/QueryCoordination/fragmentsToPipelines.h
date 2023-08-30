@@ -2,21 +2,23 @@
 
 #include <QueryCoordination/Pipelines/Pipelines.h>
 #include <QueryCoordination/IO/FragmentRequest.h>
+#include <Interpreters/Cluster.h>
 
 
 namespace DB
 {
 
-class PlanFragment;
+class Fragment;
 
-using PlanFragmentPtr = std::shared_ptr<PlanFragment>;
-using PlanFragmentPtrs = std::vector<PlanFragmentPtr>;
+using FragmentPtr = std::shared_ptr<Fragment>;
+using FragmentPtrs = std::vector<FragmentPtr>;
 
 struct Settings;
 
-Pipelines fragmentsToPipelines(const PlanFragmentPtrs & all_fragments,
+Pipelines fragmentsToPipelines(const FragmentPtrs & all_fragments,
                                const std::vector <FragmentRequest> & plan_fragment_requests, const String & query_id,
-                               const Settings & settings);
+                               const Settings & settings,
+                               ClusterPtr cluster);
 
 
 };

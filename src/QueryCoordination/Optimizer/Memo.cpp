@@ -3,6 +3,7 @@
 #include <QueryCoordination/Optimizer/DeriveOutputProp.h>
 #include <QueryCoordination/Optimizer/DeriveRequiredChildProp.h>
 #include <QueryCoordination/Optimizer/DeriveStatistics.h>
+#include <QueryCoordination/Optimizer/GroupStep.h>
 #include <QueryCoordination/Optimizer/Memo.h>
 #include <QueryCoordination/Optimizer/Transform/Transformation.h>
 #include <Common/typeid_cast.h>
@@ -28,73 +29,58 @@ Memo::Memo(QueryPlan && plan, ContextPtr context_) : context(context_)
     }
 }
 
-GroupNode & Memo::addPlanNodeToGroup(const QueryPlan::Node & node, Group & target_group)
-{
-    GroupNode group_node(node.step);
-
-    group_node.setId(++group_node_id_counter);
-
-    /// get logical equivalence child
-    const auto children = target_group.getOneGroupNode().getChildren();
-
-    if (!node.children.empty())
-    {
-        for (auto * child : node.children)
-        {
-            auto & child_group = buildGroup(*child, children);
-            group_node.addChild(child_group);
-        }
-    }
-    else
-    {
-        group_node.replaceChildren(children);
-    }
-
-    return target_group.addGroupNode(group_node);
-}
-
-Group & Memo::buildGroup(const QueryPlan::Node & node, const std::vector<Group *> children_groups)
-{
-    /// children_groups push to bottom
-
-    GroupNode group_node(node.step);
-
-    group_node.setId(++group_node_id_counter);
-
-    if (!node.children.empty())
-    {
-        for (auto * child : node.children)
-        {
-            auto & child_group = buildGroup(*child, children_groups);
-            group_node.addChild(child_group);
-        }
-    }
-    else
-    {
-        group_node.replaceChildren(children_groups);
-    }
-
-    groups.emplace_back(Group(group_node, ++group_id_counter));
-    return groups.back();
-}
-
 Group & Memo::buildGroup(const QueryPlan::Node & node)
 {
-    GroupNode group_node(node.step);
-
-    group_node.setId(++group_node_id_counter);
-
+    std::vector<Group *> child_groups;
     for (auto * child : node.children)
     {
         auto & child_group = buildGroup(*child);
-        group_node.addChild(child_group);
+        child_groups.emplace_back(&child_group);
     }
 
-    groups.emplace_back(Group(group_node, ++group_id_counter));
-    return groups.back();
+    groups.emplace_back(Group(++group_id_counter));
+
+    Group & group = groups.back();
+
+    GroupNode group_node(node.step, child_groups);
+    group.addGroupNode(group_node,  ++group_node_id_counter);
+    return group;
 }
 
-void Memo::dump(Group & /*group*/)
+GroupNode & Memo::addPlanNodeToGroup(const QueryPlan::Node & node, Group * target_group)
+{
+    std::vector<Group *> child_groups;
+    for (auto * child : node.children)
+    {
+        if (auto * group_step = typeid_cast<GroupStep *>(child->step.get()))
+        {
+            child_groups.emplace_back(&group_step->getGroup());
+        }
+        else
+        {
+            GroupNode & added_node = addPlanNodeToGroup(*child, nullptr);
+            child_groups.emplace_back(&added_node.getGroup());
+        }
+    }
+
+    GroupNode group_node(node.step, child_groups);
+    /// TODO group_node duplicate detection
+
+
+    if (target_group)
+    {
+        return target_group->addGroupNode(group_node, ++group_node_id_counter);
+    }
+    else
+    {
+        groups.emplace_back(Group(++group_id_counter));
+        auto & group = groups.back();
+
+        return group.addGroupNode(group_node, ++group_node_id_counter);
+    }
+}
+
+void Memo::dump()
 {
 //    auto & group_nodes = group.getGroupNodes();
 //
@@ -154,7 +140,7 @@ Statistics Memo::deriveStat(Group & group)
 
 void Memo::transform()
 {
-    dump(*root_group);
+    dump();
 
     std::unordered_map<Group *, std::vector<StepTree>> group_transformed_node;
     transform(*root_group, group_transformed_node);
@@ -163,11 +149,11 @@ void Memo::transform()
     {
         for (auto & sub_query_plan : sub_query_plans)
         {
-            addPlanNodeToGroup(sub_query_plan.getRoot(), *group);
+            addPlanNodeToGroup(*sub_query_plan.getRoot(), group);
         }
     }
 
-    dump(*root_group);
+    dump();
 }
 
 void Memo::transform(Group & group, std::unordered_map<Group *, std::vector<StepTree>> & group_transformed_node)
@@ -201,7 +187,7 @@ void Memo::enforce()
 {
     enforce(*root_group, PhysicalProperties{.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
 
-    dump(*root_group);
+    dump();
 }
 
 std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>> Memo::enforce(Group & group, const PhysicalProperties & required_prop)
@@ -241,7 +227,7 @@ std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>> Memo::enforce
             }
 
             /// derivation output prop by required_prop and children_prop
-            DeriveOutputProp output_prop_visitor(required_prop, actual_children_prop);
+            DeriveOutputProp output_prop_visitor(required_prop, actual_children_prop, context);
             auto output_prop = group_node.accept(output_prop_visitor);
 
             group_node.updateBestChild(output_prop, actual_children_prop, cost);
@@ -263,7 +249,7 @@ std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>> Memo::enforce
     for (auto & [group_enforce_node, child_prop] : collection_enforced_nodes_child_prop)
     {
         // GroupNode group_enforce_singleton_node(exchange_step);
-        auto & added_node = group.addGroupNode(group_enforce_node);
+        auto & added_node = group.addGroupNode(group_enforce_node, ++group_node_id_counter);
 
         auto child_cost = group.getCostByProp(child_prop);
 
@@ -285,30 +271,8 @@ void Memo::enforceGroupNode(
     GroupNode & group_node,
     std::vector<std::pair<GroupNode, PhysicalProperties>> & collection)
 {
-    std::shared_ptr<ExchangeDataStep> exchange_step;
-
-    switch (required_prop.distribution.type)
-    {
-        case PhysicalProperties::DistributionType::Singleton: {
-            exchange_step = std::make_shared<ExchangeDataStep>(
-                PhysicalProperties::DistributionType::Singleton, group_node.getStep()->getOutputStream());
-            break;
-        }
-        case PhysicalProperties::DistributionType::Replicated: {
-            exchange_step = std::make_shared<ExchangeDataStep>(
-                PhysicalProperties::DistributionType::Replicated, group_node.getStep()->getOutputStream());
-            // exchange_step = std::make_shared<ExchangeDataStep>(Replicated);
-            break;
-        }
-        case PhysicalProperties::DistributionType::Hashed: {
-            exchange_step = std::make_shared<ExchangeDataStep>(
-                PhysicalProperties::DistributionType::Hashed, group_node.getStep()->getOutputStream());
-            // exchange_step = std::make_shared<ExchangeDataStep>(Hashed);
-            break;
-        }
-        default:
-            break;
-    }
+    std::shared_ptr<ExchangeDataStep> exchange_step
+        = std::make_shared<ExchangeDataStep>(required_prop.distribution, group_node.getStep()->getOutputStream());
 
     if (!output_prop.sort_description.empty())
     {
@@ -329,10 +293,7 @@ void Memo::enforceGroupNode(
         }
     }
 
-    GroupNode group_enforce_node(exchange_step, true);
-
-    group_enforce_node.setId(++group_node_id_counter);
-
+    GroupNode group_enforce_node(exchange_step, {});
     collection.emplace_back(std::move(group_enforce_node), output_prop);
 }
 

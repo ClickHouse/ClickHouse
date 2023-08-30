@@ -9,6 +9,7 @@ namespace DB
 class LimitStep : public ITransformingStep
 {
 public:
+    /// Only work on query coordination
     enum Type
     {
         Global,

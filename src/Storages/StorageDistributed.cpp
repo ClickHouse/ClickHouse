@@ -326,6 +326,7 @@ StorageDistributed::StorageDistributed(
     , log(&Poco::Logger::get("StorageDistributed (" + id_.table_name + ")"))
     , owned_cluster(std::move(owned_cluster_))
     , cluster_name(getContext()->getMacros()->expand(cluster_name_))
+    , sharding_key(sharding_key_)
     , has_sharding_key(sharding_key_)
     , relative_data_path(relative_data_path_)
     , distributed_settings(distributed_settings_)

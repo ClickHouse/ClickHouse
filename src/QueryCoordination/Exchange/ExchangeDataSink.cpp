@@ -41,6 +41,14 @@ void ExchangeDataSink::calculateKeysPositions()
         keys_positions[i] = sample.getPositionByName(output_partition.keys[i]);
 }
 
+void ExchangeDataSink::calcKeysPositions()
+{
+    const auto & sample = getPort().getHeader();
+    keys_positions.resize(output_distribution.keys.size());
+    for (size_t i = 0; i < output_distribution.keys.size(); ++i)
+        keys_positions[i] = sample.getPositionByName(output_distribution.keys[i]);
+}
+
 void ExchangeDataSink::consume(Chunk chunk)
 {
     size_t rows = chunk.getNumRows();
@@ -56,14 +64,15 @@ void ExchangeDataSink::consume(Chunk chunk)
         }
     }
 
-    if (output_partition.type == PartitionType::UNPARTITIONED)
+    if (output_distribution.type == PhysicalProperties::DistributionType::Singleton
+        || output_distribution.type == PhysicalProperties::DistributionType::Replicated)
     {
         for (auto & channel : channels)
             channel.sendData(block);
     }
-    else if (output_partition.type == PartitionType::HASH_PARTITIONED)
+    else if (output_distribution.type == PhysicalProperties::DistributionType::Hashed)
     {
-        if (block.info.bucket_num > -1 && output_partition.partition_by_bucket_num)
+        if (block.info.bucket_num > -1 && output_distribution.distribution_by_buket_num)
         {
             size_t which_channel = block.info.bucket_num % channels.size();
             channels[which_channel].sendData(block);

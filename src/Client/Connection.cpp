@@ -35,6 +35,7 @@
 #include <base/scope_guard.h>
 #include <QueryCoordination/IO/FragmentsRequest.h>
 #include <QueryCoordination/IO/ExchangeDataRequest.h>
+#include <QueryCoordination/QueryCoordinationMetaInfo.h>
 
 #include "config_version.h"
 #include "config.h"
@@ -733,11 +734,15 @@ void Connection::sendFragments(
     UInt64 stage,
     const Settings * settings,
     const ClientInfo * client_info,
-    const FragmentsRequest & fragment)
+    const FragmentsRequest & fragment,
+    const QueryCoordinationMetaInfo & meta_info)
 {
     writeVarUInt(Protocol::Client::PlanFragments, *out);
     sendQuery(timeouts, query, query_parameters, query_id_, stage, settings, client_info, true, {}, false);
     fragment.write(*out);
+
+    LOG_DEBUG(log_wrapper.get(), "Send QueryCoordinationMetaInfo {}", meta_info.toString());
+    meta_info.write(*out);
     sendData(Block(), "", false); // tcphandler and executeQuery use initializeExternalTablesIfSet
     out->next();
 }

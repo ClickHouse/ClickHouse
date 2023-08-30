@@ -3,9 +3,8 @@
 namespace DB
 {
 
-Group::Group(GroupNode & group_plan_node, UInt32 id_) : id(id_)
+Group::Group(UInt32 id_) : id(id_)
 {
-    addGroupNode(group_plan_node);
 }
 
 GroupNode & Group::getOneGroupNode()
@@ -23,8 +22,10 @@ std::list<GroupNode> & Group::getGroupNodes()
     return group_nodes;
 }
 
-GroupNode & Group::addGroupNode(GroupNode & group_plan_node)
+GroupNode & Group::addGroupNode(GroupNode & group_plan_node, UInt32 group_node_id)
 {
+    group_plan_node.setId(group_node_id);
+    group_plan_node.setGroup(this);
     group_nodes.emplace_back(std::move(group_plan_node));
     return group_nodes.back();
 }

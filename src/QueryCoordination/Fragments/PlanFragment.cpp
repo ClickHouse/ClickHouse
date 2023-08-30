@@ -14,6 +14,57 @@ namespace DB
 {
 
 
+void PlanFragment::mergePlanFragments(QueryPlanStepPtr step, std::vector<std::shared_ptr<PlanFragment>> fragments)
+{
+    if (isInitialized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite plans because current PlanFragment is already initialized");
+
+    const auto & inputs = step->getInputStreams();
+    size_t num_inputs = step->getInputStreams().size();
+    if (num_inputs != fragments.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot unite PlanFragments using {} because step has different number of inputs. Has {} plans and {} inputs",
+            step->getName(),
+            fragments.size(),
+            num_inputs);
+
+    for (size_t i = 0; i < num_inputs; ++i)
+    {
+        const auto & step_header = inputs[i].header;
+        const auto & plan_header = fragments[i]->getCurrentDataStream().header;
+        if (!blocksHaveEqualStructure(step_header, plan_header))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot unite PlanFragments using {} because it has incompatible header with plan {} plan header: {} step header: {}",
+                step->getName(),
+                root->step->getName(),
+                plan_header.dumpStructure(),
+                step_header.dumpStructure());
+    }
+
+    for (auto & fragment : fragments)
+        nodes.splice(nodes.end(), std::move(fragment->nodes));
+
+    nodes.emplace_back(Node{.step = std::move(step)});
+    root = &nodes.back();
+
+    for (auto & fragment : fragments)
+        root->children.emplace_back(fragment->root);
+
+    for (auto & fragment : fragments)
+    {
+        children.insert(children.end(), fragment->children.begin(), fragment->children.end());
+    }
+
+    for (auto & fragment : fragments)
+    {
+        max_threads = std::max(max_threads, fragment->max_threads);
+        resources = std::move(fragment->resources);
+    }
+}
+
+
 void PlanFragment::unitePlanFragments(QueryPlanStepPtr step, std::vector<std::shared_ptr<PlanFragment>> fragments, StorageLimitsList storage_limits_)
 {
     if (isInitialized())

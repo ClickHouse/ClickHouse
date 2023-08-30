@@ -67,7 +67,7 @@ OptimizeTaskPtr DeriveStats::clone(bool need_derive_child_)
 
 String DeriveStats::getDescription()
 {
-    return "DeriveStats (" + group_node.getStep()->getName() + (need_derive_child ? "with children)" : "without children)");
+    return "DeriveStats (" + group_node.getStep()->getName() + (need_derive_child ? " with children)" : " without children)");
 }
 
 }
