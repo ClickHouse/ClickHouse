@@ -145,7 +145,7 @@ StorageDictionary::~StorageDictionary()
     removeDictionaryConfigurationFromRepository();
 }
 
-void StorageDictionary::checkTableCanBeDropped() const
+void StorageDictionary::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const
 {
     if (location == Location::SameDatabaseAndNameAsDictionary)
         throw Exception(ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE,
@@ -159,7 +159,9 @@ void StorageDictionary::checkTableCanBeDropped() const
 
 void StorageDictionary::checkTableCanBeDetached() const
 {
-    checkTableCanBeDropped();
+    /// Actually query context (from DETACH query) should be passed here.
+    /// But we don't use it for this type of storage
+    checkTableCanBeDropped(getContext());
 }
 
 Pipe StorageDictionary::read(
