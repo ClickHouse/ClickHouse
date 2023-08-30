@@ -1212,18 +1212,33 @@ ClickHouse использует потоки из глобального пул�
 -   `metrics` – флаг для экспорта текущих значений метрик из таблицы [system.metrics](../system-tables/metrics.md#system_tables-metrics).
 -   `events` – флаг для экспорта текущих значений метрик из таблицы [system.events](../system-tables/events.md#system_tables-events).
 -   `asynchronous_metrics` – флаг для экспорта текущих значений значения метрик из таблицы [system.asynchronous_metrics](../system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics).
+-   `status_info` - флаг для экспорта данных из различных компонентов, например: статус словарей
 
 **Пример**
 
 ``` xml
- <prometheus>
+ <clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+    <!-- highlight-start -->
+    <prometheus>
         <endpoint>/metrics</endpoint>
-        <port>8001</port>
+        <port>9363</port>
         <metrics>true</metrics>
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
+        <status_info>true</status_info>
     </prometheus>
+    <!-- highlight-end -->
+</clickhouse>
 ```
+
+Проверка (замените `127.0.0.1` на IP-адрес или имя хоста вашего сервера ClickHouse):
+```bash
+curl 127.0.0.1:9363/metrics
+```
+
 
 ## query_log {#server_configuration_parameters-query-log}
 

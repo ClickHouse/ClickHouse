@@ -1816,6 +1816,7 @@ Settings:
 - `metrics` – Flag that sets to expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
 - `events` – Flag that sets to expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
 - `asynchronous_metrics` – Flag that sets to expose current metrics values from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
+- `status_info` - Flag that sets to expose data from different component from CH, ex: Dictionaries status 
 
 **Example**
 
@@ -1831,6 +1832,7 @@ Settings:
         <metrics>true</metrics>
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
+        <status_info>true</status_info>
     </prometheus>
     <!-- highlight-end -->
 </clickhouse>
