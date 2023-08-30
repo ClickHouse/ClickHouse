@@ -1212,26 +1212,17 @@ ClickHouse использует потоки из глобального пул�
 -   `metrics` – флаг для экспорта текущих значений метрик из таблицы [system.metrics](../system-tables/metrics.md#system_tables-metrics).
 -   `events` – флаг для экспорта текущих значений метрик из таблицы [system.events](../system-tables/events.md#system_tables-events).
 -   `asynchronous_metrics` – флаг для экспорта текущих значений значения метрик из таблицы [system.asynchronous_metrics](../system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics).
--   `status_info` - флаг для экспорта данных из различных компонентов, например: статус словарей
 
 **Пример**
 
 ``` xml
- <clickhouse>
-    <listen_host>0.0.0.0</listen_host>
-    <http_port>8123</http_port>
-    <tcp_port>9000</tcp_port>
-    <!-- highlight-start -->
-    <prometheus>
+ <prometheus>
         <endpoint>/metrics</endpoint>
-        <port>9363</port>
+        <port>8001</port>
         <metrics>true</metrics>
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
-        <status_info>true</status_info>
     </prometheus>
-    <!-- highlight-end -->
-</clickhouse>
 ```
 
 ## query_log {#server_configuration_parameters-query-log}
@@ -1931,4 +1922,4 @@ ClickHouse использует ZooKeeper для хранения метадан
 
 -   Положительное целое число.
 
-Значение по умолчанию: `100
+Значение по умолчанию: `10000`.

@@ -1816,7 +1816,6 @@ Settings:
 - `metrics` – Flag that sets to expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
 - `events` – Flag that sets to expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
 - `asynchronous_metrics` – Flag that sets to expose current metrics values from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
-- `status_info` - Flag that sets to expose data from different component from CH, ex: Dictionaries status 
 
 **Example**
 
@@ -1832,7 +1831,6 @@ Settings:
         <metrics>true</metrics>
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
-        <status_info>true</status_info>
     </prometheus>
     <!-- highlight-end -->
 </clickhouse>
@@ -2544,4 +2542,48 @@ Default value: `4194304`.
 
 ## total_memory_tracker_sample_probability {#total-memory-tracker-sample-probability}
 
-Allows to collect random allocations and deallocations and writes them in the [system.trace_log](../../operations/system-tables/trace_log.md) system table with `trace_type` equal to a `MemorySample` with the specified probability. The probability is for every allocation or deallocations, regardless of the size of the allocation. Note that sampling happens only when the amount of untracked memory exceeds the untracked memory limit (default value is `4` MiB). It can be lowered if [total_memory_profiler_step](#total-memory-profiler-step) is lowered. You can set `total_memory
+Allows to collect random allocations and deallocations and writes them in the [system.trace_log](../../operations/system-tables/trace_log.md) system table with `trace_type` equal to a `MemorySample` with the specified probability. The probability is for every allocation or deallocations, regardless of the size of the allocation. Note that sampling happens only when the amount of untracked memory exceeds the untracked memory limit (default value is `4` MiB). It can be lowered if [total_memory_profiler_step](#total-memory-profiler-step) is lowered. You can set `total_memory_profiler_step` equal to `1` for extra fine-grained sampling.
+
+Possible values:
+
+- Positive integer.
+- 0 — Writing of random allocations and deallocations in the `system.trace_log` system table is disabled.
+
+Default value: `0`.
+
+## compiled_expression_cache_size {#compiled-expression-cache-size}
+
+Sets the cache size (in bytes) for [compiled expressions](../../operations/caches.md).
+
+Possible values:
+
+- Positive integer.
+
+Default value: `134217728`.
+
+## compiled_expression_cache_elements_size {#compiled_expression_cache_elements_size}
+
+Sets the cache size (in elements) for [compiled expressions](../../operations/caches.md).
+
+Possible values:
+
+- Positive integer.
+
+Default value: `10000`.
+
+## display_secrets_in_show_and_select {#display_secrets_in_show_and_select}
+
+Enables or disables showing secrets in `SHOW` and `SELECT` queries for tables, databases,
+table functions, and dictionaries.
+
+User wishing to see secrets must also have
+[`format_display_secrets_in_show_and_select` format setting](../settings/formats#format_display_secrets_in_show_and_select)
+turned on and a
+[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0.
