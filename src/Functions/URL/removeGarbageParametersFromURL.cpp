@@ -176,6 +176,7 @@ struct RemoveGarbageParametersFromURLImpl
     {
         char * n_c_start = reinterpret_cast<char *>(malloc(c_end - c_start));
         const char * n_c_end = n_c_start - c_start + c_end;
+        memset(n_c_start, 0, static_cast<int>(c_end - c_start)); // This prevents Clang Tidy from saying the memory is uninitialized
         char * write = n_c_start;
 
         for (const char * i = c_start; i < c_end; ++i)
