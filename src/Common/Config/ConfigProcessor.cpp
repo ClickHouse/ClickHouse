@@ -821,7 +821,7 @@ XMLDocumentPtr ConfigProcessor::hideElements(XMLDocumentPtr xml_tree)
 
     for (Node * node = xml_tree->firstChild(); node; node = node->nextSibling())
     {
-        Node * new_node = xml_tree_copy->importNode(node, true);
+        NodePtr new_node = xml_tree_copy->importNode(node, true);
         xml_tree_copy->appendChild(new_node);
     }
     Node * new_config_root = getRootNode(xml_tree_copy.get());
