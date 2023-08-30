@@ -3,11 +3,14 @@
 #include <Core/MySQL/IMySQLWritePacket.h>
 #include <Core/MySQL/PacketsProtocolBinary.h>
 #include <Poco/DateTime.h>
+#include <Poco/Logger.h>
 #include <Poco/Timestamp.h>
+#include "Common/logger_useful.h"
 #include "Columns/ColumnLowCardinality.h"
 #include "Columns/ColumnVector.h"
 #include "DataTypes/DataTypeLowCardinality.h"
 #include "DataTypes/DataTypeNullable.h"
+#include "DataTypes/DataTypesNumber.h"
 #include "Formats/FormatSettings.h"
 #include "IO/WriteBufferFromString.h"
 #include "base/types.h"
@@ -26,23 +29,36 @@ namespace MySQLProtocol
         {
             /// See https://dev.mysql.com/doc/dev/mysql-server/8.1.0/page_protocol_binary_resultset.html#sect_protocol_binary_resultset_row
             payload_size = 1 + null_bitmap_size;
-            // LOG_TRACE(&Poco::Logger::get("ResultSetRow"), "Null bitmap size: {}", null_bitmap_size);
+            LOG_TRACE(&Poco::Logger::get("ResultSetRow"), "Null bitmap size: {}", null_bitmap_size);
             FormatSettings format_settings;
             for (size_t i = 0; i < columns.size(); ++i)
             {
                 ColumnPtr col = columns[i];
-
+                LOG_TRACE(&Poco::Logger::get("col->isNullAt"), "isNullAt: {}, {}", row_num, col->isNullAt(row_num));
                 if (col->isNullAt(row_num))
                 {
-                    null_bitmap[i / 8] |= 1 << i % 8;
+                    size_t byte = (i + 2) / 8;
+                    int bit = 1 << ((i + 2) % 8);
+                    null_bitmap[byte] |= bit;
+                    continue; // NULLs are stored in the null bitmap only
                 }
 
-                TypeIndex type_index = removeNullable(removeLowCardinality(data_types[i]))->getTypeId();
+                DataTypePtr data_type = removeLowCardinality(removeNullable((data_types[i])));
+                TypeIndex type_index = data_type->getTypeId();
                 switch (type_index)
                 {
                     case TypeIndex::Int8:
-                    case TypeIndex::UInt8:
                         payload_size += 1;
+                        break;
+                    case TypeIndex::UInt8:
+                        if (data_type->getName() == "Bool")
+                        {
+                            payload_size += 2; // BIT MySQL type is string<lenenc> in binary
+                        }
+                        else
+                        {
+                            payload_size += 1;
+                        }
                         break;
                     case TypeIndex::Int16:
                     case TypeIndex::UInt16:
@@ -91,6 +107,7 @@ namespace MySQLProtocol
                         break;
                     }
                     default:
+                        LOG_TRACE(&Poco::Logger::get("Type default"), "{} is {}", col->getName(), data_type->getName());
                         WriteBufferFromOwnString ostr;
                         serializations[i]->serializeText(*columns[i], row_num, ostr, format_settings);
                         payload_size += getLengthEncodedStringSize(ostr.str());
@@ -109,64 +126,69 @@ namespace MySQLProtocol
                 ColumnPtr col = columns[i];
                 if (col->isNullAt(row_num))
                 {
-                    continue; // NULLs are stored in the null bitmap only
+                    continue;
                 }
 
-                TypeIndex type_index = removeNullable(removeLowCardinality(data_types[i]))->getTypeId();
+                DataTypePtr data_type = removeLowCardinality(removeNullable((data_types[i])));
+                TypeIndex type_index = data_type->getTypeId();
                 switch (type_index)
                 {
                     case TypeIndex::UInt8: {
-                        UInt64 value = col->get64(row_num);
+                        UInt8 value = assert_cast<const ColumnVector<UInt8> &>(*col).getData()[row_num];
+                        if (data_type->getName() == "Bool")
+                        {
+                            buffer.write(static_cast<char>(1));
+                        }
                         buffer.write(reinterpret_cast<char *>(&value), 1);
                         break;
                     }
                     case TypeIndex::UInt16: {
-                        UInt64 value = col->get64(row_num);
+                        UInt16 value = assert_cast<const ColumnVector<UInt16> &>(*col).getData()[row_num];
                         buffer.write(reinterpret_cast<char *>(&value), 2);
                         break;
                     }
                     case TypeIndex::UInt32: {
-                        UInt64 value = col->get64(row_num);
+                        UInt32 value = assert_cast<const ColumnVector<UInt32> &>(*col).getData()[row_num];
                         buffer.write(reinterpret_cast<char *>(&value), 4);
                         break;
                     }
                     case TypeIndex::UInt64: {
-                        UInt64 value = col->get64(row_num);
+                        UInt64 value = assert_cast<const ColumnVector<UInt64> &>(*col).getData()[row_num];
                         buffer.write(reinterpret_cast<char *>(&value), 8);
                         break;
                     }
                     case TypeIndex::Int8: {
-                        UInt64 value = col->get64(row_num);
+                        Int8 value = assert_cast<const ColumnVector<Int8> &>(*col).getData()[row_num];
                         buffer.write(reinterpret_cast<char *>(&value), 1);
                         break;
                     }
                     case TypeIndex::Int16: {
-                        UInt64 value = col->get64(row_num);
+                        Int16 value = assert_cast<const ColumnVector<Int16> &>(*col).getData()[row_num];
                         buffer.write(reinterpret_cast<char *>(&value), 2);
                         break;
                     }
                     case TypeIndex::Int32: {
-                        UInt64 value = col->get64(row_num);
+                        Int32 value = assert_cast<const ColumnVector<Int32> &>(*col).getData()[row_num];
                         buffer.write(reinterpret_cast<char *>(&value), 4);
                         break;
                     }
                     case TypeIndex::Int64: {
-                        UInt64 value = col->get64(row_num);
+                        Int64 value = assert_cast<const ColumnVector<Int64> &>(*col).getData()[row_num];
                         buffer.write(reinterpret_cast<char *>(&value), 8);
                         break;
                     }
                     case TypeIndex::Float32: {
-                        Float32 value = col->getFloat32(row_num);
+                        Float32 value = assert_cast<const ColumnVector<Float32> &>(*col).getData()[row_num];
                         buffer.write(reinterpret_cast<char *>(&value), 4);
                         break;
                     }
                     case TypeIndex::Float64: {
-                        Float64 value = col->getFloat64(row_num);
+                        Float64 value = assert_cast<const ColumnVector<Float64> &>(*col).getData()[row_num];
                         buffer.write(reinterpret_cast<char *>(&value), 8);
                         break;
                     }
                     case TypeIndex::Date: {
-                        UInt64 value = col->get64(row_num);
+                        UInt64 value = assert_cast<const ColumnVector<UInt64> &>(*col).getData()[row_num];
                         if (value != 0)
                         {
                             Poco::DateTime dt = Poco::DateTime(Poco::Timestamp(value * 1000 * 1000));
@@ -185,7 +207,7 @@ namespace MySQLProtocol
                         break;
                     }
                     case TypeIndex::DateTime: {
-                        UInt64 value = col->get64(row_num);
+                        UInt64 value = assert_cast<const ColumnVector<UInt64> &>(*col).getData()[row_num];
                         if (value != 0)
                         {
                             Poco::DateTime dt = Poco::DateTime(Poco::Timestamp(value * 1000 * 1000));

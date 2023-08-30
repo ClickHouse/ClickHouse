@@ -2,7 +2,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include "Common/assert_cast.h"
 #include "Core/MySQL/IMySQLWritePacket.h"
+#include "DataTypes/DataTypesDecimal.h"
 
 namespace DB
 {
@@ -142,17 +144,25 @@ namespace MySQLProtocol
             }
         }
 
-        ColumnDefinition getColumnDefinition(const String & column_name, const TypeIndex type_index)
+        ColumnDefinition getColumnDefinition(const String & column_name, const DataTypePtr & data_type)
         {
             ColumnType column_type;
             CharacterSet charset = CharacterSet::binary;
             int flags = 0;
             uint8_t decimals = 0;
+            TypeIndex type_index = data_type->getTypeId();
             switch (type_index)
             {
                 case TypeIndex::UInt8:
-                    column_type = ColumnType::MYSQL_TYPE_TINY;
-                    flags = ColumnDefinitionFlags::BINARY_FLAG | ColumnDefinitionFlags::UNSIGNED_FLAG;
+                    if (data_type->getName() == "Bool")
+                    {
+                        column_type = ColumnType::MYSQL_TYPE_BIT;
+                    }
+                    else
+                    {
+                        column_type = ColumnType::MYSQL_TYPE_TINY;
+                        flags = ColumnDefinitionFlags::BINARY_FLAG | ColumnDefinitionFlags::UNSIGNED_FLAG;
+                    }
                     break;
                 case TypeIndex::UInt16:
                     column_type = ColumnType::MYSQL_TYPE_SHORT;
@@ -202,11 +212,24 @@ namespace MySQLProtocol
                     break;
                 case TypeIndex::Decimal32:
                 case TypeIndex::Decimal64:
-                case TypeIndex::Decimal128:
-                    /// MySQL Decimal has max 65 precision and 30 scale. Thus, Decimal256 is reported as a string
                     column_type = ColumnType::MYSQL_TYPE_DECIMAL;
                     flags = ColumnDefinitionFlags::BINARY_FLAG;
                     break;
+                case TypeIndex::Decimal128: {
+                    // MySQL Decimal has max 65 precision and 30 scale
+                    const auto & type = assert_cast<const DataTypeDecimal128 &>(*data_type);
+                    if (type.getPrecision() > 65 || type.getScale() > 30)
+                    {
+                        column_type = ColumnType::MYSQL_TYPE_STRING;
+                        charset = CharacterSet::utf8_general_ci;
+                    }
+                    else
+                    {
+                        column_type = ColumnType::MYSQL_TYPE_DECIMAL;
+                        flags = ColumnDefinitionFlags::BINARY_FLAG;
+                    }
+                    break;
+                }
                 default:
                     column_type = ColumnType::MYSQL_TYPE_STRING;
                     charset = CharacterSet::utf8_general_ci;
