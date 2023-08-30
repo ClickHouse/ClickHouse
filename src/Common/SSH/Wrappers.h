@@ -70,6 +70,7 @@ namespace ssh
 class SSHKey
 {
 public:
+    bool operator==(const SSHKey &) const = default;
     bool isEmpty() { return true; }
 };
 }
