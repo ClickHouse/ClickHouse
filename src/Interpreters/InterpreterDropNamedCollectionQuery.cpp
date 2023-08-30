@@ -12,20 +12,17 @@ namespace DB
 BlockIO InterpreterDropNamedCollectionQuery::execute()
 {
     auto current_context = getContext();
-    current_context->checkAccess(AccessType::DROP_NAMED_COLLECTION);
-
     const auto & query = query_ptr->as<const ASTDropNamedCollectionQuery &>();
+
+    current_context->checkAccess(AccessType::DROP_NAMED_COLLECTION, query.collection_name);
+
     if (!query.cluster.empty())
     {
         DDLQueryOnClusterParams params;
         return executeDDLQueryOnCluster(query_ptr, current_context, params);
     }
 
-    if (query.if_exists)
-        NamedCollectionUtils::removeIfExistsFromSQL(query.collection_name, current_context);
-    else
-        NamedCollectionUtils::removeFromSQL(query.collection_name, current_context);
-
+    NamedCollectionUtils::removeFromSQL(query, current_context);
     return {};
 }
 

@@ -3,12 +3,12 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/ExecutorTasks.h>
 #include <Common/EventCounter.h>
-#include <Common/logger_useful.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Common/ConcurrencyControl.h>
 
 #include <queue>
 #include <mutex>
+#include <memory>
 
 
 namespace DB
@@ -38,7 +38,7 @@ public:
 
     /// Execute pipeline in multiple threads. Must be called once.
     /// In case of exception during execution throws any occurred.
-    void execute(size_t num_threads);
+    void execute(size_t num_threads, bool concurrency_control);
 
     /// Execute single step. Step will be stopped when yield_flag is true.
     /// Execution is happened in a single thread.
@@ -49,6 +49,9 @@ public:
 
     /// Cancel execution. May be called from another thread.
     void cancel();
+
+    /// Cancel processors which only read data from source. May be called from another thread.
+    void cancelReading();
 
     /// Checks the query time limits (cancelled or timeout). Throws on cancellation or when time limit is reached and the query uses "break"
     bool checkTimeLimit();
@@ -64,11 +67,11 @@ private:
 
     ExecutorTasks tasks;
 
-    // Concurrency control related
+    /// Concurrency control related
     ConcurrencyControl::AllocationPtr slots;
     ConcurrencyControl::SlotPtr single_thread_slot; // slot for single-thread mode to work using executeStep()
-    std::mutex threads_mutex;
-    std::vector<ThreadFromGlobalPool> threads;
+    std::unique_ptr<ThreadPool> pool;
+    std::atomic_size_t threads = 0;
 
     /// Flag that checks that initializeExecution was called.
     bool is_execution_initialized = false;
@@ -78,6 +81,7 @@ private:
     bool trace_processors = false;
 
     std::atomic_bool cancelled = false;
+    std::atomic_bool cancelled_reading = false;
 
     Poco::Logger * log = &Poco::Logger::get("PipelineExecutor");
 
@@ -88,13 +92,12 @@ private:
 
     using Queue = std::queue<ExecutingGraph::Node *>;
 
-    void initializeExecution(size_t num_threads); /// Initialize executor contexts and task_queue.
+    void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
     void spawnThreads();
-    void joinThreads();
 
     /// Methods connected to execution.
-    void executeImpl(size_t num_threads);
+    void executeImpl(size_t num_threads, bool concurrency_control);
     void executeStepImpl(size_t thread_num, std::atomic_bool * yield_flag = nullptr);
     void executeSingleThread(size_t thread_num);
     void finish();

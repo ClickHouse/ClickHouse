@@ -15,6 +15,7 @@
 #include <base/sleep.h>
 #include <Common/escapeForFileName.h>
 #include <boost/range/algorithm/copy.hpp>
+#include <base/scope_guard.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -76,14 +77,22 @@ BackupEntriesCollector::BackupEntriesCollector(
     const ASTBackupQuery::Elements & backup_query_elements_,
     const BackupSettings & backup_settings_,
     std::shared_ptr<IBackupCoordination> backup_coordination_,
+    const ReadSettings & read_settings_,
     const ContextPtr & context_)
     : backup_query_elements(backup_query_elements_)
     , backup_settings(backup_settings_)
     , backup_coordination(backup_coordination_)
+    , read_settings(read_settings_)
     , context(context_)
     , on_cluster_first_sync_timeout(context->getConfigRef().getUInt64("backups.on_cluster_first_sync_timeout", 180000))
     , consistent_metadata_snapshot_timeout(context->getConfigRef().getUInt64("backups.consistent_metadata_snapshot_timeout", 600000))
     , log(&Poco::Logger::get("BackupEntriesCollector"))
+    , global_zookeeper_retries_info(
+        "BackupEntriesCollector",
+        log,
+        context->getSettingsRef().backup_restore_keeper_max_retries,
+        context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
+        context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms)
 {
 }
 
@@ -123,7 +132,6 @@ BackupEntries BackupEntriesCollector::run()
     runPostTasks();
 
     /// No more backup entries or tasks are allowed after this point.
-    setStage(Stage::WRITING_BACKUP);
 
     return std::move(backup_entries);
 }
@@ -133,22 +141,22 @@ Strings BackupEntriesCollector::setStage(const String & new_stage, const String 
     LOG_TRACE(log, fmt::runtime(toUpperFirst(new_stage)));
     current_stage = new_stage;
 
-    backup_coordination->setStage(backup_settings.host_id, new_stage, message);
+    backup_coordination->setStage(new_stage, message);
 
     if (new_stage == Stage::formatGatheringMetadata(1))
     {
-        return backup_coordination->waitForStage(all_hosts, new_stage, on_cluster_first_sync_timeout);
+        return backup_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
     }
     else if (new_stage.starts_with(Stage::GATHERING_METADATA))
     {
         auto current_time = std::chrono::steady_clock::now();
         auto end_of_timeout = std::max(current_time, consistent_metadata_snapshot_end_time);
         return backup_coordination->waitForStage(
-            all_hosts, new_stage, std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - current_time));
+            new_stage, std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - current_time));
     }
     else
     {
-        return backup_coordination->waitForStage(all_hosts, new_stage);
+        return backup_coordination->waitForStage(new_stage);
     }
 }
 
@@ -464,17 +472,17 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
     const auto & database_info = database_infos.at(database_name);
     const auto & database = database_info.database;
 
-    auto filter_by_table_name = [database_info = &database_info](const String & table_name)
+    auto filter_by_table_name = [my_database_info = &database_info](const String & table_name)
     {
         /// We skip inner tables of materialized views.
         if (table_name.starts_with(".inner_id."))
             return false;
 
-        if (database_info->tables.contains(table_name))
+        if (my_database_info->tables.contains(table_name))
             return true;
 
-        if (database_info->all_tables)
-            return !database_info->except_table_names.contains(table_name);
+        if (my_database_info->all_tables)
+            return !my_database_info->except_table_names.contains(table_name);
 
         return false;
     };
@@ -483,7 +491,10 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
 
     try
     {
-        db_tables = database->getTablesForBackup(filter_by_table_name, context);
+        /// Database or table could be replicated - so may use ZooKeeper. We need to retry.
+        auto zookeeper_retries_info = global_zookeeper_retries_info;
+        ZooKeeperRetriesControl retries_ctl("getTablesForBackup", zookeeper_retries_info, nullptr);
+        retries_ctl.retryLoop([&](){ db_tables = database->getTablesForBackup(filter_by_table_name, context); });
     }
     catch (Exception & e)
     {
@@ -746,6 +757,7 @@ void BackupEntriesCollector::addPostTask(std::function<void()> task)
 /// Runs all the tasks added with addPostCollectingTask().
 void BackupEntriesCollector::runPostTasks()
 {
+    LOG_TRACE(log, "Will run {} post tasks", post_tasks.size());
     /// Post collecting tasks can add other post collecting tasks, our code is fine with that.
     while (!post_tasks.empty())
     {
@@ -753,6 +765,7 @@ void BackupEntriesCollector::runPostTasks()
         post_tasks.pop();
         std::move(task)();
     }
+    LOG_TRACE(log, "All post tasks successfully executed");
 }
 
 size_t BackupEntriesCollector::getAccessCounter(AccessEntityType type)

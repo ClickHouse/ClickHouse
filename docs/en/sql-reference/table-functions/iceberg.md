@@ -1,6 +1,7 @@
 ---
 slug: /en/sql-reference/table-functions/iceberg
-sidebar_label: Iceberg
+sidebar_position: 90
+sidebar_label: iceberg
 ---
 
 # iceberg Table Function
@@ -20,7 +21,7 @@ iceberg(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure])
 - `format` — The [format](/docs/en/interfaces/formats.md/#formats) of the file. By default `Parquet` is used.
 - `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 
-Engine parameters can be specified using [Named Collections](../../operations/named-collections.md)
+Engine parameters can be specified using [Named Collections](/docs/en/operations/named-collections.md).
 
 **Returned value**
 
@@ -32,7 +33,13 @@ A table with the specified structure for reading data in the specified Iceberg t
 SELECT * FROM iceberg('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
 ```
 
-Using named collections:
+:::important
+ClickHouse currently supports reading v1 (v2 support is coming soon!) of the Iceberg format via the `iceberg` table function and `Iceberg` table engine.
+:::
+
+## Defining a named collection
+
+Here is an example of configuring a named collection for storing the URL and credentials:
 
 ```xml
 <clickhouse>

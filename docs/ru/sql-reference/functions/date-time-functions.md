@@ -26,7 +26,8 @@ SELECT
 
 ## timeZone {#timezone}
 
-Возвращает часовой пояс сервера.
+Возвращает часовой пояс сервера, считающийся умолчанием для текущей сессии: значение параметра [session_timezone](../../operations/settings/settings.md#session_timezone), если установлено.
+
 Если функция вызывается в контексте распределенной таблицы, то она генерирует обычный столбец со значениями, актуальными для каждого шарда. Иначе возвращается константа.
 
 **Синтаксис**
@@ -42,6 +43,33 @@ timeZone()
 -   Часовой пояс.
 
 Тип: [String](../../sql-reference/data-types/string.md).
+
+**Смотрите также**
+
+- [serverTimeZone](#servertimezone)
+
+## serverTimeZone {#servertimezone}
+
+Возвращает часовой пояс сервера по умолчанию, в т.ч. установленный [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
+Если функция вызывается в контексте распределенной таблицы, то она генерирует обычный столбец со значениями, актуальными для каждого шарда. Иначе возвращается константа.
+
+**Синтаксис**
+
+``` sql
+serverTimeZone()
+```
+
+Синонимы: `serverTimezone`.
+
+**Возвращаемое значение**
+
+-   Часовой пояс.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Смотрите также**
+
+- [timeZone](#timezone)
 
 ## toTimeZone {#totimezone}
 
@@ -235,13 +263,13 @@ SELECT toDateTime('2021-04-21 10:20:30', 'Europe/Moscow') AS Time, toTypeName(Ti
 
 ## toUnixTimestamp {#to-unix-timestamp}
 
-Переводит дату-с-временем в число типа UInt32 -- Unix Timestamp (https://en.wikipedia.org/wiki/Unix_time).
-Для аргумента String, строка конвертируется в дату и время в соответствии с часовым поясом (необязательный второй аргумент, часовой пояс сервера используется по умолчанию).
+Переводит строку, дату или дату-с-временем в [Unix Timestamp](https://en.wikipedia.org/wiki/Unix_time), имеющий тип `UInt32`.
+Строка может сопровождаться вторым (необязательным) аргументом, указывающим часовой пояс.
 
 **Синтаксис**
 
 ``` sql
-toUnixTimestamp(datetime)
+toUnixTimestamp(date)
 toUnixTimestamp(str, [timezone])
 ```
 
@@ -256,25 +284,41 @@ toUnixTimestamp(str, [timezone])
 Запрос:
 
 ``` sql
-SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp;
+SELECT
+    '2017-11-05 08:07:47' AS dt_str,
+    toUnixTimestamp(dt_str) AS from_str,
+    toUnixTimestamp(dt_str, 'Asia/Tokyo') AS from_str_tokyo,
+    toUnixTimestamp(toDateTime(dt_str)) AS from_datetime,
+    toUnixTimestamp(toDateTime64(dt_str, 0)) AS from_datetime64,
+    toUnixTimestamp(toDate(dt_str)) AS from_date,
+    toUnixTimestamp(toDate32(dt_str)) AS from_date32
+FORMAT Vertical;
 ```
 
 Результат:
 
 ``` text
-┌─unix_timestamp─┐
-│     1509836867 │
-└────────────────┘
+Row 1:
+──────
+dt_str:          2017-11-05 08:07:47
+from_str:        1509869267
+from_str_tokyo:  1509836867
+from_datetime:   1509869267
+from_datetime64: 1509869267
+from_date:       1509840000
+from_date32:     1509840000
 ```
 
 :::note
-Тип возвращаемого значения описанными далее функциями `toStartOf*`, `toLastDayOfMonth`, `toMonday`, `timeSlot` определяется конфигурационным параметром [enable_extended_results_for_datetime_functions](../../operations/settings/settings#enable-extended-results-for-datetime-functions) имеющим по умолчанию значение `0`.
+Тип возвращаемого значения описанными далее функциями `toStartOf*`, `toLastDayOf*`, `toMonday`, `timeSlot` определяется конфигурационным параметром [enable_extended_results_for_datetime_functions](../../operations/settings/settings.md#enable-extended-results-for-datetime-functions) имеющим по умолчанию значение `0`.
 
 Поведение для
-* `enable_extended_results_for_datetime_functions = 0`: Функции `toStartOf*`, `toLastDayOfMonth`, `toMonday` возвращают `Date` или `DateTime`. Функции `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` возвращают `DateTime`. Хотя эти функции могут принимать значения типа `Date32` или `DateTime64` в качестве аргумента, при обработке аргумента вне нормального диапазона значений (`1970` - `2148` для `Date` и `1970-01-01 00:00:00`-`2106-02-07 08:28:15` для `DateTime`) будет получен некорректный результат.
+* `enable_extended_results_for_datetime_functions = 0`:
+  * Функции `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfWeek`, `toLastDayOfMonth`, `toMonday` возвращают `Date` или `DateTime`.
+  * Функции `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` возвращают `DateTime`. Хотя эти функции могут принимать значения расширенных типов `Date32` и `DateTime64` в качестве аргумента, при обработке аргумента вне нормального диапазона значений (`1970` - `2148` для `Date` и `1970-01-01 00:00:00`-`2106-02-07 08:28:15` для `DateTime`) будет получен некорректный результат.
 * `enable_extended_results_for_datetime_functions = 1`:
-    * Функции `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfMonth`, `toMonday` возвращают `Date` или `DateTime` если их аргумент `Date` или `DateTime` и они возвращают `Date32` или `DateTime64` если их аргумент `Date32` или `DateTime64`.
-    * Функции `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` возвращают `DateTime` если их аргумент `Date` или `DateTime` и они возвращают `DateTime64` если их аргумент `Date32` или `DateTime64`.
+  * Функции `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfWeek`, `toLastDayOfMonth`, `toMonday` возвращают `Date` или `DateTime` если их аргумент `Date` или `DateTime` и они возвращают `Date32` или `DateTime64` если их аргумент `Date32` или `DateTime64`.
+  * Функции `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` возвращают `DateTime`, если их аргумент имеет тип `Date` или `DateTime`, и `DateTime64` если их аргумент имеет тип `Date32` или `DateTime64`.
 :::
 
 ## toStartOfYear {#tostartofyear}
@@ -324,9 +368,15 @@ SELECT toStartOfISOYear(toDate('2017-01-01')) AS ISOYear20170101;
 Округляет дату или дату-с-временем вниз до ближайшего понедельника.
 Возвращается дата.
 
-## toStartOfWeek(t[,mode]) {#tostartofweek}
+## toStartOfWeek(t[, mode[, timezone]])
 
-Округляет дату или дату со временем до ближайшего воскресенья или понедельника в соответствии с mode.
+Округляет дату или дату-с-временем назад, до ближайшего воскресенья или понедельника, в соответствии с mode.
+Возвращается дата.
+Аргумент mode работает точно так же, как аргумент mode [toWeek()](#toweek). Если аргумент mode опущен, то используется режим 0.
+
+## toLastDayOfWeek(t[, mode[, timezone]])
+
+Округляет дату или дату-с-временем вперёд, до ближайшей субботы или воскресенья, в соответствии с mode.
 Возвращается дата.
 Аргумент mode работает точно так же, как аргумент mode [toWeek()](#toweek). Если аргумент mode опущен, то используется режим 0.
 
@@ -549,29 +599,33 @@ SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS we
 ## toYearWeek(date[,mode]) {#toyearweek}
 Возвращает год и неделю для даты. Год в результате может отличаться от года в аргументе даты для первой и последней недели года.
 
-Аргумент mode работает точно так же, как аргумент mode [toWeek()](#toweek). Если mode не задан, используется режим 0.
+Аргумент mode работает так же, как аргумент mode [toWeek()](#toweek), значение mode по умолчанию -- `0`.
 
-`toISOYear() ` эквивалентно `intDiv(toYearWeek(date,3),100)`.
+`toISOYear() ` эквивалентно `intDiv(toYearWeek(date,3),100)`
+
+:::warning
+Однако, есть отличие в работе функций `toWeek()` и `toYearWeek()`. `toWeek()` возвращает номер недели в контексте заданного года, и в случае, когда `toWeek()` вернёт `0`, `toYearWeek()` вернёт значение, соответствующее последней неделе предыдущего года (см. `prev_yearWeek` в примере).
+:::
 
 **Пример**
 
 Запрос:
 
 ```sql
-SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(date,1) AS yearWeek1, toYearWeek(date,9) AS yearWeek9;
+SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(date,1) AS yearWeek1, toYearWeek(date,9) AS yearWeek9, toYearWeek(toDate('2022-01-01')) AS prev_yearWeek;
 ```
 
 Результат:
 
 ```text
-┌───────date─┬─yearWeek0─┬─yearWeek1─┬─yearWeek9─┐
-│ 2016-12-27 │    201652 │    201652 │    201701 │
-└────────────┴───────────┴───────────┴───────────┘
+┌───────date─┬─yearWeek0─┬─yearWeek1─┬─yearWeek9─┬─prev_yearWeek─┐
+│ 2016-12-27 │    201652 │    201652 │    201701 │        202152 │
+└────────────┴───────────┴───────────┴───────────┴───────────────┘
 ```
 
 ## age
 
-Вычисляет компонент `unit` разницы между `startdate` и `enddate`. Разница вычисляется с точностью в 1 секунду.
+Вычисляет компонент `unit` разницы между `startdate` и `enddate`. Разница вычисляется с точностью в 1 микросекунду.
 Например, разница между `2021-12-29` и `2022-01-01` 3 дня для единицы `day`, 0 месяцев для единицы `month`, 0 лет для единицы `year`.
 
 **Синтаксис**
@@ -585,6 +639,8 @@ age('unit', startdate, enddate, [timezone])
 -   `unit` — единица измерения времени, в которой будет выражено возвращаемое значение функции. [String](../../sql-reference/data-types/string.md).
     Возможные значения:
 
+    - `microsecond` (возможные сокращения: `us`, `u`)
+    - `millisecond` (возможные сокращения: `ms`)
     - `second` (возможные сокращения: `ss`, `s`)
     - `minute` (возможные сокращения: `mi`, `n`)
     - `hour` (возможные сокращения: `hh`, `h`)
@@ -658,6 +714,8 @@ date_diff('unit', startdate, enddate, [timezone])
 -   `unit` — единица измерения времени, в которой будет выражено возвращаемое значение функции. [String](../../sql-reference/data-types/string.md).
     Возможные значения:
 
+    - `microsecond` (возможные сокращения: `us`, `u`)
+    - `millisecond` (возможные сокращения: `ms`)
     - `second` (возможные сокращения: `ss`, `s`)
     - `minute` (возможные сокращения: `mi`, `n`)
     - `hour` (возможные сокращения: `hh`, `h`)

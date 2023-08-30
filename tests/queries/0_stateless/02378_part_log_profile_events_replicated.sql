@@ -1,8 +1,8 @@
 
 -- Tags: long, replica, no-replicated-database, no-parallel
 
-DROP TABLE IF EXISTS part_log_profile_events_r1 NO DELAY;
-DROP TABLE IF EXISTS part_log_profile_events_r2 NO DELAY;
+DROP TABLE IF EXISTS part_log_profile_events_r1 SYNC;
+DROP TABLE IF EXISTS part_log_profile_events_r2 SYNC;
 
 CREATE TABLE part_log_profile_events_r1 (x UInt64)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_02378/part_log_profile_events', 'r1')
@@ -36,5 +36,5 @@ WHERE event_time > now() - INTERVAL 10 MINUTE
     AND event_type == 'DownloadPart'
 ;
 
-DROP TABLE part_log_profile_events_r1 NO DELAY;
-DROP TABLE part_log_profile_events_r2 NO DELAY;
+DROP TABLE part_log_profile_events_r1 SYNC;
+DROP TABLE part_log_profile_events_r2 SYNC;

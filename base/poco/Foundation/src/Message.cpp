@@ -27,8 +27,7 @@ Message::Message():
 	_tid(0), 
 	_file(0),
 	_line(0),
-	_pMap(0),
-    _fmt_str(0)
+	_pMap(0)
 {
 	init();
 }
@@ -60,6 +59,19 @@ Message::Message(const std::string& source, const std::string& text, Priority pr
 	init();
 }
 
+
+Message::Message(std::string && source, std::string && text, Priority prio, const char * file, int line, std::string_view fmt_str):
+    _source(std::move(source)),
+    _text(std::move(text)),
+    _prio(prio),
+    _tid(0),
+    _file(file),
+    _line(line),
+    _pMap(0),
+    _fmt_str(fmt_str)
+{
+    init();
+}
 
 Message::Message(const Message& msg):
 	_source(msg._source),

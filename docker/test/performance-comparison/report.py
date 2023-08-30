@@ -364,20 +364,6 @@ if args.report == "main":
             ]
         )
 
-    slow_on_client_rows = tsvRows("report/slow-on-client.tsv")
-    error_tests += len(slow_on_client_rows)
-    addSimpleTable(
-        "Slow on Client",
-        ["Client time,&nbsp;s", "Server time,&nbsp;s", "Ratio", "Test", "Query"],
-        slow_on_client_rows,
-    )
-    if slow_on_client_rows:
-        errors_explained.append(
-            [
-                f'<a href="#{currentTableAnchor()}">Some queries are taking noticeable time client-side (missing `FORMAT Null`?)</a>'
-            ]
-        )
-
     def add_backward_incompatible():
         rows = tsvRows("report/partial-queries-report.tsv")
         if not rows:
@@ -626,7 +612,9 @@ if args.report == "main":
         message_array.append(str(faster_queries) + " faster")
 
     if slower_queries:
-        if slower_queries > 3:
+        # This threshold should be synchronized with the value in https://github.com/ClickHouse/ClickHouse/blob/master/tests/ci/performance_comparison_check.py#L225
+        # False positives rate should be < 1%: https://shorturl.at/CDEK8
+        if slower_queries > 5:
             status = "failure"
         message_array.append(str(slower_queries) + " slower")
 
@@ -670,7 +658,6 @@ if args.report == "main":
     )
 
 elif args.report == "all-queries":
-
     print((header_template.format()))
 
     add_tested_commits()

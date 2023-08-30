@@ -1,50 +1,23 @@
-DROP TABLE IF EXISTS t_tuple_element_default;
+-- const tuple argument
 
-CREATE TABLE t_tuple_element_default(t1 Tuple(a UInt32, s String), t2 Tuple(UInt32, String)) ENGINE = Memory;
-INSERT INTO t_tuple_element_default VALUES ((1, 'a'), (2, 'b'));
+SELECT tupleElement(('hello', 'world'), 1, 'default');
+SELECT tupleElement(('hello', 'world'), 2, 'default');
+SELECT tupleElement(('hello', 'world'), 3, 'default');
+SELECT tupleElement(('hello', 'world'), 'xyz', 'default');
+SELECT tupleElement(('hello', 'world'), 3, [([('a')], 1)]); -- arbitrary default value
 
-SELECT tupleElement(t1, 'z', 'z') FROM t_tuple_element_default;
-EXPLAIN SYNTAX SELECT tupleElement(t1, 'z', 'z') FROM t_tuple_element_default;
-SELECT tupleElement(t1, 'z', 0) FROM t_tuple_element_default;
-EXPLAIN SYNTAX SELECT tupleElement(t1, 'z', 0) FROM t_tuple_element_default;
-SELECT tupleElement(t2, 'z', 'z') FROM t_tuple_element_default;
-EXPLAIN SYNTAX SELECT tupleElement(t2, 'z', 'z') FROM t_tuple_element_default;
+SELECT tupleElement([(1, 2), (3, 4)], 1, 'default');
+SELECT tupleElement([(1, 2), (3, 4)], 2, 'default');
+SELECT tupleElement([(1, 2), (3, 4)], 3, 'default');
 
-SELECT tupleElement(t1, 3, 'z') FROM t_tuple_element_default; -- { serverError 127 }
-SELECT tupleElement(t1, 0, 'z') FROM t_tuple_element_default; -- { serverError 127 }
+SELECT '--------';
 
-DROP TABLE t_tuple_element_default;
+-- non-const tuple argument
 
-SELECT '--------------------';
+SELECT tupleElement(materialize(('hello', 'world')), 1, 'default');
+SELECT tupleElement(materialize(('hello', 'world')), 2, 'default');
+SELECT tupleElement(materialize(('hello', 'world')), 3, 'default');
+SELECT tupleElement(materialize(('hello', 'world')), 'xzy', 'default');
+SELECT tupleElement(materialize(('hello', 'world')), 'xzy', [([('a')], 1)]); -- arbitrary default value
 
-SELECT tupleElement(array(tuple(1, 2)), 'a', 0); -- { serverError 645 }
-SELECT tupleElement(array(tuple(1, 2)), 'a', array(tuple(1, 2), tuple(3, 4))); -- { serverError 190 }
-SELECT tupleElement(array(array(tuple(1))), 'a', array(array(1, 2, 3))); -- { serverError 190 }
-
-SELECT tupleElement(array(tuple(1, 2)), 'a', array(tuple(3, 4)));
-EXPLAIN SYNTAX SELECT tupleElement(array(tuple(1, 2)), 'a', array(tuple(3, 4)));
-
-SELECT '--------------------';
-
-CREATE TABLE t_tuple_element_default(t1 Array(Tuple(UInt32)), t2 UInt32) ENGINE = Memory;
-
-SELECT tupleElement(t1, 'a', array(tuple(1))) FROM t_tuple_element_default;
-EXPLAIN SYNTAX SELECT tupleElement(t1, 'a', array(tuple(1))) FROM t_tuple_element_default;
-
-SELECT '--------------------';
-
-INSERT INTO t_tuple_element_default VALUES ([(1)], 100);
-
-SELECT tupleElement(t1, 'a', array(tuple(0))) FROM t_tuple_element_default;
-EXPLAIN SYNTAX SELECT tupleElement(t1, 'a', array(tuple(0))) FROM t_tuple_element_default;
-
-SELECT tupleElement(t1, 'a', array(0)) FROM t_tuple_element_default;
-EXPLAIN SYNTAX SELECT tupleElement(t1, 'a', array(0)) FROM t_tuple_element_default;
-
-INSERT INTO t_tuple_element_default VALUES ([(2)], 200);
-
-SELECT tupleElement(t1, 'a', array(0)) FROM t_tuple_element_default;
-EXPLAIN SYNTAX SELECT tupleElement(t1, 'a', array(0)) FROM t_tuple_element_default;
-
-DROP TABLE t_tuple_element_default;
-
+SELECT tupleElement([[(count('2147483646'), 1)]], 'aaaa', [[1, 2, 3]]) -- bug #51525

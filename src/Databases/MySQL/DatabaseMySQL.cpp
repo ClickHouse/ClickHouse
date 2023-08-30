@@ -53,7 +53,7 @@ DatabaseMySQL::DatabaseMySQL(
     const String & metadata_path_,
     const ASTStorage * database_engine_define_,
     const String & database_name_in_mysql_,
-    std::unique_ptr<ConnectionMySQLSettings> settings_,
+    std::unique_ptr<MySQLSettings> settings_,
     mysqlxx::PoolWithFailover && pool,
     bool attach)
     : IDatabase(database_name_)
@@ -61,13 +61,13 @@ DatabaseMySQL::DatabaseMySQL(
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , database_name_in_mysql(database_name_in_mysql_)
-    , database_settings(std::move(settings_))
+    , mysql_settings(std::move(settings_))
     , mysql_pool(std::move(pool)) /// NOLINT
 {
     try
     {
         /// Test that the database is working fine; it will also fetch tables.
-        empty();
+        empty(); // NOLINT(bugprone-standalone-empty)
     }
     catch (...)
     {
@@ -76,6 +76,8 @@ DatabaseMySQL::DatabaseMySQL(
         else
             throw;
     }
+
+    fs::create_directories(metadata_path);
 
     thread = ThreadFromGlobalPool{&DatabaseMySQL::cleanOutdatedTables, this};
 }
@@ -144,6 +146,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
     auto table_storage_define = database_engine_define->clone();
     {
         ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
+        ast_storage->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
         ASTs storage_children = ast_storage->children;
         auto storage_engine_arguments = ast_storage->engine->arguments;
 
@@ -309,7 +312,7 @@ DatabaseMySQL::fetchTablesColumnsList(const std::vector<String> & tables_name, C
             database_name_in_mysql,
             tables_name,
             settings,
-            database_settings->mysql_datatypes_support_level);
+            mysql_settings->mysql_datatypes_support_level);
 }
 
 void DatabaseMySQL::shutdown()
@@ -402,7 +405,7 @@ String DatabaseMySQL::getMetadataPath() const
     return metadata_path;
 }
 
-void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/, bool /* skip_startup_tables */)
+void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/)
 {
 
     std::lock_guard lock{mutex};

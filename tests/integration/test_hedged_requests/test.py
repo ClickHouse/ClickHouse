@@ -23,7 +23,7 @@ def started_cluster():
     NODES["node"] = cluster.add_instance(
         "node",
         stay_alive=True,
-        main_configs=["configs/remote_servers.xml"],
+        main_configs=["configs/remote_servers.xml", "configs/logger.xml"],
         user_configs=["configs/users.xml"],
     )
 
@@ -128,6 +128,22 @@ def check_changing_replica_events(expected_count):
     assert int(result) >= expected_count
 
 
+def check_if_query_sending_was_suspended():
+    result = NODES["node"].query(
+        "SELECT value FROM system.events WHERE event='SuspendSendingQueryToShard'"
+    )
+
+    assert int(result) >= 1
+
+
+def check_if_query_sending_was_not_suspended():
+    result = NODES["node"].query(
+        "SELECT value FROM system.events WHERE event='SuspendSendingQueryToShard'"
+    )
+
+    assert result == ""
+
+
 def update_configs(
     node_1_sleep_in_send_tables_status=0,
     node_1_sleep_in_send_data=0,
@@ -187,6 +203,9 @@ def update_configs(
 
 
 def test_stuck_replica(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs()
 
     cluster.pause_container("node_1")
@@ -217,6 +236,9 @@ def test_stuck_replica(started_cluster):
 
 
 def test_long_query(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs()
 
     # Restart to reset pool states.
@@ -233,12 +255,18 @@ def test_long_query(started_cluster):
 
 
 def test_send_table_status_sleep(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs(node_1_sleep_in_send_tables_status=sleep_time)
     check_query(expected_replica="node_2")
     check_changing_replica_events(1)
 
 
 def test_send_table_status_sleep2(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs(
         node_1_sleep_in_send_tables_status=sleep_time,
         node_2_sleep_in_send_tables_status=sleep_time,
@@ -248,12 +276,18 @@ def test_send_table_status_sleep2(started_cluster):
 
 
 def test_send_data(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs(node_1_sleep_in_send_data=sleep_time)
     check_query(expected_replica="node_2")
     check_changing_replica_events(1)
 
 
 def test_send_data2(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs(
         node_1_sleep_in_send_data=sleep_time, node_2_sleep_in_send_data=sleep_time
     )
@@ -262,6 +296,9 @@ def test_send_data2(started_cluster):
 
 
 def test_combination1(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs(
         node_1_sleep_in_send_tables_status=sleep_time,
         node_2_sleep_in_send_data=sleep_time,
@@ -271,6 +308,9 @@ def test_combination1(started_cluster):
 
 
 def test_combination2(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs(
         node_1_sleep_in_send_data=sleep_time,
         node_2_sleep_in_send_tables_status=sleep_time,
@@ -280,6 +320,9 @@ def test_combination2(started_cluster):
 
 
 def test_combination3(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs(
         node_1_sleep_in_send_data=sleep_time,
         node_2_sleep_in_send_tables_status=1000,
@@ -290,6 +333,9 @@ def test_combination3(started_cluster):
 
 
 def test_combination4(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     update_configs(
         node_1_sleep_in_send_tables_status=1000,
         node_1_sleep_in_send_data=sleep_time,
@@ -301,6 +347,9 @@ def test_combination4(started_cluster):
 
 
 def test_receive_timeout1(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     # Check the situation when first two replicas get receive timeout
     # in establishing connection, but the third replica is ok.
     update_configs(
@@ -313,6 +362,9 @@ def test_receive_timeout1(started_cluster):
 
 
 def test_receive_timeout2(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     # Check the situation when first replica get receive timeout
     # in packet receiving but there are replicas in process of
     # connection establishing.
@@ -326,6 +378,9 @@ def test_receive_timeout2(started_cluster):
 
 
 def test_initial_receive_timeout(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     # Check the situation when replicas don't respond after
     # receiving query (so, no packets were send to initiator)
     update_configs(
@@ -341,3 +396,77 @@ def test_initial_receive_timeout(started_cluster):
     )
 
     assert "SOCKET_TIMEOUT" in result
+
+
+def test_async_connect(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
+    update_configs()
+
+    NODES["node"].restart_clickhouse()
+
+    NODES["node"].query("DROP TABLE IF EXISTS distributed_connect")
+
+    NODES["node"].query(
+        """CREATE TABLE distributed_connect (id UInt32, date Date) ENGINE =
+        Distributed('test_cluster_connect', 'default', 'test_hedged')"""
+    )
+
+    NODES["node"].query(
+        "SELECT hostName(), id FROM distributed_connect ORDER BY id LIMIT 1 SETTINGS prefer_localhost_replica = 0, connect_timeout_with_failover_ms=5000, async_query_sending_for_remote=0, max_threads=1"
+    )
+    check_changing_replica_events(2)
+    check_if_query_sending_was_not_suspended()
+
+    # Restart server to reset connection pool state
+    NODES["node"].restart_clickhouse()
+
+    NODES["node"].query(
+        "SELECT hostName(), id FROM distributed_connect ORDER BY id LIMIT 1 SETTINGS prefer_localhost_replica = 0, connect_timeout_with_failover_ms=5000, async_query_sending_for_remote=1, max_threads=1"
+    )
+    check_changing_replica_events(2)
+    check_if_query_sending_was_suspended()
+
+    NODES["node"].query("DROP TABLE distributed_connect")
+
+
+def test_async_query_sending(started_cluster):
+    if NODES["node"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
+    update_configs(
+        node_1_sleep_after_receiving_query=5000,
+        node_2_sleep_after_receiving_query=5000,
+        node_3_sleep_after_receiving_query=5000,
+    )
+
+    NODES["node"].restart_clickhouse()
+
+    NODES["node"].query("DROP TABLE IF EXISTS distributed_query_sending")
+
+    NODES["node"].query(
+        """CREATE TABLE distributed_query_sending (id UInt32, date Date) ENGINE =
+        Distributed('test_cluster_three_shards', 'default', 'test_hedged')"""
+    )
+
+    # Create big enough temporary table
+    NODES["node"].query("DROP TABLE IF EXISTS tmp")
+    NODES["node"].query(
+        "CREATE TEMPORARY TABLE tmp (number UInt64, s String) "
+        "as select number, randomString(number % 1000) from numbers(10000000)"
+    )
+
+    NODES["node"].query(
+        "SELECT hostName(), id FROM distributed_query_sending ORDER BY id LIMIT 1 SETTINGS"
+        " prefer_localhost_replica = 0, async_query_sending_for_remote=0, max_threads = 1"
+    )
+    check_if_query_sending_was_not_suspended()
+
+    NODES["node"].query(
+        "SELECT hostName(), id FROM distributed_query_sending ORDER BY id LIMIT 1 SETTINGS"
+        " prefer_localhost_replica = 0, async_query_sending_for_remote=1, max_threads = 1"
+    )
+    check_if_query_sending_was_suspended()
+
+    NODES["node"].query("DROP TABLE distributed_query_sending")

@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseDictionary.h>
+#include <Databases/DatabaseFilesystem.h>
 #include <Databases/DatabaseLazy.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOrdinary.h>
@@ -13,9 +14,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Common/NamedCollections/NamedCollections.h>
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
@@ -24,11 +23,11 @@
 
 #if USE_MYSQL
 #    include <Core/MySQL/MySQLClient.h>
-#    include <Databases/MySQL/ConnectionMySQLSettings.h>
 #    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Databases/MySQL/MaterializedMySQLSettings.h>
 #    include <Storages/MySQL/MySQLHelpers.h>
 #    include <Storages/MySQL/MySQLSettings.h>
+#    include <Storages/StorageMySQL.h>
 #    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
 #    include <mysqlxx/Pool.h>
 #endif
@@ -47,6 +46,14 @@
 
 #if USE_SQLITE
 #include <Databases/SQLite/DatabaseSQLite.h>
+#endif
+
+#if USE_AWS_S3
+#include <Databases/DatabaseS3.h>
+#endif
+
+#if USE_HDFS
+#include <Databases/DatabaseHDFS.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -100,9 +107,6 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
 {
     cckMetadataPathForOrdinary(create, metadata_path);
 
-    /// Creates store/xxx/ for Atomic
-    fs::create_directories(fs::path(metadata_path).parent_path());
-
     DatabasePtr impl = getImpl(create, metadata_path, context);
 
     if (impl && context->hasQueryContext() && context->getSettingsRef().log_queries)
@@ -133,13 +137,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
     static const std::unordered_set<std::string_view> database_engines{"Ordinary", "Atomic", "Memory",
         "Dictionary", "Lazy", "Replicated", "MySQL", "MaterializeMySQL", "MaterializedMySQL",
-        "PostgreSQL", "MaterializedPostgreSQL", "SQLite"};
+        "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "Filesystem", "S3", "HDFS"};
 
     if (!database_engines.contains(engine_name))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine name `{}` does not exist", engine_name);
 
     static const std::unordered_set<std::string_view> engines_with_arguments{"MySQL", "MaterializeMySQL", "MaterializedMySQL",
-        "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite"};
+        "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "Filesystem", "S3", "HDFS"};
 
     static const std::unordered_set<std::string_view> engines_with_table_overrides{"MaterializeMySQL", "MaterializedMySQL", "MaterializedPostgreSQL"};
     bool engine_may_have_arguments = engines_with_arguments.contains(engine_name);
@@ -183,21 +187,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (!engine->arguments)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
-        StorageMySQLConfiguration configuration;
+        StorageMySQL::Configuration configuration;
         ASTs & arguments = engine->arguments->children;
-        auto mysql_settings = std::make_unique<ConnectionMySQLSettings>();
+        auto mysql_settings = std::make_unique<MySQLSettings>();
 
-        if (auto named_collection = getExternalDataSourceConfiguration(arguments, context, true, true, *mysql_settings))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(arguments, context))
         {
-            auto [common_configuration, storage_specific_args, settings_changes] = named_collection.value();
-
-            configuration.set(common_configuration);
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-            mysql_settings->applyChanges(settings_changes);
-
-            if (!storage_specific_args.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.");
+            configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, context, false);
         }
         else
         {
@@ -230,8 +226,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         {
             if (engine_name == "MySQL")
             {
-                mysql_settings->loadFromQueryContext(context);
-                mysql_settings->loadFromQuery(*engine_define); /// higher priority
+                mysql_settings->loadFromQueryContext(context, *engine_define);
+                if (engine_define->settings)
+                    mysql_settings->loadFromQuery(*engine_define);
 
                 auto mysql_pool = createMySQLPoolWithFailover(configuration, *mysql_settings);
 
@@ -324,22 +321,10 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         auto use_table_cache = false;
         StoragePostgreSQL::Configuration configuration;
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
         {
-            validateNamedCollection(
-                *named_collection,
-                {"host", "port", "user", "password", "database"},
-                {"schema", "on_conflict", "use_table_cache"});
-
-            configuration.host = named_collection->get<String>("host");
-            configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-            configuration.username = named_collection->get<String>("user");
-            configuration.password = named_collection->get<String>("password");
-            configuration.database = named_collection->get<String>("database");
-            configuration.schema = named_collection->getOrDefault<String>("schema", "");
-            configuration.on_conflict = named_collection->getOrDefault<String>("on_conflict", "");
-            use_table_cache = named_collection->getOrDefault<UInt64>("use_tables_cache", 0);
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, false);
+            use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
         }
         else
         {
@@ -399,20 +384,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         ASTs & engine_args = engine->arguments->children;
         StoragePostgreSQL::Configuration configuration;
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
         {
-            validateNamedCollection(
-                *named_collection,
-                {"host", "port", "user", "password", "database"},
-                {"schema"});
-
-            configuration.host = named_collection->get<String>("host");
-            configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-            configuration.username = named_collection->get<String>("user");
-            configuration.password = named_collection->get<String>("password");
-            configuration.database = named_collection->get<String>("database");
-            configuration.schema = named_collection->getOrDefault<String>("schema", "");
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, false);
         }
         else
         {
@@ -461,6 +435,63 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         String database_path = safeGetLiteralValue<String>(arguments[0], "SQLite");
 
         return std::make_shared<DatabaseSQLite>(context, engine_define, create.attach, database_path);
+    }
+#endif
+
+    else if (engine_name == "Filesystem")
+    {
+        const ASTFunction * engine = engine_define->engine;
+
+        /// If init_path is empty, then the current path will be used
+        std::string init_path;
+
+        if (engine->arguments && !engine->arguments->children.empty())
+        {
+            if (engine->arguments->children.size() != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filesystem database requires at most 1 argument: filesystem_path");
+
+            const auto & arguments = engine->arguments->children;
+            init_path = safeGetLiteralValue<String>(arguments[0], engine_name);
+        }
+
+        return std::make_shared<DatabaseFilesystem>(database_name, init_path, context);
+    }
+
+#if USE_AWS_S3
+    else if (engine_name == "S3")
+    {
+        const ASTFunction * engine = engine_define->engine;
+
+        DatabaseS3::Configuration config;
+
+        if (engine->arguments && !engine->arguments->children.empty())
+        {
+            ASTs & engine_args = engine->arguments->children;
+            config = DatabaseS3::parseArguments(engine_args, context);
+        }
+
+        return std::make_shared<DatabaseS3>(database_name, config, context);
+    }
+#endif
+
+#if USE_HDFS
+    else if (engine_name == "HDFS")
+    {
+        const ASTFunction * engine = engine_define->engine;
+
+        /// If source_url is empty, then table name must contain full url
+        std::string source_url;
+
+        if (engine->arguments && !engine->arguments->children.empty())
+        {
+            if (engine->arguments->children.size() != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS database requires at most 1 argument: source_url");
+
+            const auto & arguments = engine->arguments->children;
+            source_url = safeGetLiteralValue<String>(arguments[0], engine_name);
+        }
+
+        return std::make_shared<DatabaseHDFS>(database_name, source_url, context);
     }
 #endif
 

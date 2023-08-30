@@ -22,6 +22,7 @@
 #include <Common/setThreadName.h>
 #include <Core/MySQL/Authentication.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
 #include "config_version.h"
 
@@ -93,7 +94,7 @@ void MySQLHandler::run()
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MYSQL);
     SCOPE_EXIT({ session.reset(); });
 
-    session->getClientInfo().connection_id = connection_id;
+    session->setClientConnectionId(connection_id);
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
@@ -339,10 +340,10 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 
         std::atomic<size_t> affected_rows {0};
         auto prev = query_context->getProgressCallback();
-        query_context->setProgressCallback([&, prev = prev](const Progress & progress)
+        query_context->setProgressCallback([&, my_prev = prev](const Progress & progress)
         {
-            if (prev)
-                prev(progress);
+            if (my_prev)
+                my_prev(progress);
 
             affected_rows += progress.written_rows;
         });

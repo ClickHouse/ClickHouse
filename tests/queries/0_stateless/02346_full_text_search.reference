@@ -46,17 +46,3 @@ Test inverted(2) on UTF-8 data
 af	inverted
 102	clickhouse你好
 1
-Test max_digestion_size_per_segment
-af	inverted
-BC614E,05397FB1,6969696969898240,CF3304
-1
-Test density==1
-af	inverted
-1
-1
-Test density==0.1
-af	inverted
-1
-1
-1
-1

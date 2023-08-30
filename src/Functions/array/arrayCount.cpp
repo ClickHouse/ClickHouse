@@ -17,9 +17,6 @@ namespace ErrorCodes
   */
 struct ArrayCountImpl
 {
-    using column_type = ColumnArray;
-    using data_type = DataTypeArray;
-
     static bool needBoolean() { return true; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }

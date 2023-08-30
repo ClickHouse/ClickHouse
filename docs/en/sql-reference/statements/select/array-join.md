@@ -23,8 +23,8 @@ You can specify only one `ARRAY JOIN` clause in a `SELECT` query.
 
 Supported types of `ARRAY JOIN` are listed below:
 
--   `ARRAY JOIN` - In base case, empty arrays are not included in the result of `JOIN`.
--   `LEFT ARRAY JOIN` - The result of `JOIN` contains rows with empty arrays. The value for an empty array is set to the default value for the array element type (usually 0, empty string or NULL).
+- `ARRAY JOIN` - In base case, empty arrays are not included in the result of `JOIN`.
+- `LEFT ARRAY JOIN` - The result of `JOIN` contains rows with empty arrays. The value for an empty array is set to the default value for the array element type (usually 0, empty string or NULL).
 
 ## Basic ARRAY JOIN Examples
 
@@ -146,7 +146,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS ma
 └───────┴─────────┴───┴─────┴────────┘
 ```
 
-The example below uses the [arrayEnumerate](../../../sql-reference/functions/array-functions#array_functions-arrayenumerate) function:
+The example below uses the [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate) function:
 
 ``` sql
 SELECT s, arr, a, num, arrayEnumerate(arr)
@@ -166,8 +166,8 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num;
 Multiple arrays with different sizes can be joined by using: `SETTINGS enable_unaligned_array_join = 1`. Example:
 
 ```sql
-SELECT s, arr, a, b 
-FROM arrays_test ARRAY JOIN arr as a, [['a','b'],['c']] as b 
+SELECT s, arr, a, b
+FROM arrays_test ARRAY JOIN arr as a, [['a','b'],['c']] as b
 SETTINGS enable_unaligned_array_join = 1;
 ```
 
@@ -185,7 +185,7 @@ SETTINGS enable_unaligned_array_join = 1;
 
 ## ARRAY JOIN with Nested Data Structure
 
-`ARRAY JOIN` also works with [nested data structures](../../../sql-reference/data-types/nested-data-structures/nested.md):
+`ARRAY JOIN` also works with [nested data structures](../../../sql-reference/data-types/nested-data-structures/index.md):
 
 ``` sql
 CREATE TABLE nested_test
@@ -278,7 +278,7 @@ ARRAY JOIN nest AS n;
 └───────┴─────┴─────┴─────────┴────────────┘
 ```
 
-Example of using the [arrayEnumerate](../../../sql-reference/functions/array-functions#array_functions-arrayenumerate) function:
+Example of using the [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate) function:
 
 ``` sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num

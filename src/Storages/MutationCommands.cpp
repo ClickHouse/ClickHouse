@@ -23,6 +23,12 @@ namespace ErrorCodes
     extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN;
 }
 
+
+bool MutationCommand::isBarrierCommand() const
+{
+    return type == RENAME_COLUMN;
+}
+
 std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool parse_alter_commands)
 {
     if (command->type == ASTAlterCommand::DELETE)
@@ -179,7 +185,6 @@ void MutationCommands::readText(ReadBuffer & in)
     String commands_str;
     readEscapedString(commands_str, in);
 
-
     ParserAlterCommandList p_alter_commands;
     auto commands_ast = parseQuery(
         p_alter_commands, commands_str.data(), commands_str.data() + commands_str.length(), "mutation commands list", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
@@ -207,6 +212,16 @@ bool MutationCommands::hasNonEmptyMutationCommands() const
     for (const auto & command : *this)
     {
         if (command.type != MutationCommand::Type::EMPTY && command.type != MutationCommand::Type::ALTER_WITHOUT_MUTATION)
+            return true;
+    }
+    return false;
+}
+
+bool MutationCommands::containBarrierCommand() const
+{
+    for (const auto & command : *this)
+    {
+        if (command.isBarrierCommand())
             return true;
     }
     return false;

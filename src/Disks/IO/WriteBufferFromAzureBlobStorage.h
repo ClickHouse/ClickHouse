@@ -6,7 +6,7 @@
 
 #include <memory>
 
-#include <IO/BufferWithOwnMemory.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
 #include <azure/storage/blobs.hpp>
@@ -21,7 +21,7 @@ class Logger;
 namespace DB
 {
 
-class WriteBufferFromAzureBlobStorage : public BufferWithOwnMemory<WriteBuffer>
+class WriteBufferFromAzureBlobStorage : public WriteBufferFromFileBase
 {
 public:
     using AzureClientPtr = std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient>;
@@ -36,6 +36,9 @@ public:
     ~WriteBufferFromAzureBlobStorage() override;
 
     void nextImpl() override;
+
+    std::string getFileName() const override { return blob_path; }
+    void sync() override { next(); }
 
 private:
     void finalizeImpl() override;

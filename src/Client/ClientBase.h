@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string_view>
 #include "Common/NamePrompter.h"
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/ProgressIndication.h>
@@ -23,6 +24,15 @@ namespace po = boost::program_options;
 
 namespace DB
 {
+
+static constexpr std::string_view DEFAULT_CLIENT_NAME = "client";
+
+static const NameSet exit_strings
+{
+    "exit", "quit", "logout", "учше", "йгше", "дщпщге",
+    "exit;", "quit;", "logout;", "учшеж", "йгшеж", "дщпщгеж",
+    "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
+};
 
 namespace ErrorCodes
 {
@@ -129,9 +139,10 @@ protected:
 
     void setInsertionTable(const ASTInsertQuery & insert_query);
 
+    void addMultiquery(std::string_view query, Arguments & common_arguments) const;
 
 private:
-    void receiveResult(ASTPtr parsed_query);
+    void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
     void receiveLogsAndProfileEvents(ASTPtr parsed_query);
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
@@ -139,6 +150,7 @@ private:
     void cancelQuery();
 
     void onProgress(const Progress & value);
+    void onTimezoneUpdate(const String & tz);
     void onData(Block & block, ASTPtr parsed_query);
     void onLogData(Block & block);
     void onTotals(Block & block, ASTPtr parsed_query);

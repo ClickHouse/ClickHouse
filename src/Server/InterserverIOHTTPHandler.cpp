@@ -80,6 +80,7 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
 void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     setThreadName("IntersrvHandler");
+    ThreadStatus thread_status;
 
     /// In order to work keep-alive.
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
@@ -93,10 +94,13 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 
     auto write_response = [&](const std::string & message)
     {
-        if (response.sent())
-            return;
-
         auto & out = *used_output.out;
+        if (response.sent())
+        {
+            out.finalize();
+            return;
+        }
+
         try
         {
             writeString(message, out);
@@ -127,7 +131,10 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     catch (Exception & e)
     {
         if (e.code() == ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES)
+        {
+            used_output.out->finalize();
             return;
+        }
 
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 

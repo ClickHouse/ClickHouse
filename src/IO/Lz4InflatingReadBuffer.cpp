@@ -1,4 +1,5 @@
 #include <IO/Lz4InflatingReadBuffer.h>
+#include <IO/WithFileName.h>
 
 namespace DB
 {
@@ -72,9 +73,10 @@ bool Lz4InflatingReadBuffer::nextImpl()
     if (LZ4F_isError(ret))
         throw Exception(
             ErrorCodes::LZ4_DECODER_FAILED,
-            "LZ4 decompression failed. LZ4F version: {}. Error: {}",
+            "LZ4 decompression failed. LZ4F version: {}. Error: {}{}",
             LZ4F_VERSION,
-            LZ4F_getErrorName(ret));
+            LZ4F_getErrorName(ret),
+            getExceptionEntryWithFileName(*in));
 
     if (in->eof())
     {

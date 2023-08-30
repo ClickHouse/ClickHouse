@@ -33,6 +33,7 @@ ln -sf $SRC_PATH/config.d/test_cluster_with_incorrect_pw.xml $DEST_SERVER_PATH/c
 ln -sf $SRC_PATH/config.d/keeper_port.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/logging_no_rotate.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/merge_tree.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/lost_forever_check.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/metadata_cache.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/tcp_with_proxy.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/prometheus.xml $DEST_SERVER_PATH/config.d/
@@ -42,7 +43,7 @@ ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/encryption.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/CORS.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_log.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/logger_test.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/logger_trace.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/named_collection.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/ssl_certs.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/filesystem_cache_log.xml $DEST_SERVER_PATH/config.d/
@@ -50,11 +51,16 @@ ln -sf $SRC_PATH/config.d/session_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/system_unfreeze.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/enable_zero_copy_replication.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/nlp.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/forbidden_headers.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/enable_keeper_map.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/custom_disks_base_path.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/display_name.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/reverse_dns_query_function.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/compressed_marks_and_index.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/disable_s3_env_credentials.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/enable_wait_for_shutdown_replicated_tables.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/backups.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/filesystem_caches_path.xml $DEST_SERVER_PATH/config.d/
 
 # Not supported with fasttest.
 if [ "${DEST_SERVER_PATH}" = "/etc/clickhouse-server" ]
@@ -76,6 +82,11 @@ ln -sf $SRC_PATH/users.d/enable_blobs_check.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/marks.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/insert_keeper_retries.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/prefetch_settings.xml $DEST_SERVER_PATH/users.d/
+ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
+
+if [[ -n "$USE_NEW_ANALYZER" ]] && [[ "$USE_NEW_ANALYZER" -eq 1 ]]; then
+    ln -sf $SRC_PATH/users.d/analyzer.xml $DEST_SERVER_PATH/users.d/
+fi
 
 # FIXME DataPartsExchange may hang for http_send_timeout seconds
 # when nobody is going to read from the other side of socket (due to "Fetching of part was cancelled"),

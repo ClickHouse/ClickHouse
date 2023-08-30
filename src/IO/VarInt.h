@@ -1,41 +1,75 @@
 #pragma once
 
-#include <iostream>
 #include <base/types.h>
+#include <base/defines.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 
 
 namespace DB
 {
-namespace ErrorCodes
+
+/// Variable-Length Quantity (VLQ) Base-128 compression, also known as Variable Byte (VB) or Varint encoding.
+
+[[noreturn]] void throwReadAfterEOF();
+
+
+inline void writeVarUInt(UInt64 x, WriteBuffer & ostr)
 {
-    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    while (x > 0x7F)
+    {
+        uint8_t byte = 0x80 | (x & 0x7F);
+
+        ostr.nextIfAtEnd();
+        *ostr.position() = byte;
+        ++ostr.position();
+
+        x >>= 7;
+    }
+
+    uint8_t final_byte = static_cast<uint8_t>(x);
+
+    ostr.nextIfAtEnd();
+    *ostr.position() = final_byte;
+    ++ostr.position();
 }
 
+inline void writeVarUInt(UInt64 x, std::ostream & ostr)
+{
+    while (x > 0x7F)
+    {
+        uint8_t byte = 0x80 | (x & 0x7F);
+        ostr.put(byte);
 
-/** Write UInt64 in variable length format (base128) NOTE Only up to 2^63 - 1 are supported. */
-void writeVarUInt(UInt64 x, std::ostream & ostr);
-void writeVarUInt(UInt64 x, WriteBuffer & ostr);
-char * writeVarUInt(UInt64 x, char * ostr);
+        x >>= 7;
+    }
 
+    uint8_t final_byte = static_cast<uint8_t>(x);
+    ostr.put(final_byte);
+}
 
-/** Read UInt64, written in variable length format (base128) */
-void readVarUInt(UInt64 & x, std::istream & istr);
-void readVarUInt(UInt64 & x, ReadBuffer & istr);
-const char * readVarUInt(UInt64 & x, const char * istr, size_t size);
+inline char * writeVarUInt(UInt64 x, char * ostr)
+{
+    while (x > 0x7F)
+    {
+        uint8_t byte = 0x80 | (x & 0x7F);
 
+        *ostr = byte;
+        ++ostr;
 
-/** Get the length of UInt64 in VarUInt format */
-size_t getLengthOfVarUInt(UInt64 x);
+        x >>= 7;
+    }
 
-/** Get the Int64 length in VarInt format */
-size_t getLengthOfVarInt(Int64 x);
+    uint8_t final_byte = static_cast<uint8_t>(x);
 
+    *ostr = final_byte;
+    ++ostr;
 
-/** Write Int64 in variable length format (base128) */
-template <typename OUT>
-inline void writeVarInt(Int64 x, OUT & ostr)
+    return ostr;
+}
+
+template <typename Out>
+inline void writeVarInt(Int64 x, Out & ostr)
 {
     writeVarUInt(static_cast<UInt64>((x << 1) ^ (x >> 63)), ostr);
 }
@@ -45,10 +79,73 @@ inline char * writeVarInt(Int64 x, char * ostr)
     return writeVarUInt(static_cast<UInt64>((x << 1) ^ (x >> 63)), ostr);
 }
 
+namespace impl
+{
 
-/** Read Int64, written in variable length format (base128) */
-template <typename IN>
-inline void readVarInt(Int64 & x, IN & istr)
+template <bool check_eof>
+inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
+{
+    x = 0;
+    for (size_t i = 0; i < 10; ++i)
+    {
+        if constexpr (check_eof)
+            if (istr.eof()) [[unlikely]]
+                throwReadAfterEOF();
+
+        UInt64 byte = *istr.position();
+        ++istr.position();
+        x |= (byte & 0x7F) << (7 * i);
+
+        if (!(byte & 0x80))
+            return;
+    }
+}
+
+}
+
+inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
+{
+    if (istr.buffer().end() - istr.position() >= 10)
+        return impl::readVarUInt<false>(x, istr);
+    return impl::readVarUInt<true>(x, istr);
+}
+
+inline void readVarUInt(UInt64 & x, std::istream & istr)
+{
+    x = 0;
+    for (size_t i = 0; i < 10; ++i)
+    {
+        UInt64 byte = istr.get();
+        x |= (byte & 0x7F) << (7 * i);
+
+        if (!(byte & 0x80))
+            return;
+    }
+}
+
+inline const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
+{
+    const char * end = istr + size;
+
+    x = 0;
+    for (size_t i = 0; i < 10; ++i)
+    {
+        if (istr == end) [[unlikely]]
+            throwReadAfterEOF();
+
+        UInt64 byte = *istr;
+        ++istr;
+        x |= (byte & 0x7F) << (7 * i);
+
+        if (!(byte & 0x80))
+            return istr;
+    }
+
+    return istr;
+}
+
+template <typename In>
+inline void readVarInt(Int64 & x, In & istr)
 {
     readVarUInt(*reinterpret_cast<UInt64*>(&x), istr);
     x = (static_cast<UInt64>(x) >> 1) ^ -(x & 1);
@@ -60,24 +157,6 @@ inline const char * readVarInt(Int64 & x, const char * istr, size_t size)
     x = (static_cast<UInt64>(x) >> 1) ^ -(x & 1);
     return res;
 }
-
-
-inline void writeVarT(UInt64 x, std::ostream & ostr) { writeVarUInt(x, ostr); }
-inline void writeVarT(Int64 x, std::ostream & ostr) { writeVarInt(x, ostr); }
-inline void writeVarT(UInt64 x, WriteBuffer & ostr) { writeVarUInt(x, ostr); }
-inline void writeVarT(Int64 x, WriteBuffer & ostr) { writeVarInt(x, ostr); }
-inline char * writeVarT(UInt64 x, char * & ostr) { return writeVarUInt(x, ostr); }
-inline char * writeVarT(Int64 x, char * & ostr) { return writeVarInt(x, ostr); }
-
-inline void readVarT(UInt64 & x, std::istream & istr) { readVarUInt(x, istr); }
-inline void readVarT(Int64 & x, std::istream & istr) { readVarInt(x, istr); }
-inline void readVarT(UInt64 & x, ReadBuffer & istr) { readVarUInt(x, istr); }
-inline void readVarT(Int64 & x, ReadBuffer & istr) { readVarInt(x, istr); }
-inline const char * readVarT(UInt64 & x, const char * istr, size_t size) { return readVarUInt(x, istr, size); }
-inline const char * readVarT(Int64 & x, const char * istr, size_t size) { return readVarInt(x, istr, size); }
-
-
-/// For [U]Int32, [U]Int16, size_t.
 
 inline void readVarUInt(UInt32 & x, ReadBuffer & istr)
 {
@@ -116,130 +195,6 @@ inline void readVarUInt(T & x, ReadBuffer & istr)
     x = tmp;
 }
 
-
-[[noreturn]] inline void throwReadAfterEOF()
-{
-    throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after eof");
-}
-
-template <bool fast>
-inline void readVarUIntImpl(UInt64 & x, ReadBuffer & istr)
-{
-    x = 0;
-    for (size_t i = 0; i < 9; ++i)
-    {
-        if constexpr (!fast)
-            if (istr.eof())
-                throwReadAfterEOF();
-
-        UInt64 byte = *istr.position(); /// NOLINT
-        ++istr.position();
-        x |= (byte & 0x7F) << (7 * i);
-
-        if (!(byte & 0x80))
-            return;
-    }
-}
-
-inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
-{
-    if (istr.buffer().end() - istr.position() >= 9)
-        return readVarUIntImpl<true>(x, istr);
-    return readVarUIntImpl<false>(x, istr);
-}
-
-
-inline void readVarUInt(UInt64 & x, std::istream & istr)
-{
-    x = 0;
-    for (size_t i = 0; i < 9; ++i)
-    {
-        UInt64 byte = istr.get();
-        x |= (byte & 0x7F) << (7 * i);
-
-        if (!(byte & 0x80))
-            return;
-    }
-}
-
-inline const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
-{
-    const char * end = istr + size;
-
-    x = 0;
-    for (size_t i = 0; i < 9; ++i)
-    {
-        if (istr == end)
-            throwReadAfterEOF();
-
-        UInt64 byte = *istr; /// NOLINT
-        ++istr;
-        x |= (byte & 0x7F) << (7 * i);
-
-        if (!(byte & 0x80))
-            return istr;
-    }
-
-    return istr;
-}
-
-
-inline void writeVarUInt(UInt64 x, WriteBuffer & ostr)
-{
-    for (size_t i = 0; i < 9; ++i)
-    {
-        uint8_t byte = x & 0x7F;
-        if (x > 0x7F)
-            byte |= 0x80;
-
-        ostr.nextIfAtEnd();
-        *ostr.position() = byte;
-        ++ostr.position();
-
-        x >>= 7;
-        if (!x)
-            return;
-    }
-}
-
-
-inline void writeVarUInt(UInt64 x, std::ostream & ostr)
-{
-    for (size_t i = 0; i < 9; ++i)
-    {
-        uint8_t byte = x & 0x7F;
-        if (x > 0x7F)
-            byte |= 0x80;
-
-        ostr.put(byte);
-
-        x >>= 7;
-        if (!x)
-            return;
-    }
-}
-
-
-inline char * writeVarUInt(UInt64 x, char * ostr)
-{
-    for (size_t i = 0; i < 9; ++i)
-    {
-        uint8_t byte = x & 0x7F;
-        if (x > 0x7F)
-            byte |= 0x80;
-
-        *ostr = byte;
-        ++ostr;
-
-        x >>= 7;
-        if (!x)
-            return ostr;
-    }
-
-    return ostr;
-}
-
-
 inline size_t getLengthOfVarUInt(UInt64 x)
 {
     return x < (1ULL << 7) ? 1
@@ -250,7 +205,8 @@ inline size_t getLengthOfVarUInt(UInt64 x)
         : (x < (1ULL << 42) ? 6
         : (x < (1ULL << 49) ? 7
         : (x < (1ULL << 56) ? 8
-        : 9)))))));
+        : (x < (1ULL << 63) ? 9
+        : 10))))))));
 }
 
 

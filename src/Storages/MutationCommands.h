@@ -21,7 +21,7 @@ class ReadBuffer;
 /// to values from set of columns which satisfy predicate.
 struct MutationCommand
 {
-    ASTPtr ast; /// The AST of the whole command
+    ASTPtr ast = {}; /// The AST of the whole command
 
     enum Type
     {
@@ -43,30 +43,33 @@ struct MutationCommand
     Type type = EMPTY;
 
     /// WHERE part of mutation
-    ASTPtr predicate;
+    ASTPtr predicate = {};
 
     /// Columns with corresponding actions
-    std::unordered_map<String, ASTPtr> column_to_update_expression;
+    std::unordered_map<String, ASTPtr> column_to_update_expression = {};
 
     /// For MATERIALIZE INDEX and PROJECTION
-    String index_name;
-    String projection_name;
+    String index_name = {};
+    String projection_name = {};
 
     /// For MATERIALIZE INDEX, UPDATE and DELETE.
-    ASTPtr partition;
+    ASTPtr partition = {};
 
     /// For reads, drops and etc.
-    String column_name;
-    DataTypePtr data_type; /// Maybe empty if we just want to drop column
+    String column_name = {};
+    DataTypePtr data_type = {}; /// Maybe empty if we just want to drop column
 
     /// We need just clear column, not drop from metadata.
     bool clear = false;
 
     /// Column rename_to
-    String rename_to;
+    String rename_to = {};
 
     /// If parse_alter_commands, than consider more Alter commands as mutation commands
     static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_alter_commands = false);
+
+    /// This command shouldn't stick with other commands
+    bool isBarrierCommand() const;
 };
 
 /// Multiple mutation commands, possible from different ALTER queries
@@ -79,6 +82,11 @@ public:
     void readText(ReadBuffer & in);
     std::string toString() const;
     bool hasNonEmptyMutationCommands() const;
+
+    /// These set of commands contain barrier command and shouldn't
+    /// stick with other commands. Commands from one set have already been validated
+    /// to be executed without issues on the creation state.
+    bool containBarrierCommand() const;
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;

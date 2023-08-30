@@ -12,6 +12,7 @@
 #include <IO/TimeoutSetter.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
+#include <Client/ClientBase.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
 #include <Common/ClickHouseRevision.h>
@@ -22,7 +23,8 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/randomSeed.h>
-#include "Core/Block.h"
+#include <Common/logger_useful.h>
+#include <Core/Block.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Compression/CompressionFactory.h>
@@ -104,6 +106,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         for (auto it = addresses.begin(); it != addresses.end();)
         {
+            have_more_addresses_to_connect = it != std::prev(addresses.end());
+
             if (connected)
                 disconnect();
 
@@ -127,7 +131,22 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
             try
             {
-                socket->connect(*it, connection_timeout);
+                if (async_callback)
+                {
+                    socket->connectNB(*it);
+                    while (!socket->poll(0, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_WRITE | Poco::Net::Socket::SELECT_ERROR))
+                        async_callback(socket->impl()->sockfd(), connection_timeout, AsyncEventTimeoutType::CONNECT, description, AsyncTaskExecutor::READ | AsyncTaskExecutor::WRITE | AsyncTaskExecutor::ERROR);
+
+                    if (auto err = socket->impl()->socketError())
+                        socket->impl()->error(err); // Throws an exception
+
+                    socket->setBlocking(true);
+                }
+                else
+                {
+                    socket->connect(*it, connection_timeout);
+                }
+
                 current_resolved_address = *it;
                 break;
             }
@@ -162,14 +181,14 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
-        in->setAsyncCallback(std::move(async_callback));
+        in->setAsyncCallback(async_callback);
 
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
-
+        out->setAsyncCallback(async_callback);
         connected = true;
 
         sendHello();
-        receiveHello();
+        receiveHello(timeouts.handshake_timeout);
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             sendAddendum();
 
@@ -211,11 +230,28 @@ void Connection::disconnect()
     maybe_compressed_out = nullptr;
     in = nullptr;
     last_input_packet_type.reset();
-    out = nullptr; // can write to socket
+    std::exception_ptr finalize_exception;
+    try
+    {
+        // finalize() can write to socket and throw an exception.
+        if (out)
+            out->finalize();
+    }
+    catch (...)
+    {
+        /// Don't throw an exception here, it will leave Connection in invalid state.
+        finalize_exception = std::current_exception();
+    }
+    out = nullptr;
+
     if (socket)
         socket->close();
     socket = nullptr;
     connected = false;
+    nonce.reset();
+
+    if (finalize_exception)
+        std::rethrow_exception(finalize_exception);
 }
 
 
@@ -245,9 +281,9 @@ void Connection::sendHello()
                         "Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters");
 
     writeVarUInt(Protocol::Client::Hello, *out);
-    writeStringBinary((DBMS_NAME " ") + client_name, *out);
-    writeVarUInt(DBMS_VERSION_MAJOR, *out);
-    writeVarUInt(DBMS_VERSION_MINOR, *out);
+    writeStringBinary((VERSION_NAME " ") + client_name, *out);
+    writeVarUInt(VERSION_MAJOR, *out);
+    writeVarUInt(VERSION_MINOR, *out);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
     writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, *out);
     writeStringBinary(default_database, *out);
@@ -283,8 +319,10 @@ void Connection::sendAddendum()
 }
 
 
-void Connection::receiveHello()
+void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
 {
+    TimeoutSetter timeout_setter(*socket, socket->getSendTimeout(), handshake_timeout);
+
     /// Receive hello packet.
     UInt64 packet_type = 0;
 
@@ -324,11 +362,23 @@ void Connection::receiveHello()
                 password_complexity_rules.push_back({std::move(original_pattern), std::move(exception_message)});
             }
         }
+        if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
+        {
+            chassert(!nonce.has_value());
+
+            UInt64 read_nonce;
+            readIntBinary(read_nonce, *in);
+            nonce.emplace(read_nonce);
+        }
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
     else
     {
+        /// Reset timeout_setter before disconnect,
+        /// because after disconnect socket will be invalid.
+        timeout_setter.reset();
+
         /// Close connection, to not stay in unsynchronised state.
         disconnect();
         throwUnexpectedPacket(packet_type, "Hello or Exception");
@@ -541,7 +591,7 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs, settings->allow_experimental_codecs);
+        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs, settings->allow_experimental_codecs, settings->enable_deflate_qpl_codec);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
@@ -584,6 +634,9 @@ void Connection::sendQuery(
         {
 #if USE_SSL
             std::string data(salt);
+            // For backward compatibility
+            if (nonce.has_value())
+                data += std::to_string(nonce.value());
             data += cluster_secret;
             data += query;
             data += query_id;
@@ -593,8 +646,8 @@ void Connection::sendQuery(
             std::string hash = encodeSHA256(data);
             writeStringBinary(hash, *out);
 #else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
 #endif
         }
         else
@@ -833,7 +886,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
             return sink;
         });
         executor = pipeline.execute();
-        executor->execute(/*num_threads = */ 1);
+        executor->execute(/*num_threads = */ 1, false);
 
         auto read_rows = sink->getNumReadRows();
         rows += read_rows;
@@ -970,6 +1023,11 @@ Packet Connection::receivePacket()
 
             case Protocol::Server::ProfileEvents:
                 res.block = receiveProfileEvents();
+                return res;
+
+            case Protocol::Server::TimezoneUpdate:
+                readStringBinary(server_timezone, *in);
+                res.server_timezone = server_timezone;
                 return res;
 
             default:
@@ -1120,16 +1178,12 @@ ProfileInfo Connection::receiveProfileInfo() const
 
 ParallelReadRequest Connection::receiveParallelReadRequest() const
 {
-    ParallelReadRequest request;
-    request.deserialize(*in);
-    return request;
+    return ParallelReadRequest::deserialize(*in);
 }
 
 InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnounecement() const
 {
-    InitialAllRangesAnnouncement announcement;
-    announcement.deserialize(*in);
-    return announcement;
+    return InitialAllRangesAnnouncement::deserialize(*in);
 }
 
 
@@ -1151,7 +1205,7 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         parameters.quota_key,
         "", /* cluster */
         "", /* cluster_secret */
-        "client",
+        std::string(DEFAULT_CLIENT_NAME),
         parameters.compression,
         parameters.security);
 }

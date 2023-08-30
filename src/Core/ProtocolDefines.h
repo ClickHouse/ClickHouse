@@ -30,12 +30,11 @@
 
 #define DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION 1
 
-#define DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION 1
+#define DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION 2
 #define DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS 54453
 
 #define DBMS_MERGE_TREE_PART_INFO_VERSION 1
 
-/// Minimum revision supporting interserver secret.
 #define DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET 54441
 
 #define DBMS_MIN_REVISION_WITH_X_FORWARDED_FOR_IN_CLIENT_INFO 54443
@@ -46,15 +45,6 @@
 #define DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS 54451
 
 #define DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION 54454
-
-/// Version of ClickHouse TCP protocol.
-///
-/// Should be incremented manually on protocol changes.
-///
-/// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
-/// later is just a number for server version (one number instead of commit SHA)
-/// for simplicity (sometimes it may be more convenient in some use cases).
-#define DBMS_TCP_PROTOCOL_VERSION 54461
 
 #define DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME 54449
 
@@ -72,3 +62,20 @@
 #define DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS 54460
 
 #define DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES 54461
+
+#define DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2 54462
+
+#define DBMS_MIN_PROTOCOL_VERSION_WITH_TOTAL_BYTES_IN_PROGRESS 54463
+
+#define DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES 54464
+
+#define DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION 54465
+
+/// Version of ClickHouse TCP protocol.
+///
+/// Should be incremented manually on protocol changes.
+///
+/// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
+/// later is just a number for server version (one number instead of commit SHA)
+/// for simplicity (sometimes it may be more convenient in some use cases).
+#define DBMS_TCP_PROTOCOL_VERSION 54465

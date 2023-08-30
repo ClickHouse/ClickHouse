@@ -13,7 +13,9 @@ def fill_nodes(nodes, shard):
                 CREATE DATABASE test;
 
                 CREATE TABLE test.test_table(date Date, id UInt32)
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}') ORDER BY id PARTITION BY toYYYYMM(date) SETTINGS min_replicated_logs_to_keep=3, max_replicated_logs_to_keep=5, cleanup_delay_period=0, cleanup_delay_period_random_add=0;
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}') ORDER BY id PARTITION BY toYYYYMM(date) 
+                SETTINGS min_replicated_logs_to_keep=3, max_replicated_logs_to_keep=5,
+                cleanup_delay_period=0, cleanup_delay_period_random_add=0, cleanup_thread_preferred_points_per_iteration=0;
             """.format(
                 shard=shard, replica=node.name
             )
@@ -122,11 +124,12 @@ def test_metrics_storage_buffer_size(start_cluster):
         )
         == "1\n"
     )
+    # By the way, this metric does not count the LowCardinality's dictionary size.
     assert (
         node1.query(
             "SELECT value FROM system.metrics WHERE metric = 'StorageBufferBytes'"
         )
-        == "24\n"
+        == "1\n"
     )
 
     node1.query("INSERT INTO test.buffer_table VALUES('hello');")
@@ -140,7 +143,7 @@ def test_metrics_storage_buffer_size(start_cluster):
         node1.query(
             "SELECT value FROM system.metrics WHERE metric = 'StorageBufferBytes'"
         )
-        == "25\n"
+        == "2\n"
     )
 
     # flush
@@ -156,4 +159,58 @@ def test_metrics_storage_buffer_size(start_cluster):
             "SELECT value FROM system.metrics WHERE metric = 'StorageBufferBytes'"
         )
         == "0\n"
+    )
+
+
+def test_attach_without_zk_incr_readonly_metric(start_cluster):
+    assert (
+        node1.query("SELECT value FROM system.metrics WHERE metric = 'ReadonlyReplica'")
+        == "0\n"
+    )
+
+    node1.query(
+        "ATTACH TABLE test.test_no_zk UUID 'a50b7933-59b2-49ce-8db6-59da3c9b4413' (i Int8, d Date) ENGINE = ReplicatedMergeTree('no_zk', 'replica') ORDER BY tuple()"
+    )
+    assert_eq_with_retry(
+        node1,
+        "SELECT value FROM system.metrics WHERE metric = 'ReadonlyReplica'",
+        "1\n",
+        retry_count=300,
+        sleep_time=1,
+    )
+
+    node1.query("DETACH TABLE test.test_no_zk")
+    assert_eq_with_retry(
+        node1,
+        "SELECT value FROM system.metrics WHERE metric = 'ReadonlyReplica'",
+        "0\n",
+        retry_count=300,
+        sleep_time=1,
+    )
+
+    node1.query("ATTACH TABLE test.test_no_zk")
+    assert_eq_with_retry(
+        node1,
+        "SELECT value FROM system.metrics WHERE metric = 'ReadonlyReplica'",
+        "1\n",
+        retry_count=300,
+        sleep_time=1,
+    )
+
+    node1.query("SYSTEM RESTORE REPLICA test.test_no_zk")
+    assert_eq_with_retry(
+        node1,
+        "SELECT value FROM system.metrics WHERE metric = 'ReadonlyReplica'",
+        "0\n",
+        retry_count=300,
+        sleep_time=1,
+    )
+
+    node1.query("DROP TABLE test.test_no_zk")
+    assert_eq_with_retry(
+        node1,
+        "SELECT value FROM system.metrics WHERE metric = 'ReadonlyReplica'",
+        "0\n",
+        retry_count=300,
+        sleep_time=1,
     )

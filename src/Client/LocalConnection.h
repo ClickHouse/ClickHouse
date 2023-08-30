@@ -7,6 +7,7 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/CurrentThread.h>
 
 
 namespace DB

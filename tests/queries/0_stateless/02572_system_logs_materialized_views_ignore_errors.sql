@@ -9,6 +9,8 @@ set log_queries=1;
 drop table if exists log_proxy_02572;
 drop table if exists push_to_logs_proxy_mv_02572;
 
+-- create log tables
+system flush logs;
 create table log_proxy_02572 as system.query_log engine=Distributed('test_shard_localhost', currentDatabase(), 'receiver_02572');
 create materialized view push_to_logs_proxy_mv_02572 to log_proxy_02572 as select * from system.query_log;
 
@@ -23,4 +25,6 @@ system flush logs;
 -- lower() to pass through clickhouse-test "exception" check
 select count(), lower(type::String), errorCodeToName(exception_code)
     from system.query_log
-    where current_database = currentDatabase() group by 2, 3;
+    where current_database = currentDatabase()
+    group by 2, 3
+    order by 2;

@@ -1,15 +1,16 @@
 #include "IOUringReader.h"
+#include <memory>
 
 #if USE_LIBURING
 
 #include <base/errnoToString.h>
 #include <Common/assert_cast.h>
-#include <Common/Exception.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <future>
 
@@ -44,7 +45,7 @@ namespace ErrorCodes
 }
 
 IOUringReader::IOUringReader(uint32_t entries_)
- : log(&Poco::Logger::get("IOUringReader"))
+    : log(&Poco::Logger::get("IOUringReader"))
 {
     struct io_uring_probe * probe = io_uring_get_probe();
     if (!probe)
@@ -61,8 +62,16 @@ IOUringReader::IOUringReader(uint32_t entries_)
 
     struct io_uring_params params =
     {
+        .sq_entries = 0, // filled by the kernel, initializing to silence warning
         .cq_entries = 0, // filled by the kernel, initializing to silence warning
         .flags = 0,
+        .sq_thread_cpu = 0, // Unused (IORING_SETUP_SQ_AFF isn't set). Silences warning
+        .sq_thread_idle = 0, // Unused (IORING_SETUP_SQPOL isn't set). Silences warning
+        .features = 0, // filled by the kernel, initializing to silence warning
+        .wq_fd = 0, // Unused (IORING_SETUP_ATTACH_WQ isn't set). Silences warning.
+        .resv = {0, 0, 0}, // "The resv array must be initialized to zero."
+        .sq_off = {}, // filled by the kernel, initializing to silence warning
+        .cq_off = {}, // filled by the kernel, initializing to silence warning
     };
 
     int ret = io_uring_queue_init_params(entries_, &ring, &params);
@@ -70,7 +79,7 @@ IOUringReader::IOUringReader(uint32_t entries_)
         throwFromErrno("Failed initializing io_uring", ErrorCodes::IO_URING_INIT_FAILED, -ret);
 
     cq_entries = params.cq_entries;
-    ring_completion_monitor = ThreadFromGlobalPool([this] { monitorRing(); });
+    ring_completion_monitor = std::make_unique<ThreadFromGlobalPool>([this] { monitorRing(); });
 }
 
 std::future<IAsynchronousReader::Result> IOUringReader::submit(Request request)
@@ -333,7 +342,7 @@ IOUringReader::~IOUringReader()
         io_uring_submit(&ring);
     }
 
-    ring_completion_monitor.join();
+    ring_completion_monitor->join();
 
     io_uring_queue_exit(&ring);
 }

@@ -2,9 +2,16 @@
 
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
+#include <Common/CurrentMetrics.h>
 
 #include <gtest/gtest.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
+}
 
 /// Test what happens if local ThreadPool cannot create a ThreadFromGlobalPool.
 /// There was a bug: if local ThreadPool cannot allocate even a single thread,
@@ -27,7 +34,7 @@ TEST(ThreadPool, GlobalFull1)
 
     auto func = [&] { ++counter; while (counter != num_jobs) {} };
 
-    ThreadPool pool(num_jobs);
+    ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, num_jobs);
 
     for (size_t i = 0; i < capacity; ++i)
         pool.scheduleOrThrowOnError(func);
@@ -65,11 +72,11 @@ TEST(ThreadPool, GlobalFull2)
     std::atomic<size_t> counter = 0;
     auto func = [&] { ++counter; while (counter != capacity + 1) {} };
 
-    ThreadPool pool(capacity, 0, capacity);
+    ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, capacity, 0, capacity);
     for (size_t i = 0; i < capacity; ++i)
         pool.scheduleOrThrowOnError(func);
 
-    ThreadPool another_pool(1);
+    ThreadPool another_pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, 1);
     EXPECT_THROW(another_pool.scheduleOrThrowOnError(func), DB::Exception);
 
     ++counter;

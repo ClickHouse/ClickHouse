@@ -10,7 +10,7 @@ namespace DB
 /** Has arbitrary non zero number of inputs and arbitrary non zero number of outputs.
   * All of them have the same structure.
   *
-  * Pulls data from arbitrary input (whenever it is ready) and pushes it to arbitrary output (whenever is is not full).
+  * Pulls data from arbitrary input (whenever it is ready) and pushes it to arbitrary output (whenever it is not full).
   * Doesn't do any heavy calculations.
   * Doesn't preserve an order of data.
   *
@@ -43,6 +43,7 @@ private:
     std::queue<UInt64> waiting_outputs;
     std::queue<UInt64> inputs_with_data;
     bool initialized = false;
+    bool is_reading_started = false;
 
     enum class OutputStatus
     {

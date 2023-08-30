@@ -13,8 +13,9 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
 {
     ParserKeyword s_alter("ALTER");
     ParserKeyword s_collection("NAMED COLLECTION");
+    ParserKeyword s_if_exists("IF EXISTS");
+    ParserKeyword s_on("ON");
     ParserKeyword s_delete("DELETE");
-
     ParserIdentifier name_p;
     ParserSetQuery set_p;
     ParserToken s_comma(TokenType::Comma);
@@ -32,10 +33,13 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
     if (!s_collection.ignore(pos, expected))
         return false;
 
+    if (s_if_exists.ignore(pos, expected))
+        if_exists = true;
+
     if (!name_p.parse(pos, collection_name, expected))
         return false;
 
-    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    if (s_on.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;

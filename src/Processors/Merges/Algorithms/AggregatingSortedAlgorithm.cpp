@@ -159,8 +159,11 @@ AggregatingSortedAlgorithm::SimpleAggregateDescription::~SimpleAggregateDescript
 
 
 AggregatingSortedAlgorithm::AggregatingMergedData::AggregatingMergedData(
-    MutableColumns columns_, UInt64 max_block_size_, ColumnsDefinition & def_)
-    : MergedData(std::move(columns_), false, max_block_size_), def(def_)
+    MutableColumns columns_,
+    UInt64 max_block_size_rows_,
+    UInt64 max_block_size_bytes_,
+    ColumnsDefinition & def_)
+    : MergedData(std::move(columns_), false, max_block_size_rows_, max_block_size_bytes_), def(def_)
 {
     initAggregateDescription();
 
@@ -168,7 +171,7 @@ AggregatingSortedAlgorithm::AggregatingMergedData::AggregatingMergedData(
     if (def.allocates_memory_in_arena)
     {
         arena = std::make_unique<Arena>();
-        arena_size = arena->size();
+        arena_size = arena->allocatedBytes();
     }
 }
 
@@ -194,10 +197,10 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::startGroup(const ColumnR
     /// To avoid this, reset arena if and only if:
     /// - arena is required (i.e. SimpleAggregateFunction(any, String) in PK),
     /// - arena was used in the previous groups.
-    if (def.allocates_memory_in_arena && arena->size() > arena_size)
+    if (def.allocates_memory_in_arena && arena->allocatedBytes() > arena_size)
     {
         arena = std::make_unique<Arena>();
-        arena_size = arena->size();
+        arena_size = arena->allocatedBytes();
     }
 
     is_group_started = true;
@@ -257,10 +260,14 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::initAggregateDescription
 
 
 AggregatingSortedAlgorithm::AggregatingSortedAlgorithm(
-    const Block & header_, size_t num_inputs, SortDescription description_, size_t max_block_size)
+    const Block & header_,
+    size_t num_inputs,
+    SortDescription description_,
+    size_t max_block_size_rows_,
+    size_t max_block_size_bytes_)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, description_)
     , columns_definition(defineColumns(header_, description_))
-    , merged_data(getMergedColumns(header_, columns_definition), max_block_size, columns_definition)
+    , merged_data(getMergedColumns(header_, columns_definition), max_block_size_rows_, max_block_size_bytes_, columns_definition)
 {
 }
 
