@@ -38,21 +38,21 @@ public:
     void shutdown();
 
     /// Starts executing a BACKUP or RESTORE query. Returns ID of the operation.
-    BackupOperationInfo::ID start(const ASTPtr & backup_or_restore_query, ContextMutablePtr context);
+    BackupOperationID start(const ASTPtr & backup_or_restore_query, ContextMutablePtr context);
 
     /// Waits until a BACKUP or RESTORE query started by start() is finished.
     /// The function returns immediately if the operation is already finished.
-    void wait(const BackupOperationInfo::ID & backup_or_restore_id, bool rethrow_exception = true);
+    void wait(const BackupOperationID & backup_or_restore_id, bool rethrow_exception = true);
 
-    BackupOperationInfo getInfo(const BackupOperationInfo::ID & id) const;
+    BackupOperationInfo getInfo(const BackupOperationID & id) const;
     std::vector<BackupOperationInfo> getAllInfos() const;
 
 private:
-    BackupOperationInfo::ID startMakingBackup(const ASTPtr & query, const ContextPtr & context);
+    BackupOperationID startMakingBackup(const ASTPtr & query, const ContextPtr & context);
 
     void doBackup(
         const std::shared_ptr<ASTBackupQuery> & backup_query,
-        const BackupOperationInfo::ID & backup_id,
+        const BackupOperationID & backup_id,
         const String & backup_name_for_logging,
         const BackupInfo & backup_info,
         BackupSettings backup_settings,
@@ -65,13 +65,13 @@ private:
     void buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination);
 
     /// Write backup entries to an opened backup.
-    void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, const BackupOperationInfo::ID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool internal);
+    void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, const BackupOperationID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool internal);
 
-    BackupOperationInfo::ID startRestoring(const ASTPtr & query, ContextMutablePtr context);
+    BackupOperationID startRestoring(const ASTPtr & query, ContextMutablePtr context);
 
     void doRestore(
         const std::shared_ptr<ASTBackupQuery> & restore_query,
-        const BackupOperationInfo::ID & restore_id,
+        const BackupOperationID & restore_id,
         const String & backup_name_for_logging,
         const BackupInfo & backup_info,
         RestoreSettings restore_settings,
@@ -80,18 +80,18 @@ private:
         bool called_async);
 
     /// Run data restoring tasks which insert data to tables.
-    void restoreTablesData(const BackupOperationInfo::ID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool);
+    void restoreTablesData(const BackupOperationID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool);
 
-    void addInfo(const BackupOperationInfo::ID & id, const String & name, bool internal, BackupStatus status);
-    void setStatus(const BackupOperationInfo::ID & id, BackupStatus status, bool throw_if_error = true);
+    void addInfo(const BackupOperationID & id, const String & name, bool internal, BackupStatus status);
+    void setStatus(const BackupOperationID & id, BackupStatus status, bool throw_if_error = true);
     void setStatusSafe(const String & id, BackupStatus status) { setStatus(id, status, false); }
-    void setNumFilesAndSize(const BackupOperationInfo::ID & id, size_t num_files, UInt64 total_size, size_t num_entries,
+    void setNumFilesAndSize(const BackupOperationID & id, size_t num_files, UInt64 total_size, size_t num_entries,
                             UInt64 uncompressed_size, UInt64 compressed_size, size_t num_read_files, UInt64 num_read_bytes);
 
     std::unique_ptr<ThreadPool> backups_thread_pool;
     std::unique_ptr<ThreadPool> restores_thread_pool;
 
-    std::unordered_map<BackupOperationInfo::ID, BackupOperationInfo> infos;
+    std::unordered_map<BackupOperationID, BackupOperationInfo> infos;
     std::shared_ptr<BackupLog> backup_log;
     std::condition_variable status_changed;
     std::atomic<size_t> num_active_backups = 0;

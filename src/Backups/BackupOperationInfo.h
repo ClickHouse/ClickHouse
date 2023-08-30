@@ -5,14 +5,13 @@
 namespace DB
 {
 
+using BackupOperationID = String;
+
 /// Information about executing a BACKUP or RESTORE operation
 struct BackupOperationInfo
 {
     /// Operation ID, can be either passed via SETTINGS id=... or be randomly generated UUID.
-    using ID = String;
-
-    /// Operation ID, can be either passed via SETTINGS id=... or be randomly generated UUID.
-    ID id;
+    BackupOperationID id;
 
     /// Operation name, a string like "Disk('backups', 'my_backup')"
     String name;

@@ -45,7 +45,7 @@ namespace ErrorCodes
     extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
 }
 
-using OperationID = BackupOperationInfo::ID;
+using OperationID = BackupOperationID;
 namespace Stage = BackupCoordinationStage;
 
 namespace
