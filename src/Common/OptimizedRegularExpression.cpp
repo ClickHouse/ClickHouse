@@ -1,5 +1,6 @@
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
+#include <Common/checkStackSize.h>
 #include <Common/OptimizedRegularExpression.h>
 
 #define MIN_LENGTH_FOR_STRSTR 3
@@ -22,6 +23,8 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
     bool & is_trivial,
     bool & required_substring_is_prefix)
 {
+    checkStackSize();
+
     /** The expression is trivial if all the metacharacters in it are escaped.
       * The non-alternative string is
       *  a string outside parentheses,
