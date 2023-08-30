@@ -4643,3 +4643,11 @@ SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_pars
 │              1.7091 │                 15008753 │
 └─────────────────────┴──────────────────────────┘
 ```
+
+## partial_result_update_duration_ms
+
+Interval (in milliseconds) for sending updates with partial data about the result table to the client (in interactive mode) during query execution. Setting to 0 disables partial results. Only supported for single-threaded GROUP BY without key, ORDER BY, LIMIT and OFFSET.
+
+## max_rows_in_partial_result
+
+Maximum rows to show in the partial result after every real-time update while the query runs (use partial result limit + OFFSET as a value in case of OFFSET in the query).
