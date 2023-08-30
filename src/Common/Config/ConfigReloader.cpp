@@ -15,7 +15,7 @@ namespace DB
 
 ConfigReloader::ConfigReloader(
         std::string_view config_path_,
-        const ConfigReloader::Paths& extra_paths_,
+        const ConfigReloader::Paths & extra_paths_,
         const std::string & preprocessed_dir_,
         zkutil::ZooKeeperNodeCache && zk_node_cache_,
         const zkutil::EventPtr & zk_changed_event_,
