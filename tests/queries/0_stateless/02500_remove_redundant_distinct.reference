@@ -464,3 +464,45 @@ Expression ((Projection + (Before ORDER BY + (Projection + Before ORDER BY))))
 1
 
 0
+-- DISTINCT COUNT() with GROUP BY => do _not_ remove DISTINCT
+-- query
+select distinct count() from numbers(10) group by number
+-- explain
+Expression (Projection)
+  Distinct
+    Distinct (Preliminary DISTINCT)
+      Expression (Before ORDER BY)
+        Aggregating
+          Expression (Before GROUP BY)
+            ReadFromStorage (SystemNumbers)
+-- execute
+1
+-- UNION ALL with DISTINCT => do _not_ remove DISTINCT
+-- query
+SELECT DISTINCT number
+FROM
+(
+    SELECT DISTINCT number
+    FROM numbers(1)
+    UNION ALL
+    SELECT DISTINCT number
+    FROM numbers(2)
+)
+-- explain
+Expression (Projection)
+  Distinct
+    Distinct (Preliminary DISTINCT)
+      Union
+        Expression ((Before ORDER BY + Projection))
+          Distinct
+            Distinct (Preliminary DISTINCT)
+              Expression (Before ORDER BY)
+                ReadFromStorage (SystemNumbers)
+        Expression (( + Projection))
+          Distinct
+            Distinct (Preliminary DISTINCT)
+              Expression (Before ORDER BY)
+                ReadFromStorage (SystemNumbers)
+-- execute
+0
+1

@@ -319,6 +319,8 @@ void UnlinkMetadataFileOperation::execute(std::unique_lock<SharedMutex> & metada
         write_operation = std::make_unique<WriteFileOperation>(path, disk, metadata->serializeToString());
         write_operation->execute(metadata_lock);
     }
+    outcome->num_hardlinks = ref_count;
+
     unlink_operation = std::make_unique<UnlinkFileOperation>(path, disk);
     unlink_operation->execute(metadata_lock);
 }
@@ -334,6 +336,9 @@ void UnlinkMetadataFileOperation::undo()
 
     if (write_operation)
         write_operation->undo();
+
+    /// Update outcome to reflect the fact that we have restored the file.
+    outcome->num_hardlinks++;
 }
 
 void SetReadonlyFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)

@@ -73,8 +73,8 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
     const char * const source_end = source + source_size;
     while (source < source_end)
     {
-        T curr_src = unalignedLoad<T>(source);
-        unalignedStore<T>(dest, curr_src - prev_src);
+        T curr_src = unalignedLoadLittleEndian<T>(source);
+        unalignedStoreLittleEndian<T>(dest, curr_src - prev_src);
         prev_src = curr_src;
 
         source += sizeof(T);
@@ -94,10 +94,10 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
     const char * const source_end = source + source_size;
     while (source < source_end)
     {
-        accumulator += unalignedLoad<T>(source);
+        accumulator += unalignedLoadLittleEndian<T>(source);
         if (dest + sizeof(accumulator) > output_end) [[unlikely]]
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress the data");
-        unalignedStore<T>(dest, accumulator);
+        unalignedStoreLittleEndian<T>(dest, accumulator);
 
         source += sizeof(T);
         dest += sizeof(T);
@@ -193,7 +193,8 @@ void registerCodecDelta(CompressionCodecFactory & factory)
     UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::Delta);
     auto codec_builder = [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
-        UInt8 delta_bytes_size = 0;
+        /// Default bytes size is 1.
+        UInt8 delta_bytes_size = 1;
 
         if (arguments && !arguments->children.empty())
         {
@@ -202,8 +203,8 @@ void registerCodecDelta(CompressionCodecFactory & factory)
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
-            if (!literal)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Delta codec argument must be integer");
+            if (!literal || literal->value.getType() != Field::Types::Which::UInt64)
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Delta codec argument must be unsigned integer");
 
             size_t user_bytes_size = literal->value.safeGet<UInt64>();
             if (user_bytes_size != 1 && user_bytes_size != 2 && user_bytes_size != 4 && user_bytes_size != 8)

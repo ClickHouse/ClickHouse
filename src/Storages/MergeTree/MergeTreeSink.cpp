@@ -13,34 +13,6 @@ namespace ProfileEvents
 namespace DB
 {
 
-MergeTreeSink::~MergeTreeSink() = default;
-
-MergeTreeSink::MergeTreeSink(
-    StorageMergeTree & storage_,
-    StorageMetadataPtr metadata_snapshot_,
-    size_t max_parts_per_block_,
-    ContextPtr context_)
-    : SinkToStorage(metadata_snapshot_->getSampleBlock())
-    , storage(storage_)
-    , metadata_snapshot(metadata_snapshot_)
-    , max_parts_per_block(max_parts_per_block_)
-    , context(context_)
-    , storage_snapshot(storage.getStorageSnapshotWithoutParts(metadata_snapshot))
-{
-}
-
-void MergeTreeSink::onStart()
-{
-    /// Only check "too many parts" before write,
-    /// because interrupting long-running INSERT query in the middle is not convenient for users.
-    storage.delayInsertOrThrowIfNeeded(nullptr, context);
-}
-
-void MergeTreeSink::onFinish()
-{
-    finishDelayedChunk();
-}
-
 struct MergeTreeSink::DelayedChunk
 {
     struct Partition
@@ -55,8 +27,39 @@ struct MergeTreeSink::DelayedChunk
 };
 
 
+MergeTreeSink::~MergeTreeSink() = default;
+
+MergeTreeSink::MergeTreeSink(
+    StorageMergeTree & storage_,
+    StorageMetadataPtr metadata_snapshot_,
+    size_t max_parts_per_block_,
+    ContextPtr context_)
+    : SinkToStorage(metadata_snapshot_->getSampleBlock())
+    , storage(storage_)
+    , metadata_snapshot(metadata_snapshot_)
+    , max_parts_per_block(max_parts_per_block_)
+    , context(context_)
+    , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
+{
+}
+
+void MergeTreeSink::onStart()
+{
+    /// It's only allowed to throw "too many parts" before write,
+    /// because interrupting long-running INSERT query in the middle is not convenient for users.
+    storage.delayInsertOrThrowIfNeeded(nullptr, context, true);
+}
+
+void MergeTreeSink::onFinish()
+{
+    finishDelayedChunk();
+}
+
 void MergeTreeSink::consume(Chunk chunk)
 {
+    if (num_blocks_processed > 0)
+        storage.delayInsertOrThrowIfNeeded(nullptr, context, false);
+
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
     if (!storage_snapshot->object_columns.empty())
         convertDynamicColumnsToTuples(block, storage_snapshot);
@@ -136,6 +139,8 @@ void MergeTreeSink::consume(Chunk chunk)
     finishDelayedChunk();
     delayed_chunk = std::make_unique<MergeTreeSink::DelayedChunk>();
     delayed_chunk->partitions = std::move(partitions);
+
+    ++num_blocks_processed;
 }
 
 void MergeTreeSink::finishDelayedChunk()

@@ -39,7 +39,7 @@ namespace
 TemporaryFileOnDiskHolder flushToFile(const DiskPtr & disk, const Block & header, QueryPipelineBuilder pipeline, const String & codec)
 {
     auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk, CurrentMetrics::TemporaryFilesForJoin);
-    auto write_stat = TemporaryFileStreamLegacy::write(tmp_file->getPath(), header, std::move(pipeline), codec);
+    auto write_stat = TemporaryFileStreamLegacy::write(tmp_file->getAbsolutePath(), header, std::move(pipeline), codec);
 
     ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, write_stat.compressed_bytes);
     ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, write_stat.uncompressed_bytes);
@@ -165,6 +165,7 @@ SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & bloc
             pipeline.getNumStreams(),
             sort_description,
             rows_in_block,
+            /*max_block_size_bytes=*/0,
             SortingQueueStrategy::Default);
 
         pipeline.addTransform(std::move(transform));
@@ -220,6 +221,7 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
                             pipeline.getNumStreams(),
                             sort_description,
                             rows_in_block,
+                            /*max_block_size_bytes=*/0,
                             SortingQueueStrategy::Default);
 
                         pipeline.addTransform(std::move(transform));
@@ -254,6 +256,7 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
             pipeline.getNumStreams(),
             sort_description,
             rows_in_block,
+            /*max_block_size_bytes=*/0,
             SortingQueueStrategy::Default);
 
         pipeline.addTransform(std::move(transform));
@@ -264,7 +267,7 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
 
 Pipe SortedBlocksWriter::streamFromFile(const TmpFilePtr & file) const
 {
-    return Pipe(std::make_shared<TemporaryFileLazySource>(file->getPath(), materializeBlock(sample_block)));
+    return Pipe(std::make_shared<TemporaryFileLazySource>(file->getAbsolutePath(), materializeBlock(sample_block)));
 }
 
 
@@ -331,6 +334,7 @@ Block SortedBlocksBuffer::mergeBlocks(Blocks && blocks) const
                 builder.getNumStreams(),
                 sort_description,
                 num_rows,
+                /*max_block_size_bytes=*/0,
                 SortingQueueStrategy::Default);
 
             builder.addTransform(std::move(transform));

@@ -6,13 +6,18 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, List
 
 import requests  # type: ignore
 
+import get_robot_token as grt  # we need an updated ROBOT_TOKEN
 from ci_config import CI_CONFIG
 
 DOWNLOAD_RETRIES_COUNT = 5
+
+
+class DownloadException(Exception):
+    pass
 
 
 def get_with_retries(
@@ -24,26 +29,73 @@ def get_with_retries(
     logging.info(
         "Getting URL with %i tries and sleep %i in between: %s", retries, sleep, url
     )
-    exc = None  # type: Optional[Exception]
+    exc = Exception("A placeholder to satisfy typing and avoid nesting")
     for i in range(retries):
         try:
             response = requests.get(url, **kwargs)
             response.raise_for_status()
-            break
+            return response
         except Exception as e:
             if i + 1 < retries:
                 logging.info("Exception '%s' while getting, retry %i", e, i + 1)
                 time.sleep(sleep)
 
             exc = e
-    else:
-        raise Exception(exc)
 
-    return response
+    raise exc
+
+
+def get_gh_api(
+    url: str,
+    retries: int = DOWNLOAD_RETRIES_COUNT,
+    sleep: int = 3,
+    **kwargs: Any,
+) -> requests.Response:
+    """It's a wrapper around get_with_retries that requests GH api w/o auth by
+    default, and falls back to the get_best_robot_token in case of receiving
+    "403 rate limit exceeded" error
+    It sets auth automatically when ROBOT_TOKEN is already set by get_best_robot_token
+    """
+
+    def set_auth_header():
+        if "headers" in kwargs:
+            if "Authorization" not in kwargs["headers"]:
+                kwargs["headers"][
+                    "Authorization"
+                ] = f"Bearer {grt.get_best_robot_token()}"
+        else:
+            kwargs["headers"] = {
+                "Authorization": f"Bearer {grt.get_best_robot_token()}"
+            }
+
+    if grt.ROBOT_TOKEN is not None:
+        set_auth_header()
+
+    need_retry = False
+    for _ in range(retries):
+        try:
+            response = get_with_retries(url, 1, sleep, **kwargs)
+            response.raise_for_status()
+            return response
+        except requests.HTTPError as exc:
+            if (
+                exc.response.status_code == 403
+                and b"rate limit exceeded"
+                in exc.response._content  # pylint:disable=protected-access
+            ):
+                logging.warning(
+                    "Received rate limit exception, setting the auth header and retry"
+                )
+                set_auth_header()
+                need_retry = True
+                break
+
+    if need_retry:
+        return get_with_retries(url, retries, sleep, **kwargs)
 
 
 def get_build_name_for_check(check_name: str) -> str:
-    return CI_CONFIG["tests_config"][check_name]["required_build"]  # type: ignore
+    return CI_CONFIG.test_configs[check_name].required_build
 
 
 def read_build_urls(build_name: str, reports_path: str) -> List[str]:
@@ -101,7 +153,9 @@ def download_build_with_progress(url: str, path: Path) -> None:
             if os.path.exists(path):
                 os.remove(path)
     else:
-        raise Exception(f"Cannot download dataset from {url}, all retries exceeded")
+        raise DownloadException(
+            f"Cannot download dataset from {url}, all retries exceeded"
+        )
 
     if sys.stdout.isatty():
         sys.stdout.write("\n")
@@ -126,7 +180,7 @@ def download_builds_filter(
     print(urls)
 
     if not urls:
-        raise Exception("No build URLs found")
+        raise DownloadException("No build URLs found")
 
     download_builds(result_path, urls, filter_fn)
 

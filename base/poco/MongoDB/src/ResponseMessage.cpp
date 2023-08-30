@@ -21,10 +21,20 @@ namespace MongoDB {
 
 
 ResponseMessage::ResponseMessage():
-	Message(MessageHeader::OP_REPLY), 
-	_responseFlags(0), 
-	_cursorID(0), 
-	_startingFrom(0), 
+	Message(MessageHeader::OP_REPLY),
+	_responseFlags(0),
+	_cursorID(0),
+	_startingFrom(0),
+	_numberReturned(0)
+{
+}
+
+
+ResponseMessage::ResponseMessage(const Int64& cursorID):
+	Message(MessageHeader::OP_REPLY),
+	_responseFlags(0),
+	_cursorID(cursorID),
+	_startingFrom(0),
 	_numberReturned(0)
 {
 }
@@ -50,7 +60,7 @@ void ResponseMessage::read(std::istream& istr)
 	clear();
 
 	BinaryReader reader(istr, BinaryReader::LITTLE_ENDIAN_BYTE_ORDER);
-	
+
 	_header.read(reader);
 
 	reader >> _responseFlags;

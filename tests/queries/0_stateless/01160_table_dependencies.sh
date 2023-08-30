@@ -64,6 +64,10 @@ else
     echo "OK"
 fi
 
+$CLICKHOUSE_CLIENT -q "rename table t to ${CLICKHOUSE_DATABASE}_2.t" |& grep -m1 -F -o UNKNOWN_DATABASE
+$CLICKHOUSE_CLIENT -q "select table, arraySort(dependencies_table),
+arraySort(loading_dependencies_table), arraySort(loading_dependent_table) from system.tables where database in (currentDatabase(), '$t_database') order by table"
+
 $CLICKHOUSE_CLIENT -q "drop table mv"
 $CLICKHOUSE_CLIENT -q "create database ${CLICKHOUSE_DATABASE}_1"
 

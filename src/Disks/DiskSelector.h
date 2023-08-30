@@ -23,7 +23,8 @@ public:
     DiskSelector() = default;
     DiskSelector(const DiskSelector & from) = default;
 
-    void initialize(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context);
+    using DiskValidator = std::function<bool(const Poco::Util::AbstractConfiguration & config, const String & disk_config_prefix)>;
+    void initialize(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context, DiskValidator disk_validator = {});
 
     DiskSelectorPtr updateFromConfig(
         const Poco::Util::AbstractConfiguration & config,

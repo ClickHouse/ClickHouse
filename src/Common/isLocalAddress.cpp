@@ -44,7 +44,7 @@ struct NetworkInterfaces
             std::optional<Poco::Net::IPAddress> interface_address;
             switch (family)
             {
-                /// We interested only in IP-adresses
+                /// We interested only in IP-addresses
                 case AF_INET:
                 {
                     interface_address.emplace(*(iface->ifa_addr));

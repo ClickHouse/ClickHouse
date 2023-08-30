@@ -72,12 +72,11 @@ namespace
             return std::make_shared<BackupEntryFromMemory>(buf.str());
         }
 
-        static AccessEntitiesInBackup fromBackupEntry(const IBackupEntry & backup_entry, const String & file_path)
+        static AccessEntitiesInBackup fromBackupEntry(std::unique_ptr<ReadBuffer> buf, const String & file_path)
         {
             try
             {
                 AccessEntitiesInBackup res;
-                std::unique_ptr<ReadBuffer> buf = backup_entry.getReadBuffer();
 
                 bool dependencies_found = false;
 
@@ -343,8 +342,8 @@ void AccessRestorerFromBackup::addDataPath(const String & data_path)
     for (const String & filename : filenames)
     {
         String filepath_in_backup = data_path_in_backup_fs / filename;
-        auto backup_entry = backup->readFile(filepath_in_backup);
-        auto ab = AccessEntitiesInBackup::fromBackupEntry(*backup_entry, filepath_in_backup);
+        auto read_buffer_from_backup = backup->readFile(filepath_in_backup);
+        auto ab = AccessEntitiesInBackup::fromBackupEntry(std::move(read_buffer_from_backup), filepath_in_backup);
 
         boost::range::copy(ab.entities, std::back_inserter(entities));
         boost::range::copy(ab.dependencies, std::inserter(dependencies, dependencies.end()));

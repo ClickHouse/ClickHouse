@@ -71,7 +71,7 @@ SELECT 1
 | `global` | Same as `shard`. Prefer `shard` ||
 | `zookeeper` | Test requires Zookeeper or ClickHouse Keeper to run | Test uses `ReplicatedMergeTree` |
 | `replica` | Same as `zookeeper`. Prefer `zookeeper` ||
-| `no-fasttest`|  Test is not run under [Fast test](continuous-integration#fast-test) | Test uses `MySQL` table engine which is disabled in Fast test|
+| `no-fasttest`|  Test is not run under [Fast test](continuous-integration.md#fast-test) | Test uses `MySQL` table engine which is disabled in Fast test|
 | `no-[asan, tsan, msan, ubsan]` | Disables tests in build with [sanitizers](#sanitizers) | Test is run under QEMU which doesn't work with sanitizers |
 | `no-replicated-database` |||
 | `no-ordinary-database` |||
@@ -194,11 +194,11 @@ If the system clickhouse-server is already running and you do not want to stop i
 Build tests allow to check that build is not broken on various alternative configurations and on some foreign systems. These tests are automated as well.
 
 Examples:
--   cross-compile for Darwin x86_64 (macOS)
--   cross-compile for FreeBSD x86_64
--   cross-compile for Linux AArch64
--   build on Ubuntu with libraries from system packages (discouraged)
--   build with shared linking of libraries (discouraged)
+- cross-compile for Darwin x86_64 (macOS)
+- cross-compile for FreeBSD x86_64
+- cross-compile for Linux AArch64
+- build on Ubuntu with libraries from system packages (discouraged)
+- build with shared linking of libraries (discouraged)
 
 For example, build with system packages is bad practice, because we cannot guarantee what exact version of packages a system will have. But this is really needed by Debian maintainers. For this reason we at least have to support this variant of build. Another example: shared linking is a common source of trouble, but it is needed for some enthusiasts.
 

@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/time-window-functions
-sidebar_position: 68
+sidebar_position: 175
 sidebar_label: Time Window
 ---
 

@@ -7,7 +7,6 @@
 #include <Poco/URI.h>
 #include <ThriftHiveMetastore.h>
 
-#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/HDFS/HDFSCommon.h>
@@ -62,7 +61,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/) override;
+    SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool async_insert) override;
 
     NamesAndTypesList getVirtuals() const override;
 

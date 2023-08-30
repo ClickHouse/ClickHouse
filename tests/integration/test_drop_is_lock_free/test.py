@@ -104,7 +104,7 @@ def test_query_is_lock_free(lock_free_query, exclusive_table):
 
     select_handler = node.get_query_request(
         f"""
-            SELECT sleepEachRow(3) FROM {exclusive_table};
+            SELECT sleepEachRow(3) FROM {exclusive_table} SETTINGS function_sleep_max_microseconds_per_block = 0;
         """,
         query_id=query_id,
     )
@@ -125,7 +125,7 @@ def test_query_is_lock_free(lock_free_query, exclusive_table):
                 SELECT count() FROM {exclusive_table};
             """
         )
-        assert f"Table default.{exclusive_table} doesn't exist" in result
+        assert f"Table default.{exclusive_table} does not exist" in result
     else:
         assert 0 == int(
             node.query(
@@ -173,7 +173,7 @@ def test_query_is_permanent(transaction, permanent, exclusive_table):
 
     select_handler = node.get_query_request(
         f"""
-            SELECT sleepEachRow(3) FROM {exclusive_table};
+            SELECT sleepEachRow(3) FROM {exclusive_table} SETTINGS function_sleep_max_microseconds_per_block = 0;
         """,
         query_id=query_id,
     )

@@ -40,6 +40,9 @@ private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
+    size_t countRows(size_t max_block_size) override;
+    bool supportsCountRows() const override { return true; }
+
     const String & columnName(size_t i) const;
     size_t columnIndex(StringRef name, size_t key_index);
     bool advanceToNextKey(size_t key_index);
@@ -50,9 +53,7 @@ private:
     void readNestedData(const String & name, MutableColumns & columns);
 
     virtual void readRowStart(MutableColumns &) {}
-    virtual bool checkEndOfData(bool is_first_row);
-
-    const FormatSettings format_settings;
+    virtual void skipRowStart() {}
 
     /// Buffer for the read from the stream field name. Used when you have to copy it.
     /// Also, if processing of Nested data is in progress, it holds the common prefix
@@ -71,17 +72,17 @@ private:
     /// for row like {..., "non-nullable column name" : null, ...}
 
     /// Hash table match `field name -> position in the block`. NOTE You can use perfect hash map.
-    using NameMap = HashMap<StringRef, size_t, StringRefHash>;
-    NameMap name_map;
+    Block::NameMap name_map;
 
     /// Cached search results for previous row (keyed as index in JSON object) - used as a hint.
-    std::vector<NameMap::LookupResult> prev_positions;
-
-    bool allow_new_rows = true;
+    std::vector<Block::NameMap::const_iterator> prev_positions;
 
     bool yield_strings;
 
 protected:
+    virtual bool checkEndOfData(bool is_first_row);
+
+    const FormatSettings format_settings;
 
     /// Set of columns for which the values were read. The rest will be filled with default values.
     std::vector<UInt8> read_columns;
@@ -90,6 +91,8 @@ protected:
 
     /// This flag is needed to know if data is in square brackets.
     bool data_in_square_brackets = false;
+
+    bool allow_new_rows = true;
 };
 
 class JSONEachRowSchemaReader : public IRowWithNamesSchemaReader

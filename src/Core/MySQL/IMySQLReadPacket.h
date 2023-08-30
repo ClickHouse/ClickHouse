@@ -34,6 +34,7 @@ public:
 };
 
 uint64_t readLengthEncodedNumber(ReadBuffer & buffer);
+uint64_t readLengthEncodedNumber(ReadBuffer & buffer, UInt16 & bytes_read);
 void readLengthEncodedString(String & s, ReadBuffer & buffer);
 
 }

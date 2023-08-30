@@ -55,7 +55,7 @@ jobs:
         cd "$GITHUB_WORKSPACE/tests/ci"
         python3 docker_server.py --release-type auto --version "$GITHUB_TAG" \
           --image-repo clickhouse/clickhouse-server --image-path docker/server
-        python3 docker_server.py --release-type auto --version "$GITHUB_TAG" --no-ubuntu \
+        python3 docker_server.py --release-type auto --version "$GITHUB_TAG" \
           --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper
     - name: Cleanup
       if: always()

@@ -5,6 +5,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/Context.h>
 
 #include <Common/assert_cast.h>
 
@@ -115,7 +116,10 @@ public:
     bool isVariadic() const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
-    static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<Now64OverloadResolver>(); }
+    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<Now64OverloadResolver>(context); }
+    explicit Now64OverloadResolver(ContextPtr context)
+        : allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
+    {}
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -137,7 +141,7 @@ public:
         }
         if (arguments.size() == 2)
         {
-            timezone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
+            timezone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, allow_nonconst_timezone_arguments);
         }
 
         return std::make_shared<DataTypeDateTime64>(scale, timezone_name);
@@ -157,6 +161,8 @@ public:
 
         return std::make_unique<FunctionBaseNow64>(nowSubsecond(scale), std::move(arg_types), result_type);
     }
+private:
+    const bool allow_nonconst_timezone_arguments;
 };
 
 }

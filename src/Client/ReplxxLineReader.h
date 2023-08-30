@@ -15,10 +15,12 @@ public:
         bool multiline,
         Patterns extenders_,
         Patterns delimiters_,
+        const char word_break_characters_[],
         replxx::Replxx::highlighter_callback_t highlighter_);
     ~ReplxxLineReader() override;
 
     void enableBracketedPaste() override;
+    void disableBracketedPaste() override;
 
     /// If highlight is on, we will set a flag to denote whether the last token is a delimiter.
     /// This is useful to determine the behavior of <ENTER> key when multiline is enabled.
@@ -31,6 +33,8 @@ private:
 
     replxx::Replxx rx;
     replxx::Replxx::highlighter_callback_t highlighter;
+
+    const char * word_break_characters;
 
     // used to call flock() to synchronize multiple clients using same history file
     int history_file_fd = -1;

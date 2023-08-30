@@ -400,7 +400,7 @@ struct fmt::formatter<DB::Identifier>
 
         /// Only support {}.
         if (it != end && *it != '}')
-            throw format_error("invalid format");
+            throw fmt::format_error("invalid format");
 
         return it;
     }
@@ -408,7 +408,7 @@ struct fmt::formatter<DB::Identifier>
     template <typename FormatContext>
     auto format(const DB::Identifier & identifier, FormatContext & ctx)
     {
-        return format_to(ctx.out(), "{}", identifier.getFullName());
+        return fmt::format_to(ctx.out(), "{}", identifier.getFullName());
     }
 };
 
@@ -422,7 +422,7 @@ struct fmt::formatter<DB::IdentifierView>
 
         /// Only support {}.
         if (it != end && *it != '}')
-            throw format_error("invalid format");
+            throw fmt::format_error("invalid format");
 
         return it;
     }
@@ -430,6 +430,6 @@ struct fmt::formatter<DB::IdentifierView>
     template <typename FormatContext>
     auto format(const DB::IdentifierView & identifier_view, FormatContext & ctx)
     {
-        return format_to(ctx.out(), "{}", identifier_view.getFullName());
+        return fmt::format_to(ctx.out(), "{}", identifier_view.getFullName());
     }
 };

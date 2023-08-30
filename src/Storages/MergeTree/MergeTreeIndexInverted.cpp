@@ -123,7 +123,7 @@ void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos,
 {
     if (*pos >= block.rows())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
-                "Position: {}, Block rows: {}.", toString(*pos), toString(block.rows()));
+                "Position: {}, Block rows: {}.", *pos, block.rows());
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
     auto row_id = store->getNextRowIDRange(rows_read);
@@ -426,6 +426,7 @@ bool MergeTreeConditionInverted::traverseAtomAST(const RPNBuilderTreeNode & node
                  function_name == "like" ||
                  function_name == "notLike" ||
                  function_name == "hasToken" ||
+                 function_name == "hasTokenOrNull" ||
                  function_name == "startsWith" ||
                  function_name == "endsWith" ||
                  function_name == "multiSearchAny")
@@ -490,6 +491,10 @@ bool MergeTreeConditionInverted::traverseASTEquals(
                 DataTypePtr const_type;
                 if (argument.tryGetConstant(const_value, const_type))
                 {
+                    auto const_data_type = WhichDataType(const_type);
+                    if (!const_data_type.isStringOrFixedString() && !const_data_type.isArray())
+                        return false;
+
                     key_column_num = header.getPositionByName(map_keys_index_column_name);
                     key_exists = true;
                 }
@@ -568,7 +573,7 @@ bool MergeTreeConditionInverted::traverseASTEquals(
         token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_filter);
         return true;
     }
-    else if (function_name == "hasToken")
+    else if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
         out.key_column = key_column_num;
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -654,7 +659,11 @@ bool MergeTreeConditionInverted::tryPrepareSetGinFilter(
     if (key_tuple_mapping.empty())
         return false;
 
-    ConstSetPtr prepared_set = rhs.tryGetPreparedSet();
+    auto future_set = rhs.tryGetPreparedSet();
+    if (!future_set)
+        return false;
+
+    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 

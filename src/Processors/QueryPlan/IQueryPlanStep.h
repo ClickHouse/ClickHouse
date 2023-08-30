@@ -23,11 +23,6 @@ class DataStream
 public:
     Block header;
 
-    /// Tuples with those columns are distinct.
-    /// It doesn't mean that columns are distinct separately.
-    /// Removing any column from this list breaks this invariant.
-    NameSet distinct_columns = {};
-
     /// QueryPipeline has single port. Totals or extremes ports are not counted.
     bool has_single_port = false;
 
@@ -51,8 +46,7 @@ public:
 
     bool hasEqualPropertiesWith(const DataStream & other) const
     {
-        return distinct_columns == other.distinct_columns
-            && has_single_port == other.has_single_port
+        return has_single_port == other.has_single_port
             && sort_description == other.sort_description
             && (sort_description.empty() || sort_scope == other.sort_scope);
     }

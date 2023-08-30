@@ -838,8 +838,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
                     const auto & function_arguments_list = table_function_expression.arguments->as<ASTExpressionList &>().children;
                     for (const auto & argument : function_arguments_list)
                     {
+                        if (!node->getSettingsChanges().empty())
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' has arguments after SETTINGS",
+                                table_function_expression.formatForErrorMessage());
+
                         if (argument->as<ASTSelectQuery>() || argument->as<ASTSelectWithUnionQuery>() || argument->as<ASTSelectIntersectExceptQuery>())
                             node->getArguments().getNodes().push_back(buildSelectOrUnionExpression(argument, false /*is_subquery*/, {} /*cte_name*/, context));
+                        else if (const auto * ast_set = argument->as<ASTSetQuery>())
+                            node->setSettingsChanges(ast_set->changes);
                         else
                             node->getArguments().getNodes().push_back(buildExpression(argument, context));
                     }

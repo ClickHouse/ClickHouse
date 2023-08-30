@@ -89,8 +89,12 @@ static std::vector<std::string> extractFromConfig(
     if (has_zk_includes && process_zk_includes)
     {
         DB::ConfigurationPtr bootstrap_configuration(new Poco::Util::XMLConfiguration(config_xml));
+
+        zkutil::validateZooKeeperConfig(*bootstrap_configuration);
+
         zkutil::ZooKeeperPtr zookeeper = std::make_shared<zkutil::ZooKeeper>(
-                *bootstrap_configuration, "zookeeper", nullptr);
+            *bootstrap_configuration, bootstrap_configuration->has("zookeeper") ? "zookeeper" : "keeper", nullptr);
+
         zkutil::ZooKeeperNodeCache zk_node_cache([&] { return zookeeper; });
         config_xml = processor.processConfig(&has_zk_includes, &zk_node_cache);
     }

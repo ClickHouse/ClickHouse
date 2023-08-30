@@ -34,7 +34,7 @@ git push
 ## 描述信息检查 {#description-check}
 检查pull请求的描述是否符合[PULL_REQUEST_TEMPLATE.md](https://github.com/ClickHouse/ClickHouse/blob/master/.github/PULL_REQUEST_TEMPLATE.md)模板.
 
-您必须为您的更改指定一个更改日志类别(例如，Bug修复), 并且为[CHANGELOG.md](../whats-new/changelog/)编写一条用户可读的消息用来描述更改.
+您必须为您的更改指定一个更改日志类别(例如，Bug修复), 并且为[CHANGELOG.md](../whats-new/changelog/index.md)编写一条用户可读的消息用来描述更改.
 
 ## 推送到DockerHub {#push-to-dockerhub}
 生成用于构建和测试的docker映像, 然后将它们推送到DockerHub.

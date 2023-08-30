@@ -40,7 +40,7 @@ public:
     void onStart() override;
     void onFinish() override;
     void onCancel() override { onFinish(); }
-    void onException() override { onFinish(); }
+    void onException(std::exception_ptr /* exception */) override { onFinish(); }
 
 protected:
     /// Do some specific initialization before consuming data.

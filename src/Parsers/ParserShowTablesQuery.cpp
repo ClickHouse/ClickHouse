@@ -36,7 +36,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_where("WHERE");
     ParserKeyword s_limit("LIMIT");
     ParserStringLiteral like_p;
-    ParserIdentifier name_p;
+    ParserIdentifier name_p(true);
     ParserExpressionWithOptionalAlias exp_elem(false);
 
     ASTPtr like;
@@ -149,10 +149,8 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         }
 
         if (s_from.ignore(pos, expected) || s_in.ignore(pos, expected))
-        {
             if (!name_p.parse(pos, database, expected))
                 return false;
-        }
 
         if (s_not.ignore(pos, expected))
             query->not_like = true;
@@ -168,19 +166,15 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         else if (query->not_like)
             return false;
         else if (s_where.ignore(pos, expected))
-        {
             if (!exp_elem.parse(pos, query->where_expression, expected))
                 return false;
-        }
 
         if (s_limit.ignore(pos, expected))
-        {
             if (!exp_elem.parse(pos, query->limit_length, expected))
                 return false;
-        }
     }
 
-    tryGetIdentifierNameInto(database, query->from);
+    query->set(query->from, database);
 
     if (like)
         query->like = like->as<ASTLiteral &>().value.safeGet<const String &>();

@@ -11,6 +11,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <Common/Concepts.h>
 #include <Common/Exception.h>
 #include <Common/NaNUtils.h>
 #include <Common/register_objects.h>
@@ -251,8 +252,8 @@ public:
 
 REGISTER_FUNCTION(WidthBucket)
 {
-    factory.registerFunction<FunctionWidthBucket>({
-        R"(
+    factory.registerFunction<FunctionWidthBucket>(FunctionDocumentation{
+        .description=R"(
 Returns the number of the bucket in which `operand` falls in a histogram having `count` equal-width buckets spanning the range `low` to `high`. Returns `0` if `operand < low`, and returns `count+1` if `operand >= high`.
 
 `operand`, `low`, `high` can be any native number type. `count` can only be unsigned native integer and its value cannot be zero.
@@ -278,10 +279,10 @@ Result:
 └──────────────────────────────────┘
 ```
 )",
-        Documentation::Examples{
-            {"simple", "SELECT widthBucket(10.15, -8.6, 23, 18)"},
+        .examples{
+            {"simple", "SELECT widthBucket(10.15, -8.6, 23, 18)", ""},
         },
-        Documentation::Categories{"Mathematical"},
+        .categories{"Mathematical"},
     });
 
     factory.registerAlias("width_bucket", "widthBucket", FunctionFactory::CaseInsensitive);
