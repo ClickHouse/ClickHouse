@@ -198,7 +198,7 @@ ConfigReloader::FilesChangesTracker ConfigReloader::getNewFileList() const
     FilesChangesTracker file_list;
 
     file_list.addIfExists(config_path);
-    for (const auto& [_, path] : extra_paths)
+    for (const auto & [_, path] : extra_paths)
         file_list.addIfExists(path);
 
     for (const auto & merge_path : ConfigProcessor::getConfigMergeFiles(config_path))
