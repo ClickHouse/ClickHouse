@@ -215,13 +215,11 @@ void SerializationFixedString::serializeTextMarkdown(
 {
     if (settings.output_format_markdown_escape_special_characters)
     {
-        const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-        writeAnyMarkdownEscapedString(pos, pos + n, ostr);
+        writeMarkdownEscapedString(
+            reinterpret_cast<const char *>(&(assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num])), n, ostr);
     }
     else
-    {
         serializeTextEscaped(column, row_num, ostr, settings);
-    }
 }
 
 }

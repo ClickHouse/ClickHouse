@@ -6,14 +6,19 @@ SELECT * FROM markdown FORMAT Markdown;
 DROP TABLE IF EXISTS markdown;
 
 
-DROP TABLE IF EXISTS markdown;
 SET output_format_markdown_escape_special_characters = true;
-SELECT '!' as a, '#' as b, '$' as c, '%' as d, '&' as e, '(' as f, '*' as g, '+' as h, ',' as i, '-' as j, '.' as k FORMAT Markdown;
-SELECT '/' as a, ':' as b, ';' as c, '<' as d, '=' as e, '>' as f, '?' as g, '@' as h, '[' as i, '^' as j, '_' as k FORMAT Markdown;
-SELECT '`' as a, '{' as b, '|' as c, '}' as d, '~' as e FORMAT Markdown;
-
+SELECT '!' AS a, '#' AS b, '$' AS c, '%' AS d, '&' AS e, '(' AS f, '*' AS g, '+' AS h, ',' AS i, '-' AS j, '.' AS k, '/' AS l, ':' AS m, ';' AS n, '<' AS o, '=' AS p, '>' AS q, '?' AS r, '@' AS s, '[' AS t, '^' AS u, '_' AS v, '`' AS w, '{' AS x, '|' AS y, '}' AS z, '~' AS A FORMAT Markdown;
 SET output_format_markdown_escape_special_characters = false;
-SELECT '!' as a, '#' as b, '$' as c, '%' as d, '&' as e, '(' as f, '*' as g, '+' as h, ',' as i, '-' as j, '.' as k FORMAT Markdown;
-SELECT '/' as a, ':' as b, ';' as c, '<' as d, '=' as e, '>' as f, '?' as g, '@' as h, '[' as i, '^' as j, '_' as k FORMAT Markdown;
-SELECT '`' as a, '{' as b, '|' as c, '}' as d, '~' as e FORMAT Markdown;
-DROP TABLE IF EXISTS markdown;
+SELECT '!' AS a, '#' AS b, '$' AS c, '%' AS d, '&' AS e, '(' AS f, '*' AS g, '+' AS h, ',' AS i, '-' AS j, '.' AS k, '/' AS l, ':' AS m, ';' AS n, '<' AS o, '=' AS p, '>' AS q, '?' AS r, '@' AS s, '[' AS t, '^' AS u, '_' AS v, '`' AS w, '{' AS x, '|' AS y, '}' AS z, '~' AS A FORMAT Markdown;
+
+
+SET output_format_markdown_escape_special_characters = true;
+SELECT CAST(1 AS Enum('!#$%&(*+,-./:<=>?@[^`{|}~' = 1)) AS a FORMAT Markdown;
+SET output_format_markdown_escape_special_characters = false;
+SELECT CAST(1 AS Enum('!#$%&(*+,-./:<=>?@[^`{|}~' = 1)) AS a FORMAT Markdown;
+
+
+SET output_format_markdown_escape_special_characters = true;
+SELECT toFixedString('!#$%&(*+,-./:<=>?@[^`{|}~', 25) AS a FORMAT Markdown;
+SET output_format_markdown_escape_special_characters = false;
+SELECT toFixedString('!#$%&(*+,-./:<=>?@[^`{|}~', 25) AS a FORMAT Markdown;
