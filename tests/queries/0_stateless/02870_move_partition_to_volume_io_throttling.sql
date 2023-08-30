@@ -1,5 +1,6 @@
--- Tags: no-random-merge-tree-settings, no-fasttest
+-- Tags: no-random-merge-tree-settings, no-fasttest, no-replicated-database
 -- Tag: no-fasttest -- requires S3
+-- Tag: no-replicated-database -- ALTER MOVE PARTITION TO should not be replicated (will be fixed separatelly)
 
 CREATE TABLE test_move_partition_throttling (key UInt64 CODEC(NONE)) ENGINE = MergeTree ORDER BY tuple() SETTINGS storage_policy='local_remote';
 INSERT INTO test_move_partition_throttling SELECT number FROM numbers(1e6);
