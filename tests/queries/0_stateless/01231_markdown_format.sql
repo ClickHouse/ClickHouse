@@ -7,7 +7,6 @@ DROP TABLE IF EXISTS markdown;
 
 
 SET output_format_markdown_escape_special_characters = true;
-SELECT '!' AS a, '#' AS b, '$' AS c, '%' AS d, '&' AS e, '(' AS f, '*' AS g, '+' AS h, ',' AS i, '-' AS j, '.' AS k, '/' AS l, ':' AS m, ';' AS n, '<' AS o, '=' AS p, '>' AS q, '?' AS r, '@' AS s, '[' AS t, '^' AS u, '_' AS v, '`' AS w, '{' AS x, '|' AS y, '}' AS z, '~' AS A FORMAT Markdown;
 SELECT '!#$%&(*+,-./:<=>?@[^`{|}~' AS a FORMAT Markdown;
 SELECT CAST(1 AS Enum('!#$%&(*+,-./:<=>?@[^`{|}~' = 1)) AS a FORMAT Markdown;
 SELECT toFixedString('!#$%&(*+,-./:<=>?@[^`{|}~', 25) AS a FORMAT Markdown;
