@@ -287,7 +287,7 @@ namespace
         }
 
         bool access_management = config.getBool(user_config + ".access_management", false);
-        bool named_collection_control = config.getBool(user_config + ".named_collection_control", false);
+        bool named_collection_control = config.getBool(user_config + ".named_collection_control", false) || config.getBool(user_config + ".named_collection_admin", false);
         bool show_named_collections_secrets = config.getBool(user_config + ".show_named_collections_secrets", false);
 
         if (grant_queries)
