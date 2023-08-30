@@ -4,7 +4,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Cache/FileCache.h>
-#include <base/getThreadId.h>
 #include <base/hex.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
@@ -27,6 +26,8 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+thread_local std::string caller_id;
 
 namespace ErrorCodes
 {
@@ -176,10 +177,20 @@ bool FileSegment::isDownloaded() const
 
 String FileSegment::getCallerId()
 {
-    if (!CurrentThread::isInitialized() || CurrentThread::getQueryId().empty())
-        return "None:" + toString(getThreadId());
+    if (caller_id.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Caller id is not set");
 
-    return std::string(CurrentThread::getQueryId()) + ":" + toString(getThreadId());
+    return caller_id;
+}
+
+void FileSegment::setCallerId(const std::string & caller_id_)
+{
+    caller_id = caller_id_;
+}
+
+void FileSegment::resetCallerId()
+{
+    caller_id.clear();
 }
 
 String FileSegment::getDownloader() const
@@ -203,7 +214,6 @@ String FileSegment::getOrSetDownloader()
 
     if (current_downloader.empty())
     {
-        const auto caller_id = getCallerId();
         bool allow_new_downloader = download_state == State::EMPTY || download_state == State::PARTIALLY_DOWNLOADED;
         if (!allow_new_downloader)
             return "notAllowed:" + stateToString(download_state);

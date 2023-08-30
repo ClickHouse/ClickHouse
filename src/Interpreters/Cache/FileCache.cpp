@@ -1,5 +1,6 @@
 #include "FileCache.h"
 
+#include <base/getThreadId.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
@@ -8,7 +9,6 @@
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Context.h>
-#include <base/hex.h>
 #include <Common/ThreadPool.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 
@@ -1151,6 +1151,14 @@ void FileCache::assertCacheCorrectness()
         chassert(file_segment.assertCorrectness());
         return PriorityIterationResult::CONTINUE;
     }, lock);
+}
+
+std::string FileCache::getCallerId()
+{
+    if (!CurrentThread::isInitialized() || CurrentThread::getQueryId().empty())
+        return "None:" + toString(getThreadId());
+    else
+        return std::string(CurrentThread::getQueryId()) + ":" + toString(getThreadId());
 }
 
 FileCache::QueryContextHolder::QueryContextHolder(

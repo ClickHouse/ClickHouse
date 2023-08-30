@@ -25,8 +25,11 @@ class FileSegmentRangeWriter
 {
 public:
     FileSegmentRangeWriter(
-        FileCache * cache_, const FileSegment::Key & key_,
-        std::shared_ptr<FilesystemCacheLog> cache_log_, const String & query_id_, const String & source_path_);
+        FileCache * cache_,
+        const FileSegment::Key & key_,
+        std::shared_ptr<FilesystemCacheLog> cache_log_,
+        const String & query_id_,
+        const String & source_path_);
 
     /**
     * Write a range of file segments. Allocate file segment of `max_file_segment_size` and write to
@@ -49,9 +52,10 @@ private:
     FileSegment::Key key;
 
     Poco::Logger * log;
-    std::shared_ptr<FilesystemCacheLog> cache_log;
-    String query_id;
-    String source_path;
+    const std::shared_ptr<FilesystemCacheLog> cache_log;
+    const String query_id;
+    const String source_path;
+    const String cache_user_id;
 
     FileSegmentsHolderPtr file_segments;
 
@@ -81,6 +85,7 @@ public:
 
 private:
     void cacheData(char * data, size_t size, bool throw_on_error);
+    void finalizeCacheData();
 
     Poco::Logger * log;
 

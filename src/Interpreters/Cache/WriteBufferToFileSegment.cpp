@@ -20,6 +20,7 @@ namespace ErrorCodes
 WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegment * file_segment_)
     : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(file_segment_->getPathInLocalCache()))
     , file_segment(file_segment_)
+    , cache_user_id(FileCache::getCallerId())
 {
 }
 
@@ -30,12 +31,16 @@ WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegmentsHolderPtr segment
         : throw Exception(ErrorCodes::LOGICAL_ERROR, "WriteBufferToFileSegment can be created only from single segment"))
     , file_segment(&segment_holder_->front())
     , segment_holder(std::move(segment_holder_))
+    , cache_user_id(FileCache::getCallerId())
 {
 }
 
 /// If it throws an exception, the file segment will be incomplete, so you should not use it in the future.
 void WriteBufferToFileSegment::nextImpl()
 {
+    FileSegment::setCallerId(cache_user_id);
+    SCOPE_EXIT({ FileSegment::resetCallerId(); });
+
     auto downloader [[maybe_unused]] = file_segment->getOrSetDownloader();
     chassert(downloader == FileSegment::getCallerId());
 

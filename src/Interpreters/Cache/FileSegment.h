@@ -138,6 +138,8 @@ public:
     };
 
     static String getCallerId();
+    static void setCallerId(const std::string & caller_id_);
+    static void resetCallerId();
 
     String getInfoForLog() const;
 

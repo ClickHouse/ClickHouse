@@ -40,6 +40,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
+
 CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     const String & source_file_path_,
     const FileCache::Key & cache_key_,
@@ -65,6 +66,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , read_until_position(read_until_position_ ? *read_until_position_ : file_size_)
     , implementation_buffer_creator(implementation_buffer_creator_)
     , query_id(query_id_)
+    , cache_user_id(FileCache::getCallerId())
     , current_buffer_id(getRandomASCIIString(8))
     , allow_seeks_after_first_read(allow_seeks_after_first_read_)
     , use_external_buffer(use_external_buffer_)
@@ -769,6 +771,9 @@ bool CachedOnDiskReadBufferFromFile::writeCache(char * data, size_t size, size_t
 
 bool CachedOnDiskReadBufferFromFile::nextImpl()
 {
+    FileSegment::setCallerId(cache_user_id);
+    SCOPE_EXIT({ FileSegment::resetCallerId(); });
+
     try
     {
         return nextImplStep();

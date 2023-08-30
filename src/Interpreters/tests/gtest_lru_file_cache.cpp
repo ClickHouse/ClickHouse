@@ -68,6 +68,7 @@ using HolderPtr = FileSegmentsHolderPtr;
 fs::path caches_dir = fs::current_path() / "lru_cache_test";
 std::string cache_base_path = caches_dir / "cache1" / "";
 
+FileSegment::setCallerId("unit_test");
 
 void assertEqual(FileSegments::const_iterator segments_begin, FileSegments::const_iterator segments_end, size_t segments_size, const Ranges & expected_ranges, const States & expected_states = {})
 {

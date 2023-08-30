@@ -124,6 +124,8 @@ public:
 
     bool tryReserve(FileSegment & file_segment, size_t size, FileCacheReserveStat & stat);
 
+    static std::string getCallerId();
+
     FileSegments getSnapshot();
 
     FileSegments getSnapshot(const Key & key);

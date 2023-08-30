@@ -34,6 +34,7 @@ FileSegmentRangeWriter::FileSegmentRangeWriter(
     , cache_log(cache_log_)
     , query_id(query_id_)
     , source_path(source_path_)
+    , cache_user_id(FileCache::getCallerId())
 {
 }
 
@@ -49,6 +50,9 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
             "Cannot write file segment at offset {}, because expected write offset is: {}",
             offset, expected_write_offset);
     }
+
+    FileSegment::setCallerId(cache_user_id);
+    SCOPE_EXIT({ FileSegment::resetCallerId(); });
 
     FileSegment * file_segment;
 
@@ -115,6 +119,9 @@ void FileSegmentRangeWriter::finalize()
 {
     if (finalized)
         return;
+
+    FileSegment::setCallerId(cache_user_id);
+    SCOPE_EXIT({ FileSegment::resetCallerId(); });
 
     completeFileSegment();
     finalized = true;
@@ -302,8 +309,7 @@ void CachedOnDiskWriteBufferFromFile::finalizeImpl()
         {
             try
             {
-                cache_writer->finalize();
-                cache_writer.reset();
+                finalizeCacheData();
             }
             catch (...)
             {
@@ -316,9 +322,14 @@ void CachedOnDiskWriteBufferFromFile::finalizeImpl()
 
     if (cache_writer)
     {
-        cache_writer->finalize();
-        cache_writer.reset();
+        finalizeCacheData();
     }
+}
+
+void CachedOnDiskWriteBufferFromFile::finalizeCacheData()
+{
+    cache_writer->finalize();
+    cache_writer.reset();
 }
 
 }

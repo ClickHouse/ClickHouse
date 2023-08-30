@@ -138,8 +138,9 @@ private:
     String nextimpl_step_log_info;
     String last_caller_id;
 
-    String query_id;
-    String current_buffer_id;
+    const String query_id;
+    const String cache_user_id;
+    const String current_buffer_id;
 
     bool allow_seeks_after_first_read;
     [[maybe_unused]]bool use_external_buffer;

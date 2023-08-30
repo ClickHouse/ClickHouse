@@ -28,6 +28,8 @@ private:
 
     /// Empty if file_segment is not owned by this WriteBufferToFileSegment
     FileSegmentsHolderPtr segment_holder;
+
+    const std::string cache_user_id;
 };
 
 
