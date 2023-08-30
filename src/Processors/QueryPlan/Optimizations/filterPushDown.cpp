@@ -263,7 +263,7 @@ static size_t joinPushDown(
         {
             /// Here we should change join type to INNER
             /// But instead I am doing this
-            static_cast<JoinStep &>(*join_step).addFilterDefault(split_filter->clone(), can_remove_filter);
+            static_cast<JoinStep &>(*join_step).addFilterDefault(child_idx);
         }
     }
 
@@ -429,10 +429,10 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         }
         else if (table_join.kind() == JoinKind::Full)
         {
-            right_depth = joinPushDown(parent_node, 0, nodes, false);
+            left_depth = joinPushDown(parent_node, 0, nodes, false);
             /// Probably there is no FilledRight Fill join. But check just in case.
             if (can_push_down_right)
-                left_depth = joinPushDown(parent_node, 1, nodes, false);
+                right_depth = joinPushDown(parent_node, 1, nodes, false);
         }
 
         return std::max(left_depth, right_depth);
