@@ -8678,9 +8678,13 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
     /// Let's fetch new log entries firstly
     queue.pullLogsToQueue(getZooKeeperAndAssertNotReadonly(), {}, ReplicatedMergeTreeQueue::SYNC);
 
-    /// FIXME(cluster): this is a very ugly hack to sync cluster partitions map
-    if (cluster.has_value())
-        cluster->loadFromCoordinator();
+    if (sync_mode == SyncReplicaMode::CLUSTER)
+    {
+        if (!cluster.has_value())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM SYNC REPLICA CLUSTER supported only for cluster=true");
+
+        cluster->sync();
+    }
 
     if (sync_mode == SyncReplicaMode::PULL)
         return true;

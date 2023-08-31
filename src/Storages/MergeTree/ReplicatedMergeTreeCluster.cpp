@@ -135,6 +135,13 @@ void ReplicatedMergeTreeCluster::cloneReplicaWithResharding(const zkutil::ZooKee
     /// conflicts)
 }
 
+void ReplicatedMergeTreeCluster::sync()
+{
+    /// FIXME(cluster): this is a hack to sync cluster partitions map, we need to get rid of it
+    loadFromCoordinator();
+    balancer.waitSynced();
+}
+
 void ReplicatedMergeTreeCluster::loadFromCoordinator()
 {
     auto zookeeper = getZooKeeper();

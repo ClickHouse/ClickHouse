@@ -43,6 +43,7 @@ public:
     void initialize();
     void startDistributor();
 
+    void sync();
     void loadFromCoordinator();
     void loadPartitionFromCoordinator(const String & partition_id);
 

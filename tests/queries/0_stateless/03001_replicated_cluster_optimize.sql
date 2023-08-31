@@ -11,10 +11,10 @@ create table data_r4 (key Int, part Int, value Int) engine=ReplicatedMergeTree('
 insert into data_r1 select number key, intDiv(number, 10) part, number value from numbers(10);
 
 -- NOTE: this is required for proper results after OPTIMIZE, is this OK?
-system sync replica data_r1;
-system sync replica data_r2;
-system sync replica data_r3;
-system sync replica data_r4;
+system sync replica data_r1 cluster;
+system sync replica data_r2 cluster;
+system sync replica data_r3 cluster;
+system sync replica data_r4 cluster;
 
 -- { echoOn }
 optimize table data_r1 final;

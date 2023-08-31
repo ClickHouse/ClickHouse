@@ -22,6 +22,8 @@ public:
     void wakeup();
     void shutdown();
 
+    void waitSynced();
+
 private:
     ReplicatedMergeTreeCluster & cluster;
     StorageReplicatedMergeTree & storage;

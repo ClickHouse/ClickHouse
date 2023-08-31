@@ -15,10 +15,10 @@ insert into data_r1 select number key, intDiv(number, 10) part, number value fro
 alter table data_r1 update value = value*10 where 1 settings mutations_sync=2;
 
 -- Only after sync replica we could check any data, since SELECT will do distributed query.
-system sync replica data_r1;
-system sync replica data_r2;
-system sync replica data_r3;
-system sync replica data_r4;
+system sync replica data_r1 cluster;
+system sync replica data_r2 cluster;
+system sync replica data_r3 cluster;
+system sync replica data_r4 cluster;
 
 select arraySort(groupArray(value)) from data_r1;
 select arraySort(groupArray(value)) from data_r2;

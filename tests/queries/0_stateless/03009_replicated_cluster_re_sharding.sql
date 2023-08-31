@@ -9,8 +9,8 @@ create table data_r2 (key Int, part Int, value Int) engine=ReplicatedMergeTree('
 select throwIf(is_readonly = 1) from system.replicas where database = currentDatabase() and table like 'data_%' format Null;
 insert into data_r1 select number key, intDiv(number, 10) part, number value from numbers(100);
 
-system sync replica data_r1;
-system sync replica data_r2;
+system sync replica data_r1 cluster;
+system sync replica data_r2 cluster;
 
 select count() from data_r1;
 select count() from data_r2;
@@ -19,13 +19,10 @@ create table data_r3 (key Int, part Int, value Int) engine=ReplicatedMergeTree('
 create table data_r4 (key Int, part Int, value Int) engine=ReplicatedMergeTree('/tables/{database}/data', '4') order by key partition by (part, key % 2) settings cluster=1, cluster_replication_factor=2;
 select throwIf(is_readonly = 1) from system.replicas where database = currentDatabase() and table like 'data_%' format Null;
 
-system sync replica data_r1;
-system sync replica data_r2;
-system sync replica data_r3;
-system sync replica data_r4;
-
--- TODO: SYSTEM SYNC CLUSTER
-select sleepEachRow(1) from numbers(10) format Null settings max_block_size=1;
+system sync replica data_r1 cluster;
+system sync replica data_r2 cluster;
+system sync replica data_r3 cluster;
+system sync replica data_r4 cluster;
 
 -- FIXME:
 -- - arrayDistinct - what the heck, there should be only distinct values

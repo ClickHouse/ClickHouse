@@ -281,6 +281,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {
                 if (ParserKeyword{"STRICT"}.ignore(pos, expected))
                     res->sync_replica_mode = SyncReplicaMode::STRICT;
+                else if (ParserKeyword{"CLUSTER"}.ignore(pos, expected))
+                    res->sync_replica_mode = SyncReplicaMode::CLUSTER;
                 else if (ParserKeyword{"LIGHTWEIGHT"}.ignore(pos, expected))
                     res->sync_replica_mode = SyncReplicaMode::LIGHTWEIGHT;
                 else if (ParserKeyword{"PULL"}.ignore(pos, expected))

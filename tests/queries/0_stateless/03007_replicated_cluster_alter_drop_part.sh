@@ -17,10 +17,10 @@ $CLICKHOUSE_CLIENT -nm -q "
 
     insert into data_r1 select number key, number%2 part, number value from numbers(100);
 
-    system sync replica data_r1;
-    system sync replica data_r2;
-    system sync replica data_r3;
-    system sync replica data_r4;
+    system sync replica data_r1 cluster;
+    system sync replica data_r2 cluster;
+    system sync replica data_r3 cluster;
+    system sync replica data_r4 cluster;
 "
 
 # FIXME(cluster): ALTER TABLE DROP PART cannot be executed from any replicas,

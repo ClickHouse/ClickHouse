@@ -66,6 +66,21 @@ void ReplicatedMergeTreeClusterBalancer::shutdown()
     task->deactivate();
 }
 
+void ReplicatedMergeTreeClusterBalancer::waitSynced()
+{
+    auto task_blocker = task->getExecLock();
+
+    while (!is_stopped)
+    {
+        runStep();
+        if (state.step == NOTHING_TODO)
+            break;
+    }
+
+    if (is_stopped)
+        throw Exception(ErrorCodes::ABORTED, "Shutdown is called for table");
+}
+
 void ReplicatedMergeTreeClusterBalancer::restoreStateFromCoordinator()
 {
     cluster.loadFromCoordinator();

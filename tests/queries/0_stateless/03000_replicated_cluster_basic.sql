@@ -13,10 +13,10 @@ select throwIf(is_readonly = 1) from system.replicas where database = currentDat
 insert into data_r1 select number key, intDiv(number, 10) part, number value from numbers(10);
 
 -- Only after sync replica we could check any data, since SELECT will do distributed query.
-system sync replica data_r1;
-system sync replica data_r2;
-system sync replica data_r3;
-system sync replica data_r4;
+system sync replica data_r1 cluster;
+system sync replica data_r2 cluster;
+system sync replica data_r3 cluster;
+system sync replica data_r4 cluster;
 
 -- { echo }
 select count() from data_r1;
