@@ -1,10 +1,10 @@
 #include <Columns/ColumnString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <base/hex.h>
-#include <base/find_symbols.h>
 #include <Functions/HTMLCharacterReference.h>
+#include <base/find_symbols.h>
+#include <base/hex.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -65,12 +65,13 @@ namespace
         static const int max_decimal_length_of_unicode_point = 7; /// 1114111
 
 
-
         static size_t execute(const char * src, size_t src_size, char * dst)
         {
             const char * src_pos = src;
             const char * src_end = src + src_size;
             char * dst_pos = dst;
+            // perfect hashmap to lookup html character references
+            HTMLCharacterHash hash;
 
             while (true)
             {
@@ -82,7 +83,6 @@ namespace
                 dst_pos += bytes_to_copy;
                 src_pos = entity_pos;
 
-
                 ++entity_pos;
 
                 const char * entity_end = find_first_symbols<';'>(entity_pos, src_end);
@@ -92,37 +92,36 @@ namespace
 
                 bool parsed = false;
 
-                /// &#NNNN; or &#xNNNN;
+                /// covers &#NNNN; or &#xNNNN hexadecimal values;
                 uint32_t code_point = 0;
                 if (isValidNumericEntity(entity_pos, entity_end, code_point))
                 {
                     codePointToUTF8(code_point, dst_pos);
                     parsed = true;
                 }
-                else
+                else /// covers html encoded character sequences
                 {
-
-                    char a[5];
-                    strncpy(a, entity_pos, 5);
-                    HTMLCharacterHash hash;
-                    auto res = hash.Lookup(a, strlen(a));
-                    if(res)
+                    size_t seq_length = entity_end - entity_pos;
+                    // account for null termination at end;
+                    char seq[seq_length + 1];
+                    // copy from start to end of the encoded sequence including ';'.
+                    strncpy(seq, entity_pos, seq_length + 1);
+                    // null terminate the sequence
+                    seq[seq_length + 1] = '\0';
+                    // lookup the html sequence in the perfect hashmap.
+                    auto res = hash.Lookup(seq, strlen(seq));
+                    if (res)
                     {
                         auto r = res->glyph;
-                        for(size_t i = 0 ; i < strlen(r) ; ++i)
+                        for (size_t i = 0; i < strlen(r); ++i)
                         {
                             *dst_pos = r[i];
                             ++dst_pos;
                         }
-
                         parsed = true;
                     }
                     else
-                    {
-//                        *dst_pos = *a;
-//                        ++dst_pos;
                         parsed = false;
-                    }
                 }
 
                 if (parsed)
@@ -184,12 +183,10 @@ namespace
             }
         }
 
-        [[maybe_unused]]
-        static bool isValidNumericEntity(const char * src, const char * end, uint32_t & code_point)
+        [[maybe_unused]] static bool isValidNumericEntity(const char * src, const char * end, uint32_t & code_point)
         {
             if (src + strlen("#") >= end)
                 return false;
-
             if (src[0] != '#' || (end - src > 1 + max_decimal_length_of_unicode_point))
                 return false;
 
@@ -218,7 +215,6 @@ namespace
 
             return code_point <= max_legal_unicode_value;
         }
-
     };
 
     using FunctionDecodeHTMLComponent = FunctionStringToString<FunctionDecodeHTMLComponentImpl, DecodeHTMLComponentName>;
