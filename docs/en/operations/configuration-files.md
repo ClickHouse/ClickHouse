@@ -65,7 +65,7 @@ XML substitution example:
 
 Substitutions can also be performed from ZooKeeper. To do this, specify the attribute `from_zk = "/path/to/node"`. The element value is replaced with the contents of the node at `/path/to/node` in ZooKeeper. You can also put an entire XML subtree on the ZooKeeper node and it will be fully inserted into the source element.
 
-## Encrypting Configuration {#encryption}
+## Encrypting and Hiding Configuration {#encryption}
 
 You can use symmetric encryption to encrypt a configuration element, for example, a password field. To do so, first configure the [encryption codec](../sql-reference/statements/create/table.md#encryption-codecs), then add attribute `encrypted_by` with the name of the encryption codec as value to the element to encrypt.
 
@@ -100,6 +100,21 @@ Example:
 
 ``` text
 961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85
+```
+
+Even with applied encryption in the preprocessed file the elements are still saved in plain text. In case this is a problem, we suggest two alternatives: either set file permissions of the preprocessed file to 600 or use the `hide_in_preprocessed` attribute.
+
+Example:
+
+```xml
+<clickhouse>
+
+    <interserver_http_credentials hide_in_preprocessed="true">
+        <user>admin</user>
+        <password>secret</password>
+    </interserver_http_credentials>
+
+</clickhouse>
 ```
 
 ## User Settings {#user-settings}
