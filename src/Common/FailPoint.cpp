@@ -1,5 +1,6 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/Config/ConfigHelper.h>
 
 #include <boost/core/noncopyable.hpp>
 #include <chrono>
@@ -162,6 +163,21 @@ void FailPointInjection::wait(const String & fail_point_name)
         auto ptr = iter->second;
         ptr->wait();
     }
-};
+}
+
+void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    String root_key = "fail_points_active";
+
+    Poco::Util::AbstractConfiguration::Keys tables_keys;
+    config.keys(root_key, tables_keys);
+
+    for (const auto & table_key : tables_keys)
+    {
+        if (ConfigHelper::getBool(config, root_key + "." + table_key))
+            FailPointInjection::enableFailPoint(table_key);
+    }
+}
+
 
 }
