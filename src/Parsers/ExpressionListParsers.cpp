@@ -865,6 +865,10 @@ public:
                 if (!ParserKeyword("FROM").ignore(test_pos, test_expected))
                     return true;
 
+                // If there is a comma after 'from' then the first one was a name of a column
+                if (test_pos->type == TokenType::Comma)
+                    return true;
+
                 /// If we parse a second FROM then the first one was a name of a column
                 if (ParserKeyword("FROM").ignore(test_pos, test_expected))
                     return true;
