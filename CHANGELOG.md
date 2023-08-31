@@ -21,7 +21,6 @@
 * Disable support for 3DES in TLS connections. [#52893](https://github.com/ClickHouse/ClickHouse/pull/52893) ([Kenji Noguchi](https://github.com/knoguchi)).
 
 #### New Feature
-* Add new table engine `S3Queue` for streaming data import from s3. Closes [#37012](https://github.com/ClickHouse/ClickHouse/issues/37012). [#49086](https://github.com/ClickHouse/ClickHouse/pull/49086) ([s-kat](https://github.com/s-kat)).
 * Direct import from zip/7z/tar archives. Example: `file('*.zip :: *.csv')`. [#50321](https://github.com/ClickHouse/ClickHouse/pull/50321) ([nikitakeba](https://github.com/nikitakeba)).
 * Add column `ptr` to `system.trace_log` for `trace_type = 'MemorySample'`. This column contains an address of allocation. Added function `flameGraph` which can build flamegraph containing allocated and not released memory. Reworking of [#38391](https://github.com/ClickHouse/ClickHouse/issues/38391). [#45322](https://github.com/ClickHouse/ClickHouse/pull/45322) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * Added table function `azureBlobStorageCluster`. The supported set of features is very similar to table function `s3Cluster`. [#50795](https://github.com/ClickHouse/ClickHouse/pull/50795) ([SmitaRKulkarni](https://github.com/SmitaRKulkarni)).
@@ -50,6 +49,7 @@
 * Add support for string literals as table names. Closes [#52178](https://github.com/ClickHouse/ClickHouse/issues/52178). [#52635](https://github.com/ClickHouse/ClickHouse/pull/52635) ([hendrik-m](https://github.com/hendrik-m)).
 
 #### Experimental Feature
+* Add new table engine `S3Queue` for streaming data import from s3. Closes [#37012](https://github.com/ClickHouse/ClickHouse/issues/37012). [#49086](https://github.com/ClickHouse/ClickHouse/pull/49086) ([s-kat](https://github.com/s-kat)).
 * Enable parallel reading from replicas over distributed table. Related to [#49708](https://github.com/ClickHouse/ClickHouse/issues/49708). [#53005](https://github.com/ClickHouse/ClickHouse/pull/53005) ([Igor Nikonov](https://github.com/devcrafter)).
 * Add experimental support for HNSW as approximate neighbor search method. [#53447](https://github.com/ClickHouse/ClickHouse/pull/53447) ([Davit Vardanyan](https://github.com/davvard)). This is currently intended for those who continue working on the implementation.
 
