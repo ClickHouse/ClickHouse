@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include <base/defines.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/SharedMutex.h>
@@ -39,7 +40,6 @@
 #include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index/global_fun.hpp>
 #include <boost/range/iterator_range_core.hpp>
-
 
 namespace DB
 {
@@ -84,6 +84,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+struct DataPartsLock
+{
+    std::optional<Stopwatch> wait_watch;
+    std::unique_lock<std::mutex> lock;
+    std::optional<Stopwatch> lock_watch;
+    DataPartsLock() = default;
+    explicit DataPartsLock(std::mutex & data_parts_mutex_);
+
+    ~DataPartsLock();
+};
 
 /// Data structure for *MergeTree engines.
 /// Merge tree is used for incremental sorting of data.
@@ -220,7 +230,6 @@ public:
     using MutableDataParts = std::set<MutableDataPartPtr, LessDataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;
 
-    using DataPartsLock = std::unique_lock<std::mutex>;
     DataPartsLock lockParts() const { return DataPartsLock(data_parts_mutex); }
 
     using OperationDataPartsLock = std::unique_lock<std::mutex>;
@@ -240,7 +249,7 @@ public:
     public:
         Transaction(MergeTreeData & data_, MergeTreeTransaction * txn_);
 
-        DataPartsVector commit(MergeTreeData::DataPartsLock * acquired_parts_lock = nullptr);
+        DataPartsVector commit(DataPartsLock * acquired_parts_lock = nullptr);
 
         void addPart(MutableDataPartPtr & part);
 
