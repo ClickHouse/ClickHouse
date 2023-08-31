@@ -74,7 +74,6 @@ namespace ErrorCodes
     extern const int S3_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_NOT_ALLOWED;
-    extern const int NO_ZOOKEEPER;
     extern const int REPLICA_ALREADY_EXISTS;
     extern const int INCOMPATIBLE_COLUMNS;
 }
