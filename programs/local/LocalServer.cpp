@@ -699,17 +699,23 @@ void LocalServer::processConfig()
     if (index_mark_cache_size > max_cache_size)
     {
         index_mark_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+        LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(index_mark_cache_size));
     }
     global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
     size_t mmap_cache_size = config().getUInt64("mmap_cache_size", DEFAULT_MMAP_CACHE_MAX_SIZE);
-    if (mmap_cache_size > max_cache_size)
-    {
-        mmap_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered mmap file cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
-    }
     global_context->setMMappedFileCache(mmap_cache_size);
+
+    String secondary_index_cache_policy = config().getString("secondary_index_cache_policy", DEFAULT_SECONDARY_INDEX_CACHE_POLICY);
+    size_t secondary_index_cache_size = config().getUInt64("secondary_index_cache_size", DEFAULT_SECONDARY_INDEX_CACHE_MAX_SIZE);
+    size_t secondary_index_cache_max_count = config().getUInt64("secondary_index_cache_max_count", DEFAULT_SECONDARY_INDEX_CACHE_MAX_COUNT);
+    double secondary_index_cache_size_ratio = config().getDouble("secondary_index_cache_size_ratio", DEFAULT_SECONDARY_INDEX_CACHE_SIZE_RATIO);
+    if (secondary_index_cache_size > max_cache_size)
+    {
+        secondary_index_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered secondary index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(secondary_index_cache_size));
+    }
+    global_context->setSecondaryIndexCache(secondary_index_cache_policy, secondary_index_cache_size, secondary_index_cache_max_count, secondary_index_cache_size_ratio);
 
     /// Initialize a dummy query cache.
     global_context->setQueryCache(0, 0, 0, 0);

@@ -90,6 +90,7 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Storages/MergeTree/SecondaryIndexCache.h>
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
 #include <Interpreters/ClusterDiscovery.h>
@@ -253,6 +254,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool;  /// Threadpool for loading marks cache.
     mutable std::unique_ptr<ThreadPool> prefetch_threadpool;    /// Threadpool for loading marks cache.
     mutable UncompressedCachePtr index_uncompressed_cache;      /// The cache of decompressed blocks for MergeTree indices.
+    mutable SecondaryIndexCachePtr secondary_index_cache;       /// Cache of deserialized secondary index granules.
     mutable QueryCachePtr query_cache;                          /// Cache of query results.
     mutable MarkCachePtr index_mark_cache;                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache;                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
@@ -2444,6 +2446,41 @@ void Context::clearMMappedFileCache() const
         shared->mmap_cache->clear();
 }
 
+void Context::setSecondaryIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
+{
+    auto lock = getLock();
+
+    if (shared->secondary_index_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Secondary index cache has been already created.");
+
+    shared->secondary_index_cache = std::make_shared<SecondaryIndexCache>(cache_policy, max_size_in_bytes, max_count, size_ratio);
+}
+
+void Context::updateSecondaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+
+    if (!shared->secondary_index_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Secondary index cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("secondary_index_cache_size", DEFAULT_SECONDARY_INDEX_CACHE_MAX_SIZE);
+    shared->secondary_index_cache->setMaxSizeInBytes(max_size_in_bytes);
+}
+
+SecondaryIndexCachePtr Context::getSecondaryIndexCache() const
+{
+    auto lock = getLock();
+    return shared->secondary_index_cache;
+}
+
+void Context::clearSecondaryIndexCache() const
+{
+    auto lock = getLock();
+
+    if (shared->secondary_index_cache)
+        shared->secondary_index_cache->clear();
+}
+
 void Context::setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
 {
     auto lock = getLock();
@@ -2505,6 +2542,10 @@ void Context::clearCaches() const
     if (!shared->mmap_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mmapped file cache was not created yet.");
     shared->mmap_cache->clear();
+
+    if (!shared->secondary_index_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Secondary index cache was not created yet.");
+    shared->secondary_index_cache->clear();
 
     /// Intentionally not clearing the query cache which is transactionally inconsistent by design.
 }

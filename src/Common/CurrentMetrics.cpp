@@ -196,6 +196,7 @@
     M(FilesystemCacheDownloadQueueElements, "Filesystem cache elements in download queue") \
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
+    M(SecondaryIndexCacheSize, "Size (in bytes) of the secondary index cache") \
     M(S3Requests, "S3 requests") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequets, "Number of outstanding requests") \

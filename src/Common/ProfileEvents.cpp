@@ -43,6 +43,9 @@
     M(UncompressedCacheWeightLost, "Number of bytes evicted from the uncompressed cache.") \
     M(MMappedFileCacheHits, "Number of times a file has been found in the MMap cache (for the 'mmap' read_method), so we didn't have to mmap it again.") \
     M(MMappedFileCacheMisses, "Number of times a file has not been found in the MMap cache (for the 'mmap' read_method), so we had to mmap it again.") \
+    M(SecondaryIndexCacheHits, "Number of times an index granule has been found in the secondary index cache.") \
+    M(SecondaryIndexCacheMisses, "Number of times an index granule has not been found in the secondary index cache and had to be read from disk.") \
+    M(SecondaryIndexCacheBytesEvicted, "Approximate total size (memory usage) of index granules evicted from the secondary index cache.") \
     M(OpenedFileCacheHits, "Number of times a file has been found in the opened file cache, so we didn't have to open it again.") \
     M(OpenedFileCacheMisses, "Number of times a file has been found in the opened file cache, so we had to open it again.") \
     M(OpenedFileCacheMicroseconds, "Amount of time spent executing OpenedFileCache methods.") \

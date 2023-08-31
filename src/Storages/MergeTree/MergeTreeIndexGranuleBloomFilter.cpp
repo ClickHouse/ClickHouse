@@ -93,6 +93,14 @@ void MergeTreeIndexGranuleBloomFilter::serializeBinary(WriteBuffer & ostr) const
     }
 }
 
+size_t MergeTreeIndexGranuleBloomFilter::memoryUsageBytes() const
+{
+    size_t sum = 0;
+    for (const auto & bloom_filter : bloom_filters)
+        sum += bloom_filter->memoryUsageBytes();
+    return sum;
+}
+
 void MergeTreeIndexGranuleBloomFilter::fillingBloomFilter(BloomFilterPtr & bf, const HashSet<UInt64> &hashes) const
 {
     for (const auto & bf_base_hash : hashes)

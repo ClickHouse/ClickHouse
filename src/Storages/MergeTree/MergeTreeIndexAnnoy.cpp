@@ -73,6 +73,12 @@ size_t AnnoyIndexWithSerialization<Distance>::getDimensions() const
     return Base::get_f();
 }
 
+template<typename Distance>
+size_t AnnoyIndexWithSerialization<Distance>::memoryUsageBytes() const
+{
+    return Base::_s * Base::_n_nodes;
+}
+
 
 template <typename Distance>
 MergeTreeIndexGranuleAnnoy<Distance>::MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_)

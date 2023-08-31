@@ -16,19 +16,29 @@ public:
         MergeTreeData::DataPartPtr part_,
         size_t marks_count_,
         const MarkRanges & all_mark_ranges_,
-        MarkCache * mark_cache,
-        UncompressedCache * uncompressed_cache,
-        MergeTreeReaderSettings settings);
+        MarkCache * mark_cache_,
+        UncompressedCache * uncompressed_cache_,
+        SecondaryIndexCache * secondary_index_cache_,
+        MergeTreeReaderSettings settings_);
     ~MergeTreeIndexReader();
 
-    void seek(size_t mark);
-
-    MergeTreeIndexGranulePtr read();
+    MergeTreeIndexGranulePtr read(size_t mark);
 
 private:
     MergeTreeIndexPtr index;
+    MergeTreeData::DataPartPtr part;
+    size_t marks_count;
+    const MarkRanges & all_mark_ranges;
+    MarkCache * mark_cache;
+    UncompressedCache * uncompressed_cache;
+    SecondaryIndexCache * secondary_index_cache;
+    MergeTreeReaderSettings settings;
+
     std::unique_ptr<MergeTreeReaderStream> stream;
     uint8_t version = 0;
+    size_t stream_mark = 0;
+
+    void initStreamIfNeeded();
 };
 
 }

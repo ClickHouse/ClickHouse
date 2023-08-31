@@ -83,6 +83,14 @@ void MergeTreeIndexGranuleInverted::deserializeBinary(ReadBuffer & istr, MergeTr
     has_elems = true;
 }
 
+size_t MergeTreeIndexGranuleInverted::memoryUsageBytes() const
+{
+    size_t sum = 0;
+    for (const auto & gin_filter : gin_filters)
+        sum += gin_filter.memoryUsageBytes();
+    return sum;
+}
+
 
 MergeTreeIndexAggregatorInverted::MergeTreeIndexAggregatorInverted(
     GinIndexStorePtr store_,

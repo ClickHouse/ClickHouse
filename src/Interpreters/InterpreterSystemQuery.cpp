@@ -341,6 +341,10 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->clearMMappedFileCache();
             break;
+        case Type::DROP_SECONDARY_INDEX_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_SECONDARY_INDEX_CACHE);
+            system_context->clearSecondaryIndexCache();
+            break;
         case Type::DROP_QUERY_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
             getContext()->clearQueryCache();
@@ -1070,6 +1074,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
+        case Type::DROP_SECONDARY_INDEX_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_SCHEMA_CACHE:

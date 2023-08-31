@@ -95,6 +95,7 @@ private:
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
+        SecondaryIndexCache * secondary_index_cache,
         Poco::Logger * log);
 
     static MarkRanges filterMarksUsingMergedIndex(
@@ -106,6 +107,7 @@ private:
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
+        SecondaryIndexCache * secondary_index_cache,
         Poco::Logger * log);
 
     struct PartFilterCounters

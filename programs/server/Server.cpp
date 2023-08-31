@@ -1110,7 +1110,7 @@ try
     if (index_uncompressed_cache_size > max_cache_size)
     {
         index_uncompressed_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+        LOG_INFO(log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(index_uncompressed_cache_size));
     }
     global_context->setIndexUncompressedCache(index_uncompressed_cache_policy, index_uncompressed_cache_size, index_uncompressed_cache_size_ratio);
 
@@ -1120,17 +1120,23 @@ try
     if (index_mark_cache_size > max_cache_size)
     {
         index_mark_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+        LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(index_mark_cache_size));
     }
     global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
     size_t mmap_cache_size = server_settings.mmap_cache_size;
-    if (mmap_cache_size > max_cache_size)
-    {
-        mmap_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered mmap file cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
-    }
     global_context->setMMappedFileCache(mmap_cache_size);
+
+    String secondary_index_cache_policy = server_settings.secondary_index_cache_policy;
+    size_t secondary_index_cache_size = server_settings.secondary_index_cache_size;
+    size_t secondary_index_cache_max_count = server_settings.secondary_index_cache_max_count;
+    double secondary_index_cache_size_ratio = server_settings.secondary_index_cache_size_ratio;
+    if (secondary_index_cache_size > max_cache_size)
+    {
+        secondary_index_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered secondary index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(secondary_index_cache_size));
+    }
+    global_context->setSecondaryIndexCache(secondary_index_cache_policy, secondary_index_cache_size, secondary_index_cache_max_count, secondary_index_cache_size_ratio);
 
     size_t query_cache_max_size_in_bytes = config().getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_SIZE);
     size_t query_cache_max_entries = config().getUInt64("query_cache.max_entries", DEFAULT_QUERY_CACHE_MAX_ENTRIES);
@@ -1139,7 +1145,7 @@ try
     if (query_cache_max_size_in_bytes > max_cache_size)
     {
         query_cache_max_size_in_bytes = max_cache_size;
-        LOG_INFO(log, "Lowered query cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+        LOG_INFO(log, "Lowered query cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(query_cache_max_size_in_bytes));
     }
     global_context->setQueryCache(query_cache_max_size_in_bytes, query_cache_max_entries, query_cache_query_cache_max_entry_size_in_bytes, query_cache_max_entry_size_in_rows);
 
@@ -1374,6 +1380,7 @@ try
             global_context->updateIndexUncompressedCacheConfiguration(*config);
             global_context->updateIndexMarkCacheConfiguration(*config);
             global_context->updateMMappedFileCacheConfiguration(*config);
+            global_context->updateSecondaryIndexCacheConfiguration(*config);
             global_context->updateQueryCacheConfiguration(*config);
 
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");

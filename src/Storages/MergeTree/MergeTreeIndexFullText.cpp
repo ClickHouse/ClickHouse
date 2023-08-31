@@ -64,6 +64,14 @@ void MergeTreeIndexGranuleFullText::deserializeBinary(ReadBuffer & istr, MergeTr
     has_elems = true;
 }
 
+size_t MergeTreeIndexGranuleFullText::memoryUsageBytes() const
+{
+    size_t sum = 0;
+    for (const auto & bloom_filter : bloom_filters)
+        sum += bloom_filter.memoryUsageBytes();
+    return sum;
+}
+
 
 MergeTreeIndexAggregatorFullText::MergeTreeIndexAggregatorFullText(
     const Names & index_columns_,
