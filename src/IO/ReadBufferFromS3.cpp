@@ -214,6 +214,7 @@ bool ReadBufferFromS3::processException(Poco::Exception & e, size_t read_offset,
         "Attempt: {}, Message: {}",
         bucket, key, version_id.empty() ? "Latest" : version_id, read_offset, attempt, e.message());
 
+
     if (auto * s3_exception = dynamic_cast<S3Exception *>(&e))
     {
         /// It doesn't make sense to retry Access Denied or No Such Key
