@@ -16,8 +16,8 @@ namespace ErrorCodes
 
 /**
   * Performs null-safe comparison.
-  * euqals(NULL, NULL) is NULL, while isNotDistinctFrom(NULL, NULL) is true.
-  * Currecntly can be used only in JOIN ON section.
+  * equals(NULL, NULL) is NULL, while isNotDistinctFrom(NULL, NULL) is true.
+  * Currently, it can be used only in the JOIN ON section.
   * This wrapper is needed to register function to make possible query analysis, syntax completion and so on.
   */
 class FunctionIsNotDistinctFrom : public IFunction
@@ -45,7 +45,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr &, size_t /* rows_count */) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} can be used only in JOIN ON section", getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} can be used only in the JOIN ON section", getName());
     }
 };
 

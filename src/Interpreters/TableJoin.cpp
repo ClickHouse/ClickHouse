@@ -139,7 +139,11 @@ void TableJoin::resetCollected()
 
 void TableJoin::addUsingKey(const ASTPtr & ast)
 {
-    /// For USING key and right key AST is the same.
+    /** For USING key and right key AST are the same.
+      * Example:
+      * SELECT ... FROM t1 JOIN t2 USING (key)
+      * Both key_asts_left and key_asts_right will reference the same ASTIdentifer `key`
+      */
     addKey(ast->getColumnName(), renamedRightColumnName(ast->getAliasOrColumnName()), ast, ast);
 }
 
@@ -430,16 +434,16 @@ static void renameIfNeeded(String & name, const NameToNameMap & renames)
         name = it->second;
 }
 
-static void makeColumnNameUnique(const ColumnsWithTypeAndName & source_coulmns, String & name)
+static void makeColumnNameUnique(const ColumnsWithTypeAndName & source_columns, String & name)
 {
-    for (const auto & source_col : source_coulmns)
+    for (const auto & source_col : source_columns)
     {
         if (source_col.name != name)
             continue;
 
         /// Duplicate found, slow path
         NameSet names;
-        for (const auto & col : source_coulmns)
+        for (const auto & col : source_columns)
             names.insert(col.name);
 
         String base_name = name;
@@ -453,14 +457,14 @@ static void makeColumnNameUnique(const ColumnsWithTypeAndName & source_coulmns, 
 }
 
 static ActionsDAGPtr createWrapWithTupleActions(
-    const ColumnsWithTypeAndName & source_coulmns,
+    const ColumnsWithTypeAndName & source_columns,
     std::unordered_set<std::string_view> && column_names_to_wrap,
     NameToNameMap & new_names)
 {
     if (column_names_to_wrap.empty())
         return nullptr;
 
-    auto actions_dag = std::make_shared<ActionsDAG>(source_coulmns);
+    auto actions_dag = std::make_shared<ActionsDAG>(source_columns);
 
     FunctionOverloadResolverPtr func_builder = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
 
@@ -473,7 +477,7 @@ static ActionsDAGPtr createWrapWithTupleActions(
         column_names_to_wrap.erase(it);
 
         String node_name = "__wrapNullsafe(" + column_name + ")";
-        makeColumnNameUnique(source_coulmns, node_name);
+        makeColumnNameUnique(source_columns, node_name);
 
         const auto & dst_node = actions_dag->addFunction(func_builder, {input_node}, node_name);
         new_names[column_name] = dst_node.result_name;
@@ -482,7 +486,7 @@ static ActionsDAGPtr createWrapWithTupleActions(
 
     if (!column_names_to_wrap.empty())
         throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Can't find columns {} in input columns [{}]",
-                        fmt::join(column_names_to_wrap, ", "), Block(source_coulmns).dumpNames());
+                        fmt::join(column_names_to_wrap, ", "), Block(source_columns).dumpNames());
 
     return actions_dag;
 }
