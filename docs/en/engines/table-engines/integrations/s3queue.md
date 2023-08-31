@@ -39,7 +39,7 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
 CREATE TABLE s3queue_engine_table (name String, value UInt32)
 ENGINE=S3Queue('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*', 'CSV', 'gzip')
 SETTINGS
-    mode = 'ordred';
+    mode = 'ordered';
 ```
 
 Using named collections:
@@ -60,7 +60,7 @@ Using named collections:
 CREATE TABLE s3queue_engine_table (name String, value UInt32)
 ENGINE=S3Queue(s3queue_conf, format = 'CSV', compression_method = 'gzip')
 SETTINGS
-    mode = 'ordred';
+    mode = 'ordered';
 ```
 
 ## Settings {#s3queue-settings}
@@ -188,7 +188,7 @@ Example:
   CREATE TABLE s3queue_engine_table (name String, value UInt32)
     ENGINE=S3Queue('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*', 'CSV', 'gzip')
     SETTINGS
-        mode = 'unordred',
+        mode = 'unordered',
         keeper_path = '/clickhouse/s3queue/';
 
   CREATE TABLE stats (name String, value UInt32)
