@@ -4075,7 +4075,9 @@ private:
                             throw Exception(ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected IPv4", result_type->getName());
 
                         const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
-                        if (cast_ipv4_ipv6_default_on_conversion_error_value || input_format_ipv4_default_on_conversion_error_value || requested_result_is_nullable)
+                        if (requested_result_is_nullable)
+                            return convertToIPv4<IPStringToNumExceptionMode::Null>(arguments[0].column, null_map);
+                        else if (cast_ipv4_ipv6_default_on_conversion_error_value || input_format_ipv4_default_on_conversion_error_value)
                             return convertToIPv4<IPStringToNumExceptionMode::Default>(arguments[0].column, null_map);
                         else
                             return convertToIPv4<IPStringToNumExceptionMode::Throw>(arguments[0].column, null_map);
@@ -4095,7 +4097,9 @@ private:
                                 ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected IPv6", result_type->getName());
 
                         const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
-                        if (cast_ipv4_ipv6_default_on_conversion_error_value || input_format_ipv6_default_on_conversion_error_value || requested_result_is_nullable)
+                        if (requested_result_is_nullable)
+                            return convertToIPv6<IPStringToNumExceptionMode::Null>(arguments[0].column, null_map);
+                        else if (cast_ipv4_ipv6_default_on_conversion_error_value || input_format_ipv6_default_on_conversion_error_value)
                             return convertToIPv6<IPStringToNumExceptionMode::Default>(arguments[0].column, null_map);
                         else
                             return convertToIPv6<IPStringToNumExceptionMode::Throw>(arguments[0].column, null_map);
@@ -4132,7 +4136,9 @@ private:
                             ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected IPv4", result_type->getName());
 
                     const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
-                    if (cast_ipv4_ipv6_default_on_conversion_error_value || requested_result_is_nullable)
+                    if (requested_result_is_nullable)
+                        return convertIPv6ToIPv4<IPStringToNumExceptionMode::Null>(arguments[0].column, null_map);
+                    else if (cast_ipv4_ipv6_default_on_conversion_error_value)
                         return convertIPv6ToIPv4<IPStringToNumExceptionMode::Default>(arguments[0].column, null_map);
                     else
                         return convertIPv6ToIPv4<IPStringToNumExceptionMode::Throw>(arguments[0].column, null_map);
