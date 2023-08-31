@@ -1597,7 +1597,20 @@ struct ConvertImplGenericFromString
 
                 const auto & val = col_from_string->getDataAt(i);
                 ReadBufferFromMemory read_buffer(val.data, val.size);
-                serialization_from.deserializeWholeText(column_to, read_buffer, format_settings);
+                try
+                {
+                    serialization_from.deserializeWholeText(column_to, read_buffer, format_settings);
+                }
+                catch (Exception &)
+                {
+                    if (auto * nullable_column = typeid_cast<ColumnNullable *>(&column_to))
+                    {
+                        column_to.insertDefault();
+                        continue;
+                    }
+                    else
+                        throw;
+                }
 
                 if (!read_buffer.eof())
                 {
@@ -4093,7 +4106,18 @@ private:
 
                 if (to_type->getCustomSerialization() && to_type->getCustomName())
                 {
-                    ret = &ConvertImplGenericFromString<typename FromDataType::ColumnType>::execute;
+                    ret = [requested_result_is_nullable](
+                              ColumnsWithTypeAndName & arguments,
+                              const DataTypePtr & result_type,
+                              const ColumnNullable * column_nullable,
+                              size_t input_rows_count) -> ColumnPtr
+                    {
+                        auto wrapped_result_type = result_type;
+                        if (requested_result_is_nullable)
+                            wrapped_result_type = makeNullable(result_type);
+                        return ConvertImplGenericFromString<typename FromDataType::ColumnType>::execute(
+                            arguments, wrapped_result_type, column_nullable, input_rows_count);
+                    };
                     return true;
                 }
             }
