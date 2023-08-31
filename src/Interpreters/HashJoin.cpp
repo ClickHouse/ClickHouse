@@ -309,8 +309,6 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
 
     for (auto & maps : data->maps)
         dataMapInit(maps, reserve_num);
-
-    LOG_DEBUG(log, "({}) Method: {}", fmt::ptr(this), data->type);
 }
 
 HashJoin::Type HashJoin::chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes)
