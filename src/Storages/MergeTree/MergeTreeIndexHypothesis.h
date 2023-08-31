@@ -24,6 +24,8 @@ public:
 
     bool empty() const override { return is_empty; }
 
+    size_t memoryUsageBytes() const override { return 100; }
+
     ~MergeTreeIndexGranuleHypothesis() override = default;
 
     const String & index_name;

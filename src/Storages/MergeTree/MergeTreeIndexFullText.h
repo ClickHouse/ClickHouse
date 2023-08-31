@@ -25,6 +25,8 @@ struct MergeTreeIndexGranuleFullText final : public IMergeTreeIndexGranule
 
     bool empty() const override { return !has_elems; }
 
+    size_t memoryUsageBytes() const override;
+
     const String index_name;
     const BloomFilterParameters params;
 
