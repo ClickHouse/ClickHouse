@@ -4067,9 +4067,13 @@ private:
             {
                 if constexpr (std::is_same_v<ToDataType, DataTypeIPv4>)
                 {
-                    ret = [cast_ipv4_ipv6_default_on_conversion_error_value, input_format_ipv4_default_on_conversion_error_value, requested_result_is_nullable](
-                                  ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t)
-                            -> ColumnPtr
+                    ret = [cast_ipv4_ipv6_default_on_conversion_error_value,
+                           input_format_ipv4_default_on_conversion_error_value,
+                           requested_result_is_nullable](
+                              ColumnsWithTypeAndName & arguments,
+                              const DataTypePtr & result_type,
+                              const ColumnNullable * column_nullable,
+                              size_t) -> ColumnPtr
                     {
                         if (!WhichDataType(result_type).isIPv4())
                             throw Exception(ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected IPv4", result_type->getName());
@@ -4088,9 +4092,13 @@ private:
 
                 if constexpr (std::is_same_v<ToDataType, DataTypeIPv6>)
                 {
-                    ret = [cast_ipv4_ipv6_default_on_conversion_error_value, input_format_ipv6_default_on_conversion_error_value, requested_result_is_nullable](
-                                  ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t)
-                            -> ColumnPtr
+                    ret = [cast_ipv4_ipv6_default_on_conversion_error_value,
+                           input_format_ipv6_default_on_conversion_error_value,
+                           requested_result_is_nullable](
+                              ColumnsWithTypeAndName & arguments,
+                              const DataTypePtr & result_type,
+                              const ColumnNullable * column_nullable,
+                              size_t) -> ColumnPtr
                     {
                         if (!WhichDataType(result_type).isIPv6())
                             throw Exception(
