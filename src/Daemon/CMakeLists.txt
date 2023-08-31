@@ -15,5 +15,5 @@ if (TARGET ch_contrib::sentry)
 endif ()
 
 if (TARGET ch_contrib::breakpad)
-    target_link_libraries(daemon PUBLIC ch_contrib::breakpad dbms)
+    target_link_libraries(daemon PRIVATE ch_contrib::breakpad dbms)
 endif()

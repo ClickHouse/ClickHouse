@@ -4,7 +4,13 @@ if (NOT OS_LINUX)
                  "breakpad is disabled implicitly, it only support linux now")
     endif ()
     set (ENABLE_BREAKPAD OFF)
-else ()
+elseif (NOT ARCH_AMD64)
+    if (ENABLE_BREAKPAD)
+        message (${RECONFIGURE_MESSAGE_LEVEL}
+                 "breakpad is disabled implicitly, it only support amd64 now")
+    endif ()
+    set (ENABLE_BREAKPAD OFF)
+else()
     option (ENABLE_BREAKPAD "Enable breakpad minidump" ${ENABLE_LIBRARIES})
 endif ()
 
@@ -46,6 +52,7 @@ SET(BREAKPAD_SRC_FILES
         "${BREAKPAD_DIR}/common/linux/memory_mapped_file.cc"
         "${BREAKPAD_DIR}/common/path_helper.cc"
         "Minidump2Core.cpp"
+        "ExceptionHandler.cpp"
 )
 
 add_library(_breakpad ${BREAKPAD_SRC_FILES})
