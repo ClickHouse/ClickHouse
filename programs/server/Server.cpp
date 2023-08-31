@@ -1425,7 +1425,7 @@ try
     const auto interserver_listen_hosts = getInterserverListenHosts(config());
     const auto listen_try = getListenTry(config());
 
-    if (config().has("keeper_server"))
+    if (config().has("keeper_server.server_id"))
     {
 #if USE_NURAFT
         //// If we don't have configured connection probably someone trying to use clickhouse-server instead
