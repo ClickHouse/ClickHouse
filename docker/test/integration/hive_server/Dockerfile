@@ -6,7 +6,7 @@ RUN apt-get install -y wget openjdk-8-jre
 
 RUN wget https://archive.apache.org/dist/hadoop/common/hadoop-3.1.0/hadoop-3.1.0.tar.gz && \
         tar -xf hadoop-3.1.0.tar.gz && rm -rf hadoop-3.1.0.tar.gz
-RUN wget https://dlcdn.apache.org/hive/hive-2.3.9/apache-hive-2.3.9-bin.tar.gz && \
+RUN wget https://apache.apache.org/dist/hive/hive-2.3.9/apache-hive-2.3.9-bin.tar.gz && \
         tar -xf apache-hive-2.3.9-bin.tar.gz && rm -rf apache-hive-2.3.9-bin.tar.gz
 RUN apt install -y vim
 
