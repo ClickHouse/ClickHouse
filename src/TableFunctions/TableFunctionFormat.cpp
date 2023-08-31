@@ -10,7 +10,6 @@
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -73,17 +72,7 @@ Block TableFunctionFormat::parseData(ColumnsDescription columns, ContextPtr cont
 
     auto read_buf = std::make_unique<ReadBufferFromString>(data);
     auto input_format = context->getInputFormat(format, *read_buf, block, context->getSettingsRef().max_block_size);
-    QueryPipelineBuilder builder;
-    builder.init(Pipe(input_format));
-    if (columns.hasDefaults())
-    {
-        builder.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<AddingDefaultsTransform>(header, columns, *input_format, context);
-        });
-    }
-
-    auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+    auto pipeline = std::make_unique<QueryPipeline>(input_format);
     auto reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
     std::vector<Block> blocks;
@@ -107,9 +96,9 @@ StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, Con
     return res;
 }
 
-static const FunctionDocumentation format_table_function_documentation =
+static const Documentation format_table_function_documentation =
 {
-    .description=R"(
+    R"(
 Extracts table structure from data and parses it according to specified input format.
 Syntax: `format(format_name, data)`.
 Parameters:
@@ -117,7 +106,7 @@ Parameters:
     - `data ` - String literal or constant expression that returns a string containing data in specified format.
 Returned value: A table with data parsed from `data` argument according specified format and extracted schema.
 )",
-    .examples
+    Documentation::Examples
     {
         {
             "First example",
@@ -142,7 +131,7 @@ Result:
 │ 124 │ World │
 └─────┴───────┘
 ```
-)", ""
+)"
         },
         {
             "Second example",
@@ -165,10 +154,10 @@ Result:
 │ a    │ Nullable(String)  │              │                    │         │                  │                │
 └──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-)", ""
+)"
         },
     },
-    .categories{"format", "table-functions"}
+    Documentation::Categories{"format", "table-functions"}
 };
 
 void registerTableFunctionFormat(TableFunctionFactory & factory)

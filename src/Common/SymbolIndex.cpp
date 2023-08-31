@@ -9,6 +9,7 @@
 
 #include <link.h>
 
+//#include <iostream>
 #include <filesystem>
 
 #include <base/sort.h>
@@ -87,13 +88,50 @@ namespace
 /// https://stackoverflow.com/questions/32088140/multiple-string-tables-in-elf-object
 
 
+void updateResources(ElfW(Addr) base_address, std::string_view object_name, std::string_view name, const void * address, SymbolIndex::Resources & resources)
+{
+    const char * char_address = static_cast<const char *>(address);
+
+    if (name.starts_with("_binary_") || name.starts_with("binary_"))
+    {
+        if (name.ends_with("_start"))
+        {
+            name = name.substr((name[0] == '_') + strlen("binary_"));
+            name = name.substr(0, name.size() - strlen("_start"));
+
+            auto & resource = resources[name];
+            if (!resource.base_address || resource.base_address == base_address)
+            {
+                resource.base_address = base_address;
+                resource.start = std::string_view{char_address, 0}; // NOLINT(bugprone-string-constructor)
+                resource.object_name = object_name;
+            }
+        }
+        if (name.ends_with("_end"))
+        {
+            name = name.substr((name[0] == '_') + strlen("binary_"));
+            name = name.substr(0, name.size() - strlen("_end"));
+
+            auto & resource = resources[name];
+            if (!resource.base_address || resource.base_address == base_address)
+            {
+                resource.base_address = base_address;
+                resource.end = std::string_view{char_address, 0}; // NOLINT(bugprone-string-constructor)
+                resource.object_name = object_name;
+            }
+        }
+    }
+}
+
+
 /// Based on the code of musl-libc and the answer of Kanalpiroge on
 /// https://stackoverflow.com/questions/15779185/list-all-the-functions-symbols-on-the-fly-in-c-code-on-a-linux-architecture
 /// It does not extract all the symbols (but only public - exported and used for dynamic linking),
 /// but will work if we cannot find or parse ELF files.
 void collectSymbolsFromProgramHeaders(
     dl_phdr_info * info,
-    std::vector<SymbolIndex::Symbol> & symbols)
+    std::vector<SymbolIndex::Symbol> & symbols,
+    SymbolIndex::Resources & resources)
 {
     /* Iterate over all headers of the current shared lib
      * (first call is for the executable itself)
@@ -211,6 +249,9 @@ void collectSymbolsFromProgramHeaders(
                     /// We are not interested in empty symbols.
                     if (elf_sym[sym_index].st_size)
                         symbols.push_back(symbol);
+
+                    /// But resources can be represented by a pair of empty symbols (indicating their boundaries).
+                    updateResources(base_address, info->dlpi_name, symbol.name, symbol.address_begin, resources);
                 }
 
                 break;
@@ -241,7 +282,8 @@ void collectSymbolsFromELFSymbolTable(
     const Elf & elf,
     const Elf::Section & symbol_table,
     const Elf::Section & string_table,
-    std::vector<SymbolIndex::Symbol> & symbols)
+    std::vector<SymbolIndex::Symbol> & symbols,
+    SymbolIndex::Resources & resources)
 {
     /// Iterate symbol table.
     const ElfSym * symbol_table_entry = reinterpret_cast<const ElfSym *>(symbol_table.begin());
@@ -271,6 +313,8 @@ void collectSymbolsFromELFSymbolTable(
 
         if (symbol_table_entry->st_size)
             symbols.push_back(symbol);
+
+        updateResources(info->dlpi_addr, info->dlpi_name, symbol.name, symbol.address_begin, resources);
     }
 }
 
@@ -280,7 +324,8 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
     const Elf & elf,
     unsigned section_header_type,
     const char * string_table_name,
-    std::vector<SymbolIndex::Symbol> & symbols)
+    std::vector<SymbolIndex::Symbol> & symbols,
+    SymbolIndex::Resources & resources)
 {
     std::optional<Elf::Section> symbol_table;
     std::optional<Elf::Section> string_table;
@@ -298,7 +343,7 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
         return false;
     }
 
-    collectSymbolsFromELFSymbolTable(info, elf, *symbol_table, *string_table, symbols);
+    collectSymbolsFromELFSymbolTable(info, elf, *symbol_table, *string_table, symbols, resources);
     return true;
 }
 
@@ -307,6 +352,7 @@ void collectSymbolsFromELF(
     dl_phdr_info * info,
     std::vector<SymbolIndex::Symbol> & symbols,
     std::vector<SymbolIndex::Object> & objects,
+    SymbolIndex::Resources & resources,
     String & build_id)
 {
     String object_name;
@@ -417,11 +463,11 @@ void collectSymbolsFromELF(
     object.name = object_name;
     objects.push_back(std::move(object));
 
-    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_SYMTAB, ".strtab", symbols);
+    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_SYMTAB, ".strtab", symbols, resources);
 
     /// Unneeded if they were parsed from "program headers" of loaded objects.
 #if defined USE_MUSL
-    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_DYNSYM, ".dynstr", symbols);
+    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_DYNSYM, ".dynstr", symbols, resources);
 #endif
 }
 
@@ -434,8 +480,8 @@ int collectSymbols(dl_phdr_info * info, size_t, void * data_ptr)
 {
     SymbolIndex::Data & data = *reinterpret_cast<SymbolIndex::Data *>(data_ptr);
 
-    collectSymbolsFromProgramHeaders(info, data.symbols);
-    collectSymbolsFromELF(info, data.symbols, data.objects, data.build_id);
+    collectSymbolsFromProgramHeaders(info, data.symbols, data.resources);
+    collectSymbolsFromELF(info, data.symbols, data.objects, data.resources, data.build_id);
 
     /* Continue iterations */
     return 0;
@@ -464,7 +510,7 @@ const T * find(const void * address, const std::vector<T> & vec)
 }
 
 
-void SymbolIndex::load()
+void SymbolIndex::update()
 {
     dl_iterate_phdr(collectSymbols, &data);
 
@@ -504,10 +550,22 @@ String SymbolIndex::getBuildIDHex() const
     return build_id_hex;
 }
 
-const SymbolIndex & SymbolIndex::instance()
+MultiVersion<SymbolIndex> & SymbolIndex::instanceImpl()
 {
-    static SymbolIndex instance;
+    static MultiVersion<SymbolIndex> instance(std::unique_ptr<SymbolIndex>(new SymbolIndex));
     return instance;
+}
+
+MultiVersion<SymbolIndex>::Version SymbolIndex::instance()
+{
+    return instanceImpl().get();
+}
+
+void SymbolIndex::reload()
+{
+    instanceImpl().set(std::unique_ptr<SymbolIndex>(new SymbolIndex));
+    /// Also drop stacktrace cache.
+    StackTrace::dropCache();
 }
 
 }

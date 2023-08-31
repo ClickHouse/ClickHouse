@@ -49,7 +49,7 @@ public:
     void addValues(const AsynchronousMetricValues &);
 
     /// This table is usually queried for fixed metric name.
-    static const char * getDefaultOrderBy() { return "metric, event_date, event_time"; }
+    static const char * getDefaultOrderBy() { return "(metric, event_date, event_time)"; }
 };
 
 }

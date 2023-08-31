@@ -2,7 +2,7 @@
 
 #include <atomic>
 
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/Common.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ConcurrentBoundedQueue.h>
@@ -21,7 +21,7 @@ public:
     static constexpr char STORAGE_TYPE[] = "replicated";
 
     ReplicatedAccessStorage(const String & storage_name, const String & zookeeper_path, zkutil::GetZooKeeper get_zookeeper, AccessChangesNotifier & changes_notifier_, bool allow_backup);
-    ~ReplicatedAccessStorage() override;
+    virtual ~ReplicatedAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
 
@@ -43,7 +43,7 @@ private:
     std::mutex cached_zookeeper_mutex;
 
     std::atomic<bool> watching = false;
-    std::unique_ptr<ThreadFromGlobalPool> watching_thread;
+    ThreadFromGlobalPool watching_thread;
     std::shared_ptr<ConcurrentBoundedQueue<UUID>> watched_queue;
 
     std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;

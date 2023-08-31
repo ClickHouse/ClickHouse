@@ -6,7 +6,6 @@ import urllib.request, urllib.parse
 import ssl
 import os.path
 from os import remove
-import logging
 
 
 # The test cluster is configured with certificate for that host name, see 'server-ext.cnf'.
@@ -15,7 +14,6 @@ SSL_HOST = "integration-tests.clickhouse.com"
 HTTPS_PORT = 8443
 # It's important for the node to work at this IP because 'server-cert.pem' requires that (see server-ext.cnf).
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-MAX_RETRY = 5
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -200,25 +198,17 @@ def test_https_wrong_cert():
     # Wrong certificate: different user's certificate
     with pytest.raises(Exception) as err:
         execute_query_https("SELECT currentUser()", user="john", cert_name="client2")
-    assert "403" in str(err.value)
+    assert "HTTP Error 403" in str(err.value)
 
-    count = 0
     # Wrong certificate: self-signed certificate.
-    while count <= MAX_RETRY:
-        with pytest.raises(Exception) as err:
-            execute_query_https("SELECT currentUser()", user="john", cert_name="wrong")
-        err_str = str(err.value)
-        if count < MAX_RETRY and "Broken pipe" in err_str:
-            count = count + 1
-            logging.warning(f"Failed attempt with wrong cert, err: {err_str}")
-            continue
-        assert "unknown ca" in err_str
-        break
+    with pytest.raises(Exception) as err:
+        execute_query_https("SELECT currentUser()", user="john", cert_name="wrong")
+    assert "unknown ca" in str(err.value)
 
     # No certificate.
     with pytest.raises(Exception) as err:
         execute_query_https("SELECT currentUser()", user="john")
-    assert "403" in str(err.value)
+    assert "HTTP Error 403" in str(err.value)
 
     # No header enabling SSL authentication.
     with pytest.raises(Exception) as err:
@@ -303,45 +293,24 @@ def test_https_non_ssl_auth():
         == "jane\n"
     )
 
-    count = 0
     # However if we send a certificate it must not be wrong.
-    while count <= MAX_RETRY:
-        with pytest.raises(Exception) as err:
-            execute_query_https(
-                "SELECT currentUser()",
-                user="peter",
-                enable_ssl_auth=False,
-                cert_name="wrong",
-            )
-        err_str = str(err.value)
-        if count < MAX_RETRY and "Broken pipe" in err_str:
-            count = count + 1
-            logging.warning(
-                f"Failed attempt with wrong cert, user: peter, err: {err_str}"
-            )
-            continue
-        assert "unknown ca" in err_str
-        break
-
-    count = 0
-    while count <= MAX_RETRY:
-        with pytest.raises(Exception) as err:
-            execute_query_https(
-                "SELECT currentUser()",
-                user="jane",
-                enable_ssl_auth=False,
-                password="qwe123",
-                cert_name="wrong",
-            )
-        err_str = str(err.value)
-        if count < MAX_RETRY and "Broken pipe" in err_str:
-            count = count + 1
-            logging.warning(
-                f"Failed attempt with wrong cert, user: jane, err: {err_str}"
-            )
-            continue
-        assert "unknown ca" in err_str
-        break
+    with pytest.raises(Exception) as err:
+        execute_query_https(
+            "SELECT currentUser()",
+            user="peter",
+            enable_ssl_auth=False,
+            cert_name="wrong",
+        )
+    assert "unknown ca" in str(err.value)
+    with pytest.raises(Exception) as err:
+        execute_query_https(
+            "SELECT currentUser()",
+            user="jane",
+            enable_ssl_auth=False,
+            password="qwe123",
+            cert_name="wrong",
+        )
+    assert "unknown ca" in str(err.value)
 
 
 def test_create_user():
@@ -367,7 +336,7 @@ def test_create_user():
 
     with pytest.raises(Exception) as err:
         execute_query_https("SELECT currentUser()", user="emma", cert_name="client3")
-    assert "403" in str(err.value)
+    assert "HTTP Error 403" in str(err.value)
 
     assert (
         instance.query("SHOW CREATE USER lucy")

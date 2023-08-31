@@ -1,60 +1,60 @@
 Using storage policy: s3_cache
 0
-0	0
+0
 Row 1:
 ──────
 file_segment_range_begin: 0
 file_segment_range_end:   745
 size:                     746
 state:                    DOWNLOADED
-8
-8	1100
+7
+7
 0
 2
 2
-8	1100
+7
 Row 1:
 ──────
 file_segment_range_begin: 0
 file_segment_range_end:   1659
 size:                     1660
 state:                    DOWNLOADED
-8
-8	2014
-8	2014
-8	2014
-24	84045
-35	168815
-44	252113
+7
+7
+7
+7
+21
+31
+38
 5010500
 18816
 Using storage policy: local_cache
 0
-0	0
+0
 Row 1:
 ──────
 file_segment_range_begin: 0
 file_segment_range_end:   745
 size:                     746
 state:                    DOWNLOADED
-8
-8	1100
+7
+7
 0
 2
 2
-8	1100
+7
 Row 1:
 ──────
 file_segment_range_begin: 0
 file_segment_range_end:   1659
 size:                     1660
 state:                    DOWNLOADED
-8
-8	2014
-8	2014
-8	2014
-24	84045
-35	168815
-44	252113
+7
+7
+7
+7
+21
+31
+38
 5010500
 18816

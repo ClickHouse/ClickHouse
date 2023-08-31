@@ -3,7 +3,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTDatabaseOrNone.h>
-#include <Access/Common/AuthenticationType.h>
+#include <Access/Common/AuthenticationData.h>
 #include <Access/Common/AllowedClientHosts.h>
 
 
@@ -13,8 +13,6 @@ class ASTUserNamesWithHost;
 class ASTRolesOrUsersSet;
 class ASTDatabaseOrNone;
 class ASTSettingsProfileElements;
-class ASTAuthenticationData;
-
 
 /** CREATE USER [IF NOT EXISTS | OR REPLACE] name
   *     [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password|plaintext_password|sha256_password|sha256_hash|double_sha1_password|double_sha1_hash}] BY {'password'|'hash'}}|{WITH ldap SERVER 'server_name'}|{WITH kerberos [REALM 'realm']}]
@@ -46,7 +44,9 @@ public:
     std::shared_ptr<ASTUserNamesWithHost> names;
     std::optional<String> new_name;
 
-    std::shared_ptr<ASTAuthenticationData> auth_data;
+    std::optional<AuthenticationData> auth_data;
+
+    mutable std::optional<String> temporary_password_for_checks;
 
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
@@ -61,6 +61,7 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
+    bool hasSecretParts() const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateUserQuery>(clone()); }
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }

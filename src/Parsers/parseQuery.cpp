@@ -233,11 +233,10 @@ ASTPtr tryParseQuery(
     const std::string & query_description,
     bool allow_multi_statements,
     size_t max_query_size,
-    size_t max_parser_depth,
-    bool skip_insignificant)
+    size_t max_parser_depth)
 {
     const char * query_begin = _out_query_end;
-    Tokens tokens(query_begin, all_queries_end, max_query_size, skip_insignificant);
+    Tokens tokens(query_begin, all_queries_end, max_query_size);
     /// NOTE: consider use UInt32 for max_parser_depth setting.
     IParser::Pos token_iterator(tokens, static_cast<uint32_t>(max_parser_depth));
 

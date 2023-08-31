@@ -16,8 +16,6 @@
 #include <DataTypes/DataTypeSet.h>
 
 #include <Common/FieldVisitorToString.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -601,16 +599,11 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     auto lambda_node_name = calculateActionNodeName(node, *planner_context);
     auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
-        lambda_actions, captured_column_names, lambda_arguments_names_and_types, lambda_node.getExpression()->getResultType(), lambda_expression_node_name);
+        lambda_actions, captured_column_names, lambda_arguments_names_and_types, result_type, lambda_expression_node_name);
     actions_stack.pop_back();
 
     // TODO: Pass IFunctionBase here not FunctionCaptureOverloadResolver.
-    const auto * actions_node = actions_stack[level].addFunctionIfNecessary(lambda_node_name, std::move(lambda_children), function_capture);
-
-    if (!result_type->equals(*actions_node->result_type))
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Lambda resolved type {} is not equal to type from actions DAG {}",
-            result_type, actions_node->result_type);
+    actions_stack[level].addFunctionIfNecessary(lambda_node_name, std::move(lambda_children), function_capture);
 
     size_t actions_stack_size = actions_stack.size();
     for (size_t i = level + 1; i < actions_stack_size; ++i)
@@ -625,67 +618,33 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::makeSetForInFunction(const QueryTreeNodePtr & node)
 {
     const auto & function_node = node->as<FunctionNode &>();
-    auto in_first_argument = function_node.getArguments().getNodes().at(0);
     auto in_second_argument = function_node.getArguments().getNodes().at(1);
 
-    //auto set_key = planner_context->createSetKey(in_second_argument);
-
-    DataTypes set_element_types;
-
-    auto in_second_argument_node_type = in_second_argument->getNodeType();
-
-    bool subquery_or_table =
-        in_second_argument_node_type == QueryTreeNodeType::QUERY ||
-        in_second_argument_node_type == QueryTreeNodeType::UNION ||
-        in_second_argument_node_type == QueryTreeNodeType::TABLE;
-
-    FutureSetPtr set;
-    auto set_key = in_second_argument->getTreeHash();
-
-    if (!subquery_or_table)
-    {
-        set_element_types = {in_first_argument->getResultType()};
-        const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
-        if (left_tuple_type && left_tuple_type->getElements().size() != 1)
-            set_element_types = left_tuple_type->getElements();
-
-        set_element_types = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef().transform_null_in);
-        set = planner_context->getPreparedSets().findTuple(set_key, set_element_types);
-    }
-    else
-    {
-        set = planner_context->getPreparedSets().findSubquery(set_key);
-        if (!set)
-            set = planner_context->getPreparedSets().findStorage(set_key);
-    }
-
-    if (!set)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "No set is registered for key {}",
-            PreparedSets::toString(set_key, set_element_types));
+    auto set_key = planner_context->createSetKey(in_second_argument);
+    const auto & planner_set = planner_context->getSetOrThrow(set_key);
 
     ColumnWithTypeAndName column;
-    column.name = planner_context->createSetKey(in_second_argument);
+    column.name = set_key;
     column.type = std::make_shared<DataTypeSet>();
 
-    bool set_is_created = set->get() != nullptr;
-    auto column_set = ColumnSet::create(1, std::move(set));
+    bool set_is_created = planner_set.getSet()->isCreated();
+    auto column_set = ColumnSet::create(1, planner_set.getSet());
 
     if (set_is_created)
         column.column = ColumnConst::create(std::move(column_set), 1);
     else
         column.column = std::move(column_set);
 
-    actions_stack[0].addConstantIfNecessary(column.name, column);
+    actions_stack[0].addConstantIfNecessary(set_key, column);
 
     size_t actions_stack_size = actions_stack.size();
     for (size_t i = 1; i < actions_stack_size; ++i)
     {
         auto & actions_stack_node = actions_stack[i];
-        actions_stack_node.addInputConstantColumnIfNecessary(column.name, column);
+        actions_stack_node.addInputConstantColumnIfNecessary(set_key, column);
     }
 
-    return {column.name, 0};
+    return {set_key, 0};
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitIndexHintFunction(const QueryTreeNodePtr & node)

@@ -57,7 +57,9 @@ void MergeTreeThreadSelectAlgorithm::finalizeNewTask()
     /// task->reader.valid() means there is a prefetched reader in this test, use it.
     const bool init_new_readers = !reader || task->reader.valid() || part_name != last_read_part_name;
     if (init_new_readers)
+    {
         initializeMergeTreeReadersForCurrentTask(metadata_snapshot, value_size_map, profile_callback);
+    }
 
     last_read_part_name = part_name;
 }

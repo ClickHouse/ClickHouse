@@ -1,35 +1,24 @@
 #pragma once
 #include <Core/Types.h>
-#include <fmt/format.h>
+#include <base/hex.h>
+#include <Core/UUID.h>
 
 namespace DB
 {
 
 struct FileCacheKey
 {
-    using KeyHash = UInt128;
-    KeyHash key;
+    UInt128 key;
 
-    std::string toString() const;
+    String toString() const { return getHexUIntLowercase(key); }
 
     FileCacheKey() = default;
 
-    explicit FileCacheKey(const std::string & path);
+    explicit FileCacheKey(const UInt128 & key_) : key(key_) { }
 
-    explicit FileCacheKey(const UInt128 & key_);
-
-    static FileCacheKey random();
+    static FileCacheKey random() { return FileCacheKey(UUIDHelpers::generateV4().toUnderType()); }
 
     bool operator==(const FileCacheKey & other) const { return key == other.key; }
-};
-
-using FileCacheKeyAndOffset = std::pair<FileCacheKey, size_t>;
-struct FileCacheKeyAndOffsetHash
-{
-    std::size_t operator()(const FileCacheKeyAndOffset & key) const
-    {
-        return std::hash<UInt128>()(key.first.key) ^ std::hash<UInt64>()(key.second);
-    }
 };
 
 }
@@ -43,13 +32,3 @@ struct hash<DB::FileCacheKey>
 };
 
 }
-
-template <>
-struct fmt::formatter<DB::FileCacheKey> : fmt::formatter<std::string>
-{
-    template <typename FormatCtx>
-    auto format(const DB::FileCacheKey & key, FormatCtx & ctx) const
-    {
-        return fmt::formatter<std::string>::format(key.toString(), ctx);
-    }
-};

@@ -41,7 +41,7 @@
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
 #include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
-#include <Analyzer/Passes/ConvertQueryToCNFPass.h>
+
 
 namespace DB
 {
@@ -115,22 +115,12 @@ private:
 
         for (size_t i = 0; i < expected_argument_types_size; ++i)
         {
+            // Skip lambdas
+            if (WhichDataType(expected_argument_types[i]).isFunction())
+                continue;
+
             const auto & expected_argument_type = expected_argument_types[i];
             const auto & actual_argument_type = actual_argument_columns[i].type;
-
-            if (!expected_argument_type)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Function {} expected argument {} type is not set after running {} pass",
-                    function->toAST()->formatForErrorMessage(),
-                    i + 1,
-                    pass_name);
-
-            if (!actual_argument_type)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Function {} actual argument {} type is not set after running {} pass",
-                    function->toAST()->formatForErrorMessage(),
-                    i + 1,
-                    pass_name);
 
             if (!expected_argument_type->equals(*actual_argument_type))
             {
@@ -158,6 +148,8 @@ private:
 
 /** ClickHouse query tree pass manager.
   *
+  * TODO: Support setting convert_query_to_cnf.
+  * TODO: Support setting optimize_using_constraints.
   * TODO: Support setting optimize_substitute_columns.
   * TODO: Support GROUP BY injective function elimination.
   * TODO: Support setting optimize_move_functions_out_of_any.
@@ -242,8 +234,6 @@ void addQueryTreePasses(QueryTreePassManager & manager)
 {
     manager.addPass(std::make_unique<QueryAnalysisPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
-
-    manager.addPass(std::make_unique<ConvertLogicalExpressionToCNFPass>());
 
     manager.addPass(std::make_unique<CountDistinctPass>());
     manager.addPass(std::make_unique<RewriteAggregateFunctionWithIfPass>());

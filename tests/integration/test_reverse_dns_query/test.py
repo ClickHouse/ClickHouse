@@ -1,4 +1,10 @@
 import pytest
+
+# FIXME This test is broken
+# https://github.com/ClickHouse/ClickHouse/issues/53194
+
+pytestmark = pytest.mark.skip
+
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
 from time import sleep
 import os

@@ -56,7 +56,8 @@ void ASTCreateIndexQuery::formatQueryImpl(const FormatSettings & settings, Forma
 
     formatOnCluster(settings);
 
-    settings.ostr << " ";
+    if (!cluster.empty())
+        settings.ostr << " ";
 
     index_decl->formatImpl(settings, state, frame);
 }

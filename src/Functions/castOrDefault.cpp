@@ -245,8 +245,7 @@ private:
         {
             if (additional_argument_index < arguments.size())
             {
-                time_zone = extractTimeZoneNameFromColumn(arguments[additional_argument_index].column.get(),
-                                                          arguments[additional_argument_index].name);
+                time_zone = extractTimeZoneNameFromColumn(*arguments[additional_argument_index].column);
                 ++additional_argument_index;
             }
         }

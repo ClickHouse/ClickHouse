@@ -2,7 +2,6 @@
 
 #include <Parsers/ASTFunction.h>
 
-#include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/KnownObjectNames.h>
@@ -693,15 +692,12 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
     {
         std::string nl_or_nothing = settings.one_line ? "" : "\n";
         std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
-        settings.ostr << (settings.hilite ? hilite_function : "") << name << (settings.hilite ? hilite_none : "");
-        settings.ostr << (settings.hilite ? hilite_function : "") << "(" << (settings.hilite ? hilite_none : "");
-        settings.ostr << nl_or_nothing;
+        settings.ostr << (settings.hilite ? hilite_function : "") << name << "(" << nl_or_nothing;
         FormatStateStacked frame_nested = frame;
         frame_nested.need_parens = false;
         ++frame_nested.indent;
         query->formatImpl(settings, state, frame_nested);
-        settings.ostr << nl_or_nothing << indent_str;
-        settings.ostr << (settings.hilite ? hilite_function : "") << ")" << (settings.hilite ? hilite_none : "");
+        settings.ostr << nl_or_nothing << indent_str << ")";
         return;
     }
 

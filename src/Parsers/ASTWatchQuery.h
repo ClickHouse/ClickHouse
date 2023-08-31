@@ -23,7 +23,7 @@ class ASTWatchQuery : public ASTQueryWithTableAndOutput
 
 public:
     ASTPtr limit_length;
-    bool is_watch_events = false;
+    bool is_watch_events;
 
     ASTWatchQuery() = default;
     String getID(char) const override { return "WatchQuery_" + getDatabase() + "_" + getTable(); }

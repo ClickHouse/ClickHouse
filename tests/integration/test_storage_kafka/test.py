@@ -285,11 +285,11 @@ def avro_confluent_message(schema_registry_client, value):
 # Tests
 
 
-def test_kafka_column_types(kafka_cluster):
+def test_kafka_prohibited_column_types(kafka_cluster):
     def assert_returned_exception(e):
         assert e.value.returncode == 36
         assert (
-            "KafkaEngine doesn't support DEFAULT/MATERIALIZED/EPHEMERAL expressions for columns."
+            "KafkaEngine doesn't support DEFAULT/MATERIALIZED/EPHEMERAL/ALIAS expressions for columns."
             in str(e.value)
         )
 
@@ -314,39 +314,17 @@ def test_kafka_column_types(kafka_cluster):
     assert_returned_exception(exception)
 
     # check ALIAS
-    instance.query(
-        """
+    with pytest.raises(QueryRuntimeException) as exception:
+        instance.query(
+            """
                 CREATE TABLE test.kafka (a Int, b String Alias toString(a))
                 ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_new}', '{kafka_group_name_new}', '{kafka_format_json_each_row}', '\\n')
-                SETTINGS kafka_commit_on_select = 1;
                 """
-    )
-    messages = []
-    for i in range(5):
-        messages.append(json.dumps({"a": i}))
-    kafka_produce(kafka_cluster, "new", messages)
-    result = ""
-    expected = TSV(
-        """
-0\t0
-1\t1
-2\t2
-3\t3
-4\t4
-                              """
-    )
-    retries = 50
-    while retries > 0:
-        result += instance.query("SELECT a, b FROM test.kafka", ignore_error=True)
-        if TSV(result) == expected:
-            break
-        retries -= 1
-
-    assert TSV(result) == expected
-
-    instance.query("DROP TABLE test.kafka SYNC")
+        )
+    assert_returned_exception(exception)
 
     # check MATERIALIZED
+    # check ALIAS
     with pytest.raises(QueryRuntimeException) as exception:
         instance.query(
             """
@@ -762,7 +740,7 @@ def test_kafka_formats(kafka_cluster):
                 ),
             ],
             "extra_settings": ", format_avro_schema_registry_url='http://{}:{}'".format(
-                kafka_cluster.schema_registry_host, kafka_cluster.schema_registry_port
+                kafka_cluster.schema_registry_host, 8081
             ),
             "supports_empty_value": True,
         },
@@ -4339,7 +4317,7 @@ def test_row_based_formats(kafka_cluster):
             f"""
             DROP TABLE IF EXISTS test.view;
             DROP TABLE IF EXISTS test.kafka;
-
+    
             CREATE TABLE test.kafka (key UInt64, value UInt64)
                 ENGINE = Kafka
                 SETTINGS kafka_broker_list = 'kafka1:19092',
@@ -4347,10 +4325,10 @@ def test_row_based_formats(kafka_cluster):
                          kafka_group_name = '{format_name}',
                          kafka_format = '{format_name}',
                          kafka_max_rows_per_message = 5;
-
+    
             CREATE MATERIALIZED VIEW test.view Engine=Log AS
                 SELECT key, value FROM test.kafka;
-
+                
             INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows});
         """
         )
@@ -4459,17 +4437,17 @@ def test_block_based_formats_2(kafka_cluster):
             f"""
             DROP TABLE IF EXISTS test.view;
             DROP TABLE IF EXISTS test.kafka;
-
+    
             CREATE TABLE test.kafka (key UInt64, value UInt64)
                 ENGINE = Kafka
                 SETTINGS kafka_broker_list = 'kafka1:19092',
                          kafka_topic_list = '{format_name}',
                          kafka_group_name = '{format_name}',
                          kafka_format = '{format_name}';
-
+    
             CREATE MATERIALIZED VIEW test.view Engine=Log AS
                 SELECT key, value FROM test.kafka;
-
+                
             INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows}) settings max_block_size=12, optimize_trivial_insert_select=0;
         """
         )

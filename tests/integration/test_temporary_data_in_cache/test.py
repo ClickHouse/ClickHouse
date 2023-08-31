@@ -26,24 +26,20 @@ def start_cluster():
 
 def test_cache_evicted_by_temporary_data(start_cluster):
     q = node.query
-    get_free_space = lambda: int(
-        q(
-            "SELECT free_space FROM system.disks WHERE name = 'tiny_local_cache_local_disk'"
-        ).strip()
+    qi = lambda query: int(node.query(query).strip())
+
+    cache_size_initial = qi("SELECT sum(size) FROM system.filesystem_cache")
+    assert cache_size_initial == 0
+
+    free_space_initial = qi(
+        "SELECT free_space FROM system.disks WHERE name = 'tiny_local_cache_local_disk'"
     )
-    get_cache_size = lambda: int(
-        q("SELECT sum(size) FROM system.filesystem_cache").strip()
-    )
+    assert free_space_initial > 8 * 1024 * 1024
 
-    assert get_cache_size() == 0
-
-    assert get_free_space() > 8 * 1024 * 1024
-
-    # Codec is NONE to make cache size predictable
     q(
-        "CREATE TABLE t1 (x UInt64 CODEC(NONE), y UInt64 CODEC(NONE)) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'tiny_local_cache'"
+        "CREATE TABLE t1 (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'tiny_local_cache'"
     )
-    q("INSERT INTO t1 SELECT number, number FROM numbers(1024 * 1024)")
+    q("INSERT INTO t1 SELECT number FROM numbers(1024 * 1024)")
 
     # To be sure that nothing is reading the cache and entries for t1 can be evited
     q("OPTIMIZE TABLE t1 FINAL")
@@ -52,11 +48,13 @@ def test_cache_evicted_by_temporary_data(start_cluster):
     # Read some data to fill the cache
     q("SELECT sum(x) FROM t1")
 
-    cache_size_with_t1 = get_cache_size()
+    cache_size_with_t1 = qi("SELECT sum(size) FROM system.filesystem_cache")
     assert cache_size_with_t1 > 8 * 1024 * 1024
 
     # Almost all disk space is occupied by t1 cache
-    free_space_with_t1 = get_free_space()
+    free_space_with_t1 = qi(
+        "SELECT free_space FROM system.disks WHERE name = 'tiny_local_cache_local_disk'"
+    )
     assert free_space_with_t1 < 4 * 1024 * 1024
 
     # Try to sort the table, but fail because of lack of disk space
@@ -71,39 +69,13 @@ def test_cache_evicted_by_temporary_data(start_cluster):
     assert "Failed to reserve space for the file cache" in str(exc.value)
 
     # Some data evicted from cache by temporary data
-    cache_size_after_eviction = get_cache_size()
+    cache_size_after_eviction = qi("SELECT sum(size) FROM system.filesystem_cache")
     assert cache_size_after_eviction < cache_size_with_t1
 
     # Disk space freed, at least 3 MB, because temporary data tried to write 4 MB
-    assert get_free_space() > free_space_with_t1 + 3 * 1024 * 1024
-
-    # Read some data to fill the cache again
-    q("SELECT avg(y) FROM t1")
-
-    cache_size_with_t1 = get_cache_size()
-    assert cache_size_with_t1 > 8 * 1024 * 1024, q(
-        "SELECT * FROM system.filesystem_cache FORMAT Vertical"
+    free_space_after_eviction = qi(
+        "SELECT free_space FROM system.disks WHERE name = 'tiny_local_cache_local_disk'"
     )
-
-    # Almost all disk space is occupied by t1 cache
-    free_space_with_t1 = get_free_space()
-    assert free_space_with_t1 < 4 * 1024 * 1024, q(
-        "SELECT * FROM system.disks WHERE name = 'tiny_local_cache_local_disk' FORMAT Vertical"
-    )
-
-    node.http_query(
-        "SELECT randomPrintableASCII(1024) FROM numbers(8 * 1024) FORMAT TSV",
-        params={"buffer_size": 0, "wait_end_of_query": 1},
-    )
-
-    assert get_free_space() > free_space_with_t1 + 3 * 1024 * 1024
-
-    # not enough space for buffering 32 MB
-    with pytest.raises(Exception) as exc:
-        node.http_query(
-            "SELECT randomPrintableASCII(1024) FROM numbers(32 * 1024) FORMAT TSV",
-            params={"buffer_size": 0, "wait_end_of_query": 1},
-        )
-    assert "Failed to reserve space for the file cache" in str(exc.value)
+    assert free_space_after_eviction > free_space_with_t1 + 3 * 1024 * 1024
 
     q("DROP TABLE IF EXISTS t1")

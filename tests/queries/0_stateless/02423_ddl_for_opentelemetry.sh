@@ -15,15 +15,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # $3 - Query Settings
 function execute_query()
 {
-    local trace_id=$1 && shift
-    local ddl_version=$1 && shift
-    local opts=(
-        --opentelemetry-traceparent "00-$trace_id-5150000000000515-01"
-        --opentelemetry-tracestate $'a\nb cd'
-        --distributed_ddl_output_mode "none"
-        --distributed_ddl_entry_format_version "$ddl_version"
-    )
-    ${CLICKHOUSE_CLIENT} "${opts[@]}" "$@"
+    # Some queries are supposed to fail, use -f to suppress error messages
+    echo $2 | ${CLICKHOUSE_CURL_COMMAND} -q -s --max-time 180 \
+                -X POST \
+                -H "traceparent: 00-$1-5150000000000515-01" \
+                -H "tracestate: a\nb cd" \
+                "${CLICKHOUSE_URL}&${3}" \
+                --data @-
 }
 
 # This function takes following argument:
@@ -84,9 +82,9 @@ for ddl_version in 3 4; do
     echo "===ddl_format_version ${ddl_version}===="
 
     trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
-    execute_query $trace_id $ddl_version -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.ddl_test_for_opentelemetry ON CLUSTER ${cluster_name} (id UInt64) Engine=MergeTree ORDER BY id"
+    execute_query $trace_id "CREATE TABLE ${CLICKHOUSE_DATABASE}.ddl_test_for_opentelemetry ON CLUSTER ${cluster_name} (id UInt64) Engine=MergeTree ORDER BY id" "distributed_ddl_output_mode=none&distributed_ddl_entry_format_version=${ddl_version}"
 
-    check_span 1 $trace_id "TCPHandler"
+    check_span 1 $trace_id "HTTPHandler"
 
     if [ $cluster_name = "test_shard_localhost" ]; then
         check_span 1 $trace_id "%executeDDLQueryOnCluster%" "attribute['clickhouse.cluster']='${cluster_name}'"
@@ -108,7 +106,7 @@ for ddl_version in 3 4; do
     check_span $expected $trace_id "%DDLWorker::processTask%"
     
     # For queries that tracing are enabled(format version is 4 or Replicated database engine), there should be two 'query' spans,
-    # one is for the TCPHandler, the other is for the DDL executing in DDLWorker.
+    # one is for the HTTPHandler, the other is for the DDL executing in DDLWorker.
     #
     # For other format, there should be only one 'query' span
     if [ $cluster_name = "test_shard_localhost" ]; then
@@ -136,9 +134,9 @@ done
 echo "===exception===="
 
 trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))");
-execute_query $trace_id 4 -q "DROP TABLE ${CLICKHOUSE_DATABASE}.ddl_test_for_opentelemetry_non_exist ON CLUSTER ${cluster_name}" 2>&1 | grep 'DB::Exception ' | grep -Fv "UNKNOWN_TABLE"
+execute_query $trace_id "DROP TABLE ${CLICKHOUSE_DATABASE}.ddl_test_for_opentelemetry_non_exist ON CLUSTER ${cluster_name}" "distributed_ddl_output_mode=none&distributed_ddl_entry_format_version=4" 2>&1| grep -Fv "UNKNOWN_TABLE"
 
-check_span 1 $trace_id "TCPHandler"
+check_span 1 $trace_id "HTTPHandler"
 
 if [ $cluster_name = "test_shard_localhost" ]; then
     expected=1
@@ -150,7 +148,7 @@ check_span $expected $trace_id "%executeDDLQueryOnCluster%" "attribute['clickhou
 check_span $expected $trace_id "%DDLWorker::processTask%" "kind = 'CONSUMER'"
 
 if [ $cluster_name = "test_shard_localhost" ]; then
-    # There should be two 'query' spans, one is for the TCPHandler, the other is for the DDL executing in DDLWorker.
+    # There should be two 'query' spans, one is for the HTTPHandler, the other is for the DDL executing in DDLWorker.
     # Both of these two spans contain exception
     expected=2
 else

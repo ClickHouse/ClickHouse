@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <vector>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include "arrayScalarProduct.h"
@@ -90,7 +91,7 @@ public:
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
-    template <typename ResultType, typename T, typename U>
+    template <typename T, typename U>
     static ResultType apply(
         const T * scores,
         const U * labels,

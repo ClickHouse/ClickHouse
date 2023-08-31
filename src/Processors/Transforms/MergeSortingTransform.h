@@ -5,6 +5,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB

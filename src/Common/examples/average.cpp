@@ -10,6 +10,9 @@
 #include <Common/Arena.h>
 #include <Common/Stopwatch.h>
 
+#pragma GCC diagnostic ignored "-Wframe-larger-than="
+
+
 /** This test program evaluates different solutions for a simple degenerate task:
   * Aggregate data by UInt8 key, calculate "avg" function on Float values.
   *
@@ -473,8 +476,7 @@ Float NO_INLINE buffered(const PODArray<UInt8> & keys, const PODArray<Float> & v
     return map[0].result();
 }
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wframe-larger-than"
+
 template <size_t UNROLL_COUNT>
 Float NO_INLINE really_unrolled(const PODArray<UInt8> & keys, const PODArray<Float> & values)
 {
@@ -497,7 +499,6 @@ Float NO_INLINE really_unrolled(const PODArray<UInt8> & keys, const PODArray<Flo
 
     return map[0].result();
 }
-#pragma clang diagnostic pop
 
 
 struct State4

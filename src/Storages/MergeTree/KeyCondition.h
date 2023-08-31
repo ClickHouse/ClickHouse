@@ -286,6 +286,9 @@ public:
 
     bool alwaysFalse() const;
 
+    /// Get the maximum number of the key element used in the condition.
+    size_t getMaxKeyColumn() const;
+
     bool hasMonotonicFunctionsChain() const;
 
     /// Impose an additional condition: the value in the column `column` must be in the range `range`.
@@ -293,9 +296,6 @@ public:
     bool addCondition(const String & column, const Range & range);
 
     String toString() const;
-
-    /// Get the key indices of key names used in the condition.
-    const std::vector<size_t> & getKeyIndices() const { return key_indices; }
 
     /// Condition description for EXPLAIN query.
     struct Description
@@ -478,8 +478,6 @@ private:
     RPN rpn;
 
     ColumnIndices key_columns;
-    std::vector<size_t> key_indices;
-
     /// Expression which is used for key condition.
     const ExpressionActionsPtr key_expr;
     /// All intermediate columns are used to calculate key_expr.

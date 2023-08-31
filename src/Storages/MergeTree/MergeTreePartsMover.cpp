@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Common/logger_useful.h>
 
 #include <set>
 #include <boost/algorithm/string/join.hpp>
@@ -112,15 +111,11 @@ bool MergeTreePartsMover::selectPartsForMove(
         {
             for (const auto & disk : volumes[i]->getDisks())
             {
-                auto total_space = disk->getTotalSpace();
-                auto unreserved_space = disk->getUnreservedSpace();
-                if (total_space && unreserved_space)
-                {
-                    UInt64 required_maximum_available_space = static_cast<UInt64>(*total_space * policy->getMoveFactor());
+                UInt64 required_maximum_available_space = static_cast<UInt64>(disk->getTotalSpace() * policy->getMoveFactor());
+                UInt64 unreserved_space = disk->getUnreservedSpace();
 
-                    if (*unreserved_space < required_maximum_available_space && !disk->isBroken())
-                        need_to_move.emplace(disk, required_maximum_available_space - *unreserved_space);
-                }
+                if (unreserved_space < required_maximum_available_space && !disk->isBroken())
+                    need_to_move.emplace(disk, required_maximum_available_space - unreserved_space);
             }
         }
     }
@@ -237,15 +232,9 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
 
         disk->createDirectories(path_to_clone);
 
-        auto zero_copy_part = data->tryToFetchIfShared(*part, disk, fs::path(path_to_clone) / part->name);
+        cloned_part_storage = data->tryToFetchIfShared(*part, disk, fs::path(path_to_clone) / part->name);
 
-        if (zero_copy_part)
-        {
-            /// FIXME for some reason we cannot just use this part, we have to re-create it through MergeTreeDataPartBuilder
-            zero_copy_part->is_temp = false;    /// Do not remove it in dtor
-            cloned_part_storage = zero_copy_part->getDataPartStoragePtr();
-        }
-        else
+        if (!cloned_part_storage)
         {
             LOG_INFO(log, "Part {} was not fetched, we are the first who move it to another disk, so we will copy it", part->name);
             cloned_part_storage = part->getDataPartStorage().clonePart(path_to_clone, part->getDataPartStorage().getPartDirectory(), disk, log);
@@ -273,10 +262,7 @@ void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) cons
     if (moves_blocker.isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled moving parts.");
 
-    /// `getActiveContainingPart` and `swapActivePart` are called under the same lock
-    /// to prevent part becoming inactive between calls
-    auto part_lock = data->lockParts();
-    auto active_part = data->getActiveContainingPart(cloned_part.part->name, part_lock);
+    auto active_part = data->getActiveContainingPart(cloned_part.part->name);
 
     /// It's ok, because we don't block moving parts for merges or mutations
     if (!active_part || active_part->name != cloned_part.part->name)
@@ -297,7 +283,7 @@ void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) cons
     cloned_part.part->renameTo(active_part->name, false);
 
     /// TODO what happen if server goes down here?
-    data->swapActivePart(cloned_part.part, part_lock);
+    data->swapActivePart(cloned_part.part);
 
     LOG_TRACE(log, "Part {} was moved to {}", cloned_part.part->name, cloned_part.part->getDataPartStorage().getFullPath());
 
