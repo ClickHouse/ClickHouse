@@ -18,6 +18,7 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
+
 def test_skip_unavailable_shards(start_cluster):
     expected = "node1\nnode2\nnode3\n"
     assert (
