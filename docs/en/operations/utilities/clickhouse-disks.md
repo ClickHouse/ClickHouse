@@ -17,7 +17,7 @@ Program-wide options:
 
 ## Commands
 
-* `copy [--diskFrom d1] [--diskTo d2] <FROM_PATH> <TO_PATH>`.
+* `copy [--disk-from d1] [--disk-to d2] <FROM_PATH> <TO_PATH>`.
   Recursively copy data from `FROM_PATH` at disk `d1` (defaults to `disk` value if not provided)
   to `TO_PATH` at disk `d2` (defaults to `disk` value if not provided).
 * `move <FROM_PATH> <TO_PATH>`.

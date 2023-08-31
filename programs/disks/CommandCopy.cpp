@@ -20,8 +20,8 @@ public:
         description = "Recursively copy data from `FROM_PATH` to `TO_PATH`";
         usage = "copy [OPTION]... <FROM_PATH> <TO_PATH>";
         command_option_description->add_options()
-            ("diskFrom", po::value<String>(), "disk from which we copy")
-            ("diskTo", po::value<String>(), "disk to which we copy");
+            ("disk-from", po::value<String>(), "disk from which we copy")
+            ("disk-to", po::value<String>(), "disk to which we copy");
     }
 
     void processOptions(
