@@ -145,15 +145,8 @@ void SerializationNumber<T>::serializeBinaryBulk(const IColumn & column, WriteBu
 
     if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
     {
-        static constexpr auto to_little_endian = [](auto i)
-        {
-            transformEndianness<std::endian::little>(i);
-            return i;
-        };
-
         std::ranges::for_each(
-            x | std::views::drop(offset) | std::views::take(limit) | std::views::transform(to_little_endian),
-            [&ostr](const auto & i) { ostr.write(reinterpret_cast<const char *>(&i), sizeof(typename ColumnVector<T>::ValueType)); });
+            x | std::views::drop(offset) | std::views::take(limit), [&ostr](const auto & i) { writeBinaryLittleEndian(i, ostr); });
     }
     else
         ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnVector<T>::ValueType) * limit);
