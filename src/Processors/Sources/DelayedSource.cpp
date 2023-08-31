@@ -148,7 +148,9 @@ Processors DelayedSource::expandPipeline()
         inputs.emplace_back(outputs.front().getHeader(), this);
         /// Connect checks that header is same for ports.
         connect(*output, inputs.back());
-        inputs.back().setNeeded();
+
+        if (output == main_output)
+            inputs.back().setNeeded();
     }
 
     /// Executor will check that all processors are connected.
