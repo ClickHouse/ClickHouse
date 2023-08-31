@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
@@ -333,6 +334,11 @@ public:
                              Coordination::WatchCallback watch_callback,
                              Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
+    Strings getChildrenWatch(const std::string & path,
+                             Coordination::Stat * stat,
+                             Coordination::WatchCallbackPtr watch_callback,
+                             Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+
     using MultiGetChildrenResponse = MultiReadResponses<Coordination::ListResponse, false>;
     using MultiTryGetChildrenResponse = MultiReadResponses<Coordination::ListResponse, true>;
 
@@ -367,6 +373,13 @@ public:
         Strings & res,
         Coordination::Stat * stat,
         Coordination::WatchCallback watch_callback,
+        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+
+    Coordination::Error tryGetChildrenWatch(
+        const std::string & path,
+        Strings & res,
+        Coordination::Stat * stat,
+        Coordination::WatchCallbackPtr watch_callback,
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     template <typename TIter>
@@ -474,7 +487,7 @@ public:
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureGetChildren asyncTryGetChildrenNoThrow(
         const std::string & path,
-        Coordination::WatchCallback watch_callback = {},
+        Coordination::WatchCallbackPtr watch_callback = {},
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     using FutureSet = std::future<Coordination::SetResponse>;
@@ -545,7 +558,7 @@ private:
         const std::string & path,
         Strings & res,
         Coordination::Stat * stat,
-        Coordination::WatchCallback watch_callback,
+        Coordination::WatchCallbackPtr watch_callback,
         Coordination::ListRequestType list_request_type);
     Coordination::Error multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses);
     Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallback watch_callback);
@@ -656,7 +669,13 @@ public:
             return;
         try
         {
-            zookeeper.tryRemove(path);
+            if (!zookeeper.expired())
+                zookeeper.tryRemove(path);
+            else
+            {
+                ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
+                LOG_DEBUG(&Poco::Logger::get("EphemeralNodeHolder"), "Cannot remove {} since session has been expired", path);
+            }
         }
         catch (...)
         {

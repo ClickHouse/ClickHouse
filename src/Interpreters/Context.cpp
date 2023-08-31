@@ -215,6 +215,7 @@ struct ContextSharedPart : boost::noncopyable
     String user_files_path;                                 /// Path to the directory with user provided files, usable by 'file' table function.
     String dictionaries_lib_path;                           /// Path to the directory with user provided binaries and libraries for external dictionaries.
     String user_scripts_path;                               /// Path to the directory with user provided scripts.
+    String filesystem_caches_path;                          /// Path to the directory with filesystem caches.
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
@@ -478,6 +479,9 @@ struct ContextSharedPart : boost::noncopyable
             return;
         shutdown_called = true;
 
+        /// Need to flush the async insert queue before shutting down the database catalog
+        async_insert_queue.reset();
+
         /// Stop periodic reloading of the configuration files.
         /// This must be done first because otherwise the reloading may pass a changed config
         /// to some destroyed parts of ContextSharedPart.
@@ -547,7 +551,7 @@ struct ContextSharedPart : boost::noncopyable
               */
 #if USE_EMBEDDED_COMPILER
             if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
-                cache->reset();
+                cache->clear();
 #endif
 
             /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
@@ -771,6 +775,12 @@ String Context::getUserScriptsPath() const
     return shared->user_scripts_path;
 }
 
+String Context::getFilesystemCachesPath() const
+{
+    auto lock = getLock();
+    return shared->filesystem_caches_path;
+}
+
 Strings Context::getWarnings() const
 {
     Strings common_warnings;
@@ -860,6 +870,16 @@ void Context::setPath(const String & path)
 
     if (shared->user_scripts_path.empty())
         shared->user_scripts_path = shared->path + "user_scripts/";
+}
+
+void Context::setFilesystemCachesPath(const String & path)
+{
+    auto lock = getLock();
+
+    if (!fs::path(path).is_absolute())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filesystem caches path must be absolute: {}", path);
+
+    shared->filesystem_caches_path = path;
 }
 
 static void setupTmpPath(Poco::Logger * log, const std::string & path)
@@ -2251,16 +2271,26 @@ QueryStatusPtr Context::getProcessListElement() const
 }
 
 
-void Context::setUncompressedCache(const String & uncompressed_cache_policy, size_t max_size_in_bytes)
+void Context::setUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
 {
     auto lock = getLock();
 
     if (shared->uncompressed_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Uncompressed cache has been already created.");
 
-    shared->uncompressed_cache = std::make_shared<UncompressedCache>(uncompressed_cache_policy, max_size_in_bytes);
+    shared->uncompressed_cache = std::make_shared<UncompressedCache>(cache_policy, max_size_in_bytes, size_ratio);
 }
 
+void Context::updateUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+
+    if (!shared->uncompressed_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Uncompressed cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("uncompressed_cache_size", DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE);
+    shared->uncompressed_cache->setMaxSizeInBytes(max_size_in_bytes);
+}
 
 UncompressedCachePtr Context::getUncompressedCache() const
 {
@@ -2268,23 +2298,33 @@ UncompressedCachePtr Context::getUncompressedCache() const
     return shared->uncompressed_cache;
 }
 
-
 void Context::clearUncompressedCache() const
 {
     auto lock = getLock();
+
     if (shared->uncompressed_cache)
-        shared->uncompressed_cache->reset();
+        shared->uncompressed_cache->clear();
 }
 
-
-void Context::setMarkCache(const String & mark_cache_policy, size_t cache_size_in_bytes)
+void Context::setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
 {
     auto lock = getLock();
 
     if (shared->mark_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache has been already created.");
 
-    shared->mark_cache = std::make_shared<MarkCache>(mark_cache_policy, cache_size_in_bytes);
+    shared->mark_cache = std::make_shared<MarkCache>(cache_policy, max_cache_size_in_bytes, size_ratio);
+}
+
+void Context::updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+
+    if (!shared->mark_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("mark_cache_size", DEFAULT_MARK_CACHE_MAX_SIZE);
+    shared->mark_cache->setMaxSizeInBytes(max_size_in_bytes);
 }
 
 MarkCachePtr Context::getMarkCache() const
@@ -2296,8 +2336,9 @@ MarkCachePtr Context::getMarkCache() const
 void Context::clearMarkCache() const
 {
     auto lock = getLock();
+
     if (shared->mark_cache)
-        shared->mark_cache->reset();
+        shared->mark_cache->clear();
 }
 
 ThreadPool & Context::getLoadMarksThreadpool() const
@@ -2315,14 +2356,25 @@ ThreadPool & Context::getLoadMarksThreadpool() const
     return *shared->load_marks_threadpool;
 }
 
-void Context::setIndexUncompressedCache(size_t max_size_in_bytes)
+void Context::setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
 {
     auto lock = getLock();
 
     if (shared->index_uncompressed_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache has been already created.");
 
-    shared->index_uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes);
+    shared->index_uncompressed_cache = std::make_shared<UncompressedCache>(cache_policy, max_size_in_bytes, size_ratio);
+}
+
+void Context::updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+
+    if (!shared->index_uncompressed_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("index_uncompressed_cache_size", DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE);
+    shared->index_uncompressed_cache->setMaxSizeInBytes(max_size_in_bytes);
 }
 
 UncompressedCachePtr Context::getIndexUncompressedCache() const
@@ -2331,23 +2383,33 @@ UncompressedCachePtr Context::getIndexUncompressedCache() const
     return shared->index_uncompressed_cache;
 }
 
-
 void Context::clearIndexUncompressedCache() const
 {
     auto lock = getLock();
+
     if (shared->index_uncompressed_cache)
-        shared->index_uncompressed_cache->reset();
+        shared->index_uncompressed_cache->clear();
 }
 
-
-void Context::setIndexMarkCache(size_t cache_size_in_bytes)
+void Context::setIndexMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
 {
     auto lock = getLock();
 
     if (shared->index_mark_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache has been already created.");
 
-    shared->index_mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes);
+    shared->index_mark_cache = std::make_shared<MarkCache>(cache_policy, max_cache_size_in_bytes, size_ratio);
+}
+
+void Context::updateIndexMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+
+    if (!shared->index_mark_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("index_mark_cache_size", DEFAULT_INDEX_MARK_CACHE_MAX_SIZE);
+    shared->index_mark_cache->setMaxSizeInBytes(max_size_in_bytes);
 }
 
 MarkCachePtr Context::getIndexMarkCache() const
@@ -2359,18 +2421,30 @@ MarkCachePtr Context::getIndexMarkCache() const
 void Context::clearIndexMarkCache() const
 {
     auto lock = getLock();
+
     if (shared->index_mark_cache)
-        shared->index_mark_cache->reset();
+        shared->index_mark_cache->clear();
 }
 
-void Context::setMMappedFileCache(size_t cache_size_in_num_entries)
+void Context::setMMappedFileCache(size_t max_cache_size_in_num_entries)
 {
     auto lock = getLock();
 
     if (shared->mmap_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped file cache has been already created.");
 
-    shared->mmap_cache = std::make_shared<MMappedFileCache>(cache_size_in_num_entries);
+    shared->mmap_cache = std::make_shared<MMappedFileCache>(max_cache_size_in_num_entries);
+}
+
+void Context::updateMMappedFileCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+
+    if (!shared->mmap_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped file cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("mmap_cache_size", DEFAULT_MMAP_CACHE_MAX_SIZE);
+    shared->mmap_cache->setMaxSizeInBytes(max_size_in_bytes);
 }
 
 MMappedFileCachePtr Context::getMMappedFileCache() const
@@ -2382,8 +2456,9 @@ MMappedFileCachePtr Context::getMMappedFileCache() const
 void Context::clearMMappedFileCache() const
 {
     auto lock = getLock();
+
     if (shared->mmap_cache)
-        shared->mmap_cache->reset();
+        shared->mmap_cache->clear();
 }
 
 void Context::setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
@@ -2399,14 +2474,15 @@ void Context::setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t
 void Context::updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
     auto lock = getLock();
-    if (shared->query_cache)
-    {
-        size_t max_size_in_bytes = config.getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_SIZE);
-        size_t max_entries = config.getUInt64("query_cache.max_entries", DEFAULT_QUERY_CACHE_MAX_ENTRIES);
-        size_t max_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
-        size_t max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
-        shared->query_cache->updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
-    }
+
+    if (!shared->query_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("query_cache.max_entries", DEFAULT_QUERY_CACHE_MAX_ENTRIES);
+    size_t max_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
+    size_t max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
+    shared->query_cache->updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
 }
 
 QueryCachePtr Context::getQueryCache() const
@@ -2418,30 +2494,36 @@ QueryCachePtr Context::getQueryCache() const
 void Context::clearQueryCache() const
 {
     auto lock = getLock();
+
     if (shared->query_cache)
-        shared->query_cache->reset();
+        shared->query_cache->clear();
 }
 
 void Context::clearCaches() const
 {
     auto lock = getLock();
 
-    if (shared->uncompressed_cache)
-        shared->uncompressed_cache->reset();
+    if (!shared->uncompressed_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Uncompressed cache was not created yet.");
+    shared->uncompressed_cache->clear();
 
-    if (shared->mark_cache)
-        shared->mark_cache->reset();
+    if (!shared->mark_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache was not created yet.");
+    shared->mark_cache->clear();
 
-    if (shared->index_uncompressed_cache)
-        shared->index_uncompressed_cache->reset();
+    if (!shared->index_uncompressed_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache was not created yet.");
+    shared->index_uncompressed_cache->clear();
 
-    if (shared->index_mark_cache)
-        shared->index_mark_cache->reset();
+    if (!shared->index_mark_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache was not created yet.");
+    shared->index_mark_cache->clear();
 
-    if (shared->mmap_cache)
-        shared->mmap_cache->reset();
+    if (!shared->mmap_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mmapped file cache was not created yet.");
+    shared->mmap_cache->clear();
 
-    /// Intentionally not dropping the query cache which is transactionally inconsistent by design.
+    /// Intentionally not clearing the query cache which is transactionally inconsistent by design.
 }
 
 ThreadPool & Context::getPrefetchThreadpool() const
@@ -4593,6 +4675,11 @@ UInt64 Context::getClientProtocolVersion() const
 void Context::setClientProtocolVersion(UInt64 version)
 {
     client_protocol_version = version;
+}
+
+const ServerSettings & Context::getServerSettings() const
+{
+    return shared->server_settings;
 }
 
 }

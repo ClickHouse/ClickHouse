@@ -302,7 +302,6 @@ Session::~Session()
         LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(*user_id));
         if (auto session_log = getSessionLog())
         {
-            /// TODO: We have to ensure that the same info is added to the session log on a LoginSuccess event and on the corresponding Logout event.
             session_log->addLogOut(auth_id, user, getClientInfo());
         }
     }
@@ -622,7 +621,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     if (auto query_context_user = query_context->getAccess()->tryGetUser())
     {
-        LOG_DEBUG(log, "{} Creating query context from {} context, user_id: {}, parent context user: {}",
+        LOG_TRACE(log, "{} Creating query context from {} context, user_id: {}, parent context user: {}",
                   toString(auth_id),
                   from_session_context ? "session" : "global",
                   toString(*user_id),
