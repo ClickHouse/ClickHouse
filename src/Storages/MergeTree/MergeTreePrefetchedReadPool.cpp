@@ -138,7 +138,7 @@ void MergeTreePrefetchedReadPool::startPrefetches()
 
     while (!prefetch_queue.empty())
     {
-        auto & top = prefetch_queue.top();
+        const auto & top = prefetch_queue.top();
         createPrefetchedReadersForTask(*top.task);
 #ifndef NDEBUG
         if (prev.task)
