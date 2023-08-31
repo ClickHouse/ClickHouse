@@ -283,8 +283,6 @@ bool CustomSeparatedFormatReader::checkForSuffixImpl(bool check_eof)
 
         /// Allow optional \n before eof.
         checkChar('\n', *buf);
-        if (format_settings.custom.skip_trailing_empty_lines)
-            while (checkChar('\n', *buf) || checkChar('\r', *buf));
         return buf->eof();
     }
 
@@ -296,8 +294,6 @@ bool CustomSeparatedFormatReader::checkForSuffixImpl(bool check_eof)
 
         /// Allow optional \n before eof.
         checkChar('\n', *buf);
-        if (format_settings.custom.skip_trailing_empty_lines)
-            while (checkChar('\n', *buf) || checkChar('\r', *buf));
         if (buf->eof())
             return true;
     }

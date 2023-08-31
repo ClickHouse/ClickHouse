@@ -22,8 +22,6 @@ namespace ErrorCodes
 }
 
 class IMetadataStorage;
-struct UnlinkMetadataFileOperationOutcome;
-using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 
 /// Tries to provide some "transactions" interface, which allow
 /// to execute (commit) operations simultaneously. We don't provide
@@ -129,10 +127,9 @@ public:
 
     /// Unlink metadata file and do something special if required
     /// By default just remove file (unlink file).
-    virtual UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path)
+    virtual void unlinkMetadata(const std::string & path)
     {
         unlinkFile(path);
-        return nullptr;
     }
 
     virtual ~IMetadataTransaction() = default;

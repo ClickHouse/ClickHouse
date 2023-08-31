@@ -931,8 +931,7 @@ def test_nats_overloaded_insert(nats_cluster):
         CREATE TABLE test.view_overload (key UInt64, value UInt64)
             ENGINE = MergeTree
             ORDER BY key
-            SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3,
-            cleanup_thread_preferred_points_per_iteration=0;
+            SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3;
         CREATE MATERIALIZED VIEW test.consumer_overload TO test.view_overload AS
             SELECT * FROM test.nats_consume;
     """

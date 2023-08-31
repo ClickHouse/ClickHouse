@@ -3,6 +3,7 @@
 #include "CurrentThread.h"
 #include <Common/logger_useful.h>
 #include <Common/ThreadStatus.h>
+#include <Common/TaskStatsInfoGetter.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
 #include <base/getThreadId.h>

@@ -158,17 +158,6 @@ void CurrentThread::attachQueryForLog(const String & query_)
     current_thread->attachQueryForLog(query_);
 }
 
-void ThreadStatus::applyGlobalSettings()
-{
-    auto global_context_ptr = global_context.lock();
-    if (!global_context_ptr)
-        return;
-
-    const Settings & settings = global_context_ptr->getSettingsRef();
-
-    DB::Exception::enable_job_stack_trace = settings.enable_job_stack_trace;
-}
-
 void ThreadStatus::applyQuerySettings()
 {
     auto query_context_ptr = query_context.lock();
@@ -176,8 +165,6 @@ void ThreadStatus::applyQuerySettings()
         return;
 
     const Settings & settings = query_context_ptr->getSettingsRef();
-
-    DB::Exception::enable_job_stack_trace = settings.enable_job_stack_trace;
 
     query_id_from_query_context = query_context_ptr->getCurrentQueryId();
     initQueryProfiler();
@@ -217,7 +204,6 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 
     local_data = thread_group->getSharedData();
 
-    applyGlobalSettings();
     applyQuerySettings();
     initPerformanceCounters();
 }
@@ -518,7 +504,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
 
 static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 {
-    String res = serializeAST(*q);
+    String res = serializeAST(*q, true);
     if (auto * masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(res);
 

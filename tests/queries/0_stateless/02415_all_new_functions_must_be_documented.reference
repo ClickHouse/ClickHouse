@@ -112,7 +112,6 @@ arrayFirstIndex
 arrayFirstOrNull
 arrayFlatten
 arrayIntersect
-arrayJaccardIndex
 arrayJoin
 arrayLast
 arrayLastIndex
@@ -238,6 +237,10 @@ defaultValueOfArgumentType
 defaultValueOfTypeName
 degrees
 demangle
+detectCharset
+detectLanguageUnknown
+detectProgrammingLanguage
+detectTonality
 divide
 dotProduct
 dumpColumnStructure
@@ -340,12 +343,9 @@ has
 hasAll
 hasAny
 hasColumnInTable
-hasSubsequence
-hasSubsequenceCaseInsensitive
-hasSubsequenceCaseInsensitiveUTF8
-hasSubsequenceUTF8
 hasSubstr
 hasThreadFuzzer
+hashid
 hex
 hiveHash
 hop
@@ -363,8 +363,6 @@ in
 inIgnoreSet
 indexHint
 indexOf
-initcap
-initcapUTF8
 initialQueryID
 initializeAggregation
 intDiv
@@ -667,8 +665,6 @@ sqrt
 startsWith
 subBitmap
 substring
-substringIndex
-substringIndexUTF8
 substringUTF8
 subtractDays
 subtractHours
@@ -690,6 +686,7 @@ throwIf
 tid
 timeSlot
 timeSlots
+timezone
 timezoneOf
 timezoneOffset
 toBool

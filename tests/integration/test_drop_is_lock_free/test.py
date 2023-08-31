@@ -104,7 +104,7 @@ def test_query_is_lock_free(lock_free_query, exclusive_table):
 
     select_handler = node.get_query_request(
         f"""
-            SELECT sleepEachRow(3) FROM {exclusive_table} SETTINGS function_sleep_max_microseconds_per_block = 0;
+            SELECT sleepEachRow(3) FROM {exclusive_table};
         """,
         query_id=query_id,
     )
@@ -173,7 +173,7 @@ def test_query_is_permanent(transaction, permanent, exclusive_table):
 
     select_handler = node.get_query_request(
         f"""
-            SELECT sleepEachRow(3) FROM {exclusive_table} SETTINGS function_sleep_max_microseconds_per_block = 0;
+            SELECT sleepEachRow(3) FROM {exclusive_table};
         """,
         query_id=query_id,
     )

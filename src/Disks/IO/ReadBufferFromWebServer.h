@@ -12,6 +12,8 @@ namespace DB
 
 /* Read buffer, which reads via http, but is used as ReadBufferFromFileBase.
  * Used to read files, hosted on a web server with static files.
+ *
+ * Usage: ReadIndirectBufferFromRemoteFS -> SeekAvoidingReadBuffer -> ReadBufferFromWebServer -> ReadWriteBufferFromHTTP.
  */
 class ReadBufferFromWebServer : public ReadBufferFromFileBase
 {

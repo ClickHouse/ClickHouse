@@ -206,11 +206,12 @@ add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::jemalloc)
-    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::jemalloc)
-    target_link_libraries (clickhouse_storages_system PRIVATE ch_contrib::jemalloc)
 endif()
 
-target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash ch_contrib::incbin)
+if (TARGET ch_contrib::jemalloc)
+    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::jemalloc)
+endif()
+target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash)
 
 add_subdirectory(Access/Common)
 add_subdirectory(Common/ZooKeeper)
@@ -412,7 +413,6 @@ dbms_target_link_libraries (
         boost::system
         clickhouse_common_io
         Poco::MongoDB
-        Poco::Redis
 )
 
 if (TARGET ch::mysqlxx)
@@ -561,6 +561,7 @@ if (ENABLE_NLP)
     dbms_target_link_libraries (PUBLIC ch_contrib::stemmer)
     dbms_target_link_libraries (PUBLIC ch_contrib::wnb)
     dbms_target_link_libraries (PUBLIC ch_contrib::lemmagen)
+    dbms_target_link_libraries (PUBLIC ch_contrib::nlp_data)
 endif()
 
 if (TARGET ch_contrib::ulid)

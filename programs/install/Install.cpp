@@ -20,7 +20,10 @@
 #include <Common/formatReadable.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/OpenSSLHelpers.h>
+#include <base/hex.h>
+#include <Common/getResource.h>
 #include <base/sleep.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
@@ -31,14 +34,6 @@
 #include <readpassphrase.h>
 
 #include <Poco/Util/XMLConfiguration.h>
-
-#include <incbin.h>
-
-#include "config.h"
-
-/// Embedded configuration files used inside the install program
-INCBIN(resource_config_xml, SOURCE_DIR "/programs/server/config.xml");
-INCBIN(resource_users_xml, SOURCE_DIR "/programs/server/users.xml");
 
 
 /** This tool can be used to install ClickHouse without a deb/rpm/tgz package, having only "clickhouse" binary.
@@ -565,7 +560,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (!fs::exists(main_config_file))
         {
-            std::string_view main_config_content(reinterpret_cast<const char *>(gresource_config_xmlData), gresource_config_xmlSize);
+            std::string_view main_config_content = getResource("config.xml");
             if (main_config_content.empty())
             {
                 fmt::print("There is no default config.xml, you have to download it and place to {}.\n", main_config_file.string());
@@ -677,7 +672,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (!fs::exists(users_config_file))
         {
-            std::string_view users_config_content(reinterpret_cast<const char *>(gresource_users_xmlData), gresource_users_xmlSize);
+            std::string_view users_config_content = getResource("users.xml");
             if (users_config_content.empty())
             {
                 fmt::print("There is no default users.xml, you have to download it and place to {}.\n", users_config_file.string());
@@ -997,7 +992,9 @@ namespace
         {
             /// sudo respects limits in /etc/security/limits.conf e.g. open files,
             /// that's why we are using it instead of the 'clickhouse su' tool.
-            command = fmt::format("sudo -u '{}' {}", user, command);
+            /// by default, sudo resets all the ENV variables, but we should preserve
+            /// the values /etc/default/clickhouse in /etc/init.d/clickhouse file
+            command = fmt::format("sudo --preserve-env -u '{}' {}", user, command);
         }
 
         fmt::print("Will run {}\n", command);

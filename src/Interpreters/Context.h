@@ -1,12 +1,9 @@
 #pragma once
 
-#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
-
 #include <base/types.h>
 #include <Common/isLocalAddress.h>
 #include <Common/MultiVersion.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/HTTPHeaderFilter.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Throttler_fwd.h>
 #include <Core/NamesAndTypes.h>
@@ -51,8 +48,8 @@ struct ContextSharedPart;
 class ContextAccess;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
-struct SettingsProfilesInfo;
 struct EnabledRolesInfo;
+class EnabledRowPolicies;
 struct RowPolicyFilter;
 using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
 class EnabledQuota;
@@ -134,7 +131,6 @@ using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
-class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 
@@ -250,8 +246,8 @@ private:
     std::optional<UUID> user_id;
     std::shared_ptr<std::vector<UUID>> current_roles;
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
-    mutable std::shared_ptr<const ContextAccess> access;
-    mutable bool need_recalculate_access = true;
+    std::shared_ptr<const ContextAccess> access;
+    std::shared_ptr<const EnabledRowPolicies> row_policies_of_initial_user;
     String current_database;
     Settings settings;  /// Setting for query execution.
 
@@ -531,13 +527,11 @@ public:
 
     /// Sets the current user assuming that he/she is already authenticated.
     /// WARNING: This function doesn't check password!
-    void setUser(const UUID & user_id_, bool set_current_profiles_ = true, bool set_current_roles_ = true, bool set_current_database_ = true);
+    void setUser(const UUID & user_id_);
+
     UserPtr getUser() const;
-
-    void setUserID(const UUID & user_id_);
-    std::optional<UUID> getUserID() const;
-
     String getUserName() const;
+    std::optional<UUID> getUserID() const;
 
     void setQuotaKey(String quota_key_);
 
@@ -547,9 +541,8 @@ public:
     boost::container::flat_set<UUID> getEnabledRoles() const;
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
 
-    void setCurrentProfile(const String & profile_name, bool check_constraints = true);
-    void setCurrentProfile(const UUID & profile_id, bool check_constraints = true);
-    void setCurrentProfiles(const SettingsProfilesInfo & profiles_info, bool check_constraints = true);
+    void setCurrentProfile(const String & profile_name);
+    void setCurrentProfile(const UUID & profile_id);
     std::vector<UUID> getCurrentProfiles() const;
     std::vector<UUID> getEnabledProfiles() const;
 
@@ -571,6 +564,13 @@ public:
     std::shared_ptr<const ContextAccess> getAccess() const;
 
     RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
+
+    /// Finds and sets extra row policies to be used based on `client_info.initial_user`,
+    /// if the initial user exists.
+    /// TODO: we need a better solution here. It seems we should pass the initial row policy
+    /// because a shard is allowed to not have the initial user or it might be another user
+    /// with the same name.
+    void enableRowPoliciesOfInitialUser();
 
     std::shared_ptr<const EnabledQuota> getQuota() const;
     std::optional<QuotaUsage> getQuotaUsage() const;
@@ -595,32 +595,8 @@ public:
     InputBlocksReader getInputBlocksReaderCallback() const;
     void resetInputCallbacks();
 
-    /// Returns information about the client executing a query.
+    ClientInfo & getClientInfo() { return client_info; }
     const ClientInfo & getClientInfo() const { return client_info; }
-
-    /// Modify stored in the context information about the client executing a query.
-    void setClientInfo(const ClientInfo & client_info_);
-    void setClientName(const String & client_name);
-    void setClientInterface(ClientInfo::Interface interface);
-    void setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
-    void setClientConnectionId(uint32_t connection_id);
-    void setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer);
-    void setForwardedFor(const String & forwarded_for);
-    void setQueryKind(ClientInfo::QueryKind query_kind);
-    void setQueryKindInitial();
-    void setQueryKindReplicatedDatabaseInternal();
-    void setCurrentUserName(const String & current_user_name);
-    void setCurrentAddress(const Poco::Net::SocketAddress & current_address);
-    void setInitialUserName(const String & initial_user_name);
-    void setInitialAddress(const Poco::Net::SocketAddress & initial_address);
-    void setInitialQueryId(const String & initial_query_id);
-    void setInitialQueryStartTime(std::chrono::time_point<std::chrono::system_clock> initial_query_start_time);
-    void setQuotaClientKey(const String & quota_key);
-    void setConnectionClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
-    void setReplicaInfo(bool collaborate_with_initiator, size_t all_replicas_count, size_t number_of_current_replica);
-    void increaseDistributedDepth();
-    const OpenTelemetry::TracingContext & getClientTraceContext() const { return client_info.client_trace_context; }
-    OpenTelemetry::TracingContext & getClientTraceContext() { return client_info.client_trace_context; }
 
     enum StorageNamespace
     {
@@ -639,7 +615,6 @@ public:
 
     Tables getExternalTables() const;
     void addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
-    std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
     const Scalars & getScalars() const;
@@ -658,14 +633,6 @@ public:
         const String & projection_name = {},
         const String & view_name = {});
     void addQueryAccessInfo(const Names & partition_names);
-
-    struct QualifiedProjectionName
-    {
-        StorageID storage_id = StorageID::createEmpty();
-        String projection_name;
-        explicit operator bool() const { return !projection_name.empty(); }
-    };
-    void addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name);
 
 
     /// Supported factories for records in query_log
@@ -795,10 +762,6 @@ public:
     /// Storage of allowed hosts from config.xml
     void setRemoteHostFilter(const Poco::Util::AbstractConfiguration & config);
     const RemoteHostFilter & getRemoteHostFilter() const;
-
-    /// Storage of forbidden HTTP headers from config.xml
-    void setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config);
-    const HTTPHeaderFilter & getHTTPHeaderFilter() const;
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
@@ -1058,13 +1021,6 @@ public:
     void setConfigReloadCallback(ConfigReloadCallback && callback);
     void reloadConfig() const;
 
-    using StartStopServersCallback = std::function<void(const ServerType &)>;
-    void setStartServersCallback(StartStopServersCallback && callback);
-    void setStopServersCallback(StartStopServersCallback && callback);
-
-    void startServers(const ServerType & server_type) const;
-    void stopServers(const ServerType & server_type) const;
-
     void shutdown();
 
     bool isInternalQuery() const { return is_internal_query; }
@@ -1190,6 +1146,10 @@ private:
 
     void initGlobal();
 
+    /// Compute and set actual user settings, client_info.current_user should be set
+    void calculateAccessRights();
+    void recalculateAccessRightsIfNeeded(std::string_view setting_name);
+
     template <typename... Args>
     void checkAccessImpl(const Args &... args) const;
 
@@ -1279,9 +1239,3 @@ struct HTTPContext : public IHTTPContext
 };
 
 }
-
-#else
-
-#include <Coordination/Standalone/Context.h>
-
-#endif

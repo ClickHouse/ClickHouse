@@ -477,7 +477,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Check support for JOIN for parallel replicas with custom key
     if (joined_tables.tablesCount() > 1 && !settings.parallel_replicas_custom_key.value.empty())
     {
-        LOG_DEBUG(log, "JOINs are not supported with parallel_replicas_custom_key. Query will be executed without using them.");
+        LOG_WARNING(log, "JOINs are not supported with parallel_replicas_custom_key. Query will be executed without using them.");
         context->setSetting("parallel_replicas_custom_key", String{""});
     }
 
@@ -487,7 +487,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (settings.allow_experimental_parallel_reading_from_replicas == 1)
         {
-            LOG_DEBUG(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
+            LOG_WARNING(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
             context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
             context->setSetting("parallel_replicas_custom_key", String{""});
         }
@@ -503,7 +503,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (settings.allow_experimental_parallel_reading_from_replicas == 1)
         {
-            LOG_DEBUG(log, "To use parallel replicas with plain MergeTree tables please enable setting `parallel_replicas_for_non_replicated_merge_tree`. For now query will be executed without using them.");
+            LOG_WARNING(log, "To use parallel replicas with plain MergeTree tables please enable setting `parallel_replicas_for_non_replicated_merge_tree`. For now query will be executed without using them.");
             context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
         }
         else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
@@ -953,7 +953,10 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     if (storage && !options.only_analyze)
     {
+        query_analyzer->makeSetsForIndex(select_query.where());
+        query_analyzer->makeSetsForIndex(select_query.prewhere());
         query_info.prepared_sets = query_analyzer->getPreparedSets();
+
         from_stage = storage->getQueryProcessingStage(context, options.to_stage, storage_snapshot, query_info);
     }
 
@@ -1213,12 +1216,12 @@ static InterpolateDescriptionPtr getInterpolateDescription(
             }
 
             col_set.clear();
-            for (const auto & column : source_block)
+            for (const auto & column : result_block)
             {
                 source_columns.emplace_back(column.name, column.type);
                 col_set.insert(column.name);
             }
-            for (const auto & column : result_block)
+            for (const auto & column : source_block)
                 if (!col_set.contains(column.name))
                     source_columns.emplace_back(column.name, column.type);
         }
@@ -2274,7 +2277,8 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 max_paralle
         && !settings.allow_experimental_query_deduplication
         && !settings.empty_result_for_aggregation_by_empty_set
         && storage
-        && storage->supportsTrivialCountOptimization()
+        && storage->getName() != "MaterializedMySQL"
+        && !storage->hasLightweightDeletedMask()
         && query_info.filter_asts.empty()
         && query_analyzer->hasAggregation()
         && (query_analyzer->aggregates().size() == 1)
@@ -3147,17 +3151,7 @@ void InterpreterSelectQuery::executeExtremes(QueryPlan & query_plan)
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_plan)
 {
-    auto subqueries = prepared_sets->getSubqueries();
-
-    if (!subqueries.empty())
-    {
-        auto step = std::make_unique<DelayedCreatingSetsStep>(
-                query_plan.getCurrentDataStream(),
-                std::move(subqueries),
-                context);
-
-        query_plan.addStep(std::move(step));
-    }
+    addCreatingSetsStep(query_plan, prepared_sets, context);
 }
 
 
@@ -3180,9 +3174,9 @@ void InterpreterSelectQuery::initSettings()
 {
     auto & query = getSelectQuery();
     if (query.settings())
-        InterpreterSetQuery(query.settings(), context).executeForCurrentContext(options.ignore_setting_constraints);
+        InterpreterSetQuery(query.settings(), context).executeForCurrentContext();
 
-    const auto & client_info = context->getClientInfo();
+    auto & client_info = context->getClientInfo();
     auto min_major = DBMS_MIN_MAJOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
     auto min_minor = DBMS_MIN_MINOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
 

@@ -145,6 +145,9 @@ bool IMergeTreeSelectAlgorithm::getNewTask()
 
 ChunkAndProgress IMergeTreeSelectAlgorithm::read()
 {
+    size_t num_read_rows = 0;
+    size_t num_read_bytes = 0;
+
     while (!is_cancelled)
     {
         try
@@ -175,6 +178,10 @@ ChunkAndProgress IMergeTreeSelectAlgorithm::read()
                 ordered_columns.push_back(res.block.getByName(name).column);
             }
 
+            /// Account a progress from previous empty chunks.
+            res.num_read_rows += num_read_rows;
+            res.num_read_bytes += num_read_bytes;
+
             return ChunkAndProgress{
                 .chunk = Chunk(ordered_columns, res.row_count),
                 .num_read_rows = res.num_read_rows,
@@ -187,7 +194,7 @@ ChunkAndProgress IMergeTreeSelectAlgorithm::read()
         }
     }
 
-    return {Chunk(), 0, 0, true};
+    return {Chunk(), num_read_rows, num_read_bytes, true};
 }
 
 void IMergeTreeSelectAlgorithm::initializeMergeTreeReadersForCurrentTask(

@@ -3,17 +3,15 @@
 #include "config.h"
 #if USE_CAPNP
 
-#    include <Formats/CapnProtoSchema.h>
-#    include <Formats/CapnProtoSerializer.h>
-#    include <Formats/FormatSchemaInfo.h>
-#    include <Processors/Formats/IRowOutputFormat.h>
-#    include <capnp/dynamic.h>
-#    include <capnp/schema.h>
-#    include <kj/io.h>
+#include <Processors/Formats/IRowOutputFormat.h>
+#include <Formats/FormatSchemaInfo.h>
+#include <Formats/CapnProtoUtils.h>
+#include <capnp/schema.h>
+#include <capnp/dynamic.h>
+#include <kj/io.h>
 
 namespace DB
 {
-
 class CapnProtoOutputStream : public kj::OutputStream
 {
 public:
@@ -45,9 +43,8 @@ private:
     DataTypes column_types;
     capnp::StructSchema schema;
     std::unique_ptr<CapnProtoOutputStream> output_stream;
+    const FormatSettings format_settings;
     CapnProtoSchemaParser schema_parser;
-    std::unique_ptr<CapnProtoSerializer> serializer;
-
 };
 
 }
