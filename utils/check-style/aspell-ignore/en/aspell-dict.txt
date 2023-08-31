@@ -1325,6 +1325,7 @@ debian
 decodeURLComponent
 decodeURLFormComponent
 decodeXMLComponent
+decodeHTMLComponent
 decompressor
 decrypt
 decrypted
