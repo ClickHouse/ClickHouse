@@ -6,8 +6,13 @@ cluster = ClickHouseCluster(__file__)
 
 # create only 2 nodes out of 3 nodes in cluster with 1 shard
 # and out of 6 nodes in first shard in cluster with 2 shards
-node1 = cluster.add_instance("n1", main_configs=["configs/remote_servers.xml"], with_zookeeper=True)
-node2 = cluster.add_instance("n2", main_configs=["configs/remote_servers.xml"], with_zookeeper=True)
+node1 = cluster.add_instance(
+    "n1", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
+)
+node2 = cluster.add_instance(
+    "n2", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
+)
+
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
@@ -45,15 +50,9 @@ def create_tables(cluster, table_name):
     )
 
     # populate data
-    node1.query(
-        f"INSERT INTO {table_name} SELECT number, number FROM numbers(1000)"
-    )
-    node2.query(
-        f"INSERT INTO {table_name} SELECT -number, -number FROM numbers(1000)"
-    )
-    node1.query(
-        f"INSERT INTO {table_name} SELECT number, number FROM numbers(3)"
-    )
+    node1.query(f"INSERT INTO {table_name} SELECT number, number FROM numbers(1000)")
+    node2.query(f"INSERT INTO {table_name} SELECT -number, -number FROM numbers(1000)")
+    node1.query(f"INSERT INTO {table_name} SELECT number, number FROM numbers(3)")
 
 
 @pytest.mark.parametrize(
@@ -61,7 +60,7 @@ def create_tables(cluster, table_name):
     [
         pytest.param(0),
         pytest.param(1),
-    ]
+    ],
 )
 def test_skip_unavailable_shards(start_cluster, prefer_localhost_replica):
     cluster = "test_multiple_shards_multiple_replicas"
@@ -72,7 +71,9 @@ def test_skip_unavailable_shards(start_cluster, prefer_localhost_replica):
 
     # w/o parallel replicas
     assert (
-        node1.query(f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d settings skip_unavailable_shards=1")
+        node1.query(
+            f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d settings skip_unavailable_shards=1"
+        )
         == expected_result
     )
 
@@ -86,7 +87,7 @@ def test_skip_unavailable_shards(start_cluster, prefer_localhost_replica):
                 "use_hedged_requests": 0,
                 "prefer_localhost_replica": prefer_localhost_replica,
                 "skip_unavailable_shards": 1,
-                "connections_with_failover_max_tries": 0, # just don't wait for unavailable replicas
+                "connections_with_failover_max_tries": 0,  # just don't wait for unavailable replicas
             },
         )
         == expected_result
@@ -98,7 +99,7 @@ def test_skip_unavailable_shards(start_cluster, prefer_localhost_replica):
     [
         pytest.param(0),
         pytest.param(1),
-    ]
+    ],
 )
 def test_error_on_unavailable_shards(start_cluster, prefer_localhost_replica):
     cluster = "test_multiple_shards_multiple_replicas"
@@ -107,7 +108,9 @@ def test_error_on_unavailable_shards(start_cluster, prefer_localhost_replica):
 
     # w/o parallel replicas
     with pytest.raises(QueryRuntimeException):
-        node1.query(f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d settings skip_unavailable_shards=0")
+        node1.query(
+            f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d settings skip_unavailable_shards=0"
+        )
 
     # parallel replicas
     with pytest.raises(QueryRuntimeException):
@@ -128,7 +131,7 @@ def test_error_on_unavailable_shards(start_cluster, prefer_localhost_replica):
     [
         pytest.param(0),
         pytest.param(1),
-    ]
+    ],
 )
 def test_no_unavailable_shards(start_cluster, skip_unavailable_shards):
     cluster = "test_single_shard_multiple_replicas"
@@ -139,7 +142,9 @@ def test_no_unavailable_shards(start_cluster, skip_unavailable_shards):
 
     # w/o parallel replicas
     assert (
-        node1.query(f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d settings skip_unavailable_shards={skip_unavailable_shards}")
+        node1.query(
+            f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d settings skip_unavailable_shards={skip_unavailable_shards}"
+        )
         == expected_result
     )
 
