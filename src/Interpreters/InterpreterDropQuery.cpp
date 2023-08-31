@@ -208,7 +208,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             if (table->isStaticStorage())
                 throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
 
-            table->checkTableCanBeDropped();
+            table->checkTableCanBeDropped(context_);
 
             TableExclusiveLockHolder table_excl_lock;
             /// We don't need any lock for ReplicatedMergeTree and for simple MergeTree
@@ -228,10 +228,10 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             {
                 /// If DROP DICTIONARY query is not used, check if Dictionary can be dropped with DROP TABLE query
                 if (!query.is_dictionary)
-                    table->checkTableCanBeDropped();
+                    table->checkTableCanBeDropped(context_);
             }
             else
-                table->checkTableCanBeDropped();
+                table->checkTableCanBeDropped(context_);
 
             /// Check dependencies before shutting table down
             bool check_ref_deps = getContext()->getSettingsRef().check_referential_table_dependencies;

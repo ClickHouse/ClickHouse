@@ -141,3 +141,8 @@ Expression (Projection)
             Description: usearch GRANULARITY 4
             Parts: 1/1
             Granules: 1/4
+--- Test correctness of Usearch index with > 1 mark
+1	[1,0,0,0]
+9000	[9000,0,0,0]
+1	(1,0,0,0)
+9000	(9000,0,0,0)
