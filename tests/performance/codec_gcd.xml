@@ -1,11 +1,11 @@
 <test>
     <create_query>
-        CREATE TABLE gcd_codec (n DateTime64 CODEC(GCD, LZ4))
+        CREATE TABLE IF NOT EXISTS gcd_codec (n DateTime64 CODEC(GCD, LZ4))
         ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple()
         SETTINGS parts_to_delay_insert = 5000, parts_to_throw_insert = 5000;
     </create_query>
     <create_query>
-        CREATE TABLE delta_codec (n DateTime64 CODEC(Delta, LZ4))
+        CREATE TABLE IF NOT EXISTS delta_codec (n DateTime64 CODEC(Delta, LZ4))
         ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple()
         SETTINGS parts_to_delay_insert = 5000, parts_to_throw_insert = 5000;
     </create_query>
@@ -17,6 +17,6 @@
     <query>INSERT INTO delta_codec SELECT * FROM generateRandom() LIMIT 1337228 SETTINGS max_threads=1</query>
     <query>SELECT * FROM delta_codec SETTINGS max_threads=1</query>
 
-    <drop_query>DROP TABLE gcd_codec</drop_query>
-    <drop_query>DROP TABLE delta_codec</drop_query>
+    <drop_query>DROP TABLE IF EXISTS gcd_codec</drop_query>
+    <drop_query>DROP TABLE IF EXISTS delta_codec</drop_query>
 </test>
