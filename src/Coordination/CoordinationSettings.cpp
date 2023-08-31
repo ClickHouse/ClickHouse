@@ -152,6 +152,9 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
 
     writeText("raft_limits_reconnect_limit=", buf);
     write_int(static_cast<uint64_t>(coordination_settings->raft_limits_reconnect_limit));
+
+    writeText("async_replication=", buf);
+    write_bool(coordination_settings->async_replication);
 }
 
 KeeperConfigurationAndSettingsPtr
