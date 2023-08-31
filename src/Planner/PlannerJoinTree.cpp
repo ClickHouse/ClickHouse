@@ -208,6 +208,9 @@ bool applyTrivialCountIfPossible(
     if (row_policy_filter)
         return {};
 
+    if (select_query_info.additional_filter_ast)
+        return false;
+
     /** Transaction check here is necessary because
       * MergeTree maintains total count for all parts in Active state and it simply returns that number for trivial select count() from table query.
       * But if we have current transaction, then we should return number of rows in current snapshot (that may include parts in Outdated state),
@@ -663,6 +666,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             is_single_table_expression &&
             (table_node || table_function_node) &&
             select_query_info.has_aggregates &&
+            settings.additional_table_filters.value.empty() &&
             applyTrivialCountIfPossible(query_plan, table_expression_query_info, table_node, table_function_node, select_query_info.query_tree, planner_context->getMutableQueryContext(), table_expression_data.getColumnNames());
 
         if (is_trivial_count_applied)
