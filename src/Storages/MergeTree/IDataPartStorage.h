@@ -63,6 +63,7 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class ISyncGuard;
 using SyncGuardPtr = std::unique_ptr<ISyncGuard>;
 
+
 class MergeTreeTransaction;
 using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
 
