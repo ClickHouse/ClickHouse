@@ -27,7 +27,7 @@ SELECT library_name, license_type, license_path FROM system.licenses LIMIT 15
 │ aws-c-event-stream │ Apache       │ /contrib/aws-c-event-stream/LICENSE │
 │ aws-checksums      │ Apache       │ /contrib/aws-checksums/LICENSE      │
 │ aws                │ Apache       │ /contrib/aws/LICENSE.txt            │
-│ base64             │ BSD 2-clause │ /contrib/base64/LICENSE             │
+│ base64             │ BSD 2-clause │ /contrib/aklomp-base64/LICENSE      │
 │ boost              │ Boost        │ /contrib/boost/LICENSE_1_0.txt      │
 │ brotli             │ MIT          │ /contrib/brotli/LICENSE             │
 │ capnproto          │ MIT          │ /contrib/capnproto/LICENSE          │

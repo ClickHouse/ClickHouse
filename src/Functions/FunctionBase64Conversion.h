@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include "config.h"
 
 #if USE_BASE64
@@ -8,7 +9,7 @@
 #    include <Functions/FunctionHelpers.h>
 #    include <Functions/IFunction.h>
 #    include <Interpreters/Context_fwd.h>
-#    include <turbob64.h>
+#    include <libbase64.h>
 #    include <Common/MemorySanitizer.h>
 
 #    include <span>
@@ -27,11 +28,9 @@ namespace Detail
 {
     inline size_t base64Decode(const std::span<const UInt8> src, UInt8 * dst)
     {
-#    if defined(__aarch64__)
-        return tb64sdec(reinterpret_cast<const uint8_t *>(src.data()), src.size(), reinterpret_cast<uint8_t *>(dst));
-#    else
-        return _tb64d(reinterpret_cast<const uint8_t *>(src.data()), src.size(), reinterpret_cast<uint8_t *>(dst));
-#    endif
+        size_t outlen = 0;
+        base64_decode(reinterpret_cast<const char *>(src.data()), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
+        return outlen;
     }
 }
 
@@ -46,15 +45,9 @@ struct Base64Encode
 
     static size_t performCoding(const std::span<const UInt8> src, UInt8 * dst)
     {
-        /*
-        * Some bug in sse arm64 implementation?
-        * `base64Encode(repeat('a', 46))` returns wrong padding character
-        */
-#    if defined(__aarch64__)
-        return tb64senc(reinterpret_cast<const uint8_t *>(src.data()), src.size(), reinterpret_cast<uint8_t *>(dst));
-#    else
-        return _tb64e(reinterpret_cast<const uint8_t *>(src.data()), src.size(), reinterpret_cast<uint8_t *>(dst));
-#    endif
+        size_t outlen = 0;
+        base64_encode(reinterpret_cast<const char *>(src.data()), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
+        return outlen;
     }
 };
 
@@ -225,6 +218,7 @@ private:
         return dst_column;
     }
 };
+
 }
 
 #endif
