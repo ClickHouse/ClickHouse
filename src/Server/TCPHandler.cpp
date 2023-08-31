@@ -232,12 +232,14 @@ void TCPHandler::runImpl()
     try
     {
         receiveHello();
+        sendHello();
+
+        authenticate();
 
         /// In interserver mode queries are executed without a session context.
         if (!is_interserver_mode)
             session->makeSessionContext();
 
-        sendHello();
         if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             receiveAddendum();
 
@@ -1254,92 +1256,34 @@ std::unique_ptr<Session> TCPHandler::makeSession()
     return res;
 }
 
-String TCPHandler::prepareStringForSshValidation(String user, String challenge)
+void TCPHandler::authenticate()
 {
-    String output;
-    output.append(std::to_string(client_tcp_protocol_version));
-    output.append(default_database);
-    output.append(user);
-    output.append(challenge);
-    return output;
-}
-
-void TCPHandler::receiveHello()
-{
-    String challenge;
-    String user;
-    String password;
-    String default_db;
-
     UInt64 packet_type = 0;
-    /// Receive packet
-    readVarUInt(packet_type, *in);
-
-    /// Sanity check
-    if (packet_type != Protocol::Client::Hello && packet_type != Protocol::Client::SSHChallengeRequest)
-    {
-        /** If you accidentally accessed the HTTP protocol for a port destined for an internal TCP protocol,
-          * Then instead of the packet type, there will be G (GET) or P (POST), in most cases.
-          */
-        if (packet_type == 'G' || packet_type == 'P')
-        {
-            writeString(formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(server.config()), *out);
-            throw Exception(ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT, "Client has connected to wrong port");
-        }
-        else
-            throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
-                               "Unexpected packet from client (expected Hello, got {})", packet_type);
-    }
-
-    /// First message can require challenge to authenticate in further hello message
-    if (packet_type == Protocol::Client::SSHChallengeRequest)
-    {
-        challenge = createChallenge();
-        writeVarUInt(Protocol::Server::SSHChallenge, *out);
-        writeStringBinary(challenge, *out);
-        out->next();
-        /// Receive `hello` packet.
-        readVarUInt(packet_type, *in);
-    }
-
-    readStringBinary(client_name, *in);
-    readVarUInt(client_version_major, *in);
-    readVarUInt(client_version_minor, *in);
-    // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
-    readVarUInt(client_tcp_protocol_version, *in);
-    readStringBinary(default_db, *in);
-    if (!default_db.empty())
-        default_database = default_db;
-    readStringBinary(user, *in);
-    readStringBinary(password, *in);
-
-    if (user.empty())
-        throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client (no user in Hello package)");
-
-    LOG_DEBUG(log, "Connected {} version {}.{}.{}, revision: {}{}{}.",
-        client_name,
-        client_version_major, client_version_minor, client_version_patch,
-        client_tcp_protocol_version,
-        (!default_database.empty() ? ", database: " + default_database : ""),
-        (!user.empty() ? ", user: " + user : "")
-    );
-
-    is_interserver_mode = (user == USER_INTERSERVER_MARKER) && password.empty();
-    if (is_interserver_mode)
-    {
-        if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
-            LOG_WARNING(LogFrequencyLimiter(log, 10),
-                        "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
-        receiveClusterNameAndSalt();
-        return;
-    }
-
     session = makeSession();
     const auto & client_info = session->getClientInfo();
 
-    if (!challenge.empty() && session->getAuthenticationTypeOrLogInFailure(user) == AuthenticationType::SSH_KEY)
+    /// Perform handshake for SSH authentication
+    if (session->getAuthenticationTypeOrLogInFailure(user) == AuthenticationType::SSH_KEY)
     {
-        auto cred = SshCredentials(user, password, prepareStringForSshValidation(user, challenge));
+        if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot authenticate user with SSH key, because client version is too old");
+
+        readVarUInt(packet_type, *in);
+        if (packet_type != Protocol::Client::SSHChallengeRequest)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet for requesting a challenge string");
+
+        auto challenge = createChallenge();
+        writeVarUInt(Protocol::Server::SSHChallenge, *out);
+        writeStringBinary(challenge, *out);
+        out->next();
+
+        String signature;
+        readVarUInt(packet_type, *in);
+        if (packet_type != Protocol::Client::SSHChallengeResponse)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet with a response for a challenge");
+        readStringBinary(signature, *in);
+
+        auto cred = SshCredentials(user, signature, prepareStringForSshValidation(user, challenge));
         session->authenticate(cred, getClientAddress(client_info));
         return;
     }
@@ -1366,6 +1310,72 @@ void TCPHandler::receiveHello()
 #endif
 
     session->authenticate(user, password, getClientAddress(client_info));
+}
+
+String TCPHandler::prepareStringForSshValidation(String username, String challenge)
+{
+    String output;
+    output.append(std::to_string(client_tcp_protocol_version));
+    output.append(default_database);
+    output.append(username);
+    output.append(challenge);
+    return output;
+}
+
+void TCPHandler::receiveHello()
+{
+    UInt64 packet_type = 0;
+    /// Receive `hello` packet.
+    readVarUInt(packet_type, *in);
+
+    /// Sanity check
+    if (packet_type != Protocol::Client::Hello)
+    {
+        /** If you accidentally accessed the HTTP protocol for a port destined for an internal TCP protocol,
+          * Then instead of the packet type, there will be G (GET) or P (POST), in most cases.
+          */
+        if (packet_type == 'G' || packet_type == 'P')
+        {
+            writeString(formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(server.config()), *out);
+            throw Exception(ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT, "Client has connected to wrong port");
+        }
+        else
+            throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                               "Unexpected packet from client (expected Hello, got {})", packet_type);
+    }
+
+    readStringBinary(client_name, *in);
+    readVarUInt(client_version_major, *in);
+    readVarUInt(client_version_minor, *in);
+    // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
+    readVarUInt(client_tcp_protocol_version, *in);
+    String default_db;
+    readStringBinary(default_db, *in);
+    if (!default_db.empty())
+        default_database = default_db;
+    readStringBinary(user, *in);
+    readStringBinary(password, *in);
+
+    if (user.empty())
+        throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client (no user in Hello package)");
+
+    LOG_DEBUG(log, "Connected {} version {}.{}.{}, revision: {}{}{}.",
+        client_name,
+        client_version_major, client_version_minor, client_version_patch,
+        client_tcp_protocol_version,
+        (!default_database.empty() ? ", database: " + default_database : ""),
+        (!user.empty() ? ", user: " + user : "")
+    );
+
+    is_interserver_mode = (user == USER_INTERSERVER_MARKER) && password.empty();
+    if (is_interserver_mode)
+    {
+        if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
+            LOG_WARNING(LogFrequencyLimiter(log, 10),
+                        "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
+        receiveClusterNameAndSalt();
+        return;
+    }
 }
 
 void TCPHandler::receiveAddendum()

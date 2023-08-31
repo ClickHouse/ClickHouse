@@ -263,6 +263,7 @@ private:
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
     String packStringForSshSign(String challenge);
+    void performHandshakeForSSHAuth();
     void sendAddendum();
     void receiveHello(const Poco::Timespan & handshake_timeout);
 

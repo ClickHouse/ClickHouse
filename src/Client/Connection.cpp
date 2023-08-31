@@ -60,6 +60,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 Connection::~Connection() = default;
@@ -192,6 +193,16 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         sendHello();
         receiveHello(timeouts.handshake_timeout);
+
+        // You may want to ask a server for a challenge if you want to authenticate using ssh keys
+        if (!ssh_private_key.isEmpty())
+        {
+            if (server_revision < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Authentication using SSH keys is not supported by the server");
+
+            performHandshakeForSSHAuth();
+        }
+
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             sendAddendum();
 
@@ -294,31 +305,6 @@ void Connection::sendHello()
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters");
 
-    String challenge;
-    // You may want to ask a server for a challenge if you want to authenticate using ssh keys
-    if (!ssh_private_key.isEmpty())
-    {
-        writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);
-        out->next();
-        UInt64 packet_type = 0;
-        if (in->eof())
-            throw Poco::Net::NetException("Connection reset by peer");
-
-        readVarUInt(packet_type, *in);
-        if (packet_type == Protocol::Server::SSHChallenge)
-        {
-            readStringBinary(challenge, *in);
-        }
-        else if (packet_type == Protocol::Server::Exception)
-            receiveException()->rethrow();
-        else
-        {
-            /// Close connection, to not stay in unsynchronised state.
-            disconnect();
-            throwUnexpectedPacket(packet_type, "SSHChallenge or Exception");
-        }
-    }
-
     writeVarUInt(Protocol::Client::Hello, *out);
     writeStringBinary((VERSION_NAME " ") + client_name, *out);
     writeVarUInt(VERSION_MAJOR, *out);
@@ -343,20 +329,7 @@ void Connection::sendHello()
     else
     {
         writeStringBinary(user, *out);
-        if (ssh_private_key.isEmpty())
-        {
-            writeStringBinary(password, *out);
-        }
-        else
-        {
-#if USE_SSL
-            String to_sign = packStringForSshSign(challenge);
-            String signature = ssh_private_key.signString(to_sign);
-            writeStringBinary(signature, *out);
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
-#endif
-        }
+        writeStringBinary(password, *out);
     }
 
     out->next();
@@ -368,6 +341,43 @@ void Connection::sendAddendum()
     if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY)
         writeStringBinary(quota_key, *out);
     out->next();
+}
+
+void Connection::performHandshakeForSSHAuth()
+{
+    String challenge;
+    {
+        writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);
+        out->next();
+        UInt64 packet_type = 0;
+        if (in->eof())
+            throw Poco::Net::NetException("Connection reset by peer");
+
+        readVarUInt(packet_type, *in);
+        if (packet_type == Protocol::Server::SSHChallenge)
+        {
+            readStringBinary(challenge, *in);
+        }
+        else if (packet_type == Protocol::Server::Exception)
+            receiveException()->rethrow();
+        else
+        {
+            /// Close connection, to not stay in unsynchronised state.
+            disconnect();
+            throwUnexpectedPacket(packet_type, "SSHChallenge or Exception");
+        }
+    }
+
+#if USE_SSL
+    writeVarUInt(Protocol::Client::SSHChallengeResponse, *out);
+    String to_sign = packStringForSshSign(challenge);
+    String signature = ssh_private_key.signString(to_sign);
+    writeStringBinary(signature, *out);
+    out->next();
+#else
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
+#endif
+
 }
 
 

@@ -153,8 +153,9 @@ namespace Protocol
             ReadTaskResponse = 9,           /// A filename to read from s3 (used in s3Cluster)
             MergeTreeReadTaskResponse = 10, /// Coordinator's decision with a modified set of mark ranges allowed to read
 
-            SSHChallengeRequest = 11,       /// Request for ssh signature challenge
-            MAX = SSHChallengeRequest,
+            SSHChallengeRequest = 11,       /// Request for SSH signature challenge
+            SSHChallengeResponse = 12,       /// Request for SSH signature challenge
+            MAX = SSHChallengeResponse,
         };
 
         inline const char * toString(UInt64 packet)
@@ -172,6 +173,7 @@ namespace Protocol
                 "ReadTaskResponse",
                 "MergeTreeReadTaskResponse",
                 "SSHChallengeRequest",
+                "SSHChallengeResponse"
             };
             return packet <= MAX
                 ? data[packet]
