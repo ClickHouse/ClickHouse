@@ -2,17 +2,18 @@
 #include <Core/MySQL/IMySQLReadPacket.h>
 #include <Core/MySQL/IMySQLWritePacket.h>
 #include <Core/MySQL/PacketsProtocolBinary.h>
-#include <Poco/DateTime.h>
-#include <Poco/Logger.h>
-#include <Poco/Timestamp.h>
-#include "Common/logger_useful.h"
+#include "Common/LocalDate.h"
+#include "Common/LocalDateTime.h"
 #include "Columns/ColumnLowCardinality.h"
 #include "Columns/ColumnVector.h"
+#include "Columns/ColumnsDateTime.h"
 #include "DataTypes/DataTypeLowCardinality.h"
 #include "DataTypes/DataTypeNullable.h"
 #include "DataTypes/DataTypesNumber.h"
 #include "Formats/FormatSettings.h"
 #include "IO/WriteBufferFromString.h"
+#include "base/DayNum.h"
+#include "base/Decimal.h"
 #include "base/types.h"
 
 namespace DB
@@ -29,12 +30,10 @@ namespace MySQLProtocol
         {
             /// See https://dev.mysql.com/doc/dev/mysql-server/8.1.0/page_protocol_binary_resultset.html#sect_protocol_binary_resultset_row
             payload_size = 1 + null_bitmap_size;
-            LOG_TRACE(&Poco::Logger::get("ResultSetRow"), "Null bitmap size: {}", null_bitmap_size);
             FormatSettings format_settings;
             for (size_t i = 0; i < columns.size(); ++i)
             {
                 ColumnPtr col = columns[i];
-                LOG_TRACE(&Poco::Logger::get("col->isNullAt"), "isNullAt: {}, {}", row_num, col->isNullAt(row_num));
                 if (col->isNullAt(row_num))
                 {
                     size_t byte = (i + 2) / 8;
@@ -75,7 +74,19 @@ namespace MySQLProtocol
                         payload_size += 8;
                         break;
                     case TypeIndex::Date: {
-                        UInt64 value = col->get64(row_num);
+                        UInt16 value = assert_cast<const ColumnVector<UInt16> &>(*col).getData()[row_num];
+                        if (value == 0)
+                        {
+                            payload_size += 1; // length only, no other fields
+                        }
+                        else
+                        {
+                            payload_size += 5;
+                        }
+                        break;
+                    }
+                    case TypeIndex::Date32: {
+                        Int32 value = assert_cast<const ColumnVector<Int32> &>(*col).getData()[row_num];
                         if (value == 0)
                         {
                             payload_size += 1; // length only, no other fields
@@ -87,15 +98,15 @@ namespace MySQLProtocol
                         break;
                     }
                     case TypeIndex::DateTime: {
-                        UInt64 value = col->get64(row_num);
+                        UInt32 value = assert_cast<const ColumnVector<UInt32> &>(*col).getData()[row_num];
                         if (value == 0)
                         {
                             payload_size += 1; // length only, no other fields
                         }
                         else
                         {
-                            Poco::DateTime dt = Poco::DateTime(Poco::Timestamp(value * 1000 * 1000));
-                            if (dt.second() == 0 && dt.minute() == 0 && dt.hour() == 0)
+                            LocalDateTime ldt = LocalDateTime(value, DateLUT::instance(getDateTimeTimezone(*data_type)));
+                            if (ldt.second() == 0 && ldt.minute() == 0 && ldt.hour() == 0)
                             {
                                 payload_size += 5;
                             }
@@ -107,7 +118,6 @@ namespace MySQLProtocol
                         break;
                     }
                     default:
-                        LOG_TRACE(&Poco::Logger::get("Type default"), "{} is {}", col->getName(), data_type->getName());
                         WriteBufferFromOwnString ostr;
                         serializations[i]->serializeText(*columns[i], row_num, ostr, format_settings);
                         payload_size += getLengthEncodedStringSize(ostr.str());
@@ -188,14 +198,33 @@ namespace MySQLProtocol
                         break;
                     }
                     case TypeIndex::Date: {
-                        UInt64 value = assert_cast<const ColumnVector<UInt64> &>(*col).getData()[row_num];
+                        UInt16 value = assert_cast<const ColumnVector<UInt16> &>(*col).getData()[row_num];
                         if (value != 0)
                         {
-                            Poco::DateTime dt = Poco::DateTime(Poco::Timestamp(value * 1000 * 1000));
+                            LocalDate ld = LocalDate(DayNum(value));
                             buffer.write(static_cast<char>(4)); // bytes_following
-                            int year = dt.year();
-                            int month = dt.month();
-                            int day = dt.day();
+                            auto year = ld.year();
+                            auto month = ld.month();
+                            auto day = ld.day();
+                            buffer.write(reinterpret_cast<const char *>(&year), 2);
+                            buffer.write(reinterpret_cast<const char *>(&month), 1);
+                            buffer.write(reinterpret_cast<const char *>(&day), 1);
+                        }
+                        else
+                        {
+                            buffer.write(static_cast<char>(0));
+                        }
+                        break;
+                    }
+                    case TypeIndex::Date32: {
+                        Int32 value = assert_cast<const ColumnVector<Int32> &>(*col).getData()[row_num];
+                        if (value != 0)
+                        {
+                            LocalDate ld = LocalDate(ExtendedDayNum(value));
+                            buffer.write(static_cast<char>(4)); // bytes_following
+                            auto year = ld.year();
+                            auto month = ld.month();
+                            auto day = ld.day();
                             buffer.write(reinterpret_cast<const char *>(&year), 2);
                             buffer.write(reinterpret_cast<const char *>(&month), 1);
                             buffer.write(reinterpret_cast<const char *>(&day), 1);
@@ -207,24 +236,24 @@ namespace MySQLProtocol
                         break;
                     }
                     case TypeIndex::DateTime: {
-                        UInt64 value = assert_cast<const ColumnVector<UInt64> &>(*col).getData()[row_num];
+                        UInt32 value = assert_cast<const ColumnVector<UInt32> &>(*col).getData()[row_num];
                         if (value != 0)
                         {
-                            Poco::DateTime dt = Poco::DateTime(Poco::Timestamp(value * 1000 * 1000));
-                            bool is_date_time = !(dt.hour() == 0 && dt.minute() == 0 && dt.second() == 0);
-                            size_t bytes_following = is_date_time ? 7 : 4;
+                            LocalDateTime ldt = LocalDateTime(value, DateLUT::instance(getDateTimeTimezone(*data_type)));
+                            int year = ldt.year();
+                            int month = ldt.month();
+                            int day = ldt.day();
+                            int hour = ldt.hour();
+                            int minute = ldt.minute();
+                            int second = ldt.second();
+                            bool has_time = !(hour == 0 && minute == 0 && second == 0);
+                            size_t bytes_following = has_time ? 7 : 4;
                             buffer.write(reinterpret_cast<const char *>(&bytes_following), 1);
-                            int year = dt.year();
-                            int month = dt.month();
-                            int day = dt.day();
                             buffer.write(reinterpret_cast<const char *>(&year), 2);
                             buffer.write(reinterpret_cast<const char *>(&month), 1);
                             buffer.write(reinterpret_cast<const char *>(&day), 1);
-                            if (is_date_time)
+                            if (has_time)
                             {
-                                int hour = dt.hourAMPM();
-                                int minute = dt.minute();
-                                int second = dt.second();
                                 buffer.write(reinterpret_cast<const char *>(&hour), 1);
                                 buffer.write(reinterpret_cast<const char *>(&minute), 1);
                                 buffer.write(reinterpret_cast<const char *>(&second), 1);
@@ -236,6 +265,7 @@ namespace MySQLProtocol
                         }
                         break;
                     }
+
                     default:
                         writeLengthEncodedString(serialized[i], buffer);
                         break;

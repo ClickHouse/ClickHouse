@@ -203,6 +203,7 @@ namespace MySQLProtocol
                     decimals = 31;
                     break;
                 case TypeIndex::Date:
+                case TypeIndex::Date32:
                     column_type = ColumnType::MYSQL_TYPE_DATE;
                     flags = ColumnDefinitionFlags::BINARY_FLAG;
                     break;

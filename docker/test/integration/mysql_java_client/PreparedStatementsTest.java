@@ -33,20 +33,19 @@ public class PreparedStatementsTest {
             }
         }
 
+        // useServerPrepStmts allows us to send COM_STMT_PREPARE and COM_STMT_EXECUTE
+        // to test the binary protocol implementation
+        String jdbcUrl = String.format("jdbc:mysql://%s:%s/%s?useSSL=false&useServerPrepStmts=true",
+                host, port, database);
+
         try {
             Class.forName("com.mysql.cj.jdbc.Driver");
-            /*
-             * useServerPrepStmts allows us to send COM_STMT_PREPARE and COM_STMT_EXECUTE to
-             * test the binary protocol
-             */
-            String jdbcUrl = String.format("jdbc:mysql://%s:%s/%s?useSSL=false&useServerPrepStmts=true",
-                    host, port, database);
             Connection conn = DriverManager.getConnection(jdbcUrl, user, password);
             testSimpleDataTypes(conn);
             testStringTypes(conn);
             testDecimalTypes(conn);
             testMiscTypes(conn);
-            // testDateTypes(conn);
+            testDateTypes(conn);
             conn.close();
         } catch (Exception e) {
             e.printStackTrace();
@@ -99,20 +98,15 @@ public class PreparedStatementsTest {
         int rowNum = 1;
         while (rs.next()) {
             System.out.printf("Row #%d\n", rowNum++);
-            System.out.printf("Type: %s, value: %s\n",
-                    getMysqlType(rs, "d32"),
+            System.out.printf("Type: %s, value: %s\n", getMysqlType(rs, "d32"),
                     rs.getBigDecimal("d32").toPlainString());
-            System.out.printf("Type: %s, value: %s\n",
-                    getMysqlType(rs, "d64"),
+            System.out.printf("Type: %s, value: %s\n", getMysqlType(rs, "d64"),
                     rs.getBigDecimal("d64").toPlainString());
-            System.out.printf("Type: %s, value: %s\n",
-                    getMysqlType(rs, "d128_native"),
+            System.out.printf("Type: %s, value: %s\n", getMysqlType(rs, "d128_native"),
                     rs.getBigDecimal("d128_native").toPlainString());
-            System.out.printf("Type: %s, value: %s\n",
-                    getMysqlType(rs, "d128_text"),
+            System.out.printf("Type: %s, value: %s\n", getMysqlType(rs, "d128_text"),
                     rs.getString("d128_text"));
-            System.out.printf("Type: %s, value: %s\n",
-                    getMysqlType(rs, "d256"),
+            System.out.printf("Type: %s, value: %s\n", getMysqlType(rs, "d256"),
                     rs.getString("d256"));
         }
         System.out.println();
@@ -127,14 +121,16 @@ public class PreparedStatementsTest {
             System.out.printf("Type: %s, value: %s\n", getMysqlType(rs, "d"), rs.getDate("d"));
             System.out.printf("Type: %s, value: %s\n", getMysqlType(rs, "d32"), rs.getDate("d32"));
             System.out.printf("Type: %s, value: %s\n", getMysqlType(rs, "dt"), rs.getTimestamp("dt"));
-            System.out.printf("Type: %s, value: %s\n", getMysqlType(rs, "dt64"), rs.getTimestamp("dt64"));
+            System.out.printf("Type: %s, value: %s\n", getMysqlType(rs, "dt64_3"), rs.getString("dt64_3"));
+            System.out.printf("Type: %s, value: %s\n", getMysqlType(rs, "dt64_6"), rs.getString("dt64_6"));
+            System.out.printf("Type: %s, value: %s\n", getMysqlType(rs, "dt64_9"), rs.getString("dt64_9"));
         }
         System.out.println();
     }
 
     private static void testMiscTypes(Connection conn) throws SQLException {
         System.out.println("### testMiscTypes");
-        ResultSet rs = conn.prepareStatement("SELECT d FROM ps_misc_types").executeQuery();
+        ResultSet rs = conn.prepareStatement("SELECT * FROM ps_misc_types").executeQuery();
         int rowNum = 1;
         while (rs.next()) {
             System.out.printf("Row #%d\n", rowNum++);
@@ -149,7 +145,5 @@ public class PreparedStatementsTest {
     private static MysqlType getMysqlType(ResultSet rs, String columnLabel) throws SQLException {
         ResultSetMetaData meta = rs.getMetaData();
         return MysqlType.getByJdbcType(meta.getColumnType(rs.findColumn(columnLabel)));
-
     }
-
 }
