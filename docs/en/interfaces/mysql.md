@@ -35,6 +35,8 @@ Alternatively, in order to enable the MySQL interface for an existing service:
 3. After entering the password, you will get prompted the MySQL connection string for this service
 ![Connection screen -  MySQL Enabled](./images/mysql5.png)
 
+If the connection is asking for a server certificate, ClickHouse Cloud's SSL certificate is signed by [LetsEncrypt](https://letsencrypt.org/certificates/). You can download this root cert [here](https://letsencrypt.org/certs/isrgrootx1.pem).
+
 ## Enabling the MySQL Interface On Self-managed ClickHouse
 
 Add the [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d/` [folder](../operations/configuration-files):
