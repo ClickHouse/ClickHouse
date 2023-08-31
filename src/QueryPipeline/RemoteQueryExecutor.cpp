@@ -108,7 +108,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     , scalars(scalars_), external_tables(external_tables_), stage(stage_)
     , extension(extension_)
 {
-    create_connections = [this, pool, throttler, extension_](AsyncCallback async_callback)->std::unique_ptr<IConnections>
+    create_connections = [this, pool, throttler](AsyncCallback async_callback)->std::unique_ptr<IConnections>
     {
         const Settings & current_settings = context->getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
@@ -121,8 +121,8 @@ RemoteQueryExecutor::RemoteQueryExecutor(
                 table_to_check = std::make_shared<QualifiedTableName>(main_table.getQualifiedName());
 
             auto res = std::make_unique<HedgedConnections>(pool, context, timeouts, throttler, pool_mode, table_to_check, std::move(async_callback));
-            if (extension_ && extension_->replica_info)
-                res->setReplicaInfo(*extension_->replica_info);
+            if (extension && extension->replica_info)
+                res->setReplicaInfo(*extension->replica_info);
             return res;
         }
 #endif
@@ -145,8 +145,8 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         }
 
         auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), current_settings, throttler);
-        if (extension_ && extension_->replica_info)
-            res->setReplicaInfo(*extension_->replica_info);
+        if (extension && extension->replica_info)
+            res->setReplicaInfo(*extension->replica_info);
         return res;
     };
 }
