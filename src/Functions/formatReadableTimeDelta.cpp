@@ -35,54 +35,77 @@ using simple_month = std::chrono::duration<int64_t, std::ratio<(30L * 24L + 12L)
 
 
 // This is a helper type for various chrono lengths (and it can't be inside the FunctionFormatReadableTimeDelta class)
-struct Unit {
+struct Unit
+{
     int num;
     int denom;
 
     std::string_view name;
 
-    friend bool operator==(const Unit & lhs, const Unit & rhs) {
+    friend bool operator==(const Unit & lhs, const Unit & rhs)
+    {
         return std::tie(lhs.num, lhs.denom) == std::tie(rhs.num, rhs.denom);
     }
 
-    friend bool operator==(const Unit & lhs, std::string_view needle) {
+    friend bool operator==(const Unit & lhs, std::string_view needle)
+    {
         return lhs.name == needle;
     }
 
-    UInt64 convertToUnit(std::chrono::duration<Float64> & input) const noexcept {
+    UInt64 convertToUnit(std::chrono::duration<Float64> & input) const noexcept
+    {
         return static_cast<UInt64>(input.count() / num * denom);
     }
 
-    std::chrono::duration<Float64> convertFromUnit(UInt64 count) const noexcept {
+    std::chrono::duration<Float64> convertFromUnit(UInt64 count) const noexcept
+    {
         return std::chrono::duration<Float64>{static_cast<Float64>(count) * num / denom};
     }
 
-    template <typename T> static consteval std::string_view getUnitName() {
-        if constexpr (std::same_as<simple_year, T>) {
+    template <typename T> static consteval std::string_view getUnitName()
+    {
+        if constexpr (std::same_as<simple_year, T>)
+        {
             return "year";
-        } else if constexpr (std::same_as<simple_month, T>) {
+        }
+        else if constexpr (std::same_as<simple_month, T>)
+        {
             return "month";
-        } else if constexpr (std::same_as<std::chrono::days, T>) {
+        }
+        else if constexpr (std::same_as<std::chrono::days, T>)
+        {
             return "day";
-        } else if constexpr (std::same_as<std::chrono::hours, T>) {
+        }
+        else if constexpr (std::same_as<std::chrono::hours, T>)
+        {
             return "hour";
-        } else if constexpr (std::same_as<std::chrono::minutes, T>) {
+        }
+        else if constexpr (std::same_as<std::chrono::minutes, T>)
+        {
             return "minute";
-        } else if constexpr (std::same_as<std::chrono::seconds, T>) {
+        }
+        else if constexpr (std::same_as<std::chrono::seconds, T>)
+        {
             return "second";
-        } else if constexpr (std::same_as<std::chrono::milliseconds, T>) {
+        }
+        else if constexpr (std::same_as<std::chrono::milliseconds, T>)
+        {
             return "millisecond";
-        } else if constexpr (std::same_as<std::chrono::microseconds, T>) {
+        }
+        else if constexpr (std::same_as<std::chrono::microseconds, T>)
+        {
             return "microsecond";
-        } else { // if constexpr (std::same_as<std::chrono::nanoseconds, T>) {
+        }
+        else // if constexpr (std::same_as<std::chrono::nanoseconds, T>)
+        {
             static_assert(std::same_as<std::chrono::nanoseconds, T>);
             return "nanosecond";
         }
     }
 
-    template <typename T, long Num, long Den> consteval Unit(std::chrono::duration<T, std::ratio<Num, Den>>): 
-        num{static_cast<int>(Num)}, 
-        denom{static_cast<int>(Den)}, 
+    template <typename T, long Num, long Den> consteval Unit(std::chrono::duration<T, std::ratio<Num, Den>>):
+        num{static_cast<int>(Num)},
+        denom{static_cast<int>(Den)},
         name{getUnitName<std::chrono::duration<T, std::ratio<Num, Den>>>()} { }
 };
 
@@ -164,41 +187,46 @@ public:
         Unit{std::chrono::nanoseconds()},
     };
 
-    Unit convertFromString(std::string_view unit_str, std::string_view default_unit, std::string_view argument_name) const {
+    Unit convertFromString(std::string_view unit_str, std::string_view default_unit, std::string_view argument_name) const
+    {
         using namespace std::string_view_literals;
 
         if (unit_str.empty())
             unit_str = default_unit;
 
-        if (unit_str.back() == 's') {
+        if (unit_str.back() == 's')
+        {
             unit_str.remove_suffix(1);
         }
 
         const auto unit_it = std::find(all_units.begin(), all_units.end(), unit_str);
 
-        if (unit_it == all_units.end()) {
+        if (unit_it == all_units.end())
+        {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Unexpected value of {} argument ({}) for function {}, the only allowed values are:"
                 " 'nanoseconds', 'microseconds', 'milliseconds', 'seconds', 'minutes', 'hours', 'days', 'months', 'years'.",
-                argument_name, unit_str, getName());            
+                argument_name, unit_str, getName());
         }
 
         return *unit_it;
     }
-    
-    [[maybe_unused]] std::span<const Unit> selectUnitRange(const ColumnsWithTypeAndName & arguments) const {
+
+    [[maybe_unused]] std::span<const Unit> selectUnitRange(const ColumnsWithTypeAndName & arguments) const
+    {
         using namespace std::string_view_literals;
-        
-        const auto get_unit_str = [&arguments](size_t i) -> std::string_view {
-            if (arguments.size() <= i) 
+
+        const auto get_unit_str = [&arguments](size_t i) -> std::string_view
+        {
+            if (arguments.size() <= i)
                 return {};
-            
+
             const ColumnPtr & unit_column = arguments[i].column;
             const ColumnConst * unit_const_col = checkAndGetColumnConstStringOrFixedString(unit_column.get());
-            
-            if (!unit_const_col) 
+
+            if (!unit_const_col)
                 return {};
-            
+
             return unit_const_col->getDataColumn().getDataAt(0).toView();
         };
 
@@ -212,7 +240,8 @@ public:
         auto smallest_unit_iter = std::find(all_units.begin(), all_units.end(), smallest_unit);
 
         // Make sure the range of units is always from Largest to Smallest (year > seconds)
-        if (smallest_unit_iter < largest_unit_iter) {
+        if (smallest_unit_iter < largest_unit_iter)
+        {
             std::swap(smallest_unit_iter, largest_unit_iter);
         }
 
@@ -220,7 +249,7 @@ public:
         assert(smallest_unit_iter != all_units.end());
 
         /// Resulting range of units
-        return std::span(largest_unit_iter, std::next(smallest_unit_iter)); 
+        return std::span(largest_unit_iter, std::next(smallest_unit_iter));
     }
 
     ColumnPtr executeImpl([[maybe_unused]] const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -240,9 +269,9 @@ public:
         {
             /// Virtual call is Ok (negligible comparing to the rest of calculations).
             [[maybe_unused]] const auto duration = std::chrono::duration<Float64>{arguments[0].column->getFloat64(i)};
-            
+
             formatDurationInto(duration, selected_units, buf_to);
-            
+
             /// And finish the string... (always)
             writeChar(0, buf_to);
             offsets_to[i] = buf_to.count();
@@ -251,8 +280,9 @@ public:
         buf_to.finalize();
         return col_to;
     }
-    
-    [[maybe_unused]] static void formatDurationInto(std::chrono::duration<Float64> duration, std::span<const Unit> selected_units, WriteBuffer & buf_to) {
+
+    [[maybe_unused]] static void formatDurationInto(std::chrono::duration<Float64> duration, std::span<const Unit> selected_units, WriteBuffer & buf_to)
+    {
         if (!isFinite(duration.count()))
         {
             /// Cannot decide what unit it is (years, month), just simply write inf or nan.
@@ -270,7 +300,7 @@ public:
         /// To output separators between parts: ", " and " and ".
         bool has_previous_output = false;
 
-        for (const auto & unit: selected_units.first(selected_units.size() - 1u)) 
+        for (const auto & unit: selected_units.first(selected_units.size() - 1u))
         {
             if (unlikely(duration.count() + 1.0 == duration.count()))
             {
@@ -280,13 +310,14 @@ public:
                 writeChar(' ', buf_to);
                 buf_to.write(unit.name.data(), unit.name.size());
                 writeChar('s', buf_to);
-                return; 
+                return;
             }
-            
+
             has_previous_output |= processUnit(unit, duration, buf_to, has_previous_output);
         }
 
-        if (has_previous_output) {
+        if (has_previous_output)
+        {
             writeCString(" and ", buf_to);
         }
 
@@ -301,7 +332,7 @@ public:
         const UInt64 duration_in_unit = unit.convertToUnit(duration);
 
         /// Remaining value to print on next iteration.
-        duration -= unit.convertFromUnit(duration_in_unit); // and now substract it
+        duration -= unit.convertFromUnit(duration_in_unit); // and now subtract it
 
         if (duration_in_unit == 0)
         {
@@ -318,8 +349,9 @@ public:
         justPrintCountAndUnit(duration_in_unit, unit_name, buf_to);
         return true;
     }
-    
-    static void justPrintCountAndUnit(UInt64 count, std::string_view unit_name, WriteBuffer & buf_to) {
+
+    static void justPrintCountAndUnit(UInt64 count, std::string_view unit_name, WriteBuffer & buf_to)
+    {
         writeText(count, buf_to);
         writeChar(' ', buf_to);
         buf_to.write(unit_name.data(), unit_name.size());
