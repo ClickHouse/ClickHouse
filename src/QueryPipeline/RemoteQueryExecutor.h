@@ -46,9 +46,9 @@ public:
     /// decide whether to deny or to accept that request.
     struct Extension
     {
-        std::shared_ptr<TaskIterator> task_iterator;
-        std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator;
-        std::optional<IConnections::ReplicaInfo> replica_info;
+        std::shared_ptr<TaskIterator> task_iterator = nullptr;
+        std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator = nullptr;
+        std::optional<IConnections::ReplicaInfo> replica_info = {};
     };
 
     /// Takes already set connection.
