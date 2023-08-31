@@ -10,6 +10,7 @@ extract_into_parent_list(clickhouse_functions_sources dbms_sources
     extractTimeZoneFromFunctionArguments.cpp
     FunctionsLogical.cpp
     CastOverloadResolver.cpp
+    equals.cpp
 )
 extract_into_parent_list(clickhouse_functions_headers dbms_headers
     IFunction.h
