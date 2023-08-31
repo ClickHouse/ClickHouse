@@ -27,7 +27,7 @@ private:
     size_t hash_functions;
     std::vector<BloomFilterPtr> bloom_filters;
 
-    void fillingBloomFilter(BloomFilterPtr & bf, const HashSet<UInt64> &hashes) const;
+    void fillingBloomFilter(BloomFilterPtr & bf, const HashSet<UInt64> & hashes) const;
 };
 
 
