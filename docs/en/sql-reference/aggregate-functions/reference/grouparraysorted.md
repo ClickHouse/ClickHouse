@@ -1,5 +1,5 @@
  ---
- toc_priority: 108
+ toc_priority: 112
  ---
 
  # groupArraySorted {#groupArraySorted}
@@ -16,7 +16,7 @@
 
  If the parameter is omitted, default value is the size of input.
 
- -   `column` – The value.
+ -   `column` – The value (Integer, String, Float and other Generic types).
 
  **Example**
 
@@ -31,5 +31,18 @@
  │ [0,1,2,3,4,5,6,7,8,9]        │
  └──────────────────────────────┘
  ```
- Also supported by strings and generic values.
+
+
+ Gets all the String implementations of all numbers in column:
+
+ ``` sql
+SELECT groupArraySorted(str) FROM (SELECT toString(number) as str FROM numbers(5));
+
+ ```
+
+ ``` text
+ ┌─groupArraySorted(str)────────┐
+ │ ['0','1','2','3','4']        │
+ └──────────────────────────────┘
+ ```
  

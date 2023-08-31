@@ -15,6 +15,7 @@ void registerAggregateFunctionCount(AggregateFunctionFactory &);
 void registerAggregateFunctionDeltaSum(AggregateFunctionFactory &);
 void registerAggregateFunctionDeltaSumTimestamp(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory &);
+void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantile(AggregateFunctionFactory &);
@@ -82,7 +83,6 @@ void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory &);
 void registerAggregateFunctionAnalysisOfVariance(AggregateFunctionFactory &);
 void registerAggregateFunctionFlameGraph(AggregateFunctionFactory &);
 void registerAggregateFunctionKolmogorovSmirnovTest(AggregateFunctionFactory & factory);
-void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factory);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -110,6 +110,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionDeltaSum(factory);
         registerAggregateFunctionDeltaSumTimestamp(factory);
         registerAggregateFunctionGroupArray(factory);
+        registerAggregateFunctionGroupArraySorted(factory);
         registerAggregateFunctionGroupUniqArray(factory);
         registerAggregateFunctionGroupArrayInsertAt(factory);
         registerAggregateFunctionsQuantile(factory);
@@ -177,7 +178,6 @@ void registerAggregateFunctions()
         registerAggregateFunctionAnalysisOfVariance(factory);
         registerAggregateFunctionFlameGraph(factory);
         registerAggregateFunctionKolmogorovSmirnovTest(factory);
-        registerAggregateFunctionGroupArraySorted(factory);
 
         registerWindowFunctions(factory);
     }
