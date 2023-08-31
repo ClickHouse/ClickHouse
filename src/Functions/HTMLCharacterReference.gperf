@@ -19,8 +19,8 @@ const char *glyph;
 %%
 "AElig", "Æ"
 "AElig;", "Æ"
-"AMP", ""
-"AMP;", ""
+"AMP", "&"
+"AMP;", "&"
 "Aacute", "Á"
 "Aacute;", "Á"
 "Abreve;", "Ă"
