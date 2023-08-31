@@ -3,16 +3,13 @@
 #include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/setThreadName.h>
-#include <Common/MemoryTracker.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/ExecutingGraph.h>
 #include <QueryPipeline/printPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/Context.h>
 #include <Common/scope_guard_safe.h>
-#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/OpenTelemetryTraceContext.h>
 
@@ -100,7 +97,7 @@ void PipelineExecutor::finish()
     tasks.finish();
 }
 
-void PipelineExecutor::execute(size_t num_threads)
+void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
 {
     checkTimeLimit();
     if (num_threads < 1)
@@ -111,7 +108,7 @@ void PipelineExecutor::execute(size_t num_threads)
 
     try
     {
-        executeImpl(num_threads);
+        executeImpl(num_threads, concurrency_control);
 
         /// Execution can be stopped because of exception. Check and rethrow if any.
         for (auto & node : graph->nodes)
@@ -138,12 +135,11 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
 {
     if (!is_execution_initialized)
     {
-        initializeExecution(1);
+        initializeExecution(1, true);
 
         // Acquire slot until we are done
         single_thread_slot = slots->tryAcquire();
-        if (!single_thread_slot)
-            abort(); // Unable to allocate slot for the first thread, but we just allocated at least one slot
+        chassert(single_thread_slot && "Unable to allocate slot for the first thread, but we just allocated at least one slot");
 
         if (yield_flag && *yield_flag)
             return true;
@@ -298,14 +294,16 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 #endif
 }
 
-void PipelineExecutor::initializeExecution(size_t num_threads)
+void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_control)
 {
     is_execution_initialized = true;
 
+    size_t use_threads = num_threads;
+
     /// Allocate CPU slots from concurrency control
-    constexpr size_t min_threads = 1;
+    size_t min_threads = concurrency_control ? 1uz : num_threads;
     slots = ConcurrencyControl::instance().allocate(min_threads, num_threads);
-    size_t use_threads = slots->grantedCount();
+    use_threads = slots->grantedCount();
 
     Queue queue;
     graph->initializeExecution(queue);
@@ -321,7 +319,7 @@ void PipelineExecutor::spawnThreads()
 {
     while (auto slot = slots->tryAcquire())
     {
-        size_t thread_num = threads++;
+        size_t thread_num = threads.fetch_add(1);
 
         /// Count of threads in use should be updated for proper finish() condition.
         /// NOTE: this will not decrease `use_threads` below initially granted count
@@ -353,9 +351,9 @@ void PipelineExecutor::spawnThreads()
     }
 }
 
-void PipelineExecutor::executeImpl(size_t num_threads)
+void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
 {
-    initializeExecution(num_threads);
+    initializeExecution(num_threads, concurrency_control);
 
     bool finished_flag = false;
 

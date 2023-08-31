@@ -4651,3 +4651,19 @@ Interval (in milliseconds) for sending updates with partial data about the resul
 ## max_rows_in_partial_result
 
 Maximum rows to show in the partial result after every real-time update while the query runs (use partial result limit + OFFSET as a value in case of OFFSET in the query).
+
+## validate_tcp_client_information {#validate-tcp-client-information}
+
+Determines whether validation of client information enabled when query packet is received from a client using a TCP connection.
+
+If `true`, an exception will be thrown on invalid client information from the TCP client.
+
+If `false`, the data will not be validated. The server will work with clients of all versions.
+
+The default value is `false`.
+
+**Example**
+
+``` xml
+<validate_tcp_client_information>true</validate_tcp_client_information>
+```
