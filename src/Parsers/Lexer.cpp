@@ -303,6 +303,19 @@ Token Lexer::nextTokenImpl()
 
             return Token(TokenType::Minus, token_begin, pos);
         }
+        case '\xE2':
+        {
+            /// Mathematical minus symbol, UTF-8
+            if (pos + 3 <= end && pos[1] == '\x88' && pos[2] == '\x92')
+            {
+                pos += 3;
+                return Token(TokenType::Minus, token_begin, pos);
+            }
+            else
+            {
+                return Token(TokenType::Error, token_begin, ++pos);
+            }
+        }
         case '*':
             ++pos;
             return Token(TokenType::Asterisk, token_begin, pos);
