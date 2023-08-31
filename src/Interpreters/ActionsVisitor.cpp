@@ -1209,8 +1209,13 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             else if (data.is_create_parameterized_view && query_parameter)
             {
                 const auto data_type = DataTypeFactory::instance().get(query_parameter->type);
-                ColumnWithTypeAndName column(data_type,query_parameter->getColumnName());
-                data.addColumn(column);
+                /// During analysis for CREATE VIEW of a parameterized view, if parameter is
+                /// used multiple times, column is only added once
+                if (!data.hasColumn(query_parameter->name))
+                {
+                    ColumnWithTypeAndName column(data_type, query_parameter->name);
+                    data.addColumn(column);
+                }
 
                 argument_types.push_back(data_type);
                 argument_names.push_back(query_parameter->name);
