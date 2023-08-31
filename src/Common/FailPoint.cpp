@@ -170,13 +170,13 @@ void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfig
 {
     String root_key = "fail_points_active";
 
-    Poco::Util::AbstractConfiguration::Keys tables_keys;
-    config.keys(root_key, tables_keys);
+    Poco::Util::AbstractConfiguration::Keys fail_point_names;
+    config.keys(root_key, fail_point_names);
 
-    for (const auto & table_key : tables_keys)
+    for (const auto & fail_point_name : fail_point_names)
     {
-        if (ConfigHelper::getBool(config, root_key + "." + table_key))
-            FailPointInjection::enableFailPoint(table_key);
+        if (ConfigHelper::getBool(config, root_key + "." + fail_point_name))
+            FailPointInjection::enableFailPoint(fail_point_name);
     }
 }
 
