@@ -46,7 +46,7 @@ void MultipleAccessStorage::setStorages(const std::vector<StoragePtr> & storages
 {
     std::lock_guard lock{mutex};
     nested_storages = std::make_shared<const Storages>(storages);
-    ids_cache.reset();
+    ids_cache.clear();
 }
 
 void MultipleAccessStorage::addStorage(const StoragePtr & new_storage)
@@ -69,7 +69,7 @@ void MultipleAccessStorage::removeStorage(const StoragePtr & storage_to_remove)
     auto new_storages = std::make_shared<Storages>(*nested_storages);
     new_storages->erase(new_storages->begin() + index);
     nested_storages = new_storages;
-    ids_cache.reset();
+    ids_cache.clear();
 }
 
 std::vector<StoragePtr> MultipleAccessStorage::getStorages()
@@ -502,4 +502,15 @@ void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
     throwBackupNotAllowed();
 }
 
+bool MultipleAccessStorage::containsStorage(std::string_view storage_type) const
+{
+    auto storages = getStoragesInternal();
+
+    for (const auto & storage : *storages)
+    {
+        if (storage->getStorageType() == storage_type)
+            return true;
+    }
+    return false;
+}
 }

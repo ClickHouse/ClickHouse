@@ -77,15 +77,6 @@ void ReplicatedMergeTreeQueue::initialize(zkutil::ZooKeeperPtr zookeeper)
         virtual_parts.add(part_name, nullptr);
     }
 
-    /// Drop parts can negatively affect virtual parts. So when we load parts
-    /// from zookeeper we can break invariant with virtual parts. To fix this we
-    /// have it here.
-    for (const LogEntryPtr & entry : queue)
-    {
-        if (entry->isDropPart(format_version))
-            virtual_parts.removePartAndCoveredParts(*entry->getDropRange(format_version));
-    }
-
     LOG_TRACE(log, "Queue initialized");
 }
 
@@ -866,7 +857,7 @@ ActiveDataPartSet getPartNamesToMutate(
 
 }
 
-void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
+void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallbackPtr watch_callback)
 {
     std::lock_guard lock(update_mutations_mutex);
 
@@ -2169,7 +2160,7 @@ CommittingBlocks BaseMergePredicate<VirtualPartsT, MutationsStateT>::getCommitti
     {
         auto & response = locks_children[i];
         if (response.error != Coordination::Error::ZOK && !partition_ids_hint)
-            throw Coordination::Exception(response.error, paths[i]);
+            throw Coordination::Exception::fromPath(response.error, paths[i]);
 
         if (response.error != Coordination::Error::ZOK)
         {

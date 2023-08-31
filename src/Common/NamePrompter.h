@@ -117,6 +117,11 @@ public:
         DB::appendHintsMessage(error_message, hints);
     }
 
+    String getHintsMessage(const String & name) const
+    {
+        return getHintsErrorMessageSuffix(getHints(name));
+    }
+
     IHints() = default;
 
     IHints(const IHints &) = default;

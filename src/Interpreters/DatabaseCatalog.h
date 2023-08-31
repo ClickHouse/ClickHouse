@@ -44,10 +44,7 @@ public:
         if (database)
         {
             for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
-            {
-                const auto & storage_id = table_it->table()->getStorageID();
-                result.emplace_back(storage_id.getTableName());
-            }
+                result.emplace_back(table_it->name());
         }
         return result;
     }
@@ -308,7 +305,7 @@ private:
 
     static inline size_t getFirstLevelIdx(const UUID & uuid)
     {
-        return uuid.toUnderType().items[0] >> (64 - bits_for_first_level);
+        return UUIDHelpers::getHighBytes(uuid) >> (64 - bits_for_first_level);
     }
 
     void dropTableDataTask();

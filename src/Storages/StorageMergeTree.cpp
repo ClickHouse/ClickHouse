@@ -220,7 +220,8 @@ void StorageMergeTree::read(
             local_context, query_info.query,
             table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
 
-        auto cluster = local_context->getCluster(local_context->getSettingsRef().cluster_for_parallel_replicas);
+        String cluster_for_parallel_replicas = local_context->getSettingsRef().cluster_for_parallel_replicas;
+        auto cluster = local_context->getCluster(cluster_for_parallel_replicas);
 
         Block header;
 
@@ -287,7 +288,7 @@ StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & met
         *this, metadata_snapshot, settings.max_partitions_per_insert_block, local_context);
 }
 
-void StorageMergeTree::checkTableCanBeDropped() const
+void StorageMergeTree::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const
 {
     if (!supportsReplication() && isStaticStorage())
         return;
@@ -919,7 +920,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
 
         if (getCurrentMutationVersion(left, lock) != getCurrentMutationVersion(right, lock))
         {
-            disable_reason = "Some parts have differ mmutatuon version";
+            disable_reason = "Some parts have different mutation version";
             return false;
         }
 
@@ -1988,6 +1989,7 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
         renamed_parts.old_and_new_names[i].old_name.clear();
 
         results.push_back(PartitionCommandResultInfo{
+            .command_type = "ATTACH_PART",
             .partition_id = loaded_parts[i]->info.partition_id,
             .part_name = loaded_parts[i]->name,
             .old_part_name = old_name,

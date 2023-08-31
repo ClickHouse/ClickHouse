@@ -17,7 +17,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
 
-
 namespace CurrentMetrics
 {
     extern const Metric ReplicatedChecks;
