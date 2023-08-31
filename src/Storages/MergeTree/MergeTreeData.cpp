@@ -1257,6 +1257,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         if (isRetryableException(e))
             throw;
 
+        LOG_DEBUG(log, "Failed to load data part {}, Exception {}", part_name, e.message());
         mark_broken();
         return res;
     }
@@ -1269,13 +1270,20 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         throw;
     }
 #if USE_AZURE_BLOB_STORAGE
-    catch (const Azure::Core::Http::TransportException &)
+    catch (const Azure::Core::Http::TransportException & e)
     {
+        LOG_DEBUG(log, "Failed to load data part {}, Exception {}", part_name, e.Message);
+        throw;
+    }
+    catch (const Azure::Core::RequestFailedException & e)
+    {
+        LOG_DEBUG(log, "Failed to load data part {}, Exception {}", part_name, e.Message);
         throw;
     }
 #endif
     catch (...)
     {
+        LOG_DEBUG(log, "Failed to load data part {}, unknown exception", part_name);
         mark_broken();
         return res;
     }
