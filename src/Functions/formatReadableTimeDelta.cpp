@@ -300,7 +300,7 @@ public:
         /// To output separators between parts: ", " and " and ".
         bool has_previous_output = false;
 
-        for (const auto & unit: selected_units.first(selected_units.size() - 1u))
+        for (const auto & unit: selected_units)
         {
             if (unlikely(duration.count() + 1.0 == duration.count()))
             {
@@ -313,20 +313,13 @@ public:
                 return;
             }
 
-            has_previous_output |= processUnit(unit, duration, buf_to, has_previous_output);
+            if (processUnit(unit, selected_units.back(), duration, buf_to, has_previous_output)) {
+                return;
+            }
         }
-
-        if (has_previous_output)
-        {
-            writeCString(" and ", buf_to);
-        }
-
-        // and print the last one (and don't skip)
-        const auto & last_unit = selected_units.back();
-        justPrintCountAndUnit(last_unit.convertToUnit(duration), last_unit.name, buf_to);
     }
 
-    static bool processUnit(const Unit & unit, std::chrono::duration<Float64> & duration, WriteBuffer & buf_to, bool has_previous_output)
+    static bool processUnit(const Unit & unit, const Unit & smallest_unit, std::chrono::duration<Float64> & duration, WriteBuffer & buf_to, bool & has_previous_output)
     {
         const std::string_view unit_name = unit.name;
         const UInt64 duration_in_unit = unit.convertToUnit(duration);
@@ -339,15 +332,23 @@ public:
             /// Nothing to print (skip)
             return false;
         }
+        
+        /// Remainder is zero, which means all smaller units will be skipped
+        const bool unit_is_last_one = (unit == smallest_unit) || (smallest_unit.convertToUnit(duration) == 0);
 
         if (has_previous_output)
         {
             /// Need delimiter between parts. The last delimiter is " and ", all previous are comma.
-            writeCString(", ", buf_to);
+            if (unit_is_last_one)
+                writeCString(" and ", buf_to);
+            else 
+                writeCString(", ", buf_to);
         }
 
         justPrintCountAndUnit(duration_in_unit, unit_name, buf_to);
-        return true;
+        has_previous_output |= true;
+        
+        return unit_is_last_one;
     }
 
     static void justPrintCountAndUnit(UInt64 count, std::string_view unit_name, WriteBuffer & buf_to)
