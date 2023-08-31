@@ -945,6 +945,7 @@ void BackupsWorker::setNumFilesAndSize(const OperationID & id, size_t num_files,
                                        UInt64 uncompressed_size, UInt64 compressed_size, size_t num_read_files, UInt64 num_read_bytes)
 
 {
+    /// Current operation's info entry is updated here. The backup_log table is updated on its basis within a subsequent setStatus() call.
     std::lock_guard lock{infos_mutex};
     auto it = infos.find(id);
     if (it == infos.end())
