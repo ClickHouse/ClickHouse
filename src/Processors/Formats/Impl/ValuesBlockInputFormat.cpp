@@ -54,66 +54,8 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(
 {
 }
 
-Chunk ValuesBlockInputFormat::generate()
-{
-    if (total_rows == 0)
-        readPrefix();
-
-    const Block & header = getPort().getHeader();
-    MutableColumns columns = header.cloneEmptyColumns();
-    block_missing_values.clear();
-    size_t chunk_start = getDataOffsetMaybeCompressed(*buf);
-
-    for (size_t rows_in_block = 0; rows_in_block < params.max_block_size; ++rows_in_block)
-    {
-        try
-        {
-            skipWhitespaceIfAny(*buf);
-            if (buf->eof() || *buf->position() == ';')
-                break;
-            readRow(columns, rows_in_block);
-        }
-        catch (Exception & e)
-        {
-            if (isParseError(e.code()))
-                e.addMessage(" at row " + std::to_string(total_rows));
-            throw;
-        }
-    }
-
-    approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(*buf) - chunk_start;
-
-    /// Evaluate expressions, which were parsed using templates, if any
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        if (!templates[i] || !templates[i]->rowsCount())
-            continue;
-
-        const auto & expected_type = header.getByPosition(i).type;
-        if (columns[i]->empty())
-            columns[i] = IColumn::mutate(templates[i]->evaluateAll(block_missing_values, i, expected_type));
-        else
-        {
-            ColumnPtr evaluated = templates[i]->evaluateAll(block_missing_values, i, expected_type, columns[i]->size());
-            columns[i]->insertRangeFrom(*evaluated, 0, evaluated->size());
-        }
-    }
-
-    if (columns.empty() || columns[0]->empty())
-    {
-        readSuffix();
-        return {};
-    }
-
-    for (const auto & column : columns)
-        column->finalize();
-
-    size_t rows_in_block = columns[0]->size();
-    return Chunk{std::move(columns), rows_in_block};
-}
-
 /// Can be used in fileSegmentationEngine for parallel parsing of Values
-static bool skipToNextRow(PeekableReadBuffer * buf, size_t min_chunk_bytes, int balance)
+bool ValuesBlockInputFormat::skipToNextRow(ReadBuffer * buf, size_t min_chunk_bytes, int balance)
 {
     skipWhitespaceIfAny(*buf);
     if (buf->eof() || *buf->position() == ';')
@@ -154,6 +96,80 @@ static bool skipToNextRow(PeekableReadBuffer * buf, size_t min_chunk_bytes, int 
     if (!buf->eof() && *buf->position() == ',')
         ++buf->position();
     return true;
+}
+
+Chunk ValuesBlockInputFormat::generate()
+{
+    if (total_rows == 0)
+        readPrefix();
+
+    const Block & header = getPort().getHeader();
+    MutableColumns columns = header.cloneEmptyColumns();
+    block_missing_values.clear();
+    size_t chunk_start = getDataOffsetMaybeCompressed(*buf);
+
+    size_t rows_in_block = 0;
+    for (; rows_in_block < params.max_block_size; ++rows_in_block)
+    {
+        try
+        {
+            skipWhitespaceIfAny(*buf);
+            if (buf->eof() || *buf->position() == ';')
+                break;
+            if (need_only_count)
+                skipToNextRow(buf.get(), 1, 0);
+            else
+                readRow(columns, rows_in_block);
+        }
+        catch (Exception & e)
+        {
+            if (isParseError(e.code()))
+                e.addMessage(" at row " + std::to_string(total_rows));
+            throw;
+        }
+    }
+
+    approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(*buf) - chunk_start;
+
+    if (need_only_count)
+    {
+        if (!rows_in_block)
+        {
+            readSuffix();
+            return {};
+        }
+
+        total_rows += rows_in_block;
+        return getChunkForCount(rows_in_block);
+    }
+
+    /// Evaluate expressions, which were parsed using templates, if any
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (!templates[i] || !templates[i]->rowsCount())
+            continue;
+
+        const auto & expected_type = header.getByPosition(i).type;
+        if (columns[i]->empty())
+            columns[i] = IColumn::mutate(templates[i]->evaluateAll(block_missing_values, i, expected_type));
+        else
+        {
+            ColumnPtr evaluated = templates[i]->evaluateAll(block_missing_values, i, expected_type, columns[i]->size());
+            columns[i]->insertRangeFrom(*evaluated, 0, evaluated->size());
+        }
+    }
+
+    if (columns.empty() || columns[0]->empty())
+    {
+        readSuffix();
+        return {};
+    }
+
+    for (const auto & column : columns)
+        column->finalize();
+
+    size_t rows = columns[0]->size();
+    return Chunk{std::move(columns), rows};
 }
 
 /// We need continuous memory containing the expression to use Lexer
