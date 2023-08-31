@@ -1,8 +1,4 @@
 <clickhouse>
-    <logger>
-        <level>test</level>
-    </logger>
-
     <storage_configuration>
         <disks>
             <s3>
@@ -13,30 +9,18 @@
             </s3>
         </disks>
         <policies>
-            <s3>
+            <two_disks>
                 <volumes>
                     <default>
                         <disk>default</disk>
                     </default>
-                    <main>
+                    <external>
                         <disk>s3</disk>
-                        <prefer_not_to_merge>False</prefer_not_to_merge>
-                        <perform_ttl_move_on_insert>True</perform_ttl_move_on_insert>
-                    </main>
+                    </external>
                 </volumes>
-            </s3>
-            <s3_only>
-                <volumes>
-                    <main>
-                        <disk>s3</disk>
-                    </main>
-                </volumes>
-            </s3_only>
+            </two_disks>
         </policies>
     </storage_configuration>
 
-    <merge_tree>
-        <allow_remote_fs_zero_copy_replication>true</allow_remote_fs_zero_copy_replication>
-    </merge_tree>
     <allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
 </clickhouse>

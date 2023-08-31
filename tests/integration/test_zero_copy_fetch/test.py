@@ -45,7 +45,7 @@ CREATE TABLE test1 (EventDate Date, CounterID UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse-tables/test1', 'r1')
 PARTITION BY toMonday(EventDate)
 ORDER BY (CounterID, EventDate)
-SETTINGS index_granularity = 8192, storage_policy = 's3'"""
+SETTINGS index_granularity = 8192, storage_policy = 's3', temporary_directories_lifetime=1"""
     )
 
     node1.query(
