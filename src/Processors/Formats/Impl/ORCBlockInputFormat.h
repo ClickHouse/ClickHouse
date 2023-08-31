@@ -52,7 +52,7 @@ private:
     std::vector<int> include_indices;
 
     BlockMissingValues block_missing_values;
-    size_t approx_bytes_read_for_chunk = 0;
+    size_t approx_bytes_read_for_chunk;
 
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_stripes;

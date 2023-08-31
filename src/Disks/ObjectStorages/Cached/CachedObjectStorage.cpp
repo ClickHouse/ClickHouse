@@ -16,6 +16,11 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 CachedObjectStorage::CachedObjectStorage(
     ObjectStoragePtr object_storage_,
     FileCachePtr cache_,
@@ -74,6 +79,8 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
+    if (objects.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Received empty list of objects to read");
     return object_storage->readObjects(objects, patchSettings(read_settings), read_hint, file_size);
 }
 
@@ -112,6 +119,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
             cache,
             implementation_buffer->getFileName(),
             key,
+            modified_write_settings.is_file_cache_persistent,
             CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
             modified_write_settings);
     }
@@ -130,7 +138,6 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
 
 void CachedObjectStorage::removeObject(const StoredObject & object)
 {
-    removeCacheIfExists(object.remote_path);
     object_storage->removeObject(object);
 }
 
@@ -154,6 +161,20 @@ void CachedObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
         removeCacheIfExists(object.remote_path);
 
     object_storage->removeObjectsIfExist(objects);
+}
+
+ReadSettings CachedObjectStorage::getAdjustedSettingsFromMetadataFile(const ReadSettings & settings, const std::string & path) const
+{
+    ReadSettings new_settings{settings};
+    new_settings.is_file_cache_persistent = isFileWithPersistentCache(path) && cache_settings.do_not_evict_index_and_mark_files;
+    return new_settings;
+}
+
+WriteSettings CachedObjectStorage::getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & path) const
+{
+    WriteSettings new_settings{settings};
+    new_settings.is_file_cache_persistent = isFileWithPersistentCache(path) && cache_settings.do_not_evict_index_and_mark_files;
+    return new_settings;
 }
 
 void CachedObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT

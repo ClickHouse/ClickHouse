@@ -24,8 +24,6 @@
 #include <sys/stat.h>
 #include <pwd.h>
 
-#include <Interpreters/Context.h>
-
 #include <Coordination/FourLetterCommand.h>
 #include <Coordination/KeeperAsynchronousMetrics.h>
 
@@ -36,19 +34,14 @@
 #include "Core/Defines.h"
 #include "config.h"
 #include "config_version.h"
-#include "config_tools.h"
-
 
 #if USE_SSL
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
-#    include <Server/CertificateReloader.h>
 #endif
 
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/KeeperTCPHandlerFactory.h>
-
-#include <Disks/registerDisks.h>
 
 
 int mainEntryClickHouseKeeper(int argc, char ** argv)
@@ -110,18 +103,19 @@ void Keeper::createServer(const std::string & listen_host, const char * port_nam
     }
     catch (const Poco::Exception &)
     {
+        std::string message = "Listen [" + listen_host + "]:" + std::to_string(port) + " failed: " + getCurrentExceptionMessage(false);
+
         if (listen_try)
         {
-            LOG_WARNING(&logger(), "Listen [{}]:{} failed: {}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, "
-                "then consider to "
+            LOG_WARNING(&logger(), "{}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
                 "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
                 "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
                 " Example for disabled IPv4: <listen_host>::</listen_host>",
-                listen_host, port, getCurrentExceptionMessage(false));
+                message);
         }
         else
         {
-            throw Exception(ErrorCodes::NETWORK_ERROR, "Listen [{}]:{} failed: {}", listen_host, port, getCurrentExceptionMessage(false));
+            throw Exception::createDeprecated(message, ErrorCodes::NETWORK_ERROR);
         }
     }
 }
@@ -137,10 +131,7 @@ int Keeper::run()
     if (config().hasOption("help"))
     {
         Poco::Util::HelpFormatter help_formatter(Keeper::options());
-        auto header_str = fmt::format("{0} [OPTION] [-- [ARG]...]\n"
-#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
-                                      "{0} client [OPTION]\n"
-#endif
+        auto header_str = fmt::format("{} [OPTION] [-- [ARG]...]\n"
                                       "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010",
                                       commandName());
         help_formatter.setHeader(header_str);
@@ -149,7 +140,7 @@ int Keeper::run()
     }
     if (config().hasOption("version"))
     {
-        std::cout << VERSION_NAME << " keeper version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
+        std::cout << DBMS_NAME << " keeper version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
         return 0;
     }
 
@@ -205,12 +196,9 @@ void Keeper::defineOptions(Poco::Util::OptionSet & options)
     BaseDaemon::defineOptions(options);
 }
 
-namespace
+struct Keeper::KeeperHTTPContext : public IHTTPContext
 {
-
-struct KeeperHTTPContext : public IHTTPContext
-{
-    explicit KeeperHTTPContext(ContextPtr context_)
+    explicit KeeperHTTPContext(TinyContextPtr context_)
         : context(std::move(context_))
     {}
 
@@ -231,12 +219,12 @@ struct KeeperHTTPContext : public IHTTPContext
 
     uint64_t getMaxFieldNameSize() const override
     {
-        return context->getConfigRef().getUInt64("keeper_server.http_max_field_name_size", 128 * 1024);
+        return context->getConfigRef().getUInt64("keeper_server.http_max_field_name_size", 1048576);
     }
 
     uint64_t getMaxFieldValueSize() const override
     {
-        return context->getConfigRef().getUInt64("keeper_server.http_max_field_value_size", 128 * 1024);
+        return context->getConfigRef().getUInt64("keeper_server.http_max_field_value_size", 1048576);
     }
 
     uint64_t getMaxChunkSize() const override
@@ -254,14 +242,12 @@ struct KeeperHTTPContext : public IHTTPContext
         return {context->getConfigRef().getInt64("keeper_server.http_send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0};
     }
 
-    ContextPtr context;
+    TinyContextPtr context;
 };
 
-HTTPContextPtr httpContext()
+HTTPContextPtr Keeper::httpContext()
 {
-    return std::make_shared<KeeperHTTPContext>(Context::getGlobalContextInstance());
-}
-
+    return std::make_shared<KeeperHTTPContext>(tiny_context);
 }
 
 int Keeper::main(const std::vector<std::string> & /*args*/)
@@ -287,27 +273,13 @@ try
     std::string path;
 
     if (config().has("keeper_server.storage_path"))
-    {
         path = config().getString("keeper_server.storage_path");
-    }
     else if (config().has("keeper_server.log_storage_path"))
-    {
         path = std::filesystem::path(config().getString("keeper_server.log_storage_path")).parent_path();
-    }
     else if (config().has("keeper_server.snapshot_storage_path"))
-    {
         path = std::filesystem::path(config().getString("keeper_server.snapshot_storage_path")).parent_path();
-    }
-    else if (std::filesystem::is_directory(std::filesystem::path{config().getString("path", DBMS_DEFAULT_PATH)} / "coordination"))
-    {
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-                        "By default 'keeper.storage_path' could be assigned to {}, but the directory {} already exists. Please specify 'keeper.storage_path' in the keeper configuration explicitly",
-                        KEEPER_DEFAULT_PATH, String{std::filesystem::path{config().getString("path", DBMS_DEFAULT_PATH)} / "coordination"});
-    }
     else
-    {
-        path = KEEPER_DEFAULT_PATH;
-    }
+        path = std::filesystem::path{KEEPER_DEFAULT_PATH};
 
     std::filesystem::create_directories(path);
 
@@ -329,8 +301,8 @@ try
 
     /// Initialize DateLUT early, to not interfere with running time of first query.
     LOG_DEBUG(log, "Initializing DateLUT.");
-    DateLUT::serverTimezoneInstance();
-    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::serverTimezoneInstance().getTimeZone());
+    DateLUT::instance();
+    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::instance().getTimeZone());
 
     /// Don't want to use DNS cache
     DNSResolver::instance().setDisableCacheFlag();
@@ -339,22 +311,10 @@ try
     std::mutex servers_lock;
     auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
 
-    auto shared_context = Context::createShared();
-    auto global_context = Context::createGlobal(shared_context.get());
-
-    global_context->makeGlobalContext();
-    global_context->setApplicationType(Context::ApplicationType::KEEPER);
-    global_context->setPath(path);
-    global_context->setRemoteHostFilter(config());
-
-    if (config().has("macros"))
-        global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
-
-    registerDisks(/*global_skip_access_check=*/false);
-
+    tiny_context = std::make_shared<TinyContext>();
     /// This object will periodically calculate some metrics.
     KeeperAsynchronousMetrics async_metrics(
-        global_context,
+        tiny_context,
         config().getUInt("asynchronous_metrics_update_period_s", 1),
         [&]() -> std::vector<ProtocolServerMetrics>
         {
@@ -379,12 +339,12 @@ try
     }
 
     /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
-    global_context->initializeKeeperDispatcher(/* start_async = */ false);
-    FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
+    tiny_context->initializeKeeperDispatcher(/* start_async = */ true);
+    FourLetterCommandFactory::registerCommands(*tiny_context->getKeeperDispatcher());
 
-    auto config_getter = [&] () -> const Poco::Util::AbstractConfiguration &
+    auto config_getter = [this] () -> const Poco::Util::AbstractConfiguration &
     {
-        return global_context->getConfigRef();
+        return tiny_context->getConfigRef();
     };
 
     auto tcp_receive_timeout = config().getInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC);
@@ -406,7 +366,7 @@ try
                 "Keeper (tcp): " + address.toString(),
                 std::make_unique<TCPServer>(
                     new KeeperTCPHandlerFactory(
-                        config_getter, global_context->getKeeperDispatcher(),
+                        config_getter, tiny_context->getKeeperDispatcher(),
                         tcp_receive_timeout, tcp_send_timeout, false), server_pool, socket));
         });
 
@@ -424,7 +384,7 @@ try
                 "Keeper with secure protocol (tcp_secure): " + address.toString(),
                 std::make_unique<TCPServer>(
                     new KeeperTCPHandlerFactory(
-                        config_getter, global_context->getKeeperDispatcher(),
+                        config_getter, tiny_context->getKeeperDispatcher(),
                         tcp_receive_timeout, tcp_send_timeout, true), server_pool, socket));
 #else
             UNUSED(port);
@@ -466,31 +426,17 @@ try
 
     zkutil::EventPtr unused_event = std::make_shared<Poco::Event>();
     zkutil::ZooKeeperNodeCache unused_cache([] { return nullptr; });
-
-    const std::string cert_path = config().getString("openSSL.server.certificateFile", "");
-    const std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
-
-    std::vector<std::string> extra_paths = {include_from_path};
-    if (!cert_path.empty())
-        extra_paths.emplace_back(cert_path);
-    if (!key_path.empty())
-        extra_paths.emplace_back(key_path);
-
     /// ConfigReloader have to strict parameters which are redundant in our case
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
-        extra_paths,
+        include_from_path,
         config().getString("path", ""),
         std::move(unused_cache),
         unused_event,
         [&](ConfigurationPtr config, bool /* initial_loading */)
         {
             if (config->has("keeper_server"))
-                global_context->updateKeeperConfiguration(*config);
-
-#if USE_SSL
-            CertificateReloader::instance().tryLoad(*config);
-#endif
+                tiny_context->updateKeeperConfiguration(*config);
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
@@ -514,14 +460,14 @@ try
             LOG_INFO(log, "Closed all listening sockets.");
 
         if (current_connections > 0)
-            current_connections = waitServersToFinish(*servers, servers_lock, config().getInt("shutdown_wait_unfinished", 5));
+            current_connections = waitServersToFinish(*servers, config().getInt("shutdown_wait_unfinished", 5));
 
         if (current_connections)
             LOG_INFO(log, "Closed connections to Keeper. But {} remain. Probably some users cannot finish their connections after context shutdown.", current_connections);
         else
             LOG_INFO(log, "Closed connections to Keeper.");
 
-        global_context->shutdownKeeperDispatcher();
+        tiny_context->shutdownKeeperDispatcher();
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();

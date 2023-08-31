@@ -21,7 +21,7 @@ class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
 /// Returns true if provided ALTER type can be executed ON CLUSTER
-bool isSupportedAlterTypeForOnClusterDDLQuery(int type);
+bool isSupportedAlterType(int type);
 
 struct DDLQueryOnClusterParams
 {

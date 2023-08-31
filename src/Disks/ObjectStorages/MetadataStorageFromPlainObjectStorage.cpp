@@ -135,11 +135,9 @@ void MetadataStorageFromPlainObjectStorageTransaction::addBlobToMetadata(
 {
     /// Noop, local metadata files is only one file, it is the metadata file itself.
 }
-
-UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTransaction::unlinkMetadata(const std::string &)
+void MetadataStorageFromPlainObjectStorageTransaction::unlinkMetadata(const std::string &)
 {
-    /// No hardlinks, so will always remove file.
-    return std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
+    /// Noop, no separate metadata.
 }
 
 }

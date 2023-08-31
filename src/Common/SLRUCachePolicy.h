@@ -9,8 +9,9 @@ namespace DB
 {
 
 /// Cache policy SLRU evicts entries which were used only once and are not used for a long time,
-/// this policy protects entries which were used more then once from a sequential scan. Also see cache policy LRU for reference.
-/// WeightFunction is a functor that takes Mapped as a parameter and returns "weight" (approximate size) of that value.
+/// this policy protects entries which were used more then once from a sequential scan.
+/// WeightFunction is a functor that takes Mapped as a parameter and returns "weight" (approximate size)
+/// of that value.
 /// Cache starts to evict entries when their total weight exceeds max_size_in_bytes.
 /// Value weight should not change after insertion.
 /// To work with the thread-safe implementation of this class use a class "CacheBase" with first parameter "SLRU"
@@ -29,9 +30,8 @@ public:
       * max_protected_size == 0 means that the default protected size is equal to half of the total max size.
       */
     /// TODO: construct from special struct with cache policy parameters (also with max_protected_size).
-    SLRUCachePolicy(size_t max_size_in_bytes_, size_t max_count_, double size_ratio_, OnWeightLossFunction on_weight_loss_function_)
+    SLRUCachePolicy(size_t max_size_in_bytes_, size_t max_count_, double size_ratio, OnWeightLossFunction on_weight_loss_function_)
         : Base(std::make_unique<NoCachePolicyUserQuota>())
-        , size_ratio(size_ratio_)
         , max_protected_size(static_cast<size_t>(max_size_in_bytes_ * std::min(1.0, size_ratio)))
         , max_size_in_bytes(max_size_in_bytes_)
         , max_count(max_count_)
@@ -54,22 +54,7 @@ public:
         return max_size_in_bytes;
     }
 
-    void setMaxCount(size_t max_count_, std::lock_guard<std::mutex> & /* cache_lock */) override
-    {
-        max_count = max_count_;
-        removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
-        removeOverflow(probationary_queue, max_size_in_bytes, current_size_in_bytes, /*is_protected=*/false);
-    }
-
-    void setMaxSize(size_t max_size_in_bytes_, std::lock_guard<std::mutex> & /* cache_lock */) override
-    {
-        max_protected_size = static_cast<size_t>(max_size_in_bytes_ * std::min(1.0, size_ratio));
-        max_size_in_bytes = max_size_in_bytes_;
-        removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
-        removeOverflow(probationary_queue, max_size_in_bytes, current_size_in_bytes, /*is_protected=*/false);
-    }
-
-    void clear(std::lock_guard<std::mutex> & /* cache_lock */) override
+    void reset(std::lock_guard<std::mutex> & /* cache_lock */) override
     {
         cells.clear();
         probationary_queue.clear();
@@ -83,13 +68,12 @@ public:
         auto it = cells.find(key);
         if (it == cells.end())
             return;
-
         auto & cell = it->second;
-
         current_size_in_bytes -= cell.size;
         if (cell.is_protected)
+        {
             current_protected_size -= cell.size;
-
+        }
         auto & queue = cell.is_protected ? protected_queue : probationary_queue;
         queue.erase(cell.queue_iterator);
         cells.erase(it);
@@ -208,17 +192,16 @@ private:
 
     Cells cells;
 
-    const double size_ratio;
     size_t current_protected_size = 0;
     size_t current_size_in_bytes = 0;
-    size_t max_protected_size;
-    size_t max_size_in_bytes;
-    size_t max_count;
+    const size_t max_protected_size;
+    const size_t max_size_in_bytes;
+    const size_t max_count;
 
     WeightFunction weight_function;
     OnWeightLossFunction on_weight_loss_function;
 
-    void removeOverflow(SLRUQueue & queue, size_t max_weight_size, size_t & current_weight_size, bool is_protected)
+    void removeOverflow(SLRUQueue & queue, const size_t max_weight_size, size_t & current_weight_size, bool is_protected)
     {
         size_t current_weight_lost = 0;
         size_t queue_size = queue.size();
@@ -240,7 +223,8 @@ private:
         {
             need_remove = [&]()
             {
-                return ((max_count != 0 && cells.size() > max_count) || (current_weight_size > max_weight_size)) && (queue_size > 0);
+                return ((max_count != 0 && cells.size() > max_count)
+                || (current_weight_size > max_weight_size)) && (queue_size > 0);
             };
         }
 
@@ -250,7 +234,10 @@ private:
 
             auto it = cells.find(key);
             if (it == cells.end())
-                std::terminate(); // Queue became inconsistent
+            {
+                // Queue became inconsistent
+                abort();
+            }
 
             auto & cell = it->second;
 
@@ -275,7 +262,10 @@ private:
             on_weight_loss_function(current_weight_lost);
 
         if (current_size_in_bytes > (1ull << 63))
-            std::terminate(); // Queue became inconsistent
+        {
+            // Queue became inconsistent
+            abort();
+        }
     }
 };
 

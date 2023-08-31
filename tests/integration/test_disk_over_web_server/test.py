@@ -36,7 +36,6 @@ def cluster():
             with_installed_binary=True,
             image="clickhouse/clickhouse-server",
             tag="22.8.14.53",
-            allow_analyzer=False,
         )
 
         cluster.start()
@@ -45,8 +44,6 @@ def cluster():
             node.query(
                 f"CREATE TABLE data{i} (id Int32) ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'def', min_bytes_for_wide_part=1;"
             )
-
-            node.query("SYSTEM STOP MERGES")
 
             for _ in range(10):
                 node.query(

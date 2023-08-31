@@ -329,8 +329,8 @@ SELECT count() FROM system.schema_inference_cache WHERE storage='S3'
 ## Text formats {#text-formats}
 
 For text formats, ClickHouse reads the data row by row, extracts column values according to the format,
-and then uses some recursive parsers and heuristics to determine the type for each value. The maximum number of rows and bytes read from the data in schema inference
-is controlled by the settings `input_format_max_rows_to_read_for_schema_inference` (25000 by default) and `input_format_max_bytes_to_read_for_schema_inference` (32Mb by default).
+and then uses some recursive parsers and heuristics to determine the type for each value. The maximum number of rows read from the data in schema inference
+is controlled by the setting `input_format_max_rows_to_read_for_schema_inference` with default value 25000.
 By default, all inferred types are [Nullable](../sql-reference/data-types/nullable.md), but you can change this by setting `schema_inference_make_columns_nullable` (see examples in the [settings](#settings-for-text-formats) section).
 
 ### JSON formats {#json-formats}
@@ -1144,15 +1144,13 @@ Line: value_1=2, value_2="Some string 2", value_3="[4, 5, NULL]"$$)
 
 ### Settings for text formats {#settings-for-text-formats}
 
-#### input_format_max_rows_to_read_for_schema_inference/input_format_max_bytes_to_read_for_schema_inference
+#### input_format_max_rows_to_read_for_schema_inference
 
-These settings control the amount of data to be read while schema inference.
-The more rows/bytes are read, the more time is spent on schema inference, but the greater the chance to
+This setting controls the maximum number of rows to be read while schema inference.
+The more rows are read, the more time is spent on schema inference, but the greater the chance to
 correctly determine the types (especially when the data contains a lot of nulls).
 
-Default values:
--   `25000` for `input_format_max_rows_to_read_for_schema_inference`.
--   `33554432` (32 Mb) for `input_format_max_bytes_to_read_for_schema_inference`.
+Default value: `25000`.
 
 #### column_names_for_schema_inference
 
@@ -1194,7 +1192,7 @@ DESC format(JSONEachRow, '{"id" : 1, "age" : 25, "name" : "Josh", "status" : nul
 #### schema_inference_make_columns_nullable
 
 Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
-If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will be `Nullable` only if `input_format_null_as_default` is disabled and the column contains `NULL` in a sample that is parsed during schema inference.
+If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference.
 
 Enabled by default.
 
@@ -1217,8 +1215,7 @@ DESC format(JSONEachRow, $$
 └─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 ```sql
-SET schema_inference_make_columns_nullable = 0;
-SET input_format_null_as_default = 0;    
+SET schema_inference_make_columns_nullable = 0
 DESC format(JSONEachRow, $$
                                 {"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}
                                 {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
@@ -1233,25 +1230,6 @@ DESC format(JSONEachRow, $$
 │ status  │ Nullable(String) │              │                    │         │                  │                │
 │ hobbies │ Array(String)    │              │                    │         │                  │                │
 └─────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-```
-
-```sql
-SET schema_inference_make_columns_nullable = 0;
-SET input_format_null_as_default = 1;    
-DESC format(JSONEachRow, $$
-                                {"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}
-                                {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
-                         $$)
-```
-```response
-
-┌─name────┬─type──────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ id      │ Int64         │              │                    │         │                  │                │
-│ age     │ Int64         │              │                    │         │                  │                │
-│ name    │ String        │              │                    │         │                  │                │
-│ status  │ String        │              │                    │         │                  │                │
-│ hobbies │ Array(String) │              │                    │         │                  │                │
-└─────────┴───────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
 #### input_format_try_infer_integers
@@ -1645,7 +1623,7 @@ In schema inference for CapnProto format ClickHouse uses the following type matc
 ## Strong-typed binary formats {#strong-typed-binary-formats}
 
 In such formats, each serialized value contains information about its type (and possibly about its name), but there is no information about the whole table.
-In schema inference for such formats, ClickHouse reads data row by row (up to `input_format_max_rows_to_read_for_schema_inference` rows or `input_format_max_bytes_to_read_for_schema_inference` bytes) and extracts
+In schema inference for such formats, ClickHouse reads data row by row (up to `input_format_max_rows_to_read_for_schema_inference` rows) and extracts
 the type (and possibly name) for each value from the data and then converts these types to ClickHouse types.
 
 ### MsgPack {#msgpack}

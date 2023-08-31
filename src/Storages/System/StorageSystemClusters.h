@@ -22,8 +22,6 @@ public:
 
     static NamesAndTypesList getNamesAndTypes();
 
-    static NamesAndAliases getNamesAndAliases();
-
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
     using NameAndCluster = std::pair<String, std::shared_ptr<Cluster>>;

@@ -79,7 +79,6 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
         column_names,
         columns_description.getOrdinary(),
         bridge_helper->getIdentifierQuotingStyle(),
-        LiteralEscapingStyle::Regular,
         remote_database_name,
         remote_table_name,
         local_context);

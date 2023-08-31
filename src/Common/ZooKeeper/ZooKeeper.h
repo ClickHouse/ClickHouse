@@ -15,7 +15,6 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/thread_local_rng.h>
-#include <Coordination/KeeperFeatureFlags.h>
 #include <unistd.h>
 #include <random>
 
@@ -50,7 +49,7 @@ constexpr size_t MULTI_BATCH_SIZE = 100;
 struct ShuffleHost
 {
     String host;
-    Priority priority;
+    Int64 priority = 0;
     UInt64 random = 0;
 
     void randomize()
@@ -216,7 +215,7 @@ public:
     /// Returns true, if the session has expired.
     bool expired();
 
-    bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const;
+    DB::KeeperApiVersion getApiVersion() const;
 
     /// Create a znode.
     /// Throw an exception if something went wrong.
@@ -333,11 +332,6 @@ public:
                              Coordination::WatchCallback watch_callback,
                              Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
-    Strings getChildrenWatch(const std::string & path,
-                             Coordination::Stat * stat,
-                             Coordination::WatchCallbackPtr watch_callback,
-                             Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
-
     using MultiGetChildrenResponse = MultiReadResponses<Coordination::ListResponse, false>;
     using MultiTryGetChildrenResponse = MultiReadResponses<Coordination::ListResponse, true>;
 
@@ -372,13 +366,6 @@ public:
         Strings & res,
         Coordination::Stat * stat,
         Coordination::WatchCallback watch_callback,
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
-
-    Coordination::Error tryGetChildrenWatch(
-        const std::string & path,
-        Strings & res,
-        Coordination::Stat * stat,
-        Coordination::WatchCallbackPtr watch_callback,
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     template <typename TIter>
@@ -486,7 +473,7 @@ public:
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureGetChildren asyncTryGetChildrenNoThrow(
         const std::string & path,
-        Coordination::WatchCallbackPtr watch_callback = {},
+        Coordination::WatchCallback watch_callback = {},
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     using FutureSet = std::future<Coordination::SetResponse>;
@@ -533,16 +520,12 @@ public:
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
     UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
-    bool hasReachedDeadline() const { return impl->hasReachedDeadline(); }
 
     void setServerCompletelyStarted();
 
     String getConnectedZooKeeperHost() const { return connected_zk_host; }
     UInt16 getConnectedZooKeeperPort() const { return connected_zk_port; }
     size_t getConnectedZooKeeperIndex() const { return connected_zk_index; }
-    UInt64 getConnectedTime() const { return connected_time; }
-
-    const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return impl->getKeeperFeatureFlags(); }
 
 private:
     void init(ZooKeeperArgs args_);
@@ -557,7 +540,7 @@ private:
         const std::string & path,
         Strings & res,
         Coordination::Stat * stat,
-        Coordination::WatchCallbackPtr watch_callback,
+        Coordination::WatchCallback watch_callback,
         Coordination::ListRequestType list_request_type);
     Coordination::Error multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses);
     Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallback watch_callback);
@@ -570,7 +553,7 @@ private:
     template <typename TResponse, bool try_multi, typename TIter>
     MultiReadResponses<TResponse, try_multi> multiRead(TIter start, TIter end, RequestFactory request_factory, AsyncFunction<TResponse> async_fun)
     {
-        if (isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ))
+        if (getApiVersion() >= DB::KeeperApiVersion::WITH_MULTI_READ)
         {
             Coordination::Requests requests;
             for (auto it = start; it != end; ++it)
@@ -610,7 +593,6 @@ private:
     String connected_zk_host;
     UInt16 connected_zk_port;
     size_t connected_zk_index;
-    UInt64 connected_time = timeInSeconds(std::chrono::system_clock::now());
 
     std::mutex mutex;
 
@@ -703,7 +685,7 @@ String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config);
 template <typename Client>
 void addCheckNotExistsRequest(Coordination::Requests & requests, const Client & client, const std::string & path)
 {
-    if (client.isFeatureEnabled(DB::KeeperFeatureFlag::CHECK_NOT_EXISTS))
+    if (client.getApiVersion() >= DB::KeeperApiVersion::WITH_CHECK_NOT_EXISTS)
     {
         auto request = std::make_shared<Coordination::CheckRequest>();
         request->path = path;

@@ -2,10 +2,11 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/Cache/SchemaCache.h>
-#include <Common/FileRenamer.h>
+
 
 #include <atomic>
 #include <shared_mutex>
+
 
 namespace DB
 {
@@ -22,8 +23,6 @@ public:
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
         const String & comment;
-        const std::string rename_after_processing;
-        std::string path_to_archive;
     };
 
     /// From file descriptor
@@ -75,8 +74,6 @@ public:
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
     bool supportsSubsetOfColumns() const override;
 
-    bool supportsSubcolumns() const override { return true; }
-
     bool prefersLargeBlocks() const override;
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
@@ -90,12 +87,9 @@ public:
         const std::vector<String> & paths,
         const String & compression_method,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr context,
-        const std::vector<String> & paths_to_archive = {"auto"});
+        ContextPtr context);
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
-
-    static void parseFileSource(String source, String & filename, String & path_to_archive);
 
 protected:
     friend class StorageFileSource;
@@ -126,7 +120,6 @@ private:
 
     std::string base_path;
     std::vector<std::string> paths;
-    std::vector<std::string> paths_to_archive;
 
     bool is_db_table = true;        /// Table is stored in real database, not user's file
     bool use_table_fd = false;      /// Use table_fd instead of path
@@ -147,11 +140,6 @@ private:
     std::unique_ptr<ReadBuffer> read_buffer_from_fd;
     std::unique_ptr<ReadBuffer> peekable_read_buffer_from_fd;
     std::atomic<bool> has_peekable_read_buffer_from_fd = false;
-
-    // Counts the number of readers
-    std::atomic<int32_t> readers_counter = 0;
-    FileRenamer file_renamer;
-    bool was_renamed = false;
 };
 
 }

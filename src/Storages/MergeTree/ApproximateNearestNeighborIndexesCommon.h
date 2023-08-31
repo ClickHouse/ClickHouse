@@ -9,9 +9,6 @@
 namespace DB
 {
 
-static constexpr auto DISTANCE_FUNCTION_L2 = "L2Distance";
-static constexpr auto DISTANCE_FUNCTION_COSINE = "cosineDistance";
-
 /// Approximate Nearest Neighbour queries have a similar structure:
 /// - reference vector from which all distances are calculated
 /// - metric name (e.g L2Distance, LpDistance, etc.)
@@ -93,8 +90,8 @@ public:
     /// Distance should be calculated regarding to referenceVector
     std::vector<float> getReferenceVector() const;
 
-    /// Reference vector's dimension count
-    size_t getDimensions() const;
+    /// Reference vector's dimension size
+    size_t getNumOfDimensions() const;
 
     String getColumnName() const;
 

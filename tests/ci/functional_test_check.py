@@ -16,8 +16,8 @@ from github import Github
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import (
     ClickHouseHelper,
+    mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
-    get_instance_type,
 )
 from commit_status_helper import (
     NotSet,
@@ -74,11 +74,9 @@ def get_image_name(check_name):
 
 
 def get_run_command(
-    pr_info,
-    check_start_time,
     check_name,
     builds_path,
-    repo_path,
+    repo_tests_path,
     result_path,
     server_log_path,
     kill_timeout,
@@ -108,28 +106,16 @@ def get_run_command(
 
     envs += [f"-e {e}" for e in additional_envs]
 
-    instance_type = get_instance_type()
-
-    envs += [
-        "-e CLICKHOUSE_CI_LOGS_HOST",
-        "-e CLICKHOUSE_CI_LOGS_PASSWORD",
-        f"-e PULL_REQUEST_NUMBER='{pr_info.number}'",
-        f"-e COMMIT_SHA='{pr_info.sha}'",
-        f"-e CHECK_START_TIME='{check_start_time}'",
-        f"-e CHECK_NAME='{check_name}'",
-        f"-e INSTANCE_TYPE='{instance_type}'",
-    ]
-
     env_str = " ".join(envs)
     volume_with_broken_test = (
-        f"--volume={repo_path}/tests/analyzer_tech_debt.txt:/analyzer_tech_debt.txt"
+        f"--volume={repo_tests_path}/broken_tests.txt:/broken_tests.txt"
         if "analyzer" in check_name
         else ""
     )
 
     return (
         f"docker run --volume={builds_path}:/package_folder "
-        f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
+        f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
         f"{volume_with_broken_test} "
         f"--volume={result_path}:/test_output --volume={server_log_path}:/var/log/clickhouse-server "
         f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image}"
@@ -321,6 +307,8 @@ def main():
     image_name = get_image_name(check_name)
     docker_image = get_image_with_version(reports_path, image_name)
 
+    repo_tests_path = os.path.join(repo_path, "tests")
+
     packages_path = os.path.join(temp_path, "packages")
     if not os.path.exists(packages_path):
         os.makedirs(packages_path)
@@ -347,11 +335,9 @@ def main():
         additional_envs.append("GLOBAL_TAGS=no-random-settings")
 
     run_command = get_run_command(
-        pr_info,
-        stopwatch.start_time_str,
         check_name,
         packages_path,
-        repo_path,
+        repo_tests_path,
         result_path,
         server_log_path,
         kill_timeout,
@@ -369,10 +355,7 @@ def main():
         else:
             logging.info("Run failed")
 
-    try:
-        subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
-    except subprocess.CalledProcessError:
-        logging.warning("Failed to change files owner in %s, ignoring it", temp_path)
+    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     s3_helper = S3Helper()
 
@@ -382,23 +365,7 @@ def main():
     state = override_status(state, check_name, invert=validate_bugfix_check)
 
     ch_helper = ClickHouseHelper()
-
-    # Cleanup run log from the credentials of CI logs database.
-    # Note: a malicious user can still print them by splitting the value into parts.
-    # But we will be warned when a malicious user modifies CI script.
-    # Although they can also print them from inside tests.
-    # Nevertheless, the credentials of the CI logs have limited scope
-    # and does not provide access to sensitive info.
-
-    ci_logs_host = os.getenv("CLICKHOUSE_CI_LOGS_HOST", "CLICKHOUSE_CI_LOGS_HOST")
-    ci_logs_password = os.getenv(
-        "CLICKHOUSE_CI_LOGS_PASSWORD", "CLICKHOUSE_CI_LOGS_PASSWORD"
-    )
-    if ci_logs_host not in ("CLICKHOUSE_CI_LOGS_HOST", ""):
-        subprocess.check_call(
-            f"sed -i -r -e 's!{ci_logs_host}!CLICKHOUSE_CI_LOGS_HOST!g; s!{ci_logs_password}!CLICKHOUSE_CI_LOGS_PASSWORD!g;' '{run_log_path}'",
-            shell=True,
-        )
+    mark_flaky_tests(ch_helper, check_name, test_results)
 
     report_url = upload_results(
         s3_helper,
@@ -411,16 +378,34 @@ def main():
 
     print(f"::notice:: {check_name} Report url: {report_url}")
     if args.post_commit_status == "commit_status":
-        post_commit_status(
-            commit, state, report_url, description, check_name_with_group, pr_info
-        )
+        if "parallelreplicas" in check_name.lower():
+            post_commit_status(
+                commit,
+                "success",
+                report_url,
+                description,
+                check_name_with_group,
+                pr_info,
+            )
+        else:
+            post_commit_status(
+                commit, state, report_url, description, check_name_with_group, pr_info
+            )
     elif args.post_commit_status == "file":
-        post_commit_status_to_file(
-            post_commit_path,
-            description,
-            state,
-            report_url,
-        )
+        if "parallelreplicas" in check_name.lower():
+            post_commit_status_to_file(
+                post_commit_path,
+                description,
+                "success",
+                report_url,
+            )
+        else:
+            post_commit_status_to_file(
+                post_commit_path,
+                description,
+                state,
+                report_url,
+            )
     else:
         raise Exception(
             f'Unknown post_commit_status option "{args.post_commit_status}"'
@@ -438,7 +423,11 @@ def main():
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     if state != "success":
-        if FORCE_TESTS_LABEL in pr_info.labels:
+        # Parallel replicas are always green for now
+        if (
+            FORCE_TESTS_LABEL in pr_info.labels
+            or "parallelreplicas" in check_name.lower()
+        ):
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
             sys.exit(1)

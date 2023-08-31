@@ -1,11 +1,11 @@
-if(NOT OS_FREEBSD AND NOT APPLE AND NOT ARCH_PPC64LE AND NOT ARCH_S390X)
+if(NOT ARCH_AARCH64 AND NOT OS_FREEBSD AND NOT APPLE AND NOT ARCH_PPC64LE AND NOT ARCH_S390X)
     option(ENABLE_HDFS "Enable HDFS" ${ENABLE_LIBRARIES})
 elseif(ENABLE_HDFS)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use HDFS3 with current configuration")
 endif()
 
 if(NOT ENABLE_HDFS)
-    message(STATUS "Not using HDFS")
+    message(STATUS "Not using hdfs")
     return()
 endif()
 
