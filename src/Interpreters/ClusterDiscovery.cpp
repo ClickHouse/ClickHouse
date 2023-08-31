@@ -347,6 +347,8 @@ void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & inf
 
 void ClusterDiscovery::initialUpdate()
 {
+    LOG_DEBUG(log, "Initializing");
+
     auto zk = context->getZooKeeper();
     for (auto & [_, info] : clusters_info)
     {
@@ -357,6 +359,8 @@ void ClusterDiscovery::initialUpdate()
             clusters_to_update->set(info.name);
         }
     }
+    LOG_DEBUG(log, "Initialized");
+    is_initialized = true;
 }
 
 void ClusterDiscovery::start()
@@ -414,6 +418,10 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
     using namespace std::chrono_literals;
 
     constexpr auto force_update_interval = 2min;
+
+    if (!is_initialized)
+        initialUpdate();
+
     bool finished = false;
     while (!finished)
     {
