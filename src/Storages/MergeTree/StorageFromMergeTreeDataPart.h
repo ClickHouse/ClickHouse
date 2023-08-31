@@ -59,6 +59,21 @@ public:
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns));
     }
 
+    StorageSnapshotPtr getStorageSnapshotForQuery(
+        const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr /*query_context*/) const override
+    {
+        const auto & storage_columns = metadata_snapshot->getColumns();
+        if (!hasDynamicSubcolumns(storage_columns))
+            return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
+
+        auto data_parts = storage.getDataPartsVectorForInternalUsage();
+
+        auto object_columns = getConcreteObjectColumns(
+            data_parts.begin(), data_parts.end(), storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
+
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns));
+    }
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -110,12 +125,6 @@ public:
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const
     {
         return storage.getPartitionIDFromQuery(ast, context);
-    }
-
-    StorageSnapshotPtr getStorageSnapshotForQuery(
-        const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context) const override
-    {
-        return storage.getStorageSnapshot(metadata_snapshot, query_context);
     }
 
     bool materializeTTLRecalculateOnly() const
