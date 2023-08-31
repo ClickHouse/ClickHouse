@@ -318,20 +318,11 @@ void executeQueryWithParallelReplicas(
     }
 
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(all_replicas_count);
-
-    /// This is a little bit weird, but we construct an "empty" coordinator without
-    /// any specified reading/coordination method (like Default, InOrder, InReverseOrder)
-    /// Because we will understand it later during QueryPlan optimization
-    /// So we place a reference to the coordinator to some common plane like QueryInfo
-    /// to then tell it about the reading method we chose.
-    query_info.coordinator = coordinator;
-
     auto external_tables = new_context->getExternalTables();
-
     auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
         query_ast,
         new_cluster,
-        coordinator,
+        std::move(coordinator),
         stream_factory.header,
         stream_factory.processed_stage,
         main_table,

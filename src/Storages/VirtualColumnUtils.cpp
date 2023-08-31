@@ -340,7 +340,8 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     return block.getByName("_idx").column;
 }
 
-void addRequestedPathAndFileVirtualsToChunk(Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path)
+void addRequestedPathAndFileVirtualsToChunk(
+    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, const String * filename)
 {
     for (const auto & virtual_column : requested_virtual_columns)
     {
@@ -350,9 +351,16 @@ void addRequestedPathAndFileVirtualsToChunk(Chunk & chunk, const NamesAndTypesLi
         }
         else if (virtual_column.name == "_file")
         {
-            size_t last_slash_pos = path.find_last_of('/');
-            auto file_name = path.substr(last_slash_pos + 1);
-            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), file_name));
+            if (filename)
+            {
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *filename));
+            }
+            else
+            {
+                size_t last_slash_pos = path.find_last_of('/');
+                auto filename_from_path = path.substr(last_slash_pos + 1);
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), filename_from_path));
+            }
         }
     }
 }

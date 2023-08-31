@@ -103,6 +103,10 @@
 #include <Poco/Logger.h>
 #include <Poco/Net/NetException.h>
 
+#if USE_AZURE_BLOB_STORAGE
+#include <azure/core/http/http.hpp>
+#endif
+
 template <>
 struct fmt::formatter<DB::DataPartPtr> : fmt::formatter<std::string>
 {
@@ -128,6 +132,8 @@ namespace ProfileEvents
     extern const Event RejectedMutations;
     extern const Event DelayedMutations;
     extern const Event DelayedMutationsMilliseconds;
+    extern const Event PartsLockWaitMicroseconds;
+    extern const Event PartsLockHoldMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -307,6 +313,20 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
         if (min_format_version == MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING.toUnderType())
             throw Exception(ErrorCodes::METADATA_MISMATCH, "MergeTree data format version on disk doesn't support custom partitioning");
     }
+}
+DataPartsLock::DataPartsLock(std::mutex & data_parts_mutex_)
+    : wait_watch(Stopwatch(CLOCK_MONOTONIC))
+    , lock(data_parts_mutex_)
+    , lock_watch(Stopwatch(CLOCK_MONOTONIC))
+{
+    ProfileEvents::increment(ProfileEvents::PartsLockWaitMicroseconds, wait_watch->elapsedMicroseconds());
+}
+
+
+DataPartsLock::~DataPartsLock()
+{
+    if (lock_watch.has_value())
+        ProfileEvents::increment(ProfileEvents::PartsLockHoldMicroseconds, lock_watch->elapsedMicroseconds());
 }
 
 MergeTreeData::MergeTreeData(
@@ -1248,6 +1268,12 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     {
         throw;
     }
+#if USE_AZURE_BLOB_STORAGE
+    catch (const Azure::Core::Http::TransportException &)
+    {
+        throw;
+    }
+#endif
     catch (...)
     {
         mark_broken();
@@ -1396,6 +1422,18 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     size_t max_backoff_ms,
     size_t max_tries)
 {
+    auto handle_exception = [&, this](String exception_message, size_t try_no)
+    {
+        if (try_no + 1 == max_tries)
+            throw;
+
+        LOG_DEBUG(log, "Failed to load data part {} at try {} with retryable error: {}. Will retry in {} ms",
+                  part_name, try_no, exception_message, initial_backoff_ms);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(initial_backoff_ms));
+        initial_backoff_ms = std::min(initial_backoff_ms * 2, max_backoff_ms);
+    };
+
     for (size_t try_no = 0; try_no < max_tries; ++try_no)
     {
         try
@@ -1404,15 +1442,17 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
         }
         catch (const Exception & e)
         {
-            if (!isRetryableException(e) || try_no + 1 == max_tries)
+            if (isRetryableException(e))
+                handle_exception(e.message(),try_no);
+            else
                 throw;
-
-            LOG_DEBUG(log, "Failed to load data part {} at try {} with retryable error: {}. Will retry in {} ms",
-                part_name, try_no, e.message(), initial_backoff_ms);
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(initial_backoff_ms));
-            initial_backoff_ms = std::min(initial_backoff_ms * 2, max_backoff_ms);
         }
+#if USE_AZURE_BLOB_STORAGE
+        catch (const Azure::Core::Http::TransportException & e)
+        {
+            handle_exception(e.Message,try_no);
+        }
+#endif
     }
     UNREACHABLE();
 }
@@ -6244,14 +6284,14 @@ void MergeTreeData::Transaction::clear()
     precommitted_parts.clear();
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData::DataPartsLock * acquired_parts_lock)
+MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock * acquired_parts_lock)
 {
     DataPartsVector total_covered_parts;
 
     if (!isEmpty())
     {
         auto settings = data.getSettings();
-        auto parts_lock = acquired_parts_lock ? MergeTreeData::DataPartsLock() : data.lockParts();
+        auto parts_lock = acquired_parts_lock ? DataPartsLock() : data.lockParts();
         auto * owing_parts_lock = acquired_parts_lock ? acquired_parts_lock : &parts_lock;
 
         for (const auto & part : precommitted_parts)
@@ -7680,6 +7720,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
         part->is_frozen.store(true, std::memory_order_relaxed);
         result.push_back(PartitionCommandResultInfo{
+            .command_type = "FREEZE PART",
             .partition_id = part->info.partition_id,
             .part_name = part->name,
             .backup_path = new_storage->getFullRootPath(),
@@ -7689,7 +7730,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
         ++parts_processed;
     }
 
-    LOG_DEBUG(log, "Freezed {} parts", parts_processed);
+    LOG_DEBUG(log, "Froze {} parts", parts_processed);
     return result;
 }
 

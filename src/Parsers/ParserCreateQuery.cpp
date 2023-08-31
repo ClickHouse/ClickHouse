@@ -2,6 +2,7 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTForeignKeyDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -224,17 +225,69 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     return true;
 }
 
+bool ParserForeignKeyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_references("REFERENCES");
+    ParserCompoundIdentifier table_name_p(true, true);
+    ParserExpression expression_p;
+
+    ASTPtr name;
+    ASTPtr expr;
+
+    if (!expression_p.parse(pos, expr, expected))
+        return false;
+
+    if (!s_references.ignore(pos, expected))
+        return false;
+
+    if (!table_name_p.parse(pos, name, expected))
+        return false;
+
+    if (!expression_p.parse(pos, expr, expected))
+        return false;
+
+    ParserKeyword s_on("ON");
+    while (s_on.ignore(pos, expected))
+    {
+        ParserKeyword s_delete("DELETE");
+        ParserKeyword s_update("UPDATE");
+
+        if (!s_delete.ignore(pos, expected) && !s_update.ignore(pos, expected))
+            return false;
+
+        ParserKeyword s_restrict("RESTRICT");
+        ParserKeyword s_cascade("CASCADE");
+        ParserKeyword s_set_null("SET NULL");
+        ParserKeyword s_no_action("NO ACTION");
+        ParserKeyword s_set_default("SET DEFAULT");
+
+        if (!s_restrict.ignore(pos, expected) && !s_cascade.ignore(pos, expected) &&
+            !s_set_null.ignore(pos, expected) && !s_no_action.ignore(pos, expected) &&
+            !s_set_default.ignore(pos, expected))
+        {
+            return false;
+        }
+    }
+
+    auto foreign_key = std::make_shared<ASTForeignKeyDeclaration>();
+    foreign_key->name = "Foreign Key";
+    node = foreign_key;
+
+    return true;
+}
 
 bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_index("INDEX");
     ParserKeyword s_constraint("CONSTRAINT");
     ParserKeyword s_projection("PROJECTION");
+    ParserKeyword s_foreign_key("FOREIGN KEY");
     ParserKeyword s_primary_key("PRIMARY KEY");
 
     ParserIndexDeclaration index_p;
     ParserConstraintDeclaration constraint_p;
     ParserProjectionDeclaration projection_p;
+    ParserForeignKeyDeclaration foreign_key_p;
     ParserColumnDeclaration column_p{true, true};
     ParserExpression primary_key_p;
 
@@ -258,6 +311,11 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     else if (s_primary_key.ignore(pos, expected))
     {
         if (!primary_key_p.parse(pos, new_node, expected))
+            return false;
+    }
+    else if (s_foreign_key.ignore(pos, expected))
+    {
+        if (!foreign_key_p.parse(pos, new_node, expected))
             return false;
     }
     else
@@ -323,6 +381,11 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
             constraints->children.push_back(elem);
         else if (elem->as<ASTProjectionDeclaration>())
             projections->children.push_back(elem);
+        else if (elem->as<ASTForeignKeyDeclaration>())
+        {
+            /// Ignore the foreign key node
+            continue;
+        }
         else if (elem->as<ASTIdentifier>() || elem->as<ASTFunction>())
         {
             if (primary_key)
