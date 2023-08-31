@@ -311,10 +311,8 @@ Token Lexer::nextTokenImpl()
                 pos += 3;
                 return Token(TokenType::Minus, token_begin, pos);
             }
-            else
-            {
-                return Token(TokenType::Error, token_begin, ++pos);
-            }
+            /// Other characters starting at E2 can be parsed, see skipWhitespacesUTF8
+            [[fallthrough]];
         }
         case '*':
             ++pos;
