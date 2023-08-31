@@ -4644,6 +4644,22 @@ SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_pars
 └─────────────────────┴──────────────────────────┘
 ```
 
+## validate_tcp_client_information {#validate-tcp-client-information}
+
+Determines whether validation of client information enabled when query packet is received from a client using a TCP connection.
+
+If `true`, an exception will be thrown on invalid client information from the TCP client.
+
+If `false`, the data will not be validated. The server will work with clients of all versions.
+
+The default value is `false`.
+
+**Example**
+
+``` xml
+<validate_tcp_client_information>true</validate_tcp_client_information>
+```
+
 ## ignore_eacces_multidirectory_globs {#ignore_eacces_multidirectory_globs}
 
 Allows to ignore 'permission denied' errors when using multi-directory `{}` globs for [File](../../sql-reference/table-functions/file.md#globs_in_path) and [HDFS](../../sql-reference/table-functions/hdfs.md) storages.
