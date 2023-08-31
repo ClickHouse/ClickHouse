@@ -49,9 +49,9 @@
 * Add support for string literals as table names. Closes [#52178](https://github.com/ClickHouse/ClickHouse/issues/52178). [#52635](https://github.com/ClickHouse/ClickHouse/pull/52635) ([hendrik-m](https://github.com/hendrik-m)).
 
 #### Experimental Feature
-* Add new table engine `S3Queue` for streaming data import from s3. Closes [#37012](https://github.com/ClickHouse/ClickHouse/issues/37012). [#49086](https://github.com/ClickHouse/ClickHouse/pull/49086) ([s-kat](https://github.com/s-kat)).
+* Add new table engine `S3Queue` for streaming data import from s3. Closes [#37012](https://github.com/ClickHouse/ClickHouse/issues/37012). [#49086](https://github.com/ClickHouse/ClickHouse/pull/49086) ([s-kat](https://github.com/s-kat)). It is not ready to use. Do not use it.
 * Enable parallel reading from replicas over distributed table. Related to [#49708](https://github.com/ClickHouse/ClickHouse/issues/49708). [#53005](https://github.com/ClickHouse/ClickHouse/pull/53005) ([Igor Nikonov](https://github.com/devcrafter)).
-* Add experimental support for HNSW as approximate neighbor search method. [#53447](https://github.com/ClickHouse/ClickHouse/pull/53447) ([Davit Vardanyan](https://github.com/davvard)). This is currently intended for those who continue working on the implementation.
+* Add experimental support for HNSW as approximate neighbor search method. [#53447](https://github.com/ClickHouse/ClickHouse/pull/53447) ([Davit Vardanyan](https://github.com/davvard)). This is currently intended for those who continue working on the implementation. Do not use it.
 
 #### Performance Improvement
 * Parquet filter pushdown. I.e. when reading Parquet files, row groups (chunks of the file) are skipped based on the WHERE condition and the min/max values in each column. In particular, if the file is roughly sorted by some column, queries that filter by a short range of that column will be much faster. [#52951](https://github.com/ClickHouse/ClickHouse/pull/52951) ([Michael Kolupaev](https://github.com/al13n321)).
