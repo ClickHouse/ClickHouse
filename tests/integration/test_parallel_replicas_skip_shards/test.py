@@ -18,8 +18,19 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
-
 def test_skip_unavailable_shards(start_cluster):
+    expected = "node1\nnode2\nnode3\n"
+    assert (
+        node1.query(
+            "SELECT hostName() as h FROM clusterAllReplicas('two_shards', system.one) order by h",
+            settings={
+                "allow_experimental_parallel_reading_from_replicas": 0,
+                "skip_unavailable_shards": 1,
+            },
+        )
+        == expected
+    )
+
     assert (
         node1.query(
             "SELECT hostName() as h FROM clusterAllReplicas('two_shards', system.one) order by h",
@@ -28,13 +39,25 @@ def test_skip_unavailable_shards(start_cluster):
                 "max_parallel_replicas": 3,
                 "use_hedged_requests": 0,
                 "skip_unavailable_shards": 1,
+                # "async_socket_for_remote" : 0,
+                # "async_query_sending_for_remote" : 0,
+                # "connections_with_failover_max_tries": 0,
             },
         )
-        == "node1\nnode2\nnode3\n"
+        == expected
     )
 
 
 def test_error_on_unavailable_shards(start_cluster):
+    with pytest.raises(QueryRuntimeException):
+        node1.query(
+            "SELECT hostName() as h FROM clusterAllReplicas('two_shards', system.one) order by h",
+            settings={
+                "allow_experimental_parallel_reading_from_replicas": 0,
+                "skip_unavailable_shards": 0,
+            },
+        )
+
     with pytest.raises(QueryRuntimeException):
         node1.query(
             "SELECT hostName() as h FROM clusterAllReplicas('two_shards', system.one) order by h",
