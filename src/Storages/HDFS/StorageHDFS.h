@@ -169,6 +169,11 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
     String current_path;
 
+    UInt64 total_rows_approx_max = 0;
+    size_t total_rows_count_times = 0;
+    UInt64 total_rows_approx_accumulated = 0;
+    size_t total_files_size = 0;
+
     /// Recreate ReadBuffer and PullingPipelineExecutor for each file.
     bool initialize();
 };

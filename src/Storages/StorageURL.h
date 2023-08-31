@@ -212,6 +212,11 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
 
     Poco::Net::HTTPBasicCredentials credentials;
+
+    size_t total_size = 0;
+    UInt64 total_rows_approx_max = 0;
+    size_t total_rows_count_times = 0;
+    UInt64 total_rows_approx_accumulated = 0;
 };
 
 class StorageURLSink : public SinkToStorage

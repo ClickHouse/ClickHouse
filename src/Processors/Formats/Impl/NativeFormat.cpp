@@ -66,7 +66,7 @@ private:
     std::unique_ptr<NativeReader> reader;
     Block header;
     BlockMissingValues block_missing_values;
-    size_t approx_bytes_read_for_chunk = 0;
+    size_t approx_bytes_read_for_chunk;
 };
 
 class NativeOutputFormat final : public IOutputFormat

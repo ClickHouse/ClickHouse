@@ -13,6 +13,7 @@
 
 namespace DB
 {
+
 class TableJoin;
 class HashJoin;
 
@@ -22,11 +23,11 @@ class HashJoin;
  *
  * The joining algorithm consists of three stages:
  *
- * 1) During the first stage we accumulate blocks of the right table via @addBlockToJoin.
+ * 1) During the first stage we accumulate blocks of the right table via @addJoinedBlock.
  * Each input block is split into multiple buckets based on the hash of the row join keys.
  * The first bucket is added to the in-memory HashJoin, and the remaining buckets are written to disk for further processing.
  * When the size of HashJoin exceeds the limits, we double the number of buckets.
- * There can be multiple threads calling addBlockToJoin, just like @ConcurrentHashJoin.
+ * There can be multiple threads calling addJoinedBlock, just like @ConcurrentHashJoin.
  *
  * 2) At the second stage we process left table blocks via @joinBlock.
  * Again, each input block is split into multiple buckets by hash.
@@ -64,7 +65,7 @@ public:
 
     void initialize(const Block & sample_block) override;
 
-    bool addBlockToJoin(const Block & block, bool check_limits) override;
+    bool addJoinedBlock(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
 
@@ -78,7 +79,7 @@ public:
     bool supportTotals() const override { return false; }
 
     IBlocksStreamPtr
-    getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size) const override;
+    getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     /// Open iterator over joined blocks.
     /// Must be called after all @joinBlock calls.
@@ -90,10 +91,10 @@ public:
 private:
     void initBuckets();
     /// Create empty join for in-memory processing.
-    InMemoryJoinPtr makeInMemoryJoin(size_t reserve_num = 0);
+    InMemoryJoinPtr makeInMemoryJoin();
 
     /// Add right table block to the @join. Calls @rehash on overflow.
-    void addBlockToJoinImpl(Block block);
+    void addJoinedBlockImpl(Block block);
 
     /// Check that join satisfies limits on rows/bytes in table_join.
     bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;

@@ -731,7 +731,7 @@ void expandGroupByAll(ASTSelectQuery * select_query)
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_expression_list);
 }
 
-ASTs getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
+std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
 {
     /// There can not be aggregate functions inside the WHERE and PREWHERE.
     if (select_query.where())
@@ -743,12 +743,11 @@ ASTs getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
     GetAggregatesVisitor(data).visit(query);
 
     /// There can not be other aggregate functions within the aggregate functions.
-    for (const ASTPtr & ast : data.aggregates)
+    for (const ASTFunction * node : data.aggregates)
     {
-        const ASTFunction & node = typeid_cast<const ASTFunction &>(*ast);
-        if (node.arguments)
+        if (node->arguments)
         {
-            for (auto & arg : node.arguments->children)
+            for (auto & arg : node->arguments->children)
             {
                 assertNoAggregates(arg, "inside another aggregate function");
                 // We also can't have window functions inside aggregate functions,
@@ -760,7 +759,7 @@ ASTs getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
     return data.aggregates;
 }
 
-ASTs getWindowFunctions(ASTPtr & query, const ASTSelectQuery & select_query)
+std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSelectQuery & select_query)
 {
     /// There can not be window functions inside the WHERE, PREWHERE and HAVING
     if (select_query.having())
@@ -778,16 +777,20 @@ ASTs getWindowFunctions(ASTPtr & query, const ASTSelectQuery & select_query)
     /// Window functions cannot be inside aggregates or other window functions.
     /// Aggregate functions can be inside window functions because they are
     /// calculated earlier.
-    for (const ASTPtr & ast : data.window_functions)
+    for (const ASTFunction * node : data.window_functions)
     {
-        const ASTFunction & node = typeid_cast<const ASTFunction &>(*ast);
-
-        if (node.arguments)
-            for (auto & arg : node.arguments->children)
+        if (node->arguments)
+        {
+            for (auto & arg : node->arguments->children)
+            {
                 assertNoWindows(arg, "inside another window function");
+            }
+        }
 
-        if (node.window_definition)
-            assertNoWindows(node.window_definition, "inside window definition");
+        if (node->window_definition)
+        {
+            assertNoWindows(node->window_definition, "inside window definition");
+        }
     }
 
     return data.window_functions;
@@ -1354,8 +1357,8 @@ TreeRewriterResultPtr TreeRewriter::analyze(
         GetAggregatesVisitor(data).visit(query);
 
         /// There can not be other aggregate functions within the aggregate functions.
-        for (const ASTPtr & node : data.aggregates)
-            for (auto & arg : typeid_cast<const ASTFunction &>(*node).arguments->children)
+        for (const ASTFunction * node : data.aggregates)
+            for (auto & arg : node->arguments->children)
                 assertNoAggregates(arg, "inside another aggregate function");
         result.aggregates = data.aggregates;
     }

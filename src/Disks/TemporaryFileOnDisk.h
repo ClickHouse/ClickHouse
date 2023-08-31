@@ -16,8 +16,9 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class TemporaryFileOnDisk
 {
 public:
+    explicit TemporaryFileOnDisk(const DiskPtr & disk_);
     explicit TemporaryFileOnDisk(const DiskPtr & disk_, CurrentMetrics::Metric metric_scope);
-    explicit TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix = "tmp");
+    explicit TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix);
 
     ~TemporaryFileOnDisk();
 

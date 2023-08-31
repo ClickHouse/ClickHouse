@@ -12,6 +12,7 @@
 
 namespace DB
 {
+
 using ResponsesQueue = ConcurrentBoundedQueue<KeeperStorage::ResponseForSession>;
 using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
@@ -25,6 +26,7 @@ public:
     KeeperStateMachine(
         ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
+        const std::string & snapshots_path_,
         const CoordinationSettingsPtr & coordination_settings_,
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
@@ -66,9 +68,7 @@ public:
     // (can happen in case of exception during preprocessing)
     void rollbackRequest(const KeeperStorage::RequestForSession & request_for_session, bool allow_missing);
 
-    void rollbackRequestNoLock(
-        const KeeperStorage::RequestForSession & request_for_session,
-        bool allow_missing) TSA_NO_THREAD_SAFETY_ANALYSIS;
+    void rollbackRequestNoLock(const KeeperStorage::RequestForSession & request_for_session, bool allow_missing);
 
     uint64_t last_commit_index() override { return last_committed_idx; }
 
@@ -88,13 +88,8 @@ public:
     int read_logical_snp_obj(
         nuraft::snapshot & s, void *& user_snp_ctx, uint64_t obj_id, nuraft::ptr<nuraft::buffer> & data_out, bool & is_last_obj) override;
 
-    // This should be used only for tests or keeper-data-dumper because it violates
-    // TSA -- we can't acquire the lock outside of this class or return a storage under lock
-    // in a reasonable way.
-    KeeperStorage & getStorageUnsafe() TSA_NO_THREAD_SAFETY_ANALYSIS
-    {
-        return *storage;
-    }
+    /// just for test
+    KeeperStorage & getStorage() { return *storage; }
 
     void shutdownStorage();
 
@@ -128,21 +123,18 @@ public:
     uint64_t getLatestSnapshotBufSize() const;
 
     void recalculateStorageStats();
-
-    void reconfigure(const KeeperStorage::RequestForSession& request_for_session);
-
 private:
     CommitCallback commit_callback;
     /// In our state machine we always have a single snapshot which is stored
     /// in memory in compressed (serialized) format.
     SnapshotMetadataPtr latest_snapshot_meta = nullptr;
-    SnapshotFileInfo latest_snapshot_info;
+    std::string latest_snapshot_path;
     nuraft::ptr<nuraft::buffer> latest_snapshot_buf = nullptr;
 
     CoordinationSettingsPtr coordination_settings;
 
     /// Main state machine logic
-    KeeperStoragePtr storage TSA_PT_GUARDED_BY(storage_and_responses_lock);
+    KeeperStoragePtr storage;
 
     /// Save/Load and Serialize/Deserialize logic for snapshots.
     KeeperSnapshotManager snapshot_manager;
@@ -187,9 +179,6 @@ private:
     KeeperContextPtr keeper_context;
 
     KeeperSnapshotManagerS3 * snapshot_manager_s3;
-
-    KeeperStorage::ResponseForSession processReconfiguration(
-        const KeeperStorage::RequestForSession& request_for_session)
-        TSA_REQUIRES(storage_and_responses_lock);
 };
+
 }

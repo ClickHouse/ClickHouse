@@ -65,40 +65,6 @@ XML substitution example:
 
 Substitutions can also be performed from ZooKeeper. To do this, specify the attribute `from_zk = "/path/to/node"`. The element value is replaced with the contents of the node at `/path/to/node` in ZooKeeper. You can also put an entire XML subtree on the ZooKeeper node and it will be fully inserted into the source element.
 
-## Encrypting Configuration {#encryption}
-
-You can use symmetric encryption to encrypt a configuration element, for example, a password field. To do so, first configure the [encryption codec](../sql-reference/statements/create/table.md#encryption-codecs), then add attribute `encryption_codec` with the name of the encryption codec as value to the element to encrypt.
-
-Unlike attributes `from_zk`, `from_env` and `incl` (or element `include`), no substitution, i.e. decryption of the encrypted value, is performed in the preprocessed file. Decryption happens only at runtime in the server process.
-
-Example:
-
-```xml
-<clickhouse>
-    <encryption_codecs>
-        <aes_128_gcm_siv>
-            <key_hex>00112233445566778899aabbccddeeff</key_hex>
-        </aes_128_gcm_siv>
-    </encryption_codecs>
-    <interserver_http_credentials>
-        <user>admin</user>
-        <password encryption_codec="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
-    </interserver_http_credentials>
-</clickhouse>
-```
-
-To get the encrypted value `encrypt_decrypt` example application may be used.
-
-Example:
-
-``` bash
-./encrypt_decrypt /etc/clickhouse-server/config.xml -e AES_128_GCM_SIV abcd
-```
-
-``` text
-961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85
-```
-
 ## User Settings {#user-settings}
 
 The `config.xml` file can specify a separate config with user settings, profiles, and quotas. The relative path to this config is set in the `users_config` element. By default, it is `users.xml`. If `users_config` is omitted, the user settings, profiles, and quotas are specified directly in `config.xml`.

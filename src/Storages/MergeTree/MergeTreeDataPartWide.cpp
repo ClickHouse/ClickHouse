@@ -260,18 +260,6 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
     return res;
 }
 
-std::optional<time_t> MergeTreeDataPartWide::getColumnModificationTime(const String & column_name) const
-{
-    try
-    {
-        return getDataPartStorage().getFileLastModified(column_name + DATA_FILE_EXTENSION).epochTime();
-    }
-    catch (const fs::filesystem_error &)
-    {
-        return {};
-    }
-}
-
 String MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & column) const
 {
     String filename;

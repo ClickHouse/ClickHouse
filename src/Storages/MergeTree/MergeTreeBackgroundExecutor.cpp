@@ -136,7 +136,7 @@ bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
     return true;
 }
 
-void printExceptionWithRespectToAbort(Poco::Logger * log, const String & query_id)
+void printExceptionWithRespectToAbort(Poco::Logger * log)
 {
     std::exception_ptr ex = std::current_exception();
 
@@ -155,14 +155,14 @@ void printExceptionWithRespectToAbort(Poco::Logger * log, const String & query_i
             if (e.code() == ErrorCodes::ABORTED)
                 LOG_DEBUG(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
             else
-                tryLogCurrentException(log, "Exception while executing background task {" + query_id + "}");
+                tryLogCurrentException(__PRETTY_FUNCTION__);
         });
     }
     catch (...)
     {
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
-            tryLogCurrentException(log, "Exception while executing background task {" + query_id + "}");
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         });
     }
 }
@@ -182,6 +182,7 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
         }
         catch (...)
         {
+            printExceptionWithRespectToAbort(log);
             pending.remove(id);
         }
 
@@ -239,9 +240,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         has_tasks.notify_one();
     };
 
-    String query_id;
-
-    auto release_task = [this, &erase_from_active, &on_task_done, &query_id](TaskRuntimeDataPtr && item_)
+    auto release_task = [this, &erase_from_active, &on_task_done](TaskRuntimeDataPtr && item_)
     {
         std::lock_guard guard(mutex);
 
@@ -258,7 +257,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         }
         catch (...)
         {
-            printExceptionWithRespectToAbort(log, query_id);
+            printExceptionWithRespectToAbort(log);
         }
 
         on_task_done(std::move(item_));
@@ -269,12 +268,11 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
     try
     {
         ALLOW_ALLOCATIONS_IN_SCOPE;
-        query_id = item->task->getQueryId();
         need_execute_again = item->task->executeStep();
     }
     catch (...)
     {
-        printExceptionWithRespectToAbort(log, query_id);
+        printExceptionWithRespectToAbort(log);
         /// Release the task with exception context.
         /// An exception context is needed to proper delete write buffers without finalization
         release_task(std::move(item));
@@ -301,7 +299,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             }
             catch (...)
             {
-                printExceptionWithRespectToAbort(log, query_id);
+                printExceptionWithRespectToAbort(log);
                 on_task_done(std::move(item));
                 return;
             }
