@@ -288,7 +288,7 @@ StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & met
         *this, metadata_snapshot, settings.max_partitions_per_insert_block, local_context);
 }
 
-void StorageMergeTree::checkTableCanBeDropped() const
+void StorageMergeTree::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const
 {
     if (!supportsReplication() && isStaticStorage())
         return;
@@ -1989,6 +1989,7 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
         renamed_parts.old_and_new_names[i].old_name.clear();
 
         results.push_back(PartitionCommandResultInfo{
+            .command_type = "ATTACH_PART",
             .partition_id = loaded_parts[i]->info.partition_id,
             .part_name = loaded_parts[i]->name,
             .old_part_name = old_name,

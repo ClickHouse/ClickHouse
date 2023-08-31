@@ -67,7 +67,8 @@ void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & pa
     sources = std::move(filtered_sources);
 }
 
-void addRequestedPathAndFileVirtualsToChunk(Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path);
+void addRequestedPathAndFileVirtualsToChunk(
+    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, const String * filename = nullptr);
 }
 
 }
