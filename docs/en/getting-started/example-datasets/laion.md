@@ -56,10 +56,12 @@ os.system(f"rm {npy_file} {metadata_file} {text_npy}")
 To start the data preparation pipeline, run:
 
 ```bash
-seq 0 409 | xargs -P100 -I{} bash -c './download.sh {}'
+seq 0 409 | xargs -P1 -I{} bash -c './download.sh {}'
 ```
 
 The dataset is split into 410 files, each file contains ca. 1 million rows. If you like to work with a smaller subset of the data, simply adjust the limits, e.g. `seq 0 9 | ...`.
+
+(The python script above is very slow (~2-10 minutes per file), takes a lot of memory (41 GB per file), and the resulting csv files are big (10 GB each), so be careful. If you have enough RAM, increase the `-P1` number for more parallelism. If this is still too slow, consider coming up with a better ingestion procedure - maybe converting the .npy files to parquet, then doing all the other processing with clickhouse.)
 
 ## Create table
 
