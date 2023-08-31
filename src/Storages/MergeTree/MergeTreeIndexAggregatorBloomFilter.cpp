@@ -54,7 +54,7 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
 
         const auto & index_col = checkAndGetColumn<ColumnUInt64>(index_column.get());
         const auto & index_data = index_col->getData();
-        for (const auto &hash: index_data)
+        for (const auto & hash: index_data)
             column_hashes[column].insert(hash);
     }
 
