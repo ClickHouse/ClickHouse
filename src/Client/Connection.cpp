@@ -345,6 +345,7 @@ void Connection::sendAddendum()
 
 void Connection::performHandshakeForSSHAuth()
 {
+#if USE_SSL
     String challenge;
     {
         writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);
@@ -368,7 +369,6 @@ void Connection::performHandshakeForSSHAuth()
         }
     }
 
-#if USE_SSL
     writeVarUInt(Protocol::Client::SSHChallengeResponse, *out);
     String to_sign = packStringForSshSign(challenge);
     String signature = ssh_private_key.signString(to_sign);
