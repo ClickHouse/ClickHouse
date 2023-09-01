@@ -20,7 +20,7 @@ def start_cluster():
         cluster.shutdown()
 
 
-def create_tables(cluster, table_name):
+def create_tables(cluster, table_name, disable_replication):
     # create replicated tables
     for node in nodes:
         node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
@@ -76,6 +76,13 @@ def create_tables(cluster, table_name):
             """
     )
 
+    # prevent part replication to ensure that parallel replicas read from different replicas
+    if disable_replication:
+        for node in nodes:
+            # node.query(f"SYSTEM STOP MERGES")
+            # node.query(f"SYSTEM STOP REPLICATED SENDS")
+            node.query(f"SYSTEM STOP REPLICATION QUEUES")
+
     # populate data
     nodes[0].query(
         f"INSERT INTO {table_name}_d SELECT number, number FROM numbers(1000)",
@@ -128,16 +135,11 @@ def test_parallel_replicas_over_distributed(
     start_cluster, cluster, max_parallel_replicas, prefer_localhost_replica
 ):
     table_name = "test_table"
-    create_tables(cluster, table_name)
+    disable_replication = True
+    create_tables(cluster, table_name, disable_replication)
 
     node = nodes[0]
     expected_result = f"6003\t-1999\t1999\t3\n"
-
-    # w/o parallel replicas
-    assert (
-        node.query(f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d")
-        == expected_result
-    )
 
     # parallel replicas
     assert (
@@ -150,5 +152,11 @@ def test_parallel_replicas_over_distributed(
                 "use_hedged_requests": 0,
             },
         )
+        == expected_result
+    )
+
+    # w/o parallel replicas
+    assert (
+        node.query(f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d")
         == expected_result
     )
