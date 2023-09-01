@@ -1,5 +1,6 @@
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/ResizeProcessor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -136,7 +137,8 @@ void DelayedSource::work()
     if (rows_before_limit)
     {
         for (auto & processor : processors)
-            processor->setRowsBeforeLimitCounter(rows_before_limit);
+            if (auto * remote_source = typeid_cast<RemoteSource *>(processors.get())
+                remote_source->setRowsBeforeLimitCounter(rows_before_limit);
     }
 
     synchronizePorts(totals_output, totals, header, processors);
