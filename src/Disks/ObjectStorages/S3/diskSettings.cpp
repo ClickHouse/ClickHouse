@@ -25,11 +25,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 std::unique_ptr<S3ObjectStorageSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
     const Settings & settings = context->getSettingsRef();
@@ -50,6 +45,8 @@ std::unique_ptr<S3::Client> getClient(
 {
     String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
     S3::URI uri(endpoint);
+    if (!uri.key.ends_with('/'))
+        uri.key.push_back('/');
 
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         config.getString(config_prefix + ".region", ""),
@@ -60,9 +57,6 @@ std::unique_ptr<S3::Client> getClient(
         settings.request_settings.get_request_throttler,
         settings.request_settings.put_request_throttler,
         uri.uri.getScheme());
-
-    if (uri.key.back() != '/')
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 path must ends with '/', but '{}' doesn't.", uri.key);
 
     client_configuration.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 1000);
     client_configuration.requestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 3000);
