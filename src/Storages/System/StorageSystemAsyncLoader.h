@@ -13,7 +13,7 @@ class Context;
 class StorageSystemAsyncLoader final : public IStorageSystemOneBlock<StorageSystemAsyncLoader>
 {
 public:
-    std::string getName() const override { return "SystemReplicatedFetches"; }
+    std::string getName() const override { return "SystemAsyncLoader"; }
 
     static NamesAndTypesList getNamesAndTypes();
 
