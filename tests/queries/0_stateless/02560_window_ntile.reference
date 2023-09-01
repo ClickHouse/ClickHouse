@@ -22,28 +22,7 @@ select a, b, ntile(3) over (partition by a order by b rows between unbounded pre
 1	7	3
 1	8	3
 1	9	3
-select a, b, ntile(3) over (partition by a order by b) from(select intDiv(number,10) as a, number%10 as b from numbers(20));
-0	0	1
-0	1	1
-0	2	1
-0	3	1
-0	4	2
-0	5	2
-0	6	2
-0	7	3
-0	8	3
-0	9	3
-1	0	1
-1	1	1
-1	2	1
-1	3	1
-1	4	2
-1	5	2
-1	6	2
-1	7	3
-1	8	3
-1	9	3
-select a, b, ntile(2) over (partition by a order by b) from(select intDiv(number,10) as a, number%10 as b from numbers(20));
+select a, b, ntile(2) over (partition by a order by b rows between unbounded preceding and unbounded following) from(select intDiv(number,10) as a, number%10 as b from numbers(20));
 0	0	1
 0	1	1
 0	2	1
@@ -64,7 +43,7 @@ select a, b, ntile(2) over (partition by a order by b) from(select intDiv(number
 1	7	2
 1	8	2
 1	9	2
-select a, b, ntile(1) over (partition by a order by b) from(select intDiv(number,10) as a, number%10 as b from numbers(20));
+select a, b, ntile(1) over (partition by a order by b rows between unbounded preceding and unbounded following) from(select intDiv(number,10) as a, number%10 as b from numbers(20));
 0	0	1
 0	1	1
 0	2	1
@@ -85,7 +64,7 @@ select a, b, ntile(1) over (partition by a order by b) from(select intDiv(number
 1	7	1
 1	8	1
 1	9	1
-select a, b, ntile(100) over (partition by a order by b) from(select intDiv(number,10) as a, number%10 as b from numbers(20));
+select a, b, ntile(100) over (partition by a order by b rows between unbounded preceding and unbounded following) from(select intDiv(number,10) as a, number%10 as b from numbers(20));
 0	0	1
 0	1	2
 0	2	3
@@ -106,7 +85,7 @@ select a, b, ntile(100) over (partition by a order by b) from(select intDiv(numb
 1	7	8
 1	8	9
 1	9	10
-select a, b, ntile(65535) over (partition by a order by b) from (select 1 as a, number as b from numbers(65535)) limit 100;
+select a, b, ntile(65535) over (partition by a order by b rows between unbounded preceding and unbounded following) from (select 1 as a, number as b from numbers(65535)) limit 100;
 1	0	1
 1	1	2
 1	2	3
@@ -208,11 +187,11 @@ select a, b, ntile(65535) over (partition by a order by b) from (select 1 as a, 
 1	98	99
 1	99	100
 -- Bad arguments
-select a, b, ntile(3.0) over (partition by a order by b) from(select intDiv(number,10) as a, number%10 as b from numbers(20)); -- { serverError 36 }
-select a, b, ntile('2') over (partition by a order by b) from(select intDiv(number,10) as a, number%10 as b from numbers(20)); -- { serverError 36 }
-select a, b, ntile(0) over (partition by a order by b) from(select intDiv(number,10) as a, number%10 as b from numbers(20)); -- { serverError 36 }
-select a, b, ntile(-2) over (partition by a order by b) from(select intDiv(number,10) as a, number%10 as b from numbers(20)); -- { serverError 36 }
-select a, b, ntile(b + 1) over (partition by a order by b) from(select intDiv(number,10) as a, number%10 as b from numbers(20)); -- { serverError 36 }
+select a, b, ntile(3.0) over (partition by a order by b rows between unbounded preceding and unbounded following) from(select intDiv(number,10) as a, number%10 as b from numbers(20)); -- { serverError 36 }
+select a, b, ntile('2') over (partition by a order by b rows between unbounded preceding and unbounded following) from(select intDiv(number,10) as a, number%10 as b from numbers(20)); -- { serverError 36 }
+select a, b, ntile(0) over (partition by a order by b rows between unbounded preceding and unbounded following) from(select intDiv(number,10) as a, number%10 as b from numbers(20)); -- { serverError 36 }
+select a, b, ntile(-2) over (partition by a order by b rows between unbounded preceding and unbounded following) from(select intDiv(number,10) as a, number%10 as b from numbers(20)); -- { serverError 36 }
+select a, b, ntile(b + 1) over (partition by a order by b rows between unbounded preceding and unbounded following) from(select intDiv(number,10) as a, number%10 as b from numbers(20)); -- { serverError 36 }
 -- Bad window type
 select a, b, ntile(2) over (partition by a) from(select intDiv(number,10) as a, number%10 as b from numbers(20)); -- { serverError 36 }
 select a, b, ntile(2) over (partition by a order by b rows between 4 preceding and unbounded following) from(select intDiv(number,10) as a, number%10 as b from numbers(20)); -- { serverError 36 }

@@ -9,7 +9,6 @@ RUN apt-get update \
         expect \
         file \
         lsof \
-        odbcinst \
         psmisc \
         python3 \
         python3-lxml \
@@ -32,7 +31,7 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \
   && rm -rf /tmp/clickhouse-odbc-tmp
 
-ENV TZ=Europe/Amsterdam
+ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV COMMIT_SHA=''

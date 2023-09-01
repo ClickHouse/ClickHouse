@@ -56,7 +56,7 @@ struct AggregateFunctionWithOffset
 using JITCreateAggregateStatesFunction = void (*)(AggregateDataPtr);
 using JITAddIntoAggregateStatesFunction = void (*)(ColumnDataRowsOffset, ColumnDataRowsOffset, ColumnData *, AggregateDataPtr *);
 using JITAddIntoAggregateStatesFunctionSinglePlace = void (*)(ColumnDataRowsOffset, ColumnDataRowsOffset, ColumnData *, AggregateDataPtr);
-using JITMergeAggregateStatesFunction = void (*)(AggregateDataPtr *, AggregateDataPtr *, size_t);
+using JITMergeAggregateStatesFunction = void (*)(AggregateDataPtr, AggregateDataPtr);
 using JITInsertAggregateStatesIntoColumnsFunction = void (*)(ColumnDataRowsOffset, ColumnDataRowsOffset, ColumnData *, AggregateDataPtr *);
 
 struct CompiledAggregateFunctions

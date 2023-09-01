@@ -21,7 +21,7 @@ def start_cluster():
             CREATE DATABASE test;
             CREATE TABLE test_table(date Date, id UInt32)
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/replicated', 'node1')
-            ORDER BY id PARTITION BY toYYYYMM(date) SETTINGS old_parts_lifetime=4, cleanup_delay_period=1, cleanup_thread_preferred_points_per_iteration=0;
+            ORDER BY id PARTITION BY toYYYYMM(date) SETTINGS old_parts_lifetime=4, cleanup_delay_period=1;
             """
         )
 

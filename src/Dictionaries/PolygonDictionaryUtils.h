@@ -13,7 +13,6 @@
 
 #include <numeric>
 
-
 namespace DB
 {
 

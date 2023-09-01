@@ -40,5 +40,3 @@ function wait_for_all_mutations()
 
     done
 }
-
-# vi: ft=bash

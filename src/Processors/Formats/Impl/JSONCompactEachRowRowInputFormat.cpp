@@ -88,17 +88,6 @@ void JSONCompactEachRowFormatReader::skipHeaderRow()
     skipRowEndDelimiter();
 }
 
-bool JSONCompactEachRowFormatReader::checkForSuffix()
-{
-    skipWhitespaceIfAny(*in);
-    return in->eof();
-}
-
-void JSONCompactEachRowFormatReader::skipRow()
-{
-    JSONUtils::skipRowForJSONCompactEachRow(*in);
-}
-
 std::vector<String> JSONCompactEachRowFormatReader::readHeaderRow()
 {
     skipRowStartDelimiter();
@@ -121,12 +110,6 @@ bool JSONCompactEachRowFormatReader::readField(IColumn & column, const DataTypeP
 {
     skipWhitespaceIfAny(*in);
     return JSONUtils::readField(*in, column, type, serialization, column_name, format_settings, yield_strings);
-}
-
-bool JSONCompactEachRowFormatReader::checkForEndOfRow()
-{
-    skipWhitespaceIfAny(*in);
-    return !in->eof() && *in->position() == ']';
 }
 
 bool JSONCompactEachRowFormatReader::parseRowStartWithDiagnosticInfo(WriteBuffer & out)
@@ -204,7 +187,7 @@ JSONCompactEachRowRowSchemaReader::JSONCompactEachRowRowSchemaReader(
 {
 }
 
-std::optional<DataTypes> JSONCompactEachRowRowSchemaReader::readRowAndGetDataTypesImpl()
+DataTypes JSONCompactEachRowRowSchemaReader::readRowAndGetDataTypesImpl()
 {
     if (first_row)
         first_row = false;

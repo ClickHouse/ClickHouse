@@ -61,39 +61,28 @@ def test_mntr_data_size_after_restart(started_cluster):
         node_zk.close()
         node_zk = None
 
-        def get_line_from_mntr(mntr_str, key):
+        def get_line_from_mntr(key):
             return next(
                 filter(
                     lambda line: key in line,
-                    mntr_str.split("\n"),
+                    keeper_utils.send_4lw_cmd(started_cluster, node, "mntr").split(
+                        "\n"
+                    ),
                 ),
                 None,
             )
 
-        mntr_result = keeper_utils.send_4lw_cmd(started_cluster, node, "mntr")
-        line_size_before = get_line_from_mntr(mntr_result, "zk_approximate_data_size")
-        node_count_before = get_line_from_mntr(mntr_result, "zk_znode_count")
-        assert (
-            get_line_from_mntr(mntr_result, "zk_ephemerals_count")
-            == "zk_ephemerals_count\t0"
-        )
+        line_size_before = get_line_from_mntr("zk_approximate_data_size")
+        node_count_before = get_line_from_mntr("zk_znode_count")
+        assert get_line_from_mntr("zk_ephemerals_count") == "zk_ephemerals_count\t0"
         assert line_size_before != None
 
         restart_clickhouse()
 
         def assert_mntr_stats():
-            mntr_result = keeper_utils.send_4lw_cmd(started_cluster, node, "mntr")
-            assert (
-                get_line_from_mntr(mntr_result, "zk_ephemerals_count")
-                == "zk_ephemerals_count\t0"
-            )
-            assert (
-                get_line_from_mntr(mntr_result, "zk_znode_count") == node_count_before
-            )
-            assert (
-                get_line_from_mntr(mntr_result, "zk_approximate_data_size")
-                == line_size_before
-            )
+            assert get_line_from_mntr("zk_ephemerals_count") == "zk_ephemerals_count\t0"
+            assert get_line_from_mntr("zk_znode_count") == node_count_before
+            assert get_line_from_mntr("zk_approximate_data_size") == line_size_before
 
         assert_mntr_stats()
         keeper_utils.send_4lw_cmd(started_cluster, node, "rclc")

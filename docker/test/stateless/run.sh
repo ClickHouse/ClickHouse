@@ -1,15 +1,9 @@
 #!/bin/bash
 
-# shellcheck disable=SC1091
-source /setup_export_logs.sh
-
 # fail on errors, verbose and export all env variables
 set -e -x -a
 
 # Choose random timezone for this test run.
-#
-# NOTE: that clickhouse-test will randomize session_timezone by itself as well
-# (it will choose between default server timezone and something specific).
 TZ="$(rg -v '#' /usr/share/zoneinfo/zone.tab  | awk '{print $3}' | shuf | head -n1)"
 echo "Choosen random timezone $TZ"
 ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
@@ -20,12 +14,6 @@ dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
 
 ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
-
-# shellcheck disable=SC1091
-source /usr/share/clickhouse-test/ci/attach_gdb.lib || true  # FIXME: to not break old builds, clean on 2023-09-01
-
-# shellcheck disable=SC1091
-source /usr/share/clickhouse-test/ci/utils.lib || true # FIXME: to not break old builds, clean on 2023-09-01
 
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
@@ -38,8 +26,6 @@ fi
 
 ./setup_minio.sh stateless
 ./setup_hdfs_minicluster.sh
-
-config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
@@ -97,33 +83,7 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     MAX_RUN_TIME=$((MAX_RUN_TIME != 0 ? MAX_RUN_TIME : 9000))    # set to 2.5 hours if 0 (unlimited)
 fi
 
-
-# Wait for the server to start, but not for too long.
-for _ in {1..100}
-do
-    clickhouse-client --query "SELECT 1" && break
-    sleep 1
-done
-
-setup_logs_replication
-
-attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
-
-function fn_exists() {
-    declare -F "$1" > /dev/null;
-}
-
-# FIXME: to not break old builds, clean on 2023-09-01
-function try_run_with_retry() {
-    local total_retries="$1"
-    shift
-
-    if fn_exists run_with_retry; then
-        run_with_retry "$total_retries" "$@"
-    else
-        "$@"
-    fi
-}
+sleep 5
 
 function run_tests()
 {
@@ -171,8 +131,6 @@ function run_tests()
     fi
 
     ADDITIONAL_OPTIONS+=('--report-logs-stats')
-
-    try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
 
     set +e
     clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \

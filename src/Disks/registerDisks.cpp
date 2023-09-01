@@ -29,11 +29,6 @@ void registerDiskWebServer(DiskFactory & factory, bool global_skip_access_check)
 
 void registerDiskCache(DiskFactory & factory, bool global_skip_access_check);
 
-void registerDiskLocalObjectStorage(DiskFactory & factory, bool global_skip_access_check);
-
-
-#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
-
 void registerDisks(bool global_skip_access_check)
 {
     auto & factory = DiskFactory::instance();
@@ -59,23 +54,6 @@ void registerDisks(bool global_skip_access_check)
     registerDiskWebServer(factory, global_skip_access_check);
 
     registerDiskCache(factory, global_skip_access_check);
-
-    registerDiskLocalObjectStorage(factory, global_skip_access_check);
 }
-
-#else
-
-void registerDisks(bool global_skip_access_check)
-{
-    auto & factory = DiskFactory::instance();
-
-    registerDiskLocal(factory, global_skip_access_check);
-
-#if USE_AWS_S3
-    registerDiskS3(factory, global_skip_access_check);
-#endif
-}
-
-#endif
 
 }

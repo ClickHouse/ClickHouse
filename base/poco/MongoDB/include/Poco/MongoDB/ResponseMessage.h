@@ -38,9 +38,6 @@ namespace MongoDB
         ResponseMessage();
         /// Creates an empty ResponseMessage.
 
-        ResponseMessage(const Int64 & cursorID);
-        /// Creates an ResponseMessage for existing cursor ID.
-
         virtual ~ResponseMessage();
         /// Destroys the ResponseMessage.
 

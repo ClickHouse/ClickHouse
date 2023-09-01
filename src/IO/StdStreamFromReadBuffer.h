@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/StdStreamBufFromReadBuffer.h>
+#include <iostream>
 #include <memory>
 
 
