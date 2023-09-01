@@ -111,8 +111,6 @@ elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "mips")
   set(ARCH "generic")
 elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "ppc64le")
   set(ARCH "ppc64le")
-elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "riscv64")
-  set(ARCH "riscv64")
 else()
   message(FATAL_ERROR "Unknown processor:" ${CMAKE_SYSTEM_PROCESSOR})
 endif()
@@ -139,6 +137,13 @@ if(NOT OPENSSL_NO_ASM)
     set(CMAKE_ASM_NASM_FLAGS "${CMAKE_ASM_NASM_FLAGS} -gcv8")
     enable_language(ASM_NASM)
   endif()
+endif()
+
+if(BUILD_SHARED_LIBS)
+  add_definitions(-DBORINGSSL_SHARED_LIBRARY)
+  # Enable position-independent code globally. This is needed because
+  # some library targets are OBJECT libraries.
+  set(CMAKE_POSITION_INDEPENDENT_CODE TRUE)
 endif()
 
 set(

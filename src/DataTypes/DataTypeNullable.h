@@ -16,7 +16,6 @@ public:
     explicit DataTypeNullable(const DataTypePtr & nested_data_type_);
     std::string doGetName() const override { return "Nullable(" + nested_data_type->getName() + ")"; }
     const char * getFamilyName() const override { return "Nullable"; }
-    String getSQLCompatibleName() const override { return nested_data_type->getSQLCompatibleName(); }
     TypeIndex getTypeId() const override { return TypeIndex::Nullable; }
 
     MutableColumnPtr createColumn() const override;
@@ -54,6 +53,5 @@ private:
 DataTypePtr makeNullable(const DataTypePtr & type);
 DataTypePtr makeNullableSafe(const DataTypePtr & type);
 DataTypePtr removeNullable(const DataTypePtr & type);
-DataTypePtr makeNullableOrLowCardinalityNullable(const DataTypePtr & type);
 
 }

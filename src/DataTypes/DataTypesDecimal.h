@@ -39,8 +39,6 @@ public:
     static constexpr auto family_name = "Decimal";
 
     const char * getFamilyName() const override { return family_name; }
-    String getSQLCompatibleName() const override;
-
     std::string doGetName() const override;
     TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }
     bool canBePromoted() const override { return true; }
@@ -102,7 +100,7 @@ inline UInt32 getDecimalScale(const DataTypeDecimal<T> & data_type)
 
 template <typename FromDataType, typename ToDataType, typename ReturnType = void>
 requires (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-inline ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType & result)
+inline ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType& result)
 {
     using FromFieldType = typename FromDataType::FieldType;
     using ToFieldType = typename ToDataType::FieldType;
@@ -118,20 +116,14 @@ inline ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & v
         if (common::mulOverflow(static_cast<MaxNativeType>(value.value), converted_value, converted_value))
         {
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow while multiplying {} by scale {}",
-                                std::string(ToDataType::family_name), toString(value.value), toString(converted_value));
+                throw Exception(std::string(ToDataType::family_name) + " convert overflow",
+                                ErrorCodes::DECIMAL_OVERFLOW);
             else
                 return ReturnType(false);
         }
     }
-    else if (scale_to == scale_from)
-    {
-        converted_value = value.value;
-    }
     else
-    {
         converted_value = value.value / DecimalUtils::scaleMultiplier<MaxNativeType>(scale_from - scale_to);
-    }
 
     if constexpr (sizeof(FromFieldType) > sizeof(ToFieldType))
     {
@@ -139,10 +131,8 @@ inline ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & v
             converted_value > std::numeric_limits<typename ToFieldType::NativeType>::max())
         {
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow: {} is not in range ({}, {})",
-                                std::string(ToDataType::family_name), toString(converted_value),
-                                toString(std::numeric_limits<typename ToFieldType::NativeType>::min()),
-                                toString(std::numeric_limits<typename ToFieldType::NativeType>::max()));
+                throw Exception(std::string(ToDataType::family_name) + " convert overflow",
+                                ErrorCodes::DECIMAL_OVERFLOW);
             else
                 return ReturnType(false);
         }
@@ -167,7 +157,7 @@ inline typename ToDataType::FieldType convertDecimals(const typename FromDataTyp
 
 template <typename FromDataType, typename ToDataType>
 requires (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-inline bool tryConvertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType & result)
+inline bool tryConvertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType& result)
 {
     return convertDecimalsImpl<FromDataType, ToDataType, bool>(value, scale_from, scale_to, result);
 }
@@ -215,9 +205,10 @@ inline ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & 
         if (!std::isfinite(value))
         {
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow. Cannot convert infinity or NaN to decimal", ToDataType::family_name);
+                throw Exception(std::string(ToDataType::family_name) + " convert overflow. Cannot convert infinity or NaN to decimal",
+                                ErrorCodes::DECIMAL_OVERFLOW);
             else
-                return ReturnType(false);
+                return false;
         }
 
         auto out = value * static_cast<FromFieldType>(DecimalUtils::scaleMultiplier<ToNativeType>(scale));
@@ -226,7 +217,8 @@ inline ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & 
             out >= static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::max()))
         {
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow. Float is out of Decimal range", ToDataType::family_name);
+                throw Exception(std::string(ToDataType::family_name) + " convert overflow. Float is out of Decimal range",
+                                ErrorCodes::DECIMAL_OVERFLOW);
             else
                 return ReturnType(false);
         }

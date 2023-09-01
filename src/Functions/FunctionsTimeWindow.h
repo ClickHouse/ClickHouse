@@ -64,7 +64,7 @@ struct ToStartOfTransform;
     {
         static UInt32 execute(UInt32 t, UInt64 delta, const DateLUTImpl & time_zone)
         {
-            return static_cast<UInt32>(time_zone.toStartOfDayInterval(time_zone.toDayNum(t), delta));
+            return time_zone.toStartOfDayInterval(time_zone.toDayNum(t), delta);
         }
     };
 
@@ -74,7 +74,7 @@ struct ToStartOfTransform;
     { \
         static UInt32 execute(UInt32 t, UInt64 delta, const DateLUTImpl & time_zone) \
         { \
-            return static_cast<UInt32>(time_zone.toStartOf##INTERVAL_KIND##Interval(t, delta)); \
+            return time_zone.toStartOf##INTERVAL_KIND##Interval(t, delta); \
         } \
     };
     TRANSFORM_TIME(Hour)
@@ -114,7 +114,7 @@ template<> \
     template <> \
     struct AddTime<IntervalKind::INTERVAL_KIND> \
     { \
-        static inline auto execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone) \
+        static inline auto execute(UInt16 d, UInt64 delta, const DateLUTImpl & time_zone) \
         { \
             return time_zone.add##INTERVAL_KIND##s(ExtendedDayNum(d), delta); \
         } \
@@ -127,18 +127,14 @@ template<> \
     template <>
     struct AddTime<IntervalKind::Week>
     {
-        static inline NO_SANITIZE_UNDEFINED ExtendedDayNum execute(UInt16 d, UInt64 delta, const DateLUTImpl &)
-        {
-            return ExtendedDayNum(static_cast<Int32>(d + delta * 7));
-        }
+        static inline NO_SANITIZE_UNDEFINED ExtendedDayNum execute(UInt16 d, UInt64 delta, const DateLUTImpl &) { return ExtendedDayNum(d + delta * 7);}
     };
 
 #define ADD_TIME(INTERVAL_KIND, INTERVAL) \
     template <> \
     struct AddTime<IntervalKind::INTERVAL_KIND> \
     { \
-        static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &) \
-        { return static_cast<UInt32>(t + delta * INTERVAL); } \
+        static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &) { return t + delta * INTERVAL; } \
     };
     ADD_TIME(Day, 86400)
     ADD_TIME(Hour, 3600)

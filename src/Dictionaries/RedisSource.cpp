@@ -1,12 +1,20 @@
 #include "RedisSource.h"
 
+#include <string>
 #include <vector>
+
+#include <Poco/Redis/Array.h>
+#include <Poco/Redis/Client.h>
+#include <Poco/Redis/Command.h>
+#include <Poco/Redis/Type.h>
+
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromString.h>
+
+#include "DictionaryStructure.h"
 
 
 namespace DB
@@ -22,7 +30,7 @@ namespace DB
 
 
     RedisSource::RedisSource(
-        RedisConnectionPtr connection_,
+        ConnectionPtr connection_,
         const RedisArray & keys_,
         const RedisStorageType & storage_type_,
         const DB::Block & sample_block,
@@ -101,7 +109,7 @@ namespace DB
                     readDateTimeText(time, in);
                     if (time < 0)
                         time = 0;
-                    assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
+                    assert_cast<ColumnUInt32 &>(column).insertValue(time);
                     break;
                 }
                 case ValueType::vtUUID:
@@ -151,7 +159,7 @@ namespace DB
                 {
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Too low keys in request to source: {}, expected 2 or more",
-                        keys_array.size());
+                        DB::toString(keys_array.size()));
                 }
 
                 if (num_rows + keys_array.size() - 1 > max_block_size)

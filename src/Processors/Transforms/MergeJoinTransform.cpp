@@ -276,7 +276,7 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     , log(&Poco::Logger::get("MergeJoinAlgorithm"))
 {
     if (input_headers.size() != 2)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeJoinAlgorithm requires exactly two inputs");
+        throw Exception("MergeJoinAlgorithm requires exactly two inputs", ErrorCodes::LOGICAL_ERROR);
 
     auto strictness = table_join->getTableJoin().strictness();
     if (strictness != JoinStrictness::Any && strictness != JoinStrictness::All)
@@ -300,16 +300,6 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         size_t right_idx = input_headers[1].getPositionByName(right_key);
         left_to_right_key_remap[left_idx] = right_idx;
     }
-}
-
-void MergeJoinAlgorithm::logElapsed(double seconds)
-{
-    LOG_TRACE(log,
-        "Finished pocessing in {} seconds"
-        ", left: {} blocks, {} rows; right: {} blocks, {} rows"
-        ", max blocks loaded to memory: {}",
-        seconds, stat.num_blocks[0], stat.num_rows[0], stat.num_blocks[1], stat.num_rows[1],
-        stat.max_blocks_loaded);
 }
 
 static void prepareChunk(Chunk & chunk)
@@ -339,10 +329,10 @@ void MergeJoinAlgorithm::initialize(Inputs inputs)
 void MergeJoinAlgorithm::consume(Input & input, size_t source_num)
 {
     if (input.skip_last_row)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "skip_last_row is not supported");
+        throw Exception("skip_last_row is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
     if (input.permutation)
-        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "permutation is not supported");
+        throw DB::Exception("permutation is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
     if (input.chunk)
     {
@@ -523,7 +513,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin(JoinKind kind)
     Columns lcols;
     if (!left_to_right_key_remap.empty())
     {
-        /// If we have remapped columns, then we need to get values from right columns instead of defaults
+        /// If we have remapped columns, then we need to get values from right columns insead of defaults
         const auto & indices = idx_map[0];
 
         const auto & left_src = cursors[0]->getCurrent().getColumns();
@@ -854,7 +844,6 @@ MergeJoinTransform::MergeJoinTransform(
         output_header,
         /* have_all_inputs_= */ true,
         limit_hint_,
-        /* always_read_till_end_= */ false,
         /* empty_chunk_on_finish_= */ true,
         table_join, input_headers, max_block_size)
     , log(&Poco::Logger::get("MergeJoinTransform"))

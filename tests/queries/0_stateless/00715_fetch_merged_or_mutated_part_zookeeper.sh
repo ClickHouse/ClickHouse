@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper
+# Tags: zookeeper, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -9,8 +9,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 ${CLICKHOUSE_CLIENT} -n --query="
-    DROP TABLE IF EXISTS fetches_r1 SYNC;
-    DROP TABLE IF EXISTS fetches_r2 SYNC"
+    DROP TABLE IF EXISTS fetches_r1;
+    DROP TABLE IF EXISTS fetches_r2"
 
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE fetches_r1(x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/fetches', 'r1') ORDER BY x"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE fetches_r2(x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/fetches', 'r2') ORDER BY x \
@@ -18,7 +18,6 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE fetches_r2(x UInt32) ENGINE Replicate
              prefer_fetch_merged_part_size_threshold=0"
 
 ${CLICKHOUSE_CLIENT} -n --query="
-    SET insert_keeper_fault_injection_probability=0;
     INSERT INTO fetches_r1 VALUES (1);
     INSERT INTO fetches_r1 VALUES (2);
     INSERT INTO fetches_r1 VALUES (3)"
@@ -52,5 +51,5 @@ ${CLICKHOUSE_CLIENT} --query="SELECT '*** Check data after fetch/clone of mutate
 ${CLICKHOUSE_CLIENT} --query="SELECT _part, * FROM fetches_r2 ORDER BY x"
 
 ${CLICKHOUSE_CLIENT} -n --query="
-    DROP TABLE fetches_r1 SYNC;
-    DROP TABLE fetches_r2 SYNC"
+    DROP TABLE fetches_r1;
+    DROP TABLE fetches_r2"

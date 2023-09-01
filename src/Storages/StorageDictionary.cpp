@@ -145,7 +145,7 @@ StorageDictionary::~StorageDictionary()
     removeDictionaryConfigurationFromRepository();
 }
 
-void StorageDictionary::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const
+void StorageDictionary::checkTableCanBeDropped() const
 {
     if (location == Location::SameDatabaseAndNameAsDictionary)
         throw Exception(ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE,
@@ -153,15 +153,13 @@ void StorageDictionary::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr que
             dictionary_name);
     if (location == Location::DictionaryDatabase)
         throw Exception(ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE,
-            "Cannot drop/detach table '{}' from a database with DICTIONARY engine, use DROP DICTIONARY or DETACH DICTIONARY query instead",
+            "Cannot drop/detach table from a database with DICTIONARY engine, use DROP DICTIONARY or DETACH DICTIONARY query instead",
             dictionary_name);
 }
 
 void StorageDictionary::checkTableCanBeDetached() const
 {
-    /// Actually query context (from DETACH query) should be passed here.
-    /// But we don't use it for this type of storage
-    checkTableCanBeDropped(getContext());
+    checkTableCanBeDropped();
 }
 
 Pipe StorageDictionary::read(
@@ -171,17 +169,11 @@ Pipe StorageDictionary::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
-    const size_t threads)
+    const unsigned threads)
 {
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
     auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
     return dictionary->read(column_names, max_block_size, threads);
-}
-
-std::shared_ptr<const IDictionary> StorageDictionary::getDictionary() const
-{
-    auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
-    return getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, getContext());
 }
 
 void StorageDictionary::shutdown()
@@ -210,13 +202,13 @@ void StorageDictionary::removeDictionaryConfigurationFromRepository()
 
 Poco::Timestamp StorageDictionary::getUpdateTime() const
 {
-    std::lock_guard lock(dictionary_config_mutex);
+    std::lock_guard<std::mutex> lock(dictionary_config_mutex);
     return update_time;
 }
 
 LoadablesConfigurationPtr StorageDictionary::getConfiguration() const
 {
-    std::lock_guard lock(dictionary_config_mutex);
+    std::lock_guard<std::mutex> lock(dictionary_config_mutex);
     return configuration;
 }
 
@@ -236,7 +228,7 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
     assert(old_table_id.uuid == new_table_id.uuid || move_to_atomic || move_to_ordinary);
 
     {
-        std::lock_guard lock(dictionary_config_mutex);
+        std::lock_guard<std::mutex> lock(dictionary_config_mutex);
 
         configuration->setString("dictionary.database", new_table_id.database_name);
         configuration->setString("dictionary.name", new_table_id.table_name);
@@ -303,7 +295,7 @@ void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_con
         dictionary_non_const->setDictionaryComment(new_comment);
     }
 
-    std::lock_guard lock(dictionary_config_mutex);
+    std::lock_guard<std::mutex> lock(dictionary_config_mutex);
     configuration->setString("dictionary.comment", new_comment);
 }
 
@@ -344,7 +336,8 @@ void registerStorageDictionary(StorageFactory & factory)
             /// Create dictionary storage that is view of underlying dictionary
 
             if (args.engine_args.size() != 1)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage Dictionary requires single parameter: name of dictionary");
+                throw Exception("Storage Dictionary requires single parameter: name of dictionary",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
             args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
             String dictionary_name = checkAndGetLiteralArgument<String>(args.engine_args[0], "dictionary_name");

@@ -57,7 +57,7 @@ void BinlogDumpGTID::writePayloadImpl(WriteBuffer & buffer) const
     const UInt64 position = 4;
     buffer.write(reinterpret_cast<const char *>(&position), 8);
 
-    UInt32 gtid_size = static_cast<UInt32>(gtid_datas.size());
+    UInt32 gtid_size = gtid_datas.size();
     buffer.write(reinterpret_cast<const char *>(&gtid_size), 4);
     buffer.write(gtid_datas.data(), gtid_datas.size());
 }

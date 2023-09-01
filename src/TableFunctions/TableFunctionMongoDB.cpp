@@ -1,5 +1,3 @@
-#include <TableFunctions/TableFunctionMongoDB.h>
-
 #include <Common/Exception.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -9,6 +7,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 
+#include <TableFunctions/TableFunctionMongoDB.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -27,9 +26,9 @@ namespace ErrorCodes
 
 
 StoragePtr TableFunctionMongoDB::executeImpl(const ASTPtr & /*ast_function*/,
-        ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
+        ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    auto columns = getActualTableStructure(context, is_insert_query);
+    auto columns = getActualTableStructure(context);
     auto storage = std::make_shared<StorageMongoDB>(
     StorageID(configuration->database, table_name),
     configuration->host,
@@ -46,7 +45,7 @@ StoragePtr TableFunctionMongoDB::executeImpl(const ASTPtr & /*ast_function*/,
     return storage;
 }
 
-ColumnsDescription TableFunctionMongoDB::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionMongoDB::getActualTableStructure(ContextPtr context) const
 {
     return parseColumnsListFromString(structure, context);
 }
@@ -55,15 +54,14 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
 {
     const auto & func_args = ast_function->as<ASTFunction &>();
     if (!func_args.arguments)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'mongodb' must have arguments.");
+        throw Exception("Table function 'mongodb' must have arguments.", ErrorCodes::BAD_ARGUMENTS);
 
     ASTs & args = func_args.arguments->children;
 
     if (args.size() < 6 || args.size() > 7)
     {
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Table function 'mongodb' requires from 6 to 7 parameters: "
-                        "mongodb('host:port', database, collection, 'user', 'password', structure, [, 'options'])");
+        "Table function 'mongodb' requires from 6 to 7 parameters: mongodb('host:port', database, collection, 'user', 'password', structure, [, 'options'])");
     }
 
     ASTs main_arguments(args.begin(), args.begin() + 5);

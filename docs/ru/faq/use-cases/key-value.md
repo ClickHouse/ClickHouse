@@ -1,5 +1,4 @@
 ---
-slug: /ru/faq/use-cases/key-value
 title: Можно ли использовать ClickHouse для хранения данных вида "ключ-значение"?
 sidebar_position: 101
 ---

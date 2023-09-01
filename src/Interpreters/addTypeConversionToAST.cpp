@@ -41,7 +41,7 @@ ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name, const Nam
 
     for (const auto & action : actions->getActions())
         if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-            throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Unsupported default value that requires ARRAY JOIN action");
+            throw Exception("Unsupported default value that requires ARRAY JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
 
     auto block = actions->getSampleBlock();
 

@@ -1,7 +1,4 @@
 #include <Common/FrequencyHolder.h>
-
-#if USE_NLP
-
 #include <Common/StringUtils/StringUtils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTextClassification.h>
@@ -55,9 +52,9 @@ struct FunctionDetectTonalityImpl
         /// Calculate average value of tonality.
         /// Convert values -12..6 to -1..1
         if (weight > 0)
-            return static_cast<Float32>(weight / count_words / 6);
+            return weight / count_words / 6;
         else
-            return static_cast<Float32>(weight / count_words / 12);
+            return weight / count_words / 12;
     }
 
     static void vector(
@@ -90,5 +87,3 @@ REGISTER_FUNCTION(DetectTonality)
 }
 
 }
-
-#endif

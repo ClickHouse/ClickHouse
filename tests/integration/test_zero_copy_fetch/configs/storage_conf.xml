@@ -1,8 +1,4 @@
 <clickhouse>
-    <logger>
-        <level>test</level>
-    </logger>
-
     <storage_configuration>
         <disks>
             <s3>
@@ -25,18 +21,10 @@
                     </main>
                 </volumes>
             </s3>
-            <s3_only>
-                <volumes>
-                    <main>
-                        <disk>s3</disk>
-                    </main>
-                </volumes>
-            </s3_only>
         </policies>
     </storage_configuration>
 
     <merge_tree>
         <allow_remote_fs_zero_copy_replication>true</allow_remote_fs_zero_copy_replication>
     </merge_tree>
-    <allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
 </clickhouse>

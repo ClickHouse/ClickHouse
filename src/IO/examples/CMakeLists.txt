@@ -37,6 +37,12 @@ target_link_libraries (read_write_int PRIVATE clickhouse_common_io)
 clickhouse_add_executable (o_direct_and_dirty_pages o_direct_and_dirty_pages.cpp)
 target_link_libraries (o_direct_and_dirty_pages PRIVATE clickhouse_common_io)
 
+clickhouse_add_executable (hashing_write_buffer hashing_write_buffer.cpp)
+target_link_libraries (hashing_write_buffer PRIVATE clickhouse_common_io)
+
+clickhouse_add_executable (hashing_read_buffer hashing_read_buffer.cpp)
+target_link_libraries (hashing_read_buffer PRIVATE clickhouse_common_io)
+
 clickhouse_add_executable (io_operators io_operators.cpp)
 target_link_libraries (io_operators PRIVATE clickhouse_common_io)
 
@@ -72,10 +78,4 @@ target_link_libraries (snappy_read_buffer PRIVATE clickhouse_common_io)
 
 clickhouse_add_executable (hadoop_snappy_read_buffer hadoop_snappy_read_buffer.cpp)
 target_link_libraries (hadoop_snappy_read_buffer PRIVATE clickhouse_common_io)
-
-if (TARGET ch_contrib::hdfs)
-    clickhouse_add_executable (read_buffer_from_hdfs read_buffer_from_hdfs.cpp)
-    target_link_libraries (read_buffer_from_hdfs PRIVATE dbms ch_contrib::hdfs)
-endif ()
-
 

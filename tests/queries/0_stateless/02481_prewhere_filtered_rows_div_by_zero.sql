@@ -1,7 +1,7 @@
 DROP TABLE IF EXISTS test_filter;
 
 -- { echoOn }
-CREATE TABLE test_filter(a Int32, b Int32, c Int32) ENGINE = MergeTree() ORDER BY a SETTINGS index_granularity = 3, index_granularity_bytes = '10Mi';
+CREATE TABLE test_filter(a Int32, b Int32, c Int32) ENGINE = MergeTree() ORDER BY a SETTINGS index_granularity = 3;
 
 INSERT INTO test_filter SELECT number, number+1, (number/2 + 1) % 2 FROM numbers(15);
 
@@ -15,7 +15,7 @@ SELECT intDiv(b, c) FROM test_filter PREWHERE c != 0;
 SELECT intDiv(b, c) FROM test_filter PREWHERE c != 0 WHERE b%2 != 0;
 
 
-SET mutations_sync = 2;
+SET mutations_sync = 2, allow_experimental_lightweight_delete = 1;
 
 -- Delete all rows where division by zero could occur
 DELETE FROM test_filter WHERE c = 0;

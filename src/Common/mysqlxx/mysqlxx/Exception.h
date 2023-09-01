@@ -53,7 +53,7 @@ struct CannotParseValue : public Exception
 };
 
 
-std::string errorMessage(MYSQL * driver, const std::string & query = "");
+std::string errorMessage(MYSQL * driver);
 
 /// For internal need of library.
 void checkError(MYSQL * driver);

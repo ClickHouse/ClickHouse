@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/create/settings-profile
 sidebar_position: 43
 sidebar_label: "Профиль настроек"
 ---
@@ -11,9 +10,9 @@ sidebar_label: "Профиль настроек"
 Синтаксис:
 
 ``` sql
-CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
+CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] TO name1 [ON CLUSTER cluster_name1]
         [, name2 [ON CLUSTER cluster_name2] ...]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
 ```
 
 Секция `ON CLUSTER` позволяет создавать профили на кластере, см. [Распределенные DDL запросы](../../../sql-reference/distributed-ddl.md).
@@ -25,3 +24,5 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_n
 ``` sql
 CREATE SETTINGS PROFILE max_memory_usage_profile SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000 TO robin
 ```
+
+<!--hide-->

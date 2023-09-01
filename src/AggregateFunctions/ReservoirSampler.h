@@ -24,7 +24,6 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 }
 
@@ -190,33 +189,23 @@ public:
             /// When frequency is too low, replace just one random element with the corresponding probability.
             if (frequency * 2 >= sample_count)
             {
-                UInt64 rnd = genRandom(static_cast<UInt64>(frequency));
+                UInt64 rnd = genRandom(frequency);
                 if (rnd < sample_count)
                     samples[rnd] = b.samples[rnd];
             }
             else
             {
                 for (double i = 0; i < sample_count; i += frequency) /// NOLINT
-                {
-                    size_t idx = static_cast<size_t>(i);
-                    samples[idx] = b.samples[idx];
-                }
+                    samples[i] = b.samples[i];
             }
         }
     }
 
     void read(DB::ReadBuffer & buf)
     {
-        DB::readBinaryLittleEndian(sample_count, buf);
-        DB::readBinaryLittleEndian(total_values, buf);
-
-        size_t size = std::min(total_values, sample_count);
-        static constexpr size_t MAX_RESERVOIR_SIZE = 1_GiB;
-        if (unlikely(size > MAX_RESERVOIR_SIZE))
-            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                                "Too large array size (maximum: {})", MAX_RESERVOIR_SIZE);
-
-        samples.resize(size);
+        DB::readIntBinary<size_t>(sample_count, buf);
+        DB::readIntBinary<size_t>(total_values, buf);
+        samples.resize(std::min(total_values, sample_count));
 
         std::string rng_string;
         DB::readStringBinary(rng_string, buf);
@@ -224,22 +213,22 @@ public:
         rng_buf >> rng;
 
         for (size_t i = 0; i < samples.size(); ++i)
-            DB::readBinaryLittleEndian(samples[i], buf);
+            DB::readBinary(samples[i], buf);
 
         sorted = false;
     }
 
     void write(DB::WriteBuffer & buf) const
     {
-        DB::writeBinaryLittleEndian(sample_count, buf);
-        DB::writeBinaryLittleEndian(total_values, buf);
+        DB::writeIntBinary<size_t>(sample_count, buf);
+        DB::writeIntBinary<size_t>(total_values, buf);
 
         DB::WriteBufferFromOwnString rng_buf;
         rng_buf << rng;
         DB::writeStringBinary(rng_buf.str(), buf);
 
         for (size_t i = 0; i < std::min(sample_count, total_values); ++i)
-            DB::writeBinaryLittleEndian(samples[i], buf);
+            DB::writeBinary(samples[i], buf);
     }
 
 private:
@@ -253,15 +242,14 @@ private:
     bool sorted = false;
 
 
-    UInt64 genRandom(UInt64 limit)
+    UInt64 genRandom(size_t lim)
     {
-        assert(limit > 0);
-
+        assert(lim > 0);
         /// With a large number of values, we will generate random numbers several times slower.
-        if (limit <= static_cast<UInt64>(rng.max()))
-            return static_cast<UInt32>(rng()) % static_cast<UInt32>(limit);
+        if (lim <= static_cast<UInt64>(rng.max()))
+            return static_cast<UInt32>(rng()) % static_cast<UInt32>(lim);
         else
-            return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(rng.max()) + 1ULL) + static_cast<UInt64>(rng())) % limit;
+            return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(rng.max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
     }
 
     void sortIfNeeded()

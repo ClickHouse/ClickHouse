@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/database-engines/materialized-postgresql
 sidebar_label: MaterializedPostgreSQL
 sidebar_position: 60
 ---
@@ -8,7 +7,7 @@ sidebar_position: 60
 
 Creates a ClickHouse database with tables from PostgreSQL database. Firstly, database with engine `MaterializedPostgreSQL` creates a snapshot of PostgreSQL database and loads required tables. Required tables can include any subset of tables from any subset of schemas from specified database. Along with the snapshot database engine acquires LSN and once initial dump of tables is performed - it starts pulling updates from WAL. After database is created, newly added tables to PostgreSQL database are not automatically added to replication. They have to be added manually with `ATTACH TABLE db.table` query.
 
-Replication is implemented with PostgreSQL Logical Replication Protocol, which does not allow to replicate DDL, but allows to know whether replication breaking changes happened (column type changes, adding/removing columns). Such changes are detected and according tables stop receiving updates. In this case you should use `ATTACH`/ `DETACH` queries to reload table completely. If DDL does not break replication (for example, renaming a column) table will still receive updates (insertion is done by position).
+Replication is implemented with PostgreSQL Logical Replication Protocol, which does not allow to replicate DDL, but allows to know whether replication breaking changes happened (column type changes, adding/removing columns). Such changes are detected and according tables stop receiving updates. Such tables can be automatically reloaded in the background in case required setting is turned on (can be used starting from 22.1). Safest way for now is to use `ATTACH`/ `DETACH` queries to reload table completely. If DDL does not break replication (for example, renaming a column) table will still receive updates (insertion is done by position).
 
 :::note
 This database engine is experimental. To use it, set `allow_experimental_database_materialized_postgresql` to 1 in your configuration files or by using the `SET` command:
@@ -26,10 +25,10 @@ ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SE
 
 **Engine Parameters**
 
-- `host:port` — PostgreSQL server endpoint.
-- `database` — PostgreSQL database name.
-- `user` — PostgreSQL user.
-- `password` — User password.
+-   `host:port` — PostgreSQL server endpoint.
+-   `database` — PostgreSQL database name.
+-   `user` — PostgreSQL user.
+-   `password` — User password.
 
 ## Example of Use {#example-of-use}
 
@@ -55,7 +54,7 @@ ATTACH TABLE postgres_database.new_table;
 ```
 
 :::warning
-Before version 22.1, adding a table to replication left a non-removed temporary replication slot (named `{db_name}_ch_replication_slot_tmp`). If attaching tables in ClickHouse version before 22.1, make sure to delete it manually (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`). Otherwise disk usage will grow. This issue is fixed in 22.1.
+Before version 22.1, adding a table to replication left an unremoved temporary replication slot (named `{db_name}_ch_replication_slot_tmp`). If attaching tables in ClickHouse version before 22.1, make sure to delete it manually (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`). Otherwise disk usage will grow. This issue is fixed in 22.1.
 :::
 
 ## Dynamically removing tables from replication {#dynamically-removing-table-from-replication}
@@ -120,9 +119,9 @@ Warning: for this case dots in table name are not allowed.
 
 2. Each replicated table must have one of the following [replica identity](https://www.postgresql.org/docs/10/sql-altertable.html#SQL-CREATETABLE-REPLICA-IDENTITY):
 
-- primary key (by default)
+-   primary key (by default)
 
-- index
+-   index
 
 ``` bash
 postgres# CREATE TABLE postgres_table (a Integer NOT NULL, b Integer, c Integer NOT NULL, d Integer, e Integer NOT NULL);
@@ -145,7 +144,7 @@ FROM pg_class
 WHERE oid = 'postgres_table'::regclass;
 ```
 
-:::note
+:::warning
 Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
 :::
 
@@ -165,13 +164,26 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
     Default value: empty list. (Default schema is used)
 
+### `materialized_postgresql_allow_automatic_update` {#materialized-postgresql-allow-automatic-update}
+
+    Do not use this setting before 22.1 version.
+
+    Allows reloading table in the background, when schema changes are detected. DDL queries on the PostgreSQL side are not replicated via ClickHouse [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) engine, because it is not allowed with PostgreSQL logical replication protocol, but the fact of DDL changes is detected transactionally. In this case, the default behaviour is to stop replicating those tables once DDL is detected. However, if this setting is enabled, then, instead of stopping the replication of those tables, they will be reloaded in the background via database snapshot without data losses and replication will continue for them.
+
+    Possible values:
+
+    -   0 — The table is not automatically updated in the background, when schema changes are detected.
+    -   1 — The table is automatically updated in the background, when schema changes are detected.
+
+    Default value: `0`.
+
 ### `materialized_postgresql_max_block_size` {#materialized-postgresql-max-block-size}
 
     Sets the number of rows collected in memory before flushing data into PostgreSQL database table.
 
     Possible values:
 
-    - Positive integer.
+    -   Positive integer.
 
     Default value: `65536`.
 
@@ -257,7 +269,7 @@ Please note that this should be used only if it is actually needed. If there is 
 
 1. [CREATE PUBLICATION](https://postgrespro.ru/docs/postgresql/14/sql-createpublication) -- create query privilege.
 
-2. [CREATE_REPLICATION_SLOT](https://postgrespro.ru/docs/postgrespro/10/protocol-replication#PROTOCOL-REPLICATION-CREATE-SLOT) -- replication privilege.
+2. [CREATE_REPLICATION_SLOT](https://postgrespro.ru/docs/postgrespro/10/protocol-replication#PROTOCOL-REPLICATION-CREATE-SLOT) -- replication privelege.
 
 3. [pg_drop_replication_slot](https://postgrespro.ru/docs/postgrespro/9.5/functions-admin#functions-replication) -- replication privilege or superuser.
 

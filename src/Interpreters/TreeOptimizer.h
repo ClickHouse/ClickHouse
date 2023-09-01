@@ -23,9 +23,9 @@ public:
         const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
         ContextPtr context);
 
+
     static void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif, bool multiif_to_if);
-    static void optimizeCountConstantAndSumOne(ASTPtr & query, ContextPtr context);
-    static void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query);
+    static void optimizeCountConstantAndSumOne(ASTPtr & query);
 };
 
 }

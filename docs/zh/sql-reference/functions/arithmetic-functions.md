@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/functions/arithmetic-functions
 sidebar_position: 35
 sidebar_label: 算术函数
 ---
@@ -125,7 +124,7 @@ SELECT max2(-1, 2);
 **语法**
 
 ```sql
-min2(value1, value2)
+max2(value1, value2)
 ```
 
 **参数**
@@ -154,3 +153,5 @@ SELECT min2(-1, 2);
 │          -1 │
 └─────────────┘
 ```
+
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/arithmetic_functions/) <!--hide-->

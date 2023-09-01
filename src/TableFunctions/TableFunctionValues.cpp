@@ -56,7 +56,7 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
             const Tuple & value_tuple = value_field.safeGet<Tuple>();
 
             if (value_tuple.size() != sample_block.columns())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Values size should match with number of columns");
+                throw Exception("Values size should match with number of columns", ErrorCodes::BAD_ARGUMENTS);
 
             const DataTypes & value_types_tuple = type_tuple->getElements();
             for (size_t j = 0; j < value_tuple.size(); ++j)
@@ -83,17 +83,16 @@ void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' must have arguments", getName());
+        throw Exception("Table function '" + getName() + "' must have arguments", ErrorCodes::LOGICAL_ERROR);
 
     ASTs & args = args_func.at(0)->children;
 
     if (args.empty())
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires at least 1 argument", getName());
+        throw Exception("Table function '" + getName() + "' requires at least 1 argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const auto & literal = args[0]->as<const ASTLiteral>();
     String value;
-    String error;
-    if (args.size() > 1 && literal && literal->value.tryGet(value) && tryParseColumnsListFromString(value, structure, context, error))
+    if (args.size() > 1 && literal && literal->value.tryGet(value) && tryParseColumnsListFromString(value, structure, context))
     {
         has_structure_in_arguments = true;
         return;
@@ -119,14 +118,14 @@ void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr
     structure = ColumnsDescription(names_and_types);
 }
 
-ColumnsDescription TableFunctionValues::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionValues::getActualTableStructure(ContextPtr /*context*/) const
 {
     return structure;
 }
 
-StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
+StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    auto columns = getActualTableStructure(context, is_insert_query);
+    auto columns = getActualTableStructure(context);
 
     Block sample_block;
     for (const auto & name_type : columns.getOrdinary())
@@ -148,7 +147,7 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, Context
 
 void registerTableFunctionValues(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionValues>({.documentation = {}, .allow_readonly = true}, TableFunctionFactory::CaseInsensitive);
+    factory.registerFunction<TableFunctionValues>(TableFunctionFactory::CaseInsensitive);
 }
 
 }

@@ -1,4 +1,6 @@
+#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
 
 #include <memory>
 #include <cstddef>

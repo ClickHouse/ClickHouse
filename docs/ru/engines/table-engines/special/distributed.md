@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/table-engines/special/distributed
 sidebar_position: 33
 sidebar_label: Distributed
 ---

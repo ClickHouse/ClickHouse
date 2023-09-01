@@ -86,8 +86,8 @@ struct NodeBase
     {
         UInt64 size;
         readVarUInt(size, buf);
-        if (unlikely(size > max_node_size_deserialize))
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large node state size");
+        if unlikely (size > max_node_size_deserialize)
+            throw Exception("Too large node state size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
         Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + size, alignof(Node)));
         node->size = size;
@@ -190,7 +190,7 @@ public:
         SequenceDirection seq_direction_,
         size_t min_required_args_,
         UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node>, Self>(arguments, parameters_, data_type_)
+        : IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node>, Self>({data_type_}, parameters_)
         , seq_base_kind(seq_base_kind_)
         , seq_direction(seq_direction_)
         , min_required_args(min_required_args_)
@@ -202,9 +202,22 @@ public:
 
     String getName() const override { return "sequenceNextNode"; }
 
+    DataTypePtr getReturnType() const override { return data_type; }
+
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
         return this->getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
+    }
+
+    AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params,
+        const AggregateFunctionProperties &) const override
+    {
+        /// Even though some values are mapped to aggregating key, it could return nulls for the below case.
+        ///   aggregated events: [A -> B -> C]
+        ///   events to find: [C -> D]
+        ///   [C -> D] is not matched to 'A -> B -> C' so that it returns null.
+        return std::make_shared<AggregateFunctionNullVariadic<false, false, true>>(nested_function, arguments, params);
     }
 
     void insert(Data & a, const Node * v, Arena * arena) const
@@ -234,7 +247,7 @@ public:
         for (UInt8 i = 0; i < events_size; ++i)
             if (assert_cast<const ColumnVector<UInt8> *>(columns[min_required_args + i])->getData()[row_num])
                 node->events_bitset.set(i);
-        node->event_time = static_cast<DataTypeDateTime::FieldType>(timestamp);
+        node->event_time = timestamp;
 
         node->can_be_base = assert_cast<const ColumnVector<UInt8> *>(columns[base_cond_column_idx])->getData()[row_num];
 
@@ -323,10 +336,6 @@ public:
         if (unlikely(size == 0))
             return;
 
-        if (unlikely(size > max_node_size_deserialize))
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                            "Too large array size (maximum: {})", max_node_size_deserialize);
-
         auto & value = data(place).value;
 
         value.resize(size, arena);
@@ -377,7 +386,7 @@ public:
     /// The first matched event is 0x00000001, the second one is 0x00000002, the third one is 0x00000004, and so on.
     UInt32 getNextNodeIndex(Data & data) const
     {
-        const UInt32 unmatched_idx = static_cast<UInt32>(data.value.size());
+        const UInt32 unmatched_idx = data.value.size();
 
         if (data.value.size() <= events_size)
             return unmatched_idx;
@@ -407,7 +416,7 @@ public:
                         break;
                 return (i == events_size) ? base - i : unmatched_idx;
         }
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

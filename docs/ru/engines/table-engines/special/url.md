@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/table-engines/special/url
 sidebar_position: 41
 sidebar_label: URL
 ---
@@ -77,3 +76,4 @@ SELECT * FROM url_engine_table
     -   использование операций `ALTER` и `SELECT...SAMPLE`;
     -   индексы;
     -   репликация.
+

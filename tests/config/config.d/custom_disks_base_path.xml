@@ -1,3 +1,0 @@
-<clickhouse>
-  <custom_local_disks_base_directory>/var/lib/clickhouse/disks/</custom_local_disks_base_directory>
-</clickhouse>

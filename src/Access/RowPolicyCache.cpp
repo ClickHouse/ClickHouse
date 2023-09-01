@@ -16,8 +16,7 @@ namespace DB
 {
 namespace
 {
-    /// Helper to accumulate filters from multiple row policies and join them together
-    ///   by AND or OR logical operations.
+    /// Accumulates filters from multiple row policies and joins them using the AND logical operation.
     class FiltersMixer
     {
     public:
@@ -149,11 +148,9 @@ void RowPolicyCache::ensureAllRowPoliciesRead()
 
     for (const UUID & id : access_control.findAll<RowPolicy>())
     {
-        auto policy = access_control.tryRead<RowPolicy>(id);
-        if (policy)
-        {
-            all_policies.emplace(id, PolicyInfo(policy));
-        }
+        auto quota = access_control.tryRead<RowPolicy>(id);
+        if (quota)
+            all_policies.emplace(id, PolicyInfo(quota));
     }
 }
 
@@ -215,108 +212,37 @@ void RowPolicyCache::mixFiltersFor(EnabledRowPolicies & enabled)
     {
         FiltersMixer mixer;
         std::shared_ptr<const std::pair<String, String>> database_and_table_name;
-        std::vector<RowPolicyPtr> policies;
     };
 
-    std::unordered_map<MixedFiltersKey, MixerWithNames, Hash> database_mixers;
+    std::unordered_map<MixedFiltersKey, MixerWithNames, Hash> mixers;
 
-    /// populate database_mixers using database-level policies
-    ///  to aggregate (mix) rules per database
     for (const auto & [policy_id, info] : all_policies)
     {
-        if (info.isForDatabase())
+        const auto & policy = *info.policy;
+        bool match = info.roles->match(enabled.params.user_id, enabled.params.enabled_roles);
+        MixedFiltersKey key;
+        key.database = info.database_and_table_name->first;
+        key.table_name = info.database_and_table_name->second;
+        for (auto filter_type : collections::range(0, RowPolicyFilterType::MAX))
         {
-            const auto & policy = *info.policy;
-            bool match = info.roles->match(enabled.params.user_id, enabled.params.enabled_roles);
-            for (auto filter_type : collections::range(0, RowPolicyFilterType::MAX))
+            auto filter_type_i = static_cast<size_t>(filter_type);
+            if (info.parsed_filters[filter_type_i])
             {
-                auto filter_type_i = static_cast<size_t>(filter_type);
-                if (info.parsed_filters[filter_type_i])
-                {
-                    MixedFiltersKey key{info.database_and_table_name->first,
-                        info.database_and_table_name->second,
-                        filter_type};
-
-                    auto & mixer = database_mixers[key];
-                    mixer.database_and_table_name = info.database_and_table_name;
-                    if (match)
-                    {
-                        mixer.mixer.add(info.parsed_filters[filter_type_i], policy.isRestrictive());
-                        mixer.policies.push_back(info.policy);
-                    }
-                }
-            }
-        }
-    }
-
-    std::unordered_map<MixedFiltersKey, MixerWithNames, Hash> table_mixers;
-
-    /// populate table_mixers using database_mixers and table-level policies
-    for (const auto & [policy_id, info] : all_policies)
-    {
-        if (!info.isForDatabase())
-        {
-            const auto & policy = *info.policy;
-            bool match = info.roles->match(enabled.params.user_id, enabled.params.enabled_roles);
-            for (auto filter_type : collections::range(0, RowPolicyFilterType::MAX))
-            {
-                auto filter_type_i = static_cast<size_t>(filter_type);
-                if (info.parsed_filters[filter_type_i])
-                {
-                    MixedFiltersKey key{info.database_and_table_name->first,
-                        info.database_and_table_name->second,
-                        filter_type};
-                    auto table_it = table_mixers.find(key);
-                    if (table_it == table_mixers.end())
-                    {   /// no exact match - create new mixer
-                        MixedFiltersKey database_key = key;
-                        database_key.table_name = RowPolicyName::ANY_TABLE_MARK;
-
-                        auto database_it = database_mixers.find(database_key);
-
-                        if (database_it == database_mixers.end())
-                        {
-                            table_it = table_mixers.try_emplace(key).first;
-                        }
-                        else
-                        {
-                            /// table policies are based on database ones
-                            table_it = table_mixers.insert({key, database_it->second}).first;
-                        }
-                    }
-
-                    auto & mixer = table_it->second; ///  getting table level mixer
-                    mixer.database_and_table_name = info.database_and_table_name;
-                    if (match)
-                    {
-                        mixer.mixer.add(info.parsed_filters[filter_type_i], policy.isRestrictive());
-                        mixer.policies.push_back(info.policy);
-                    }
-                }
+                key.filter_type = filter_type;
+                auto & mixer = mixers[key];
+                mixer.database_and_table_name = info.database_and_table_name;
+                if (match)
+                    mixer.mixer.add(info.parsed_filters[filter_type_i], policy.isRestrictive());
             }
         }
     }
 
     auto mixed_filters = boost::make_shared<MixedFiltersMap>();
-
-    /// Retrieve aggregated policies from mixers
-    ///  if a table has a policy for this particular table, we have all needed information in table_mixers
-    ///    (policies for the database are already applied)
-    ///  otherwise we would look for a policy for database using RowPolicy::ANY_TABLE_MARK
-    /// Consider restrictive policies a=1 for db.t, b=2 for db.* and c=3 for db.*
-    ///   We are going to have two items in mixed_filters:
-    ///     1. a=1 AND b=2 AND c=3   for db.t (comes from table_mixers, where it had been created with the help of database_mixers)
-    ///     2. b=2 AND c=3  for db.* (comes directly from database_mixers)
-    for (auto * mixer_map_ptr : {&table_mixers, &database_mixers})
+    for (auto & [key, mixer] : mixers)
     {
-        for (auto & [key, mixer] : *mixer_map_ptr)
-        {
-            auto mixed_filter = std::make_shared<RowPolicyFilter>();
-            mixed_filter->database_and_table_name = std::move(mixer.database_and_table_name);
-            mixed_filter->expression = std::move(mixer.mixer).getResult(access_control.isEnabledUsersWithoutRowPoliciesCanReadRows());
-            mixed_filter->policies = std::move(mixer.policies);
-            mixed_filters->emplace(key, std::move(mixed_filter));
-        }
+        auto & mixed_filter = (*mixed_filters)[key];
+        mixed_filter.database_and_table_name = mixer.database_and_table_name;
+        mixed_filter.ast = std::move(mixer.mixer).getResult(access_control.isEnabledUsersWithoutRowPoliciesCanReadRows());
     }
 
     enabled.mixed_filters.store(mixed_filters);

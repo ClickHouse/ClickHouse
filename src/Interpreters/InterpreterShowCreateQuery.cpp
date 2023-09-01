@@ -9,7 +9,6 @@
 #include <Common/typeid_cast.h>
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
@@ -77,16 +76,14 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
     else if ((show_query = query_ptr->as<ASTShowCreateDatabaseQuery>()))
     {
         if (show_query->temporary)
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary databases are not possible.");
+            throw Exception("Temporary databases are not possible.", ErrorCodes::SYNTAX_ERROR);
         show_query->setDatabase(getContext()->resolveDatabase(show_query->getDatabase()));
         getContext()->checkAccess(AccessType::SHOW_DATABASES, show_query->getDatabase());
         create_query = DatabaseCatalog::instance().getDatabase(show_query->getDatabase())->getCreateDatabaseQuery();
     }
 
     if (!create_query)
-        throw Exception(ErrorCodes::THERE_IS_NO_QUERY,
-                        "Unable to show the create query of {}. Maybe it was created by the system.",
-                        show_query->getTable());
+        throw Exception("Unable to show the create query of " + show_query->getTable() + ". Maybe it was created by the system.", ErrorCodes::THERE_IS_NO_QUERY);
 
     if (!getContext()->getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
     {
@@ -95,8 +92,12 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         create.to_inner_uuid = UUIDHelpers::Nil;
     }
 
+    WriteBufferFromOwnString buf;
+    formatAST(*create_query, buf, false, false);
+    String res = buf.str();
+
     MutableColumnPtr column = ColumnString::create();
-    column->insert(format({.ctx = getContext(), .query = *create_query, .one_line = false}));
+    column->insert(res);
 
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{
         std::move(column),

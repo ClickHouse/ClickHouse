@@ -43,7 +43,7 @@ namespace detail
     {
         static Ret hash(UInt128 x)
         {
-            return static_cast<Ret>(sipHash64(x));
+            return sipHash64(x);
         }
     };
 
@@ -119,10 +119,6 @@ struct AggregateFunctionUniqCombinedData<String, K, HashValueType> : public Aggr
 {
 };
 
-template <UInt8 K, typename HashValueType>
-struct AggregateFunctionUniqCombinedData<IPv6, K, HashValueType> : public AggregateFunctionUniqCombinedDataWithKey<UInt64 /*always*/, K>
-{
-};
 
 template <typename T, UInt8 K, typename HashValueType>
 class AggregateFunctionUniqCombined final
@@ -130,8 +126,7 @@ class AggregateFunctionUniqCombined final
 {
 public:
     AggregateFunctionUniqCombined(const DataTypes & argument_types_, const Array & params_)
-        : IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<T, K, HashValueType>, AggregateFunctionUniqCombined<T, K, HashValueType>>(argument_types_, params_, std::make_shared<DataTypeUInt64>())
-    {}
+        : IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<T, K, HashValueType>, AggregateFunctionUniqCombined<T, K, HashValueType>>(argument_types_, params_) {}
 
     String getName() const override
     {
@@ -141,19 +136,24 @@ public:
             return "uniqCombined";
     }
 
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeUInt64>();
+    }
+
     bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
-        {
-            StringRef value = columns[0]->getDataAt(row_num);
-            this->data(place).set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
-        }
-        else
+        if constexpr (!std::is_same_v<T, String>)
         {
             const auto & value = assert_cast<const ColumnVector<T> &>(*columns[0]).getElement(row_num);
             this->data(place).set.insert(detail::AggregateFunctionUniqCombinedTraits<T, HashValueType>::hash(value));
+        }
+        else
+        {
+            StringRef value = columns[0]->getDataAt(row_num);
+            this->data(place).set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
         }
     }
 
@@ -192,7 +192,7 @@ private:
 public:
     explicit AggregateFunctionUniqCombinedVariadic(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<UInt64, K, HashValueType>,
-            AggregateFunctionUniqCombinedVariadic<is_exact, argument_is_tuple, K, HashValueType>>(arguments, params, std::make_shared<DataTypeUInt64>())
+            AggregateFunctionUniqCombinedVariadic<is_exact, argument_is_tuple, K, HashValueType>>(arguments, params)
     {
         if (argument_is_tuple)
             num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();
@@ -206,6 +206,11 @@ public:
             return "uniqCombined64";
         else
             return "uniqCombined";
+    }
+
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeUInt64>();
     }
 
     bool allocatesMemoryInArena() const override { return false; }

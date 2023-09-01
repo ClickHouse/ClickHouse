@@ -31,7 +31,7 @@ public:
         const auto * path = query_ptr->as<ASTJSONPath>();
         if (!path)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid path");
+            throw Exception("Invalid path", ErrorCodes::LOGICAL_ERROR);
         }
         const auto * query = path->jsonpath_query;
 
@@ -89,7 +89,7 @@ public:
             for (size_t i = current_visitor; i < visitors.size(); ++i)
             {
                 status = visitors[i]->visit(current);
-                current_visitor = static_cast<int>(i);
+                current_visitor = i;
                 if (status == VisitorStatus::Error || status == VisitorStatus::Ignore)
                 {
                     break;

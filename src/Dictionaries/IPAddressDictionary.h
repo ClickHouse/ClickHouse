@@ -5,11 +5,13 @@
 #include <variant>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
+#include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <Poco/Net/IPAddress.h>
 #include <base/StringRef.h>
+#include <Common/logger_useful.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
@@ -17,8 +19,6 @@
 
 namespace DB
 {
-class Arena;
-
 class IPAddressDictionary final : public IDictionary
 {
 public:
@@ -118,8 +118,6 @@ private:
             Float32,
             Float64,
             UUID,
-            IPv4,
-            IPv6,
             String,
             Array>
             null_values;
@@ -144,8 +142,6 @@ private:
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,
-            ContainerType<IPv4>,
-            ContainerType<IPv6>,
             ContainerType<StringRef>,
             ContainerType<Array>>
             maps;

@@ -1,46 +1,45 @@
 ---
-slug: /en/sql-reference/data-types/uuid
 sidebar_position: 46
 sidebar_label: UUID
 ---
 
 # UUID
 
-A Universally Unique Identifier (UUID) is a 16-byte value used to identify records. For detailed information about UUIDs, see [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).
+A universally unique identifier (UUID) is a 16-byte number used to identify records. For detailed information about the UUID, see [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).
 
-While different UUID variants exist (see [here](https://datatracker.ietf.org/doc/html/draft-ietf-uuidrev-rfc4122bis)), ClickHouse does not validate that inserted UUIDs conform to a particular variant. UUIDs are internally treated as a sequence of 16 random bytes with [8-4-4-4-12 representation](https://en.wikipedia.org/wiki/Universally_unique_identifier#Textual_representation) at SQL level.
-
-Example UUID value:
+The example of UUID type value is represented below:
 
 ``` text
 61f0c404-5cb3-11e7-907b-a6006ad3dba0
 ```
 
-The default UUID is all-zero. It is used, for example, when a new record is inserted but no value for a UUID column is specified:
+If you do not specify the UUID column value when inserting a new record, the UUID value is filled with zero:
 
 ``` text
 00000000-0000-0000-0000-000000000000
 ```
 
-## Generating UUIDs
+## How to Generate
 
-ClickHouse provides the [generateUUIDv4](../../sql-reference/functions/uuid-functions.md) function to generate random UUID version 4 values.
+To generate the UUID value, ClickHouse provides the [generateUUIDv4](../../sql-reference/functions/uuid-functions.md) function.
 
 ## Usage Example
 
 **Example 1**
 
-This example demonstrates the creation of a table with a UUID column and the insertion of a value into the table.
+This example demonstrates creating a table with the UUID type column and inserting a value into the table.
 
 ``` sql
 CREATE TABLE t_uuid (x UUID, y String) ENGINE=TinyLog
-
-INSERT INTO t_uuid SELECT generateUUIDv4(), 'Example 1'
-
-SELECT * FROM t_uuid
 ```
 
-Result:
+``` sql
+INSERT INTO t_uuid SELECT generateUUIDv4(), 'Example 1'
+```
+
+``` sql
+SELECT * FROM t_uuid
+```
 
 ``` text
 ┌────────────────────────────────────x─┬─y─────────┐
@@ -50,11 +49,13 @@ Result:
 
 **Example 2**
 
-In this example, no UUID column value is specified when the record is inserted, i.e. the default UUID value is inserted:
+In this example, the UUID column value is not specified when inserting a new record.
 
 ``` sql
 INSERT INTO t_uuid (y) VALUES ('Example 2')
+```
 
+``` sql
 SELECT * FROM t_uuid
 ```
 
@@ -70,3 +71,5 @@ SELECT * FROM t_uuid
 The UUID data type only supports functions which [String](../../sql-reference/data-types/string.md) data type also supports (for example, [min](../../sql-reference/aggregate-functions/reference/min.md#agg_function-min), [max](../../sql-reference/aggregate-functions/reference/max.md#agg_function-max), and [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count)).
 
 The UUID data type is not supported by arithmetic operations (for example, [abs](../../sql-reference/functions/arithmetic-functions.md#arithm_func-abs)) or aggregate functions, such as [sum](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum) and [avg](../../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg).
+
+[Original article](https://clickhouse.com/docs/en/data_types/uuid/) <!--hide-->

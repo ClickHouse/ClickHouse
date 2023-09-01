@@ -12,11 +12,19 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <base/defines.h>
-#include <base/errnoToString.h>
-
 
 using namespace DB;
+
+static int regAggregateFunctions = 0;
+
+void tryRegisterAggregateFunctions()
+{
+    if (!regAggregateFunctions)
+    {
+        registerAggregateFunctions();
+        regAggregateFunctions = 1;
+    }
+}
 
 static ConfigProcessor::LoadedConfig loadConfiguration(const std::string & config_path)
 {
@@ -35,7 +43,7 @@ static ConfigProcessor::LoadedConfig loadConfigurationFromString(std::string & s
     int fd = mkstemp(tmp_file);
     if (fd == -1)
     {
-        throw std::runtime_error(errnoToString());
+        throw std::runtime_error(strerror(errno));
     }
     try
     {
@@ -47,15 +55,13 @@ static ConfigProcessor::LoadedConfig loadConfigurationFromString(std::string & s
         {
             throw std::runtime_error("unable write to temp file");
         }
-        int error = close(fd);
-        chassert(!error);
-
+        close(fd);
         auto config_path = std::string(tmp_file) + ".xml";
         if (std::rename(tmp_file, config_path.c_str()))
         {
             int err = errno;
             (void)remove(tmp_file);
-            throw std::runtime_error(errnoToString(err));
+            throw std::runtime_error(strerror(err));
         }
         ConfigProcessor::LoadedConfig config = loadConfiguration(config_path);
         (void)remove(tmp_file);

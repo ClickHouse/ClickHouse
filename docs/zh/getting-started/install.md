@@ -1,5 +1,4 @@
 ---
-slug: /zh/getting-started/install
 sidebar_position: 11
 sidebar_label: 安装部署
 ---
@@ -79,17 +78,6 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 sudo yum install -y yum-utils
 sudo yum-config-manager --add-repo https://packages.clickhouse.com/rpm/clickhouse.repo
 sudo yum install -y clickhouse-server clickhouse-client
-
-sudo /etc/init.d/clickhouse-server start
-clickhouse-client # or "clickhouse-client --password" if you set up a password.
-```
-
-For systems with `zypper` package manager (openSUSE, SLES):
-
-``` bash
-sudo zypper addrepo -r https://packages.clickhouse.com/rpm/clickhouse.repo -g
-sudo zypper --gpg-auto-import-keys refresh clickhouse-stable
-sudo zypper install -y clickhouse-server clickhouse-client
 
 sudo /etc/init.d/clickhouse-server start
 clickhouse-client # or "clickhouse-client --password" if you set up a password.
@@ -287,3 +275,5 @@ SELECT 1
 **恭喜，系统已经工作了!**
 
 为了继续进行实验，你可以尝试下载测试数据集或查看[教程](./tutorial.md)。
+
+[原始文章](https://clickhouse.com/docs/en/getting_started/install/) <!--hide-->

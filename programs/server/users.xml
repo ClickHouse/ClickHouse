@@ -1,3 +1,4 @@
+<?xml version="1.0"?>
 <clickhouse>
     <!-- See also the files in users.d directory where the settings can be overridden. -->
 
@@ -5,6 +6,15 @@
     <profiles>
         <!-- Default settings. -->
         <default>
+            <!-- How to choose between replicas during distributed query processing.
+                 random - choose random replica from set of replicas with minimum number of errors
+                 nearest_hostname - from set of replicas with minimum number of errors, choose replica
+                  with minimum number of different symbols between replica's hostname and local hostname
+                  (Hamming distance).
+                 in_order - first live replica is chosen in specified order.
+                 first_or_random - if first replica one has higher number of errors, pick a random one from replicas with minimum number of errors.
+            -->
+            <load_balancing>random</load_balancing>
         </default>
 
         <!-- Profile that allows only read queries. -->

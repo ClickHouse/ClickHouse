@@ -3,15 +3,12 @@
 #include <cassert>
 #include <stdexcept> // for std::logic_error
 #include <string>
-#include <type_traits>
 #include <vector>
 #include <functional>
 #include <iosfwd>
 
-#include <base/defines.h>
 #include <base/types.h>
 #include <base/unaligned.h>
-#include <base/simd.h>
 
 #include <city.h>
 
@@ -28,11 +25,6 @@
 #if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
     #include <arm_acle.h>
     #define CRC_INT __crc32cd
-#endif
-
-#if defined(__aarch64__) && defined(__ARM_NEON)
-    #include <arm_neon.h>
-    #pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 
 
@@ -63,9 +55,10 @@ struct StringRef
     bool empty() const { return size == 0; }
 
     std::string toString() const { return std::string(data, size); }
-    explicit operator std::string() const { return toString(); }
 
+    explicit operator std::string() const { return toString(); }
     std::string_view toView() const { return std::string_view(data, size); }
+
     constexpr explicit operator std::string_view() const { return std::string_view(data, size); }
 };
 
@@ -80,14 +73,14 @@ using StringRefs = std::vector<StringRef>;
   * For more information, see hash_map_string_2.cpp
   */
 
-inline bool compare8(const char * p1, const char * p2)
+inline bool compareSSE2(const char * p1, const char * p2)
 {
     return 0xFFFF == _mm_movemask_epi8(_mm_cmpeq_epi8(
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(p1)),
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(p2))));
 }
 
-inline bool compare64(const char * p1, const char * p2)
+inline bool compareSSE2x4(const char * p1, const char * p2)
 {
     return 0xFFFF == _mm_movemask_epi8(
         _mm_and_si128(
@@ -107,30 +100,7 @@ inline bool compare64(const char * p1, const char * p2)
                     _mm_loadu_si128(reinterpret_cast<const __m128i *>(p2) + 3)))));
 }
 
-#elif defined(__aarch64__) && defined(__ARM_NEON)
-
-inline bool compare8(const char * p1, const char * p2)
-{
-    uint64_t mask = getNibbleMask(vceqq_u8(
-            vld1q_u8(reinterpret_cast<const unsigned char *>(p1)), vld1q_u8(reinterpret_cast<const unsigned char *>(p2))));
-    return 0xFFFFFFFFFFFFFFFF == mask;
-}
-
-inline bool compare64(const char * p1, const char * p2)
-{
-    uint64_t mask = getNibbleMask(vandq_u8(
-        vandq_u8(vceqq_u8(vld1q_u8(reinterpret_cast<const unsigned char *>(p1)), vld1q_u8(reinterpret_cast<const unsigned char *>(p2))),
-            vceqq_u8(vld1q_u8(reinterpret_cast<const unsigned char *>(p1 + 16)), vld1q_u8(reinterpret_cast<const unsigned char *>(p2 + 16)))),
-        vandq_u8(vceqq_u8(vld1q_u8(reinterpret_cast<const unsigned char *>(p1 + 32)), vld1q_u8(reinterpret_cast<const unsigned char *>(p2 + 32))),
-            vceqq_u8(vld1q_u8(reinterpret_cast<const unsigned char *>(p1 + 48)), vld1q_u8(reinterpret_cast<const unsigned char *>(p2 + 48))))));
-    return 0xFFFFFFFFFFFFFFFF == mask;
-}
-
-#endif
-
-#if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
-
-inline bool memequalWide(const char * p1, const char * p2, size_t size)
+inline bool memequalSSE2Wide(const char * p1, const char * p2, size_t size)
 {
     /** The order of branches and the trick with overlapping comparisons
       * are the same as in memcpy implementation.
@@ -167,7 +137,7 @@ inline bool memequalWide(const char * p1, const char * p2, size_t size)
 
     while (size >= 64)
     {
-        if (compare64(p1, p2))
+        if (compareSSE2x4(p1, p2))
         {
             p1 += 64;
             p2 += 64;
@@ -179,15 +149,16 @@ inline bool memequalWide(const char * p1, const char * p2, size_t size)
 
     switch (size / 16)
     {
-        case 3: if (!compare8(p1 + 32, p2 + 32)) return false; [[fallthrough]];
-        case 2: if (!compare8(p1 + 16, p2 + 16)) return false; [[fallthrough]];
-        case 1: if (!compare8(p1, p2)) return false;
+        case 3: if (!compareSSE2(p1 + 32, p2 + 32)) return false; [[fallthrough]];
+        case 2: if (!compareSSE2(p1 + 16, p2 + 16)) return false; [[fallthrough]];
+        case 1: if (!compareSSE2(p1, p2)) return false;
     }
 
-    return compare8(p1 + size - 16, p2 + size - 16);
+    return compareSSE2(p1 + size - 16, p2 + size - 16);
 }
 
 #endif
+
 
 inline bool operator== (StringRef lhs, StringRef rhs)
 {
@@ -197,8 +168,8 @@ inline bool operator== (StringRef lhs, StringRef rhs)
     if (lhs.size == 0)
         return true;
 
-#if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
-    return memequalWide(lhs.data, rhs.data, lhs.size);
+#if defined(__SSE2__)
+    return memequalSSE2Wide(lhs.data, rhs.data, lhs.size);
 #else
     return 0 == memcmp(lhs.data, rhs.data, lhs.size);
 #endif
@@ -252,7 +223,7 @@ inline UInt64 shiftMix(UInt64 val)
     return val ^ (val >> 47);
 }
 
-inline UInt64 rotateByAtLeast1(UInt64 val, UInt8 shift)
+inline UInt64 rotateByAtLeast1(UInt64 val, int shift)
 {
     return (val >> shift) | (val << (64 - shift));
 }
@@ -274,7 +245,7 @@ inline size_t hashLessThan8(const char * data, size_t size)
         uint8_t b = data[size >> 1];
         uint8_t c = data[size - 1];
         uint32_t y = static_cast<uint32_t>(a) + (static_cast<uint32_t>(b) << 8);
-        uint32_t z = static_cast<uint32_t>(size) + (static_cast<uint32_t>(c) << 2);
+        uint32_t z = size + (static_cast<uint32_t>(c) << 2);
         return shiftMix(y * k2 ^ z * k3) * k2;
     }
 
@@ -287,7 +258,7 @@ inline size_t hashLessThan16(const char * data, size_t size)
     {
         UInt64 a = unalignedLoad<UInt64>(data);
         UInt64 b = unalignedLoad<UInt64>(data + size - 8);
-        return hashLen16(a, rotateByAtLeast1(b + size, static_cast<UInt8>(size))) ^ b;
+        return hashLen16(a, rotateByAtLeast1(b + size, size)) ^ b;
     }
 
     return hashLessThan8(data, size);
@@ -295,7 +266,7 @@ inline size_t hashLessThan16(const char * data, size_t size)
 
 struct CRC32Hash
 {
-    unsigned operator() (StringRef x) const
+    size_t operator() (StringRef x) const
     {
         const char * pos = x.data;
         size_t size = x.size;
@@ -303,26 +274,24 @@ struct CRC32Hash
         if (size == 0)
             return 0;
 
-        chassert(pos);
-
         if (size < 8)
         {
-            return static_cast<unsigned>(hashLessThan8(x.data, x.size));
+            return hashLessThan8(x.data, x.size);
         }
 
         const char * end = pos + size;
-        unsigned res = -1U;
+        size_t res = -1ULL;
 
         do
         {
             UInt64 word = unalignedLoad<UInt64>(pos);
-            res = static_cast<unsigned>(CRC_INT(res, word));
+            res = CRC_INT(res, word);
 
             pos += 8;
         } while (pos + 8 < end);
 
         UInt64 word = unalignedLoad<UInt64>(end - 8);    /// I'm not sure if this is normal.
-        res = static_cast<unsigned>(CRC_INT(res, word));
+        res = CRC_INT(res, word);
 
         return res;
     }
@@ -334,7 +303,7 @@ struct StringRefHash : CRC32Hash {};
 
 struct CRC32Hash
 {
-    unsigned operator() (StringRef /* x */) const
+    size_t operator() (StringRef /* x */) const
     {
        throw std::logic_error{"Not implemented CRC32Hash without SSE"};
     }
@@ -356,17 +325,6 @@ namespace ZeroTraits
 {
     inline bool check(const StringRef & x) { return 0 == x.size; }
     inline void set(StringRef & x) { x.size = 0; }
-}
-
-namespace PackedZeroTraits
-{
-    template <typename Second, template <typename, typename> class PackedPairNoInit>
-    inline bool check(const PackedPairNoInit<StringRef, Second> p)
-    { return 0 == p.key.size; }
-
-    template <typename Second, template <typename, typename> class PackedPairNoInit>
-    inline void set(PackedPairNoInit<StringRef, Second> & p)
-    { p.key.size = 0; }
 }
 
 

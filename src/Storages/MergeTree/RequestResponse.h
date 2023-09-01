@@ -1,6 +1,5 @@
 #pragma once
 
-#include <condition_variable>
 #include <functional>
 #include <optional>
 
@@ -10,23 +9,10 @@
 #include <IO/ReadBuffer.h>
 
 #include <Storages/MergeTree/MarkRange.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
 
 
 namespace DB
 {
-
-/// This enum is being serialized and transferred over a network
-/// You can't reorder it or add another value in the middle
-enum class CoordinationMode : uint8_t
-{
-    Default = 0,
-    /// For reading in order
-    WithOrder = 1,
-    ReverseOrder = 2,
-
-    MAX = ReverseOrder,
-};
 
 /// Represents a segment [left; right]
 struct PartBlockRange
@@ -40,79 +26,32 @@ struct PartBlockRange
     }
 };
 
-/// ParallelReadRequest is used by remote replicas during parallel read
-/// to signal an initiator that they need more marks to read.
-struct ParallelReadRequest
+struct PartitionReadRequest
 {
-    /// No default constructor, you must initialize all fields at once.
-
-    ParallelReadRequest(
-        CoordinationMode mode_,
-        size_t replica_num_,
-        size_t min_number_of_marks_,
-        RangesInDataPartsDescription description_)
-        : mode(mode_)
-        , replica_num(replica_num_)
-        , min_number_of_marks(min_number_of_marks_)
-        , description(std::move(description_))
-    {}
-
-    CoordinationMode mode;
-    size_t replica_num;
-    size_t min_number_of_marks;
-    /// Extension for Ordered (InOrder or ReverseOrder) mode
-    /// Contains only data part names without mark ranges.
-    RangesInDataPartsDescription description;
+    String partition_id;
+    String part_name;
+    String projection_name;
+    PartBlockRange block_range;
+    MarkRanges mark_ranges;
 
     void serialize(WriteBuffer & out) const;
-    String describe() const;
-    static ParallelReadRequest deserialize(ReadBuffer & in);
-    void merge(ParallelReadRequest & other);
+    void describe(WriteBuffer & out) const;
+    void deserialize(ReadBuffer & in);
+
+    UInt64 getConsistentHash(size_t buckets) const;
 };
 
-/// ParallelReadResponse is used by an initiator to tell
-/// remote replicas about what to read during parallel reading.
-/// Additionally contains information whether there are more available
-/// marks to read (whether it is the last packet or not).
-struct ParallelReadResponse
+struct PartitionReadResponse
 {
-    bool finish{false};
-    RangesInDataPartsDescription description;
+    bool denied{false};
+    MarkRanges mark_ranges{};
 
     void serialize(WriteBuffer & out) const;
-    String describe() const;
     void deserialize(ReadBuffer & in);
 };
 
 
-/// The set of parts (their names) along with ranges to read which is sent back
-/// to the initiator by remote replicas during parallel reading.
-/// Additionally contains an identifier (replica_num) plus
-/// the reading algorithm chosen (Default, InOrder or ReverseOrder).
-struct InitialAllRangesAnnouncement
-{
-    /// No default constructor, you must initialize all fields at once.
+using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
-    InitialAllRangesAnnouncement(
-        CoordinationMode mode_,
-        RangesInDataPartsDescription description_,
-        size_t replica_num_)
-        : mode(mode_)
-        , description(description_)
-        , replica_num(replica_num_)
-    {}
-
-    CoordinationMode mode;
-    RangesInDataPartsDescription description;
-    size_t replica_num;
-
-    void serialize(WriteBuffer & out) const;
-    String describe();
-    static InitialAllRangesAnnouncement deserialize(ReadBuffer & in);
-};
-
-
-using MergeTreeAllRangesCallback = std::function<void(InitialAllRangesAnnouncement)>;
-using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
 }

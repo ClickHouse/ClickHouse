@@ -26,7 +26,8 @@ static void append(std::vector<String> & to, const std::vector<String> & what, s
     }
 
     if (what.size() * to.size() > max_addresses)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'remote': first argument generates too many result addresses");
+        throw Exception("Table function 'remote': first argument generates too many result addresses",
+                        ErrorCodes::BAD_ARGUMENTS);
     std::vector<String> res;
     for (const auto & elem_to : to)
         for (const auto & elem_what : what)
@@ -52,8 +53,19 @@ static bool parseNumber(const String & description, size_t l, size_t r, size_t &
 }
 
 
-std::vector<String> parseRemoteDescription(
-    const String & description, size_t l, size_t r, char separator, size_t max_addresses, const String & func_name)
+/* Parse a string that generates shards and replicas. Separator - one of two characters | or ,
+ *  depending on whether shards or replicas are generated.
+ * For example:
+ * host1,host2,...      - generates set of shards from host1, host2, ...
+ * host1|host2|...      - generates set of replicas from host1, host2, ...
+ * abc{8..10}def        - generates set of shards abc8def, abc9def, abc10def.
+ * abc{08..10}def       - generates set of shards abc08def, abc09def, abc10def.
+ * abc{x,yy,z}def       - generates set of shards abcxdef, abcyydef, abczdef.
+ * abc{x|yy|z} def      - generates set of replicas abcxdef, abcyydef, abczdef.
+ * abc{1..9}de{f,g,h}   - is a direct product, 27 shards.
+ * abc{1..9}de{0|1}     - is a direct product, 9 shards, in each 2 replicas.
+ */
+std::vector<String> parseRemoteDescription(const String & description, size_t l, size_t r, char separator, size_t max_addresses)
 {
     std::vector<String> res;
     std::vector<String> cur;
@@ -70,8 +82,8 @@ std::vector<String> parseRemoteDescription(
         /// Either the numeric interval (8..10) or equivalent expression in brackets
         if (description[i] == '{')
         {
-            ssize_t cnt = 1;
-            ssize_t last_dot = -1; /// The rightmost pair of points, remember the index of the right of the two
+            int cnt = 1;
+            int last_dot = -1; /// The rightmost pair of points, remember the index of the right of the two
             size_t m;
             std::vector<String> buffer;
             bool have_splitter = false;
@@ -86,41 +98,30 @@ std::vector<String> parseRemoteDescription(
                 if (cnt == 0) break;
             }
             if (cnt != 0)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}': incorrect brace sequence in first argument", func_name);
+                throw Exception("Table function 'remote': incorrect brace sequence in first argument",
+                                ErrorCodes::BAD_ARGUMENTS);
             /// The presence of a dot - numeric interval
             if (last_dot != -1)
             {
                 size_t left, right;
                 if (description[last_dot - 1] != '.')
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Table function '{}': incorrect argument in braces (only one dot): {}",
-                        func_name,
-                        description.substr(i, m - i + 1));
+                    throw Exception("Table function 'remote': incorrect argument in braces (only one dot): " + description.substr(i, m - i + 1),
+                                    ErrorCodes::BAD_ARGUMENTS);
                 if (!parseNumber(description, i + 1, last_dot - 1, left))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Table function '{}': "
-                        "incorrect argument in braces (Incorrect left number): {}",
-                        func_name,
-                        description.substr(i, m - i + 1));
+                    throw Exception("Table function 'remote': incorrect argument in braces (Incorrect left number): "
+                                    + description.substr(i, m - i + 1),
+                                    ErrorCodes::BAD_ARGUMENTS);
                 if (!parseNumber(description, last_dot + 1, m, right))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Table function '{}': "
-                        "incorrect argument in braces (Incorrect right number): {}",
-                        func_name,
-                        description.substr(i, m - i + 1));
+                    throw Exception("Table function 'remote': incorrect argument in braces (Incorrect right number): "
+                                    + description.substr(i, m - i + 1),
+                                    ErrorCodes::BAD_ARGUMENTS);
                 if (left > right)
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Table function '{}': "
-                        "incorrect argument in braces (left number is greater then right): {}",
-                        func_name,
-                        description.substr(i, m - i + 1));
+                    throw Exception("Table function 'remote': incorrect argument in braces (left number is greater then right): "
+                                    + description.substr(i, m - i + 1),
+                                    ErrorCodes::BAD_ARGUMENTS);
                 if (right - left + 1 >  max_addresses)
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS, "Table function '{}': first argument generates too many result addresses", func_name);
+                    throw Exception("Table function 'remote': first argument generates too many result addresses",
+                        ErrorCodes::BAD_ARGUMENTS);
                 bool add_leading_zeroes = false;
                 size_t len = last_dot - 1 - (i + 1);
                 /// If the left and right borders have equal numbers, then you must add leading zeros.
@@ -163,7 +164,8 @@ std::vector<String> parseRemoteDescription(
 
     res.insert(res.end(), cur.begin(), cur.end());
     if (res.size() > max_addresses)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}': first argument generates too many result addresses", func_name);
+        throw Exception("Table function 'remote': first argument generates too many result addresses",
+            ErrorCodes::BAD_ARGUMENTS);
 
     return res;
 }

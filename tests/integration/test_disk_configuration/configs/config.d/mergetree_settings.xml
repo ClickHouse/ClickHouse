@@ -1,5 +1,0 @@
-<clickhouse>
-    <merge_tree>
-        <storage_policy>unknown</storage_policy>
-    </merge_tree>
-</clickhouse>

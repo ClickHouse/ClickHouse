@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Processors/Sources/MongoDBSource.h>
 #include <Core/Block.h>
 
 #include "DictionaryStructure.h"
@@ -16,6 +15,7 @@ namespace Util
 namespace MongoDB
 {
     class Connection;
+    class Cursor;
 }
 }
 
@@ -40,7 +40,6 @@ public:
         const std::string & method_,
         const std::string & db_,
         const std::string & collection_,
-        const std::string & options,
         const Block & sample_block_);
 
     MongoDBDictionarySource(const MongoDBDictionarySource & other);
@@ -80,7 +79,6 @@ private:
     const std::string method;
     std::string db;
     const std::string collection;
-    const std::string options;
     Block sample_block;
 
     std::shared_ptr<Poco::MongoDB::Connection> connection;

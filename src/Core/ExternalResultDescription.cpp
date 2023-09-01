@@ -87,7 +87,7 @@ void ExternalResultDescription::init(const Block & sample_block_)
         else if (which.isFixedString())
             types.emplace_back(ValueType::vtFixedString, is_nullable);
         else
-            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unsupported type {}", type->getName());
+            throw Exception{"Unsupported type " + type->getName(), ErrorCodes::UNKNOWN_TYPE};
     }
 }
 

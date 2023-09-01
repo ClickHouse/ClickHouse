@@ -1,3 +1,4 @@
+-- Tags: no-backward-compatibility-check
 
 -- https://github.com/ClickHouse/ClickHouse/issues/37561
 

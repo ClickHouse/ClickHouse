@@ -11,6 +11,8 @@ if (COMPILER_CLANG)
     if (NOT EXISTS "${BUILTINS_LIBRARY}")
         set (BUILTINS_LIBRARY "-lgcc")
     endif ()
+else ()
+    set (BUILTINS_LIBRARY "-lgcc")
 endif ()
 
 if (OS_ANDROID)
@@ -32,9 +34,6 @@ set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-include (cmake/unwind.cmake)
-include (cmake/cxx.cmake)
-
 if (NOT OS_ANDROID)
     if (NOT USE_MUSL)
         # Our compatibility layer doesn't build under Android, many errors in musl.
@@ -43,7 +42,8 @@ if (NOT OS_ANDROID)
     add_subdirectory(base/harmful)
 endif ()
 
-link_libraries(global-group)
+include (cmake/unwind.cmake)
+include (cmake/cxx.cmake)
 
 target_link_libraries(global-group INTERFACE
     -Wl,--start-group

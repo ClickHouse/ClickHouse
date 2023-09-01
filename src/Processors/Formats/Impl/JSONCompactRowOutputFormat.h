@@ -19,6 +19,7 @@ public:
     JSONCompactRowOutputFormat(
         WriteBuffer & out_,
         const Block & header,
+        const RowOutputFormatParams & params_,
         const FormatSettings & settings_,
         bool yield_strings_);
 
@@ -29,9 +30,6 @@ private:
     void writeFieldDelimiter() override;
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
-
-    bool supportTotals() const override { return true; }
-    bool supportExtremes() const override { return true; }
 
     void writeBeforeTotals() override;
     void writeAfterTotals() override;

@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/database-engines/atomic
 sidebar_label: Atomic
 sidebar_position: 10
 ---
@@ -59,4 +58,4 @@ For [ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table
 
 ## See Also
 
-- [system.databases](../../operations/system-tables/databases.md) system table
+-   [system.databases](../../operations/system-tables/databases.md) system table

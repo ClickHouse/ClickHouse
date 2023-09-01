@@ -1,5 +1,4 @@
 ---
-slug: /zh/engines/database-engines/materialized-mysql
 sidebar_position: 29
 sidebar_label: MaterializedMySQL
 ---
@@ -109,7 +108,7 @@ MySQL中的Time 类型，会被ClickHouse转换成微秒来存储
 
 ### DDL Queries {#ddl-queries}
 
-MySQL DDL 语句会被转换成对应的ClickHouse DDL 语句，比如： ([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create.md), [DROP](../../sql-reference/statements/drop.md), [RENAME](../../sql-reference/statements/rename.md)). 如果ClickHouse 无法解析某些语句DDL 操作，则会跳过。
+MySQL DDL 语句会被转换成对应的ClickHouse DDL 语句，比如： ([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create/index.md), [DROP](../../sql-reference/statements/drop), [RENAME](../../sql-reference/statements/rename.md)). 如果ClickHouse 无法解析某些语句DDL 操作，则会跳过。
 
 
 ### 数据复制 {#data-replication}
@@ -152,17 +151,17 @@ ClickHouse只有一个物理排序，由 `order by` 条件决定。要创建一�
 这些是你可以对MaterializedMySQL表重写的模式转换操作:
 
  * 修改列类型。必须与原始类型兼容，否则复制将失败。例如，可以将`UInt32`列修改为`UInt64`，不能将 `String` 列修改为 `Array(String)`。
- * 修改 [column TTL](../table-engines/mergetree-family/mergetree.md#mergetree-column-ttl).
- * 修改 [column compression codec](../../sql-reference/statements/create/table.mdx#codecs).
- * 增加 [ALIAS columns](../../sql-reference/statements/create/table.mdx#alias).
- * 增加 [skipping indexes](../table-engines/mergetree-family/mergetree.md#table_engine-mergetree-data_skipping-indexes)
- * 增加 [projections](../table-engines/mergetree-family/mergetree.md#projections).
+ * 修改 [column TTL](../table-engines/mergetree-family/mergetree/#mergetree-column-ttl).
+ * 修改 [column compression codec](../../sql-reference/statements/create/table/#codecs).
+ * 增加 [ALIAS columns](../../sql-reference/statements/create/table/#alias).
+ * 增加 [skipping indexes](../table-engines/mergetree-family/mergetree/#table_engine-mergetree-data_skipping-indexes)
+ * 增加 [projections](../table-engines/mergetree-family/mergetree/#projections). 
  请注意，当使用 `SELECT ... FINAL ` (MaterializedMySQL默认是这样做的) 时，预测优化是被禁用的，所以这里是受限的， `INDEX ... TYPE hypothesis `[在v21.12的博客文章中描述]](https://clickhouse.com/blog/en/2021/clickhouse-v21.12-released/)可能在这种情况下更有用。
- * 修改 [PARTITION BY](../table-engines/mergetree-family/custom-partitioning-key.md)
- * 修改 [ORDER BY](../table-engines/mergetree-family/mergetree.md#mergetree-query-clauses)
- * 修改 [PRIMARY KEY](../table-engines/mergetree-family/mergetree.md#mergetree-query-clauses)
- * 增加 [SAMPLE BY](../table-engines/mergetree-family/mergetree.md#mergetree-query-clauses)
- * 增加 [table TTL](../table-engines/mergetree-family/mergetree.md#mergetree-query-clauses)
+ * 修改 [PARTITION BY](../table-engines/mergetree-family/custom-partitioning-key/)
+ * 修改 [ORDER BY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+ * 修改 [PRIMARY KEY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+ * 增加 [SAMPLE BY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+ * 增加 [table TTL](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
 
 ```sql
 CREATE DATABASE db_name ENGINE = MaterializedMySQL(...)
@@ -271,3 +270,5 @@ SELECT * FROM mysql.test;
 │ 2 │ 222 │ Wow! │
 └───┴─────┴──────┘
 ```
+
+[来源文章](https://clickhouse.com/docs/en/engines/database-engines/materialized-mysql/) <!--hide-->

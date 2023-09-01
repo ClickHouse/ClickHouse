@@ -49,14 +49,14 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs exactly one argument; passed {}.",
-                getName(), arguments.size());
+            throw Exception("Function " + getName() + " needs exactly one argument; passed "
+                + toString(arguments.size()) + ".", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         const auto & type = arguments[0].type;
 
         if (!WhichDataType(type.get()).isUInt64())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The only argument for function {} must be UInt64. "
-                "Found {} instead.", getName(), type->getName());
+            throw Exception("The only argument for function " + getName() + " must be UInt64. Found "
+                + type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
     }
@@ -68,13 +68,14 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const SymbolIndex & symbol_index = SymbolIndex::instance();
+        auto symbol_index_ptr = SymbolIndex::instance();
+        const SymbolIndex & symbol_index = *symbol_index_ptr;
 
         const ColumnPtr & column = arguments[0].column;
         const ColumnUInt64 * column_concrete = checkAndGetColumn<ColumnUInt64>(column.get());
 
         if (!column_concrete)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", column->getName(), getName());
+            throw Exception("Illegal column " + column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
         const typename ColumnVector<UInt64>::Container & data = column_concrete->getData();
         auto result_column = ColumnString::create();

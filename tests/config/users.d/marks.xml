@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-          <load_marks_asynchronously>1</load_marks_asynchronously>
-        </default>
-    </profiles>
-</clickhouse>

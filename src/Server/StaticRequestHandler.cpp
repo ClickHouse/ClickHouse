@@ -41,7 +41,18 @@ responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponse & response, 
     CompressionMethod http_response_compression_method = CompressionMethod::None;
 
     if (!http_response_compression_methods.empty())
-        http_response_compression_method = chooseHTTPCompressionMethod(http_response_compression_methods);
+    {
+        /// If client supports brotli - it's preferred.
+        /// Both gzip and deflate are supported. If the client supports both, gzip is preferred.
+        /// NOTE parsing of the list of methods is slightly incorrect.
+
+        if (std::string::npos != http_response_compression_methods.find("br"))
+            http_response_compression_method = CompressionMethod::Brotli;
+        else if (std::string::npos != http_response_compression_methods.find("gzip"))
+            http_response_compression_method = CompressionMethod::Gzip;
+        else if (std::string::npos != http_response_compression_methods.find("deflate"))
+            http_response_compression_method = CompressionMethod::Zlib;
+    }
 
     bool client_supports_http_compression = http_response_compression_method != CompressionMethod::None;
 
@@ -102,9 +113,7 @@ void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServer
 
         /// Workaround. Poco does not detect 411 Length Required case.
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
-            throw Exception(ErrorCodes::HTTP_LENGTH_REQUIRED,
-                            "The Transfer-Encoding is not chunked and there "
-                            "is no Content-Length header for POST request");
+            throw Exception("The Transfer-Encoding is not chunked and there is no Content-Length header for POST request", ErrorCodes::HTTP_LENGTH_REQUIRED);
 
         setResponseDefaultHeaders(response, keep_alive_timeout);
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus(status));
@@ -137,7 +146,7 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
         String file_path = fs::weakly_canonical(user_files_absolute_path / file_name);
 
         if (!fs::exists(file_path))
-            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Invalid file name {} for static HTTPHandler. ", file_path);
+            throw Exception("Invalid file name " + file_path + " for static HTTPHandler. ", ErrorCodes::INCORRECT_FILE_NAME);
 
         ReadBufferFromFile in(file_path);
         copyData(in, out);
@@ -145,9 +154,8 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
     else if (startsWith(response_expression, config_prefix))
     {
         if (response_expression.size() <= config_prefix.size())
-            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                            "Static handling rule handler must contain a complete configuration path, for example: "
-                            "config://config_key");
+            throw Exception( "Static handling rule handler must contain a complete configuration path, for example: config://config_key",
+                ErrorCodes::INVALID_CONFIG_PARAMETER);
 
         const auto & config_path = response_expression.substr(config_prefix.size(), response_expression.size() - config_prefix.size());
         writeString(server.config().getRawString(config_path, "Ok.\n"), out);
@@ -161,17 +169,15 @@ StaticRequestHandler::StaticRequestHandler(IServer & server_, const String & exp
 {
 }
 
-HTTPRequestHandlerFactoryPtr createStaticHandlerFactory(IServer & server,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix)
+HTTPRequestHandlerFactoryPtr createStaticHandlerFactory(IServer & server, const std::string & config_prefix)
 {
-    int status = config.getInt(config_prefix + ".handler.status", 200);
-    std::string response_content = config.getRawString(config_prefix + ".handler.response_content", "Ok.\n");
-    std::string response_content_type = config.getString(config_prefix + ".handler.content_type", "text/plain; charset=UTF-8");
+    int status = server.config().getInt(config_prefix + ".handler.status", 200);
+    std::string response_content = server.config().getRawString(config_prefix + ".handler.response_content", "Ok.\n");
+    std::string response_content_type = server.config().getString(config_prefix + ".handler.content_type", "text/plain; charset=UTF-8");
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(
         server, std::move(response_content), std::move(status), std::move(response_content_type));
 
-    factory->addFiltersFromConfig(config, config_prefix);
+    factory->addFiltersFromConfig(server.config(), config_prefix);
 
     return factory;
 }

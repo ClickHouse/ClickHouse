@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/AsynchronousMetricLog.h>
-#include <Common/AsynchronousMetrics.h>
+#include <Interpreters/AsynchronousMetrics.h>
 
 
 namespace DB
@@ -47,7 +47,7 @@ void AsynchronousMetricLog::addValues(const AsynchronousMetricValues & values)
     for (const auto & [key, value] : values)
     {
         element.metric_name = key;
-        element.value = round(value.value * precision) / precision;
+        element.value = round(value * precision) / precision;
 
         add(element);
     }

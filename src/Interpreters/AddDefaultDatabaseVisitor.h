@@ -270,10 +270,10 @@ private:
 
         for (ASTRenameQuery::Element & elem : node.elements)
         {
-            if (!elem.from.database)
-                elem.from.database = std::make_shared<ASTIdentifier>(database_name);
-            if (!elem.to.database)
-                elem.to.database = std::make_shared<ASTIdentifier>(database_name);
+            if (elem.from.database.empty())
+                elem.from.database = database_name;
+            if (elem.to.database.empty())
+                elem.to.database = database_name;
         }
     }
 

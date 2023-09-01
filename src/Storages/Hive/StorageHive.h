@@ -1,12 +1,13 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_HIVE
 
 #include <Poco/URI.h>
 #include <ThriftHiveMetastore.h>
 
+#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/HDFS/HDFSCommon.h>
@@ -59,9 +60,9 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams) override;
+        unsigned num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool async_insert) override;
+    SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/) override;
 
     NamesAndTypesList getVirtuals() const override;
 
@@ -97,7 +98,7 @@ private:
     void initMinMaxIndexExpression();
 
     HiveFiles collectHiveFiles(
-        size_t max_threads,
+        unsigned max_threads,
         const SelectQueryInfo & query_info,
         const HiveTableMetadataPtr & hive_table_metadata,
         const HDFSFSPtr & fs,

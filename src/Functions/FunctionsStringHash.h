@@ -110,13 +110,9 @@ public:
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Third argument (num hashes) of function {} cannot be zero", getName());
 
         if (shingle_size > max_shingle_size)
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                            "Second argument (shingle size) of function {} cannot be greater then {}",
-                            getName(), max_shingle_size);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Second argument (shingle size) of function {} cannot be greater then {}", getName(), max_shingle_size);
         if (num_hashes > max_num_hashes)
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                            "Third argument (num hashes) of function {} cannot be greater then {}",
-                            getName(), max_num_hashes);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Third argument (num hashes) of function {} cannot be greater then {}", getName(), max_num_hashes);
 
         auto type = std::make_shared<DataTypeUInt64>();
         if constexpr (is_simhash)

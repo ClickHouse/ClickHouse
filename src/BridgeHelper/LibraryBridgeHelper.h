@@ -23,7 +23,7 @@ protected:
 
     String serviceFileName() const override { return serviceAlias(); }
 
-    unsigned getDefaultPort() const override { return DEFAULT_PORT; }
+    size_t getDefaultPort() const override { return DEFAULT_PORT; }
 
     bool startBridgeManually() const override { return false; }
 

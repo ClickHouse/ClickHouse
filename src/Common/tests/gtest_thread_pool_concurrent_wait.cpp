@@ -1,5 +1,4 @@
 #include <Common/ThreadPool.h>
-#include <Common/CurrentMetrics.h>
 
 #include <gtest/gtest.h>
 
@@ -7,12 +6,6 @@
   * It get stuck if we call 'wait' many times from many other threads simultaneously.
   */
 
-
-namespace CurrentMetrics
-{
-    extern const Metric LocalThread;
-    extern const Metric LocalThreadActive;
-}
 
 TEST(ThreadPool, ConcurrentWait)
 {
@@ -25,14 +18,14 @@ TEST(ThreadPool, ConcurrentWait)
     constexpr size_t num_threads = 4;
     constexpr size_t num_jobs = 4;
 
-    ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, num_threads);
+    ThreadPool pool(num_threads);
 
     for (size_t i = 0; i < num_jobs; ++i)
         pool.scheduleOrThrowOnError(worker);
 
     constexpr size_t num_waiting_threads = 4;
 
-    ThreadPool waiting_pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, num_waiting_threads);
+    ThreadPool waiting_pool(num_waiting_threads);
 
     for (size_t i = 0; i < num_waiting_threads; ++i)
         waiting_pool.scheduleOrThrowOnError([&pool] { pool.wait(); });

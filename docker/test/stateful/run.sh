@@ -1,11 +1,9 @@
 #!/bin/bash
 
-# shellcheck disable=SC1091
-source /setup_export_logs.sh
 set -e -x
 
 # Choose random timezone for this test run
-TZ="$(rg -v '#' /usr/share/zoneinfo/zone.tab | awk '{print $3}' | shuf | head -n1)"
+TZ="$(grep -v '#' /usr/share/zoneinfo/zone.tab  | awk '{print $3}' | shuf | head -n1)"
 echo "Choosen random timezone $TZ"
 ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
 
@@ -21,8 +19,6 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 ./setup_minio.sh stateful
-
-config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
 function start()
 {
@@ -69,9 +65,6 @@ function start()
 }
 
 start
-
-setup_logs_replication
-
 # shellcheck disable=SC2086 # No quotes because I want to split it into words.
 /s3downloader --url-prefix "$S3_URL" --dataset-names $DATASETS
 chmod 777 -R /var/lib/clickhouse
@@ -133,16 +126,13 @@ function run_tests()
     fi
 
     set +e
+    clickhouse-test -j 2 --testname --shard --zookeeper --check-zookeeper-session --no-stateless --hung-check --print-time \
+        --skip 00168_parallel_processing_on_replicas "${ADDITIONAL_OPTIONS[@]}" \
+        "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
 
-    if [[ -n "$USE_PARALLEL_REPLICAS" ]] && [[ "$USE_PARALLEL_REPLICAS" -eq 1 ]]; then
-        clickhouse-test --client="clickhouse-client --use_hedged_requests=0  --allow_experimental_parallel_reading_from_replicas=1 --parallel_replicas_for_non_replicated_merge_tree=1 \
-            --max_parallel_replicas=100 --cluster_for_parallel_replicas='parallel_replicas'" \
-            -j 2 --testname --shard --zookeeper --check-zookeeper-session --no-stateless --no-parallel-replicas --hung-check --print-time "${ADDITIONAL_OPTIONS[@]}" \
-        "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
-    else
-        clickhouse-test -j 2 --testname --shard --zookeeper --check-zookeeper-session --no-stateless --hung-check --print-time "${ADDITIONAL_OPTIONS[@]}" \
-        "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
-    fi
+    clickhouse-test --timeout 1200 --testname --shard --zookeeper --check-zookeeper-session --no-stateless --hung-check --print-time \
+    00168_parallel_processing_on_replicas "${ADDITIONAL_OPTIONS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a test_output/test_result.txt
+
     set -e
 }
 
@@ -162,21 +152,21 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     sudo clickhouse stop --pid-path /var/run/clickhouse-server2 ||:
 fi
 
-rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server.log ||:
+grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
 
-zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.zst ||:
+pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz ||:
 # FIXME: remove once only github actions will be left
 rm /var/log/clickhouse-server/clickhouse-server.log
 mv /var/log/clickhouse-server/stderr.log /test_output/ ||:
 
 if [[ -n "$WITH_COVERAGE" ]] && [[ "$WITH_COVERAGE" -eq 1 ]]; then
-    tar --zstd -c -h -f /test_output/clickhouse_coverage.tar.zst /profraw ||:
+    tar -chf /test_output/clickhouse_coverage.tar.gz /profraw ||:
 fi
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-    rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server1.log ||:
-    rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server2.log ||:
-    zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.zst ||:
-    zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server2.log > /test_output/clickhouse-server2.log.zst ||:
+    grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server1.log ||:
+    grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server2.log ||:
+    pigz < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.gz ||:
+    pigz < /var/log/clickhouse-server/clickhouse-server2.log > /test_output/clickhouse-server2.log.gz ||:
     # FIXME: remove once only github actions will be left
     rm /var/log/clickhouse-server/clickhouse-server1.log
     rm /var/log/clickhouse-server/clickhouse-server2.log

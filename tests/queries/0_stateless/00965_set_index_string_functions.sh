@@ -14,7 +14,7 @@ CREATE TABLE set_idx
     INDEX idx (s) TYPE set(2) GRANULARITY 1
 ) ENGINE = MergeTree()
 ORDER BY k
-SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';"
+SETTINGS index_granularity = 2;"
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO set_idx VALUES
 (0, 'ClickHouse - столбцовая система управления базами данных (СУБД)'),

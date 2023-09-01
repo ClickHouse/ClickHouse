@@ -1,6 +1,5 @@
 ---
-slug: /zh/guides/improving-query-performance/skipping-indexes
-sidebar_label: 跳数索引
+sidebar_label: Data Skipping Indexes
 sidebar_position: 2
 ---
 
@@ -89,7 +88,7 @@ SELECT * FROM skip_table WHERE my_value IN (125, 700)
 
 下图是更直观的展示，这就是如何读取和选择my_value为125的4096行，以及如何跳过以下行而不从磁盘读取:
 
-![Simple Skip](../../../en/guides/best-practices/images/simple_skip.svg)
+![Simple Skip](../../../en/guides/improving-query-performance/images/simple_skip.svg)
 
 通过在执行查询时启用跟踪，用户可以看到关于跳数索引使用情况的详细信息。在clickhouse-client中设置send_logs_level:
 
@@ -126,7 +125,7 @@ Bloom filter是一种数据结构，它允许对集合成员进行高效的是�
 * 基本的**bloom_filter**接受一个可选参数，该参数表示在0到1之间允许的“假阳性”率(如果未指定，则使用.025)。
 
 * 更专业的**tokenbf_v1**。需要三个参数，用来优化布隆过滤器：（1）过滤器的大小字节(大过滤器有更少的假阳性，有更高的存储成本)，（2）哈希函数的个数(更多的散列函数可以减少假阳性)。（3）布隆过滤器哈希函数的种子。有关这些参数如何影响布隆过滤器功能的更多细节，请参阅  [这里](https://hur.st/bloomfilter/)  。此索引仅适用于String、FixedString和Map类型的数据。输入表达式被分割为由非字母数字字符分隔的字符序列。例如，列值`This is a candidate for a "full text" search`将被分割为`This` `is` `a` `candidate` `for` `full` `text` `search`。它用于LIKE、EQUALS、in、hasToken()和类似的长字符串中单词和其他值的搜索。例如，一种可能的用途是在非结构的应用程序日志行列中搜索少量的类名或行号。
-
+  
 * 更专业的**ngrambf_v1**。该索引的功能与tokenbf_v1相同。在Bloom filter设置之前需要一个额外的参数，即要索引的ngram的大小。一个ngram是长度为n的任何字符串，比如如果n是4，`A short string`会被分割为`A sh`` sho`, `shor`, `hort`, `ort s`, `or st`, `r str`, ` stri`, `trin`, `ring`。这个索引对于文本搜索也很有用，特别是没有单词间断的语言，比如中文。
 
 ### 跳数索引函数
@@ -150,7 +149,7 @@ Bloom filter是一种数据结构，它允许对集合成员进行高效的是�
 
 考虑以下数据分布：
 
-![Bad Skip!](../../../en/guides/best-practices/images/bad_skip_1.svg)
+![Bad Skip!](../../../en/guides/improving-query-performance/images/bad_skip_1.svg)
 
 
 假设主键/顺序是时间戳，并且在visitor_id上有一个索引。考虑下面的查询:

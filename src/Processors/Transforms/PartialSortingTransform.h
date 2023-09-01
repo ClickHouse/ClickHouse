@@ -20,7 +20,7 @@ public:
 
     String getName() const override { return "PartialSortingTransform"; }
 
-    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { read_rows.swap(counter); }
+    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) { read_rows.swap(counter); }
 
 protected:
     void transform(Chunk & chunk) override;

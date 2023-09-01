@@ -37,8 +37,8 @@ if [ -n "$ERROR_LOG_PATH" ]; then ERROR_LOG_DIR="$(dirname "$ERROR_LOG_PATH")"; 
 FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=format_schema_path || true)"
 
 # There could be many disks declared in config
+readarray -t FILESYSTEM_CACHE_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='storage_configuration.disks.*.data_cache_path' || true)
 readarray -t DISKS_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='storage_configuration.disks.*.path' || true)
-readarray -t DISKS_METADATA_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='storage_configuration.disks.*.metadata_path' || true)
 
 CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
 CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
@@ -51,8 +51,8 @@ for dir in "$DATA_DIR" \
   "$TMP_DIR" \
   "$USER_PATH" \
   "$FORMAT_SCHEMA_PATH" \
-  "${DISKS_PATHS[@]}" \
-  "${DISKS_METADATA_PATHS[@]}"
+  "${FILESYSTEM_CACHE_PATHS[@]}" \
+  "${DISKS_PATHS[@]}"
 do
     # check if variable not empty
     [ -z "$dir" ] && continue
@@ -80,7 +80,7 @@ do
 done
 
 # if clickhouse user is defined - create it (user "default" already exists out of box)
-if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CLICKHOUSE_PASSWORD" ] || [ "$CLICKHOUSE_ACCESS_MANAGEMENT" != "0" ]; then
+if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CLICKHOUSE_PASSWORD" ]; then
     echo "$0: create new user '$CLICKHOUSE_USER' instead 'default'"
     cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
     <clickhouse>
@@ -106,23 +106,16 @@ fi
 
 if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
     # port is needed to check if clickhouse-server is ready for connections
-    HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port --try)"
-    HTTPS_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=https_port --try)"
-
-    if [ -n "$HTTP_PORT" ]; then
-        URL="http://127.0.0.1:$HTTP_PORT/ping"
-    else
-        URL="https://127.0.0.1:$HTTPS_PORT/ping"
-    fi
+    HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port)"
 
     # Listen only on localhost until the initialization is done
     /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" -- --listen_host=127.0.0.1 &
     pid="$!"
 
     # check if clickhouse is ready to accept connections
-    # will try to send ping clickhouse via http_port (max 1000 retries by default, with 1 sec timeout and 1 sec delay between retries)
-    tries=${CLICKHOUSE_INIT_TIMEOUT:-1000}
-    while ! wget --spider --no-check-certificate -T 1 -q "$URL" 2>/dev/null; do
+    # will try to send ping clickhouse via http_port (max 12 retries by default, with 1 sec timeout and 1 sec delay between retries)
+    tries=${CLICKHOUSE_INIT_TIMEOUT:-12}
+    while ! wget --spider -T 1 -q "http://127.0.0.1:$HTTP_PORT/ping" 2>/dev/null; do
         if [ "$tries" -le "0" ]; then
             echo >&2 'ClickHouse init process failed.'
             exit 1
@@ -172,19 +165,7 @@ if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
     # so the container can't be finished by ctrl+c
     CLICKHOUSE_WATCHDOG_ENABLE=${CLICKHOUSE_WATCHDOG_ENABLE:-0}
     export CLICKHOUSE_WATCHDOG_ENABLE
-
-    # An option for easy restarting and replacing clickhouse-server in a container, especially in Kubernetes.
-    # For example, you can replace the clickhouse-server binary to another and restart it while keeping the container running.
-    if [[ "${CLICKHOUSE_DOCKER_RESTART_ON_EXIT:-0}" -eq "1" ]]; then
-        while true; do
-            # This runs the server as a child process of the shell script:
-            /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@" ||:
-            echo >&2 'ClickHouse Server exited, and the environment variable CLICKHOUSE_DOCKER_RESTART_ON_EXIT is set to 1. Restarting the server.'
-        done
-    else
-        # This replaces the shell script with the server:
-        exec /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
-    fi
+    exec /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
 fi
 
 # Otherwise, we assume the user want to run his own process, for example a `bash` shell to explore this image

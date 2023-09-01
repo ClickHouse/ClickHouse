@@ -111,23 +111,6 @@ cat > /usr/local/hadoop/etc/hadoop/hdfs-site.xml << EOF
   <name>dfs.datanode.http.address</name>
   <value>0.0.0.0:1006</value>
 </property>
-<!-- If the port is 0 then the server will start on a free port. -->
-<property>
-  <name>dfs.datanode.ipc.address</name>
-  <value>0.0.0.0:0</value>
-</property>
-<property>
-  <name>dfs.namenode.secondary.http-address</name>
-  <value>0.0.0.0:0</value>
-</property>
-<property>
-  <name>dfs.namenode.backup.address</name>
-  <value>0.0.0.0:0</value>
-</property>
-<property>
-  <name>dfs.namenode.backup.http-address</name>
-  <value>0.0.0.0:0</value>
-</property>
 <!--
 <property>
   <name>dfs.http.policy</name>

@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/statements/select/where
 sidebar_label: WHERE
 ---
 
@@ -11,10 +10,9 @@ sidebar_label: WHERE
 
 如果基础表引擎支持，`WHERE`表达式会使用索引和分区进行剪枝。
 
-:::note
-有一个叫做过滤优化 [prewhere](../../../sql-reference/statements/select/prewhere.md) 的东西.
-:::
-
+!!! note "注"
+    有一个叫做过滤优化 [prewhere](../../../sql-reference/statements/select/prewhere.md) 的东西.
+    
 如果需要测试一个 [NULL](../../../sql-reference/syntax.md#null-literal) 值，请使用 [IS NULL](../../operators/index.md#operator-is-null) and [IS NOT NULL](../../operators/index.md#is-not-null) 运算符或 [isNull](../../../sql-reference/functions/functions-for-nulls.md#isnull) 和 [isNotNull](../../../sql-reference/functions/functions-for-nulls.md#isnotnull) 函数。否则带有 NULL 的表达式永远不会通过。
 
 **示例**

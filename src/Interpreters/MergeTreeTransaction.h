@@ -65,8 +65,6 @@ private:
     scope_guard beforeCommit();
     void afterCommit(CSN assigned_csn) noexcept;
     bool rollback() noexcept;
-    void afterFinalize();
-
     void checkIsNotCancelled() const;
 
     mutable std::mutex mutex;
@@ -75,11 +73,6 @@ private:
     /// Usually it's equal to tid.start_csn, but can be changed by SET SNAPSHOT query (for introspection purposes and time-traveling)
     std::atomic<CSN> snapshot;
     const std::list<CSN>::iterator snapshot_in_use_it;
-
-    bool finalized TSA_GUARDED_BY(mutex) = false;
-
-    /// Indicates if transaction was read-only before `afterFinalize`
-    bool is_read_only TSA_GUARDED_BY(mutex) = false;
 
     /// Lists of changes made by transaction
     std::unordered_set<StoragePtr> storages TSA_GUARDED_BY(mutex);

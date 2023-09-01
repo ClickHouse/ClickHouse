@@ -1,31 +1,28 @@
----
-slug: /en/operations/system-tables/distribution_queue
----
 # distribution_queue
 
 Contains information about local files that are in the queue to be sent to the shards. These local files contain new parts that are created by inserting new data into the Distributed table in asynchronous mode.
 
 Columns:
 
-- `database` ([String](../../sql-reference/data-types/string.md)) — Name of the database.
+-   `database` ([String](../../sql-reference/data-types/string.md)) — Name of the database.
 
-- `table` ([String](../../sql-reference/data-types/string.md)) — Name of the table.
+-   `table` ([String](../../sql-reference/data-types/string.md)) — Name of the table.
 
-- `data_path` ([String](../../sql-reference/data-types/string.md)) — Path to the folder with local files.
+-   `data_path` ([String](../../sql-reference/data-types/string.md)) — Path to the folder with local files.
 
-- `is_blocked` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag indicates whether sending local files to the server is blocked.
+-   `is_blocked` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag indicates whether sending local files to the server is blocked.
 
-- `error_count` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of errors.
+-   `error_count` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of errors.
 
-- `data_files` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of local files in a folder.
+-   `data_files` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of local files in a folder.
 
-- `data_compressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Size of compressed data in local files, in bytes.
+-   `data_compressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Size of compressed data in local files, in bytes.
 
-- `broken_data_files` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of files that has been marked as broken (due to an error).
+-   `broken_data_files` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of files that has been marked as broken (due to an error).
 
-- `broken_data_compressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Size of compressed data in broken files, in bytes.
+-   `broken_data_compressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Size of compressed data in broken files, in bytes.
 
-- `last_exception` ([String](../../sql-reference/data-types/string.md)) — Text message about the last error that occurred (if any).
+-   `last_exception` ([String](../../sql-reference/data-types/string.md)) — Text message about the last error that occurred (if any).
 
 **Example**
 
@@ -48,4 +45,5 @@ last_exception:
 
 **See Also**
 
-- [Distributed table engine](../../engines/table-engines/special/distributed.md)
+-   [Distributed table engine](../../engines/table-engines/special/distributed.md)
+

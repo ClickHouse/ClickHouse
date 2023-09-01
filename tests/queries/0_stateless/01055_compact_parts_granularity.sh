@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-random-merge-tree-settings
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -11,7 +10,7 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS mt_compact"
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE mt_compact(a Int, s String) ENGINE = MergeTree ORDER BY a
                         SETTINGS min_rows_for_wide_part = 1000,
-                        index_granularity = 14, ratio_of_defaults_for_sparse_serialization = 1;"
+                        index_granularity = 14;"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES mt_compact"
 

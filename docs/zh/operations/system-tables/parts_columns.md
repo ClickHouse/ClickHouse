@@ -1,6 +1,3 @@
----
-slug: /zh/operations/system-tables/parts_columns
----
 # system.parts_columns {#system_tables-parts_columns}
 
 包含关于[MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)表的部分和列的信息.
@@ -147,3 +144,5 @@ column_marks_bytes:                    48
 **另请参阅**
 
 -   [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
+
+[原始文章](https://clickhouse.com/docs/en/operations/system_tables/parts_columns) <!--hide-->

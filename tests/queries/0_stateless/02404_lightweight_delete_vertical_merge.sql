@@ -31,7 +31,8 @@ ORDER BY name, column;
 
 
 
-SET mutations_sync = 0;
+SET mutations_sync = 2;
+SET allow_experimental_lightweight_delete = 1;
 
 -- delete some rows using LWD
 DELETE FROM lwd_test WHERE (id % 3) = 0;
@@ -53,7 +54,7 @@ ORDER BY name, column;
 
 
 -- optimize table to physically delete the rows
-OPTIMIZE TABLE lwd_test FINAL SETTINGS mutations_sync = 2;
+OPTIMIZE TABLE lwd_test FINAL;
 
 SELECT * FROM lwd_test ORDER BY id, value;
 
@@ -108,7 +109,7 @@ ORDER BY name, column;
 
 -- optimize table to merge 2 parts together: the 1st has LDW rows and the 2nd doesn't have LWD rows
 -- physically delete the rows
-OPTIMIZE TABLE lwd_test FINAL SETTINGS mutations_sync = 2;
+OPTIMIZE TABLE lwd_test FINAL;
 
 SELECT * FROM lwd_test ORDER BY id, value;
 
@@ -163,7 +164,7 @@ ORDER BY name, column;
 
 -- optimize table to merge 2 parts together, both of them have LWD rows
 -- physically delete the rows
-OPTIMIZE TABLE lwd_test FINAL SETTINGS mutations_sync = 2;
+OPTIMIZE TABLE lwd_test FINAL;
 
 SELECT * FROM lwd_test ORDER BY id, value;
 
