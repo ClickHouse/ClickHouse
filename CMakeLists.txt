@@ -581,19 +581,23 @@ endfunction()
 if (FUZZER)
     # Bundle fuzzers target
     add_custom_target(fuzzers)
-    # Instrument all targets having pattern *_fuzzer with fuzzer and link with libfuzzer
+    # Instrument all targets fuzzer and link with libfuzzer
     get_all_targets(all_targets)
     foreach(target ${all_targets})
-        if (target MATCHES ".+_fuzzer")
-            target_link_libraries(${target} PRIVATE ch_contrib::fuzzer)
-            target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
-            message(STATUS "${target} instrumented with fuzzer")
-            # Skip this fuzzer because of linker errors (the size of the binary is too big)
-            if (target EQUAL "execute_query_fuzzer")
-                continue()
+        if (NOT(target STREQUAL "_fuzzer" OR target STREQUAL "_fuzzer_no_main"))
+            get_target_property(target_type ${target} TYPE)
+            if (NOT(target_type STREQUAL "INTERFACE_LIBRARY" OR target_type STREQUAL "UTILITY"))
+                target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
             endif()
-            # Add to bundle
-            add_dependencies(fuzzers ${target})
+            # clickhouse fuzzer isn't working correctly
+            # initial PR https://github.com/ClickHouse/ClickHouse/pull/27526
+            #if (target MATCHES ".+_fuzzer" OR target STREQUAL "clickhouse")
+            if (target MATCHES ".+_fuzzer")
+                message(STATUS "${target} instrumented with fuzzer")
+                target_link_libraries(${target} PUBLIC ch_contrib::fuzzer)
+                # Add to fuzzers bundle
+                add_dependencies(fuzzers ${target})
+            endif()
         endif()
     endforeach()
 endif()
