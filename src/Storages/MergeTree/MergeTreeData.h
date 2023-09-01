@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include <base/defines.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/SharedMutex.h>
@@ -39,7 +40,6 @@
 #include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index/global_fun.hpp>
 #include <boost/range/iterator_range_core.hpp>
-
 
 namespace DB
 {
@@ -84,6 +84,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+struct DataPartsLock
+{
+    std::optional<Stopwatch> wait_watch;
+    std::unique_lock<std::mutex> lock;
+    std::optional<Stopwatch> lock_watch;
+    DataPartsLock() = default;
+    explicit DataPartsLock(std::mutex & data_parts_mutex_);
+
+    ~DataPartsLock();
+};
 
 /// Data structure for *MergeTree engines.
 /// Merge tree is used for incremental sorting of data.
@@ -220,7 +230,6 @@ public:
     using MutableDataParts = std::set<MutableDataPartPtr, LessDataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;
 
-    using DataPartsLock = std::unique_lock<std::mutex>;
     DataPartsLock lockParts() const { return DataPartsLock(data_parts_mutex); }
 
     using OperationDataPartsLock = std::unique_lock<std::mutex>;
@@ -240,7 +249,7 @@ public:
     public:
         Transaction(MergeTreeData & data_, MergeTreeTransaction * txn_);
 
-        DataPartsVector commit(MergeTreeData::DataPartsLock * acquired_parts_lock = nullptr);
+        DataPartsVector commit(DataPartsLock * acquired_parts_lock = nullptr);
 
         void addPart(MutableDataPartPtr & part);
 
@@ -434,6 +443,8 @@ public:
 
     bool areAsynchronousInsertsEnabled() const override { return getSettings()->async_insert; }
 
+    bool supportsTrivialCountOptimization() const override { return !hasLightweightDeletedMask(); }
+
     NamesAndTypesList getVirtuals() const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr, const StorageMetadataPtr & metadata_snapshot) const override;
@@ -522,10 +533,10 @@ public:
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, DataPartsLock * acquired_lock = nullptr) const;
 
     /// Returns the part with the given name and state or nullptr if no such part.
-    DataPartPtr getPartIfExistsUnlocked(const String & part_name, const DataPartStates & valid_states, DataPartsLock & acquired_lock);
-    DataPartPtr getPartIfExistsUnlocked(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, DataPartsLock & acquired_lock);
-    DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states);
-    DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states);
+    DataPartPtr getPartIfExistsUnlocked(const String & part_name, const DataPartStates & valid_states, DataPartsLock & acquired_lock) const;
+    DataPartPtr getPartIfExistsUnlocked(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, DataPartsLock & acquired_lock) const;
+    DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states) const;
+    DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states) const;
 
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
@@ -655,7 +666,7 @@ public:
     virtual void forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(const String & /*part_name*/) {}
 
     /// Outdate broken part, set remove time to zero (remove as fast as possible) and make clone in detached directory.
-    void outdateBrokenPartAndCloneToDetached(const DataPartPtr & part, const String & prefix);
+    void outdateUnexpectedPartAndCloneToDetached(const DataPartPtr & part);
 
     /// If the part is Obsolete and not used by anybody else, immediately delete it from filesystem and remove from memory.
     void tryRemovePartImmediately(DataPartPtr && part);
@@ -934,7 +945,9 @@ public:
     WriteAheadLogPtr getWriteAheadLog();
 
     constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
-    MergeTreeData::MutableDataPartPtr createEmptyPart(MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name, const MergeTreeTransactionPtr & txn);
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
+        MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
+        const String & new_part_name, const MergeTreeTransactionPtr & txn);
 
     MergeTreeDataFormatVersion format_version;
 
@@ -1229,7 +1242,7 @@ protected:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
-    void checkProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach = false, ContextPtr local_context = nullptr) const;
+    void checkProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach, bool allow_empty_sorting_key, ContextPtr local_context) const;
 
     void setProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach = false, ContextPtr local_context = nullptr);
 
@@ -1334,7 +1347,7 @@ protected:
     using PartsBackupEntries = std::vector<PartBackupEntries>;
 
     /// Makes backup entries to backup the parts of this table.
-    PartsBackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ContextPtr & local_context);
+    PartsBackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ReadSettings & read_settings, const ContextPtr & local_context);
 
     class RestoredPartsHolder;
 
@@ -1484,7 +1497,7 @@ private:
     /// Check selected parts for movements. Used by ALTER ... MOVE queries.
     CurrentlyMovingPartsTaggerPtr checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
 
-    bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason = nullptr) const;
+    bool canUsePolymorphicParts(const MergeTreeSettings & settings, String & out_reason) const;
 
     std::mutex write_ahead_log_mutex;
     WriteAheadLogPtr write_ahead_log;

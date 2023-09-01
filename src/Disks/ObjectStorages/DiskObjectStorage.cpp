@@ -3,6 +3,7 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -410,18 +411,25 @@ void DiskObjectStorage::removeSharedRecursive(
     transaction->commit();
 }
 
-std::optional<UInt64> DiskObjectStorage::tryReserve(UInt64 bytes)
+bool DiskObjectStorage::tryReserve(UInt64 bytes)
 {
     std::lock_guard lock(reservation_mutex);
 
     auto available_space = getAvailableSpace();
-    UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
+    if (!available_space)
+    {
+        ++reservation_count;
+        reserved_bytes += bytes;
+        return true;
+    }
+
+    UInt64 unreserved_space = *available_space - std::min(*available_space, reserved_bytes);
 
     if (bytes == 0)
     {
         LOG_TRACE(log, "Reserved 0 bytes on remote disk {}", backQuote(name));
         ++reservation_count;
-        return {unreserved_space};
+        return true;
     }
 
     if (unreserved_space >= bytes)
@@ -434,14 +442,14 @@ std::optional<UInt64> DiskObjectStorage::tryReserve(UInt64 bytes)
             ReadableSize(unreserved_space));
         ++reservation_count;
         reserved_bytes += bytes;
-        return {unreserved_space - bytes};
+        return true;
     }
     else
     {
         LOG_TRACE(log, "Could not reserve {} on remote disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
     }
 
-    return {};
+    return false;
 }
 
 bool DiskObjectStorage::supportsCache() const
@@ -478,8 +486,15 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
+    auto storage_objects = metadata_storage->getStorageObjects(path);
+
+    const bool file_can_be_empty = !file_size.has_value() || *file_size == 0;
+
+    if (storage_objects.empty() && file_can_be_empty)
+        return std::make_unique<ReadBufferFromEmptyFile>();
+
     return object_storage->readObjects(
-        metadata_storage->getStorageObjects(path),
+        storage_objects,
         object_storage->getAdjustedSettingsFromMetadataFile(settings, path),
         read_hint,
         file_size);

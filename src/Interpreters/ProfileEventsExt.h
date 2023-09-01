@@ -16,6 +16,7 @@ struct ProfileEventsSnapshot
     UInt64 thread_id;
     CountersIncrement counters;
     Int64 memory_usage;
+    Int64 peak_memory_usage;
     time_t current_time;
 };
 

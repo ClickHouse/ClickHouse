@@ -3,6 +3,8 @@
 #include <Common/SharedMutex.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 
+#include <numeric>
+
 namespace DB
 {
 class MetadataStorageFromDisk;
@@ -242,9 +244,10 @@ private:
     std::unique_ptr<WriteFileOperation> write_operation;
 };
 
-
 struct UnlinkMetadataFileOperation final : public IMetadataOperation
 {
+    const UnlinkMetadataFileOperationOutcomePtr outcome = std::make_shared<UnlinkMetadataFileOperationOutcome>();
+
     UnlinkMetadataFileOperation(
         const std::string & path_,
         IDisk & disk_,

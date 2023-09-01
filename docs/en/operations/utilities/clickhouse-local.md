@@ -30,11 +30,17 @@ curl https://clickhouse.com/ | sh
 The binary you just downloaded can run all sorts of ClickHouse tools and utilities. If you want to run ClickHouse as a database server, check out the [Quick Start](../../quick-start.mdx).
 :::
 
-## Query data in a CSV file using SQL
+## Query data in a file using SQL {#query_data_in_file}
 
 A common use of `clickhouse-local` is to run ad-hoc queries on files: where you don't have to insert the data into a table. `clickhouse-local` can stream the data from a file into a temporary table and execute your SQL.
 
-If the file is sitting on the same machine as `clickhouse-local`, use the `file` table engine. The following `reviews.tsv` file contains a sampling of Amazon product reviews:
+If the file is sitting on the same machine as `clickhouse-local`, you can simple specify the file to load. The following `reviews.tsv` file contains a sampling of Amazon product reviews:
+
+```bash
+./clickhouse local -q "SELECT * FROM 'reviews.tsv'"
+```
+
+This command is a shortcut of:
 
 ```bash
 ./clickhouse local -q "SELECT * FROM file('reviews.tsv')"
@@ -50,6 +56,19 @@ The `file` table function creates a table, and you can use `DESCRIBE` to see the
 ```bash
 ./clickhouse local -q "DESCRIBE file('reviews.tsv')"
 ```
+
+:::tip
+You are allowed to use globs in file name (See [glob substitutions](/docs/en/sql-reference/table-functions/file.md/#globs-in-path)).
+
+Examples:
+
+```bash
+./clickhouse local -q "SELECT * FROM 'reviews*.jsonl'"
+./clickhouse local -q "SELECT * FROM 'review_?.csv'"
+./clickhouse local -q "SELECT * FROM 'review_{1..3}.csv'"
+```
+
+:::
 
 ```response
 marketplace	Nullable(String)

@@ -9,5 +9,5 @@ if (ENABLE_EXAMPLES)
 endif()
 
 if (ENABLE_MYSQL)
-    add_subdirectory (mysqlxx)
+    add_subdirectory(mysqlxx)
 endif ()

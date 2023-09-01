@@ -53,11 +53,9 @@ public:
 
     const std::string & getCacheName() const override { return object_storage->getCacheName(); }
 
-    UInt64 getTotalSpace() const override { return std::numeric_limits<UInt64>::max(); }
-
-    UInt64 getAvailableSpace() const override { return std::numeric_limits<UInt64>::max(); }
-
-    UInt64 getUnreservedSpace() const override { return std::numeric_limits<UInt64>::max(); }
+    std::optional<UInt64> getTotalSpace() const override { return {}; }
+    std::optional<UInt64> getAvailableSpace() const override { return {}; }
+    std::optional<UInt64> getUnreservedSpace() const override { return {}; }
 
     UInt64 getKeepingFreeSpace() const override { return 0; }
 
@@ -224,7 +222,7 @@ private:
     UInt64 reservation_count = 0;
     std::mutex reservation_mutex;
 
-    std::optional<UInt64> tryReserve(UInt64 bytes);
+    bool tryReserve(UInt64 bytes);
 
     const bool send_metadata;
 
@@ -244,7 +242,7 @@ public:
 
     UInt64 getSize() const override { return size; }
 
-    UInt64 getUnreservedSpace() const override { return unreserved_space; }
+    std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
 
     DiskPtr getDisk(size_t i) const override;
 

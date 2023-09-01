@@ -7,7 +7,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=[
-        "configs/named_collections.xml",
+        "configs/overrides.xml",
     ],
     user_configs=["configs/users.xml"],
     with_zookeeper=True,

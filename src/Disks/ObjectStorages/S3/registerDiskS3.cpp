@@ -104,12 +104,8 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
     {
         String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
         S3::URI uri(endpoint);
-
-        if (uri.key.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No key in S3 uri: {}", uri.uri.toString());
-
-        if (uri.key.back() != '/')
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 path must ends with '/', but '{}' doesn't.", uri.key);
+        if (!uri.key.ends_with('/'))
+            uri.key.push_back('/');
 
         S3Capabilities s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         std::shared_ptr<S3ObjectStorage> s3_storage;
@@ -122,6 +118,14 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
         auto client = getClient(config, config_prefix, context, *settings);
         if (type == "s3_plain")
         {
+            /// send_metadata changes the filenames (includes revision), while
+            /// s3_plain do not care about this, and expect that the file name
+            /// will not be changed.
+            ///
+            /// And besides, send_metadata does not make sense for s3_plain.
+            if (config.getBool(config_prefix + ".send_metadata", false))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "s3_plain does not supports send_metadata");
+
             s3_storage = std::make_shared<S3PlainObjectStorage>(std::move(client), std::move(settings), uri.version_id, s3_capabilities, uri.bucket, uri.endpoint);
             metadata_storage = std::make_shared<MetadataStorageFromPlainObjectStorage>(s3_storage, uri.key);
         }

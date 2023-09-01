@@ -113,22 +113,15 @@ NameAndTypePair StorageSnapshot::getColumn(const GetColumnsOptions & options, co
     return *column;
 }
 
-Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names, const NameToNameMap & parameter_values) const
+Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) const
 {
     Block res;
 
     const auto & columns = getMetadataForQuery()->getColumns();
     for (const auto & column_name : column_names)
     {
-        std::string substituted_column_name = column_name;
-
-        /// substituted_column_name is used for parameterized view (which are created using query parameters
-        /// and SELECT is used with substitution of these query parameters )
-        if (!parameter_values.empty())
-            substituted_column_name = StorageView::replaceValueWithQueryParameter(column_name, parameter_values);
-
-        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, substituted_column_name);
-        auto object_column = object_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, substituted_column_name);
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+        auto object_column = object_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
         if (column && !object_column)
         {
             res.insert({column->type->createColumn(), column->type, column_name});
@@ -147,7 +140,7 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names, cons
         else
         {
             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                "Column {} not found in table {}", backQuote(substituted_column_name), storage.getStorageID().getNameForLogs());
+                "Column {} not found in table {}", backQuote(column_name), storage.getStorageID().getNameForLogs());
         }
     }
     return res;

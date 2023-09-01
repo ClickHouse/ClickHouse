@@ -35,11 +35,9 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
-    UInt64 getTotalSpace() const override;
-
-    UInt64 getAvailableSpace() const override;
-
-    UInt64 getUnreservedSpace() const override;
+    std::optional<UInt64> getTotalSpace() const override;
+    std::optional<UInt64> getAvailableSpace() const override;
+    std::optional<UInt64> getUnreservedSpace() const override;
 
     UInt64 getKeepingFreeSpace() const override { return keep_free_space_bytes; }
 

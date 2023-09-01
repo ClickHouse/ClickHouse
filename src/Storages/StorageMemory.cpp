@@ -277,11 +277,13 @@ namespace
             const std::shared_ptr<const Blocks> blocks_,
             const String & data_path_in_backup,
             const DiskPtr & temp_disk_,
+            const ReadSettings & read_settings_,
             UInt64 max_compress_block_size_)
             : context(context_)
             , metadata_snapshot(metadata_snapshot_)
             , blocks(blocks_)
             , temp_disk(temp_disk_)
+            , read_settings(read_settings_)
             , max_compress_block_size(max_compress_block_size_)
         {
             fs::path data_path_in_backup_fs = data_path_in_backup;
@@ -314,7 +316,7 @@ namespace
             backup_entries.resize(file_paths.size());
 
             temp_dir_owner.emplace(temp_disk);
-            fs::path temp_dir = temp_dir_owner->getPath();
+            fs::path temp_dir = temp_dir_owner->getRelativePath();
             temp_disk->createDirectories(temp_dir);
 
             /// Writing data.bin
@@ -371,7 +373,7 @@ namespace
                     file_checker.update(temp_dir / fs::path{file_paths[i]}.filename());
                 }
                 file_checker.save();
-                backup_entries[sizes_json_pos] = {file_paths[sizes_json_pos], std::make_shared<BackupEntryFromSmallFile>(temp_disk, sizes_json_path)};
+                backup_entries[sizes_json_pos] = {file_paths[sizes_json_pos], std::make_shared<BackupEntryFromSmallFile>(temp_disk, sizes_json_path, read_settings)};
             }
 
             /// We don't need to keep `blocks` any longer.
@@ -386,6 +388,7 @@ namespace
         std::shared_ptr<const Blocks> blocks;
         DiskPtr temp_disk;
         std::optional<TemporaryFileOnDisk> temp_dir_owner;
+        ReadSettings read_settings;
         UInt64 max_compress_block_size;
         Strings file_paths;
         size_t data_bin_pos, index_mrk_pos, columns_txt_pos, count_txt_pos, sizes_json_pos;
@@ -395,13 +398,16 @@ namespace
 void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
     auto temp_disk = backup_entries_collector.getContext()->getGlobalTemporaryVolume()->getDisk(0);
+    const auto & read_settings = backup_entries_collector.getReadSettings();
     auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef().max_compress_block_size;
+
     backup_entries_collector.addBackupEntries(std::make_shared<MemoryBackup>(
         backup_entries_collector.getContext(),
         getInMemoryMetadataPtr(),
         data.get(),
         data_path_in_backup,
         temp_disk,
+        read_settings,
         max_compress_block_size)->getBackupEntries());
 }
 
@@ -453,10 +459,10 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
         if (!dynamic_cast<ReadBufferFromFileBase *>(in.get()))
         {
             temp_data_file.emplace(temporary_disk);
-            auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getPath());
+            auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getAbsolutePath());
             copyData(*in, *out);
             out.reset();
-            in = createReadBufferFromFileBase(temp_data_file->getPath(), {});
+            in = createReadBufferFromFileBase(temp_data_file->getAbsolutePath(), {});
         }
         std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
         CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};

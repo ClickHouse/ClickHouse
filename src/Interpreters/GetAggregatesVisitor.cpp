@@ -1,4 +1,6 @@
 #include <Interpreters/GetAggregatesVisitor.h>
+#include <Common/checkStackSize.h>
+
 
 namespace DB
 {
@@ -13,7 +15,7 @@ struct WindowExpressionsCollectorChildInfo
     bool window_function_in_subtree = false;
 };
 
-// This visitor travers AST and collects the list of expressions which depend on
+// This visitor traverses the AST and collects the list of expressions which depend on
 // evaluation of window functions. Expression is collected only if
 // it's not a part of another expression.
 //
@@ -26,15 +28,18 @@ struct WindowExpressionsCollectorMatcher
     {
         if (child->as<ASTSubquery>() || child->as<ASTSelectQuery>())
             return false;
+
         if (auto * select = node->as<ASTSelectQuery>())
         {
-            // We don't analysis WITH statement because it might contain useless aggregates
+            // We don't analyse the WITH statement because it might contain useless aggregates
             if (child == select->with())
                 return false;
         }
-        // We procces every expression manually
+
+        // We process every expression manually
         if (auto * func = node->as<ASTFunction>())
             return false;
+
         return true;
     }
 
@@ -50,6 +55,8 @@ struct WindowExpressionsCollectorMatcher
         ASTPtr & ast,
         const ASTPtr & parent)
     {
+        checkStackSize();
+
         if (auto * func = ast->as<ASTFunction>())
         {
             if (func->is_window_function)
@@ -67,7 +74,7 @@ struct WindowExpressionsCollectorMatcher
             {
                 func->compute_after_window_functions = true;
                 if ((!parent || !parent->as<ASTFunction>()))
-                    expressions_with_window_functions.push_back(func);
+                    expressions_with_window_functions.push_back(ast);
             }
 
             return result;
@@ -75,15 +82,16 @@ struct WindowExpressionsCollectorMatcher
         return {};
     }
 
-    std::vector<const ASTFunction *> expressions_with_window_functions {};
+    ASTs expressions_with_window_functions;
 };
 
 using WindowExpressionsCollectorVisitor = InDepthNodeVisitorWithChildInfo<WindowExpressionsCollectorMatcher>;
 
-std::vector<const ASTFunction *> getExpressionsWithWindowFunctions(ASTPtr & ast)
+ASTs getExpressionsWithWindowFunctions(ASTPtr & ast)
 {
     WindowExpressionsCollectorVisitor visitor;
     visitor.visit(ast);
+
     return std::move(visitor.expressions_with_window_functions);
 }
 

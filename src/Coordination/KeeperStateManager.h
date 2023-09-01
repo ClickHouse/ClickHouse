@@ -7,30 +7,12 @@
 #include <libnuraft/nuraft.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include "Coordination/KeeperStateMachine.h"
+#include "Coordination/RaftServerConfig.h"
 #include <Coordination/KeeperSnapshotManager.h>
 
 namespace DB
 {
-
 using KeeperServerConfigPtr = nuraft::ptr<nuraft::srv_config>;
-
-/// When our configuration changes the following action types
-/// can happen
-enum class ConfigUpdateActionType
-{
-    RemoveServer,
-    AddServer,
-    UpdatePriority,
-};
-
-/// Action to update configuration
-struct ConfigUpdateAction
-{
-    ConfigUpdateActionType action_type;
-    KeeperServerConfigPtr server;
-};
-
-using ConfigUpdateActions = std::vector<ConfigUpdateAction>;
 
 /// Responsible for managing our and cluster configuration
 class KeeperStateManager : public nuraft::state_mgr
@@ -74,7 +56,11 @@ public:
 
     int32_t server_id() override { return my_server_id; }
 
-    nuraft::ptr<nuraft::srv_config> get_srv_config() const { return configuration_wrapper.config; } /// NOLINT
+    nuraft::ptr<nuraft::srv_config> get_srv_config() const
+    {
+        std::lock_guard lk(configuration_wrapper_mutex);
+        return configuration_wrapper.config;
+    }
 
     void system_exit(const int exit_code) override; /// NOLINT
 
@@ -106,8 +92,8 @@ public:
     /// Read all log entries in log store from the begging and return latest config (with largest log_index)
     ClusterConfigPtr getLatestConfigFromLogStore() const;
 
-    /// Get configuration diff between proposed XML and current state in RAFT
-    ConfigUpdateActions getConfigurationDiff(const Poco::Util::AbstractConfiguration & config) const;
+    // TODO (myrrc) This should be removed once "reconfig" is stabilized
+    ClusterUpdateActions getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config) const;
 
 private:
     const String & getOldServerStatePath();
@@ -133,7 +119,7 @@ private:
     std::string config_prefix;
 
     mutable std::mutex configuration_wrapper_mutex;
-    KeeperConfigurationWrapper configuration_wrapper;
+    KeeperConfigurationWrapper configuration_wrapper TSA_GUARDED_BY(configuration_wrapper_mutex);
 
     nuraft::ptr<KeeperLogStore> log_store;
 

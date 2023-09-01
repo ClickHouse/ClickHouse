@@ -19,6 +19,19 @@ else ()
     message (FATAL_ERROR "Platform ${CMAKE_SYSTEM_NAME} is not supported")
 endif ()
 
+# Since we always use toolchain files to generate hermetic builds, cmake will
+# always think it's a cross-compilation, See
+# https://cmake.org/cmake/help/latest/variable/CMAKE_CROSSCOMPILING.html
+#
+# This will slow down cmake configuration and compilation. For instance, LLVM
+# will try to configure NATIVE LLVM targets with all tests enabled (You'll see
+# Building native llvm-tblgen...).
+#
+# Here, we set it manually by checking the system name and processor.
+if (${CMAKE_SYSTEM_NAME} STREQUAL ${CMAKE_HOST_SYSTEM_NAME} AND ${CMAKE_SYSTEM_PROCESSOR} STREQUAL ${CMAKE_HOST_SYSTEM_PROCESSOR})
+    set (CMAKE_CROSSCOMPILING 0)
+endif ()
+
 if (CMAKE_CROSSCOMPILING)
     if (OS_DARWIN)
         # FIXME: broken dependencies
@@ -40,7 +53,6 @@ if (CMAKE_CROSSCOMPILING)
             set (OPENSSL_NO_ASM ON CACHE INTERNAL "")
             set (ENABLE_JEMALLOC ON CACHE INTERNAL "")
             set (ENABLE_PARQUET OFF CACHE INTERNAL "")
-            set (USE_UNWIND OFF CACHE INTERNAL "")
             set (ENABLE_GRPC OFF CACHE INTERNAL "")
             set (ENABLE_HDFS OFF CACHE INTERNAL "")
             set (ENABLE_MYSQL OFF CACHE INTERNAL "")
@@ -48,7 +60,7 @@ if (CMAKE_CROSSCOMPILING)
             set (ENABLE_RUST OFF CACHE INTERNAL "")
         elseif (ARCH_S390X)
             set (ENABLE_GRPC OFF CACHE INTERNAL "")
-            set (ENABLE_SENTRY OFF CACHE INTERNAL "")
+            set (ENABLE_RUST OFF CACHE INTERNAL "")
         endif ()
     elseif (OS_FREEBSD)
         # FIXME: broken dependencies

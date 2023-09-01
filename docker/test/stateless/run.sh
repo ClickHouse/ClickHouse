@@ -1,9 +1,15 @@
 #!/bin/bash
 
+# shellcheck disable=SC1091
+source /setup_export_logs.sh
+
 # fail on errors, verbose and export all env variables
 set -e -x -a
 
 # Choose random timezone for this test run.
+#
+# NOTE: that clickhouse-test will randomize session_timezone by itself as well
+# (it will choose between default server timezone and something specific).
 TZ="$(rg -v '#' /usr/share/zoneinfo/zone.tab  | awk '{print $3}' | shuf | head -n1)"
 echo "Choosen random timezone $TZ"
 ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
@@ -32,6 +38,8 @@ fi
 
 ./setup_minio.sh stateless
 ./setup_hdfs_minicluster.sh
+
+config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
@@ -89,7 +97,15 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     MAX_RUN_TIME=$((MAX_RUN_TIME != 0 ? MAX_RUN_TIME : 9000))    # set to 2.5 hours if 0 (unlimited)
 fi
 
-sleep 5
+
+# Wait for the server to start, but not for too long.
+for _ in {1..100}
+do
+    clickhouse-client --query "SELECT 1" && break
+    sleep 1
+done
+
+setup_logs_replication
 
 attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
 

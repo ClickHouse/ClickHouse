@@ -230,7 +230,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
                 /// the fast replica is not overloaded because amount of executing merges doesn't affect the ability to acquire locks for new merges.
                 ///
                 /// So here we trying to solve it with the simplest solution -- sleep random time up to 500ms for 1GB part and up to 7 seconds for 300GB part.
-                /// It can sound too much, but we are trying to aquite these locks in background tasks which can be scheduled each 5 seconds or so.
+                /// It can sound too much, but we are trying to acquire these locks in background tasks which can be scheduled each 5 seconds or so.
                 double start_to_sleep_seconds = std::logf(storage_settings_ptr->zero_copy_merge_mutation_min_parts_size_sleep_before_lock.value);
                 uint64_t right_border_to_sleep_ms = static_cast<uint64_t>((std::log(estimated_space_for_merge) - start_to_sleep_seconds + 0.5) * 1000);
                 uint64_t time_to_sleep_milliseconds = std::min<uint64_t>(10000UL, std::uniform_int_distribution<uint64_t>(1, 1 + right_border_to_sleep_ms)(rng));
@@ -245,7 +245,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
             if (!zero_copy_lock || !zero_copy_lock->isLocked())
             {
-                LOG_DEBUG(log, "Merge of part {} started by some other replica, will wait it and fetch merged part", entry.new_part_name);
+                LOG_DEBUG(
+                    log,
+                    "Merge of part {} started by some other replica, will wait for it and fetch merged part. Number of tries {}",
+                    entry.new_part_name,
+                    entry.num_tries);
                 storage.watchZeroCopyLock(entry.new_part_name, disk);
                 /// Don't check for missing part -- it's missing because other replica still not
                 /// finished merge.
@@ -287,7 +291,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     task_context = Context::createCopy(storage.getContext());
     task_context->makeQueryContext();
-    task_context->setCurrentQueryId("");
+    task_context->setCurrentQueryId(getQueryId());
 
     /// Add merge to list
     merge_mutate_entry = storage.getContext()->getMergeList().insert(

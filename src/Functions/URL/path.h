@@ -1,7 +1,7 @@
 #pragma once
 
 #include <base/find_symbols.h>
-#include <Functions/URL/FunctionsURL.h>
+#include <Functions/StringHelpers.h>
 
 
 namespace DB

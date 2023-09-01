@@ -3,8 +3,10 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Interpreters/TransactionLog.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadFuzzer.h>
 
 
 namespace DB
@@ -16,7 +18,7 @@ namespace ErrorCodes
 }
 
 
-StorageID MergePlainMergeTreeTask::getStorageID()
+StorageID MergePlainMergeTreeTask::getStorageID() const
 {
     return storage.getStorageID();
 }
@@ -77,7 +79,6 @@ bool MergePlainMergeTreeTask::executeStep()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Task with state SUCCESS mustn't be executed again");
         }
     }
-    return false;
 }
 
 
@@ -145,16 +146,28 @@ void MergePlainMergeTreeTask::finish()
     storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction);
     transaction.commit();
 
+    ThreadFuzzer::maybeInjectSleep();
+    ThreadFuzzer::maybeInjectMemoryLimitException();
+
     write_part_log({});
     storage.incrementMergedPartsProfileEvent(new_part->getType());
     transfer_profile_counters_to_initial_query();
+
+    if (auto txn_ = txn_holder.getTransaction())
+    {
+        /// Explicitly commit the transaction if we own it (it's a background merge, not OPTIMIZE)
+        TransactionLog::instance().commitTransaction(txn_, /* throw_on_unknown_status */ false);
+        ThreadFuzzer::maybeInjectSleep();
+        ThreadFuzzer::maybeInjectMemoryLimitException();
+    }
+
 }
 
 ContextMutablePtr MergePlainMergeTreeTask::createTaskContext() const
 {
     auto context = Context::createCopy(storage.getContext());
     context->makeQueryContext();
-    auto queryId = storage.getStorageID().getShortName() + "::" + future_part->name;
+    auto queryId = getQueryId();
     context->setCurrentQueryId(queryId);
     return context;
 }

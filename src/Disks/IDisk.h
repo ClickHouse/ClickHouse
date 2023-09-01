@@ -140,13 +140,13 @@ public:
     const String & getName() const override { return name; }
 
     /// Total available space on the disk.
-    virtual UInt64 getTotalSpace() const = 0;
+    virtual std::optional<UInt64> getTotalSpace() const = 0;
 
     /// Space currently available on the disk.
-    virtual UInt64 getAvailableSpace() const = 0;
+    virtual std::optional<UInt64> getAvailableSpace() const = 0;
 
     /// Space available for reservation (available space minus reserved space).
-    virtual UInt64 getUnreservedSpace() const = 0;
+    virtual std::optional<UInt64> getUnreservedSpace() const = 0;
 
     /// Amount of bytes which should be kept free on the disk.
     virtual UInt64 getKeepingFreeSpace() const { return 0; }
@@ -495,7 +495,7 @@ public:
 
     /// Space available for reservation
     /// (with this reservation already take into account).
-    virtual UInt64 getUnreservedSpace() const = 0;
+    virtual std::optional<UInt64> getUnreservedSpace() const = 0;
 
     /// Get i-th disk where reservation take place.
     virtual DiskPtr getDisk(size_t i = 0) const = 0; /// NOLINT

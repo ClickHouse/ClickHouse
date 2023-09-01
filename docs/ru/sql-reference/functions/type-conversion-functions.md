@@ -284,7 +284,13 @@ toDateTime(expr[, time_zone ])
 - `expr` — Значение для преобразования. [String](/docs/ru/sql-reference/data-types/string.md), [Int](/docs/ru/sql-reference/data-types/int-uint.md), [Date](/docs/ru/sql-reference/data-types/date.md) или [DateTime](/docs/ru/sql-reference/data-types/datetime.md).
 - `time_zone` — Часовой пояс. [String](/docs/ru/sql-reference/data-types/string.md).
 
-Если `expr` является числом, оно интерпретируется как количество секунд от начала unix эпохи.
+:::note
+Если `expr` является числом, то оно интерпретируется как число секунд с начала Unix-эпохи (Unix Timestamp).
+
+Если же `expr` -- [строка (String)](/docs/ru/sql-reference/data-types/string.md), то оно может быть интерпретировано и как Unix Timestamp, и как строковое представление даты / даты со временем.  
+Ввиду неоднозначности запрещён парсинг строк длиной 4 и меньше. Так, строка `'1999'` могла бы представлять собой как год (неполное строковое представление даты или даты со временем), так и Unix Timestamp.  
+Строки длиной 5 символов и более не несут неоднозначности, а следовательно, их парсинг разрешён.
+:::
 
 **Возвращаемое значение**
 
