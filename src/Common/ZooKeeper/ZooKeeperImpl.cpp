@@ -35,7 +35,6 @@ namespace ProfileEvents
     extern const Event ZooKeeperRemove;
     extern const Event ZooKeeperExists;
     extern const Event ZooKeeperMulti;
-    extern const Event ZooKeeperReconfig;
     extern const Event ZooKeeperGet;
     extern const Event ZooKeeperSet;
     extern const Event ZooKeeperList;
@@ -313,8 +312,8 @@ ZooKeeper::~ZooKeeper()
 ZooKeeper::ZooKeeper(
     const Nodes & nodes,
     const zkutil::ZooKeeperArgs & args_,
-    std::shared_ptr<ZooKeeperLog> zk_log_, std::optional<ConnectedCallback> && connected_callback_)
-    : args(args_), connected_callback(std::move(connected_callback_))
+    std::shared_ptr<ZooKeeperLog> zk_log_)
+    : args(args_)
 {
     log = &Poco::Logger::get("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
@@ -395,9 +394,8 @@ void ZooKeeper::connect(
     WriteBufferFromOwnString fail_reasons;
     for (size_t try_no = 0; try_no < num_tries; ++try_no)
     {
-        for (size_t i = 0; i < nodes.size(); ++i)
+        for (const auto & node : nodes)
         {
-            const auto & node = nodes[i];
             try
             {
                 /// Reset the state of previous attempt.
@@ -444,25 +442,9 @@ void ZooKeeper::connect(
                     e.addMessage("while receiving handshake from ZooKeeper");
                     throw;
                 }
+
                 connected = true;
-
-                if (connected_callback.has_value())
-                    (*connected_callback)(i, node);
-
-                if (i != 0)
-                {
-                    std::uniform_int_distribution<UInt32> fallback_session_lifetime_distribution
-                    {
-                        args.fallback_session_lifetime.min_sec,
-                        args.fallback_session_lifetime.max_sec,
-                    };
-                    UInt32 session_lifetime_seconds = fallback_session_lifetime_distribution(thread_local_rng);
-                    client_session_deadline = clock::now() + std::chrono::seconds(session_lifetime_seconds);
-
-                    LOG_DEBUG(log, "Connected to a suboptimal ZooKeeper host ({}, index {})."
-                    " To preserve balance in ZooKeeper usage, this ZooKeeper session will expire in {} seconds",
-                    node.address.toString(), i, session_lifetime_seconds);
-                }
+                connected_zk_address = node.address;
 
                 break;
             }
@@ -479,6 +461,7 @@ void ZooKeeper::connect(
     if (!connected)
     {
         WriteBufferFromOwnString message;
+        connected_zk_address = Poco::Net::SocketAddress();
 
         message << "All connection tries failed while connecting to ZooKeeper. nodes: ";
         bool first = true;
@@ -588,7 +571,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
 
     if (err != Error::ZOK)
         throw Exception(Error::ZMARSHALLINGERROR, "Error received in reply to auth request. Code: {}. Message: {}",
-                        static_cast<int32_t>(err), err);
+                        static_cast<int32_t>(err), errorMessage(err));
 }
 
 void ZooKeeper::sendThread()
@@ -714,7 +697,7 @@ void ZooKeeper::receiveThread()
                 if (earliest_operation)
                 {
                     throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (no response in {} ms) for request {} for path: {}",
-                        args.operation_timeout_ms, earliest_operation->request->getOpNum(), earliest_operation->request->getPath());
+                        args.operation_timeout_ms, toString(earliest_operation->request->getOpNum()), earliest_operation->request->getPath());
                 }
                 waited_us += max_wait_us;
                 if (waited_us >= args.session_timeout_ms * 1000)
@@ -755,7 +738,7 @@ void ZooKeeper::receiveEvent()
     if (xid == PING_XID)
     {
         if (err != Error::ZOK)
-            throw Exception(Error::ZRUNTIMEINCONSISTENCY, "Received error in heartbeat response: {}", err);
+            throw Exception(Error::ZRUNTIMEINCONSISTENCY, "Received error in heartbeat response: {}", errorMessage(err));
 
         response = std::make_shared<ZooKeeperHeartbeatResponse>();
     }
@@ -1076,7 +1059,6 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 {
     try
     {
-        checkSessionDeadline();
         info.time = clock::now();
         if (zk_log)
         {
@@ -1212,6 +1194,7 @@ void ZooKeeper::create(
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperCreate);
 }
+
 
 void ZooKeeper::remove(
     const String & path,
@@ -1352,26 +1335,6 @@ void ZooKeeper::sync(
     ProfileEvents::increment(ProfileEvents::ZooKeeperSync);
 }
 
-void ZooKeeper::reconfig(
-    std::string_view joining,
-    std::string_view leaving,
-    std::string_view new_members,
-    int32_t version,
-    ReconfigCallback callback)
-{
-    ZooKeeperReconfigRequest request;
-    request.joining = joining;
-    request.leaving = leaving;
-    request.new_members = new_members;
-    request.version = version;
-
-    RequestInfo request_info;
-    request_info.request = std::make_shared<ZooKeeperReconfigRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ReconfigResponse &>(response)); };
-
-    pushRequest(std::move(request_info));
-    ProfileEvents::increment(ProfileEvents::ZooKeeperReconfig);
-}
 
 void ZooKeeper::multi(
     const Requests & requests,
@@ -1457,7 +1420,7 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
             elem.thread_id = request->thread_id;
             elem.query_id = request->query_id;
         }
-        maybe_zk_log->add(std::move(elem));
+        maybe_zk_log->add(elem);
     }
 }
 #else
@@ -1497,17 +1460,6 @@ void ZooKeeper::setupFaultDistributions()
         recv_inject_sleep.emplace(args.recv_sleep_probability);
     }
     inject_setup.test_and_set();
-}
-
-void ZooKeeper::checkSessionDeadline() const
-{
-    if (unlikely(hasReachedDeadline()))
-        throw Exception(Error::ZSESSIONEXPIRED, "Session expired (force expiry client-side)");
-}
-
-bool ZooKeeper::hasReachedDeadline() const
-{
-    return client_session_deadline.has_value() && clock::now() >= client_session_deadline.value();
 }
 
 void ZooKeeper::maybeInjectSendFault()

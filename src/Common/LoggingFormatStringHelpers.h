@@ -1,5 +1,4 @@
 #pragma once
-
 #include <base/defines.h>
 #include <base/types.h>
 #include <fmt/format.h>
@@ -7,8 +6,6 @@
 #include <unordered_map>
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
-#include <base/EnumReflection.h>
-
 
 struct PreformattedMessage;
 consteval void formatStringCheckArgsNumImpl(std::string_view str, size_t nargs);
@@ -217,41 +214,6 @@ public:
 
     /// Clears messages that were logged last time more than too_old_threshold_s seconds ago
     static void cleanup(time_t too_old_threshold_s = 600);
-
-    Poco::Logger * getLogger() { return logger; }
-};
-
-/// This wrapper helps to avoid too noisy log messages from similar objects.
-/// Once an instance of LogSeriesLimiter type is created the decision is done
-/// All followed message which use this instance is either printed or muted all together.
-/// LogSeriesLimiter differs from LogFrequencyLimiterIml in a way that
-/// LogSeriesLimiter is useful for accept or mute series of logs when LogFrequencyLimiterIml works for each line independently.
-class LogSeriesLimiter
-{
-    static std::mutex mutex;
-    static time_t last_cleanup;
-
-    /// Hash(logger_name) -> (last_logged_time_s, accepted, muted)
-    using SeriesRecords = std::unordered_map<UInt64, std::tuple<time_t, size_t, size_t>>;
-
-    static SeriesRecords & getSeriesRecords() TSA_REQUIRES(mutex)
-    {
-        static SeriesRecords records;
-        return records;
-    }
-
-    Poco::Logger * logger = nullptr;
-    bool accepted = false;
-    String debug_message;
-public:
-    LogSeriesLimiter(Poco::Logger * logger_, size_t allowed_count_, time_t interval_s_);
-
-    LogSeriesLimiter & operator -> () { return *this; }
-    bool is(Poco::Message::Priority priority) { return logger->is(priority); }
-    LogSeriesLimiter * getChannel() {return this; }
-    const String & name() const { return logger->name(); }
-
-    void log(Poco::Message & message);
 
     Poco::Logger * getLogger() { return logger; }
 };

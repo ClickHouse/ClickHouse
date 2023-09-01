@@ -7,7 +7,7 @@ from typing import Dict, List, Literal, Optional, Union
 import logging
 
 from github import Github
-from github.GithubObject import _NotSetType, NotSet as NotSet
+from github.GithubObject import _NotSetType, NotSet as NotSet  # type: ignore
 from github.Commit import Commit
 from github.CommitStatus import CommitStatus
 from github.IssueComment import IssueComment
@@ -51,8 +51,7 @@ class RerunHelper:
 
 
 def override_status(status: str, check_name: str, invert: bool = False) -> str:
-    test_config = CI_CONFIG.test_configs.get(check_name)
-    if test_config and test_config.force_tests:
+    if CI_CONFIG["tests_config"].get(check_name, {}).get("force_tests", False):
         return "success"
 
     if invert:

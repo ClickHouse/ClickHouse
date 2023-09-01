@@ -108,7 +108,7 @@ def main():
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
 
-    description_error, category = check_pr_description(pr_info.body, GITHUB_REPOSITORY)
+    description_error, category = check_pr_description(pr_info.body)
     pr_labels_to_add = []
     pr_labels_to_remove = []
     if (
@@ -137,20 +137,17 @@ def main():
     if pr_labels_to_remove:
         remove_labels(gh, pr_info, pr_labels_to_remove)
 
-    if FEATURE_LABEL in pr_info.labels and not pr_info.has_changes_in_documentation():
-        print(
-            f"The '{FEATURE_LABEL}' in the labels, "
-            "but there's no changed documentation"
-        )
+    if FEATURE_LABEL in pr_info.labels:
+        print(f"The '{FEATURE_LABEL}' in the labels, expect the 'Docs Check' status")
         post_commit_status(  # do not pass pr_info here intentionally
             commit,
-            "failure",
+            "pending",
             NotSet,
             f"expect adding docs for {FEATURE_LABEL}",
             DOCS_NAME,
-            pr_info,
         )
-        sys.exit(1)
+    elif not description_error:
+        set_mergeable_check(commit, "skipped")
 
     if description_error:
         print(
@@ -176,7 +173,6 @@ def main():
         )
         sys.exit(1)
 
-    set_mergeable_check(commit, "skipped")
     ci_report_url = create_ci_report(pr_info, [])
     if not can_run:
         print("::notice ::Cannot run")

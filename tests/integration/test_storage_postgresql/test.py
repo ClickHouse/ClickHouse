@@ -7,15 +7,12 @@ from helpers.postgres_utility import get_postgres_conn
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
-    "node1",
-    main_configs=["configs/named_collections.xml"],
-    user_configs=["configs/users.xml"],
-    with_postgres=True,
+    "node1", main_configs=["configs/named_collections.xml"], with_postgres=True
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/named_collections.xml"],
-    user_configs=["configs/settings.xml", "configs/users.xml"],
+    user_configs=["configs/settings.xml"],
     with_postgres_cluster=True,
 )
 
@@ -724,22 +721,6 @@ def test_auto_close_connection(started_cluster):
 
     # Connection from python + pg_stat table also has a connection at the moment of current query
     assert count == 2
-
-
-def test_literal_escaping(started_cluster):
-    cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute(f"DROP TABLE IF EXISTS escaping")
-    cursor.execute(f"CREATE TABLE escaping(text varchar(255))")
-    node1.query(
-        "CREATE TABLE default.escaping (text String) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'escaping', 'postgres', 'mysecretpassword')"
-    )
-    node1.query("SELECT * FROM escaping WHERE text = ''''")  # ' -> ''
-    node1.query("SELECT * FROM escaping WHERE text = '\\''")  # ' -> ''
-    node1.query("SELECT * FROM escaping WHERE text = '\\\\\\''")  # \' -> \''
-    node1.query("SELECT * FROM escaping WHERE text = '\\\\\\''")  # \' -> \''
-    node1.query("SELECT * FROM escaping WHERE text like '%a''a%'")  # %a'a% -> %a''a%
-    node1.query("SELECT * FROM escaping WHERE text like '%a\\'a%'")  # %a'a% -> %a''a%
-    cursor.execute(f"DROP TABLE escaping")
 
 
 if __name__ == "__main__":

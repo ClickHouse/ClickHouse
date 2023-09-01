@@ -242,26 +242,6 @@ See also:
 - [DateTime data type.](../../sql-reference/data-types/datetime.md)
 - [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
 
-## interval_output_format {#interval_output_format}
-
-Allows choosing different output formats of the text representation of interval types.
-
-Possible values:
-
--   `kusto` - KQL-style output format.
-
-    ClickHouse outputs intervals in [KQL format](https://learn.microsoft.com/en-us/dotnet/standard/base-types/standard-timespan-format-strings#the-constant-c-format-specifier). For example, `toIntervalDay(2)` would be formatted as `2.00:00:00`. Please note that for interval types of varying length (ie. `IntervalMonth` and `IntervalYear`) the average number of seconds per interval is taken into account.
-
--   `numeric` - Numeric output format.
-
-    ClickHouse outputs intervals as their underlying numeric representation. For example, `toIntervalDay(2)` would be formatted as `2`.
-
-Default value: `numeric`.
-
-See also:
-
--   [Interval](../../sql-reference/data-types/special-data-types/interval.md)
-
 ## input_format_ipv4_default_on_conversion_error {#input_format_ipv4_default_on_conversion_error}
 
 Deserialization of IPv4 will use default values instead of throwing exception on conversion error.
@@ -320,10 +300,6 @@ If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` ar
 ## format_schema {#format-schema}
 
 This parameter is useful when you are using formats that require a schema definition, such as [Cap’n Proto](https://capnproto.org/) or [Protobuf](https://developers.google.com/protocol-buffers/). The value depends on the format.
-
-## output_format_schema {#output-format-schema}
-
-The path to the file where the automatically generated schema will be saved in [Cap’n Proto](../../interfaces/formats.md#capnproto-capnproto) or [Protobuf](../../interfaces/formats.md#protobuf-protobuf) formats.
 
 ## output_format_enable_streaming {#output_format_enable_streaming}
 
@@ -955,11 +931,6 @@ Result
 ```text
 "  string  "
 ```
-### input_format_csv_allow_variable_number_of_columns {#input_format_csv_allow_variable_number_of_columns}
-
-ignore extra columns in CSV input (if file has more columns than expected) and treat missing fields in CSV input as default values.
-
-Disabled by default.
 
 ### input_format_csv_allow_whitespace_or_tab_as_delimiter {#input_format_csv_allow_whitespace_or_tab_as_delimiter}
 
@@ -991,28 +962,6 @@ Result
 
 ```text
 a  b
-```
-
-### input_format_csv_use_default_on_bad_values {#input_format_csv_use_default_on_bad_values}
-
-Allow to set default value to column when CSV field deserialization failed on bad value
-
-Default value: `false`.
-
-**Examples**
-
-Query
-
-```bash
-./clickhouse local -q "create table test_tbl (x String, y UInt32, z Date) engine=MergeTree order by x"
-echo 'a,b,c' | ./clickhouse local -q  "INSERT INTO test_tbl SETTINGS input_format_csv_use_default_on_bad_values=true FORMAT CSV"
-./clickhouse local -q "select * from test_tbl"
-```
-
-Result
-
-```text
-a  0  1971-01-01
 ```
 
 ## Values format settings {#values-format-settings}
@@ -1112,6 +1061,17 @@ Default value: 1.
 
 ## Arrow format settings {#arrow-format-settings}
 
+### input_format_arrow_import_nested {#input_format_arrow_import_nested}
+
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/index.md) columns as an array of structs in [Arrow](../../interfaces/formats.md/#data_types-matching-arrow) input format.
+
+Possible values:
+
+- 0 — Data can not be inserted into `Nested` columns as an array of structs.
+- 1 — Data can be inserted into `Nested` columns as an array of structs.
+
+Default value: `0`.
+
 ### input_format_arrow_case_insensitive_column_matching {#input_format_arrow_case_insensitive_column_matching}
 
 Ignore case when matching Arrow column names with ClickHouse column names.
@@ -1157,9 +1117,20 @@ Enabled by default.
 
 Compression method used in output Arrow format. Supported codecs: `lz4_frame`, `zstd`, `none` (uncompressed)
 
-Default value: `lz4_frame`.
+Default value: `none`.
 
 ## ORC format settings {#orc-format-settings}
+
+### input_format_orc_import_nested {#input_format_orc_import_nested}
+
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/index.md) columns as an array of structs in [ORC](../../interfaces/formats.md/#data-format-orc) input format.
+
+Possible values:
+
+- 0 — Data can not be inserted into `Nested` columns as an array of structs.
+- 1 — Data can be inserted into `Nested` columns as an array of structs.
+
+Default value: `0`.
 
 ### input_format_orc_row_batch_size {#input_format_orc_row_batch_size}
 
@@ -1198,6 +1169,17 @@ Compression method used in output ORC format. Supported codecs: `lz4`, `snappy`,
 Default value: `none`.
 
 ## Parquet format settings {#parquet-format-settings}
+
+### input_format_parquet_import_nested {#input_format_parquet_import_nested}
+
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/index.md) columns as an array of structs in [Parquet](../../interfaces/formats.md/#data-format-parquet) input format.
+
+Possible values:
+
+- 0 — Data can not be inserted into `Nested` columns as an array of structs.
+- 1 — Data can be inserted into `Nested` columns as an array of structs.
+
+Default value: `0`.
 
 ### input_format_parquet_case_insensitive_column_matching {#input_format_parquet_case_insensitive_column_matching}
 
@@ -1301,11 +1283,6 @@ When serializing Nullable columns with Google wrappers, serialize default values
 
 Disabled by default.
 
-### format_protobuf_use_autogenerated_schema {#format_capn_proto_use_autogenerated_schema}
-
-Use autogenerated Protobuf schema when [format_schema](#formatschema-format-schema) is not set.
-The schema is generated from ClickHouse table structure using function [structureToProtobufSchema](../../sql-reference/functions/other-functions.md#structure_to_protobuf_schema)
-
 ## Avro format settings {#avro-format-settings}
 
 ### input_format_avro_allow_missing_fields {#input_format_avro_allow_missing_fields}
@@ -1322,17 +1299,6 @@ Default value: 0.
 ### format_avro_schema_registry_url {#format_avro_schema_registry_url}
 
 Sets [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) URL to use with [AvroConfluent](../../interfaces/formats.md/#data-format-avro-confluent) format.
-
-Format:
-``` text
-http://[user:password@]machine[:port]"
-```
-
-Examples:
-``` text
-http://registry.example.com:8081
-http://admin:secret@registry.example.com:8081
-```
 
 Default value: `Empty`.
 
@@ -1601,11 +1567,6 @@ Possible values:
 - `'by_name_case_insensitive'` — Names in enums should be the same case-insensitive, values can be different.
 
 Default value: `'by_values'`.
-
-### format_capn_proto_use_autogenerated_schema {#format_capn_proto_use_autogenerated_schema}
-
-Use autogenerated CapnProto schema when [format_schema](#formatschema-format-schema) is not set.
-The schema is generated from ClickHouse table structure using function [structureToCapnProtoSchema](../../sql-reference/functions/other-functions.md#structure_to_capnproto_schema)
 
 ## MySQLDump format settings {#musqldump-format-settings}
 

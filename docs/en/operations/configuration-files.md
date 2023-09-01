@@ -65,43 +65,6 @@ XML substitution example:
 
 Substitutions can also be performed from ZooKeeper. To do this, specify the attribute `from_zk = "/path/to/node"`. The element value is replaced with the contents of the node at `/path/to/node` in ZooKeeper. You can also put an entire XML subtree on the ZooKeeper node and it will be fully inserted into the source element.
 
-## Encrypting Configuration {#encryption}
-
-You can use symmetric encryption to encrypt a configuration element, for example, a password field. To do so, first configure the [encryption codec](../sql-reference/statements/create/table.md#encryption-codecs), then add attribute `encrypted_by` with the name of the encryption codec as value to the element to encrypt.
-
-Unlike attributes `from_zk`, `from_env` and `incl` (or element `include`), no substitution, i.e. decryption of the encrypted value, is performed in the preprocessed file. Decryption happens only at runtime in the server process.
-
-Example:
-
-```xml
-<clickhouse>
-
-    <encryption_codecs>
-        <aes_128_gcm_siv>
-            <key_hex>00112233445566778899aabbccddeeff</key_hex>
-        </aes_128_gcm_siv>
-    </encryption_codecs>
-
-    <interserver_http_credentials>
-        <user>admin</user>
-        <password encrypted_by="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
-    </interserver_http_credentials>
-
-</clickhouse>
-```
-
-To encrypt a value, you can use the (example) program `encrypt_decrypt`:
-
-Example:
-
-``` bash
-./encrypt_decrypt /etc/clickhouse-server/config.xml -e AES_128_GCM_SIV abcd
-```
-
-``` text
-961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85
-```
-
 ## User Settings {#user-settings}
 
 The `config.xml` file can specify a separate config with user settings, profiles, and quotas. The relative path to this config is set in the `users_config` element. By default, it is `users.xml`. If `users_config` is omitted, the user settings, profiles, and quotas are specified directly in `config.xml`.
@@ -141,17 +104,12 @@ Here you can see default config written in YAML: [config.yaml.example](https://g
 
 There are some differences between YAML and XML formats in terms of ClickHouse configurations. Here are some tips for writing a configuration in YAML format.
 
-An XML tag with a text value is represented by a YAML key-value pair
+You should use a Scalar node to write a key-value pair:
 ``` yaml
 key: value
 ```
 
-Corresponding XML:
-``` xml
-<key>value</value>
-```
-
-A nested XML node is represented by a YAML map:
+To create a node, containing other nodes you should use a Map:
 ``` yaml
 map_key:
   key1: val1
@@ -159,16 +117,7 @@ map_key:
   key3: val3
 ```
 
-Corresponding XML:
-``` xml
-<map_key>
-    <key1>val1</key1>
-    <key2>val2</key2>
-    <key3>val3</key3>
-</map_key>
-```
-
-To create the same XML tag multiple times, use a YAML sequence:
+To create a list of values or nodes assigned to one tag you should use a Sequence:
 ``` yaml
 seq_key:
   - val1
@@ -179,22 +128,8 @@ seq_key:
       key3: val5
 ```
 
-Corresponding XML:
-```xml
-<seq_key>val1</seq_key>
-<seq_key>val2</seq_key>
-<seq_key>
-    <key1>val3</key1>
-</seq_key>
-<seq_key>
-    <map>
-        <key2>val4</key2>
-        <key3>val5</key3>
-    </map>
-</seq_key>
-```
+If you want to write an attribute for a Sequence or Map node, you should use a @ prefix before the attribute key. Note, that @ is reserved by YAML standard, so you should also to wrap it into double quotes:
 
-To provide an XML attribute, you can use an attribute key with a `@` prefix. Note that `@` is reserved by YAML standard, so must be wrapped in double quotes:
 ``` yaml
 map:
   "@attr1": value1
@@ -202,14 +137,16 @@ map:
   key: 123
 ```
 
-Corresponding XML:
+From that Map we will get these XML nodes:
+
 ``` xml
 <map attr1="value1" attr2="value2">
     <key>123</key>
 </map>
 ```
 
-It is also possible to use attributes in YAML sequence:
+You can also set attributes for Sequence:
+
 ``` yaml
 seq:
   - "@attr1": value1
@@ -218,23 +155,11 @@ seq:
   - abc
 ```
 
-Corresponding XML:
+So, we can get YAML config equal to this XML one:
+
 ``` xml
 <seq attr1="value1" attr2="value2">123</seq>
 <seq attr1="value1" attr2="value2">abc</seq>
-```
-
-The aforementioned syntax does not allow to express XML text nodes with XML attributes as YAML. This special case can be achieved using an
-`#text` attribute key:
-```yaml
-map_key:
-  "@attr1": value1
-  "#text": value2
-```
-
-Corresponding XML:
-```xml
-<map_key attr1="value1">value2</map>
 ```
 
 ## Implementation Details {#implementation-details}

@@ -10,8 +10,6 @@
 #include <chrono>
 #include <unordered_map>
 #include <string_view>
-#include <magic_enum.hpp>
-
 
 namespace DB
 {
@@ -247,12 +245,6 @@ struct SettingFieldString
     void readBinary(ReadBuffer & in);
 };
 
-#ifdef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
-#define NORETURN [[noreturn]]
-#else
-#define NORETURN
-#endif
-
 struct SettingFieldMap
 {
 public:
@@ -269,14 +261,12 @@ public:
     operator const Map &() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
-    NORETURN String toString() const;
-    NORETURN void parseFromString(const String & str);
+    String toString() const;
+    void parseFromString(const String & str);
 
-    NORETURN void writeBinary(WriteBuffer & out) const;
-    NORETURN void readBinary(ReadBuffer & in);
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
 };
-
-#undef NORETURN
 
 struct SettingFieldChar
 {

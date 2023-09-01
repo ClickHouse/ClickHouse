@@ -30,22 +30,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/// Track acquired space in cache during reservation
-/// to make error messages when no space left more informative.
-struct FileCacheReserveStat
-{
-    struct Stat
-    {
-        size_t releasable_size;
-        size_t releasable_count;
-
-        size_t non_releasable_size;
-        size_t non_releasable_count;
-    };
-
-    std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
-};
-
 /// Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
 /// Different caching algorithms are implemented using IFileCachePriority.
 class FileCache : private boost::noncopyable
@@ -99,19 +83,13 @@ public:
 
     FileSegmentsHolderPtr set(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
 
-    /// Remove file segment by `key` and `offset`. Throws if file segment does not exist.
-    void removeFileSegment(const Key & key, size_t offset);
-
-    /// Remove files by `key`. Throws if key does not exist.
-    void removeKey(const Key & key);
-
-    /// Remove files by `key`.
+    /// Remove files by `key`. Removes files which might be used at the moment.
     void removeKeyIfExists(const Key & key);
 
-    /// Removes files by `path`.
+    /// Removes files by `path`. Removes files which might be used at the moment.
     void removePathIfExists(const String & path);
 
-    /// Remove files by `key`.
+    /// Remove files by `key`. Will not remove files which are used at the moment.
     void removeAllReleasable();
 
     std::vector<String> tryGetCachePaths(const Key & key);
@@ -122,7 +100,7 @@ public:
 
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
-    bool tryReserve(FileSegment & file_segment, size_t size, FileCacheReserveStat & stat);
+    bool tryReserve(FileSegment & file_segment, size_t size);
 
     FileSegmentsHolderPtr getSnapshot();
 
@@ -158,8 +136,6 @@ private:
     const size_t max_file_segment_size;
     const size_t bypass_cache_threshold = 0;
     const size_t delayed_cleanup_interval_ms;
-    const size_t boundary_alignment;
-    const size_t background_download_threads;
 
     Poco::Logger * log;
 
@@ -204,9 +180,9 @@ private:
      */
     BackgroundSchedulePool::TaskHolder cleanup_task;
 
-    std::vector<ThreadFromGlobalPool> download_threads;
-
     void assertInitialized() const;
+
+    size_t boundary_alignment;
 
     void assertCacheCorrectness();
 
