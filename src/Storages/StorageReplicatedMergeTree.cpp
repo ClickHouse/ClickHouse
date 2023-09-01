@@ -2520,7 +2520,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             renameTempPartAndReplace(part_desc->res_part, transaction);
             getCommitPartOps(ops, part_desc->res_part);
 
-            lockSharedData(*part_desc->res_part, false, part_desc->hardlinked_files);
+            lockSharedData(*part_desc->res_part, /* replace_existing_lock */ true, part_desc->hardlinked_files);
         }
 
 
@@ -9687,6 +9687,15 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
     /// In rare case other replica can remove path between createAncestors and createIfNotExists
     /// So we make up to 5 attempts
 
+    auto is_ephemeral = [&](const String & node_path, bool default_res) -> bool
+    {
+        String dummy_res;
+        Coordination::Stat node_stat;
+        if (zookeeper->tryGet(node_path, dummy_res, &node_stat))
+            return node_stat.ephemeralOwner;
+        return default_res;
+    };
+
     bool created = false;
     for (int attempts = 5; attempts > 0; --attempts)
     {
@@ -9706,6 +9715,9 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
 
             if (error == Coordination::Error::ZNODEEXISTS)
             {
+                if (is_ephemeral(zookeeper_node, /* default_res */ false))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} is ephemeral", zookeeper_node);
+
                 size_t failed_op = zkutil::getFailedOpIndex(error, responses);
                 /// Part was locked before, unfortunately it's possible during moves
                 if (ops[failed_op]->getPath() == zookeeper_node)
@@ -9725,6 +9737,9 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
                 size_t failed_op = zkutil::getFailedOpIndex(error, responses);
                 if (ops[failed_op]->getPath() == zookeeper_node)
                 {
+                    if (!is_ephemeral(zookeeper_node, /* default_res */ true))
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} is not ephemeral", zookeeper_node);
+
                     LOG_WARNING(&Poco::Logger::get("ZeroCopyLocks"), "Replacing persistent lock with ephemeral for path {}. It can happen only in case of local part loss", zookeeper_node);
                     replace_existing_lock = true;
                     continue;
