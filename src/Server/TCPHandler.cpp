@@ -98,6 +98,7 @@ namespace DB::ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int CLIENT_INFO_DOES_NOT_MATCH;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
