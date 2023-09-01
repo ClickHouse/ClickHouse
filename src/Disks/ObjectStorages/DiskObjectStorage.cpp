@@ -66,8 +66,8 @@ DiskObjectStorage::DiskObjectStorage(
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
     , send_metadata(config.getBool(config_prefix + ".send_metadata", false))
-    , read_resource_name(config.getString(config_prefix + ".read_resource", "")
-    , write_resource_name(config.getString(config_prefix + ".write_resource", "")
+    , read_resource_name(config.getString(config_prefix + ".read_resource", ""))
+    , write_resource_name(config.getString(config_prefix + ".write_resource", ""))
     , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}))
 {}
 
