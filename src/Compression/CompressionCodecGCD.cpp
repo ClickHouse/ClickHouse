@@ -104,17 +104,19 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
     dest += sizeof(T);
     result += sizeof(T);
 
-    if (typeid(T) == typeid(UInt32) || typeid(T) == typeid(UInt64))
+    if (sizeof(T) <= 8)
     {
         /// libdivide support only UInt32 and UInt64.
         using TUInt32Or64 = std::conditional_t<sizeof(T) <= 4, UInt32, UInt64>;
         libdivide::divider<TUInt32Or64> divider(static_cast<TUInt32Or64>(gcd_divider));
         cur_source = source;
+        TUInt32Or64 value;
         while (cur_source < source_end)
         {
-            unalignedStore<TUInt32Or64>(dest, unalignedLoad<TUInt32Or64>(cur_source) / divider);
-            cur_source += sizeof(TUInt32Or64);
-            dest += sizeof(TUInt32Or64);
+            value = static_cast<TUInt32Or64>(unalignedLoad<T>(cur_source));
+            unalignedStore<T>(dest, static_cast<T>(value / divider));
+            cur_source += sizeof(T);
+            dest += sizeof(T);
             result += sizeof(T);
         }
     }
