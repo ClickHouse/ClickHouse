@@ -14,6 +14,8 @@
 #include <Processors/Transforms/FilterSortedStreamByRange.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 
 using namespace DB;
 
@@ -220,12 +222,12 @@ ASTs buildFilters(const KeyDescription & primary_key, const std::vector<Values> 
         ASTPtr value_ast = std::make_shared<ASTExpressionList>();
         for (size_t i = 0; i < value.size(); ++i)
         {
-            const auto & types = primary_key.data_types;
+            const auto & type = removeNullable(removeLowCardinality(primary_key.data_types.at(i)));
             ASTPtr component_ast = std::make_shared<ASTLiteral>(value[i]);
             // Values of some types (e.g. Date, DateTime) are stored in columns as numbers and we get them as just numbers from the index.
             // So we need an explicit Cast for them.
-            if (isColumnedAsNumber(types.at(i)->getTypeId()) && !isNumber(types.at(i)->getTypeId()))
-                component_ast = makeASTFunction("cast", std::move(component_ast), std::make_shared<ASTLiteral>(types.at(i)->getName()));
+            if (isColumnedAsNumber(type->getTypeId()) && !isNumber(type->getTypeId()))
+                component_ast = makeASTFunction("cast", std::move(component_ast), std::make_shared<ASTLiteral>(type->getName()));
             value_ast->children.push_back(std::move(component_ast));
         }
         ASTPtr values_as_tuple = makeASTFunction("tuple", value_ast->children);
