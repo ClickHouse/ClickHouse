@@ -1,10 +1,10 @@
 -- Tags: no-replicated-database, no-fasttest
 -- Tag no-replicated-database: different number of replicas
 
-create table src1 (n int) engine=ReplicatedMergeTree('/test/02413/{database}/src', '1') order by tuple() settings storage_policy='s3', allow_remote_fs_zero_copy_replication=1;
-create table src2 (n int) engine=ReplicatedMergeTree('/test/02413/{database}/src', '2') order by tuple() settings storage_policy='s3', allow_remote_fs_zero_copy_replication=1;
-create table dst1 (n int) engine=ReplicatedMergeTree('/test/02413/{database}/dst', '1') order by tuple() settings storage_policy='s3', allow_remote_fs_zero_copy_replication=1;
-create table dst2 (n int) engine=ReplicatedMergeTree('/test/02413/{database}/dst', '2') order by tuple() settings storage_policy='s3', allow_remote_fs_zero_copy_replication=1;
+create table src1 (n int) engine=ReplicatedMergeTree('/test/02413/{database}/src', '1') order by tuple() settings storage_policy='s3_disk', allow_remote_fs_zero_copy_replication=1;
+create table src2 (n int) engine=ReplicatedMergeTree('/test/02413/{database}/src', '2') order by tuple() settings storage_policy='s3_disk', allow_remote_fs_zero_copy_replication=1;
+create table dst1 (n int) engine=ReplicatedMergeTree('/test/02413/{database}/dst', '1') order by tuple() settings storage_policy='s3_disk', allow_remote_fs_zero_copy_replication=1;
+create table dst2 (n int) engine=ReplicatedMergeTree('/test/02413/{database}/dst', '2') order by tuple() settings storage_policy='s3_disk', allow_remote_fs_zero_copy_replication=1;
 
 insert into src1 values(1);
 insert into src2 values(2);
