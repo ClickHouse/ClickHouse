@@ -36,9 +36,6 @@ then
     elif [ "${ARCH}" = "riscv64" ]
     then
         DIR="riscv64"
-    elif [ "${ARCH}" = "s390x" ]
-    then
-        DIR="s390x"
     fi
 elif [ "${OS}" = "FreeBSD" ]
 then

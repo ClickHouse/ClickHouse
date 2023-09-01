@@ -304,10 +304,9 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
 /** Will escape quote_character and a list of special characters('\b', '\f', '\n', '\r', '\t', '\0', '\\').
  *   - when escape_quote_with_quote is true, use backslash to escape list of special characters,
  *      and use quote_character to escape quote_character. such as: 'hello''world'
- *     otherwise use backslash to escape list of special characters and quote_character
- *   - when escape_backslash_with_backslash is true, backslash is escaped with another backslash
+ *   - otherwise use backslash to escape list of special characters and quote_character
  */
-template <char quote_character, bool escape_quote_with_quote = false, bool escape_backslash_with_backslash = true>
+template <char quote_character, bool escape_quote_with_quote = false>
 void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & buf)
 {
     const char * pos = begin;
@@ -361,8 +360,7 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
                     writeChar('0', buf);
                     break;
                 case '\\':
-                    if constexpr (escape_backslash_with_backslash)
-                        writeChar('\\', buf);
+                    writeChar('\\', buf);
                     writeChar('\\', buf);
                     break;
                 default:
@@ -466,13 +464,6 @@ inline void writeQuotedString(StringRef ref, WriteBuffer & buf)
 inline void writeQuotedString(std::string_view ref, WriteBuffer & buf)
 {
     writeAnyQuotedString<'\''>(ref.data(), ref.data() + ref.size(), buf);
-}
-
-inline void writeQuotedStringPostgreSQL(std::string_view ref, WriteBuffer & buf)
-{
-    writeChar('\'', buf);
-    writeAnyEscapedString<'\'', true, false>(ref.data(), ref.data() + ref.size(), buf);
-    writeChar('\'', buf);
 }
 
 inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)

@@ -9,7 +9,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMaterializedMySQL.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
@@ -255,10 +254,21 @@ Pipe StorageSystemPartsBase::read(
     StoragesInfoStream stream(query_info, context);
 
     /// Create the result.
+
+    NameSet names_set(column_names.begin(), column_names.end());
+
     Block sample = storage_snapshot->metadata->getSampleBlock();
+    Block header;
 
-    auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample, column_names);
-
+    std::vector<UInt8> columns_mask(sample.columns());
+    for (size_t i = 0; i < sample.columns(); ++i)
+    {
+        if (names_set.contains(sample.getByPosition(i).name))
+        {
+            columns_mask[i] = 1;
+            header.insert(sample.getByPosition(i));
+        }
+    }
     MutableColumns res_columns = header.cloneEmptyColumns();
     if (has_state_column)
         res_columns.push_back(ColumnString::create());

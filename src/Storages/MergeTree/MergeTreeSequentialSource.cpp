@@ -138,7 +138,6 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     ReadSettings read_settings;
     if (read_with_direct_io)
         read_settings.direct_io_threshold = 1;
-    read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
 
     MergeTreeReaderSettings reader_settings =
     {
@@ -151,7 +150,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         mark_ranges.emplace(MarkRanges{MarkRange(0, data_part->getMarksCount())});
 
     reader = data_part->getReader(
-        columns_for_reader, storage_snapshot,
+        columns_for_reader, storage_snapshot->metadata,
         *mark_ranges, /* uncompressed_cache = */ nullptr,
         mark_cache.get(), alter_conversions, reader_settings, {}, {});
 }

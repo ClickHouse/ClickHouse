@@ -1671,24 +1671,22 @@ def utf8mb4_name_test(clickhouse_node, mysql_node, service_name):
         f"CREATE TABLE `{db}`.`{table}` (id INT(11) NOT NULL PRIMARY KEY, `{table}` DATETIME) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4"
     )
     mysql_node.query(f"INSERT INTO `{db}`.`{table}` VALUES(1, now())")
-    mysql_node.query(f"INSERT INTO `{db}`.`{table}`(id, `{table}`) VALUES(2, now())")
     mysql_node.query(
         f"CREATE TABLE {db}.{table}_unquoted (id INT(11) NOT NULL PRIMARY KEY, {table} DATETIME) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4"
     )
     mysql_node.query(f"INSERT INTO {db}.{table}_unquoted VALUES(1, now())")
-    mysql_node.query(f"INSERT INTO {db}.{table}_unquoted(id, {table}) VALUES(2, now())")
     clickhouse_node.query(
         f"CREATE DATABASE `{db}` ENGINE = MaterializedMySQL('{service_name}:3306', '{db}', 'root', 'clickhouse')"
     )
     check_query(
         clickhouse_node,
-        f"/* expect: 2 */ SELECT COUNT() FROM `{db}`.`{table}`",
-        "2\n",
+        f"/* expect: 1 */ SELECT COUNT() FROM `{db}`.`{table}`",
+        "1\n",
     )
     check_query(
         clickhouse_node,
-        f"/* expect: 2 */ SELECT COUNT() FROM `{db}`.`{table}_unquoted`",
-        "2\n",
+        f"/* expect: 1 */ SELECT COUNT() FROM `{db}`.`{table}_unquoted`",
+        "1\n",
     )
 
     # Inc sync
@@ -1696,24 +1694,20 @@ def utf8mb4_name_test(clickhouse_node, mysql_node, service_name):
         f"CREATE TABLE `{db}`.`{table}2` (id INT(11) NOT NULL PRIMARY KEY, `{table}` DATETIME) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4"
     )
     mysql_node.query(f"INSERT INTO `{db}`.`{table}2` VALUES(1, now())")
-    mysql_node.query(f"INSERT INTO `{db}`.`{table}2`(id, `{table}`) VALUES(2, now())")
     check_query(
         clickhouse_node,
-        f"/* expect: 2 */ SELECT COUNT() FROM `{db}`.`{table}2`",
-        "2\n",
+        f"/* expect: 1 */ SELECT COUNT() FROM `{db}`.`{table}2`",
+        "1\n",
     )
 
     mysql_node.query(
         f"CREATE TABLE {db}.{table}2_unquoted (id INT(11) NOT NULL PRIMARY KEY, {table} DATETIME) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4"
     )
     mysql_node.query(f"INSERT INTO {db}.{table}2_unquoted VALUES(1, now())")
-    mysql_node.query(
-        f"INSERT INTO {db}.{table}2_unquoted(id, {table}) VALUES(2, now())"
-    )
     check_query(
         clickhouse_node,
-        f"/* expect: 2 */ SELECT COUNT() FROM `{db}`.`{table}2_unquoted`",
-        "2\n",
+        f"/* expect: 1 */ SELECT COUNT() FROM `{db}`.`{table}2_unquoted`",
+        "1\n",
     )
 
     clickhouse_node.query(f"DROP DATABASE IF EXISTS `{db}`")
@@ -2592,20 +2586,6 @@ def named_collections(clickhouse_node, mysql_node, service_name):
         f"/* expect: (1, 'a', 1), (2, 'b', 2) */ SELECT * FROM {db}.t1",
         "1\ta\t1\n2\tb\t2\n",
     )
-    clickhouse_node.query(f"ALTER NAMED COLLECTION {db} SET port=9999")
-    clickhouse_node.query(f"DETACH DATABASE {db}")
-    mysql_node.query(f"INSERT INTO {db}.t1 VALUES (3, 'c', 3)")
-    assert "ConnectionFailed:" in clickhouse_node.query_and_get_error(
-        f"ATTACH DATABASE {db}"
-    )
-    clickhouse_node.query(f"ALTER NAMED COLLECTION {db} SET port=3306")
-    clickhouse_node.query(f"ATTACH DATABASE {db}")
-    check_query(
-        clickhouse_node,
-        f"/* expect: (1, 'a', 1), (2, 'b', 2), (3, 'c', 3) */ SELECT * FROM {db}.t1",
-        "1\ta\t1\n2\tb\t2\n3\tc\t3\n",
-    )
-
     clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
     mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
 

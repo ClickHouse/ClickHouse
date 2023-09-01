@@ -11,7 +11,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/StorageConfiguration.h>
-#include <Storages/prepareReadingFromFormat.h>
 
 
 namespace DB
@@ -159,14 +158,16 @@ public:
     using IteratorWrapper = std::function<FailoverOptions()>;
 
     StorageURLSource(
-        const ReadFromFormatInfo & info,
+        const std::vector<NameAndTypePair> & requested_virtual_columns_,
         std::shared_ptr<IteratorWrapper> uri_iterator_,
         const std::string & http_method,
         std::function<void(std::ostream &)> callback,
         const String & format,
         const std::optional<FormatSettings> & format_settings,
         String name_,
+        const Block & sample_block,
         ContextPtr context,
+        const ColumnsDescription & columns,
         UInt64 max_block_size,
         const ConnectionTimeouts & timeouts,
         CompressionMethod compression_method,
@@ -180,6 +181,8 @@ public:
     Chunk generate() override;
 
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
+
+    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
     static std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> getFirstAvailableURIAndReadBuffer(
         std::vector<String>::const_iterator & option,
@@ -199,10 +202,7 @@ private:
     InitializeFunc initialize;
 
     String name;
-    ColumnsDescription columns_description;
-    NamesAndTypesList requested_columns;
-    NamesAndTypesList requested_virtual_columns;
-    Block block_for_format;
+    std::vector<NameAndTypePair> requested_virtual_columns;
     std::shared_ptr<IteratorWrapper> uri_iterator;
     Poco::URI curr_uri;
 
@@ -270,8 +270,6 @@ public:
     {
         return storage_snapshot->metadata->getSampleBlock();
     }
-
-    bool supportsSubcolumns() const override { return true; }
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 

@@ -10,8 +10,6 @@
 #include <chrono>
 #include <unordered_map>
 #include <string_view>
-#include <magic_enum.hpp>
-
 
 namespace DB
 {

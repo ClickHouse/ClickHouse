@@ -536,10 +536,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
     }
     catch (...)
     {
-        auto error_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true);
-        error_message.text = fmt::format("Failed to make request to: {}: {}", uri, error_message.text);
-        LOG_INFO(log, error_message);
-
+        tryLogCurrentException(log, fmt::format("Failed to make request to: {}", uri));
         response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
         response->SetClientErrorMessage(getCurrentExceptionMessage(false));
 

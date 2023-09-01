@@ -56,7 +56,7 @@ public:
     String getName() const override { return "ReplicatedMergeTreeSink"; }
 
     /// For ATTACHing existing data on filesystem.
-    bool writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
+    void writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
 
     /// For proper deduplication in MaterializedViews
     bool lastBlockIsDuplicate() const override

@@ -1040,21 +1040,13 @@ inline void convertFromTime<DataTypeDateTime>(DataTypeDateTime::FieldType & x, t
 /** Conversion of strings to numbers, dates, datetimes: through parsing.
   */
 template <typename DataType>
-void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool precise_float_parsing)
+void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
-    if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
-    {
-        if (precise_float_parsing)
-            readFloatTextPrecise(x, rb);
-        else
-            readFloatTextFast(x, rb);
-    }
-    else
-        readText(x, rb);
+    readText(x, rb);
 }
 
 template <>
-inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
+inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
 {
     DayNum tmp(0);
     readDateText(tmp, rb, *time_zone);
@@ -1062,7 +1054,7 @@ inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb
 }
 
 template <>
-inline void parseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
+inline void parseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
 {
     ExtendedDayNum tmp(0);
     readDateText(tmp, rb, *time_zone);
@@ -1072,7 +1064,7 @@ inline void parseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuffer 
 
 // NOTE: no need of extra overload of DateTime64, since readDateTimeText64 has different signature and that case is explicitly handled in the calling code.
 template <>
-inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
+inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
 {
     time_t time = 0;
     readDateTimeText(time, rb, *time_zone);
@@ -1080,7 +1072,7 @@ inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuf
 }
 
 template <>
-inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool)
+inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     UUID tmp;
     readUUIDText(tmp, rb);
@@ -1088,7 +1080,7 @@ inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb
 }
 
 template <>
-inline void parseImpl<DataTypeIPv4>(DataTypeIPv4::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool)
+inline void parseImpl<DataTypeIPv4>(DataTypeIPv4::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     IPv4 tmp;
     readIPv4Text(tmp, rb);
@@ -1096,7 +1088,7 @@ inline void parseImpl<DataTypeIPv4>(DataTypeIPv4::FieldType & x, ReadBuffer & rb
 }
 
 template <>
-inline void parseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool)
+inline void parseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     IPv6 tmp;
     readIPv6Text(tmp, rb);
@@ -1104,21 +1096,16 @@ inline void parseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer & rb
 }
 
 template <typename DataType>
-bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool precise_float_parsing)
+bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
-    {
-        if (precise_float_parsing)
-            return tryReadFloatTextPrecise(x, rb);
-        else
-            return tryReadFloatTextFast(x, rb);
-    }
+        return tryReadFloatText(x, rb);
     else /*if constexpr (is_integer_v<typename DataType::FieldType>)*/
         return tryReadIntText(x, rb);
 }
 
 template <>
-inline bool tryParseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
+inline bool tryParseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
 {
     DayNum tmp(0);
     if (!tryReadDateText(tmp, rb, *time_zone))
@@ -1128,7 +1115,7 @@ inline bool tryParseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer &
 }
 
 template <>
-inline bool tryParseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
+inline bool tryParseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
 {
     ExtendedDayNum tmp(0);
     if (!tryReadDateText(tmp, rb, *time_zone))
@@ -1138,7 +1125,7 @@ inline bool tryParseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuff
 }
 
 template <>
-inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
+inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
 {
     time_t tmp = 0;
     if (!tryReadDateTimeText(tmp, rb, *time_zone))
@@ -1148,7 +1135,7 @@ inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, Read
 }
 
 template <>
-inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool)
+inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     UUID tmp;
     if (!tryReadUUIDText(tmp, rb))
@@ -1159,7 +1146,7 @@ inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer &
 }
 
 template <>
-inline bool tryParseImpl<DataTypeIPv4>(DataTypeIPv4::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool)
+inline bool tryParseImpl<DataTypeIPv4>(DataTypeIPv4::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     IPv4 tmp;
     if (!tryReadIPv4Text(tmp, rb))
@@ -1170,7 +1157,7 @@ inline bool tryParseImpl<DataTypeIPv4>(DataTypeIPv4::FieldType & x, ReadBuffer &
 }
 
 template <>
-inline bool tryParseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool)
+inline bool tryParseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     IPv6 tmp;
     if (!tryReadIPv6Text(tmp, rb))
@@ -1349,16 +1336,6 @@ struct ConvertThroughParsing
 
         size_t current_offset = 0;
 
-        bool precise_float_parsing = false;
-
-        if (DB::CurrentThread::isInitialized())
-        {
-            const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
-
-            if (query_context)
-                precise_float_parsing = query_context->getSettingsRef().precise_float_parsing;
-        }
-
         for (size_t i = 0; i < size; ++i)
         {
             size_t next_offset = std::is_same_v<FromDataType, DataTypeString> ? (*offsets)[i] : (current_offset + fixed_string_size);
@@ -1425,7 +1402,7 @@ struct ConvertThroughParsing
                                 }
                             }
 
-                            parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing);
+                            parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
                         } while (false);
                     }
                 }
@@ -1495,7 +1472,7 @@ struct ConvertThroughParsing
                                 }
                             }
 
-                            parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing);
+                            parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
                         } while (false);
                     }
                 }

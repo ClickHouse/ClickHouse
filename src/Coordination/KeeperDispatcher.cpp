@@ -320,6 +320,8 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     request_info.session_id = session_id;
 
+    std::lock_guard lock(push_request_mutex);
+
     if (shutdown_called)
         return false;
 
@@ -421,10 +423,13 @@ void KeeperDispatcher::shutdown()
     try
     {
         {
-            if (shutdown_called.exchange(true))
+            std::lock_guard lock(push_request_mutex);
+
+            if (shutdown_called)
                 return;
 
             LOG_DEBUG(log, "Shutting down storage dispatcher");
+            shutdown_called = true;
 
             if (session_cleaner_thread.joinable())
                 session_cleaner_thread.join();
@@ -577,9 +582,12 @@ void KeeperDispatcher::sessionCleanerTask()
                         .time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(),
                         .request = std::move(request),
                     };
-                    if (!requests_queue->push(std::move(request_info)))
-                        LOG_INFO(log, "Cannot push close request to queue while cleaning outdated sessions");
-                    CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequets);
+                    {
+                        std::lock_guard lock(push_request_mutex);
+                        if (!requests_queue->push(std::move(request_info)))
+                            LOG_INFO(log, "Cannot push close request to queue while cleaning outdated sessions");
+                        CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequets);
+                    }
 
                     /// Remove session from registered sessions
                     finishSession(dead_session);
@@ -599,10 +607,6 @@ void KeeperDispatcher::sessionCleanerTask()
 
 void KeeperDispatcher::finishSession(int64_t session_id)
 {
-    /// shutdown() method will cleanup sessions if needed
-    if (shutdown_called)
-        return;
-
     {
         std::lock_guard lock(session_to_response_callback_mutex);
         auto session_it = session_to_response_callback.find(session_id);
@@ -694,9 +698,12 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
     }
 
     /// Push new session request to queue
-    if (!requests_queue->tryPush(std::move(request_info), session_timeout_ms))
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push session id request to queue within session timeout");
-    CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequets);
+    {
+        std::lock_guard lock(push_request_mutex);
+        if (!requests_queue->tryPush(std::move(request_info), session_timeout_ms))
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push session id request to queue within session timeout");
+        CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequets);
+    }
 
     if (future.wait_for(std::chrono::milliseconds(session_timeout_ms)) != std::future_status::ready)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot receive session id within session timeout");
@@ -864,7 +871,10 @@ uint64_t KeeperDispatcher::getSnapDirSize() const
 Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
 {
     Keeper4LWInfo result = server->getPartiallyFilled4LWInfo();
-    result.outstanding_requests_count = requests_queue->size();
+    {
+        std::lock_guard lock(push_request_mutex);
+        result.outstanding_requests_count = requests_queue->size();
+    }
     {
         std::lock_guard lock(session_to_response_callback_mutex);
         result.alive_connections_count = session_to_response_callback.size();

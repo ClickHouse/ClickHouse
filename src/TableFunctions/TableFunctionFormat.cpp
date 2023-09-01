@@ -52,7 +52,7 @@ void TableFunctionFormat::parseArguments(const ASTPtr & ast_function, ContextPtr
         structure = checkAndGetLiteralArgument<String>(args[1], "structure");
 }
 
-ColumnsDescription TableFunctionFormat::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionFormat::getActualTableStructure(ContextPtr context) const
 {
     if (structure == "auto")
     {
@@ -98,9 +98,9 @@ Block TableFunctionFormat::parseData(ColumnsDescription columns, ContextPtr cont
     return concatenateBlocks(blocks);
 }
 
-StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
+StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    auto columns = getActualTableStructure(context, is_insert_query);
+    auto columns = getActualTableStructure(context);
     Block res_block = parseData(columns, context);
     auto res = std::make_shared<StorageValues>(StorageID(getDatabaseName(), table_name), columns, res_block);
     res->startup();

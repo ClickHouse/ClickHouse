@@ -27,6 +27,8 @@ using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeep
 class KeeperDispatcher
 {
 private:
+    mutable std::mutex push_request_mutex;
+
     using RequestsQueue = ConcurrentBoundedQueue<KeeperStorage::RequestForSession>;
     using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
     using ClusterUpdateQueue = ConcurrentBoundedQueue<ClusterUpdateAction>;

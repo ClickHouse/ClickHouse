@@ -22,10 +22,7 @@ public:
     ~TemporaryFileOnDisk();
 
     DiskPtr getDisk() const { return disk; }
-    /// Return absolute path (disk + relative_path)
-    String getAbsolutePath() const;
-    /// Return relative path (without disk)
-    const String & getRelativePath() const { return relative_path; }
+    String getPath() const;
 
 private:
     DiskPtr disk;

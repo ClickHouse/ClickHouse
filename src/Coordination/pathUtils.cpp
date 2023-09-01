@@ -1,4 +1,5 @@
 #include <Coordination/pathUtils.h>
+#include <iostream>
 
 namespace DB
 {

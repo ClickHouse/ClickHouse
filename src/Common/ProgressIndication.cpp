@@ -101,10 +101,6 @@ void ProgressIndication::writeFinalProgress()
                     << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.)";
     else
         std::cout << ". ";
-
-    auto peak_memory_usage = getMemoryUsage().peak;
-    if (peak_memory_usage >= 0)
-        std::cout << "\nPeak memory usage: " << formatReadableSizeWithBinarySuffix(peak_memory_usage) << ".";
 }
 
 void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)

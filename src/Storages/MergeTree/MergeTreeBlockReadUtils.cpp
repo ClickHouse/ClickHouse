@@ -340,10 +340,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             if (!columns_from_previous_steps.contains(name))
                 step_column_names.push_back(name);
 
-        if (!step_column_names.empty())
-            injectRequiredColumns(
-                data_part_info_for_reader, storage_snapshot,
-                with_subcolumns, step_column_names);
+        injectRequiredColumns(
+            data_part_info_for_reader, storage_snapshot, with_subcolumns, step_column_names);
 
         /// More columns could have been added, filter them as well by the list of columns from previous steps.
         Names columns_to_read_in_step;

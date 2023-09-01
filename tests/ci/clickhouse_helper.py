@@ -87,7 +87,7 @@ class ClickHouseHelper:
             )
 
             if response.status_code >= 500:
-                # A retryable error
+                # A retriable error
                 time.sleep(1)
                 continue
 
@@ -211,7 +211,6 @@ def prepare_tests_results_for_clickhouse(
         head_ref=head_ref,
         head_repo=head_repo,
         task_url=pr_info.task_url,
-        instance_type=get_instance_type(),
     )
 
     # Always publish a total record for all checks. For checks with individual
