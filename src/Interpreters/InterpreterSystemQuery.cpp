@@ -52,6 +52,7 @@
 #include <Storages/StorageFile.h>
 #include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
+#include <Storages/StorageAzureBlob.h>
 #include <Storages/HDFS/StorageHDFS.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Parsers/ASTSystemQuery.h>
@@ -407,7 +408,7 @@ BlockIO InterpreterSystemQuery::execute()
                     const auto path = cache->getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->getKind());
                     res_columns[i++]->insert(cache_name);
                     res_columns[i++]->insert(path);
-                    res_columns[i++]->insert(file_segment->getDownloadedSize(false));
+                    res_columns[i++]->insert(file_segment->getDownloadedSize());
                 }
             };
 
@@ -437,7 +438,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_SCHEMA_CACHE);
             std::unordered_set<String> caches_to_drop;
             if (query.schema_cache_storage.empty())
-                caches_to_drop = {"FILE", "S3", "HDFS", "URL"};
+                caches_to_drop = {"FILE", "S3", "HDFS", "URL", "AZURE"};
             else
                 caches_to_drop = {query.schema_cache_storage};
 
@@ -453,6 +454,10 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
             if (caches_to_drop.contains("URL"))
                 StorageURL::getSchemaCache(getContext()).clear();
+#if USE_AZURE_BLOB_STORAGE
+            if (caches_to_drop.contains("AZURE"))
+                StorageAzureBlob::getSchemaCache(getContext()).clear();
+#endif
             break;
         }
         case Type::RELOAD_DICTIONARY:

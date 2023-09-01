@@ -70,7 +70,7 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
 
     while (size > 0)
     {
-        size_t available_size = file_segment->range().size() - file_segment->getDownloadedSize(false);
+        size_t available_size = file_segment->range().size() - file_segment->getDownloadedSize();
         if (available_size == 0)
         {
             completeFileSegment();
@@ -155,7 +155,7 @@ void FileSegmentRangeWriter::appendFilesystemCacheLog(const FileSegment & file_s
         return;
 
     auto file_segment_range = file_segment.range();
-    size_t file_segment_right_bound = file_segment_range.left + file_segment.getDownloadedSize(false) - 1;
+    size_t file_segment_right_bound = file_segment_range.left + file_segment.getDownloadedSize() - 1;
 
     FilesystemCacheLogElement elem
     {
@@ -165,6 +165,7 @@ void FileSegmentRangeWriter::appendFilesystemCacheLog(const FileSegment & file_s
         .file_segment_range = { file_segment_range.left, file_segment_right_bound },
         .requested_range = {},
         .cache_type = FilesystemCacheLogElement::CacheType::WRITE_THROUGH_CACHE,
+        .file_segment_key = {},
         .file_segment_size = file_segment_range.size(),
         .read_from_cache_attempted = false,
         .read_buffer_id = {},

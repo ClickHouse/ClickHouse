@@ -23,3 +23,5 @@ $CLICKHOUSE_CLIENT -q "select number, number + 1, concat('string: ', toString(nu
 diff $non_parallel_file $parallel_file
 
 rm $non_parallel_file $parallel_file
+
+# vi: ft=bash

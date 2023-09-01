@@ -1066,6 +1066,10 @@ arrayReverse
 arrayReverseFill
 arrayReverseSort
 arrayReverseSplit
+arrayRotateLeft
+arrayRotateRight
+arrayShiftLeft
+arrayShiftRight
 arraySlice
 arraySort
 arraySplit
