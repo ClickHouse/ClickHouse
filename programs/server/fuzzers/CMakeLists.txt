@@ -6,7 +6,6 @@ set (TCP_PROTOCOL_FUZZER_LINK
         clickhouse_aggregate_functions
         clickhouse_functions
         clickhouse_table_functions
-        ch_contrib::fuzzer
 )
 
 if (TARGET ch_contrib::jemalloc)

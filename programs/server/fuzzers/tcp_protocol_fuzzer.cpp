@@ -66,14 +66,14 @@ int LLVMFuzzerInitialize(int * argc, char ***argv)
 extern "C"
 int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 {
-    if (main_app.wait_for(0s) == std::future_status::ready)
-        exit(-1);
-
-    if (size == 0)
-        return -1;
-
     try
     {
+        if (main_app.wait_for(0s) == std::future_status::ready)
+            return -1;
+
+        if (size == 0)
+            return -1;
+
         Poco::Net::SocketAddress address(host, port);
         Poco::Net::StreamSocket socket;
 
@@ -111,7 +111,7 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
             }
         }
     }
-    catch (const Poco::Exception &)
+    catch (...)
     {
     }
 
