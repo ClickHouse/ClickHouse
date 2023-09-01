@@ -1945,7 +1945,14 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
-
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    {
+        if constexpr (std::is_same_v<ToDataType, DataTypeString>)
+            return {};
+        else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+            return {2};
+        return {1};
+    }
     bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
