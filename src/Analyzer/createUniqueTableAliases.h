@@ -13,6 +13,6 @@ namespace DB
  * For each table expression in the Query Tree generate and add a unique alias.
  * If table expression had an alias in initial query tree, override it.
  */
-void createUniqueTableAliases(QueryTreeNodePtr & node, const ContextPtr & context);
+void createUniqueTableAliases(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, const ContextPtr & context);
 
 }

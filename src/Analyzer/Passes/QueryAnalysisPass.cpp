@@ -7180,7 +7180,7 @@ void QueryAnalysisPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context
 {
     QueryAnalyzer analyzer;
     analyzer.resolve(query_tree_node, table_expression, context);
-    createUniqueTableAliases(query_tree_node, context);
+    createUniqueTableAliases(query_tree_node, table_expression, context);
 }
 
 }

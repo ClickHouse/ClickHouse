@@ -373,7 +373,7 @@ QueryTreeNodePtr buildQueryTreeForShard(SelectQueryInfo & query_info, QueryTreeN
 
     removeGroupingFunctionSpecializations(query_tree_to_modify);
 
-    createUniqueTableAliases(query_tree_to_modify, planner_context->getQueryContext());
+    createUniqueTableAliases(query_tree_to_modify, nullptr, planner_context->getQueryContext());
 
     return query_tree_to_modify;
 }

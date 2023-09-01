@@ -15,9 +15,12 @@ class CreateUniqueTableAliasesVisitor : public InDepthQueryTreeVisitorWithContex
 public:
     using Base = InDepthQueryTreeVisitorWithContext<CreateUniqueTableAliasesVisitor>;
 
-    explicit CreateUniqueTableAliasesVisitor(const ContextPtr & context)
+    explicit CreateUniqueTableAliasesVisitor(const ContextPtr & context, const QueryTreeNodePtr & table_expression)
         : Base(context)
-    {}
+    {
+        if (table_expression)
+            scope_nodes_stack.push_back(table_expression);
+    }
 
     void enterImpl(QueryTreeNodePtr & node)
     {
@@ -103,9 +106,9 @@ private:
 }
 
 
-void createUniqueTableAliases(QueryTreeNodePtr & node, const ContextPtr & context)
+void createUniqueTableAliases(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, const ContextPtr & context)
 {
-    CreateUniqueTableAliasesVisitor(context).visit(node);
+    CreateUniqueTableAliasesVisitor(context, table_expression).visit(node);
 }
 
 }
