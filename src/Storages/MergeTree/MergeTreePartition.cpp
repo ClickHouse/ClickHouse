@@ -84,15 +84,7 @@ namespace
         }
         void operator() (const UUID & x) const
         {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-            auto tmp_x = x.toUnderType();
-            char * start = reinterpret_cast<char *>(&tmp_x);
-            char * end = start + sizeof(tmp_x);
-            std::reverse(start, end);
-            operator()(tmp_x);
-#else
             operator()(x.toUnderType());
-#endif
         }
         void operator() (const IPv4 & x) const
         {
@@ -371,6 +363,12 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
     const auto & partition_key_sample = metadata_snapshot->getPartitionKey().sample_block;
     size_t key_size = partition_key_sample.columns();
 
+    // In some cases we create empty parts and then value is empty.
+    if (value.empty())
+    {
+        writeCString("tuple()", out);
+        return;
+    }
     if (key_size == 0)
     {
         writeCString("tuple()", out);

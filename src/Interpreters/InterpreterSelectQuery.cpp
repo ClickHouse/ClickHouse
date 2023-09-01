@@ -68,7 +68,6 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -84,12 +83,9 @@
 #include <Core/ProtocolDefines.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Aggregator.h>
-#include <Interpreters/Cluster.h>
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <base/map.h>
-#include <base/sort.h>
-#include <base/types.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/checkStackSize.h>
@@ -97,7 +93,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 
-#include "config_version.h"
 
 namespace ProfileEvents
 {
@@ -1193,12 +1188,12 @@ static InterpolateDescriptionPtr getInterpolateDescription(
             }
 
             col_set.clear();
-            for (const auto & column : source_block)
+            for (const auto & column : result_block)
             {
                 source_columns.emplace_back(column.name, column.type);
                 col_set.insert(column.name);
             }
-            for (const auto & column : result_block)
+            for (const auto & column : source_block)
                 if (!col_set.contains(column.name))
                     source_columns.emplace_back(column.name, column.type);
         }
@@ -2266,6 +2261,10 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 max_paralle
     auto & query = getSelectQuery();
     if (!query.prewhere() && !query.where() && !context->getCurrentTransaction())
     {
+        /// Some storages can optimize trivial count in read() method instead of totalRows() because it still can
+        /// require reading some data (but much faster than reading columns).
+        /// Set a special flag in query info so the storage will see it and optimize count in read() method.
+        query_info.optimize_trivial_count = optimize_trivial_count;
         return storage->totalRows(settings);
     }
     else
@@ -2522,6 +2521,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     /// query will not update it.
     if (!query_plan.getMaxThreads() || is_remote)
         query_plan.setMaxThreads(max_threads_execute_query);
+
+    query_plan.setConcurrencyControl(settings.use_concurrency_control);
 
     /// Aliases in table declaration.
     if (processing_stage == QueryProcessingStage::FetchColumns && alias_actions)

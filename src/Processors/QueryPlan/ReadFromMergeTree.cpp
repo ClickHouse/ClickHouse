@@ -1038,7 +1038,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             /// MergeTreeReadPool and MergeTreeThreadSelectProcessor for parallel select.
             if (num_streams > 1 && settings.do_not_merge_across_partitions_select_final &&
                 std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
-                parts_to_merge_ranges[range_index]->data_part->info.level > 0)
+                parts_to_merge_ranges[range_index]->data_part->info.level > 0
+                && data.merging_params.is_deleted_column.empty())
             {
                 sum_marks_in_lonely_parts += parts_to_merge_ranges[range_index]->getMarksCount();
                 lonely_parts.push_back(std::move(*parts_to_merge_ranges[range_index]));
@@ -1094,7 +1095,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         /// with level > 0 then we won't postprocess this part
         if (settings.do_not_merge_across_partitions_select_final &&
             std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
-            parts_to_merge_ranges[range_index]->data_part->info.level > 0)
+            parts_to_merge_ranges[range_index]->data_part->info.level > 0 &&
+            data.merging_params.is_deleted_column.empty())
         {
             partition_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
             continue;

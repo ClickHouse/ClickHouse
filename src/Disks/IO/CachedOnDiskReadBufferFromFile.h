@@ -76,7 +76,7 @@ private:
 
     ImplementationBufferPtr getReadBufferForFileSegment(FileSegment & file_segment);
 
-    ImplementationBufferPtr getCacheReadBuffer(const FileSegment & file_segment) const;
+    ImplementationBufferPtr getCacheReadBuffer(const FileSegment & file_segment);
 
     ImplementationBufferPtr getRemoteReadBuffer(FileSegment & file_segment, ReadType read_type_);
 
@@ -110,7 +110,8 @@ private:
     ImplementationBufferCreator implementation_buffer_creator;
 
     /// Remote read buffer, which can only be owned by current buffer.
-    FileSegment::RemoteFileReaderPtr remote_file_reader;
+    ImplementationBufferPtr remote_file_reader;
+    ImplementationBufferPtr cache_file_reader;
 
     FileSegmentsHolderPtr file_segments;
 
