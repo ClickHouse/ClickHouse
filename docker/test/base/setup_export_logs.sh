@@ -24,7 +24,7 @@ function __set_connection_args
     # It's impossible to use generous $CONNECTION_ARGS string, it's unsafe from word splitting perspective.
     # That's why we must stick to the generated option
     CONNECTION_ARGS=(
-        --receive_timeout=10 --send_timeout=10 --secure
+        --receive_timeout=45 --send_timeout=45 --secure
         --user "${CLICKHOUSE_CI_LOGS_USER}" --host "${CLICKHOUSE_CI_LOGS_HOST}"
         --password "${CLICKHOUSE_CI_LOGS_PASSWORD}"
     )
@@ -119,7 +119,7 @@ function setup_logs_replication
     clickhouse-client --query "SYSTEM FLUSH LOGS"
 
     # It's doesn't make sense to try creating tables if SYNC fails
-    echo "SYSTEM SYNC DATABASE REPLICA default" | clickhouse-client --receive_timeout 180 "${CONNECTION_ARGS[@]}" || return 0
+    echo "SYSTEM SYNC DATABASE REPLICA default" | clickhouse-client "${CONNECTION_ARGS[@]}" || return 0
 
     # For each system log table:
     echo 'Create %_log tables'
@@ -144,7 +144,7 @@ function setup_logs_replication
         echo -e "Creating remote destination table ${table}_${hash} with statement:\n${statement}" >&2
 
         echo "$statement" | clickhouse-client --database_replicated_initial_query_timeout_sec=10 \
-            --distributed_ddl_task_timeout=10 --receive_timeout=10 --send_timeout=10 \
+            --distributed_ddl_task_timeout=30 \
             "${CONNECTION_ARGS[@]}" || continue
 
         echo "Creating table system.${table}_sender" >&2
