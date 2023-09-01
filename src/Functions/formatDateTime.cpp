@@ -746,7 +746,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -855,11 +855,18 @@ public:
     template <typename DataType>
     ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
     {
-        auto * times = checkAndGetColumn<typename DataType::ColumnType>(arguments[0].column.get());
+        auto non_const_datetime = arguments[0].column->convertToFullColumnIfConst();
+        auto * times = checkAndGetColumn<typename DataType::ColumnType>(non_const_datetime.get());
         if (!times)
             return nullptr;
 
         const ColumnConst * format_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+        const ColumnConst * time_zone_column = nullptr;
+        const DateLUTImpl * time_zone = nullptr;
+        if (arguments.size() == 2)
+            time_zone = &DateLUT::instance();
+        else if (arguments.size() > 2)
+            time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[2].column.get());
         if (!format_column)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {} of second ('format') argument of function {}. Must be constant string.",
@@ -893,15 +900,19 @@ public:
         String out_template;
         size_t out_template_size = parseFormat(format, instructions, scale, mysql_with_only_fixed_length_formatters, out_template);
 
-        const DateLUTImpl * time_zone_tmp = nullptr;
         if (castType(arguments[0].type.get(), [&]([[maybe_unused]] const auto & type) { return true; }))
-            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
+        {
+            if (time_zone_column)
+                time_zone = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
+        }
         else if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
-            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
+        {
+            if (time_zone_column)
+                time_zone = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
+        }
         else
-            time_zone_tmp = &DateLUT::instance();
+            time_zone = &DateLUT::instance();
 
-        const DateLUTImpl & time_zone = *time_zone_tmp;
         const auto & vec = times->getData();
 
         auto col_res = ColumnString::create();
@@ -941,6 +952,13 @@ public:
         auto * pos = begin;
         for (size_t i = 0; i < vec.size(); ++i)
         {
+            if (!time_zone_column && arguments.size() > 2)
+             {
+                if (!arguments[2].column.get()->getDataAt(i).toString().empty())
+                    time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i).toString());
+                else
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty and be a valid time zone");
+            }
             if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
             {
                 auto c = DecimalUtils::split(vec[i], scale);
@@ -954,12 +972,14 @@ public:
                 }
 
                 for (auto & instruction : instructions)
-                    instruction.perform(pos, static_cast<Int64>(c.whole), c.fractional, scale, time_zone);
+                {
+                    instruction.perform(pos, static_cast<Int64>(c.whole), c.fractional, scale, *time_zone);
+                }
             }
             else
             {
                 for (auto & instruction : instructions)
-                    instruction.perform(pos, static_cast<UInt32>(vec[i]), 0, 0, time_zone);
+                    instruction.perform(pos, static_cast<UInt32>(vec[i]), 0, 0, *time_zone);
             }
             *pos++ = '\0';
 

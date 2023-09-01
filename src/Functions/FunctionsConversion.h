@@ -203,18 +203,15 @@ struct ConvertImpl
                     }
                 }
 
-                if constexpr (std::is_same_v<FromDataType, DataTypeUUID> && std::is_same_v<ToDataType,DataTypeUInt128>)
+                if constexpr (std::is_same_v<FromDataType, DataTypeUUID> && std::is_same_v<ToDataType, DataTypeUInt128>)
                 {
-                    static_assert(std::is_same_v<DataTypeUInt128::FieldType, DataTypeUUID::FieldType::UnderlyingType>, "UInt128 and UUID types must be same");
-                    if constexpr (std::endian::native == std::endian::little)
-                    {
-                        vec_to[i].items[1] = vec_from[i].toUnderType().items[0];
-                        vec_to[i].items[0] = vec_from[i].toUnderType().items[1];
-                    }
-                    else
-                    {
-                        vec_to[i] = vec_from[i].toUnderType();
-                    }
+                    static_assert(
+                        std::is_same_v<DataTypeUInt128::FieldType, DataTypeUUID::FieldType::UnderlyingType>,
+                        "UInt128 and UUID types must be same");
+
+                    vec_to[i].items[1] = vec_from[i].toUnderType().items[0];
+                    vec_to[i].items[0] = vec_from[i].toUnderType().items[1];
+
                     continue;
                 }
 
@@ -886,20 +883,32 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
 
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/)
     {
-        ColumnUInt8::MutablePtr null_map = copyNullMap(arguments[0].column);
+        auto datetime_arg = arguments[0];
+        datetime_arg.column = datetime_arg.column->convertToFullColumnIfConst();
 
-        const auto & col_with_type_and_name =  columnGetNested(arguments[0]);
+        const auto & col_with_type_and_name =  columnGetNested(datetime_arg);
+        ColumnUInt8::MutablePtr null_map = copyNullMap(datetime_arg.column);
+
         const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
 
         const DateLUTImpl * time_zone = nullptr;
+        const ColumnConst * time_zone_column = nullptr;
+
+        if (arguments.size() > 1)
+            time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+        else if (arguments.size() == 1)
+            time_zone = &DateLUT::instance();
 
         if constexpr (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>)
             time_zone = &DateLUT::instance();
         /// For argument of Date or DateTime type, second argument with time zone could be specified.
         if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
         {
-            auto non_null_args = createBlockWithNestedColumns(arguments);
-            time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0);
+            if (time_zone_column)
+            {
+                auto non_null_args = createBlockWithNestedColumns(arguments);
+                time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0);
+            }
         }
 
         if (const auto col_from = checkAndGetColumn<ColVecType>(col_with_type_and_name.column.get()))
@@ -930,6 +939,13 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
             {
                 for (size_t i = 0; i < size; ++i)
                 {
+                    if (!time_zone_column && arguments.size() > 1)
+                    {
+                        if (!arguments[1].column.get()->getDataAt(i).toString().empty())
+                            time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i).toString());
+                        else
+                            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty and be a valid time zone");
+                    }
                     bool is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                     null_map->getData()[i] |= !is_ok;
                     writeChar(0, write_buffer);
@@ -940,6 +956,13 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
             {
                 for (size_t i = 0; i < size; ++i)
                 {
+                    if (!time_zone_column && arguments.size() > 1)
+                    {
+                        if (!arguments[1].column.get()->getDataAt(i).toString().empty())
+                           time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i).toString());
+                        else
+                            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty and be a valid time zone");
+                    }
                     FormatImpl<FromDataType>::template execute<void>(vec_from[i], write_buffer, &type, time_zone);
                     writeChar(0, write_buffer);
                     offsets_to[i] = write_buffer.count();
@@ -1844,20 +1867,20 @@ public:
             mandatory_args.push_back({"scale", &isNativeInteger<IDataType>, &isColumnConst, "const Integer"});
         }
 
-        // toString(DateTime or DateTime64, [timezone: String (const/non-const)])
+        // toString(DateTime or DateTime64, [timezone: String])
         if ((std::is_same_v<Name, NameToString> && !arguments.empty() && (isDateTime64(arguments[0].type) || isDateTime(arguments[0].type)))
-            // toUnixTimestamp(value[, timezone : String(const/non-const)])
+            // toUnixTimestamp(value[, timezone : String])
             || std::is_same_v<Name, NameToUnixTimestamp>
-            // toDate(value[, timezone : String(const/non-const)])
+            // toDate(value[, timezone : String])
             || std::is_same_v<ToDataType, DataTypeDate> // TODO: shall we allow timestamp argument for toDate? DateTime knows nothing about timezones and this argument is ignored below.
-            // toDate32(value[, timezone : String(const/non-const)])
+            // toDate32(value[, timezone : String])
             || std::is_same_v<ToDataType, DataTypeDate32>
-            // toDateTime(value[, timezone: String(const/non-const)])
+            // toDateTime(value[, timezone: String])
             || std::is_same_v<ToDataType, DataTypeDateTime>
-            // toDateTime64(value, scale : Integer[, timezone: String(const/non-const)])
+            // toDateTime64(value, scale : Integer[, timezone: String])
             || std::is_same_v<ToDataType, DataTypeDateTime64>)
-        {            
-            optional_args.push_back({"timezone", &isString<IDataType>, nullptr, "const String/String"});
+        {
+            optional_args.push_back({"timezone", &isString<IDataType>, nullptr, "String"});
         }
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
@@ -1895,13 +1918,13 @@ public:
 
                 if (to_datetime64 || scale != 0) /// toDateTime('xxxx-xx-xx xx:xx:xx', 0) return DateTime
                     return std::make_shared<DataTypeDateTime64>(scale,
-                        extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, true));
+                        extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
 
-                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, true));
+                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
             }
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
-                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, true));
+                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
             else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected branch in code of conversion function: it is a bug.");
             else
@@ -2142,7 +2165,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -2814,9 +2837,9 @@ protected:
     bool useDefaultImplementationForNulls() const override { return false; }
     /// CAST(Nothing, T) -> T
     bool useDefaultImplementationForNothing() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    // ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
 private:
     WrapperType wrapper_function;
