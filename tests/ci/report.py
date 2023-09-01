@@ -2,11 +2,44 @@
 from ast import literal_eval
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Final, Iterable, List, Literal, Optional, Tuple
 from html import escape
 import csv
 import os
 import datetime
+
+
+ERROR: Final = "error"
+FAILURE: Final = "failure"
+PENDING: Final = "pending"
+SUCCESS: Final = "success"
+
+OK: Final = "OK"
+FAIL: Final = "FAIL"
+
+StatusType = Literal["error", "failure", "pending", "success"]
+# The order of statuses from the worst to the best
+_STATES = {ERROR: 0, FAILURE: 1, PENDING: 2, SUCCESS: 3}
+
+
+def get_worst_status(statuses: Iterable[str]) -> str:
+    worst_status = None
+    for status in statuses:
+        if _STATES.get(status) is None:
+            continue
+        if worst_status is None:
+            worst_status = status
+            continue
+        if _STATES.get(status) < _STATES.get(worst_status):
+            worst_status = status
+
+        if worst_status == ERROR:
+            break
+
+    if worst_status is None:
+        return ""
+    return worst_status
+
 
 ### BEST FRONTEND PRACTICES BELOW
 
@@ -291,8 +324,8 @@ def _format_header(
 
 
 def _get_status_style(status: str, colortheme: Optional[ColorTheme] = None) -> str:
-    ok_statuses = ("OK", "success", "PASSED")
-    fail_statuses = ("FAIL", "failure", "error", "FAILED", "Timeout", "NOT_FAILED")
+    ok_statuses = (OK, SUCCESS, "PASSED")
+    fail_statuses = (FAIL, FAILURE, ERROR, "FAILED", "Timeout", "NOT_FAILED")
 
     if colortheme is None:
         colortheme = ReportColorTheme.default
@@ -490,7 +523,7 @@ def create_build_html_report(
             style = _get_status_style(build_result.status)
             row.append(f'<td style="{style}">{build_result.status}</td>')
         else:
-            style = _get_status_style("error")
+            style = _get_status_style(ERROR)
             row.append(f'<td style="{style}">error</td>')
 
         row.append(f'<td><a href="{build_log_url}">link</a></td>')
