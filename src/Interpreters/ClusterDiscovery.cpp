@@ -360,7 +360,10 @@ void ClusterDiscovery::initialUpdate()
     fiu_do_on(FailPoints::cluster_discovery_faults,
     {
         constexpr UInt8 success_chance = 4;
-        auto is_failed = std::uniform_int_distribution<>(0, success_chance)(thread_local_rng) != 0;
+        static size_t fail_count = 0;
+        fail_count++;
+        /// strict limit on fail count to avoid flaky tests
+        auto is_failed = fail_count < success_chance || std::uniform_int_distribution<>(0, success_chance)(thread_local_rng) != 0;
         if (is_failed)
             throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Failpoint cluster_discovery_faults is triggered");
     });
