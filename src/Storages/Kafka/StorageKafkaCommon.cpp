@@ -356,7 +356,7 @@ void registerStorageKafka(StorageFactory & factory)
                 "See https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka/#configuration");
         }
 
-        if (kafka_settings->kafka_keeper_path.changed)
+        if (!kafka_settings->kafka_keeper_path.value.empty())
         {
             if (!args.getLocalContext()->getSettingsRef().allow_experimental_kafka_store_offsets_in_keeper)
 

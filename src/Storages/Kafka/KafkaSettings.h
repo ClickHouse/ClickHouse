@@ -31,6 +31,7 @@ class ASTStorage;
     M(StreamingHandleErrorMode, kafka_handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for Kafka engine. Possible values: default (throw an exception after rabbitmq_skip_broken_messages broken messages), stream (save broken messages and errors in virtual columns _raw_message, _error).", 0) \
     M(Bool, kafka_commit_on_select, false, "Commit messages when select query is made", 0) \
     M(UInt64, kafka_max_rows_per_message, 1, "The maximum number of rows produced in one kafka message for row-based formats.", 0) \
+    /* TODO(antaljanosbenjamin): Probably this shouldn't be here, but only read as an argument */ \
     M(String, kafka_keeper_path, "", "TODO(antaljanosbenjamin)", 0) \
 
 #define OBSOLETE_KAFKA_SETTINGS(M, ALIAS) \

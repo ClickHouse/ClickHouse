@@ -853,7 +853,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
     /// method is called.
     do
     {
-        /// Use getData insteand of exists to avoid watch leak.
+        /// Use getData instead of exists to avoid watch leak.
         impl->get(path, callback, std::make_shared<Coordination::WatchCallback>(watch));
 
         if (!state->event.tryWait(1000))

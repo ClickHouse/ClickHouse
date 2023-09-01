@@ -1,17 +1,22 @@
 #pragma once
 
-#include <Common/Macros.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/Types.h>
+#include <Core/UUID.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/KafkaSettings.h>
+#include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include "Core/Block.h"
 
 #include <Poco/Semaphore.h>
 
-#include <mutex>
-#include <list>
 #include <atomic>
+#include <list>
+#include <mutex>
+#include <rdkafka.h>
 
 namespace cppkafka
 {
@@ -51,6 +56,8 @@ public:
     void startup() override;
     void shutdown() override;
 
+    void drop() override;
+
     Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -60,18 +67,11 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(
-        const ASTPtr & query,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr context,
-        bool async_insert) override;
+    SinkToStoragePtr
+    write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     /// We want to control the number of rows in a chunk inserted into Kafka
     bool prefersLargeBlocks() const override { return false; }
-
-    void pushConsumer(KafkaConsumer2Ptr consumer);
-    KafkaConsumer2Ptr popConsumer();
-    KafkaConsumer2Ptr popConsumer(std::chrono::milliseconds timeout);
 
     const auto & getFormatName() const { return format_name; }
 
@@ -81,6 +81,7 @@ public:
 
 private:
     // Configuration and state
+    zkutil::ZooKeeperPtr keeper;
     std::unique_ptr<KafkaSettings> kafka_settings;
     Macros::MacroExpansionInfo macros_info;
     const Names topics;
@@ -102,18 +103,45 @@ private:
     /// In this case we still need to be able to shutdown() properly.
     size_t num_created_consumers = 0; /// number of actually created consumers.
 
-    std::vector<KafkaConsumer2Ptr> consumers; /// available consumers
+    using TopicPartition = KafkaConsumer2::TopicPartition;
+    using TopicPartitions = KafkaConsumer2::TopicPartitions;
 
-    std::mutex mutex;
+    struct LockedTopicPartitionInfo
+    {
+        zkutil::EphemeralNodeHolderPtr lock;
+        std::optional<int64_t> committed_offset;
+        std::optional<int64_t> intent_size;
+    };
+
+    using TopicPartitionLocks = std::unordered_map<
+        TopicPartition,
+        LockedTopicPartitionInfo,
+        KafkaConsumer2::OnlyTopicNameAndPartitionIdHash,
+        KafkaConsumer2::OnlyTopicNameAndPartitionIdEquality>;
+
+    struct ConsumerAndAssignmentInfo
+    {
+        KafkaConsumer2Ptr consumer; /// available consumers
+        size_t consume_from_topic_partition_index{0};
+        TopicPartitions topic_partitions;
+        // TODO(antaljanosbenjamin): maybe recreate the ephemeral node
+        TopicPartitionLocks locks;
+    };
+
+    struct PolledBatchInfo
+    {
+        BlocksList blocks;
+        int64_t last_offset;
+    };
+
+    std::vector<ConsumerAndAssignmentInfo> consumers;
 
     // Stream thread
     struct TaskContext
     {
         BackgroundSchedulePool::TaskHolder holder;
-        std::atomic<bool> stream_cancelled {false};
-        explicit TaskContext(BackgroundSchedulePool::TaskHolder&& task_) : holder(std::move(task_))
-        {
-        }
+        std::atomic<bool> stream_cancelled{false};
+        explicit TaskContext(BackgroundSchedulePool::TaskHolder && task_) : holder(std::move(task_)) { }
     };
     std::vector<std::shared_ptr<TaskContext>> tasks;
     bool thread_per_consumer = false;
@@ -129,6 +157,7 @@ private:
     String collection_name;
 
     std::atomic<bool> shutdown_called = false;
+    UUID uuid{UUIDHelpers::generateV4()};
 
     // Update Kafka configuration with values from CH user configuration.
     void updateConfiguration(cppkafka::Configuration & kafka_config);
@@ -142,8 +171,21 @@ private:
     static Names parseTopics(String topic_list);
     static String getDefaultClientId(const StorageID & table_id_);
 
-    bool streamToViews();
+    bool streamToViews(size_t idx);
     bool checkDependencies(const StorageID & table_id);
+
+    // Takes lock over topic partitions and set's the committed offset in topic_partitions
+    void createKeeperNodes(const KafkaConsumer2Ptr & consumer);
+
+    std::optional<TopicPartitionLocks> lockTopicPartitions(const TopicPartitions & topic_partitions);
+    void saveCommittedOffset(const TopicPartition & topic_partition, int64_t committed_offset);
+    void saveIntent(const TopicPartition & topic_partition, int64_t intent);
+
+    PolledBatchInfo pollConsumer(KafkaConsumer2 & consumer, const TopicPartition & topic_partition, const ContextPtr & context);
+
+    zkutil::ZooKeeper& getZooKeeper();
+
+    std::string getTopicPartitionPath(const TopicPartition& topic_partition );
 };
 
 }

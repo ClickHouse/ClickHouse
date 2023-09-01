@@ -1,34 +1,39 @@
 // Needs to go first because its partial specialization of fmt::formatter
 // should be defined before any instantiation
+#include <cppkafka/exceptions.h>
+#include <cppkafka/topic_partition.h>
+#include <cppkafka/topic_partition_list.h>
 #include <fmt/ostream.h>
 
-#include <Storages/Kafka/KafkaConsumer2.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <Storages/Kafka/KafkaConsumer2.h>
 
 #include <Common/logger_useful.h>
 
-#include <cppkafka/cppkafka.h>
-#include <boost/algorithm/string/join.hpp>
 #include <algorithm>
+#include <iterator>
+#include <boost/algorithm/string/join.hpp>
+#include <cppkafka/cppkafka.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include "base/scope_guard.h"
 
 namespace CurrentMetrics
 {
-    extern const Metric KafkaAssignedPartitions;
-    extern const Metric KafkaConsumersWithAssignment;
+extern const Metric KafkaAssignedPartitions;
+extern const Metric KafkaConsumersWithAssignment;
 }
 
 namespace ProfileEvents
 {
-    extern const Event KafkaRebalanceRevocations;
-    extern const Event KafkaRebalanceAssignments;
-    extern const Event KafkaRebalanceErrors;
-    extern const Event KafkaMessagesPolled;
-    extern const Event KafkaCommitFailures;
-    extern const Event KafkaCommits;
-    extern const Event KafkaConsumerErrors;
+extern const Event KafkaRebalanceRevocations;
+extern const Event KafkaRebalanceAssignments;
+extern const Event KafkaRebalanceErrors;
+extern const Event KafkaMessagesPolled;
+extern const Event KafkaCommitFailures;
+extern const Event KafkaCommits;
+extern const Event KafkaConsumerErrors;
 }
 
 namespace DB
@@ -43,6 +48,12 @@ using namespace std::chrono_literals;
 const auto MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS = 15000;
 const std::size_t POLL_TIMEOUT_WO_ASSIGNMENT_MS = 50;
 const auto DRAIN_TIMEOUT_MS = 5000ms;
+
+
+bool KafkaConsumer2::TopicPartition::operator<(const TopicPartition & other) const
+{
+    return std::tie(topic, partition_id, offset) < std::tie(other.topic, other.partition_id, other.offset);
+}
 
 
 KafkaConsumer2::KafkaConsumer2(
@@ -63,68 +74,87 @@ KafkaConsumer2::KafkaConsumer2(
     , topics(_topics)
 {
     // called (synchronously, during poll) when we enter the consumer group
-    consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
-    {
-        CurrentMetrics::add(CurrentMetrics::KafkaAssignedPartitions, topic_partitions.size());
-        ProfileEvents::increment(ProfileEvents::KafkaRebalanceAssignments);
-
-        if (topic_partitions.empty())
+    consumer->set_assignment_callback(
+        [this](const cppkafka::TopicPartitionList & topic_partitions)
         {
-            LOG_INFO(log, "Got empty assignment: Not enough partitions in the topic for all consumers?");
-        }
-        else
-        {
-            LOG_TRACE(log, "Topics/partitions assigned: {}", topic_partitions);
-            CurrentMetrics::add(CurrentMetrics::KafkaConsumersWithAssignment, 1);
-        }
+            CurrentMetrics::add(CurrentMetrics::KafkaAssignedPartitions, topic_partitions.size());
+            ProfileEvents::increment(ProfileEvents::KafkaRebalanceAssignments);
 
-        assignment = topic_partitions;
-    });
+            if (topic_partitions.empty())
+            {
+                LOG_INFO(log, "Got empty assignment: Not enough partitions in the topic for all consumers?");
+            }
+            else
+            {
+                LOG_TRACE(log, "Topics/partitions assigned: {}", topic_partitions);
+                CurrentMetrics::add(CurrentMetrics::KafkaConsumersWithAssignment, 1);
+            }
+
+            chassert(!assignment.has_value());
+
+            assignment.emplace();
+            assignment->reserve(topic_partitions.size());
+            needs_offset_update = true;
+            for (const auto & topic_partition : topic_partitions)
+            {
+                assignment->push_back(TopicPartition{topic_partition.get_topic(), topic_partition.get_partition(), INVALID_OFFSET});
+            }
+            std::sort(assignment->begin(), assignment->end());
+
+            updateOffsets(topic_partitions);
+        });
 
     // called (synchronously, during poll) when we leave the consumer group
-    consumer->set_revocation_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
-    {
-        CurrentMetrics::sub(CurrentMetrics::KafkaAssignedPartitions, topic_partitions.size());
-        ProfileEvents::increment(ProfileEvents::KafkaRebalanceRevocations);
-
-        // Rebalance is happening now, and now we have a chance to finish the work
-        // with topics/partitions we were working with before rebalance
-        LOG_TRACE(log, "Rebalance initiated. Revoking partitions: {}", topic_partitions);
-
-        if (!topic_partitions.empty())
+    consumer->set_revocation_callback(
+        [this](const cppkafka::TopicPartitionList & topic_partitions)
         {
-            CurrentMetrics::sub(CurrentMetrics::KafkaConsumersWithAssignment, 1);
-        }
+            // TODO(antaljanosbenjamin): deal with revocation
+            CurrentMetrics::sub(CurrentMetrics::KafkaAssignedPartitions, topic_partitions.size());
+            ProfileEvents::increment(ProfileEvents::KafkaRebalanceRevocations);
 
-        // we can not flush data to target from that point (it is pulled, not pushed)
-        // so the best we can now it to
-        // 1) repeat last commit in sync mode (async could be still in queue, we need to be sure is is properly committed before rebalance)
-        // 2) stop / brake the current reading:
-        //     * clean buffered non-commited messages
-        //     * set flag / flush
+            // Rebalance is happening now, and now we have a chance to finish the work
+            // with topics/partitions we were working with before rebalance
+            LOG_TRACE(log, "Rebalance initiated. Revoking partitions: {}", topic_partitions);
 
-        cleanUnprocessed();
+            if (!topic_partitions.empty())
+            {
+                CurrentMetrics::sub(CurrentMetrics::KafkaConsumersWithAssignment, 1);
+            }
 
-        stalled_status = REBALANCE_HAPPENED;
-        assignment.reset();
-        waited_for_assignment = 0;
+            // we can not flush data to target from that point (it is pulled, not pushed)
+            // so the best we can now it to
+            // 1) repeat last commit in sync mode (async could be still in queue, we need to be sure is is properly committed before rebalance)
+            // 2) stop / brake the current reading:
+            //     * clean buffered non-commited messages
+            //     * set flag / flush
 
-        // for now we use slower (but reliable) sync commit in main loop, so no need to repeat
-        // try
-        // {
-        //     consumer->commit();
-        // }
-        // catch (cppkafka::HandleException & e)
-        // {
-        //     LOG_WARNING(log, "Commit error: {}", e.what());
-        // }
-    });
+            cleanUnprocessed();
 
-    consumer->set_rebalance_error_callback([this](cppkafka::Error err)
-    {
-        LOG_ERROR(log, "Rebalance error: {}", err);
-        ProfileEvents::increment(ProfileEvents::KafkaRebalanceErrors);
-    });
+            stalled_status = StalledStatus::REBALANCE_HAPPENED;
+            assignment.reset();
+            queues.clear();
+            needs_offset_update = true;
+            waited_for_assignment = 0;
+
+            // for now we use slower (but reliable) sync commit in main loop, so no need to repeat
+            // try
+            // {
+            //     consumer->commit();
+            // }
+            // catch (cppkafka::HandleException & e)
+            // {
+            //     LOG_WARNING(log, "Commit error: {}", e.what());
+            // }
+        });
+
+    consumer->set_rebalance_error_callback(
+        [this](cppkafka::Error err)
+        {
+            LOG_ERROR(log, "Rebalance error: {}", err);
+            ProfileEvents::increment(ProfileEvents::KafkaRebalanceErrors);
+        });
+
+    consumer->subscribe(topics);
 }
 
 KafkaConsumer2::~KafkaConsumer2()
@@ -148,7 +178,6 @@ KafkaConsumer2::~KafkaConsumer2()
     {
         LOG_ERROR(log, "Error while destructing consumer: {}", e.what());
     }
-
 }
 
 // Needed to drain rest of the messages / queued callback calls from the consumer
@@ -159,6 +188,9 @@ void KafkaConsumer2::drain()
 {
     auto start_time = std::chrono::steady_clock::now();
     cppkafka::Error last_error(RD_KAFKA_RESP_ERR_NO_ERROR);
+
+    for (auto & [tp, queue] : queues)
+        queue.forward_to_queue(consumer->get_consumer_queue());
 
     while (true)
     {
@@ -185,145 +217,12 @@ void KafkaConsumer2::drain()
         last_error = error;
 
         auto ts = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time) > DRAIN_TIMEOUT_MS)
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time) > DRAIN_TIMEOUT_MS)
         {
             LOG_ERROR(log, "Timeout during draining.");
             break;
         }
     }
-}
-
-
-void KafkaConsumer2::commit()
-{
-    auto print_offsets = [this] (const char * prefix, const cppkafka::TopicPartitionList & offsets)
-    {
-        for (const auto & topic_part : offsets)
-        {
-            auto print_special_offset = [&topic_part]
-            {
-                switch (topic_part.get_offset())
-                {
-                    case cppkafka::TopicPartition::OFFSET_BEGINNING: return "BEGINNING";
-                    case cppkafka::TopicPartition::OFFSET_END: return "END";
-                    case cppkafka::TopicPartition::OFFSET_STORED: return "STORED";
-                    case cppkafka::TopicPartition::OFFSET_INVALID: return "INVALID";
-                    default: return "";
-                }
-            };
-
-            if (topic_part.get_offset() < 0)
-            {
-                LOG_TRACE(log, "{} {} (topic: {}, partition: {})", prefix, print_special_offset(), topic_part.get_topic(), topic_part.get_partition());
-            }
-            else
-            {
-                LOG_TRACE(log, "{} {} (topic: {}, partition: {})", prefix, topic_part.get_offset(), topic_part.get_topic(), topic_part.get_partition());
-            }
-        }
-    };
-
-    print_offsets("Polled offset", consumer->get_offsets_position(consumer->get_assignment()));
-
-    if (hasMorePolledMessages())
-    {
-        LOG_WARNING(log, "Logical error. Non all polled messages were processed.");
-    }
-
-    if (offsets_stored > 0)
-    {
-        // if we will do async commit here (which is faster)
-        // we may need to repeat commit in sync mode in revocation callback,
-        // but it seems like existing API doesn't allow us to to that
-        // in a controlled manner (i.e. we don't know the offsets to commit then)
-
-        size_t max_retries = 5;
-        bool committed = false;
-
-        while (!committed && max_retries > 0)
-        {
-            try
-            {
-                // See https://github.com/edenhill/librdkafka/issues/1470
-                // broker may reject commit if during offsets.commit.timeout.ms (5000 by default),
-                // there were not enough replicas available for the __consumer_offsets topic.
-                // also some other temporary issues like client-server connectivity problems are possible
-                consumer->commit();
-                committed = true;
-                print_offsets("Committed offset", consumer->get_offsets_committed(consumer->get_assignment()));
-            }
-            catch (const cppkafka::HandleException & e)
-            {
-                // If there were actually no offsets to commit, return. Retrying won't solve
-                // anything here
-                if (e.get_error() == RD_KAFKA_RESP_ERR__NO_OFFSET)
-                    committed = true;
-                else
-                    LOG_ERROR(log, "Exception during commit attempt: {}", e.what());
-            }
-            --max_retries;
-        }
-
-        if (!committed)
-        {
-            // TODO: insert atomicity / transactions is needed here (possibility to rollback, on 2 phase commits)
-            ProfileEvents::increment(ProfileEvents::KafkaCommitFailures);
-            throw Exception(ErrorCodes::CANNOT_COMMIT_OFFSET,
-                            "All commit attempts failed. Last block was already written to target table(s), "
-                            "but was not committed to Kafka.");
-        }
-        else
-        {
-            ProfileEvents::increment(ProfileEvents::KafkaCommits);
-        }
-
-    }
-    else
-    {
-        LOG_TRACE(log, "Nothing to commit.");
-    }
-
-    offsets_stored = 0;
-}
-
-void KafkaConsumer2::subscribe()
-{
-    LOG_TRACE(log, "Already subscribed to topics: [{}]", boost::algorithm::join(consumer->get_subscription(), ", "));
-
-    if (assignment.has_value())
-    {
-        LOG_TRACE(log, "Already assigned to: {}", assignment.value());
-    }
-    else
-    {
-        LOG_TRACE(log, "No assignment");
-    }
-
-
-    size_t max_retries = 5;
-
-    while (consumer->get_subscription().empty())
-    {
-        --max_retries;
-        try
-        {
-            consumer->subscribe(topics);
-            // FIXME: if we failed to receive "subscribe" response while polling and destroy consumer now, then we may hang up.
-            //        see https://github.com/edenhill/librdkafka/issues/2077
-        }
-        catch (cppkafka::HandleException & e)
-        {
-            if (max_retries > 0 && e.get_error() == RD_KAFKA_RESP_ERR__TIMED_OUT)
-                continue;
-            throw;
-        }
-    }
-
-    cleanUnprocessed();
-
-    // we can reset any flags (except of CONSUMER_STOPPED) before attempt of reading new block of data
-    if (stalled_status != CONSUMER_STOPPED)
-        stalled_status = NO_MESSAGES_RETURNED;
 }
 
 void KafkaConsumer2::cleanUnprocessed()
@@ -333,59 +232,100 @@ void KafkaConsumer2::cleanUnprocessed()
     offsets_stored = 0;
 }
 
-void KafkaConsumer2::unsubscribe()
+void KafkaConsumer2::pollEvents()
 {
-    LOG_TRACE(log, "Re-joining claimed consumer after failure");
-    cleanUnprocessed();
+    // All the partition queues are detached, so the consumer shouldn't be able to poll any messages
+    auto msg = consumer->poll(10ms);
+    chassert(!msg && "Consumer returned a message when it was not expected");
+};
 
-    // it should not raise exception as used in destructor
+KafkaConsumer2::TopicPartitionCounts KafkaConsumer2::getPartitionCounts() const
+{
+    TopicPartitionCounts result;
     try
     {
-        // From docs: Any previous subscription will be unassigned and unsubscribed first.
-        consumer->subscribe(topics);
+        auto metadata = consumer->get_metadata();
+        auto topic_metadatas = metadata.get_topics();
 
-        // I wanted to avoid explicit unsubscribe as it requires draining the messages
-        // to close the consumer safely after unsubscribe
-        // see https://github.com/edenhill/librdkafka/issues/2077
-        //     https://github.com/confluentinc/confluent-kafka-go/issues/189 etc.
+        for (auto & topic_metadata : topic_metadatas)
+        {
+            if (const auto it = std::find(topics.begin(), topics.end(), topic_metadata.get_name()); it != topics.end())
+            {
+                result.push_back({topic_metadata.get_name(), topic_metadata.get_partitions().size()});
+            }
+        }
     }
-    catch (const cppkafka::HandleException & e)
+    catch (cppkafka::HandleException & e)
     {
-        LOG_ERROR(log, "Exception from KafkaConsumer2::unsubscribe: {}", e.what());
+        chassert(e.what() != nullptr);
     }
-
+    return result;
 }
 
-
-void KafkaConsumer2::resetToLastCommitted(const char * msg)
+bool KafkaConsumer2::polledDataUnusable(const TopicPartition & topic_partition) const
 {
-    if (!assignment.has_value() || assignment->empty())
+    const auto consumer_in_wrong_state
+        = (stalled_status != StalledStatus::NOT_STALLED) && (stalled_status != StalledStatus::NO_MESSAGES_RETURNED);
+    const auto different_topic_partition = current == messages.end()
+        ? false
+        : (current->get_topic() != topic_partition.topic || current->get_partition() != topic_partition.partition_id);
+    return consumer_in_wrong_state || different_topic_partition;
+}
+
+KafkaConsumer2::TopicPartitions const * KafkaConsumer2::getAssignment() const
+{
+    if (assignment.has_value())
     {
-        LOG_TRACE(log, "Not assignned. Can't reset to last committed position.");
-        return;
+        return &*assignment;
     }
-    auto committed_offset = consumer->get_offsets_committed(consumer->get_assignment());
-    consumer->assign(committed_offset);
-    LOG_TRACE(log, "{} Returned to committed position: {}", msg, committed_offset);
+
+    return nullptr;
+}
+
+void KafkaConsumer2::updateOffsets(const TopicPartitions & topic_partitions)
+{
+    // TODO(antaljanosbenjamin): Make sure topic_partitions and assignment is in sync.
+    cppkafka::TopicPartitionList original_topic_partitions;
+    original_topic_partitions.reserve(topic_partitions.size());
+    std::transform(
+        topic_partitions.begin(),
+        topic_partitions.end(),
+        std::back_inserter(original_topic_partitions),
+        [](const TopicPartition & tp) {
+            return cppkafka::TopicPartition{tp.topic, tp.partition_id, tp.offset};
+        });
+    updateOffsets(original_topic_partitions);
+    needs_offset_update = false;
+    stalled_status = StalledStatus::NOT_STALLED;
+}
+
+void KafkaConsumer2::updateOffsets(const cppkafka::TopicPartitionList & topic_partitions)
+{
+    queues.clear();
+    // cppkafka itself calls assign(), but in order to detach the queues here we have to do the assignment manually. Later on we have to reassign the topic partitions with correct offsets.
+    consumer->assign(topic_partitions);
+    for (const auto & topic_partition : topic_partitions)
+        // This will also detach the partition queues from the consumer, thus the messages won't be forwarded without attaching them manually
+        queues.emplace(
+            TopicPartition{topic_partition.get_topic(), topic_partition.get_partition(), topic_partition.get_offset()},
+            consumer->get_partition_queue(topic_partition));
 }
 
 // it do the poll when needed
-ReadBufferPtr KafkaConsumer2::consume()
+ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition)
 {
     resetIfStopped();
 
-    if (polledDataUnusable())
+    if (polledDataUnusable(topic_partition))
         return nullptr;
 
     if (hasMorePolledMessages())
         return getNextMessage();
 
-    if (intermediate_commit)
-        commit();
 
     while (true)
     {
-        stalled_status = NO_MESSAGES_RETURNED;
+        stalled_status = StalledStatus::NO_MESSAGES_RETURNED;
 
         // we already wait enough for assignment in the past,
         // let's make polls shorter and not block other consumer
@@ -393,27 +333,23 @@ ReadBufferPtr KafkaConsumer2::consume()
         // POLL_TIMEOUT_WO_ASSIGNMENT_MS (50ms) is 100% enough just to check if we got assignment
         //  (see https://github.com/ClickHouse/ClickHouse/issues/11218)
         auto actual_poll_timeout_ms = (waited_for_assignment >= MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS)
-                        ? std::min(POLL_TIMEOUT_WO_ASSIGNMENT_MS,poll_timeout)
-                        : poll_timeout;
+            ? std::min(POLL_TIMEOUT_WO_ASSIGNMENT_MS, poll_timeout)
+            : poll_timeout;
+
+        auto & queue_to_poll_from = queues[topic_partition];
+        queue_to_poll_from.forward_to_queue(consumer->get_consumer_queue());
+        SCOPE_EXIT({ queue_to_poll_from.disable_queue_forwarding(); });
 
         /// Don't drop old messages immediately, since we may need them for virtual columns.
-        auto new_messages = consumer->poll_batch(batch_size,
-                            std::chrono::milliseconds(actual_poll_timeout_ms));
+        auto new_messages = consumer->poll_batch(batch_size, std::chrono::milliseconds(actual_poll_timeout_ms));
 
         resetIfStopped();
-        if (stalled_status == CONSUMER_STOPPED)
+        if (stalled_status == StalledStatus::CONSUMER_STOPPED)
         {
             return nullptr;
         }
-        else if (stalled_status == REBALANCE_HAPPENED)
+        else if (stalled_status == StalledStatus::REBALANCE_HAPPENED)
         {
-            if (!new_messages.empty())
-            {
-                // we have polled something just after rebalance.
-                // we will not use current batch, so we need to return to last committed position
-                // otherwise we will continue polling from that position
-                resetToLastCommitted("Rewind last poll after rebalance.");
-            }
             return nullptr;
         }
 
@@ -431,7 +367,7 @@ ReadBufferPtr KafkaConsumer2::consume()
                 else
                 {
                     LOG_WARNING(log, "Can't get assignment. Will keep trying.");
-                    stalled_status = NO_ASSIGNMENT;
+                    stalled_status = StalledStatus::NO_ASSIGNMENT;
                     return nullptr;
                 }
             }
@@ -450,8 +386,11 @@ ReadBufferPtr KafkaConsumer2::consume()
         {
             messages = std::move(new_messages);
             current = messages.begin();
-            LOG_TRACE(log, "Polled batch of {} messages. Offsets position: {}",
-                messages.size(), consumer->get_offsets_position(consumer->get_assignment()));
+            LOG_TRACE(
+                log,
+                "Polled batch of {} messages. Offsets position: {}",
+                messages.size(),
+                consumer->get_offsets_position(consumer->get_assignment()));
             break;
         }
     }
@@ -460,13 +399,13 @@ ReadBufferPtr KafkaConsumer2::consume()
     if (current == messages.end())
     {
         LOG_ERROR(log, "Only errors left");
-        stalled_status = ERRORS_RETURNED;
+        stalled_status = StalledStatus::ERRORS_RETURNED;
         return nullptr;
     }
 
     ProfileEvents::increment(ProfileEvents::KafkaMessagesPolled, messages.size());
 
-    stalled_status = NOT_STALLED;
+    stalled_status = StalledStatus::NOT_STALLED;
     return getNextMessage();
 }
 
@@ -489,16 +428,18 @@ size_t KafkaConsumer2::filterMessageErrors()
 {
     assert(current == messages.begin());
 
-    size_t skipped = std::erase_if(messages, [this](auto & message)
-    {
-        if (auto error = message.get_error())
+    size_t skipped = std::erase_if(
+        messages,
+        [this](auto & message)
         {
-            ProfileEvents::increment(ProfileEvents::KafkaConsumerErrors);
-            LOG_ERROR(log, "Consumer error: {}", error);
-            return true;
-        }
-        return false;
-    });
+            if (auto error = message.get_error())
+            {
+                ProfileEvents::increment(ProfileEvents::KafkaConsumerErrors);
+                LOG_ERROR(log, "Consumer error: {}", error);
+                return true;
+            }
+            return false;
+        });
 
     if (skipped)
         LOG_ERROR(log, "There were {} messages with an error", skipped);
@@ -512,19 +453,8 @@ void KafkaConsumer2::resetIfStopped()
     // after block is formed (i.e. during copying data to MV / committing)  we ignore stop attempts
     if (stopped)
     {
-        stalled_status = CONSUMER_STOPPED;
+        stalled_status = StalledStatus::CONSUMER_STOPPED;
         cleanUnprocessed();
     }
 }
-
-
-void KafkaConsumer2::storeLastReadMessageOffset()
-{
-    if (!isStalled())
-    {
-        consumer->store_offset(*(current - 1));
-        ++offsets_stored;
-    }
-}
-
 }
