@@ -250,8 +250,7 @@ ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::ReadWriteBufferFromHTTPBase(
     bool delay_initialization,
     bool use_external_buffer_,
     bool http_skip_not_found_url_,
-    std::optional<HTTPFileInfo> file_info_,
-    Poco::Net::HTTPClientSession::ProxyConfig proxy_config_)
+    std::optional<HTTPFileInfo> file_info_)
     : SeekableReadBuffer(nullptr, 0)
     , uri {uri_}
     , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
@@ -266,7 +265,6 @@ ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::ReadWriteBufferFromHTTPBase(
     , http_skip_not_found_url(http_skip_not_found_url_)
     , settings {settings_}
     , log(&Poco::Logger::get("ReadWriteBufferFromHTTP"))
-    , proxy_config(proxy_config_)
 {
     if (settings.http_max_tries <= 0 || settings.http_retry_initial_backoff_ms <= 0
         || settings.http_retry_initial_backoff_ms >= settings.http_retry_max_backoff_ms)
@@ -862,12 +860,12 @@ HTTPFileInfo ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::parseFileInfo(con
 
 }
 
-SessionFactory::SessionFactory(const ConnectionTimeouts & timeouts_, Poco::Net::HTTPClientSession::ProxyConfig proxy_config_)
-    : timeouts(timeouts_), proxy_config(proxy_config_) {}
+SessionFactory::SessionFactory(const ConnectionTimeouts & timeouts_)
+    : timeouts(timeouts_) {}
 
 SessionFactory::SessionType SessionFactory::buildNewSession(const Poco::URI & uri)
 {
-    return makeHTTPSession(uri, timeouts, proxy_config);
+    return makeHTTPSession(uri, timeouts);
 }
 
 ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
@@ -884,10 +882,9 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     bool delay_initialization_,
     bool use_external_buffer_,
     bool skip_not_found_url_,
-    std::optional<HTTPFileInfo> file_info_,
-    Poco::Net::HTTPClientSession::ProxyConfig proxy_config_)
+    std::optional<HTTPFileInfo> file_info_)
     : Parent(
-        std::make_shared<SessionType>(uri_, max_redirects, std::make_shared<SessionFactory>(timeouts, proxy_config_)),
+        std::make_shared<SessionType>(uri_, max_redirects, std::make_shared<SessionFactory>(timeouts)),
         uri_,
         credentials_,
         method_,
@@ -899,8 +896,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
         delay_initialization_,
         use_external_buffer_,
         skip_not_found_url_,
-        file_info_,
-        proxy_config_) {}
+        file_info_) {}
 
 
 PooledSessionFactory::PooledSessionFactory(

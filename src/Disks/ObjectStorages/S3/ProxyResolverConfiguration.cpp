@@ -1,36 +1,32 @@
-#include <Common/RemoteProxyConfigurationResolver.h>
+#include "ProxyResolverConfiguration.h"
+
+#if USE_AWS_S3
 
 #include <utility>
 #include <IO/HTTPCommon.h>
-#include <Poco/StreamCopier.h>
+#include "Poco/StreamCopier.h"
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Common/logger_useful.h>
 #include <Common/DNSResolver.h>
 
-namespace DB
-{
-
-namespace ErrorCodes
+namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
 
-RemoteProxyConfigurationResolver::RemoteProxyConfigurationResolver(
-    const Poco::URI & endpoint_,
-    String proxy_protocol_,
-    unsigned proxy_port_,
-    unsigned cache_ttl_
-)
-: endpoint(endpoint_), proxy_protocol(std::move(proxy_protocol_)), proxy_port(proxy_port_), cache_ttl(cache_ttl_)
+namespace DB::S3
+{
+
+ProxyResolverConfiguration::ProxyResolverConfiguration(const Poco::URI & endpoint_, String proxy_scheme_
+    , unsigned proxy_port_, unsigned cache_ttl_)
+    : endpoint(endpoint_), proxy_scheme(std::move(proxy_scheme_)), proxy_port(proxy_port_), cache_ttl(cache_ttl_)
 {
 }
 
-ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
+ClientConfigurationPerRequest ProxyResolverConfiguration::getConfiguration(const Aws::Http::HttpRequest &)
 {
-    auto * logger = &Poco::Logger::get("RemoteProxyConfigurationResolver");
-
-    LOG_DEBUG(logger, "Obtain proxy using resolver: {}", endpoint.toString());
+    LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Obtain proxy using resolver: {}", endpoint.toString());
 
     std::lock_guard lock(cache_mutex);
 
@@ -38,12 +34,7 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 
     if (cache_ttl.count() && cache_valid && now <= cache_timestamp + cache_ttl && now >= cache_timestamp)
     {
-        LOG_DEBUG(logger,
-                  "Use cached proxy: {}://{}:{}",
-                  cached_config.protocol,
-                  cached_config.host,
-                  cached_config.port
-                  );
+        LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Use cached proxy: {}://{}:{}", Aws::Http::SchemeMapper::ToString(cached_config.proxy_scheme), cached_config.proxy_host, cached_config.proxy_port);
         return cached_config;
     }
 
@@ -93,11 +84,11 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
         /// Read proxy host as string from response body.
         Poco::StreamCopier::copyToString(response_body_stream, proxy_host);
 
-        LOG_DEBUG(logger, "Use proxy: {}://{}:{}", proxy_protocol, proxy_host, proxy_port);
+        LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Use proxy: {}://{}:{}", proxy_scheme, proxy_host, proxy_port);
 
-        cached_config.protocol = ProxyConfiguration::protocolFromString(proxy_protocol);
-        cached_config.host = proxy_host;
-        cached_config.port = proxy_port;
+        cached_config.proxy_scheme = Aws::Http::SchemeMapper::FromString(proxy_scheme.c_str());
+        cached_config.proxy_host = proxy_host;
+        cached_config.proxy_port = proxy_port;
         cache_timestamp = std::chrono::system_clock::now();
         cache_valid = true;
 
@@ -105,14 +96,16 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
     }
     catch (...)
     {
-        tryLogCurrentException("RemoteProxyConfigurationResolver", "Failed to obtain proxy");
-        return {};
+        tryLogCurrentException("AWSClient", "Failed to obtain proxy");
+        /// Don't use proxy if it can't be obtained.
+        ClientConfigurationPerRequest cfg;
+        return cfg;
     }
 }
 
-void RemoteProxyConfigurationResolver::errorReport(const ProxyConfiguration & config)
+void ProxyResolverConfiguration::errorReport(const ClientConfigurationPerRequest & config)
 {
-    if (config.host.empty())
+    if (config.proxy_host.empty())
         return;
 
     std::lock_guard lock(cache_mutex);
@@ -120,8 +113,8 @@ void RemoteProxyConfigurationResolver::errorReport(const ProxyConfiguration & co
     if (!cache_ttl.count() || !cache_valid)
         return;
 
-    if (std::tie(cached_config.protocol, cached_config.host, cached_config.port)
-        != std::tie(config.protocol, config.host, config.port))
+    if (std::tie(cached_config.proxy_scheme, cached_config.proxy_host, cached_config.proxy_port)
+            != std::tie(config.proxy_scheme, config.proxy_host, config.proxy_port))
         return;
 
     /// Invalidate cached proxy when got error with this proxy
@@ -129,3 +122,5 @@ void RemoteProxyConfigurationResolver::errorReport(const ProxyConfiguration & co
 }
 
 }
+
+#endif

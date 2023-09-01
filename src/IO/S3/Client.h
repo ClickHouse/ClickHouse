@@ -314,8 +314,7 @@ public:
         bool enable_s3_requests_logging,
         bool for_disk_s3,
         const ThrottlerPtr & get_request_throttler,
-        const ThrottlerPtr & put_request_throttler,
-        const String & protocol = "https");
+        const ThrottlerPtr & put_request_throttler);
 
 private:
     ClientFactory();
