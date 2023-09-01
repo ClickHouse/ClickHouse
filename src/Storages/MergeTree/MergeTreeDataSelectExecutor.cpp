@@ -43,6 +43,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Functions/IFunction.h>
 
 #include <IO/WriteBufferFromOStream.h>
 
@@ -771,6 +772,107 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
     return sampling;
 }
+
+std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(
+    const MergeTreeData & data,
+    const MergeTreeData::DataPartsVector & parts,
+    const ActionsDAGPtr & filter_dag,
+    ContextPtr context)
+{
+    if (!filter_dag)
+        return {};
+
+    auto sample = data.getSampleBlockWithVirtualColumns();
+    bool has_any = false;
+    for (const auto * input : filter_dag->getInputs())
+        if (sample.has(input->result_name))
+            has_any = true;
+
+    if (!has_any)
+        return {};
+
+    std::vector<const ActionsDAG::Node *> atoms;
+    auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, false /* one_part */);
+
+    {
+        std::stack<const ActionsDAG::Node *> stack;
+        stack.push(filter_dag->getOutputs().at(0));
+
+        std::unordered_map<const ActionsDAG::Node *, bool> can_compute;
+        struct Frame
+        {
+            const ActionsDAG::Node * node;
+            size_t next_child_to_visit = 0;
+        };
+
+        while (!stack.empty())
+        {
+            const auto * node = stack.top();
+            stack.pop();
+            if (node->type == ActionsDAG::ActionType::FUNCTION)
+            {
+                const auto & name = node->function_base->getName();
+                if (name == "and")
+                {
+                    for (const auto * arg : node->children)
+                        stack.push(arg);
+
+                    continue;
+                }
+            }
+
+            if (!can_compute.contains(node))
+            {
+                std::stack<Frame> compute_stack;
+                compute_stack.push({node});
+                while (!compute_stack.empty())
+                {
+                    auto & frame = compute_stack.top();
+                    bool need_visit_child = false;
+                    while (frame.next_child_to_visit < frame.node->children.size())
+                    {
+                        if (!can_compute.contains(frame.node->children[frame.next_child_to_visit]))
+                        {
+                            compute_stack.push({frame.node->children[frame.next_child_to_visit]});
+                            need_visit_child = true;
+                            break;
+                        }
+
+                        ++frame.next_child_to_visit;
+                    }
+
+                    if (need_visit_child)
+                        continue;
+
+                    if (frame.node->type == ActionsDAG::ActionType::INPUT)
+                    {
+                        can_compute[frame.node] = virtual_columns_block.has(frame.node->result_name);
+                    }
+                    else
+                    {
+                        can_compute[frame.node] = std::all_of(
+                            frame.node->children.begin(),
+                            frame.node->children.end(),
+                            [&](const auto * child) { return can_compute[child]; });
+                    }
+
+                    compute_stack.pop();
+                }
+            }
+
+            if (can_compute[node])
+                atoms.push_back(node);
+        }
+    }
+
+    if (atoms.empty())
+        return {};
+
+    auto dag = ActionsDAG::buildFilterActionsDAG(atoms, {}, context);
+    VirtualColumnUtils::filterBlockWithQuery(dag, virtual_columns_block, context);
+    return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
+}
+
 
 std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(
     const MergeTreeData & data,
