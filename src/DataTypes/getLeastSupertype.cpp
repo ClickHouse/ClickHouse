@@ -245,6 +245,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
     /// For Arrays
     {
         bool have_array = false;
+        bool have_nullable_array = false;
         bool all_arrays = true;
 
         DataTypes nested_types;
@@ -252,9 +253,13 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
         for (const auto & type : types)
         {
-            if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+            auto type_not_nullable = removeNullable(type);
+            if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(type_not_nullable.get()))
             {
                 have_array = true;
+                if (!type->equals(*type_not_nullable))
+                    have_nullable_array = true;
+
                 nested_types.emplace_back(type_array->getNestedType());
             }
             else
@@ -272,21 +277,23 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             if (!nested_type)
                 return nullptr;
 
-            return std::make_shared<DataTypeArray>(nested_type);
+            auto res = std::make_shared<DataTypeArray>(nested_type);
+            return have_nullable_array ? makeNullable(res) : res;
         }
     }
 
     /// For tuples
     {
         bool have_tuple = false;
+        bool have_nullable_tuple = false;
         bool all_tuples = true;
         size_t tuple_size = 0;
 
         std::vector<DataTypes> nested_types;
-
         for (const auto & type : types)
         {
-            if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+            auto type_not_nullable = removeNullable(type);
+            if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type_not_nullable.get()))
             {
                 if (!have_tuple)
                 {
@@ -299,6 +306,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     return throwOrReturn<on_error>(types, "because Tuples have different sizes", ErrorCodes::NO_COMMON_TYPE);
 
                 have_tuple = true;
+                if (!type->equals(*type_not_nullable))
+                    have_nullable_tuple = true;
 
                 for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
                     nested_types[elem_idx].emplace_back(type_tuple->getElements()[elem_idx]);
@@ -323,13 +332,15 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 common_tuple_types[elem_idx] = common_type;
             }
 
-            return std::make_shared<DataTypeTuple>(common_tuple_types);
+            auto res = std::make_shared<DataTypeTuple>(common_tuple_types);
+            return have_nullable_tuple ? makeNullable(res) : res;
         }
     }
 
     /// For maps
     {
         bool have_maps = false;
+        bool have_nullable_maps = false;
         bool all_maps = true;
         DataTypes key_types;
         DataTypes value_types;
@@ -338,9 +349,13 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
         for (const auto & type : types)
         {
-            if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(type.get()))
+            auto type_not_nullable = removeNullable(type);
+            if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(type_not_nullable.get()))
             {
                 have_maps = true;
+                if (!type->equals(*type_not_nullable))
+                    have_nullable_maps = true;
+
                 key_types.emplace_back(type_map->getKeyType());
                 value_types.emplace_back(type_map->getValueType());
             }
@@ -360,7 +375,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             if (!keys_common_type || !values_common_type)
                 return nullptr;
 
-            return std::make_shared<DataTypeMap>(keys_common_type, values_common_type);
+            auto res = std::make_shared<DataTypeMap>(keys_common_type, values_common_type);
+            return have_nullable_maps ? makeNullable(res) : res;
         }
     }
 
