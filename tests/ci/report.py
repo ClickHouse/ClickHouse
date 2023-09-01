@@ -10,9 +10,10 @@ import datetime
 
 ### BEST FRONTEND PRACTICES BELOW
 
-HTML_BASE_TEST_TEMPLATE = """
+HEAD_HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
+<head>
   <style>
 
 :root {{
@@ -98,15 +99,9 @@ tr:hover {{ filter: var(--tr-hover-filter); }}
 <div class="main">
 <span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
 <h1><span class="gradient">{header}</span></h1>
-<p class="links">
-<a href="{raw_log_url}">{raw_log_name}</a>
-<a href="{commit_url}">Commit</a>
-{additional_urls}
-<a href="{task_url}">Task (github actions)</a>
-<a href="{job_url}">Job (github actions)</a>
-</p>
-{test_part}
-<img id="fish" src="https://presentations.clickhouse.com/images/fish.png" />
+"""
+
+FOOTER_HTML_TEMPLATE = """<img id="fish" src="https://presentations.clickhouse.com/images/fish.png" />
 <script type="text/javascript">
     /// Straight from https://stackoverflow.com/questions/14267781/sorting-html-table-with-javascript
 
@@ -160,6 +155,21 @@ tr:hover {{ filter: var(--tr-hover-filter); }}
 </body>
 </html>
 """
+
+
+HTML_BASE_TEST_TEMPLATE = (
+    f"{HEAD_HTML_TEMPLATE}"
+    """<p class="links">
+<a href="{raw_log_url}">{raw_log_name}</a>
+<a href="{commit_url}">Commit</a>
+{additional_urls}
+<a href="{task_url}">Task (github actions)</a>
+<a href="{job_url}">Job (github actions)</a>
+</p>
+{test_part}
+"""
+    f"{FOOTER_HTML_TEMPLATE}"
+)
 
 HTML_TEST_PART = """
 <table>
@@ -423,27 +433,12 @@ def create_test_html_report(
     return html
 
 
-HTML_BASE_BUILD_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head>
-  <style>
-body {{ font-family: "DejaVu Sans", "Noto Sans", Arial, sans-serif; background: #EEE; }}
-h1 {{ margin-left: 10px; }}
-th, td {{ border: 0; padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; background-color: #FFF;
-border: 0; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }}
-a {{ color: #06F; text-decoration: none; }}
-a:hover, a:active {{ color: #F40; text-decoration: underline; }}
-table {{ border: 0; }}
-.main {{ margin: auto; }}
-p.links a {{ padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-space: nowrap; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }}
-tr:hover td {{filter: brightness(95%);}}
-  </style>
-<title>{title}</title>
-</head>
-<body>
-<div class="main">
-<h1>{header}</h1>
+HTML_BASE_BUILD_TEMPLATE = (
+    f"{HEAD_HTML_TEMPLATE}"
+    """<p class="links">
+<a href="{commit_url}">Commit</a>
+<a href="{task_url}">Task (github actions)</a>
+</p>
 <table>
 <tr>
 <th>Compiler</th>
@@ -457,13 +452,9 @@ tr:hover td {{filter: brightness(95%);}}
 </tr>
 {rows}
 </table>
-<p class="links">
-<a href="{commit_url}">Commit</a>
-<a href="{task_url}">Task (github actions)</a>
-</p>
-</body>
-</html>
 """
+    f"{FOOTER_HTML_TEMPLATE}"
+)
 
 LINK_TEMPLATE = '<a href="{url}">{text}</a>'
 
