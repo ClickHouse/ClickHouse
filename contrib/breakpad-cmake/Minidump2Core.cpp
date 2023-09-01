@@ -1356,10 +1356,10 @@ static void AugmentMappings(const Options & options, CrashedProcess * crashinfo,
 }
 
 
-namespace Minidump2Core
+namespace ClickhouseBreakpad
 {
 /// Mimic minidump-2-core.cc to generate coredump from minidump, but run in-process
-int generate(const char * minidump_path, const char * coredump_path)
+int minidump2Core(const char * minidump_path, const char * coredump_path)
 {
     MemoryMappedFile mapped_file(minidump_path, 0);
     if (!mapped_file.data())

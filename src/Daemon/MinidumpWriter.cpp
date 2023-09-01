@@ -1,68 +1,69 @@
 #include "MinidumpWriter.h"
+#include <atomic>
 #include <filesystem>
-#include <memory>
-#include <fmt/ostream.h>
-#include <sys/wait.h>
 #include <Poco/Util/LayeredConfiguration.h>
+
+#if USE_BREAKPAD && !defined(CLICKHOUSE_PROGRAM_STANDALONE_BUILD)
+
+namespace ClickhouseBreakpad
+{
+// Create the exception handler object
+void createExceptionHandler(const std::string & dump_path, bool minidump, bool generate_coredump);
+
+// Handle the crash signals, should be called during CH crash signal handler and before calling default
+// signal handler.
+// The signal flow looks like this:
+//   ClickHouse signal
+//   handler
+//        |
+//        V
+//   eh.handleSignal -------------------------| (clones a new process which
+//        |                                   |  shares an address space with
+//   (wait for cloned                         |  the crashed process. This
+//     process)                               |  allows us to ptrace the crashed
+//        |                                   |  process)
+//        V                                   V
+//    Clickhouse continue            ThreadEntry (static function to bounce
+//    signal handler                          |      back into the object)
+//                                            |
+//                                            V
+//                                          DoDump  (writes minidump)
+//                                            |
+//                                            V
+//                                         sys_exit
+void handler(int sig, siginfo_t * info, void * context);
+}
 
 namespace MinidumpWriter
 {
-#if USE_BREAKPAD
-
-static bool minidump = false;
-static bool generate_coredump = false;
-static std::shared_ptr<google_breakpad::MinidumpDescriptor> descriptor;
-static std::shared_ptr<google_breakpad::ExceptionHandler> eh;
-
-static bool callback(const google_breakpad::MinidumpDescriptor & desc, void *, bool succeeded)
-{
-    fmt::print(stderr, "Minidump dump path: {}\n", desc.path());
-    int status;
-    if (generate_coredump)
-    {
-        auto coredump_path = std::filesystem::path(desc.path()).replace_extension("core");
-        status = Minidump2Core::generate(desc.path(), coredump_path.c_str());
-        if (status == 0)
-        {
-            fmt::print(stderr, "Coredump dump path: {}\n", coredump_path.string());
-            succeeded = true;
-        }
-        else
-            fmt::print(stderr, "Cannot generate coredump\n");
-    }
-    return succeeded;
-}
-
-#endif
-
-bool useMinidump()
-{
-#if USE_BREAKPAD
-    return minidump;
-#else
-    return false;
-#endif
-}
 
 void initialize([[maybe_unused]] Poco::Util::LayeredConfiguration & config)
 {
-#if USE_BREAKPAD
-    minidump = config.getBool("minidump", true);
-    generate_coredump = config.getBool("minidump_generate_core", true);
-    if (minidump)
-    {
-        std::string dump_path = std::filesystem::path(config.getString("logger.log", "/tmp/log.log")).parent_path();
-        descriptor = std::make_shared<google_breakpad::MinidumpDescriptor>(dump_path);
-    }
-#endif
+    static std::atomic_bool initialized = false;
+    if (initialized.load())
+        return;
+    auto minidump = config.getBool("minidump", true);
+    auto generate_coredump = config.getBool("minidump_generate_core", true);
+    // By default, dump to log folder
+    std::string dump_path = std::filesystem::path(config.getString("logger.log", "/tmp/log.log")).parent_path();
+    ClickhouseBreakpad::createExceptionHandler(dump_path, minidump, generate_coredump);
+    initialized.store(true);
 }
 
-void installMinidumpHandler(int)
+void signalHandler(int sig, siginfo_t * info, void * context)
 {
-#if USE_BREAKPAD
-    if (minidump && !eh)
-        eh = std::make_shared<google_breakpad::ExceptionHandler>(*descriptor, nullptr, callback, nullptr, true, -1);
-#endif
+    ClickhouseBreakpad::handler(sig, info, context);
 }
 
 }
+#else
+namespace MinidumpWriter
+{
+void initialize(Poco::Util::LayeredConfiguration &)
+{
+}
+void signalHandler(int, siginfo_t *, void *)
+{
+}
+}
+#endif

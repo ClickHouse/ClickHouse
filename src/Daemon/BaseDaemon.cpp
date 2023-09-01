@@ -91,9 +91,7 @@ PipeFDs signal_pipe;
   */
 static void call_default_signal_handler(int sig)
 {
-    if (MinidumpWriter::useMinidump())
-        MinidumpWriter::installMinidumpHandler(sig); /// This will install minidump handler if sig considered a crash signal
-    else if (SIG_ERR == signal(sig, SIG_DFL))
+    if (SIG_ERR == signal(sig, SIG_DFL))
         throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 
     if (0 != raise(sig))
@@ -163,6 +161,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 
     if (sig != SIGTSTP) /// This signal is used for debugging.
     {
+        MinidumpWriter::signalHandler(sig, info, context);
         /// The time that is usually enough for separate thread to print info into log.
         /// Under MSan full stack unwinding with DWARF info about inline functions takes 101 seconds in one case.
         for (size_t i = 0; i < 300; ++i)
