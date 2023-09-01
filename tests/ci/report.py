@@ -343,7 +343,7 @@ def create_test_html_report(
         additional_urls = []
 
     if test_results:
-        rows_part = ""
+        rows_part = []
         num_fails = 0
         has_test_time = False
         has_log_urls = False
@@ -358,11 +358,13 @@ def create_test_html_report(
             if test_result.log_files is not None:
                 has_log_urls = True
 
-            row = "<tr>"
+            row = []
             has_error = test_result.status in ("FAIL", "NOT_FAILED")
             if has_error and test_result.raw_logs is not None:
-                row = '<tr class="failed">'
-            row += "<td>" + test_result.name + "</td>"
+                row.append('<tr class="failed">')
+            else:
+                row.append("<tr>")
+            row.append(f"<td>{test_result.name}</td>")
             colspan += 1
             style = _get_status_style(test_result.status, colortheme=statuscolors)
 
@@ -372,12 +374,12 @@ def create_test_html_report(
                 num_fails = num_fails + 1
                 fail_id = f'id="fail{num_fails}" '
 
-            row += f'<td {fail_id}style="{style}">{test_result.status}</td>'
+            row.append(f'<td {fail_id}style="{style}">{test_result.status}</td>')
             colspan += 1
 
             if test_result.time is not None:
                 has_test_time = True
-                row += f"<td>{test_result.time}</td>"
+                row.append(f"<td>{test_result.time}</td>")
                 colspan += 1
 
             if test_result.log_urls is not None:
@@ -385,19 +387,19 @@ def create_test_html_report(
                 test_logs_html = "<br>".join(
                     [_get_html_url(url) for url in test_result.log_urls]
                 )
-                row += "<td>" + test_logs_html + "</td>"
+                row.append(f"<td>{test_logs_html}</td>")
                 colspan += 1
 
-            row += "</tr>"
-            rows_part += row
+            row.append("</tr>")
+            rows_part.append("".join(row))
             if test_result.raw_logs is not None:
                 raw_logs = escape(test_result.raw_logs)
-                row = (
+                row_raw_logs = (
                     '<tr class="failed-content">'
                     f'<td colspan="{colspan}"><pre>{raw_logs}</pre></td>'
                     "</tr>"
                 )
-                rows_part += row
+                rows_part.append(row_raw_logs)
 
         headers = BASE_HEADERS.copy()
         if has_test_time:
@@ -406,7 +408,7 @@ def create_test_html_report(
             headers.append("Logs")
 
         headers_html = "".join(["<th>" + h + "</th>" for h in headers])
-        test_part = HTML_TEST_PART.format(headers=headers_html, rows=rows_part)
+        test_part = HTML_TEST_PART.format(headers=headers_html, rows="".join(rows_part))
     else:
         test_part = ""
 
@@ -469,36 +471,36 @@ def create_build_html_report(
     branch_name: str,
     commit_url: str,
 ) -> str:
-    rows = ""
+    rows = []
     for build_result, build_log_url, artifact_urls in zip(
         build_results, build_logs_urls, artifact_urls_list
     ):
-        row = "<tr>"
-        row += f"<td>{build_result.compiler}</td>"
+        row = ["<tr>"]
+        row.append(f"<td>{build_result.compiler}</td>")
         if build_result.debug_build:
-            row += "<td>debug</td>"
+            row.append("<td>debug</td>")
         else:
-            row += "<td>relwithdebuginfo</td>"
+            row.append("<td>relwithdebuginfo</td>")
         if build_result.sanitizer:
-            row += f"<td>{build_result.sanitizer}</td>"
+            row.append(f"<td>{build_result.sanitizer}</td>")
         else:
-            row += "<td>none</td>"
+            row.append("<td>none</td>")
 
         if build_result.status:
             style = _get_status_style(build_result.status)
-            row += f'<td style="{style}">{build_result.status}</td>'
+            row.append(f'<td style="{style}">{build_result.status}</td>')
         else:
             style = _get_status_style("error")
-            row += f'<td style="{style}">error</td>'
+            row.append(f'<td style="{style}">error</td>')
 
-        row += f'<td><a href="{build_log_url}">link</a></td>'
+        row.append(f'<td><a href="{build_log_url}">link</a></td>')
 
         if build_result.elapsed_seconds:
             delta = datetime.timedelta(seconds=build_result.elapsed_seconds)
         else:
             delta = "unknown"  # type: ignore
 
-        row += f"<td>{delta}</td>"
+        row.append(f"<td>{delta}</td>")
 
         links = ""
         link_separator = "<br/>"
@@ -510,16 +512,16 @@ def create_build_html_report(
                 links += link_separator
             if links:
                 links = links[: -len(link_separator)]
-            row += f"<td>{links}</td>"
+            row.append(f"<td>{links}</td>")
 
-        row += f"<td>{build_result.comment}</td>"
+        row.append(f"<td>{build_result.comment}</td>")
 
-        row += "</tr>"
-        rows += row
+        row.append("</tr>")
+        rows.append("".join(row))
     return HTML_BASE_BUILD_TEMPLATE.format(
         title=_format_header(header, branch_name),
         header=_format_header(header, branch_name, branch_url),
-        rows=rows,
+        rows="".join(rows),
         task_url=task_url,
         branch_name=branch_name,
         commit_url=commit_url,
