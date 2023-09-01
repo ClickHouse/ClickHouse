@@ -783,92 +783,22 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
         return {};
 
     auto sample = data.getSampleBlockWithVirtualColumns();
-    bool has_any = false;
+    std::unordered_set<const ActionsDAG::Node *> allowed_inputs;
     for (const auto * input : filter_dag->getInputs())
         if (sample.has(input->result_name))
-            has_any = true;
+            allowed_inputs.insert(input);
 
-    if (!has_any)
+    if (allowed_inputs.empty())
         return {};
 
-    std::vector<const ActionsDAG::Node *> atoms;
-    auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, false /* one_part */);
-
-    {
-        std::stack<const ActionsDAG::Node *> stack;
-        stack.push(filter_dag->getOutputs().at(0));
-
-        std::unordered_map<const ActionsDAG::Node *, bool> can_compute;
-        struct Frame
-        {
-            const ActionsDAG::Node * node;
-            size_t next_child_to_visit = 0;
-        };
-
-        while (!stack.empty())
-        {
-            const auto * node = stack.top();
-            stack.pop();
-            if (node->type == ActionsDAG::ActionType::FUNCTION)
-            {
-                const auto & name = node->function_base->getName();
-                if (name == "and")
-                {
-                    for (const auto * arg : node->children)
-                        stack.push(arg);
-
-                    continue;
-                }
-            }
-
-            if (!can_compute.contains(node))
-            {
-                std::stack<Frame> compute_stack;
-                compute_stack.push({node});
-                while (!compute_stack.empty())
-                {
-                    auto & frame = compute_stack.top();
-                    bool need_visit_child = false;
-                    while (frame.next_child_to_visit < frame.node->children.size())
-                    {
-                        if (!can_compute.contains(frame.node->children[frame.next_child_to_visit]))
-                        {
-                            compute_stack.push({frame.node->children[frame.next_child_to_visit]});
-                            need_visit_child = true;
-                            break;
-                        }
-
-                        ++frame.next_child_to_visit;
-                    }
-
-                    if (need_visit_child)
-                        continue;
-
-                    if (frame.node->type == ActionsDAG::ActionType::INPUT)
-                    {
-                        can_compute[frame.node] = virtual_columns_block.has(frame.node->result_name);
-                    }
-                    else
-                    {
-                        can_compute[frame.node] = std::all_of(
-                            frame.node->children.begin(),
-                            frame.node->children.end(),
-                            [&](const auto * child) { return can_compute[child]; });
-                    }
-
-                    compute_stack.pop();
-                }
-            }
-
-            if (can_compute[node])
-                atoms.push_back(node);
-        }
-    }
-
+    auto atoms = filter_dag->extractConjunctionAtoms(filter_dag->getOutputs().at(0));
+    atoms = ActionsDAG::filterNodesByAllowedInputs(std::move(atoms), allowed_inputs);
     if (atoms.empty())
         return {};
 
     auto dag = ActionsDAG::buildFilterActionsDAG(atoms, {}, context);
+
+    auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, false /* one_part */);
     VirtualColumnUtils::filterBlockWithQuery(dag, virtual_columns_block, context);
     return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 }
