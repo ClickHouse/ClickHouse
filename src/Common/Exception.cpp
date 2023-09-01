@@ -428,6 +428,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
         {
             if (!with_stacktrace)
                 stream << ", Stack trace:\n\n" << getExceptionStackTraceString(e);
+
             abortOnFailedAssertion(stream.str());
         }
         catch (...) {}
