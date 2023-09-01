@@ -275,12 +275,14 @@ DataTypePtr findSmallestIntervalSuperType(const DataTypes &types, TypeIndexSet &
 template <LeastSupertypeOnError on_error>
 DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
 {
+    bool have_nullable_tuple = false;
     Strings element_names;
     size_t element_size = 0;
     std::vector<DataTypes> element_types;
     for (const auto & type : types)
     {
-        if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+        auto type_not_nullable = removeNullable(type);
+        if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type_not_nullable.get()))
         {
             const auto & current_elements = type_tuple->getElements();
             if (element_types.empty())
@@ -295,6 +297,10 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
 
             if (element_size != type_tuple->getElements().size())
                 return throwOrReturn<on_error>(types, "because Tuples have different sizes", ErrorCodes::NO_COMMON_TYPE);
+
+            if (!type->equals(*type_not_nullable))
+                have_nullable_tuple = true;
+
             for (size_t i = 0; i < element_size; ++i)
                 element_types[i].emplace_back(current_elements[i]);
 
@@ -330,11 +336,13 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
         commont_element_types[i] = common_type;
     }
 
+    DataTypePtr res;
     if (element_names.empty())
-        return std::make_shared<DataTypeTuple>(commont_element_types);
+        res =  std::make_shared<DataTypeTuple>(commont_element_types);
     else
-        return std::make_shared<DataTypeTuple>(commont_element_types, element_names);
+        res = std::make_shared<DataTypeTuple>(commont_element_types, element_names);
 
+    return have_nullable_tuple ? makeNullable(res) : res;
 }
 
 template <LeastSupertypeOnError on_error>
@@ -400,6 +408,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
     /// For Arrays
     {
         bool have_array = false;
+        bool have_nullable_array = false;
         bool all_arrays = true;
 
         DataTypes nested_types;
@@ -407,9 +416,13 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
         for (const auto & type : types)
         {
-            if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+            auto type_not_nullable = removeNullable(type);
+            if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(type_not_nullable.get()))
             {
                 have_array = true;
+                if (!type->equals(*type_not_nullable))
+                    have_nullable_array = true;
+
                 nested_types.emplace_back(type_array->getNestedType());
             }
             else
@@ -427,20 +440,23 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             if (!nested_type)
                 return nullptr;
 
-            return std::make_shared<DataTypeArray>(nested_type);
+            auto res = std::make_shared<DataTypeArray>(nested_type);
+            return have_nullable_array ? makeNullable(res) : res;
         }
     }
 
     /// For tuples
     for (const auto & type : types)
     {
-        if (typeid_cast<const DataTypeTuple *>(type.get()))
+        auto type_not_nullable = removeNullable(type);
+        if (typeid_cast<const DataTypeTuple *>(type_not_nullable.get()))
             return getLeastSuperTypeForTuple<on_error>(types);
     }
 
     /// For maps
     {
         bool have_maps = false;
+        bool have_nullable_maps = false;
         bool all_maps = true;
         DataTypes key_types;
         DataTypes value_types;
@@ -449,9 +465,13 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
         for (const auto & type : types)
         {
-            if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(type.get()))
+            auto type_not_nullable = removeNullable(type);
+            if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(type_not_nullable.get()))
             {
                 have_maps = true;
+                if (!type->equals(*type_not_nullable))
+                    have_nullable_maps = true;
+
                 key_types.emplace_back(type_map->getKeyType());
                 value_types.emplace_back(type_map->getValueType());
             }
@@ -472,7 +492,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             if (!keys_common_type || !values_common_type)
                 return nullptr;
 
-            return std::make_shared<DataTypeMap>(keys_common_type, values_common_type);
+            auto res = std::make_shared<DataTypeMap>(keys_common_type, values_common_type);
+            return have_nullable_maps ? makeNullable(res) : res;
         }
     }
 

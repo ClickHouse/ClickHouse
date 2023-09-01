@@ -134,6 +134,7 @@ INSTANTIATE_TEST_SUITE_P(data_type,
             {"Array(Array(UInt8)) Array(Array(Int8))", "Array(Array(Int16))"},
             {"Array(Date) Array(DateTime)", "Array(DateTime)"},
             {"Array(String) Array(FixedString(32))", "Array(String)"},
+            {"Array(Int32) Nullable(Array(Nullable(Int32)))", "Nullable(Array(Nullable(Int32)))"},
 
             {"Nullable(Nothing) Nothing", "Nullable(Nothing)"},
             {"Nullable(UInt8) Int8", "Nullable(Int16)"},
@@ -141,6 +142,7 @@ INSTANTIATE_TEST_SUITE_P(data_type,
 
             {"Tuple(Int8,UInt8) Tuple(UInt8,Int8)", "Tuple(Int16,Int16)"},
             {"Tuple(Nullable(Nothing)) Tuple(Nullable(UInt8))", "Tuple(Nullable(UInt8))"},
+            {"Tuple(Int16,String) Nullable(Tuple(Nullable(Int32),Nullable(String)))", "Nullable(Tuple(Nullable(Int32),Nullable(String)))"},
 
             {"Int8 String", nullptr},
             {"Int64 UInt64", nullptr},
