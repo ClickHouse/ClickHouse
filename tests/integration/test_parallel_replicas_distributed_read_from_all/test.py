@@ -21,10 +21,10 @@ def start_cluster():
 
 
 def create_tables(cluster, table_name):
-    """ create replicated tables in special way
-        - each table is populated by equal number of rows
-        - fetches are disabled, so each replica will have different set of rows
-          which enforce parallel replicas read from each replica
+    """create replicated tables in special way
+    - each table is populated by equal number of rows
+    - fetches are disabled, so each replica will have different set of rows
+      which enforce parallel replicas read from each replica
     """
 
     # create replicated tables
@@ -96,8 +96,8 @@ def create_tables(cluster, table_name):
 
 
 def test_read_equally_from_each_replica(start_cluster):
-    """ create and populate table in special way (see create_table()),
-        so parallel replicas will read equal number of rows from each replica
+    """create and populate table in special way (see create_table()),
+    so parallel replicas will read equal number of rows from each replica
     """
 
     cluster = "test_single_shard_multiple_replicas"
@@ -125,7 +125,7 @@ def test_read_equally_from_each_replica(start_cluster):
     # each replica has 2 distinct parts (non-intersecting with another replicas),
     # each part less then index granularity, therefore 2 marks for each replica to handle
     coordinator_statistic = "replica 0 - {requests: 3 marks: 2}; replica 1 - {requests: 3 marks: 2}; replica 2 - {requests: 3 marks: 2}"
-    assert(
+    assert (
         nodes[0].contains_in_log(coordinator_statistic)
         or nodes[1].contains_in_log(coordinator_statistic)
         or nodes[2].contains_in_log(coordinator_statistic)
@@ -137,7 +137,8 @@ def test_read_equally_from_each_replica(start_cluster):
     nodes[1].query(f"system start fetches {table_name}")
     nodes[2].query(f"system start fetches {table_name}")
     assert (
-        nodes[0].query(f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d")
+        nodes[0].query(
+            f"SELECT count(), min(key), max(key), sum(key) FROM {table_name}_d"
+        )
         == expected_result
     )
-
