@@ -11,6 +11,7 @@
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/ISource.h>
@@ -162,7 +163,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         ///   5. Limit ... : Set counter on the input port of Limit
 
         /// Case 1.
-        if (typeid_cast<RemoteSource *>(processor) && !limit_processor)
+        if ((typeid_cast<RemoteSource *>(processor) || typeid_cast<DelayedSource *>(processor)) && !limit_processor)
         {
             processors.emplace_back(processor);
             continue;
@@ -197,7 +198,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             }
 
             /// Case 4.
-            if (typeid_cast<RemoteSource *>(processor))
+            if (typeid_cast<RemoteSource *>(processor) || typeid_cast<DelayedSource *>(processor))
             {
                 processors.emplace_back(processor);
                 limit_candidates[limit_processor].push_back(limit_input_port);
