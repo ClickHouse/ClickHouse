@@ -108,7 +108,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     , scalars(scalars_), external_tables(external_tables_), stage(stage_)
     , extension(extension_)
 {
-    create_connections = [this, pool, throttler](AsyncCallback async_callback)->std::unique_ptr<IConnections>
+    create_connections = [this, pool, throttler, extension_](AsyncCallback async_callback)->std::unique_ptr<IConnections>
     {
         const Settings & current_settings = context->getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
@@ -121,32 +121,26 @@ RemoteQueryExecutor::RemoteQueryExecutor(
                 table_to_check = std::make_shared<QualifiedTableName>(main_table.getQualifiedName());
 
             auto res = std::make_unique<HedgedConnections>(pool, context, timeouts, throttler, pool_mode, table_to_check, std::move(async_callback));
-            if (extension && extension->replica_info)
-                res->setReplicaInfo(*extension->replica_info);
+            if (extension_ && extension_->replica_info)
+                res->setReplicaInfo(*extension_->replica_info);
             return res;
         }
 #endif
 
         std::vector<IConnectionPool::Entry> connection_entries;
-        std::optional<bool> skip_unavailable_endpoints;
-        if (extension && extension->parallel_reading_coordinator)
-            skip_unavailable_endpoints = true;
-
         if (main_table)
         {
-            auto try_results = pool->getManyChecked(timeouts, &current_settings, pool_mode, main_table.getQualifiedName(), std::move(async_callback), skip_unavailable_endpoints);
+            auto try_results = pool->getManyChecked(timeouts, &current_settings, pool_mode, main_table.getQualifiedName(), std::move(async_callback));
             connection_entries.reserve(try_results.size());
             for (auto & try_result : try_results)
                 connection_entries.emplace_back(std::move(try_result.entry));
         }
         else
-        {
-            connection_entries = pool->getMany(timeouts, &current_settings, pool_mode, std::move(async_callback), skip_unavailable_endpoints);
-        }
+            connection_entries = pool->getMany(timeouts, &current_settings, pool_mode, std::move(async_callback));
 
         auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), current_settings, throttler);
-        if (extension && extension->replica_info)
-            res->setReplicaInfo(*extension->replica_info);
+        if (extension_ && extension_->replica_info)
+            res->setReplicaInfo(*extension_->replica_info);
         return res;
     };
 }
@@ -243,7 +237,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     AsyncCallbackSetter async_callback_setter(connections.get(), async_callback);
 
     const auto & settings = context->getSettingsRef();
-    if (isReplicaUnavailable() || needToSkipUnavailableShard())
+    if (needToSkipUnavailableShard())
     {
         /// To avoid sending the query again in the read(), we need to update the following flags:
         was_cancelled = true;
@@ -369,7 +363,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 
         read_context->resume();
 
-        if (isReplicaUnavailable() || needToSkipUnavailableShard())
+        if (needToSkipUnavailableShard())
         {
             /// We need to tell the coordinator not to wait for this replica.
             /// But at this point it may lead to an incomplete result set, because
