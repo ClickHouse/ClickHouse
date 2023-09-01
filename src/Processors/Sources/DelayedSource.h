@@ -30,7 +30,7 @@ public:
     OutputPort * getTotalsPort() { return totals; }
     OutputPort * getExtremesPort() { return extremes; }
 
-    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit.swap(counter); }
+    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) { rows_before_limit.swap(counter); }
 
 private:
     QueryPlanResourceHolder resources;
