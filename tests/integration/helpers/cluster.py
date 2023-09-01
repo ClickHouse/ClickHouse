@@ -4260,9 +4260,10 @@ class ClickHouseInstance:
         if len(self.custom_dictionaries_paths):
             write_embedded_config("0_common_enable_dictionaries.xml", self.config_d_dir)
 
-        write_embedded_config(
-            "0_common_enable_keeper_async_replication.xml", self.config_d_dir
-        )
+        if self.tag == "latest":
+            write_embedded_config(
+                "0_common_enable_keeper_async_replication.xml", self.config_d_dir
+            )
 
         logging.debug("Generate and write macros file")
         macros = self.macros.copy()

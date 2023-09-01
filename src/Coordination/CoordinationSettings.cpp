@@ -22,16 +22,19 @@ void CoordinationSettings::loadFromConfig(const String & config_elem, const Poco
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_elem, config_keys);
 
-    try
+    for (const String & key : config_keys)
     {
-        for (const String & key : config_keys)
+        try
+        {
             set(key, config.getString(config_elem + "." + key));
-    }
-    catch (Exception & e)
-    {
-        if (e.code() == ErrorCodes::UNKNOWN_SETTING)
-            e.addMessage("in Coordination settings config");
-        throw;
+        }
+        catch (Exception & e)
+        {
+            if (e.code() == ErrorCodes::UNKNOWN_SETTING)
+                LOG_WARNING(&Poco::Logger::get("CoordinationSettings"), "Found unknown coordination setting in config: '{}'", key);
+            else
+                throw;
+        }
     }
 }
 
@@ -134,6 +137,8 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     write_int(coordination_settings->max_requests_batch_size);
     writeText("max_requests_batch_bytes_size=", buf);
     write_int(coordination_settings->max_requests_batch_bytes_size);
+    writeText("max_flush_batch_size=", buf);
+    write_int(coordination_settings->max_flush_batch_size);
     writeText("max_request_queue_size=", buf);
     write_int(coordination_settings->max_request_queue_size);
     writeText("max_requests_quick_batch_size=", buf);

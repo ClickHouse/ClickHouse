@@ -1021,7 +1021,7 @@ void Changelog::writeThread()
 
     const auto flush_logs = [&](const auto & flush)
     {
-        LOG_TRACE(log, "Flushing {} logs", pending_appends);
+        LOG_TEST(log, "Flushing {} logs", pending_appends);
 
         {
             std::lock_guard writer_lock(writer_mutex);
