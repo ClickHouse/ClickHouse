@@ -76,12 +76,12 @@ TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPSOnly)
     config->setString("proxy.https.uri", https_list_proxy_server.toString());
     context->setConfig(config);
 
-    auto http_proxy_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTP)->resolve();
+    auto http_proxy_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTP, *config)->resolve();
 
     ASSERT_EQ(http_proxy_configuration.host, "");
     ASSERT_EQ(http_proxy_configuration.port, 0);
 
-    auto https_proxy_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTPS)->resolve();
+    auto https_proxy_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTPS, *config)->resolve();
 
     ASSERT_EQ(https_proxy_configuration.host, https_list_proxy_server.getHost());
 
