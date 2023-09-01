@@ -1,6 +1,6 @@
 #pragma once
 
-#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
 #include <base/types.h>
 #include <Common/isLocalAddress.h>
