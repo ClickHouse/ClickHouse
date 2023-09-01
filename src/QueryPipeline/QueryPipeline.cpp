@@ -11,6 +11,7 @@
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/ISource.h>
@@ -127,6 +128,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
     /// TODO: add setRowsBeforeLimitCounter as virtual method to IProcessor.
     std::vector<LimitTransform *> limits;
     std::vector<RemoteSource *> remote_sources;
+    std::vector<DelayedSource *> delayed_sources;
 
     std::unordered_set<IProcessor *> visited;
 
@@ -157,6 +159,9 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
 
             if (auto * source = typeid_cast<RemoteSource *>(processor))
                 remote_sources.emplace_back(source);
+
+            if (auto * source = typeid_cast<DelayedSource *>(processor))
+                delayed_sources.emplace_back(source);
         }
         else if (auto * sorting = typeid_cast<PartialSortingTransform *>(processor))
         {
@@ -187,7 +192,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         }
     }
 
-    if (!rows_before_limit_at_least && (!limits.empty() || !remote_sources.empty()))
+    if (!rows_before_limit_at_least && (!limits.empty() || !remote_sources.empty() || !delayed_sources.empty()))
     {
         rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
 
@@ -195,6 +200,9 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             limit->setRowsBeforeLimitCounter(rows_before_limit_at_least);
 
         for (auto & source : remote_sources)
+            source->setRowsBeforeLimitCounter(rows_before_limit_at_least);
+
+        for (auto & source : delayed_sources)
             source->setRowsBeforeLimitCounter(rows_before_limit_at_least);
     }
 
