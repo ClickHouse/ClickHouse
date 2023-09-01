@@ -2165,7 +2165,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -2839,7 +2839,7 @@ protected:
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    // ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
 private:
     WrapperType wrapper_function;
