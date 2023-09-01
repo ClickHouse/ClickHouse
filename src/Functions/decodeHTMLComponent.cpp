@@ -72,7 +72,8 @@ namespace
             char * dst_pos = dst;
             // perfect hashmap to lookup html character references
             HTMLCharacterHash hash;
-
+            // to hold char seq for lookup, reuse it
+            std::vector<char> seq;
             while (true)
             {
                 const char * entity_pos = find_first_symbols<'&'>(src_pos, src_end);
@@ -101,21 +102,21 @@ namespace
                 }
                 else /// covers html encoded character sequences
                 {
-                    size_t seq_length = entity_end - entity_pos;
-                    // account for null termination at end;
-                    char seq[seq_length + 1];
-                    // copy from start to end of the encoded sequence including ';'.
-                    strncpy(seq, entity_pos, seq_length + 1);
+                    // seq_length should also include `;` at the end
+                    size_t seq_length = (entity_end - entity_pos) + 1;
+                    seq.assign(entity_pos, entity_pos + seq_length);
                     // null terminate the sequence
-                    seq[seq_length + 1] = '\0';
+                    seq.push_back('\0');
                     // lookup the html sequence in the perfect hashmap.
-                    auto res = hash.Lookup(seq, strlen(seq));
+                    auto res = hash.Lookup(seq.data(), strlen(seq.data()));
+                    // reset so that it's reused in the next iteration
+                    seq.clear();
                     if (res)
                     {
-                        auto r = res->glyph;
-                        for (size_t i = 0; i < strlen(r); ++i)
+                        auto glyph = res->glyph;
+                        for (size_t i = 0; i < strlen(glyph); ++i)
                         {
-                            *dst_pos = r[i];
+                            *dst_pos = glyph[i];
                             ++dst_pos;
                         }
                         parsed = true;
