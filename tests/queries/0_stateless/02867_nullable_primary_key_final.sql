@@ -12,7 +12,7 @@ ORDER BY (f1, f2, d)
 SETTINGS allow_nullable_key = 1;
 
 INSERT INTO t SELECT
-    today() AS d,
+    toDate('2023-09-10', 'UTC') AS d,
     [number % 99999, NULL][number % 2] AS f1,
     ['x', NULL][number % 2] AS f2,
     [number, NULL][number % 2] AS c
