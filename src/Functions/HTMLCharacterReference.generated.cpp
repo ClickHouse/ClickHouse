@@ -26,13 +26,14 @@
 #pragma GCC diagnostic ignored "-Wunused-macros"
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #pragma GCC diagnostic ignored "-Wshorten-64-to-32"
-#line 15 "HTMLCharacterReference.gperf"
+// NOLINTBEGIN(google-runtime-int,hicpp-use-nullptr,modernize-use-nullptr)
+#line 16 "HTMLCharacterReference.gperf"
 struct NameAndGlyph
 {
     const char * name;
     const char * glyph;
 };
-#include <string.h>
+#include <cstring>
 
 #define TOTAL_KEYWORDS 2231
 #define MIN_WORD_LENGTH 2
@@ -115,16 +116,16 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
     static const struct NameAndGlyph wordlist[]
         = {{""},
            {""},
-#line 1154 "HTMLCharacterReference.gperf"
-           {"gt", ">"},
 #line 1155 "HTMLCharacterReference.gperf"
+           {"gt", ">"},
+#line 1156 "HTMLCharacterReference.gperf"
            {"gt;", ">"},
            {""},
            {""},
            {""},
-#line 1409 "HTMLCharacterReference.gperf"
-           {"lt", "<"},
 #line 1410 "HTMLCharacterReference.gperf"
+           {"lt", "<"},
+#line 1411 "HTMLCharacterReference.gperf"
            {"lt;", "<"},
            {""},
            {""},
@@ -155,46 +156,46 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 703 "HTMLCharacterReference.gperf"
+#line 704 "HTMLCharacterReference.gperf"
            {"ap;", "≈"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1397 "HTMLCharacterReference.gperf"
+#line 1398 "HTMLCharacterReference.gperf"
            {"lrm;", "‎"},
            {""},
            {""},
            {""},
            {""},
-#line 1061 "HTMLCharacterReference.gperf"
+#line 1062 "HTMLCharacterReference.gperf"
            {"eta;", "η"},
-#line 1043 "HTMLCharacterReference.gperf"
+#line 1044 "HTMLCharacterReference.gperf"
            {"epsi;", "ε"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1045 "HTMLCharacterReference.gperf"
+#line 1046 "HTMLCharacterReference.gperf"
            {"epsiv;", "ϵ"},
            {""},
            {""},
            {""},
            {""},
-#line 1147 "HTMLCharacterReference.gperf"
+#line 1148 "HTMLCharacterReference.gperf"
            {"gnsim;", "⋧"},
            {""},
            {""},
            {""},
            {""},
-#line 1372 "HTMLCharacterReference.gperf"
+#line 1373 "HTMLCharacterReference.gperf"
            {"lnsim;", "⋦"},
            {""},
            {""},
            {""},
-#line 600 "HTMLCharacterReference.gperf"
+#line 601 "HTMLCharacterReference.gperf"
            {"Upsi;", "ϒ"},
            {""},
            {""},
@@ -205,19 +206,19 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1391 "HTMLCharacterReference.gperf"
+#line 1392 "HTMLCharacterReference.gperf"
            {"lpar;", "("},
            {""},
            {""},
            {""},
            {""},
-#line 1040 "HTMLCharacterReference.gperf"
+#line 1041 "HTMLCharacterReference.gperf"
            {"epar;", "⋕"},
            {""},
            {""},
            {""},
            {""},
-#line 1037 "HTMLCharacterReference.gperf"
+#line 1038 "HTMLCharacterReference.gperf"
            {"ensp;", " "},
            {""},
            {""},
@@ -229,7 +230,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1048 "HTMLCharacterReference.gperf"
+#line 1049 "HTMLCharacterReference.gperf"
            {"eqsim;", "≂"},
            {""},
            {""},
@@ -239,13 +240,13 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1142 "HTMLCharacterReference.gperf"
+#line 1143 "HTMLCharacterReference.gperf"
            {"gnap;", "⪊"},
            {""},
            {""},
            {""},
            {""},
-#line 1367 "HTMLCharacterReference.gperf"
+#line 1368 "HTMLCharacterReference.gperf"
            {"lnap;", "⪉"},
            {""},
            {""},
@@ -254,47 +255,47 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2197 "HTMLCharacterReference.gperf"
+#line 2198 "HTMLCharacterReference.gperf"
            {"wr;", "≀"},
            {""},
            {""},
            {""},
            {""},
-#line 2196 "HTMLCharacterReference.gperf"
+#line 2197 "HTMLCharacterReference.gperf"
            {"wp;", "℘"},
-#line 916 "HTMLCharacterReference.gperf"
+#line 917 "HTMLCharacterReference.gperf"
            {"cup;", "∪"},
-#line 1419 "HTMLCharacterReference.gperf"
+#line 1420 "HTMLCharacterReference.gperf"
            {"ltri;", "◃"},
-#line 1393 "HTMLCharacterReference.gperf"
+#line 1394 "HTMLCharacterReference.gperf"
            {"lrarr;", "⇆"},
            {""},
            {""},
            {""},
            {""},
-#line 1057 "HTMLCharacterReference.gperf"
+#line 1058 "HTMLCharacterReference.gperf"
            {"erarr;", "⥱"},
            {""},
            {""},
-#line 1064 "HTMLCharacterReference.gperf"
-           {"euml", "ë"},
 #line 1065 "HTMLCharacterReference.gperf"
+           {"euml", "ë"},
+#line 1066 "HTMLCharacterReference.gperf"
            {"euml;", "ë"},
-#line 902 "HTMLCharacterReference.gperf"
+#line 903 "HTMLCharacterReference.gperf"
            {"crarr;", "↵"},
            {""},
            {""},
            {""},
-#line 1178 "HTMLCharacterReference.gperf"
+#line 1179 "HTMLCharacterReference.gperf"
            {"hbar;", "ℏ"},
            {""},
            {""},
            {""},
-#line 719 "HTMLCharacterReference.gperf"
-           {"auml", "ä"},
 #line 720 "HTMLCharacterReference.gperf"
+           {"auml", "ä"},
+#line 721 "HTMLCharacterReference.gperf"
            {"auml;", "ä"},
-#line 1302 "HTMLCharacterReference.gperf"
+#line 1303 "HTMLCharacterReference.gperf"
            {"lbarr;", "⤌"},
            {""},
            {""},
@@ -303,9 +304,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 605 "HTMLCharacterReference.gperf"
-           {"Uuml", "Ü"},
 #line 606 "HTMLCharacterReference.gperf"
+           {"Uuml", "Ü"},
+#line 607 "HTMLCharacterReference.gperf"
            {"Uuml;", "Ü"},
            {""},
            {""},
@@ -316,31 +317,31 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1066 "HTMLCharacterReference.gperf"
+#line 1067 "HTMLCharacterReference.gperf"
            {"euro;", "€"},
            {""},
            {""},
            {""},
            {""},
-#line 997 "HTMLCharacterReference.gperf"
+#line 998 "HTMLCharacterReference.gperf"
            {"dtri;", "▿"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 921 "HTMLCharacterReference.gperf"
+#line 922 "HTMLCharacterReference.gperf"
            {"cupor;", "⩅"},
            {""},
            {""},
-#line 714 "HTMLCharacterReference.gperf"
+#line 715 "HTMLCharacterReference.gperf"
            {"ast;", "*"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 773 "HTMLCharacterReference.gperf"
+#line 774 "HTMLCharacterReference.gperf"
            {"bnot;", "⌐"},
            {""},
            {""},
@@ -371,19 +372,19 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 994 "HTMLCharacterReference.gperf"
+#line 995 "HTMLCharacterReference.gperf"
            {"dsol;", "⧶"},
-#line 999 "HTMLCharacterReference.gperf"
+#line 1000 "HTMLCharacterReference.gperf"
            {"duarr;", "⇵"},
            {""},
-#line 1249 "HTMLCharacterReference.gperf"
+#line 1250 "HTMLCharacterReference.gperf"
            {"it;", "⁢"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1036 "HTMLCharacterReference.gperf"
+#line 1037 "HTMLCharacterReference.gperf"
            {"eng;", "ŋ"},
            {""},
            {""},
@@ -394,13 +395,13 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 683 "HTMLCharacterReference.gperf"
+#line 684 "HTMLCharacterReference.gperf"
            {"ang;", "∠"},
-#line 890 "HTMLCharacterReference.gperf"
+#line 891 "HTMLCharacterReference.gperf"
            {"comp;", "∁"},
            {""},
            {""},
-#line 1224 "HTMLCharacterReference.gperf"
+#line 1225 "HTMLCharacterReference.gperf"
            {"in;", "∈"},
            {""},
            {""},
@@ -417,16 +418,16 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 978 "HTMLCharacterReference.gperf"
+#line 979 "HTMLCharacterReference.gperf"
            {"dot;", "˙"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1005 "HTMLCharacterReference.gperf"
+#line 1006 "HTMLCharacterReference.gperf"
            {"eDot;", "≑"},
-#line 1374 "HTMLCharacterReference.gperf"
+#line 1375 "HTMLCharacterReference.gperf"
            {"loarr;", "⇽"},
            {""},
            {""},
@@ -434,24 +435,24 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 667 "HTMLCharacterReference.gperf"
+#line 668 "HTMLCharacterReference.gperf"
            {"af;", "⁡"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1144 "HTMLCharacterReference.gperf"
+#line 1145 "HTMLCharacterReference.gperf"
            {"gne;", "⪈"},
-#line 835 "HTMLCharacterReference.gperf"
+#line 836 "HTMLCharacterReference.gperf"
            {"bump;", "≎"},
            {""},
            {""},
            {""},
-#line 1369 "HTMLCharacterReference.gperf"
+#line 1370 "HTMLCharacterReference.gperf"
            {"lne;", "⪇"},
            {""},
-#line 695 "HTMLCharacterReference.gperf"
+#line 696 "HTMLCharacterReference.gperf"
            {"angrt;", "∟"},
            {""},
            {""},
@@ -459,11 +460,11 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 324 "HTMLCharacterReference.gperf"
+#line 325 "HTMLCharacterReference.gperf"
            {"Lt;", "≪"},
-#line 706 "HTMLCharacterReference.gperf"
+#line 707 "HTMLCharacterReference.gperf"
            {"ape;", "≊"},
-#line 732 "HTMLCharacterReference.gperf"
+#line 733 "HTMLCharacterReference.gperf"
            {"bbrk;", "⎵"},
            {""},
            {""},
@@ -473,7 +474,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1229 "HTMLCharacterReference.gperf"
+#line 1230 "HTMLCharacterReference.gperf"
            {"int;", "∫"},
            {""},
            {""},
@@ -481,27 +482,27 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1053 "HTMLCharacterReference.gperf"
+#line 1054 "HTMLCharacterReference.gperf"
            {"equiv;", "≡"},
            {""},
            {""},
            {""},
-#line 830 "HTMLCharacterReference.gperf"
+#line 831 "HTMLCharacterReference.gperf"
            {"bsol;", "\\"},
-#line 1187 "HTMLCharacterReference.gperf"
+#line 1188 "HTMLCharacterReference.gperf"
            {"hoarr;", "⇿"},
            {""},
            {""},
            {""},
            {""},
-#line 1420 "HTMLCharacterReference.gperf"
+#line 1421 "HTMLCharacterReference.gperf"
            {"ltrie;", "⊴"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1041 "HTMLCharacterReference.gperf"
+#line 1042 "HTMLCharacterReference.gperf"
            {"eparsl;", "⧣"},
            {""},
            {""},
@@ -511,182 +512,182 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1089 "HTMLCharacterReference.gperf"
-           {"frac12", "½"},
 #line 1090 "HTMLCharacterReference.gperf"
+           {"frac12", "½"},
+#line 1091 "HTMLCharacterReference.gperf"
            {"frac12;", "½"},
            {""},
            {""},
            {""},
-#line 2181 "HTMLCharacterReference.gperf"
+#line 2182 "HTMLCharacterReference.gperf"
            {"vprop;", "∝"},
            {""},
            {""},
            {""},
            {""},
-#line 1306 "HTMLCharacterReference.gperf"
+#line 1307 "HTMLCharacterReference.gperf"
            {"lbrke;", "⦋"},
            {""},
            {""},
-#line 1252 "HTMLCharacterReference.gperf"
-           {"iuml", "ï"},
 #line 1253 "HTMLCharacterReference.gperf"
+           {"iuml", "ï"},
+#line 1254 "HTMLCharacterReference.gperf"
            {"iuml;", "ï"},
-#line 1092 "HTMLCharacterReference.gperf"
-           {"frac14", "¼"},
 #line 1093 "HTMLCharacterReference.gperf"
+           {"frac14", "¼"},
+#line 1094 "HTMLCharacterReference.gperf"
            {"frac14;", "¼"},
            {""},
-#line 775 "HTMLCharacterReference.gperf"
+#line 776 "HTMLCharacterReference.gperf"
            {"bot;", "⊥"},
            {""},
-#line 960 "HTMLCharacterReference.gperf"
+#line 961 "HTMLCharacterReference.gperf"
            {"dharr;", "⇂"},
-#line 1094 "HTMLCharacterReference.gperf"
+#line 1095 "HTMLCharacterReference.gperf"
            {"frac15;", "⅕"},
            {""},
-#line 1132 "HTMLCharacterReference.gperf"
+#line 1133 "HTMLCharacterReference.gperf"
            {"gfr;", "𝔤"},
            {""},
            {""},
-#line 1095 "HTMLCharacterReference.gperf"
+#line 1096 "HTMLCharacterReference.gperf"
            {"frac16;", "⅙"},
            {""},
-#line 1350 "HTMLCharacterReference.gperf"
+#line 1351 "HTMLCharacterReference.gperf"
            {"lfr;", "𝔩"},
-#line 1086 "HTMLCharacterReference.gperf"
+#line 1087 "HTMLCharacterReference.gperf"
            {"fork;", "⋔"},
-#line 1099 "HTMLCharacterReference.gperf"
-           {"frac34", "¾"},
 #line 1100 "HTMLCharacterReference.gperf"
+           {"frac34", "¾"},
+#line 1101 "HTMLCharacterReference.gperf"
            {"frac34;", "¾"},
            {""},
-#line 1018 "HTMLCharacterReference.gperf"
+#line 1019 "HTMLCharacterReference.gperf"
            {"efr;", "𝔢"},
            {""},
-#line 1087 "HTMLCharacterReference.gperf"
+#line 1088 "HTMLCharacterReference.gperf"
            {"forkv;", "⫙"},
-#line 1101 "HTMLCharacterReference.gperf"
+#line 1102 "HTMLCharacterReference.gperf"
            {"frac35;", "⅗"},
            {""},
-#line 863 "HTMLCharacterReference.gperf"
+#line 864 "HTMLCharacterReference.gperf"
            {"cfr;", "𝔠"},
            {""},
            {""},
-#line 1103 "HTMLCharacterReference.gperf"
+#line 1104 "HTMLCharacterReference.gperf"
            {"frac45;", "⅘"},
            {""},
-#line 668 "HTMLCharacterReference.gperf"
+#line 669 "HTMLCharacterReference.gperf"
            {"afr;", "𝔞"},
-#line 643 "HTMLCharacterReference.gperf"
+#line 644 "HTMLCharacterReference.gperf"
            {"Yuml;", "Ÿ"},
            {""},
            {""},
            {""},
-#line 1256 "HTMLCharacterReference.gperf"
+#line 1257 "HTMLCharacterReference.gperf"
            {"jfr;", "𝔧"},
-#line 1278 "HTMLCharacterReference.gperf"
+#line 1279 "HTMLCharacterReference.gperf"
            {"lHar;", "⥢"},
            {""},
-#line 1104 "HTMLCharacterReference.gperf"
+#line 1105 "HTMLCharacterReference.gperf"
            {"frac56;", "⅚"},
            {""},
-#line 577 "HTMLCharacterReference.gperf"
+#line 578 "HTMLCharacterReference.gperf"
            {"Ufr;", "𝔘"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 907 "HTMLCharacterReference.gperf"
+#line 908 "HTMLCharacterReference.gperf"
            {"csup;", "⫐"},
            {""},
-#line 1091 "HTMLCharacterReference.gperf"
+#line 1092 "HTMLCharacterReference.gperf"
            {"frac13;", "⅓"},
            {""},
-#line 1773 "HTMLCharacterReference.gperf"
-           {"quot", "\""},
 #line 1774 "HTMLCharacterReference.gperf"
+           {"quot", "\""},
+#line 1775 "HTMLCharacterReference.gperf"
            {"quot;", "\""},
-#line 1038 "HTMLCharacterReference.gperf"
+#line 1039 "HTMLCharacterReference.gperf"
            {"eogon;", "ę"},
            {""},
            {""},
            {""},
            {""},
-#line 929 "HTMLCharacterReference.gperf"
-           {"curren", "¤"},
 #line 930 "HTMLCharacterReference.gperf"
+           {"curren", "¤"},
+#line 931 "HTMLCharacterReference.gperf"
            {"curren;", "¤"},
-#line 333 "HTMLCharacterReference.gperf"
+#line 334 "HTMLCharacterReference.gperf"
            {"Mu;", "Μ"},
-#line 958 "HTMLCharacterReference.gperf"
+#line 959 "HTMLCharacterReference.gperf"
            {"dfr;", "𝔡"},
            {""},
-#line 701 "HTMLCharacterReference.gperf"
+#line 702 "HTMLCharacterReference.gperf"
            {"aogon;", "ą"},
-#line 1162 "HTMLCharacterReference.gperf"
+#line 1163 "HTMLCharacterReference.gperf"
            {"gtrarr;", "⥸"},
            {""},
-#line 1184 "HTMLCharacterReference.gperf"
+#line 1185 "HTMLCharacterReference.gperf"
            {"hfr;", "𝔥"},
            {""},
            {""},
-#line 1098 "HTMLCharacterReference.gperf"
+#line 1099 "HTMLCharacterReference.gperf"
            {"frac25;", "⅖"},
            {""},
            {""},
            {""},
-#line 587 "HTMLCharacterReference.gperf"
+#line 588 "HTMLCharacterReference.gperf"
            {"Uogon;", "Ų"},
            {""},
            {""},
-#line 771 "HTMLCharacterReference.gperf"
+#line 772 "HTMLCharacterReference.gperf"
            {"bne;", "=⃥"},
            {""},
            {""},
-#line 1096 "HTMLCharacterReference.gperf"
+#line 1097 "HTMLCharacterReference.gperf"
            {"frac18;", "⅛"},
            {""},
            {""},
-#line 939 "HTMLCharacterReference.gperf"
+#line 940 "HTMLCharacterReference.gperf"
            {"dHar;", "⥥"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 912 "HTMLCharacterReference.gperf"
+#line 913 "HTMLCharacterReference.gperf"
            {"cuepr;", "⋞"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1102 "HTMLCharacterReference.gperf"
+#line 1103 "HTMLCharacterReference.gperf"
            {"frac38;", "⅜"},
            {""},
            {""},
            {""},
-#line 959 "HTMLCharacterReference.gperf"
+#line 960 "HTMLCharacterReference.gperf"
            {"dharl;", "⇃"},
-#line 1392 "HTMLCharacterReference.gperf"
+#line 1393 "HTMLCharacterReference.gperf"
            {"lparlt;", "⦓"},
            {""},
-#line 456 "HTMLCharacterReference.gperf"
+#line 457 "HTMLCharacterReference.gperf"
            {"Qfr;", "𝔔"},
            {""},
            {""},
-#line 1105 "HTMLCharacterReference.gperf"
+#line 1106 "HTMLCharacterReference.gperf"
            {"frac58;", "⅝"},
            {""},
            {""},
            {""},
            {""},
-#line 1097 "HTMLCharacterReference.gperf"
+#line 1098 "HTMLCharacterReference.gperf"
            {"frac23;", "⅔"},
            {""},
-#line 1077 "HTMLCharacterReference.gperf"
+#line 1078 "HTMLCharacterReference.gperf"
            {"ffr;", "𝔣"},
            {""},
            {""},
@@ -697,24 +698,24 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2194 "HTMLCharacterReference.gperf"
+#line 2195 "HTMLCharacterReference.gperf"
            {"wfr;", "𝔴"},
            {""},
-#line 837 "HTMLCharacterReference.gperf"
+#line 838 "HTMLCharacterReference.gperf"
            {"bumpe;", "≏"},
            {""},
            {""},
            {""},
            {""},
-#line 685 "HTMLCharacterReference.gperf"
+#line 686 "HTMLCharacterReference.gperf"
            {"angle;", "∠"},
            {""},
            {""},
-#line 2176 "HTMLCharacterReference.gperf"
+#line 2177 "HTMLCharacterReference.gperf"
            {"vfr;", "𝔳"},
            {""},
            {""},
-#line 923 "HTMLCharacterReference.gperf"
+#line 924 "HTMLCharacterReference.gperf"
            {"curarr;", "↷"},
            {""},
            {""},
@@ -728,51 +729,51 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1145 "HTMLCharacterReference.gperf"
-           {"gneq;", "⪈"},
 #line 1146 "HTMLCharacterReference.gperf"
+           {"gneq;", "⪈"},
+#line 1147 "HTMLCharacterReference.gperf"
            {"gneqq;", "≩"},
            {""},
            {""},
            {""},
-#line 1370 "HTMLCharacterReference.gperf"
-           {"lneq;", "⪇"},
 #line 1371 "HTMLCharacterReference.gperf"
+           {"lneq;", "⪇"},
+#line 1372 "HTMLCharacterReference.gperf"
            {"lneqq;", "≨"},
-#line 898 "HTMLCharacterReference.gperf"
+#line 899 "HTMLCharacterReference.gperf"
            {"coprod;", "∐"},
-#line 1120 "HTMLCharacterReference.gperf"
+#line 1121 "HTMLCharacterReference.gperf"
            {"ge;", "≥"},
-#line 745 "HTMLCharacterReference.gperf"
+#line 746 "HTMLCharacterReference.gperf"
            {"bfr;", "𝔟"},
            {""},
            {""},
            {""},
-#line 1320 "HTMLCharacterReference.gperf"
+#line 1321 "HTMLCharacterReference.gperf"
            {"le;", "≤"},
-#line 1125 "HTMLCharacterReference.gperf"
+#line 1126 "HTMLCharacterReference.gperf"
            {"ges;", "⩾"},
            {""},
-#line 1382 "HTMLCharacterReference.gperf"
+#line 1383 "HTMLCharacterReference.gperf"
            {"lopar;", "⦅"},
-#line 776 "HTMLCharacterReference.gperf"
+#line 777 "HTMLCharacterReference.gperf"
            {"bottom;", "⊥"},
-#line 1016 "HTMLCharacterReference.gperf"
+#line 1017 "HTMLCharacterReference.gperf"
            {"ee;", "ⅇ"},
-#line 1335 "HTMLCharacterReference.gperf"
+#line 1336 "HTMLCharacterReference.gperf"
            {"les;", "⩽"},
            {""},
            {""},
-#line 1106 "HTMLCharacterReference.gperf"
+#line 1107 "HTMLCharacterReference.gperf"
            {"frac78;", "⅞"},
            {""},
-#line 1122 "HTMLCharacterReference.gperf"
+#line 1123 "HTMLCharacterReference.gperf"
            {"geq;", "≥"},
            {""},
            {""},
            {""},
            {""},
-#line 1332 "HTMLCharacterReference.gperf"
+#line 1333 "HTMLCharacterReference.gperf"
            {"leq;", "≤"},
            {""},
            {""},
@@ -780,38 +781,38 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1158 "HTMLCharacterReference.gperf"
+#line 1159 "HTMLCharacterReference.gperf"
            {"gtdot;", "⋗"},
            {""},
            {""},
-#line 899 "HTMLCharacterReference.gperf"
-           {"copy", "©"},
 #line 900 "HTMLCharacterReference.gperf"
+           {"copy", "©"},
+#line 901 "HTMLCharacterReference.gperf"
            {"copy;", "©"},
-#line 1413 "HTMLCharacterReference.gperf"
+#line 1414 "HTMLCharacterReference.gperf"
            {"ltdot;", "⋖"},
            {""},
            {""},
            {""},
            {""},
-#line 781 "HTMLCharacterReference.gperf"
+#line 782 "HTMLCharacterReference.gperf"
            {"boxDr;", "╓"},
            {""},
            {""},
            {""},
            {""},
-#line 909 "HTMLCharacterReference.gperf"
+#line 910 "HTMLCharacterReference.gperf"
            {"ctdot;", "⋯"},
            {""},
            {""},
-#line 678 "HTMLCharacterReference.gperf"
+#line 679 "HTMLCharacterReference.gperf"
            {"and;", "∧"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1130 "HTMLCharacterReference.gperf"
+#line 1131 "HTMLCharacterReference.gperf"
            {"gesl;", "⋛︀"},
            {""},
            {""},
@@ -821,17 +822,17 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 213 "HTMLCharacterReference.gperf"
+#line 214 "HTMLCharacterReference.gperf"
            {"Hfr;", "ℌ"},
            {""},
            {""},
            {""},
            {""},
-#line 180 "HTMLCharacterReference.gperf"
+#line 181 "HTMLCharacterReference.gperf"
            {"Ffr;", "𝔉"},
            {""},
            {""},
-#line 838 "HTMLCharacterReference.gperf"
+#line 839 "HTMLCharacterReference.gperf"
            {"bumpeq;", "≏"},
            {""},
            {""},
@@ -839,16 +840,16 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1208 "HTMLCharacterReference.gperf"
+#line 1209 "HTMLCharacterReference.gperf"
            {"ifr;", "𝔦"},
            {""},
-#line 996 "HTMLCharacterReference.gperf"
+#line 997 "HTMLCharacterReference.gperf"
            {"dtdot;", "⋱"},
            {""},
            {""},
            {""},
            {""},
-#line 908 "HTMLCharacterReference.gperf"
+#line 909 "HTMLCharacterReference.gperf"
            {"csupe;", "⫒"},
            {""},
            {""},
@@ -864,21 +865,21 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 836 "HTMLCharacterReference.gperf"
+#line 837 "HTMLCharacterReference.gperf"
            {"bumpE;", "⪮"},
-#line 896 "HTMLCharacterReference.gperf"
+#line 897 "HTMLCharacterReference.gperf"
            {"conint;", "∮"},
            {""},
            {""},
-#line 530 "HTMLCharacterReference.gperf"
+#line 531 "HTMLCharacterReference.gperf"
            {"Star;", "⋆"},
            {""},
            {""},
            {""},
-#line 640 "HTMLCharacterReference.gperf"
+#line 641 "HTMLCharacterReference.gperf"
            {"Yfr;", "𝔜"},
            {""},
-#line 1236 "HTMLCharacterReference.gperf"
+#line 1237 "HTMLCharacterReference.gperf"
            {"iogon;", "į"},
            {""},
            {""},
@@ -897,10 +898,10 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 539 "HTMLCharacterReference.gperf"
+#line 540 "HTMLCharacterReference.gperf"
            {"Sum;", "∑"},
            {""},
-#line 780 "HTMLCharacterReference.gperf"
+#line 781 "HTMLCharacterReference.gperf"
            {"boxDl;", "╖"},
            {""},
            {""},
@@ -909,10 +910,10 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 116 "HTMLCharacterReference.gperf"
+#line 117 "HTMLCharacterReference.gperf"
            {"Dot;", "¨"},
            {""},
-#line 1059 "HTMLCharacterReference.gperf"
+#line 1060 "HTMLCharacterReference.gperf"
            {"esdot;", "≐"},
            {""},
            {""},
@@ -920,110 +921,110 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1133 "HTMLCharacterReference.gperf"
+#line 1134 "HTMLCharacterReference.gperf"
            {"gg;", "≫"},
-#line 308 "HTMLCharacterReference.gperf"
+#line 309 "HTMLCharacterReference.gperf"
            {"Lfr;", "𝔏"},
            {""},
            {""},
            {""},
-#line 1351 "HTMLCharacterReference.gperf"
+#line 1352 "HTMLCharacterReference.gperf"
            {"lg;", "≶"},
            {""},
            {""},
            {""},
            {""},
-#line 1019 "HTMLCharacterReference.gperf"
+#line 1020 "HTMLCharacterReference.gperf"
            {"eg;", "⪚"},
-#line 540 "HTMLCharacterReference.gperf"
+#line 541 "HTMLCharacterReference.gperf"
            {"Sup;", "⋑"},
            {""},
            {""},
            {""},
-#line 95 "HTMLCharacterReference.gperf"
+#line 96 "HTMLCharacterReference.gperf"
            {"DD;", "ⅅ"},
-#line 1022 "HTMLCharacterReference.gperf"
+#line 1023 "HTMLCharacterReference.gperf"
            {"egs;", "⪖"},
            {""},
            {""},
            {""},
-#line 1611 "HTMLCharacterReference.gperf"
+#line 1612 "HTMLCharacterReference.gperf"
            {"nu;", "ν"},
-#line 860 "HTMLCharacterReference.gperf"
-           {"cent", "¢"},
 #line 861 "HTMLCharacterReference.gperf"
+           {"cent", "¢"},
+#line 862 "HTMLCharacterReference.gperf"
            {"cent;", "¢"},
-#line 865 "HTMLCharacterReference.gperf"
+#line 866 "HTMLCharacterReference.gperf"
            {"check;", "✓"},
            {""},
-#line 1044 "HTMLCharacterReference.gperf"
+#line 1045 "HTMLCharacterReference.gperf"
            {"epsilon;", "ε"},
-#line 237 "HTMLCharacterReference.gperf"
+#line 238 "HTMLCharacterReference.gperf"
            {"Int;", "∬"},
-#line 1238 "HTMLCharacterReference.gperf"
+#line 1239 "HTMLCharacterReference.gperf"
            {"iota;", "ι"},
            {""},
            {""},
            {""},
-#line 1764 "HTMLCharacterReference.gperf"
+#line 1765 "HTMLCharacterReference.gperf"
            {"qfr;", "𝔮"},
            {""},
            {""},
            {""},
-#line 1166 "HTMLCharacterReference.gperf"
+#line 1167 "HTMLCharacterReference.gperf"
            {"gtrless;", "≷"},
            {""},
-#line 1559 "HTMLCharacterReference.gperf"
+#line 1560 "HTMLCharacterReference.gperf"
            {"npar;", "∦"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 779 "HTMLCharacterReference.gperf"
+#line 780 "HTMLCharacterReference.gperf"
            {"boxDR;", "╔"},
            {""},
-#line 601 "HTMLCharacterReference.gperf"
+#line 602 "HTMLCharacterReference.gperf"
            {"Upsilon;", "Υ"},
-#line 1612 "HTMLCharacterReference.gperf"
+#line 1613 "HTMLCharacterReference.gperf"
            {"num;", "#"},
            {""},
            {""},
-#line 1180 "HTMLCharacterReference.gperf"
+#line 1181 "HTMLCharacterReference.gperf"
            {"hearts;", "♥"},
            {""},
-#line 1488 "HTMLCharacterReference.gperf"
-           {"nbsp", " "},
 #line 1489 "HTMLCharacterReference.gperf"
+           {"nbsp", " "},
+#line 1490 "HTMLCharacterReference.gperf"
            {"nbsp;", " "},
            {""},
            {""},
            {""},
-#line 1331 "HTMLCharacterReference.gperf"
+#line 1332 "HTMLCharacterReference.gperf"
            {"leg;", "⋚"},
-#line 521 "HTMLCharacterReference.gperf"
+#line 522 "HTMLCharacterReference.gperf"
            {"Sqrt;", "√"},
-#line 790 "HTMLCharacterReference.gperf"
+#line 791 "HTMLCharacterReference.gperf"
            {"boxUr;", "╙"},
            {""},
            {""},
-#line 329 "HTMLCharacterReference.gperf"
+#line 330 "HTMLCharacterReference.gperf"
            {"Mfr;", "𝔐"},
            {""},
-#line 1562 "HTMLCharacterReference.gperf"
+#line 1563 "HTMLCharacterReference.gperf"
            {"npart;", "∂̸"},
            {""},
            {""},
            {""},
-#line 1161 "HTMLCharacterReference.gperf"
+#line 1162 "HTMLCharacterReference.gperf"
            {"gtrapprox;", "⪆"},
            {""},
-#line 686 "HTMLCharacterReference.gperf"
+#line 687 "HTMLCharacterReference.gperf"
            {"angmsd;", "∡"},
            {""},
-#line 248 "HTMLCharacterReference.gperf"
-           {"Iuml", "Ï"},
 #line 249 "HTMLCharacterReference.gperf"
+           {"Iuml", "Ï"},
+#line 250 "HTMLCharacterReference.gperf"
            {"Iuml;", "Ï"},
            {""},
            {""},
@@ -1034,85 +1035,85 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2175 "HTMLCharacterReference.gperf"
+#line 2176 "HTMLCharacterReference.gperf"
            {"vert;", "|"},
            {""},
            {""},
            {""},
-#line 1564 "HTMLCharacterReference.gperf"
+#line 1565 "HTMLCharacterReference.gperf"
            {"npr;", "⊀"},
-#line 1123 "HTMLCharacterReference.gperf"
+#line 1124 "HTMLCharacterReference.gperf"
            {"geqq;", "≧"},
-#line 1570 "HTMLCharacterReference.gperf"
+#line 1571 "HTMLCharacterReference.gperf"
            {"nrarr;", "↛"},
-#line 1051 "HTMLCharacterReference.gperf"
+#line 1052 "HTMLCharacterReference.gperf"
            {"equals;", "="},
            {""},
            {""},
-#line 1333 "HTMLCharacterReference.gperf"
+#line 1334 "HTMLCharacterReference.gperf"
            {"leqq;", "≦"},
            {""},
-#line 1572 "HTMLCharacterReference.gperf"
+#line 1573 "HTMLCharacterReference.gperf"
            {"nrarrw;", "↝̸"},
-#line 953 "HTMLCharacterReference.gperf"
+#line 954 "HTMLCharacterReference.gperf"
            {"deg", "°"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 954 "HTMLCharacterReference.gperf"
+#line 955 "HTMLCharacterReference.gperf"
            {"deg;", "°"},
            {""},
-#line 1631 "HTMLCharacterReference.gperf"
+#line 1632 "HTMLCharacterReference.gperf"
            {"nwarr;", "↖"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 901 "HTMLCharacterReference.gperf"
+#line 902 "HTMLCharacterReference.gperf"
            {"copysr;", "℗"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 982 "HTMLCharacterReference.gperf"
+#line 983 "HTMLCharacterReference.gperf"
            {"dotplus;", "∔"},
            {""},
-#line 1405 "HTMLCharacterReference.gperf"
+#line 1406 "HTMLCharacterReference.gperf"
            {"lsqb;", "["},
            {""},
-#line 1085 "HTMLCharacterReference.gperf"
+#line 1086 "HTMLCharacterReference.gperf"
            {"forall;", "∀"},
            {""},
-#line 1388 "HTMLCharacterReference.gperf"
+#line 1389 "HTMLCharacterReference.gperf"
            {"loz;", "◊"},
            {""},
            {""},
            {""},
-#line 208 "HTMLCharacterReference.gperf"
+#line 209 "HTMLCharacterReference.gperf"
            {"Gt;", "≫"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 688 "HTMLCharacterReference.gperf"
+#line 689 "HTMLCharacterReference.gperf"
            {"angmsdab;", "⦩"},
            {""},
            {""},
            {""},
-#line 924 "HTMLCharacterReference.gperf"
+#line 925 "HTMLCharacterReference.gperf"
            {"curarrm;", "⤼"},
-#line 174 "HTMLCharacterReference.gperf"
+#line 175 "HTMLCharacterReference.gperf"
            {"Eta;", "Η"},
            {""},
            {""},
            {""},
            {""},
-#line 107 "HTMLCharacterReference.gperf"
+#line 108 "HTMLCharacterReference.gperf"
            {"Dfr;", "𝔇"},
            {""},
            {""},
@@ -1120,35 +1121,35 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 789 "HTMLCharacterReference.gperf"
+#line 790 "HTMLCharacterReference.gperf"
            {"boxUl;", "╜"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1131 "HTMLCharacterReference.gperf"
+#line 1132 "HTMLCharacterReference.gperf"
            {"gesles;", "⪔"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 809 "HTMLCharacterReference.gperf"
+#line 810 "HTMLCharacterReference.gperf"
            {"boxplus;", "⊞"},
            {""},
            {""},
            {""},
            {""},
-#line 1547 "HTMLCharacterReference.gperf"
+#line 1548 "HTMLCharacterReference.gperf"
            {"not", "¬"},
            {""},
            {""},
-#line 831 "HTMLCharacterReference.gperf"
+#line 832 "HTMLCharacterReference.gperf"
            {"bsolb;", "⧅"},
            {""},
            {""},
-#line 1548 "HTMLCharacterReference.gperf"
+#line 1549 "HTMLCharacterReference.gperf"
            {"not;", "¬"},
            {""},
            {""},
@@ -1169,36 +1170,36 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 252 "HTMLCharacterReference.gperf"
+#line 253 "HTMLCharacterReference.gperf"
            {"Jfr;", "𝔍"},
            {""},
            {""},
            {""},
            {""},
-#line 1134 "HTMLCharacterReference.gperf"
+#line 1135 "HTMLCharacterReference.gperf"
            {"ggg;", "⋙"},
-#line 1168 "HTMLCharacterReference.gperf"
+#line 1169 "HTMLCharacterReference.gperf"
            {"gvertneqq;", "≩︀"},
-#line 1149 "HTMLCharacterReference.gperf"
+#line 1150 "HTMLCharacterReference.gperf"
            {"grave;", "`"},
            {""},
            {""},
            {""},
-#line 1424 "HTMLCharacterReference.gperf"
+#line 1425 "HTMLCharacterReference.gperf"
            {"lvertneqq;", "≨︀"},
            {""},
            {""},
            {""},
            {""},
-#line 1603 "HTMLCharacterReference.gperf"
+#line 1604 "HTMLCharacterReference.gperf"
            {"ntgl;", "≹"},
-#line 788 "HTMLCharacterReference.gperf"
+#line 789 "HTMLCharacterReference.gperf"
            {"boxUR;", "╚"},
            {""},
            {""},
-#line 629 "HTMLCharacterReference.gperf"
+#line 630 "HTMLCharacterReference.gperf"
            {"Xfr;", "𝔛"},
-#line 866 "HTMLCharacterReference.gperf"
+#line 867 "HTMLCharacterReference.gperf"
            {"checkmark;", "✓"},
            {""},
            {""},
@@ -1210,30 +1211,30 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1628 "HTMLCharacterReference.gperf"
+#line 1629 "HTMLCharacterReference.gperf"
            {"nvsim;", "∼⃒"},
            {""},
            {""},
-#line 175 "HTMLCharacterReference.gperf"
-           {"Euml", "Ë"},
 #line 176 "HTMLCharacterReference.gperf"
+           {"Euml", "Ë"},
+#line 177 "HTMLCharacterReference.gperf"
            {"Euml;", "Ë"},
            {""},
-#line 1183 "HTMLCharacterReference.gperf"
+#line 1184 "HTMLCharacterReference.gperf"
            {"hercon;", "⊹"},
            {""},
-#line 2170 "HTMLCharacterReference.gperf"
+#line 2171 "HTMLCharacterReference.gperf"
            {"vee;", "∨"},
            {""},
-#line 2217 "HTMLCharacterReference.gperf"
+#line 2218 "HTMLCharacterReference.gperf"
            {"xrarr;", "⟶"},
            {""},
            {""},
            {""},
            {""},
-#line 1549 "HTMLCharacterReference.gperf"
+#line 1550 "HTMLCharacterReference.gperf"
            {"notin;", "∉"},
-#line 741 "HTMLCharacterReference.gperf"
+#line 742 "HTMLCharacterReference.gperf"
            {"bernou;", "ℬ"},
            {""},
            {""},
@@ -1245,44 +1246,44 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1308 "HTMLCharacterReference.gperf"
+#line 1309 "HTMLCharacterReference.gperf"
            {"lbrkslu;", "⦍"},
            {""},
            {""},
-#line 1353 "HTMLCharacterReference.gperf"
+#line 1354 "HTMLCharacterReference.gperf"
            {"lhard;", "↽"},
            {""},
            {""},
-#line 513 "HTMLCharacterReference.gperf"
+#line 514 "HTMLCharacterReference.gperf"
            {"Sfr;", "𝔖"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 815 "HTMLCharacterReference.gperf"
-           {"boxv;", "│"},
 #line 816 "HTMLCharacterReference.gperf"
+           {"boxv;", "│"},
+#line 817 "HTMLCharacterReference.gperf"
            {"boxvH;", "╪"},
            {""},
            {""},
            {""},
            {""},
-#line 1522 "HTMLCharacterReference.gperf"
+#line 1523 "HTMLCharacterReference.gperf"
            {"nharr;", "↮"},
            {""},
            {""},
            {""},
-#line 1617 "HTMLCharacterReference.gperf"
+#line 1618 "HTMLCharacterReference.gperf"
            {"nvap;", "≍⃒"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 585 "HTMLCharacterReference.gperf"
+#line 586 "HTMLCharacterReference.gperf"
            {"Union;", "⋃"},
-#line 1561 "HTMLCharacterReference.gperf"
+#line 1562 "HTMLCharacterReference.gperf"
            {"nparsl;", "⫽⃥"},
            {""},
            {""},
@@ -1291,54 +1292,54 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1151 "HTMLCharacterReference.gperf"
+#line 1152 "HTMLCharacterReference.gperf"
            {"gsim;", "≳"},
            {""},
            {""},
            {""},
-#line 694 "HTMLCharacterReference.gperf"
+#line 695 "HTMLCharacterReference.gperf"
            {"angmsdah;", "⦯"},
-#line 1402 "HTMLCharacterReference.gperf"
+#line 1403 "HTMLCharacterReference.gperf"
            {"lsim;", "≲"},
            {""},
            {""},
            {""},
-#line 474 "HTMLCharacterReference.gperf"
+#line 475 "HTMLCharacterReference.gperf"
            {"Rho;", "Ρ"},
-#line 1060 "HTMLCharacterReference.gperf"
+#line 1061 "HTMLCharacterReference.gperf"
            {"esim;", "≂"},
-#line 1126 "HTMLCharacterReference.gperf"
+#line 1127 "HTMLCharacterReference.gperf"
            {"gescc;", "⪩"},
-#line 822 "HTMLCharacterReference.gperf"
+#line 823 "HTMLCharacterReference.gperf"
            {"bprime;", "‵"},
            {""},
-#line 230 "HTMLCharacterReference.gperf"
+#line 231 "HTMLCharacterReference.gperf"
            {"Ifr;", "ℑ"},
            {""},
-#line 1336 "HTMLCharacterReference.gperf"
+#line 1337 "HTMLCharacterReference.gperf"
            {"lescc;", "⪨"},
            {""},
            {""},
            {""},
-#line 742 "HTMLCharacterReference.gperf"
+#line 743 "HTMLCharacterReference.gperf"
            {"beta;", "β"},
            {""},
            {""},
-#line 405 "HTMLCharacterReference.gperf"
+#line 406 "HTMLCharacterReference.gperf"
            {"Nu;", "Ν"},
            {""},
            {""},
-#line 1226 "HTMLCharacterReference.gperf"
+#line 1227 "HTMLCharacterReference.gperf"
            {"infin;", "∞"},
            {""},
            {""},
            {""},
            {""},
-#line 821 "HTMLCharacterReference.gperf"
+#line 822 "HTMLCharacterReference.gperf"
            {"boxvr;", "├"},
            {""},
            {""},
-#line 1511 "HTMLCharacterReference.gperf"
+#line 1512 "HTMLCharacterReference.gperf"
            {"nfr;", "𝔫"},
            {""},
            {""},
@@ -1346,43 +1347,43 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1490 "HTMLCharacterReference.gperf"
+#line 1491 "HTMLCharacterReference.gperf"
            {"nbump;", "≎̸"},
            {""},
            {""},
            {""},
            {""},
-#line 242 "HTMLCharacterReference.gperf"
+#line 243 "HTMLCharacterReference.gperf"
            {"Iogon;", "Į"},
            {""},
            {""},
            {""},
-#line 905 "HTMLCharacterReference.gperf"
+#line 906 "HTMLCharacterReference.gperf"
            {"csub;", "⫏"},
-#line 1239 "HTMLCharacterReference.gperf"
+#line 1240 "HTMLCharacterReference.gperf"
            {"iprod;", "⨼"},
            {""},
            {""},
            {""},
-#line 1597 "HTMLCharacterReference.gperf"
+#line 1598 "HTMLCharacterReference.gperf"
            {"nsup;", "⊅"},
-#line 936 "HTMLCharacterReference.gperf"
+#line 937 "HTMLCharacterReference.gperf"
            {"cwint;", "∱"},
            {""},
            {""},
            {""},
            {""},
-#line 722 "HTMLCharacterReference.gperf"
+#line 723 "HTMLCharacterReference.gperf"
            {"awint;", "⨑"},
            {""},
            {""},
-#line 692 "HTMLCharacterReference.gperf"
+#line 693 "HTMLCharacterReference.gperf"
            {"angmsdaf;", "⦭"},
            {""},
            {""},
            {""},
            {""},
-#line 651 "HTMLCharacterReference.gperf"
+#line 652 "HTMLCharacterReference.gperf"
            {"Zfr;", "ℨ"},
            {""},
            {""},
@@ -1409,12 +1410,12 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1620 "HTMLCharacterReference.gperf"
+#line 1621 "HTMLCharacterReference.gperf"
            {"nvgt;", ">⃒"},
            {""},
            {""},
            {""},
-#line 867 "HTMLCharacterReference.gperf"
+#line 868 "HTMLCharacterReference.gperf"
            {"chi;", "χ"},
            {""},
            {""},
@@ -1426,7 +1427,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 244 "HTMLCharacterReference.gperf"
+#line 245 "HTMLCharacterReference.gperf"
            {"Iota;", "Ι"},
            {""},
            {""},
@@ -1434,126 +1435,126 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 117 "HTMLCharacterReference.gperf"
+#line 118 "HTMLCharacterReference.gperf"
            {"DotDot;", "⃜"},
            {""},
            {""},
-#line 684 "HTMLCharacterReference.gperf"
+#line 685 "HTMLCharacterReference.gperf"
            {"ange;", "⦤"},
-#line 820 "HTMLCharacterReference.gperf"
+#line 821 "HTMLCharacterReference.gperf"
            {"boxvl;", "┤"},
            {""},
            {""},
            {""},
            {""},
-#line 2206 "HTMLCharacterReference.gperf"
+#line 2207 "HTMLCharacterReference.gperf"
            {"xharr;", "⟷"},
-#line 266 "HTMLCharacterReference.gperf"
-           {"LT", "<"},
 #line 267 "HTMLCharacterReference.gperf"
+           {"LT", "<"},
+#line 268 "HTMLCharacterReference.gperf"
            {"LT;", "<"},
            {""},
-#line 1205 "HTMLCharacterReference.gperf"
-           {"iexcl", "¡"},
 #line 1206 "HTMLCharacterReference.gperf"
+           {"iexcl", "¡"},
+#line 1207 "HTMLCharacterReference.gperf"
            {"iexcl;", "¡"},
            {""},
            {""},
            {""},
            {""},
-#line 1586 "HTMLCharacterReference.gperf"
+#line 1587 "HTMLCharacterReference.gperf"
            {"nspar;", "∦"},
            {""},
            {""},
            {""},
            {""},
-#line 979 "HTMLCharacterReference.gperf"
+#line 980 "HTMLCharacterReference.gperf"
            {"doteq;", "≐"},
            {""},
            {""},
            {""},
-#line 828 "HTMLCharacterReference.gperf"
+#line 829 "HTMLCharacterReference.gperf"
            {"bsim;", "∽"},
-#line 1153 "HTMLCharacterReference.gperf"
+#line 1154 "HTMLCharacterReference.gperf"
            {"gsiml;", "⪐"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1415 "HTMLCharacterReference.gperf"
+#line 1416 "HTMLCharacterReference.gperf"
            {"ltimes;", "⋉"},
            {""},
-#line 473 "HTMLCharacterReference.gperf"
+#line 474 "HTMLCharacterReference.gperf"
            {"Rfr;", "ℜ"},
            {""},
            {""},
            {""},
            {""},
-#line 1472 "HTMLCharacterReference.gperf"
+#line 1473 "HTMLCharacterReference.gperf"
            {"nLt;", "≪⃒"},
            {""},
            {""},
-#line 679 "HTMLCharacterReference.gperf"
+#line 680 "HTMLCharacterReference.gperf"
            {"andand;", "⩕"},
            {""},
-#line 45 "HTMLCharacterReference.gperf"
-           {"Auml", "Ä"},
 #line 46 "HTMLCharacterReference.gperf"
+           {"Auml", "Ä"},
+#line 47 "HTMLCharacterReference.gperf"
            {"Auml;", "Ä"},
            {""},
            {""},
            {""},
-#line 159 "HTMLCharacterReference.gperf"
+#line 160 "HTMLCharacterReference.gperf"
            {"Efr;", "𝔈"},
            {""},
-#line 1373 "HTMLCharacterReference.gperf"
+#line 1374 "HTMLCharacterReference.gperf"
            {"loang;", "⟬"},
            {""},
            {""},
-#line 350 "HTMLCharacterReference.gperf"
+#line 351 "HTMLCharacterReference.gperf"
            {"Not;", "⫬"},
            {""},
-#line 933 "HTMLCharacterReference.gperf"
+#line 934 "HTMLCharacterReference.gperf"
            {"cuvee;", "⋎"},
            {""},
-#line 1500 "HTMLCharacterReference.gperf"
+#line 1501 "HTMLCharacterReference.gperf"
            {"ne;", "≠"},
-#line 2204 "HTMLCharacterReference.gperf"
+#line 2205 "HTMLCharacterReference.gperf"
            {"xfr;", "𝔵"},
            {""},
-#line 818 "HTMLCharacterReference.gperf"
+#line 819 "HTMLCharacterReference.gperf"
            {"boxvR;", "╞"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1767 "HTMLCharacterReference.gperf"
+#line 1768 "HTMLCharacterReference.gperf"
            {"qprime;", "⁗"},
            {""},
-#line 1207 "HTMLCharacterReference.gperf"
+#line 1208 "HTMLCharacterReference.gperf"
            {"iff;", "⇔"},
            {""},
-#line 1152 "HTMLCharacterReference.gperf"
+#line 1153 "HTMLCharacterReference.gperf"
            {"gsime;", "⪎"},
            {""},
            {""},
-#line 197 "HTMLCharacterReference.gperf"
+#line 198 "HTMLCharacterReference.gperf"
            {"Gfr;", "𝔊"},
            {""},
-#line 1403 "HTMLCharacterReference.gperf"
+#line 1404 "HTMLCharacterReference.gperf"
            {"lsime;", "⪍"},
            {""},
            {""},
            {""},
            {""},
-#line 166 "HTMLCharacterReference.gperf"
+#line 167 "HTMLCharacterReference.gperf"
            {"Eogon;", "Ę"},
            {""},
            {""},
            {""},
-#line 723 "HTMLCharacterReference.gperf"
+#line 724 "HTMLCharacterReference.gperf"
            {"bNot;", "⫭"},
            {""},
            {""},
@@ -1565,21 +1566,21 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1508 "HTMLCharacterReference.gperf"
+#line 1509 "HTMLCharacterReference.gperf"
            {"nesim;", "≂̸"},
            {""},
            {""},
-#line 1551 "HTMLCharacterReference.gperf"
+#line 1552 "HTMLCharacterReference.gperf"
            {"notindot;", "⋵̸"},
-#line 682 "HTMLCharacterReference.gperf"
+#line 683 "HTMLCharacterReference.gperf"
            {"andv;", "⩚"},
            {""},
            {""},
            {""},
            {""},
-#line 1119 "HTMLCharacterReference.gperf"
+#line 1120 "HTMLCharacterReference.gperf"
            {"gdot;", "ġ"},
-#line 1523 "HTMLCharacterReference.gperf"
+#line 1524 "HTMLCharacterReference.gperf"
            {"nhpar;", "⫲"},
            {""},
            {""},
@@ -1589,33 +1590,33 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1015 "HTMLCharacterReference.gperf"
+#line 1016 "HTMLCharacterReference.gperf"
            {"edot;", "ė"},
            {""},
            {""},
-#line 1385 "HTMLCharacterReference.gperf"
+#line 1386 "HTMLCharacterReference.gperf"
            {"lotimes;", "⨴"},
            {""},
-#line 856 "HTMLCharacterReference.gperf"
+#line 857 "HTMLCharacterReference.gperf"
            {"cdot;", "ċ"},
-#line 906 "HTMLCharacterReference.gperf"
+#line 907 "HTMLCharacterReference.gperf"
            {"csube;", "⫑"},
            {""},
-#line 1307 "HTMLCharacterReference.gperf"
+#line 1308 "HTMLCharacterReference.gperf"
            {"lbrksld;", "⦏"},
            {""},
            {""},
-#line 1599 "HTMLCharacterReference.gperf"
+#line 1600 "HTMLCharacterReference.gperf"
            {"nsupe;", "⊉"},
            {""},
            {""},
            {""},
-#line 857 "HTMLCharacterReference.gperf"
-           {"cedil", "¸"},
 #line 858 "HTMLCharacterReference.gperf"
+           {"cedil", "¸"},
+#line 859 "HTMLCharacterReference.gperf"
            {"cedil;", "¸"},
            {""},
-#line 949 "HTMLCharacterReference.gperf"
+#line 950 "HTMLCharacterReference.gperf"
            {"dd;", "ⅆ"},
            {""},
            {""},
@@ -1625,13 +1626,13 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2187 "HTMLCharacterReference.gperf"
+#line 2188 "HTMLCharacterReference.gperf"
            {"vsupne;", "⊋︀"},
            {""},
            {""},
-#line 791 "HTMLCharacterReference.gperf"
-           {"boxV;", "║"},
 #line 792 "HTMLCharacterReference.gperf"
+           {"boxV;", "║"},
+#line 793 "HTMLCharacterReference.gperf"
            {"boxVH;", "╬"},
            {""},
            {""},
@@ -1642,25 +1643,25 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 823 "HTMLCharacterReference.gperf"
+#line 824 "HTMLCharacterReference.gperf"
            {"breve;", "˘"},
            {""},
            {""},
            {""},
            {""},
-#line 1157 "HTMLCharacterReference.gperf"
+#line 1158 "HTMLCharacterReference.gperf"
            {"gtcir;", "⩺"},
            {""},
            {""},
            {""},
            {""},
-#line 1412 "HTMLCharacterReference.gperf"
+#line 1413 "HTMLCharacterReference.gperf"
            {"ltcir;", "⩹"},
            {""},
            {""},
            {""},
            {""},
-#line 1503 "HTMLCharacterReference.gperf"
+#line 1504 "HTMLCharacterReference.gperf"
            {"nearr;", "↗"},
            {""},
            {""},
@@ -1668,104 +1669,104 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 469 "HTMLCharacterReference.gperf"
+#line 470 "HTMLCharacterReference.gperf"
            {"Re;", "ℜ"},
            {""},
            {""},
            {""},
-#line 1571 "HTMLCharacterReference.gperf"
+#line 1572 "HTMLCharacterReference.gperf"
            {"nrarrc;", "⤳̸"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1234 "HTMLCharacterReference.gperf"
+#line 1235 "HTMLCharacterReference.gperf"
            {"intprod;", "⨼"},
            {""},
-#line 1243 "HTMLCharacterReference.gperf"
+#line 1244 "HTMLCharacterReference.gperf"
            {"isin;", "∈"},
            {""},
-#line 991 "HTMLCharacterReference.gperf"
+#line 992 "HTMLCharacterReference.gperf"
            {"drcrop;", "⌌"},
            {""},
-#line 691 "HTMLCharacterReference.gperf"
+#line 692 "HTMLCharacterReference.gperf"
            {"angmsdae;", "⦬"},
            {""},
-#line 1248 "HTMLCharacterReference.gperf"
+#line 1249 "HTMLCharacterReference.gperf"
            {"isinv;", "∈"},
            {""},
-#line 443 "HTMLCharacterReference.gperf"
+#line 444 "HTMLCharacterReference.gperf"
            {"Pr;", "⪻"},
            {""},
            {""},
-#line 797 "HTMLCharacterReference.gperf"
+#line 798 "HTMLCharacterReference.gperf"
            {"boxVr;", "╟"},
            {""},
            {""},
-#line 346 "HTMLCharacterReference.gperf"
+#line 347 "HTMLCharacterReference.gperf"
            {"Nfr;", "𝔑"},
            {""},
            {""},
            {""},
-#line 911 "HTMLCharacterReference.gperf"
+#line 912 "HTMLCharacterReference.gperf"
            {"cudarrr;", "⤵"},
            {""},
-#line 1150 "HTMLCharacterReference.gperf"
+#line 1151 "HTMLCharacterReference.gperf"
            {"gscr;", "ℊ"},
-#line 594 "HTMLCharacterReference.gperf"
+#line 595 "HTMLCharacterReference.gperf"
            {"UpTee;", "⊥"},
-#line 1260 "HTMLCharacterReference.gperf"
+#line 1261 "HTMLCharacterReference.gperf"
            {"jsercy;", "ј"},
            {""},
-#line 1115 "HTMLCharacterReference.gperf"
+#line 1116 "HTMLCharacterReference.gperf"
            {"gap;", "⪆"},
-#line 1400 "HTMLCharacterReference.gperf"
+#line 1401 "HTMLCharacterReference.gperf"
            {"lscr;", "𝓁"},
-#line 829 "HTMLCharacterReference.gperf"
+#line 830 "HTMLCharacterReference.gperf"
            {"bsime;", "⋍"},
-#line 990 "HTMLCharacterReference.gperf"
+#line 991 "HTMLCharacterReference.gperf"
            {"drcorn;", "⌟"},
            {""},
-#line 1286 "HTMLCharacterReference.gperf"
+#line 1287 "HTMLCharacterReference.gperf"
            {"lap;", "⪅"},
-#line 1058 "HTMLCharacterReference.gperf"
+#line 1059 "HTMLCharacterReference.gperf"
            {"escr;", "ℯ"},
            {""},
            {""},
            {""},
-#line 1298 "HTMLCharacterReference.gperf"
+#line 1299 "HTMLCharacterReference.gperf"
            {"lat;", "⪫"},
-#line 904 "HTMLCharacterReference.gperf"
+#line 905 "HTMLCharacterReference.gperf"
            {"cscr;", "𝒸"},
            {""},
            {""},
            {""},
-#line 840 "HTMLCharacterReference.gperf"
+#line 841 "HTMLCharacterReference.gperf"
            {"cap;", "∩"},
-#line 713 "HTMLCharacterReference.gperf"
+#line 714 "HTMLCharacterReference.gperf"
            {"ascr;", "𝒶"},
            {""},
-#line 1304 "HTMLCharacterReference.gperf"
+#line 1305 "HTMLCharacterReference.gperf"
            {"lbrace;", "{"},
            {""},
            {""},
-#line 1259 "HTMLCharacterReference.gperf"
+#line 1260 "HTMLCharacterReference.gperf"
            {"jscr;", "𝒿"},
            {""},
            {""},
            {""},
            {""},
-#line 603 "HTMLCharacterReference.gperf"
+#line 604 "HTMLCharacterReference.gperf"
            {"Uscr;", "𝒰"},
-#line 1518 "HTMLCharacterReference.gperf"
+#line 1519 "HTMLCharacterReference.gperf"
            {"ngsim;", "≵"},
            {""},
            {""},
            {""},
-#line 1164 "HTMLCharacterReference.gperf"
+#line 1165 "HTMLCharacterReference.gperf"
            {"gtreqless;", "⋛"},
-#line 951 "HTMLCharacterReference.gperf"
+#line 952 "HTMLCharacterReference.gperf"
            {"ddarr;", "⇊"},
            {""},
            {""},
@@ -1776,19 +1777,19 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1598 "HTMLCharacterReference.gperf"
+#line 1599 "HTMLCharacterReference.gperf"
            {"nsupE;", "⫆̸"},
            {""},
            {""},
            {""},
-#line 992 "HTMLCharacterReference.gperf"
+#line 993 "HTMLCharacterReference.gperf"
            {"dscr;", "𝒹"},
            {""},
            {""},
            {""},
-#line 1519 "HTMLCharacterReference.gperf"
+#line 1520 "HTMLCharacterReference.gperf"
            {"ngt;", "≯"},
-#line 1193 "HTMLCharacterReference.gperf"
+#line 1194 "HTMLCharacterReference.gperf"
            {"hscr;", "𝒽"},
            {""},
            {""},
@@ -1796,34 +1797,34 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1616 "HTMLCharacterReference.gperf"
+#line 1617 "HTMLCharacterReference.gperf"
            {"nvHarr;", "⤄"},
            {""},
-#line 30 "HTMLCharacterReference.gperf"
+#line 31 "HTMLCharacterReference.gperf"
            {"Afr;", "𝔄"},
-#line 1156 "HTMLCharacterReference.gperf"
+#line 1157 "HTMLCharacterReference.gperf"
            {"gtcc;", "⪧"},
-#line 888 "HTMLCharacterReference.gperf"
+#line 889 "HTMLCharacterReference.gperf"
            {"comma;", ","},
            {""},
            {""},
            {""},
-#line 1411 "HTMLCharacterReference.gperf"
+#line 1412 "HTMLCharacterReference.gperf"
            {"ltcc;", "⪦"},
            {""},
            {""},
            {""},
            {""},
-#line 1520 "HTMLCharacterReference.gperf"
+#line 1521 "HTMLCharacterReference.gperf"
            {"ngtr;", "≯"},
            {""},
            {""},
            {""},
-#line 980 "HTMLCharacterReference.gperf"
+#line 981 "HTMLCharacterReference.gperf"
            {"doteqdot;", "≑"},
-#line 1289 "HTMLCharacterReference.gperf"
+#line 1290 "HTMLCharacterReference.gperf"
            {"larr;", "←"},
-#line 796 "HTMLCharacterReference.gperf"
+#line 797 "HTMLCharacterReference.gperf"
            {"boxVl;", "╢"},
            {""},
            {""},
@@ -1833,198 +1834,198 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 458 "HTMLCharacterReference.gperf"
+#line 459 "HTMLCharacterReference.gperf"
            {"Qscr;", "𝒬"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 36 "HTMLCharacterReference.gperf"
+#line 37 "HTMLCharacterReference.gperf"
            {"Aogon;", "Ą"},
            {""},
-#line 657 "HTMLCharacterReference.gperf"
+#line 658 "HTMLCharacterReference.gperf"
            {"ac;", "∾"},
            {""},
-#line 1109 "HTMLCharacterReference.gperf"
+#line 1110 "HTMLCharacterReference.gperf"
            {"fscr;", "𝒻"},
            {""},
            {""},
            {""},
            {""},
-#line 569 "HTMLCharacterReference.gperf"
+#line 570 "HTMLCharacterReference.gperf"
            {"Uarr;", "↟"},
            {""},
            {""},
            {""},
-#line 917 "HTMLCharacterReference.gperf"
+#line 918 "HTMLCharacterReference.gperf"
            {"cupbrcap;", "⩈"},
-#line 2199 "HTMLCharacterReference.gperf"
+#line 2200 "HTMLCharacterReference.gperf"
            {"wscr;", "𝓌"},
-#line 1595 "HTMLCharacterReference.gperf"
+#line 1596 "HTMLCharacterReference.gperf"
            {"nsucc;", "⊁"},
            {""},
            {""},
            {""},
            {""},
-#line 848 "HTMLCharacterReference.gperf"
+#line 849 "HTMLCharacterReference.gperf"
            {"caron;", "ˇ"},
            {""},
            {""},
            {""},
-#line 2183 "HTMLCharacterReference.gperf"
+#line 2184 "HTMLCharacterReference.gperf"
            {"vscr;", "𝓋"},
            {""},
            {""},
            {""},
            {""},
-#line 942 "HTMLCharacterReference.gperf"
+#line 943 "HTMLCharacterReference.gperf"
            {"darr;", "↓"},
            {""},
-#line 1297 "HTMLCharacterReference.gperf"
+#line 1298 "HTMLCharacterReference.gperf"
            {"larrtl;", "↢"},
            {""},
-#line 693 "HTMLCharacterReference.gperf"
+#line 694 "HTMLCharacterReference.gperf"
            {"angmsdag;", "⦮"},
-#line 1175 "HTMLCharacterReference.gperf"
+#line 1176 "HTMLCharacterReference.gperf"
            {"harr;", "↔"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1585 "HTMLCharacterReference.gperf"
+#line 1586 "HTMLCharacterReference.gperf"
            {"nsmid;", "∤"},
            {""},
            {""},
            {""},
            {""},
-#line 794 "HTMLCharacterReference.gperf"
+#line 795 "HTMLCharacterReference.gperf"
            {"boxVR;", "╠"},
            {""},
-#line 168 "HTMLCharacterReference.gperf"
+#line 169 "HTMLCharacterReference.gperf"
            {"Epsilon;", "Ε"},
            {""},
-#line 826 "HTMLCharacterReference.gperf"
+#line 827 "HTMLCharacterReference.gperf"
            {"bscr;", "𝒷"},
-#line 595 "HTMLCharacterReference.gperf"
+#line 596 "HTMLCharacterReference.gperf"
            {"UpTeeArrow;", "↥"},
            {""},
            {""},
            {""},
            {""},
-#line 169 "HTMLCharacterReference.gperf"
+#line 170 "HTMLCharacterReference.gperf"
            {"Equal;", "⩵"},
            {""},
-#line 198 "HTMLCharacterReference.gperf"
+#line 199 "HTMLCharacterReference.gperf"
            {"Gg;", "⋙"},
            {""},
            {""},
            {""},
-#line 1008 "HTMLCharacterReference.gperf"
+#line 1009 "HTMLCharacterReference.gperf"
            {"easter;", "⩮"},
            {""},
            {""},
            {""},
-#line 1303 "HTMLCharacterReference.gperf"
+#line 1304 "HTMLCharacterReference.gperf"
            {"lbbrk;", "❲"},
            {""},
            {""},
            {""},
-#line 608 "HTMLCharacterReference.gperf"
+#line 609 "HTMLCharacterReference.gperf"
            {"Vbar;", "⫫"},
-#line 2212 "HTMLCharacterReference.gperf"
+#line 2213 "HTMLCharacterReference.gperf"
            {"xodot;", "⨀"},
-#line 1309 "HTMLCharacterReference.gperf"
+#line 1310 "HTMLCharacterReference.gperf"
            {"lcaron;", "ľ"},
            {""},
            {""},
            {""},
            {""},
-#line 1009 "HTMLCharacterReference.gperf"
+#line 1010 "HTMLCharacterReference.gperf"
            {"ecaron;", "ě"},
            {""},
            {""},
            {""},
            {""},
-#line 850 "HTMLCharacterReference.gperf"
+#line 851 "HTMLCharacterReference.gperf"
            {"ccaron;", "č"},
            {""},
            {""},
            {""},
            {""},
-#line 1013 "HTMLCharacterReference.gperf"
+#line 1014 "HTMLCharacterReference.gperf"
            {"ecolon;", "≕"},
            {""},
            {""},
            {""},
            {""},
-#line 1418 "HTMLCharacterReference.gperf"
+#line 1419 "HTMLCharacterReference.gperf"
            {"ltrPar;", "⦖"},
            {""},
            {""},
-#line 650 "HTMLCharacterReference.gperf"
+#line 651 "HTMLCharacterReference.gperf"
            {"Zeta;", "Ζ"},
            {""},
            {""},
            {""},
            {""},
-#line 2158 "HTMLCharacterReference.gperf"
+#line 2159 "HTMLCharacterReference.gperf"
            {"varr;", "↕"},
            {""},
-#line 918 "HTMLCharacterReference.gperf"
+#line 919 "HTMLCharacterReference.gperf"
            {"cupcap;", "⩆"},
            {""},
            {""},
            {""},
-#line 1246 "HTMLCharacterReference.gperf"
+#line 1247 "HTMLCharacterReference.gperf"
            {"isins;", "⋴"},
-#line 1295 "HTMLCharacterReference.gperf"
+#line 1296 "HTMLCharacterReference.gperf"
            {"larrpl;", "⤹"},
            {""},
            {""},
-#line 217 "HTMLCharacterReference.gperf"
+#line 218 "HTMLCharacterReference.gperf"
            {"Hscr;", "ℋ"},
            {""},
-#line 2198 "HTMLCharacterReference.gperf"
+#line 2199 "HTMLCharacterReference.gperf"
            {"wreath;", "≀"},
            {""},
            {""},
-#line 186 "HTMLCharacterReference.gperf"
+#line 187 "HTMLCharacterReference.gperf"
            {"Fscr;", "ℱ"},
            {""},
-#line 947 "HTMLCharacterReference.gperf"
+#line 948 "HTMLCharacterReference.gperf"
            {"dcaron;", "ď"},
            {""},
-#line 211 "HTMLCharacterReference.gperf"
+#line 212 "HTMLCharacterReference.gperf"
            {"Hat;", "^"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1242 "HTMLCharacterReference.gperf"
+#line 1243 "HTMLCharacterReference.gperf"
            {"iscr;", "𝒾"},
            {""},
            {""},
            {""},
-#line 1394 "HTMLCharacterReference.gperf"
+#line 1395 "HTMLCharacterReference.gperf"
            {"lrcorner;", "⌟"},
            {""},
            {""},
            {""},
            {""},
-#line 626 "HTMLCharacterReference.gperf"
+#line 627 "HTMLCharacterReference.gperf"
            {"Wfr;", "𝔚"},
            {""},
            {""},
            {""},
            {""},
-#line 35 "HTMLCharacterReference.gperf"
+#line 36 "HTMLCharacterReference.gperf"
            {"And;", "⩓"},
            {""},
            {""},
-#line 1294 "HTMLCharacterReference.gperf"
+#line 1295 "HTMLCharacterReference.gperf"
            {"larrlp;", "↫"},
            {""},
            {""},
@@ -2033,14 +2034,14 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 862 "HTMLCharacterReference.gperf"
+#line 863 "HTMLCharacterReference.gperf"
            {"centerdot;", "·"},
            {""},
            {""},
            {""},
-#line 1513 "HTMLCharacterReference.gperf"
+#line 1514 "HTMLCharacterReference.gperf"
            {"nge;", "≱"},
-#line 642 "HTMLCharacterReference.gperf"
+#line 643 "HTMLCharacterReference.gperf"
            {"Yscr;", "𝒴"},
            {""},
            {""},
@@ -2064,59 +2065,59 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 859 "HTMLCharacterReference.gperf"
+#line 860 "HTMLCharacterReference.gperf"
            {"cemptyv;", "⦲"},
            {""},
-#line 893 "HTMLCharacterReference.gperf"
+#line 894 "HTMLCharacterReference.gperf"
            {"complexes;", "ℂ"},
-#line 1375 "HTMLCharacterReference.gperf"
+#line 1376 "HTMLCharacterReference.gperf"
            {"lobrk;", "⟦"},
-#line 188 "HTMLCharacterReference.gperf"
-           {"GT", ">"},
 #line 189 "HTMLCharacterReference.gperf"
+           {"GT", ">"},
+#line 190 "HTMLCharacterReference.gperf"
            {"GT;", ">"},
            {""},
-#line 1582 "HTMLCharacterReference.gperf"
+#line 1583 "HTMLCharacterReference.gperf"
            {"nsim;", "≁"},
            {""},
-#line 1052 "HTMLCharacterReference.gperf"
+#line 1053 "HTMLCharacterReference.gperf"
            {"equest;", "≟"},
            {""},
            {""},
-#line 1566 "HTMLCharacterReference.gperf"
+#line 1567 "HTMLCharacterReference.gperf"
            {"npre;", "⪯̸"},
            {""},
-#line 889 "HTMLCharacterReference.gperf"
+#line 890 "HTMLCharacterReference.gperf"
            {"commat;", "@"},
            {""},
            {""},
-#line 321 "HTMLCharacterReference.gperf"
+#line 322 "HTMLCharacterReference.gperf"
            {"Lscr;", "ℒ"},
-#line 892 "HTMLCharacterReference.gperf"
+#line 893 "HTMLCharacterReference.gperf"
            {"complement;", "∁"},
            {""},
            {""},
-#line 2236 "HTMLCharacterReference.gperf"
-           {"yuml", "ÿ"},
 #line 2237 "HTMLCharacterReference.gperf"
+           {"yuml", "ÿ"},
+#line 2238 "HTMLCharacterReference.gperf"
            {"yuml;", "ÿ"},
            {""},
            {""},
-#line 1200 "HTMLCharacterReference.gperf"
+#line 1201 "HTMLCharacterReference.gperf"
            {"ic;", "⁣"},
            {""},
            {""},
-#line 1244 "HTMLCharacterReference.gperf"
+#line 1245 "HTMLCharacterReference.gperf"
            {"isinE;", "⋹"},
            {""},
            {""},
-#line 554 "HTMLCharacterReference.gperf"
+#line 555 "HTMLCharacterReference.gperf"
            {"Tfr;", "𝔗"},
-#line 2250 "HTMLCharacterReference.gperf"
+#line 2251 "HTMLCharacterReference.gperf"
            {"zwnj;", "‌"},
            {""},
            {""},
-#line 956 "HTMLCharacterReference.gperf"
+#line 957 "HTMLCharacterReference.gperf"
            {"demptyv;", "⦱"},
            {""},
            {""},
@@ -2124,19 +2125,19 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1589 "HTMLCharacterReference.gperf"
+#line 1590 "HTMLCharacterReference.gperf"
            {"nsub;", "⊄"},
            {""},
-#line 1509 "HTMLCharacterReference.gperf"
+#line 1510 "HTMLCharacterReference.gperf"
            {"nexist;", "∄"},
-#line 1001 "HTMLCharacterReference.gperf"
+#line 1002 "HTMLCharacterReference.gperf"
            {"dwangle;", "⦦"},
            {""},
-#line 1768 "HTMLCharacterReference.gperf"
+#line 1769 "HTMLCharacterReference.gperf"
            {"qscr;", "𝓆"},
            {""},
            {""},
-#line 1460 "HTMLCharacterReference.gperf"
+#line 1461 "HTMLCharacterReference.gperf"
            {"mp;", "∓"},
            {""},
            {""},
@@ -2148,7 +2149,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 437 "HTMLCharacterReference.gperf"
+#line 438 "HTMLCharacterReference.gperf"
            {"Pfr;", "𝔓"},
            {""},
            {""},
@@ -2157,40 +2158,40 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1116 "HTMLCharacterReference.gperf"
+#line 1117 "HTMLCharacterReference.gperf"
            {"gbreve;", "ğ"},
            {""},
-#line 2244 "HTMLCharacterReference.gperf"
+#line 2245 "HTMLCharacterReference.gperf"
            {"zfr;", "𝔷"},
-#line 993 "HTMLCharacterReference.gperf"
+#line 994 "HTMLCharacterReference.gperf"
            {"dscy;", "ѕ"},
-#line 1356 "HTMLCharacterReference.gperf"
+#line 1357 "HTMLCharacterReference.gperf"
            {"lhblk;", "▄"},
            {""},
            {""},
            {""},
-#line 332 "HTMLCharacterReference.gperf"
+#line 333 "HTMLCharacterReference.gperf"
            {"Mscr;", "ℳ"},
            {""},
-#line 1613 "HTMLCharacterReference.gperf"
+#line 1614 "HTMLCharacterReference.gperf"
            {"numero;", "№"},
            {""},
-#line 325 "HTMLCharacterReference.gperf"
+#line 326 "HTMLCharacterReference.gperf"
            {"Map;", "⤅"},
            {""},
            {""},
-#line 1491 "HTMLCharacterReference.gperf"
+#line 1492 "HTMLCharacterReference.gperf"
            {"nbumpe;", "≏̸"},
            {""},
            {""},
            {""},
            {""},
-#line 656 "HTMLCharacterReference.gperf"
+#line 657 "HTMLCharacterReference.gperf"
            {"abreve;", "ă"},
-#line 1463 "HTMLCharacterReference.gperf"
+#line 1464 "HTMLCharacterReference.gperf"
            {"mu;", "μ"},
            {""},
-#line 272 "HTMLCharacterReference.gperf"
+#line 273 "HTMLCharacterReference.gperf"
            {"Larr;", "↞"},
            {""},
            {""},
@@ -2198,24 +2199,24 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 572 "HTMLCharacterReference.gperf"
+#line 573 "HTMLCharacterReference.gperf"
            {"Ubreve;", "Ŭ"},
            {""},
            {""},
            {""},
-#line 1505 "HTMLCharacterReference.gperf"
+#line 1506 "HTMLCharacterReference.gperf"
            {"nedot;", "≐̸"},
-#line 2215 "HTMLCharacterReference.gperf"
+#line 2216 "HTMLCharacterReference.gperf"
            {"xotime;", "⨂"},
            {""},
            {""},
            {""},
            {""},
-#line 1230 "HTMLCharacterReference.gperf"
+#line 1231 "HTMLCharacterReference.gperf"
            {"intcal;", "⊺"},
            {""},
            {""},
-#line 2157 "HTMLCharacterReference.gperf"
+#line 2158 "HTMLCharacterReference.gperf"
            {"varpropto;", "∝"},
            {""},
            {""},
@@ -2224,43 +2225,43 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 351 "HTMLCharacterReference.gperf"
+#line 352 "HTMLCharacterReference.gperf"
            {"NotCongruent;", "≢"},
            {""},
            {""},
-#line 1020 "HTMLCharacterReference.gperf"
-           {"egrave", "è"},
 #line 1021 "HTMLCharacterReference.gperf"
+           {"egrave", "è"},
+#line 1022 "HTMLCharacterReference.gperf"
            {"egrave;", "è"},
            {""},
            {""},
-#line 864 "HTMLCharacterReference.gperf"
+#line 865 "HTMLCharacterReference.gperf"
            {"chcy;", "ч"},
-#line 849 "HTMLCharacterReference.gperf"
+#line 850 "HTMLCharacterReference.gperf"
            {"ccaps;", "⩍"},
-#line 1073 "HTMLCharacterReference.gperf"
+#line 1074 "HTMLCharacterReference.gperf"
            {"female;", "♀"},
-#line 739 "HTMLCharacterReference.gperf"
+#line 740 "HTMLCharacterReference.gperf"
            {"bemptyv;", "⦰"},
            {""},
            {""},
-#line 669 "HTMLCharacterReference.gperf"
-           {"agrave", "à"},
 #line 670 "HTMLCharacterReference.gperf"
+           {"agrave", "à"},
+#line 671 "HTMLCharacterReference.gperf"
            {"agrave;", "à"},
            {""},
            {""},
            {""},
            {""},
-#line 1173 "HTMLCharacterReference.gperf"
+#line 1174 "HTMLCharacterReference.gperf"
            {"hamilt;", "ℋ"},
            {""},
            {""},
-#line 173 "HTMLCharacterReference.gperf"
+#line 174 "HTMLCharacterReference.gperf"
            {"Esim;", "⩳"},
-#line 578 "HTMLCharacterReference.gperf"
-           {"Ugrave", "Ù"},
 #line 579 "HTMLCharacterReference.gperf"
+           {"Ugrave", "Ù"},
+#line 580 "HTMLCharacterReference.gperf"
            {"Ugrave;", "Ù"},
            {""},
            {""},
@@ -2274,30 +2275,30 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 147 "HTMLCharacterReference.gperf"
+#line 148 "HTMLCharacterReference.gperf"
            {"Dscr;", "𝒟"},
-#line 2172 "HTMLCharacterReference.gperf"
+#line 2173 "HTMLCharacterReference.gperf"
            {"veeeq;", "≚"},
-#line 709 "HTMLCharacterReference.gperf"
+#line 710 "HTMLCharacterReference.gperf"
            {"approx;", "≈"},
            {""},
-#line 620 "HTMLCharacterReference.gperf"
+#line 621 "HTMLCharacterReference.gperf"
            {"Vfr;", "𝔙"},
-#line 1473 "HTMLCharacterReference.gperf"
+#line 1474 "HTMLCharacterReference.gperf"
            {"nLtv;", "≪̸"},
-#line 1406 "HTMLCharacterReference.gperf"
-           {"lsquo;", "‘"},
 #line 1407 "HTMLCharacterReference.gperf"
+           {"lsquo;", "‘"},
+#line 1408 "HTMLCharacterReference.gperf"
            {"lsquor;", "‚"},
-#line 150 "HTMLCharacterReference.gperf"
+#line 151 "HTMLCharacterReference.gperf"
            {"ETH", "Ð"},
-#line 581 "HTMLCharacterReference.gperf"
+#line 582 "HTMLCharacterReference.gperf"
            {"UnderBar;", "_"},
            {""},
            {""},
            {""},
            {""},
-#line 151 "HTMLCharacterReference.gperf"
+#line 152 "HTMLCharacterReference.gperf"
            {"ETH;", "Ð"},
            {""},
            {""},
@@ -2306,13 +2307,13 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 273 "HTMLCharacterReference.gperf"
+#line 274 "HTMLCharacterReference.gperf"
            {"Lcaron;", "Ľ"},
            {""},
            {""},
            {""},
            {""},
-#line 255 "HTMLCharacterReference.gperf"
+#line 256 "HTMLCharacterReference.gperf"
            {"Jsercy;", "Ј"},
            {""},
            {""},
@@ -2321,15 +2322,15 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1514 "HTMLCharacterReference.gperf"
-           {"ngeq;", "≱"},
 #line 1515 "HTMLCharacterReference.gperf"
+           {"ngeq;", "≱"},
+#line 1516 "HTMLCharacterReference.gperf"
            {"ngeqq;", "≧̸"},
            {""},
            {""},
            {""},
            {""},
-#line 1583 "HTMLCharacterReference.gperf"
+#line 1584 "HTMLCharacterReference.gperf"
            {"nsime;", "≄"},
            {""},
            {""},
@@ -2339,69 +2340,69 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 254 "HTMLCharacterReference.gperf"
+#line 255 "HTMLCharacterReference.gperf"
            {"Jscr;", "𝒥"},
            {""},
            {""},
            {""},
            {""},
-#line 229 "HTMLCharacterReference.gperf"
+#line 230 "HTMLCharacterReference.gperf"
            {"Idot;", "İ"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1240 "HTMLCharacterReference.gperf"
-           {"iquest", "¿"},
 #line 1241 "HTMLCharacterReference.gperf"
+           {"iquest", "¿"},
+#line 1242 "HTMLCharacterReference.gperf"
            {"iquest;", "¿"},
            {""},
            {""},
            {""},
-#line 1404 "HTMLCharacterReference.gperf"
+#line 1405 "HTMLCharacterReference.gperf"
            {"lsimg;", "⪏"},
            {""},
            {""},
            {""},
-#line 632 "HTMLCharacterReference.gperf"
+#line 633 "HTMLCharacterReference.gperf"
            {"Xscr;", "𝒳"},
-#line 1311 "HTMLCharacterReference.gperf"
+#line 1312 "HTMLCharacterReference.gperf"
            {"lceil;", "⌈"},
            {""},
            {""},
            {""},
-#line 101 "HTMLCharacterReference.gperf"
+#line 102 "HTMLCharacterReference.gperf"
            {"Darr;", "↡"},
-#line 1591 "HTMLCharacterReference.gperf"
+#line 1592 "HTMLCharacterReference.gperf"
            {"nsube;", "⊈"},
-#line 522 "HTMLCharacterReference.gperf"
+#line 523 "HTMLCharacterReference.gperf"
            {"Square;", "□"},
            {""},
            {""},
-#line 711 "HTMLCharacterReference.gperf"
-           {"aring", "å"},
 #line 712 "HTMLCharacterReference.gperf"
+           {"aring", "å"},
+#line 713 "HTMLCharacterReference.gperf"
            {"aring;", "å"},
-#line 1046 "HTMLCharacterReference.gperf"
+#line 1047 "HTMLCharacterReference.gperf"
            {"eqcirc;", "≖"},
            {""},
            {""},
-#line 662 "HTMLCharacterReference.gperf"
-           {"acute", "´"},
 #line 663 "HTMLCharacterReference.gperf"
+           {"acute", "´"},
+#line 664 "HTMLCharacterReference.gperf"
            {"acute;", "´"},
            {""},
            {""},
-#line 1443 "HTMLCharacterReference.gperf"
+#line 1444 "HTMLCharacterReference.gperf"
            {"mho;", "℧"},
            {""},
-#line 602 "HTMLCharacterReference.gperf"
+#line 603 "HTMLCharacterReference.gperf"
            {"Uring;", "Ů"},
-#line 2185 "HTMLCharacterReference.gperf"
+#line 2186 "HTMLCharacterReference.gperf"
            {"vsubne;", "⊊︀"},
            {""},
-#line 2231 "HTMLCharacterReference.gperf"
+#line 2232 "HTMLCharacterReference.gperf"
            {"yfr;", "𝔶"},
            {""},
            {""},
@@ -2414,27 +2415,27 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1567 "HTMLCharacterReference.gperf"
+#line 1568 "HTMLCharacterReference.gperf"
            {"nprec;", "⊀"},
            {""},
            {""},
            {""},
-#line 648 "HTMLCharacterReference.gperf"
+#line 649 "HTMLCharacterReference.gperf"
            {"Zdot;", "Ż"},
-#line 715 "HTMLCharacterReference.gperf"
+#line 716 "HTMLCharacterReference.gperf"
            {"asymp;", "≈"},
            {""},
            {""},
            {""},
-#line 529 "HTMLCharacterReference.gperf"
+#line 530 "HTMLCharacterReference.gperf"
            {"Sscr;", "𝒮"},
            {""},
            {""},
            {""},
            {""},
-#line 285 "HTMLCharacterReference.gperf"
+#line 286 "HTMLCharacterReference.gperf"
            {"LeftFloor;", "⌊"},
-#line 2179 "HTMLCharacterReference.gperf"
+#line 2180 "HTMLCharacterReference.gperf"
            {"vnsup;", "⊃⃒"},
            {""},
            {""},
@@ -2442,10 +2443,10 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1047 "HTMLCharacterReference.gperf"
+#line 1048 "HTMLCharacterReference.gperf"
            {"eqcolon;", "≕"},
            {""},
-#line 1235 "HTMLCharacterReference.gperf"
+#line 1236 "HTMLCharacterReference.gperf"
            {"iocy;", "ё"},
            {""},
            {""},
@@ -2453,80 +2454,80 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 841 "HTMLCharacterReference.gperf"
+#line 842 "HTMLCharacterReference.gperf"
            {"capand;", "⩄"},
            {""},
            {""},
            {""},
            {""},
-#line 1584 "HTMLCharacterReference.gperf"
+#line 1585 "HTMLCharacterReference.gperf"
            {"nsimeq;", "≄"},
            {""},
-#line 541 "HTMLCharacterReference.gperf"
+#line 542 "HTMLCharacterReference.gperf"
            {"Superset;", "⊃"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1619 "HTMLCharacterReference.gperf"
+#line 1620 "HTMLCharacterReference.gperf"
            {"nvge;", "≥⃒"},
-#line 1290 "HTMLCharacterReference.gperf"
+#line 1291 "HTMLCharacterReference.gperf"
            {"larrb;", "⇤"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1462 "HTMLCharacterReference.gperf"
+#line 1463 "HTMLCharacterReference.gperf"
            {"mstpos;", "∾"},
            {""},
-#line 1576 "HTMLCharacterReference.gperf"
+#line 1577 "HTMLCharacterReference.gperf"
            {"nsc;", "⊁"},
-#line 245 "HTMLCharacterReference.gperf"
+#line 246 "HTMLCharacterReference.gperf"
            {"Iscr;", "ℐ"},
-#line 854 "HTMLCharacterReference.gperf"
+#line 855 "HTMLCharacterReference.gperf"
            {"ccups;", "⩌"},
-#line 103 "HTMLCharacterReference.gperf"
+#line 104 "HTMLCharacterReference.gperf"
            {"Dcaron;", "Ď"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1510 "HTMLCharacterReference.gperf"
+#line 1511 "HTMLCharacterReference.gperf"
            {"nexists;", "∄"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 659 "HTMLCharacterReference.gperf"
+#line 660 "HTMLCharacterReference.gperf"
            {"acd;", "∿"},
            {""},
-#line 1209 "HTMLCharacterReference.gperf"
-           {"igrave", "ì"},
 #line 1210 "HTMLCharacterReference.gperf"
+           {"igrave", "ì"},
+#line 1211 "HTMLCharacterReference.gperf"
            {"igrave;", "ì"},
            {""},
            {""},
-#line 1579 "HTMLCharacterReference.gperf"
+#line 1580 "HTMLCharacterReference.gperf"
            {"nscr;", "𝓃"},
            {""},
            {""},
            {""},
-#line 1480 "HTMLCharacterReference.gperf"
+#line 1481 "HTMLCharacterReference.gperf"
            {"nap;", "≉"},
            {""},
            {""},
            {""},
            {""},
-#line 690 "HTMLCharacterReference.gperf"
+#line 691 "HTMLCharacterReference.gperf"
            {"angmsdad;", "⦫"},
            {""},
            {""},
            {""},
-#line 508 "HTMLCharacterReference.gperf"
+#line 509 "HTMLCharacterReference.gperf"
            {"Sc;", "⪼"},
            {""},
            {""},
@@ -2534,31 +2535,31 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 634 "HTMLCharacterReference.gperf"
+#line 635 "HTMLCharacterReference.gperf"
            {"YIcy;", "Ї"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1590 "HTMLCharacterReference.gperf"
+#line 1591 "HTMLCharacterReference.gperf"
            {"nsubE;", "⫅̸"},
            {""},
            {""},
            {""},
-#line 158 "HTMLCharacterReference.gperf"
+#line 159 "HTMLCharacterReference.gperf"
            {"Edot;", "Ė"},
            {""},
            {""},
            {""},
            {""},
-#line 653 "HTMLCharacterReference.gperf"
+#line 654 "HTMLCharacterReference.gperf"
            {"Zscr;", "𝒵"},
            {""},
            {""},
            {""},
            {""},
-#line 635 "HTMLCharacterReference.gperf"
+#line 636 "HTMLCharacterReference.gperf"
            {"YUcy;", "Ю"},
            {""},
            {""},
@@ -2569,25 +2570,25 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 277 "HTMLCharacterReference.gperf"
+#line 278 "HTMLCharacterReference.gperf"
            {"LeftArrow;", "←"},
-#line 814 "HTMLCharacterReference.gperf"
+#line 815 "HTMLCharacterReference.gperf"
            {"boxur;", "└"},
            {""},
            {""},
-#line 1442 "HTMLCharacterReference.gperf"
+#line 1443 "HTMLCharacterReference.gperf"
            {"mfr;", "𝔪"},
-#line 196 "HTMLCharacterReference.gperf"
+#line 197 "HTMLCharacterReference.gperf"
            {"Gdot;", "Ġ"},
            {""},
-#line 42 "HTMLCharacterReference.gperf"
+#line 43 "HTMLCharacterReference.gperf"
            {"Assign;", "≔"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 278 "HTMLCharacterReference.gperf"
+#line 279 "HTMLCharacterReference.gperf"
            {"LeftArrowBar;", "⇤"},
            {""},
            {""},
@@ -2599,38 +2600,38 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 531 "HTMLCharacterReference.gperf"
+#line 532 "HTMLCharacterReference.gperf"
            {"Sub;", "⋐"},
-#line 614 "HTMLCharacterReference.gperf"
+#line 615 "HTMLCharacterReference.gperf"
            {"Vert;", "‖"},
            {""},
            {""},
            {""},
-#line 262 "HTMLCharacterReference.gperf"
+#line 263 "HTMLCharacterReference.gperf"
            {"Kfr;", "𝔎"},
            {""},
            {""},
            {""},
            {""},
-#line 687 "HTMLCharacterReference.gperf"
+#line 688 "HTMLCharacterReference.gperf"
            {"angmsdaa;", "⦨"},
            {""},
            {""},
            {""},
            {""},
-#line 93 "HTMLCharacterReference.gperf"
+#line 94 "HTMLCharacterReference.gperf"
            {"Cup;", "⋓"},
            {""},
-#line 824 "HTMLCharacterReference.gperf"
-           {"brvbar", "¦"},
 #line 825 "HTMLCharacterReference.gperf"
+           {"brvbar", "¦"},
+#line 826 "HTMLCharacterReference.gperf"
            {"brvbar;", "¦"},
            {""},
            {""},
            {""},
-#line 1049 "HTMLCharacterReference.gperf"
+#line 1050 "HTMLCharacterReference.gperf"
            {"eqslantgtr;", "⪖"},
-#line 509 "HTMLCharacterReference.gperf"
+#line 510 "HTMLCharacterReference.gperf"
            {"Scaron;", "Š"},
            {""},
            {""},
@@ -2644,11 +2645,11 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 782 "HTMLCharacterReference.gperf"
+#line 783 "HTMLCharacterReference.gperf"
            {"boxH;", "═"},
            {""},
            {""},
-#line 499 "HTMLCharacterReference.gperf"
+#line 500 "HTMLCharacterReference.gperf"
            {"RoundImplies;", "⥰"},
            {""},
            {""},
@@ -2656,15 +2657,15 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 501 "HTMLCharacterReference.gperf"
+#line 502 "HTMLCharacterReference.gperf"
            {"Rscr;", "ℛ"},
            {""},
            {""},
            {""},
-#line 710 "HTMLCharacterReference.gperf"
+#line 711 "HTMLCharacterReference.gperf"
            {"approxeq;", "≊"},
            {""},
-#line 1465 "HTMLCharacterReference.gperf"
+#line 1466 "HTMLCharacterReference.gperf"
            {"mumap;", "⊸"},
            {""},
            {""},
@@ -2674,62 +2675,62 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 172 "HTMLCharacterReference.gperf"
+#line 173 "HTMLCharacterReference.gperf"
            {"Escr;", "ℰ"},
            {""},
            {""},
            {""},
-#line 1141 "HTMLCharacterReference.gperf"
+#line 1142 "HTMLCharacterReference.gperf"
            {"gnE;", "≩"},
            {""},
-#line 813 "HTMLCharacterReference.gperf"
+#line 814 "HTMLCharacterReference.gperf"
            {"boxul;", "┘"},
            {""},
            {""},
-#line 1366 "HTMLCharacterReference.gperf"
+#line 1367 "HTMLCharacterReference.gperf"
            {"lnE;", "≨"},
-#line 2218 "HTMLCharacterReference.gperf"
+#line 2219 "HTMLCharacterReference.gperf"
            {"xscr;", "𝓍"},
            {""},
            {""},
            {""},
            {""},
-#line 1516 "HTMLCharacterReference.gperf"
+#line 1517 "HTMLCharacterReference.gperf"
            {"ngeqslant;", "⩾̸"},
            {""},
            {""},
            {""},
-#line 704 "HTMLCharacterReference.gperf"
+#line 705 "HTMLCharacterReference.gperf"
            {"apE;", "⩰"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 207 "HTMLCharacterReference.gperf"
+#line 208 "HTMLCharacterReference.gperf"
            {"Gscr;", "𝒢"},
            {""},
-#line 1493 "HTMLCharacterReference.gperf"
+#line 1494 "HTMLCharacterReference.gperf"
            {"ncaron;", "ň"},
            {""},
            {""},
-#line 1492 "HTMLCharacterReference.gperf"
+#line 1493 "HTMLCharacterReference.gperf"
            {"ncap;", "⩃"},
            {""},
            {""},
            {""},
-#line 149 "HTMLCharacterReference.gperf"
+#line 150 "HTMLCharacterReference.gperf"
            {"ENG;", "Ŋ"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2222 "HTMLCharacterReference.gperf"
+#line 2223 "HTMLCharacterReference.gperf"
            {"xvee;", "⋁"},
            {""},
            {""},
-#line 374 "HTMLCharacterReference.gperf"
+#line 375 "HTMLCharacterReference.gperf"
            {"NotLessSlantEqual;", "⩽̸"},
            {""},
            {""},
@@ -2737,11 +2738,11 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2243 "HTMLCharacterReference.gperf"
+#line 2244 "HTMLCharacterReference.gperf"
            {"zeta;", "ζ"},
            {""},
            {""},
-#line 370 "HTMLCharacterReference.gperf"
+#line 371 "HTMLCharacterReference.gperf"
            {"NotLess;", "≮"},
            {""},
            {""},
@@ -2749,53 +2750,53 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 464 "HTMLCharacterReference.gperf"
+#line 465 "HTMLCharacterReference.gperf"
            {"Rarr;", "↠"},
            {""},
-#line 646 "HTMLCharacterReference.gperf"
+#line 647 "HTMLCharacterReference.gperf"
            {"Zcaron;", "Ž"},
            {""},
            {""},
            {""},
-#line 812 "HTMLCharacterReference.gperf"
+#line 813 "HTMLCharacterReference.gperf"
            {"boxuR;", "╘"},
            {""},
-#line 2229 "HTMLCharacterReference.gperf"
+#line 2230 "HTMLCharacterReference.gperf"
            {"yen", "¥"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2230 "HTMLCharacterReference.gperf"
+#line 2231 "HTMLCharacterReference.gperf"
            {"yen;", "¥"},
            {""},
            {""},
-#line 1192 "HTMLCharacterReference.gperf"
+#line 1193 "HTMLCharacterReference.gperf"
            {"horbar;", "―"},
            {""},
-#line 689 "HTMLCharacterReference.gperf"
+#line 690 "HTMLCharacterReference.gperf"
            {"angmsdac;", "⦪"},
-#line 555 "HTMLCharacterReference.gperf"
+#line 556 "HTMLCharacterReference.gperf"
            {"Therefore;", "∴"},
            {""},
            {""},
            {""},
            {""},
-#line 1300 "HTMLCharacterReference.gperf"
+#line 1301 "HTMLCharacterReference.gperf"
            {"late;", "⪭"},
-#line 1483 "HTMLCharacterReference.gperf"
+#line 1484 "HTMLCharacterReference.gperf"
            {"napos;", "ŉ"},
            {""},
            {""},
-#line 612 "HTMLCharacterReference.gperf"
+#line 613 "HTMLCharacterReference.gperf"
            {"Vee;", "⋁"},
-#line 98 "HTMLCharacterReference.gperf"
+#line 99 "HTMLCharacterReference.gperf"
            {"DScy;", "Ѕ"},
            {""},
            {""},
            {""},
-#line 1189 "HTMLCharacterReference.gperf"
+#line 1190 "HTMLCharacterReference.gperf"
            {"hookleftarrow;", "↩"},
            {""},
            {""},
@@ -2809,7 +2810,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 465 "HTMLCharacterReference.gperf"
+#line 466 "HTMLCharacterReference.gperf"
            {"Rarrtl;", "⤖"},
            {""},
            {""},
@@ -2837,7 +2838,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1380 "HTMLCharacterReference.gperf"
+#line 1381 "HTMLCharacterReference.gperf"
            {"looparrowleft;", "↫"},
            {""},
            {""},
@@ -2851,7 +2852,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 466 "HTMLCharacterReference.gperf"
+#line 467 "HTMLCharacterReference.gperf"
            {"Rcaron;", "Ř"},
            {""},
            {""},
@@ -2860,56 +2861,56 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 402 "HTMLCharacterReference.gperf"
+#line 403 "HTMLCharacterReference.gperf"
            {"Nscr;", "𝒩"},
            {""},
            {""},
-#line 1160 "HTMLCharacterReference.gperf"
+#line 1161 "HTMLCharacterReference.gperf"
            {"gtquest;", "⩼"},
-#line 453 "HTMLCharacterReference.gperf"
+#line 454 "HTMLCharacterReference.gperf"
            {"Psi;", "Ψ"},
            {""},
            {""},
-#line 154 "HTMLCharacterReference.gperf"
+#line 155 "HTMLCharacterReference.gperf"
            {"Ecaron;", "Ě"},
-#line 1417 "HTMLCharacterReference.gperf"
+#line 1418 "HTMLCharacterReference.gperf"
            {"ltquest;", "⩻"},
            {""},
            {""},
-#line 847 "HTMLCharacterReference.gperf"
+#line 848 "HTMLCharacterReference.gperf"
            {"caret;", "⁁"},
            {""},
            {""},
            {""},
-#line 1204 "HTMLCharacterReference.gperf"
+#line 1205 "HTMLCharacterReference.gperf"
            {"iecy;", "е"},
            {""},
            {""},
            {""},
            {""},
-#line 2200 "HTMLCharacterReference.gperf"
+#line 2201 "HTMLCharacterReference.gperf"
            {"xcap;", "⋂"},
-#line 717 "HTMLCharacterReference.gperf"
-           {"atilde", "ã"},
 #line 718 "HTMLCharacterReference.gperf"
+           {"atilde", "ã"},
+#line 719 "HTMLCharacterReference.gperf"
            {"atilde;", "ã"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1600 "HTMLCharacterReference.gperf"
+#line 1601 "HTMLCharacterReference.gperf"
            {"nsupset;", "⊃⃒"},
-#line 54 "HTMLCharacterReference.gperf"
+#line 55 "HTMLCharacterReference.gperf"
            {"Bfr;", "𝔅"},
-#line 220 "HTMLCharacterReference.gperf"
+#line 221 "HTMLCharacterReference.gperf"
            {"HumpEqual;", "≏"},
            {""},
-#line 604 "HTMLCharacterReference.gperf"
+#line 605 "HTMLCharacterReference.gperf"
            {"Utilde;", "Ũ"},
            {""},
            {""},
-#line 1010 "HTMLCharacterReference.gperf"
+#line 1011 "HTMLCharacterReference.gperf"
            {"ecir;", "≖"},
            {""},
            {""},
@@ -2919,17 +2920,17 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 74 "HTMLCharacterReference.gperf"
+#line 75 "HTMLCharacterReference.gperf"
            {"Cfr;", "ℭ"},
            {""},
            {""},
            {""},
-#line 855 "HTMLCharacterReference.gperf"
+#line 856 "HTMLCharacterReference.gperf"
            {"ccupssm;", "⩐"},
            {""},
-#line 1312 "HTMLCharacterReference.gperf"
+#line 1313 "HTMLCharacterReference.gperf"
            {"lcub;", "{"},
-#line 2178 "HTMLCharacterReference.gperf"
+#line 2179 "HTMLCharacterReference.gperf"
            {"vnsub;", "⊂⃒"},
            {""},
            {""},
@@ -2937,43 +2938,43 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1062 "HTMLCharacterReference.gperf"
+#line 1063 "HTMLCharacterReference.gperf"
            {"eth", "ð"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1063 "HTMLCharacterReference.gperf"
+#line 1064 "HTMLCharacterReference.gperf"
            {"eth;", "ð"},
-#line 1497 "HTMLCharacterReference.gperf"
+#line 1498 "HTMLCharacterReference.gperf"
            {"ncup;", "⩂"},
            {""},
            {""},
-#line 1137 "HTMLCharacterReference.gperf"
+#line 1138 "HTMLCharacterReference.gperf"
            {"gl;", "≷"},
            {""},
-#line 41 "HTMLCharacterReference.gperf"
+#line 42 "HTMLCharacterReference.gperf"
            {"Ascr;", "𝒜"},
            {""},
            {""},
-#line 1358 "HTMLCharacterReference.gperf"
+#line 1359 "HTMLCharacterReference.gperf"
            {"ll;", "≪"},
            {""},
-#line 99 "HTMLCharacterReference.gperf"
+#line 100 "HTMLCharacterReference.gperf"
            {"DZcy;", "Џ"},
-#line 231 "HTMLCharacterReference.gperf"
-           {"Igrave", "Ì"},
 #line 232 "HTMLCharacterReference.gperf"
+           {"Igrave", "Ì"},
+#line 233 "HTMLCharacterReference.gperf"
            {"Igrave;", "Ì"},
-#line 1024 "HTMLCharacterReference.gperf"
+#line 1025 "HTMLCharacterReference.gperf"
            {"el;", "⪙"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1027 "HTMLCharacterReference.gperf"
+#line 1028 "HTMLCharacterReference.gperf"
            {"els;", "⪕"},
            {""},
            {""},
@@ -2982,16 +2983,16 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2242 "HTMLCharacterReference.gperf"
+#line 2243 "HTMLCharacterReference.gperf"
            {"zeetrf;", "ℨ"},
            {""},
-#line 438 "HTMLCharacterReference.gperf"
+#line 439 "HTMLCharacterReference.gperf"
            {"Phi;", "Φ"},
-#line 1381 "HTMLCharacterReference.gperf"
+#line 1382 "HTMLCharacterReference.gperf"
            {"looparrowright;", "↬"},
-#line 358 "HTMLCharacterReference.gperf"
+#line 359 "HTMLCharacterReference.gperf"
            {"NotGreater;", "≯"},
-#line 58 "HTMLCharacterReference.gperf"
+#line 59 "HTMLCharacterReference.gperf"
            {"Bumpeq;", "≎"},
            {""},
            {""},
@@ -2999,7 +3000,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1139 "HTMLCharacterReference.gperf"
+#line 1140 "HTMLCharacterReference.gperf"
            {"gla;", "⪥"},
            {""},
            {""},
@@ -3007,19 +3008,19 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 448 "HTMLCharacterReference.gperf"
+#line 449 "HTMLCharacterReference.gperf"
            {"Prime;", "″"},
            {""},
-#line 1245 "HTMLCharacterReference.gperf"
+#line 1246 "HTMLCharacterReference.gperf"
            {"isindot;", "⋵"},
            {""},
-#line 1136 "HTMLCharacterReference.gperf"
+#line 1137 "HTMLCharacterReference.gperf"
            {"gjcy;", "ѓ"},
            {""},
            {""},
            {""},
            {""},
-#line 1357 "HTMLCharacterReference.gperf"
+#line 1358 "HTMLCharacterReference.gperf"
            {"ljcy;", "љ"},
            {""},
            {""},
@@ -3029,7 +3030,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 968 "HTMLCharacterReference.gperf"
+#line 969 "HTMLCharacterReference.gperf"
            {"div;", "÷"},
            {""},
            {""},
@@ -3041,7 +3042,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 961 "HTMLCharacterReference.gperf"
+#line 962 "HTMLCharacterReference.gperf"
            {"diam;", "⋄"},
            {""},
            {""},
@@ -3050,63 +3051,63 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1596 "HTMLCharacterReference.gperf"
+#line 1597 "HTMLCharacterReference.gperf"
            {"nsucceq;", "⪰̸"},
            {""},
            {""},
-#line 1301 "HTMLCharacterReference.gperf"
+#line 1302 "HTMLCharacterReference.gperf"
            {"lates;", "⪭︀"},
            {""},
-#line 1291 "HTMLCharacterReference.gperf"
+#line 1292 "HTMLCharacterReference.gperf"
            {"larrbfs;", "⤟"},
            {""},
-#line 515 "HTMLCharacterReference.gperf"
+#line 516 "HTMLCharacterReference.gperf"
            {"ShortLeftArrow;", "←"},
-#line 778 "HTMLCharacterReference.gperf"
+#line 779 "HTMLCharacterReference.gperf"
            {"boxDL;", "╗"},
-#line 2193 "HTMLCharacterReference.gperf"
+#line 2194 "HTMLCharacterReference.gperf"
            {"weierp;", "℘"},
-#line 1484 "HTMLCharacterReference.gperf"
+#line 1485 "HTMLCharacterReference.gperf"
            {"napprox;", "≉"},
-#line 1401 "HTMLCharacterReference.gperf"
+#line 1402 "HTMLCharacterReference.gperf"
            {"lsh;", "↰"},
-#line 505 "HTMLCharacterReference.gperf"
+#line 506 "HTMLCharacterReference.gperf"
            {"SHcy;", "Ш"},
            {""},
-#line 336 "HTMLCharacterReference.gperf"
+#line 337 "HTMLCharacterReference.gperf"
            {"Ncaron;", "Ň"},
-#line 205 "HTMLCharacterReference.gperf"
+#line 206 "HTMLCharacterReference.gperf"
            {"GreaterSlantEqual;", "⩾"},
            {""},
-#line 973 "HTMLCharacterReference.gperf"
+#line 974 "HTMLCharacterReference.gperf"
            {"djcy;", "ђ"},
-#line 1398 "HTMLCharacterReference.gperf"
+#line 1399 "HTMLCharacterReference.gperf"
            {"lrtri;", "⊿"},
-#line 1225 "HTMLCharacterReference.gperf"
+#line 1226 "HTMLCharacterReference.gperf"
            {"incare;", "℅"},
            {""},
-#line 868 "HTMLCharacterReference.gperf"
+#line 869 "HTMLCharacterReference.gperf"
            {"cir;", "○"},
            {""},
-#line 967 "HTMLCharacterReference.gperf"
+#line 968 "HTMLCharacterReference.gperf"
            {"disin;", "⋲"},
            {""},
            {""},
            {""},
            {""},
-#line 1421 "HTMLCharacterReference.gperf"
+#line 1422 "HTMLCharacterReference.gperf"
            {"ltrif;", "◂"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1171 "HTMLCharacterReference.gperf"
+#line 1172 "HTMLCharacterReference.gperf"
            {"hairsp;", " "},
            {""},
            {""},
            {""},
-#line 1359 "HTMLCharacterReference.gperf"
+#line 1360 "HTMLCharacterReference.gperf"
            {"llarr;", "⇇"},
            {""},
            {""},
@@ -3124,32 +3125,32 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 952 "HTMLCharacterReference.gperf"
+#line 953 "HTMLCharacterReference.gperf"
            {"ddotseq;", "⩷"},
            {""},
-#line 1080 "HTMLCharacterReference.gperf"
+#line 1081 "HTMLCharacterReference.gperf"
            {"flat;", "♭"},
            {""},
            {""},
            {""},
            {""},
-#line 2202 "HTMLCharacterReference.gperf"
+#line 2203 "HTMLCharacterReference.gperf"
            {"xcup;", "⋃"},
            {""},
-#line 192 "HTMLCharacterReference.gperf"
+#line 193 "HTMLCharacterReference.gperf"
            {"Gbreve;", "Ğ"},
            {""},
            {""},
            {""},
-#line 1113 "HTMLCharacterReference.gperf"
+#line 1114 "HTMLCharacterReference.gperf"
            {"gamma;", "γ"},
            {""},
            {""},
            {""},
            {""},
-#line 998 "HTMLCharacterReference.gperf"
+#line 999 "HTMLCharacterReference.gperf"
            {"dtrif;", "▾"},
-#line 1250 "HTMLCharacterReference.gperf"
+#line 1251 "HTMLCharacterReference.gperf"
            {"itilde;", "ĩ"},
            {""},
            {""},
@@ -3159,13 +3160,13 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 160 "HTMLCharacterReference.gperf"
-           {"Egrave", "È"},
 #line 161 "HTMLCharacterReference.gperf"
+           {"Egrave", "È"},
+#line 162 "HTMLCharacterReference.gperf"
            {"Egrave;", "È"},
            {""},
            {""},
-#line 628 "HTMLCharacterReference.gperf"
+#line 629 "HTMLCharacterReference.gperf"
            {"Wscr;", "𝒲"},
            {""},
            {""},
@@ -3176,15 +3177,15 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2241 "HTMLCharacterReference.gperf"
+#line 2242 "HTMLCharacterReference.gperf"
            {"zdot;", "ż"},
            {""},
            {""},
            {""},
            {""},
-#line 1601 "HTMLCharacterReference.gperf"
-           {"nsupseteq;", "⊉"},
 #line 1602 "HTMLCharacterReference.gperf"
+           {"nsupseteq;", "⊉"},
+#line 1603 "HTMLCharacterReference.gperf"
            {"nsupseteqq;", "⫆̸"},
            {""},
            {""},
@@ -3194,9 +3195,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 644 "HTMLCharacterReference.gperf"
+#line 645 "HTMLCharacterReference.gperf"
            {"ZHcy;", "Ж"},
-#line 734 "HTMLCharacterReference.gperf"
+#line 735 "HTMLCharacterReference.gperf"
            {"bcong;", "≌"},
            {""},
            {""},
@@ -3204,65 +3205,65 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1211 "HTMLCharacterReference.gperf"
+#line 1212 "HTMLCharacterReference.gperf"
            {"ii;", "ⅈ"},
            {""},
            {""},
            {""},
-#line 86 "HTMLCharacterReference.gperf"
+#line 87 "HTMLCharacterReference.gperf"
            {"Conint;", "∯"},
            {""},
-#line 454 "HTMLCharacterReference.gperf"
-           {"QUOT", "\""},
 #line 455 "HTMLCharacterReference.gperf"
+           {"QUOT", "\""},
+#line 456 "HTMLCharacterReference.gperf"
            {"QUOT;", "\""},
-#line 1117 "HTMLCharacterReference.gperf"
+#line 1118 "HTMLCharacterReference.gperf"
            {"gcirc;", "ĝ"},
            {""},
            {""},
            {""},
            {""},
-#line 2182 "HTMLCharacterReference.gperf"
+#line 2183 "HTMLCharacterReference.gperf"
            {"vrtri;", "⊳"},
            {""},
            {""},
            {""},
-#line 1011 "HTMLCharacterReference.gperf"
-           {"ecirc", "ê"},
 #line 1012 "HTMLCharacterReference.gperf"
+           {"ecirc", "ê"},
+#line 1013 "HTMLCharacterReference.gperf"
            {"ecirc;", "ê"},
            {""},
            {""},
            {""},
            {""},
-#line 853 "HTMLCharacterReference.gperf"
+#line 854 "HTMLCharacterReference.gperf"
            {"ccirc;", "ĉ"},
            {""},
            {""},
            {""},
-#line 660 "HTMLCharacterReference.gperf"
-           {"acirc", "â"},
 #line 661 "HTMLCharacterReference.gperf"
+           {"acirc", "â"},
+#line 662 "HTMLCharacterReference.gperf"
            {"acirc;", "â"},
-#line 597 "HTMLCharacterReference.gperf"
+#line 598 "HTMLCharacterReference.gperf"
            {"Updownarrow;", "⇕"},
            {""},
            {""},
            {""},
-#line 1254 "HTMLCharacterReference.gperf"
+#line 1255 "HTMLCharacterReference.gperf"
            {"jcirc;", "ĵ"},
-#line 891 "HTMLCharacterReference.gperf"
+#line 892 "HTMLCharacterReference.gperf"
            {"compfn;", "∘"},
            {""},
            {""},
-#line 573 "HTMLCharacterReference.gperf"
-           {"Ucirc", "Û"},
 #line 574 "HTMLCharacterReference.gperf"
+           {"Ucirc", "Û"},
+#line 575 "HTMLCharacterReference.gperf"
            {"Ucirc;", "Û"},
            {""},
            {""},
            {""},
-#line 565 "HTMLCharacterReference.gperf"
+#line 566 "HTMLCharacterReference.gperf"
            {"Tscr;", "𝒯"},
            {""},
            {""},
@@ -3274,23 +3275,23 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 787 "HTMLCharacterReference.gperf"
+#line 788 "HTMLCharacterReference.gperf"
            {"boxUL;", "╝"},
-#line 373 "HTMLCharacterReference.gperf"
+#line 374 "HTMLCharacterReference.gperf"
            {"NotLessLess;", "≪̸"},
            {""},
-#line 444 "HTMLCharacterReference.gperf"
+#line 445 "HTMLCharacterReference.gperf"
            {"Precedes;", "≺"},
-#line 598 "HTMLCharacterReference.gperf"
+#line 599 "HTMLCharacterReference.gperf"
            {"UpperLeftArrow;", "↖"},
            {""},
-#line 705 "HTMLCharacterReference.gperf"
+#line 706 "HTMLCharacterReference.gperf"
            {"apacir;", "⩯"},
            {""},
            {""},
-#line 708 "HTMLCharacterReference.gperf"
+#line 709 "HTMLCharacterReference.gperf"
            {"apos;", "'"},
-#line 1179 "HTMLCharacterReference.gperf"
+#line 1180 "HTMLCharacterReference.gperf"
            {"hcirc;", "ĥ"},
            {""},
            {""},
@@ -3299,12 +3300,12 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1227 "HTMLCharacterReference.gperf"
+#line 1228 "HTMLCharacterReference.gperf"
            {"infintie;", "⧝"},
-#line 452 "HTMLCharacterReference.gperf"
+#line 453 "HTMLCharacterReference.gperf"
            {"Pscr;", "𝒫"},
            {""},
-#line 2174 "HTMLCharacterReference.gperf"
+#line 2175 "HTMLCharacterReference.gperf"
            {"verbar;", "|"},
            {""},
            {""},
@@ -3313,57 +3314,57 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2248 "HTMLCharacterReference.gperf"
+#line 2249 "HTMLCharacterReference.gperf"
            {"zscr;", "𝓏"},
            {""},
-#line 584 "HTMLCharacterReference.gperf"
+#line 585 "HTMLCharacterReference.gperf"
            {"UnderParenthesis;", "⏝"},
            {""},
-#line 965 "HTMLCharacterReference.gperf"
+#line 966 "HTMLCharacterReference.gperf"
            {"die;", "¨"},
-#line 870 "HTMLCharacterReference.gperf"
+#line 871 "HTMLCharacterReference.gperf"
            {"circ;", "ˆ"},
            {""},
            {""},
-#line 309 "HTMLCharacterReference.gperf"
+#line 310 "HTMLCharacterReference.gperf"
            {"Ll;", "⋘"},
            {""},
            {""},
-#line 964 "HTMLCharacterReference.gperf"
+#line 965 "HTMLCharacterReference.gperf"
            {"diams;", "♦"},
-#line 798 "HTMLCharacterReference.gperf"
+#line 799 "HTMLCharacterReference.gperf"
            {"boxbox;", "⧉"},
            {""},
            {""},
-#line 1314 "HTMLCharacterReference.gperf"
+#line 1315 "HTMLCharacterReference.gperf"
            {"ldca;", "⤶"},
-#line 766 "HTMLCharacterReference.gperf"
+#line 767 "HTMLCharacterReference.gperf"
            {"blank;", "␣"},
            {""},
            {""},
            {""},
            {""},
-#line 1395 "HTMLCharacterReference.gperf"
+#line 1396 "HTMLCharacterReference.gperf"
            {"lrhar;", "⇋"},
            {""},
            {""},
            {""},
-#line 894 "HTMLCharacterReference.gperf"
+#line 895 "HTMLCharacterReference.gperf"
            {"cong;", "≅"},
-#line 1482 "HTMLCharacterReference.gperf"
+#line 1483 "HTMLCharacterReference.gperf"
            {"napid;", "≋̸"},
            {""},
            {""},
            {""},
-#line 1321 "HTMLCharacterReference.gperf"
+#line 1322 "HTMLCharacterReference.gperf"
            {"leftarrow;", "←"},
            {""},
-#line 1163 "HTMLCharacterReference.gperf"
+#line 1164 "HTMLCharacterReference.gperf"
            {"gtrdot;", "⋗"},
            {""},
            {""},
            {""},
-#line 2189 "HTMLCharacterReference.gperf"
+#line 2190 "HTMLCharacterReference.gperf"
            {"wcirc;", "ŵ"},
            {""},
            {""},
@@ -3378,11 +3379,11 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 922 "HTMLCharacterReference.gperf"
+#line 923 "HTMLCharacterReference.gperf"
            {"cups;", "∪︀"},
-#line 802 "HTMLCharacterReference.gperf"
+#line 803 "HTMLCharacterReference.gperf"
            {"boxdr;", "┌"},
-#line 920 "HTMLCharacterReference.gperf"
+#line 921 "HTMLCharacterReference.gperf"
            {"cupdot;", "⊍"},
            {""},
            {""},
@@ -3393,11 +3394,11 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 26 "HTMLCharacterReference.gperf"
+#line 27 "HTMLCharacterReference.gperf"
            {"Abreve;", "Ă"},
            {""},
            {""},
-#line 279 "HTMLCharacterReference.gperf"
+#line 280 "HTMLCharacterReference.gperf"
            {"LeftArrowRightArrow;", "⇆"},
            {""},
            {""},
@@ -3405,7 +3406,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1281 "HTMLCharacterReference.gperf"
+#line 1282 "HTMLCharacterReference.gperf"
            {"lagran;", "ℒ"},
            {""},
            {""},
@@ -3418,59 +3419,59 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 989 "HTMLCharacterReference.gperf"
+#line 990 "HTMLCharacterReference.gperf"
            {"drbkarow;", "⤐"},
            {""},
            {""},
            {""},
-#line 524 "HTMLCharacterReference.gperf"
+#line 525 "HTMLCharacterReference.gperf"
            {"SquareSubset;", "⊏"},
            {""},
-#line 622 "HTMLCharacterReference.gperf"
+#line 623 "HTMLCharacterReference.gperf"
            {"Vscr;", "𝒱"},
-#line 770 "HTMLCharacterReference.gperf"
+#line 771 "HTMLCharacterReference.gperf"
            {"block;", "█"},
            {""},
            {""},
-#line 322 "HTMLCharacterReference.gperf"
+#line 323 "HTMLCharacterReference.gperf"
            {"Lsh;", "↰"},
            {""},
            {""},
-#line 184 "HTMLCharacterReference.gperf"
+#line 185 "HTMLCharacterReference.gperf"
            {"ForAll;", "∀"},
            {""},
            {""},
            {""},
            {""},
-#line 843 "HTMLCharacterReference.gperf"
+#line 844 "HTMLCharacterReference.gperf"
            {"capcap;", "⩋"},
            {""},
            {""},
            {""},
-#line 31 "HTMLCharacterReference.gperf"
-           {"Agrave", "À"},
 #line 32 "HTMLCharacterReference.gperf"
+           {"Agrave", "À"},
+#line 33 "HTMLCharacterReference.gperf"
            {"Agrave;", "À"},
            {""},
            {""},
            {""},
-#line 1000 "HTMLCharacterReference.gperf"
+#line 1001 "HTMLCharacterReference.gperf"
            {"duhar;", "⥯"},
-#line 1618 "HTMLCharacterReference.gperf"
+#line 1619 "HTMLCharacterReference.gperf"
            {"nvdash;", "⊬"},
            {""},
            {""},
            {""},
-#line 785 "HTMLCharacterReference.gperf"
+#line 786 "HTMLCharacterReference.gperf"
            {"boxHd;", "╤"},
-#line 1114 "HTMLCharacterReference.gperf"
+#line 1115 "HTMLCharacterReference.gperf"
            {"gammad;", "ϝ"},
            {""},
-#line 376 "HTMLCharacterReference.gperf"
+#line 377 "HTMLCharacterReference.gperf"
            {"NotNestedGreaterGreater;", "⪢̸"},
            {""},
            {""},
-#line 551 "HTMLCharacterReference.gperf"
+#line 552 "HTMLCharacterReference.gperf"
            {"Tcaron;", "Ť"},
            {""},
            {""},
@@ -3478,16 +3479,16 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1352 "HTMLCharacterReference.gperf"
+#line 1353 "HTMLCharacterReference.gperf"
            {"lgE;", "⪑"},
-#line 53 "HTMLCharacterReference.gperf"
+#line 54 "HTMLCharacterReference.gperf"
            {"Beta;", "Β"},
-#line 212 "HTMLCharacterReference.gperf"
+#line 213 "HTMLCharacterReference.gperf"
            {"Hcirc;", "Ĥ"},
            {""},
-#line 377 "HTMLCharacterReference.gperf"
+#line 378 "HTMLCharacterReference.gperf"
            {"NotNestedLessLess;", "⪡̸"},
-#line 550 "HTMLCharacterReference.gperf"
+#line 551 "HTMLCharacterReference.gperf"
            {"Tau;", "Τ"},
            {""},
            {""},
@@ -3495,37 +3496,37 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 801 "HTMLCharacterReference.gperf"
+#line 802 "HTMLCharacterReference.gperf"
            {"boxdl;", "┐"},
-#line 2171 "HTMLCharacterReference.gperf"
+#line 2172 "HTMLCharacterReference.gperf"
            {"veebar;", "⊻"},
-#line 525 "HTMLCharacterReference.gperf"
+#line 526 "HTMLCharacterReference.gperf"
            {"SquareSubsetEqual;", "⊑"},
            {""},
-#line 1201 "HTMLCharacterReference.gperf"
-           {"icirc", "î"},
 #line 1202 "HTMLCharacterReference.gperf"
+           {"icirc", "î"},
+#line 1203 "HTMLCharacterReference.gperf"
            {"icirc;", "î"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 528 "HTMLCharacterReference.gperf"
+#line 529 "HTMLCharacterReference.gperf"
            {"SquareUnion;", "⊔"},
            {""},
-#line 1143 "HTMLCharacterReference.gperf"
+#line 1144 "HTMLCharacterReference.gperf"
            {"gnapprox;", "⪊"},
-#line 1578 "HTMLCharacterReference.gperf"
+#line 1579 "HTMLCharacterReference.gperf"
            {"nsce;", "⪰̸"},
            {""},
            {""},
            {""},
-#line 1368 "HTMLCharacterReference.gperf"
+#line 1369 "HTMLCharacterReference.gperf"
            {"lnapprox;", "⪉"},
            {""},
            {""},
-#line 2239 "HTMLCharacterReference.gperf"
+#line 2240 "HTMLCharacterReference.gperf"
            {"zcaron;", "ž"},
            {""},
            {""},
@@ -3534,120 +3535,120 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1765 "HTMLCharacterReference.gperf"
+#line 1766 "HTMLCharacterReference.gperf"
            {"qint;", "⨌"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 638 "HTMLCharacterReference.gperf"
+#line 639 "HTMLCharacterReference.gperf"
            {"Ycirc;", "Ŷ"},
            {""},
            {""},
            {""},
-#line 2234 "HTMLCharacterReference.gperf"
+#line 2235 "HTMLCharacterReference.gperf"
            {"yscr;", "𝓎"},
-#line 1354 "HTMLCharacterReference.gperf"
+#line 1355 "HTMLCharacterReference.gperf"
            {"lharu;", "↼"},
            {""},
            {""},
            {""},
            {""},
-#line 699 "HTMLCharacterReference.gperf"
+#line 700 "HTMLCharacterReference.gperf"
            {"angst;", "Å"},
-#line 1228 "HTMLCharacterReference.gperf"
+#line 1229 "HTMLCharacterReference.gperf"
            {"inodot;", "ı"},
            {""},
            {""},
-#line 526 "HTMLCharacterReference.gperf"
+#line 527 "HTMLCharacterReference.gperf"
            {"SquareSuperset;", "⊐"},
-#line 903 "HTMLCharacterReference.gperf"
+#line 904 "HTMLCharacterReference.gperf"
            {"cross;", "✗"},
            {""},
            {""},
            {""},
-#line 527 "HTMLCharacterReference.gperf"
+#line 528 "HTMLCharacterReference.gperf"
            {"SquareSupersetEqual;", "⊒"},
-#line 1082 "HTMLCharacterReference.gperf"
+#line 1083 "HTMLCharacterReference.gperf"
            {"fltns;", "▱"},
            {""},
-#line 630 "HTMLCharacterReference.gperf"
+#line 631 "HTMLCharacterReference.gperf"
            {"Xi;", "Ξ"},
-#line 570 "HTMLCharacterReference.gperf"
+#line 571 "HTMLCharacterReference.gperf"
            {"Uarrocir;", "⥉"},
            {""},
-#line 800 "HTMLCharacterReference.gperf"
+#line 801 "HTMLCharacterReference.gperf"
            {"boxdR;", "╒"},
-#line 1355 "HTMLCharacterReference.gperf"
+#line 1356 "HTMLCharacterReference.gperf"
            {"lharul;", "⥪"},
            {""},
-#line 842 "HTMLCharacterReference.gperf"
+#line 843 "HTMLCharacterReference.gperf"
            {"capbrcup;", "⩉"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 39 "HTMLCharacterReference.gperf"
-           {"Aring", "Å"},
 #line 40 "HTMLCharacterReference.gperf"
+           {"Aring", "Å"},
+#line 41 "HTMLCharacterReference.gperf"
            {"Aring;", "Å"},
            {""},
            {""},
            {""},
            {""},
-#line 1107 "HTMLCharacterReference.gperf"
+#line 1108 "HTMLCharacterReference.gperf"
            {"frasl;", "⁄"},
            {""},
            {""},
            {""},
            {""},
-#line 1315 "HTMLCharacterReference.gperf"
-           {"ldquo;", "“"},
 #line 1316 "HTMLCharacterReference.gperf"
+           {"ldquo;", "“"},
+#line 1317 "HTMLCharacterReference.gperf"
            {"ldquor;", "„"},
-#line 1568 "HTMLCharacterReference.gperf"
+#line 1569 "HTMLCharacterReference.gperf"
            {"npreceq;", "⪯̸"},
            {""},
-#line 1340 "HTMLCharacterReference.gperf"
+#line 1341 "HTMLCharacterReference.gperf"
            {"lesg;", "⋚︀"},
-#line 827 "HTMLCharacterReference.gperf"
+#line 828 "HTMLCharacterReference.gperf"
            {"bsemi;", "⁏"},
-#line 1633 "HTMLCharacterReference.gperf"
+#line 1634 "HTMLCharacterReference.gperf"
            {"nwnear;", "⤧"},
-#line 716 "HTMLCharacterReference.gperf"
+#line 717 "HTMLCharacterReference.gperf"
            {"asympeq;", "≍"},
            {""},
            {""},
-#line 817 "HTMLCharacterReference.gperf"
+#line 818 "HTMLCharacterReference.gperf"
            {"boxvL;", "╡"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1384 "HTMLCharacterReference.gperf"
+#line 1385 "HTMLCharacterReference.gperf"
            {"loplus;", "⨭"},
            {""},
            {""},
-#line 680 "HTMLCharacterReference.gperf"
+#line 681 "HTMLCharacterReference.gperf"
            {"andd;", "⩜"},
            {""},
-#line 246 "HTMLCharacterReference.gperf"
+#line 247 "HTMLCharacterReference.gperf"
            {"Itilde;", "Ĩ"},
            {""},
            {""},
            {""},
            {""},
-#line 204 "HTMLCharacterReference.gperf"
+#line 205 "HTMLCharacterReference.gperf"
            {"GreaterLess;", "≷"},
            {""},
            {""},
-#line 983 "HTMLCharacterReference.gperf"
+#line 984 "HTMLCharacterReference.gperf"
            {"dotsquare;", "⊡"},
            {""},
-#line 919 "HTMLCharacterReference.gperf"
+#line 920 "HTMLCharacterReference.gperf"
            {"cupcup;", "⩊"},
            {""},
            {""},
@@ -3657,24 +3658,24 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1604 "HTMLCharacterReference.gperf"
-           {"ntilde", "ñ"},
 #line 1605 "HTMLCharacterReference.gperf"
+           {"ntilde", "ñ"},
+#line 1606 "HTMLCharacterReference.gperf"
            {"ntilde;", "ñ"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1592 "HTMLCharacterReference.gperf"
+#line 1593 "HTMLCharacterReference.gperf"
            {"nsubset;", "⊂⃒"},
            {""},
            {""},
            {""},
-#line 1396 "HTMLCharacterReference.gperf"
+#line 1397 "HTMLCharacterReference.gperf"
            {"lrhard;", "⥭"},
            {""},
-#line 1231 "HTMLCharacterReference.gperf"
+#line 1232 "HTMLCharacterReference.gperf"
            {"integers;", "ℤ"},
            {""},
            {""},
@@ -3682,29 +3683,29 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 556 "HTMLCharacterReference.gperf"
+#line 557 "HTMLCharacterReference.gperf"
            {"Theta;", "Θ"},
            {""},
            {""},
-#line 1266 "HTMLCharacterReference.gperf"
+#line 1267 "HTMLCharacterReference.gperf"
            {"kfr;", "𝔨"},
            {""},
            {""},
            {""},
-#line 387 "HTMLCharacterReference.gperf"
+#line 388 "HTMLCharacterReference.gperf"
            {"NotSquareSuperset;", "⊐̸"},
            {""},
            {""},
            {""},
            {""},
-#line 388 "HTMLCharacterReference.gperf"
+#line 389 "HTMLCharacterReference.gperf"
            {"NotSquareSupersetEqual;", "⋣"},
            {""},
-#line 1287 "HTMLCharacterReference.gperf"
-           {"laquo", "«"},
 #line 1288 "HTMLCharacterReference.gperf"
+           {"laquo", "«"},
+#line 1289 "HTMLCharacterReference.gperf"
            {"laquo;", "«"},
-#line 871 "HTMLCharacterReference.gperf"
+#line 872 "HTMLCharacterReference.gperf"
            {"circeq;", "≗"},
            {""},
            {""},
@@ -3716,28 +3717,28 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1524 "HTMLCharacterReference.gperf"
+#line 1525 "HTMLCharacterReference.gperf"
            {"ni;", "∋"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1525 "HTMLCharacterReference.gperf"
+#line 1526 "HTMLCharacterReference.gperf"
            {"nis;", "⋼"},
-#line 300 "HTMLCharacterReference.gperf"
+#line 301 "HTMLCharacterReference.gperf"
            {"Leftarrow;", "⇐"},
            {""},
            {""},
            {""},
-#line 981 "HTMLCharacterReference.gperf"
+#line 982 "HTMLCharacterReference.gperf"
            {"dotminus;", "∸"},
-#line 1461 "HTMLCharacterReference.gperf"
+#line 1462 "HTMLCharacterReference.gperf"
            {"mscr;", "𝓂"},
            {""},
            {""},
            {""},
-#line 1432 "HTMLCharacterReference.gperf"
+#line 1433 "HTMLCharacterReference.gperf"
            {"map;", "↦"},
            {""},
            {""},
@@ -3749,52 +3750,52 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1325 "HTMLCharacterReference.gperf"
+#line 1326 "HTMLCharacterReference.gperf"
            {"leftleftarrows;", "⇇"},
            {""},
-#line 1399 "HTMLCharacterReference.gperf"
+#line 1400 "HTMLCharacterReference.gperf"
            {"lsaquo;", "‹"},
            {""},
-#line 1527 "HTMLCharacterReference.gperf"
+#line 1528 "HTMLCharacterReference.gperf"
            {"niv;", "∋"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 264 "HTMLCharacterReference.gperf"
+#line 265 "HTMLCharacterReference.gperf"
            {"Kscr;", "𝒦"},
            {""},
            {""},
            {""},
            {""},
-#line 362 "HTMLCharacterReference.gperf"
+#line 363 "HTMLCharacterReference.gperf"
            {"NotGreaterLess;", "≹"},
            {""},
-#line 119 "HTMLCharacterReference.gperf"
+#line 120 "HTMLCharacterReference.gperf"
            {"DoubleContourIntegral;", "∯"},
            {""},
-#line 75 "HTMLCharacterReference.gperf"
+#line 76 "HTMLCharacterReference.gperf"
            {"Chi;", "Χ"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 514 "HTMLCharacterReference.gperf"
+#line 515 "HTMLCharacterReference.gperf"
            {"ShortDownArrow;", "↓"},
-#line 736 "HTMLCharacterReference.gperf"
+#line 737 "HTMLCharacterReference.gperf"
            {"bdquo;", "„"},
            {""},
            {""},
-#line 808 "HTMLCharacterReference.gperf"
+#line 809 "HTMLCharacterReference.gperf"
            {"boxminus;", "⊟"},
-#line 548 "HTMLCharacterReference.gperf"
+#line 549 "HTMLCharacterReference.gperf"
            {"TScy;", "Ц"},
-#line 1541 "HTMLCharacterReference.gperf"
+#line 1542 "HTMLCharacterReference.gperf"
            {"nlsim;", "≴"},
            {""},
-#line 131 "HTMLCharacterReference.gperf"
+#line 132 "HTMLCharacterReference.gperf"
            {"DoubleUpDownArrow;", "⇕"},
            {""},
            {""},
@@ -3802,34 +3803,34 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1528 "HTMLCharacterReference.gperf"
+#line 1529 "HTMLCharacterReference.gperf"
            {"njcy;", "њ"},
-#line 1495 "HTMLCharacterReference.gperf"
+#line 1496 "HTMLCharacterReference.gperf"
            {"ncong;", "≇"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2190 "HTMLCharacterReference.gperf"
+#line 2191 "HTMLCharacterReference.gperf"
            {"wedbar;", "⩟"},
            {""},
            {""},
-#line 2245 "HTMLCharacterReference.gperf"
+#line 2246 "HTMLCharacterReference.gperf"
            {"zhcy;", "ж"},
-#line 56 "HTMLCharacterReference.gperf"
+#line 57 "HTMLCharacterReference.gperf"
            {"Breve;", "˘"},
            {""},
-#line 1110 "HTMLCharacterReference.gperf"
+#line 1111 "HTMLCharacterReference.gperf"
            {"gE;", "≧"},
-#line 1542 "HTMLCharacterReference.gperf"
+#line 1543 "HTMLCharacterReference.gperf"
            {"nlt;", "≮"},
-#line 2039 "HTMLCharacterReference.gperf"
+#line 2040 "HTMLCharacterReference.gperf"
            {"tbrk;", "⎴"},
            {""},
-#line 729 "HTMLCharacterReference.gperf"
+#line 730 "HTMLCharacterReference.gperf"
            {"barvee;", "⊽"},
-#line 1276 "HTMLCharacterReference.gperf"
+#line 1277 "HTMLCharacterReference.gperf"
            {"lE;", "≦"},
            {""},
            {""},
@@ -3841,62 +3842,62 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1118 "HTMLCharacterReference.gperf"
+#line 1119 "HTMLCharacterReference.gperf"
            {"gcy;", "г"},
            {""},
-#line 250 "HTMLCharacterReference.gperf"
+#line 251 "HTMLCharacterReference.gperf"
            {"Jcirc;", "Ĵ"},
            {""},
            {""},
-#line 1313 "HTMLCharacterReference.gperf"
+#line 1314 "HTMLCharacterReference.gperf"
            {"lcy;", "л"},
            {""},
            {""},
            {""},
            {""},
-#line 1014 "HTMLCharacterReference.gperf"
+#line 1015 "HTMLCharacterReference.gperf"
            {"ecy;", "э"},
            {""},
            {""},
            {""},
-#line 596 "HTMLCharacterReference.gperf"
+#line 597 "HTMLCharacterReference.gperf"
            {"Uparrow;", "⇑"},
            {""},
-#line 931 "HTMLCharacterReference.gperf"
+#line 932 "HTMLCharacterReference.gperf"
            {"curvearrowleft;", "↶"},
-#line 1574 "HTMLCharacterReference.gperf"
+#line 1575 "HTMLCharacterReference.gperf"
            {"nrtri;", "⋫"},
            {""},
            {""},
-#line 664 "HTMLCharacterReference.gperf"
+#line 665 "HTMLCharacterReference.gperf"
            {"acy;", "а"},
            {""},
            {""},
            {""},
            {""},
-#line 1255 "HTMLCharacterReference.gperf"
+#line 1256 "HTMLCharacterReference.gperf"
            {"jcy;", "й"},
-#line 2235 "HTMLCharacterReference.gperf"
+#line 2236 "HTMLCharacterReference.gperf"
            {"yucy;", "ю"},
            {""},
-#line 1127 "HTMLCharacterReference.gperf"
+#line 1128 "HTMLCharacterReference.gperf"
            {"gesdot;", "⪀"},
            {""},
-#line 575 "HTMLCharacterReference.gperf"
+#line 576 "HTMLCharacterReference.gperf"
            {"Ucy;", "У"},
            {""},
-#line 1056 "HTMLCharacterReference.gperf"
+#line 1057 "HTMLCharacterReference.gperf"
            {"erDot;", "≓"},
-#line 1337 "HTMLCharacterReference.gperf"
+#line 1338 "HTMLCharacterReference.gperf"
            {"lesdot;", "⩿"},
            {""},
            {""},
            {""},
-#line 1531 "HTMLCharacterReference.gperf"
+#line 1532 "HTMLCharacterReference.gperf"
            {"nlarr;", "↚"},
            {""},
            {""},
-#line 2066 "HTMLCharacterReference.gperf"
+#line 2067 "HTMLCharacterReference.gperf"
            {"top;", "⊤"},
            {""},
            {""},
@@ -3904,12 +3905,12 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1177 "HTMLCharacterReference.gperf"
+#line 1178 "HTMLCharacterReference.gperf"
            {"harrw;", "↭"},
            {""},
-#line 2207 "HTMLCharacterReference.gperf"
+#line 2208 "HTMLCharacterReference.gperf"
            {"xi;", "ξ"},
-#line 948 "HTMLCharacterReference.gperf"
+#line 949 "HTMLCharacterReference.gperf"
            {"dcy;", "д"},
            {""},
            {""},
@@ -3917,13 +3918,13 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 582 "HTMLCharacterReference.gperf"
-           {"UnderBrace;", "⏟"},
-#line 1626 "HTMLCharacterReference.gperf"
-           {"nvrArr;", "⤃"},
 #line 583 "HTMLCharacterReference.gperf"
+           {"UnderBrace;", "⏟"},
+#line 1627 "HTMLCharacterReference.gperf"
+           {"nvrArr;", "⤃"},
+#line 584 "HTMLCharacterReference.gperf"
            {"UnderBracket;", "⎵"},
-#line 1339 "HTMLCharacterReference.gperf"
+#line 1340 "HTMLCharacterReference.gperf"
            {"lesdotor;", "⪃"},
            {""},
            {""},
@@ -3931,9 +3932,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 511 "HTMLCharacterReference.gperf"
+#line 512 "HTMLCharacterReference.gperf"
            {"Scirc;", "Ŝ"},
-#line 1341 "HTMLCharacterReference.gperf"
+#line 1342 "HTMLCharacterReference.gperf"
            {"lesges;", "⪓"},
            {""},
            {""},
@@ -3941,13 +3942,13 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 750 "HTMLCharacterReference.gperf"
+#line 751 "HTMLCharacterReference.gperf"
            {"bigoplus;", "⨁"},
            {""},
            {""},
-#line 1476 "HTMLCharacterReference.gperf"
+#line 1477 "HTMLCharacterReference.gperf"
            {"nVdash;", "⊮"},
-#line 1770 "HTMLCharacterReference.gperf"
+#line 1771 "HTMLCharacterReference.gperf"
            {"quatint;", "⨖"},
            {""},
            {""},
@@ -3955,25 +3956,25 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1593 "HTMLCharacterReference.gperf"
-           {"nsubseteq;", "⊈"},
 #line 1594 "HTMLCharacterReference.gperf"
+           {"nsubseteq;", "⊈"},
+#line 1595 "HTMLCharacterReference.gperf"
            {"nsubseteqq;", "⫅̸"},
            {""},
            {""},
            {""},
-#line 71 "HTMLCharacterReference.gperf"
+#line 72 "HTMLCharacterReference.gperf"
            {"Cdot;", "Ċ"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 913 "HTMLCharacterReference.gperf"
+#line 914 "HTMLCharacterReference.gperf"
            {"cuesc;", "⋟"},
            {""},
            {""},
-#line 1072 "HTMLCharacterReference.gperf"
+#line 1073 "HTMLCharacterReference.gperf"
            {"fcy;", "ф"},
            {""},
            {""},
@@ -3982,28 +3983,28 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 761 "HTMLCharacterReference.gperf"
+#line 762 "HTMLCharacterReference.gperf"
            {"blacksquare;", "▪"},
            {""},
            {""},
-#line 226 "HTMLCharacterReference.gperf"
-           {"Icirc", "Î"},
 #line 227 "HTMLCharacterReference.gperf"
+           {"Icirc", "Î"},
+#line 228 "HTMLCharacterReference.gperf"
            {"Icirc;", "Î"},
            {""},
            {""},
-#line 810 "HTMLCharacterReference.gperf"
+#line 811 "HTMLCharacterReference.gperf"
            {"boxtimes;", "⊠"},
            {""},
-#line 793 "HTMLCharacterReference.gperf"
+#line 794 "HTMLCharacterReference.gperf"
            {"boxVL;", "╣"},
            {""},
            {""},
-#line 2168 "HTMLCharacterReference.gperf"
+#line 2169 "HTMLCharacterReference.gperf"
            {"vcy;", "в"},
-#line 2056 "HTMLCharacterReference.gperf"
-           {"thorn", "þ"},
 #line 2057 "HTMLCharacterReference.gperf"
+           {"thorn", "þ"},
+#line 2058 "HTMLCharacterReference.gperf"
            {"thorn;", "þ"},
            {""},
            {""},
@@ -4012,7 +4013,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 502 "HTMLCharacterReference.gperf"
+#line 503 "HTMLCharacterReference.gperf"
            {"Rsh;", "↱"},
            {""},
            {""},
@@ -4022,26 +4023,26 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 375 "HTMLCharacterReference.gperf"
+#line 376 "HTMLCharacterReference.gperf"
            {"NotLessTilde;", "≴"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 735 "HTMLCharacterReference.gperf"
+#line 736 "HTMLCharacterReference.gperf"
            {"bcy;", "б"},
            {""},
-#line 403 "HTMLCharacterReference.gperf"
-           {"Ntilde", "Ñ"},
 #line 404 "HTMLCharacterReference.gperf"
+           {"Ntilde", "Ñ"},
+#line 405 "HTMLCharacterReference.gperf"
            {"Ntilde;", "Ñ"},
            {""},
            {""},
-#line 707 "HTMLCharacterReference.gperf"
+#line 708 "HTMLCharacterReference.gperf"
            {"apid;", "≋"},
            {""},
-#line 1507 "HTMLCharacterReference.gperf"
+#line 1508 "HTMLCharacterReference.gperf"
            {"nesear;", "⤨"},
            {""},
            {""},
@@ -4050,42 +4051,42 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1002 "HTMLCharacterReference.gperf"
+#line 1003 "HTMLCharacterReference.gperf"
            {"dzcy;", "џ"},
            {""},
-#line 1414 "HTMLCharacterReference.gperf"
+#line 1415 "HTMLCharacterReference.gperf"
            {"lthree;", "⋋"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 22 "HTMLCharacterReference.gperf"
+#line 23 "HTMLCharacterReference.gperf"
            {"AMP", "&"},
            {""},
            {""},
            {""},
-#line 1437 "HTMLCharacterReference.gperf"
+#line 1438 "HTMLCharacterReference.gperf"
            {"marker;", "▮"},
            {""},
-#line 23 "HTMLCharacterReference.gperf"
+#line 24 "HTMLCharacterReference.gperf"
            {"AMP;", "&"},
            {""},
-#line 1771 "HTMLCharacterReference.gperf"
+#line 1772 "HTMLCharacterReference.gperf"
            {"quest;", "?"},
            {""},
            {""},
-#line 1533 "HTMLCharacterReference.gperf"
+#line 1534 "HTMLCharacterReference.gperf"
            {"nle;", "≰"},
-#line 57 "HTMLCharacterReference.gperf"
+#line 58 "HTMLCharacterReference.gperf"
            {"Bscr;", "ℬ"},
-#line 2209 "HTMLCharacterReference.gperf"
+#line 2210 "HTMLCharacterReference.gperf"
            {"xlarr;", "⟵"},
-#line 1023 "HTMLCharacterReference.gperf"
+#line 1024 "HTMLCharacterReference.gperf"
            {"egsdot;", "⪘"},
-#line 288 "HTMLCharacterReference.gperf"
+#line 289 "HTMLCharacterReference.gperf"
            {"LeftTee;", "⊣"},
-#line 1277 "HTMLCharacterReference.gperf"
+#line 1278 "HTMLCharacterReference.gperf"
            {"lEg;", "⪋"},
            {""},
            {""},
@@ -4095,16 +4096,16 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 962 "HTMLCharacterReference.gperf"
+#line 963 "HTMLCharacterReference.gperf"
            {"diamond;", "⋄"},
-#line 2045 "HTMLCharacterReference.gperf"
+#line 2046 "HTMLCharacterReference.gperf"
            {"tfr;", "𝔱"},
-#line 92 "HTMLCharacterReference.gperf"
+#line 93 "HTMLCharacterReference.gperf"
            {"Cscr;", "𝒞"},
            {""},
            {""},
            {""},
-#line 63 "HTMLCharacterReference.gperf"
+#line 64 "HTMLCharacterReference.gperf"
            {"Cap;", "⋒"},
            {""},
            {""},
@@ -4112,52 +4113,52 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2221 "HTMLCharacterReference.gperf"
+#line 2222 "HTMLCharacterReference.gperf"
            {"xutri;", "△"},
            {""},
            {""},
-#line 179 "HTMLCharacterReference.gperf"
+#line 180 "HTMLCharacterReference.gperf"
            {"Fcy;", "Ф"},
-#line 1181 "HTMLCharacterReference.gperf"
+#line 1182 "HTMLCharacterReference.gperf"
            {"heartsuit;", "♥"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 43 "HTMLCharacterReference.gperf"
-           {"Atilde", "Ã"},
 #line 44 "HTMLCharacterReference.gperf"
+           {"Atilde", "Ã"},
+#line 45 "HTMLCharacterReference.gperf"
            {"Atilde;", "Ã"},
            {""},
-#line 1203 "HTMLCharacterReference.gperf"
+#line 1204 "HTMLCharacterReference.gperf"
            {"icy;", "и"},
            {""},
            {""},
-#line 1196 "HTMLCharacterReference.gperf"
+#line 1197 "HTMLCharacterReference.gperf"
            {"hybull;", "⁃"},
            {""},
            {""},
            {""},
-#line 1555 "HTMLCharacterReference.gperf"
+#line 1556 "HTMLCharacterReference.gperf"
            {"notni;", "∌"},
            {""},
            {""},
            {""},
-#line 879 "HTMLCharacterReference.gperf"
+#line 880 "HTMLCharacterReference.gperf"
            {"cire;", "≗"},
-#line 190 "HTMLCharacterReference.gperf"
+#line 191 "HTMLCharacterReference.gperf"
            {"Gamma;", "Γ"},
            {""},
            {""},
            {""},
-#line 2071 "HTMLCharacterReference.gperf"
+#line 2072 "HTMLCharacterReference.gperf"
            {"tosa;", "⤩"},
-#line 1275 "HTMLCharacterReference.gperf"
+#line 1276 "HTMLCharacterReference.gperf"
            {"lBarr;", "⤎"},
            {""},
            {""},
-#line 1496 "HTMLCharacterReference.gperf"
+#line 1497 "HTMLCharacterReference.gperf"
            {"ncongdot;", "⩭̸"},
            {""},
            {""},
@@ -4168,10 +4169,10 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 639 "HTMLCharacterReference.gperf"
+#line 640 "HTMLCharacterReference.gperf"
            {"Ycy;", "Ы"},
            {""},
-#line 1004 "HTMLCharacterReference.gperf"
+#line 1005 "HTMLCharacterReference.gperf"
            {"eDDot;", "⩷"},
            {""},
            {""},
@@ -4179,67 +4180,67 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 966 "HTMLCharacterReference.gperf"
+#line 967 "HTMLCharacterReference.gperf"
            {"digamma;", "ϝ"},
            {""},
            {""},
-#line 1272 "HTMLCharacterReference.gperf"
+#line 1273 "HTMLCharacterReference.gperf"
            {"lAarr;", "⇚"},
            {""},
            {""},
            {""},
-#line 155 "HTMLCharacterReference.gperf"
-           {"Ecirc", "Ê"},
 #line 156 "HTMLCharacterReference.gperf"
+           {"Ecirc", "Ê"},
+#line 157 "HTMLCharacterReference.gperf"
            {"Ecirc;", "Ê"},
            {""},
            {""},
            {""},
-#line 1970 "HTMLCharacterReference.gperf"
+#line 1971 "HTMLCharacterReference.gperf"
            {"star;", "☆"},
-#line 1017 "HTMLCharacterReference.gperf"
+#line 1018 "HTMLCharacterReference.gperf"
            {"efDot;", "≒"},
            {""},
            {""},
            {""},
-#line 1273 "HTMLCharacterReference.gperf"
+#line 1274 "HTMLCharacterReference.gperf"
            {"lArr;", "⇐"},
-#line 2201 "HTMLCharacterReference.gperf"
+#line 2202 "HTMLCharacterReference.gperf"
            {"xcirc;", "◯"},
            {""},
            {""},
            {""},
            {""},
-#line 1135 "HTMLCharacterReference.gperf"
+#line 1136 "HTMLCharacterReference.gperf"
            {"gimel;", "ℷ"},
            {""},
            {""},
            {""},
-#line 1948 "HTMLCharacterReference.gperf"
+#line 1949 "HTMLCharacterReference.gperf"
            {"spar;", "∥"},
-#line 516 "HTMLCharacterReference.gperf"
+#line 517 "HTMLCharacterReference.gperf"
            {"ShortRightArrow;", "→"},
            {""},
            {""},
-#line 275 "HTMLCharacterReference.gperf"
+#line 276 "HTMLCharacterReference.gperf"
            {"Lcy;", "Л"},
            {""},
-#line 194 "HTMLCharacterReference.gperf"
+#line 195 "HTMLCharacterReference.gperf"
            {"Gcirc;", "Ĝ"},
            {""},
            {""},
-#line 2001 "HTMLCharacterReference.gperf"
+#line 2002 "HTMLCharacterReference.gperf"
            {"sum;", "∑"},
-#line 2148 "HTMLCharacterReference.gperf"
+#line 2149 "HTMLCharacterReference.gperf"
            {"vBar;", "⫨"},
            {""},
-#line 963 "HTMLCharacterReference.gperf"
+#line 964 "HTMLCharacterReference.gperf"
            {"diamondsuit;", "♦"},
-#line 239 "HTMLCharacterReference.gperf"
+#line 240 "HTMLCharacterReference.gperf"
            {"Intersection;", "⋂"},
            {""},
            {""},
-#line 2149 "HTMLCharacterReference.gperf"
+#line 2150 "HTMLCharacterReference.gperf"
            {"vBarv;", "⫩"},
            {""},
            {""},
@@ -4250,7 +4251,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1614 "HTMLCharacterReference.gperf"
+#line 1615 "HTMLCharacterReference.gperf"
            {"numsp;", " "},
            {""},
            {""},
@@ -4260,64 +4261,64 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 938 "HTMLCharacterReference.gperf"
+#line 939 "HTMLCharacterReference.gperf"
            {"dArr;", "⇓"},
            {""},
-#line 1458 "HTMLCharacterReference.gperf"
+#line 1459 "HTMLCharacterReference.gperf"
            {"models;", "⊧"},
-#line 1128 "HTMLCharacterReference.gperf"
+#line 1129 "HTMLCharacterReference.gperf"
            {"gesdoto;", "⪂"},
-#line 2009 "HTMLCharacterReference.gperf"
+#line 2010 "HTMLCharacterReference.gperf"
            {"sup;", "⊃"},
-#line 1170 "HTMLCharacterReference.gperf"
+#line 1171 "HTMLCharacterReference.gperf"
            {"hArr;", "⇔"},
            {""},
-#line 1769 "HTMLCharacterReference.gperf"
+#line 1770 "HTMLCharacterReference.gperf"
            {"quaternions;", "ℍ"},
-#line 1338 "HTMLCharacterReference.gperf"
+#line 1339 "HTMLCharacterReference.gperf"
            {"lesdoto;", "⪁"},
-#line 1512 "HTMLCharacterReference.gperf"
+#line 1513 "HTMLCharacterReference.gperf"
            {"ngE;", "≧̸"},
            {""},
            {""},
            {""},
            {""},
-#line 2003 "HTMLCharacterReference.gperf"
-           {"sup1", "¹"},
 #line 2004 "HTMLCharacterReference.gperf"
+           {"sup1", "¹"},
+#line 2005 "HTMLCharacterReference.gperf"
            {"sup1;", "¹"},
-#line 1965 "HTMLCharacterReference.gperf"
+#line 1966 "HTMLCharacterReference.gperf"
            {"srarr;", "→"},
            {""},
            {""},
-#line 2005 "HTMLCharacterReference.gperf"
-           {"sup2", "²"},
 #line 2006 "HTMLCharacterReference.gperf"
+           {"sup2", "²"},
+#line 2007 "HTMLCharacterReference.gperf"
            {"sup2;", "²"},
            {""},
            {""},
            {""},
-#line 2007 "HTMLCharacterReference.gperf"
-           {"sup3", "³"},
 #line 2008 "HTMLCharacterReference.gperf"
+           {"sup3", "³"},
+#line 2009 "HTMLCharacterReference.gperf"
            {"sup3;", "³"},
            {""},
            {""},
            {""},
-#line 326 "HTMLCharacterReference.gperf"
+#line 327 "HTMLCharacterReference.gperf"
            {"Mcy;", "М"},
            {""},
-#line 2032 "HTMLCharacterReference.gperf"
+#line 2033 "HTMLCharacterReference.gperf"
            {"swarr;", "↙"},
            {""},
            {""},
-#line 130 "HTMLCharacterReference.gperf"
+#line 131 "HTMLCharacterReference.gperf"
            {"DoubleUpArrow;", "⇑"},
            {""},
            {""},
-#line 66 "HTMLCharacterReference.gperf"
+#line 67 "HTMLCharacterReference.gperf"
            {"Ccaron;", "Č"},
-#line 1563 "HTMLCharacterReference.gperf"
+#line 1564 "HTMLCharacterReference.gperf"
            {"npolint;", "⨔"},
            {""},
            {""},
@@ -4327,7 +4328,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1386 "HTMLCharacterReference.gperf"
+#line 1387 "HTMLCharacterReference.gperf"
            {"lowast;", "∗"},
            {""},
            {""},
@@ -4347,21 +4348,21 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 385 "HTMLCharacterReference.gperf"
+#line 386 "HTMLCharacterReference.gperf"
            {"NotSquareSubset;", "⊏̸"},
            {""},
            {""},
            {""},
-#line 2147 "HTMLCharacterReference.gperf"
+#line 2148 "HTMLCharacterReference.gperf"
            {"vArr;", "⇕"},
-#line 386 "HTMLCharacterReference.gperf"
+#line 387 "HTMLCharacterReference.gperf"
            {"NotSquareSubsetEqual;", "⋢"},
            {""},
            {""},
            {""},
-#line 1536 "HTMLCharacterReference.gperf"
-           {"nleq;", "≰"},
 #line 1537 "HTMLCharacterReference.gperf"
+           {"nleq;", "≰"},
+#line 1538 "HTMLCharacterReference.gperf"
            {"nleqq;", "≦̸"},
            {""},
            {""},
@@ -4379,12 +4380,12 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 206 "HTMLCharacterReference.gperf"
+#line 207 "HTMLCharacterReference.gperf"
            {"GreaterTilde;", "≳"},
-#line 542 "HTMLCharacterReference.gperf"
+#line 543 "HTMLCharacterReference.gperf"
            {"SupersetEqual;", "⊇"},
            {""},
-#line 883 "HTMLCharacterReference.gperf"
+#line 884 "HTMLCharacterReference.gperf"
            {"clubs;", "♣"},
            {""},
            {""},
@@ -4398,18 +4399,18 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 104 "HTMLCharacterReference.gperf"
+#line 105 "HTMLCharacterReference.gperf"
            {"Dcy;", "Д"},
            {""},
            {""},
            {""},
-#line 72 "HTMLCharacterReference.gperf"
+#line 73 "HTMLCharacterReference.gperf"
            {"Cedilla;", "¸"},
-#line 658 "HTMLCharacterReference.gperf"
+#line 659 "HTMLCharacterReference.gperf"
            {"acE;", "∾̳"},
            {""},
            {""},
-#line 623 "HTMLCharacterReference.gperf"
+#line 624 "HTMLCharacterReference.gperf"
            {"Vvdash;", "⊪"},
            {""},
            {""},
@@ -4422,26 +4423,26 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 534 "HTMLCharacterReference.gperf"
+#line 535 "HTMLCharacterReference.gperf"
            {"Succeeds;", "≻"},
-#line 1532 "HTMLCharacterReference.gperf"
+#line 1533 "HTMLCharacterReference.gperf"
            {"nldr;", "‥"},
            {""},
            {""},
            {""},
            {""},
-#line 257 "HTMLCharacterReference.gperf"
+#line 258 "HTMLCharacterReference.gperf"
            {"KHcy;", "Х"},
-#line 599 "HTMLCharacterReference.gperf"
+#line 600 "HTMLCharacterReference.gperf"
            {"UpperRightArrow;", "↗"},
            {""},
            {""},
            {""},
            {""},
-#line 1213 "HTMLCharacterReference.gperf"
+#line 1214 "HTMLCharacterReference.gperf"
            {"iiint;", "∭"},
            {""},
-#line 422 "HTMLCharacterReference.gperf"
+#line 423 "HTMLCharacterReference.gperf"
            {"Or;", "⩔"},
            {""},
            {""},
@@ -4455,31 +4456,31 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 210 "HTMLCharacterReference.gperf"
+#line 211 "HTMLCharacterReference.gperf"
            {"Hacek;", "ˇ"},
            {""},
            {""},
-#line 251 "HTMLCharacterReference.gperf"
+#line 252 "HTMLCharacterReference.gperf"
            {"Jcy;", "Й"},
-#line 1083 "HTMLCharacterReference.gperf"
+#line 1084 "HTMLCharacterReference.gperf"
            {"fnof;", "ƒ"},
            {""},
-#line 191 "HTMLCharacterReference.gperf"
+#line 192 "HTMLCharacterReference.gperf"
            {"Gammad;", "Ϝ"},
            {""},
            {""},
-#line 2065 "HTMLCharacterReference.gperf"
+#line 2066 "HTMLCharacterReference.gperf"
            {"toea;", "⤨"},
            {""},
            {""},
            {""},
-#line 1961 "HTMLCharacterReference.gperf"
+#line 1962 "HTMLCharacterReference.gperf"
            {"squ;", "□"},
-#line 27 "HTMLCharacterReference.gperf"
-           {"Acirc", "Â"},
 #line 28 "HTMLCharacterReference.gperf"
+           {"Acirc", "Â"},
+#line 29 "HTMLCharacterReference.gperf"
            {"Acirc;", "Â"},
-#line 2220 "HTMLCharacterReference.gperf"
+#line 2221 "HTMLCharacterReference.gperf"
            {"xuplus;", "⨄"},
            {""},
            {""},
@@ -4495,17 +4496,17 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 94 "HTMLCharacterReference.gperf"
+#line 95 "HTMLCharacterReference.gperf"
            {"CupCap;", "≍"},
            {""},
            {""},
            {""},
            {""},
-#line 2046 "HTMLCharacterReference.gperf"
+#line 2047 "HTMLCharacterReference.gperf"
            {"there4;", "∴"},
            {""},
            {""},
-#line 1344 "HTMLCharacterReference.gperf"
+#line 1345 "HTMLCharacterReference.gperf"
            {"lesseqgtr;", "⋚"},
            {""},
            {""},
@@ -4524,124 +4525,124 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 439 "HTMLCharacterReference.gperf"
+#line 440 "HTMLCharacterReference.gperf"
            {"Pi;", "Π"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1422 "HTMLCharacterReference.gperf"
+#line 1423 "HTMLCharacterReference.gperf"
            {"lurdshar;", "⥊"},
-#line 1148 "HTMLCharacterReference.gperf"
+#line 1149 "HTMLCharacterReference.gperf"
            {"gopf;", "𝕘"},
            {""},
            {""},
            {""},
-#line 512 "HTMLCharacterReference.gperf"
+#line 513 "HTMLCharacterReference.gperf"
            {"Scy;", "С"},
-#line 1383 "HTMLCharacterReference.gperf"
+#line 1384 "HTMLCharacterReference.gperf"
            {"lopf;", "𝕝"},
            {""},
-#line 975 "HTMLCharacterReference.gperf"
+#line 976 "HTMLCharacterReference.gperf"
            {"dlcrop;", "⌍"},
            {""},
            {""},
-#line 1039 "HTMLCharacterReference.gperf"
+#line 1040 "HTMLCharacterReference.gperf"
            {"eopf;", "𝕖"},
            {""},
            {""},
            {""},
            {""},
-#line 897 "HTMLCharacterReference.gperf"
+#line 898 "HTMLCharacterReference.gperf"
            {"copf;", "𝕔"},
            {""},
            {""},
            {""},
            {""},
-#line 702 "HTMLCharacterReference.gperf"
+#line 703 "HTMLCharacterReference.gperf"
            {"aopf;", "𝕒"},
-#line 1911 "HTMLCharacterReference.gperf"
+#line 1912 "HTMLCharacterReference.gperf"
            {"sharp;", "♯"},
-#line 759 "HTMLCharacterReference.gperf"
+#line 760 "HTMLCharacterReference.gperf"
            {"bkarow;", "⤍"},
            {""},
            {""},
-#line 1258 "HTMLCharacterReference.gperf"
+#line 1259 "HTMLCharacterReference.gperf"
            {"jopf;", "𝕛"},
            {""},
            {""},
-#line 361 "HTMLCharacterReference.gperf"
+#line 362 "HTMLCharacterReference.gperf"
            {"NotGreaterGreater;", "≫̸"},
-#line 1909 "HTMLCharacterReference.gperf"
+#line 1910 "HTMLCharacterReference.gperf"
            {"sfr;", "𝔰"},
-#line 588 "HTMLCharacterReference.gperf"
+#line 589 "HTMLCharacterReference.gperf"
            {"Uopf;", "𝕌"},
            {""},
-#line 974 "HTMLCharacterReference.gperf"
+#line 975 "HTMLCharacterReference.gperf"
            {"dlcorn;", "⌞"},
-#line 113 "HTMLCharacterReference.gperf"
+#line 114 "HTMLCharacterReference.gperf"
            {"Diamond;", "⋄"},
            {""},
            {""},
-#line 271 "HTMLCharacterReference.gperf"
+#line 272 "HTMLCharacterReference.gperf"
            {"Laplacetrf;", "ℒ"},
            {""},
            {""},
-#line 429 "HTMLCharacterReference.gperf"
-           {"Ouml", "Ö"},
 #line 430 "HTMLCharacterReference.gperf"
+           {"Ouml", "Ö"},
+#line 431 "HTMLCharacterReference.gperf"
            {"Ouml;", "Ö"},
            {""},
-#line 2214 "HTMLCharacterReference.gperf"
+#line 2215 "HTMLCharacterReference.gperf"
            {"xoplus;", "⨁"},
            {""},
            {""},
            {""},
-#line 1485 "HTMLCharacterReference.gperf"
+#line 1486 "HTMLCharacterReference.gperf"
            {"natur;", "♮"},
-#line 543 "HTMLCharacterReference.gperf"
+#line 544 "HTMLCharacterReference.gperf"
            {"Supset;", "⋑"},
            {""},
-#line 228 "HTMLCharacterReference.gperf"
+#line 229 "HTMLCharacterReference.gperf"
            {"Icy;", "И"},
-#line 977 "HTMLCharacterReference.gperf"
+#line 978 "HTMLCharacterReference.gperf"
            {"dopf;", "𝕕"},
            {""},
-#line 2219 "HTMLCharacterReference.gperf"
+#line 2220 "HTMLCharacterReference.gperf"
            {"xsqcup;", "⨆"},
            {""},
-#line 1055 "HTMLCharacterReference.gperf"
+#line 1056 "HTMLCharacterReference.gperf"
            {"eqvparsl;", "⧥"},
-#line 1191 "HTMLCharacterReference.gperf"
+#line 1192 "HTMLCharacterReference.gperf"
            {"hopf;", "𝕙"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 298 "HTMLCharacterReference.gperf"
+#line 299 "HTMLCharacterReference.gperf"
            {"LeftVector;", "↼"},
-#line 1967 "HTMLCharacterReference.gperf"
+#line 1968 "HTMLCharacterReference.gperf"
            {"ssetmn;", "∖"},
-#line 1632 "HTMLCharacterReference.gperf"
+#line 1633 "HTMLCharacterReference.gperf"
            {"nwarrow;", "↖"},
            {""},
            {""},
-#line 359 "HTMLCharacterReference.gperf"
+#line 360 "HTMLCharacterReference.gperf"
            {"NotGreaterEqual;", "≱"},
            {""},
            {""},
-#line 1498 "HTMLCharacterReference.gperf"
+#line 1499 "HTMLCharacterReference.gperf"
            {"ncy;", "н"},
            {""},
-#line 2020 "HTMLCharacterReference.gperf"
+#line 2021 "HTMLCharacterReference.gperf"
            {"supne;", "⊋"},
            {""},
            {""},
            {""},
            {""},
-#line 2191 "HTMLCharacterReference.gperf"
+#line 2192 "HTMLCharacterReference.gperf"
            {"wedge;", "∧"},
            {""},
            {""},
@@ -4653,148 +4654,148 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1212 "HTMLCharacterReference.gperf"
+#line 1213 "HTMLCharacterReference.gperf"
            {"iiiint;", "⨌"},
            {""},
            {""},
-#line 457 "HTMLCharacterReference.gperf"
+#line 458 "HTMLCharacterReference.gperf"
            {"Qopf;", "ℚ"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1974 "HTMLCharacterReference.gperf"
+#line 1975 "HTMLCharacterReference.gperf"
            {"strns;", "¯"},
-#line 2072 "HTMLCharacterReference.gperf"
+#line 2073 "HTMLCharacterReference.gperf"
            {"tprime;", "‴"},
            {""},
            {""},
-#line 1084 "HTMLCharacterReference.gperf"
+#line 1085 "HTMLCharacterReference.gperf"
            {"fopf;", "𝕗"},
            {""},
            {""},
            {""},
-#line 647 "HTMLCharacterReference.gperf"
+#line 648 "HTMLCharacterReference.gperf"
            {"Zcy;", "З"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2195 "HTMLCharacterReference.gperf"
+#line 2196 "HTMLCharacterReference.gperf"
            {"wopf;", "𝕨"},
            {""},
            {""},
-#line 895 "HTMLCharacterReference.gperf"
+#line 896 "HTMLCharacterReference.gperf"
            {"congdot;", "⩭"},
            {""},
            {""},
-#line 624 "HTMLCharacterReference.gperf"
+#line 625 "HTMLCharacterReference.gperf"
            {"Wcirc;", "Ŵ"},
            {""},
            {""},
            {""},
-#line 2180 "HTMLCharacterReference.gperf"
+#line 2181 "HTMLCharacterReference.gperf"
            {"vopf;", "𝕧"},
-#line 784 "HTMLCharacterReference.gperf"
+#line 785 "HTMLCharacterReference.gperf"
            {"boxHU;", "╩"},
-#line 1575 "HTMLCharacterReference.gperf"
+#line 1576 "HTMLCharacterReference.gperf"
            {"nrtrie;", "⋭"},
-#line 749 "HTMLCharacterReference.gperf"
+#line 750 "HTMLCharacterReference.gperf"
            {"bigodot;", "⨀"},
            {""},
            {""},
-#line 185 "HTMLCharacterReference.gperf"
+#line 186 "HTMLCharacterReference.gperf"
            {"Fouriertrf;", "ℱ"},
            {""},
            {""},
            {""},
            {""},
-#line 1215 "HTMLCharacterReference.gperf"
+#line 1216 "HTMLCharacterReference.gperf"
            {"iiota;", "℩"},
            {""},
            {""},
-#line 1280 "HTMLCharacterReference.gperf"
+#line 1281 "HTMLCharacterReference.gperf"
            {"laemptyv;", "⦴"},
-#line 1283 "HTMLCharacterReference.gperf"
+#line 1284 "HTMLCharacterReference.gperf"
            {"lang;", "⟨"},
            {""},
-#line 698 "HTMLCharacterReference.gperf"
+#line 699 "HTMLCharacterReference.gperf"
            {"angsph;", "∢"},
            {""},
            {""},
-#line 133 "HTMLCharacterReference.gperf"
+#line 134 "HTMLCharacterReference.gperf"
            {"DownArrow;", "↓"},
-#line 969 "HTMLCharacterReference.gperf"
-           {"divide", "÷"},
 #line 970 "HTMLCharacterReference.gperf"
+           {"divide", "÷"},
+#line 971 "HTMLCharacterReference.gperf"
            {"divide;", "÷"},
            {""},
-#line 724 "HTMLCharacterReference.gperf"
+#line 725 "HTMLCharacterReference.gperf"
            {"backcong;", "≌"},
-#line 774 "HTMLCharacterReference.gperf"
+#line 775 "HTMLCharacterReference.gperf"
            {"bopf;", "𝕓"},
-#line 450 "HTMLCharacterReference.gperf"
+#line 451 "HTMLCharacterReference.gperf"
            {"Proportion;", "∷"},
            {""},
            {""},
-#line 1088 "HTMLCharacterReference.gperf"
+#line 1089 "HTMLCharacterReference.gperf"
            {"fpartint;", "⨍"},
-#line 1538 "HTMLCharacterReference.gperf"
+#line 1539 "HTMLCharacterReference.gperf"
            {"nleqslant;", "⩽̸"},
            {""},
-#line 1292 "HTMLCharacterReference.gperf"
+#line 1293 "HTMLCharacterReference.gperf"
            {"larrfs;", "⤝"},
-#line 134 "HTMLCharacterReference.gperf"
+#line 135 "HTMLCharacterReference.gperf"
            {"DownArrowBar;", "⤓"},
            {""},
-#line 1035 "HTMLCharacterReference.gperf"
+#line 1036 "HTMLCharacterReference.gperf"
            {"emsp;", " "},
            {""},
            {""},
-#line 676 "HTMLCharacterReference.gperf"
+#line 677 "HTMLCharacterReference.gperf"
            {"amp", "&"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 677 "HTMLCharacterReference.gperf"
+#line 678 "HTMLCharacterReference.gperf"
            {"amp;", "&"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 59 "HTMLCharacterReference.gperf"
+#line 60 "HTMLCharacterReference.gperf"
            {"CHcy;", "Ч"},
            {""},
-#line 1034 "HTMLCharacterReference.gperf"
+#line 1035 "HTMLCharacterReference.gperf"
            {"emsp14;", " "},
            {""},
            {""},
-#line 2047 "HTMLCharacterReference.gperf"
+#line 2048 "HTMLCharacterReference.gperf"
            {"therefore;", "∴"},
            {""},
-#line 2192 "HTMLCharacterReference.gperf"
+#line 2193 "HTMLCharacterReference.gperf"
            {"wedgeq;", "≙"},
-#line 1552 "HTMLCharacterReference.gperf"
+#line 1553 "HTMLCharacterReference.gperf"
            {"notinva;", "∉"},
            {""},
-#line 1067 "HTMLCharacterReference.gperf"
+#line 1068 "HTMLCharacterReference.gperf"
            {"excl;", "!"},
            {""},
            {""},
            {""},
            {""},
-#line 1908 "HTMLCharacterReference.gperf"
+#line 1909 "HTMLCharacterReference.gperf"
            {"sext;", "✶"},
            {""},
-#line 504 "HTMLCharacterReference.gperf"
+#line 505 "HTMLCharacterReference.gperf"
            {"SHCHcy;", "Щ"},
            {""},
-#line 468 "HTMLCharacterReference.gperf"
+#line 469 "HTMLCharacterReference.gperf"
            {"Rcy;", "Р"},
            {""},
            {""},
@@ -4807,32 +4808,32 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2019 "HTMLCharacterReference.gperf"
+#line 2020 "HTMLCharacterReference.gperf"
            {"supnE;", "⫌"},
            {""},
            {""},
-#line 157 "HTMLCharacterReference.gperf"
+#line 158 "HTMLCharacterReference.gperf"
            {"Ecy;", "Э"},
-#line 215 "HTMLCharacterReference.gperf"
+#line 216 "HTMLCharacterReference.gperf"
            {"Hopf;", "ℍ"},
            {""},
            {""},
            {""},
            {""},
-#line 183 "HTMLCharacterReference.gperf"
+#line 184 "HTMLCharacterReference.gperf"
            {"Fopf;", "𝔽"},
            {""},
            {""},
            {""},
            {""},
-#line 1904 "HTMLCharacterReference.gperf"
+#line 1905 "HTMLCharacterReference.gperf"
            {"semi;", ";"},
            {""},
-#line 1033 "HTMLCharacterReference.gperf"
+#line 1034 "HTMLCharacterReference.gperf"
            {"emsp13;", " "},
            {""},
            {""},
-#line 1237 "HTMLCharacterReference.gperf"
+#line 1238 "HTMLCharacterReference.gperf"
            {"iopf;", "𝕚"},
            {""},
            {""},
@@ -4842,7 +4843,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 195 "HTMLCharacterReference.gperf"
+#line 196 "HTMLCharacterReference.gperf"
            {"Gcy;", "Г"},
            {""},
            {""},
@@ -4859,19 +4860,19 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1271 "HTMLCharacterReference.gperf"
+#line 1272 "HTMLCharacterReference.gperf"
            {"kscr;", "𝓀"},
-#line 811 "HTMLCharacterReference.gperf"
+#line 812 "HTMLCharacterReference.gperf"
            {"boxuL;", "╛"},
            {""},
-#line 1861 "HTMLCharacterReference.gperf"
+#line 1862 "HTMLCharacterReference.gperf"
            {"rpar;", ")"},
-#line 1360 "HTMLCharacterReference.gperf"
+#line 1361 "HTMLCharacterReference.gperf"
            {"llcorner;", "⌞"},
-#line 641 "HTMLCharacterReference.gperf"
+#line 642 "HTMLCharacterReference.gperf"
            {"Yopf;", "𝕐"},
            {""},
-#line 1188 "HTMLCharacterReference.gperf"
+#line 1189 "HTMLCharacterReference.gperf"
            {"homtht;", "∻"},
            {""},
            {""},
@@ -4880,26 +4881,26 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 846 "HTMLCharacterReference.gperf"
+#line 847 "HTMLCharacterReference.gperf"
            {"caps;", "∩︀"},
-#line 2156 "HTMLCharacterReference.gperf"
+#line 2157 "HTMLCharacterReference.gperf"
            {"varpi;", "ϖ"},
-#line 845 "HTMLCharacterReference.gperf"
+#line 846 "HTMLCharacterReference.gperf"
            {"capdot;", "⩀"},
            {""},
            {""},
            {""},
            {""},
-#line 613 "HTMLCharacterReference.gperf"
+#line 614 "HTMLCharacterReference.gperf"
            {"Verbar;", "‖"},
            {""},
-#line 413 "HTMLCharacterReference.gperf"
+#line 414 "HTMLCharacterReference.gperf"
            {"Ofr;", "𝔒"},
            {""},
            {""},
            {""},
            {""},
-#line 681 "HTMLCharacterReference.gperf"
+#line 682 "HTMLCharacterReference.gperf"
            {"andslope;", "⩘"},
            {""},
            {""},
@@ -4907,37 +4908,37 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1569 "HTMLCharacterReference.gperf"
+#line 1570 "HTMLCharacterReference.gperf"
            {"nrArr;", "⇏"},
            {""},
            {""},
            {""},
            {""},
-#line 1900 "HTMLCharacterReference.gperf"
+#line 1901 "HTMLCharacterReference.gperf"
            {"searr;", "↘"},
-#line 1408 "HTMLCharacterReference.gperf"
+#line 1409 "HTMLCharacterReference.gperf"
            {"lstrok;", "ł"},
-#line 2021 "HTMLCharacterReference.gperf"
+#line 2022 "HTMLCharacterReference.gperf"
            {"supplus;", "⫀"},
            {""},
-#line 318 "HTMLCharacterReference.gperf"
+#line 319 "HTMLCharacterReference.gperf"
            {"Lopf;", "𝕃"},
-#line 1907 "HTMLCharacterReference.gperf"
+#line 1908 "HTMLCharacterReference.gperf"
            {"setmn;", "∖"},
            {""},
            {""},
            {""},
            {""},
-#line 1629 "HTMLCharacterReference.gperf"
+#line 1630 "HTMLCharacterReference.gperf"
            {"nwArr;", "⇖"},
            {""},
-#line 1873 "HTMLCharacterReference.gperf"
+#line 1874 "HTMLCharacterReference.gperf"
            {"rtri;", "▹"},
-#line 1864 "HTMLCharacterReference.gperf"
+#line 1865 "HTMLCharacterReference.gperf"
            {"rrarr;", "⇉"},
-#line 48 "HTMLCharacterReference.gperf"
+#line 49 "HTMLCharacterReference.gperf"
            {"Barv;", "⫧"},
-#line 885 "HTMLCharacterReference.gperf"
+#line 886 "HTMLCharacterReference.gperf"
            {"colon;", ":"},
            {""},
            {""},
@@ -4946,7 +4947,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 549 "HTMLCharacterReference.gperf"
+#line 550 "HTMLCharacterReference.gperf"
            {"Tab;", "\t"},
            {""},
            {""},
@@ -4955,37 +4956,37 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1299 "HTMLCharacterReference.gperf"
+#line 1300 "HTMLCharacterReference.gperf"
            {"latail;", "⤙"},
            {""},
-#line 1805 "HTMLCharacterReference.gperf"
+#line 1806 "HTMLCharacterReference.gperf"
            {"rbarr;", "⤍"},
-#line 1766 "HTMLCharacterReference.gperf"
+#line 1767 "HTMLCharacterReference.gperf"
            {"qopf;", "𝕢"},
            {""},
            {""},
-#line 162 "HTMLCharacterReference.gperf"
+#line 163 "HTMLCharacterReference.gperf"
            {"Element;", "∈"},
            {""},
            {""},
            {""},
-#line 1969 "HTMLCharacterReference.gperf"
+#line 1970 "HTMLCharacterReference.gperf"
            {"sstarf;", "⋆"},
            {""},
            {""},
            {""},
            {""},
-#line 995 "HTMLCharacterReference.gperf"
+#line 996 "HTMLCharacterReference.gperf"
            {"dstrok;", "đ"},
            {""},
            {""},
            {""},
            {""},
-#line 1195 "HTMLCharacterReference.gperf"
+#line 1196 "HTMLCharacterReference.gperf"
            {"hstrok;", "ħ"},
            {""},
            {""},
-#line 833 "HTMLCharacterReference.gperf"
+#line 834 "HTMLCharacterReference.gperf"
            {"bull;", "•"},
            {""},
            {""},
@@ -4996,7 +4997,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 331 "HTMLCharacterReference.gperf"
+#line 332 "HTMLCharacterReference.gperf"
            {"Mopf;", "𝕄"},
            {""},
            {""},
@@ -5004,10 +5005,10 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1349 "HTMLCharacterReference.gperf"
+#line 1350 "HTMLCharacterReference.gperf"
            {"lfloor;", "⌊"},
            {""},
-#line 338 "HTMLCharacterReference.gperf"
+#line 339 "HTMLCharacterReference.gperf"
            {"Ncy;", "Н"},
            {""},
            {""},
@@ -5021,14 +5022,14 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2067 "HTMLCharacterReference.gperf"
+#line 2068 "HTMLCharacterReference.gperf"
            {"topbot;", "⌶"},
            {""},
            {""},
            {""},
-#line 1029 "HTMLCharacterReference.gperf"
+#line 1030 "HTMLCharacterReference.gperf"
            {"emacr;", "ē"},
-#line 1050 "HTMLCharacterReference.gperf"
+#line 1051 "HTMLCharacterReference.gperf"
            {"eqslantless;", "⪕"},
            {""},
            {""},
@@ -5036,131 +5037,131 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 290 "HTMLCharacterReference.gperf"
+#line 291 "HTMLCharacterReference.gperf"
            {"LeftTeeVector;", "⥚"},
-#line 803 "HTMLCharacterReference.gperf"
+#line 804 "HTMLCharacterReference.gperf"
            {"boxh;", "─"},
-#line 674 "HTMLCharacterReference.gperf"
+#line 675 "HTMLCharacterReference.gperf"
            {"amacr;", "ā"},
-#line 1835 "HTMLCharacterReference.gperf"
+#line 1836 "HTMLCharacterReference.gperf"
            {"rho;", "ρ"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1070 "HTMLCharacterReference.gperf"
+#line 1071 "HTMLCharacterReference.gperf"
            {"exponentiale;", "ⅇ"},
            {""},
            {""},
-#line 580 "HTMLCharacterReference.gperf"
+#line 581 "HTMLCharacterReference.gperf"
            {"Umacr;", "Ū"},
            {""},
            {""},
-#line 2153 "HTMLCharacterReference.gperf"
+#line 2154 "HTMLCharacterReference.gperf"
            {"varkappa;", "ϰ"},
            {""},
            {""},
-#line 1416 "HTMLCharacterReference.gperf"
+#line 1417 "HTMLCharacterReference.gperf"
            {"ltlarr;", "⥶"},
            {""},
            {""},
            {""},
            {""},
-#line 1197 "HTMLCharacterReference.gperf"
+#line 1198 "HTMLCharacterReference.gperf"
            {"hyphen;", "‐"},
            {""},
            {""},
            {""},
-#line 2227 "HTMLCharacterReference.gperf"
+#line 2228 "HTMLCharacterReference.gperf"
            {"ycirc;", "ŷ"},
-#line 1282 "HTMLCharacterReference.gperf"
+#line 1283 "HTMLCharacterReference.gperf"
            {"lambda;", "λ"},
            {""},
            {""},
            {""},
            {""},
-#line 940 "HTMLCharacterReference.gperf"
+#line 941 "HTMLCharacterReference.gperf"
            {"dagger;", "†"},
            {""},
            {""},
-#line 270 "HTMLCharacterReference.gperf"
+#line 271 "HTMLCharacterReference.gperf"
            {"Lang;", "⟪"},
-#line 459 "HTMLCharacterReference.gperf"
+#line 460 "HTMLCharacterReference.gperf"
            {"RBarr;", "⤐"},
            {""},
            {""},
-#line 832 "HTMLCharacterReference.gperf"
+#line 833 "HTMLCharacterReference.gperf"
            {"bsolhsub;", "⟈"},
-#line 223 "HTMLCharacterReference.gperf"
+#line 224 "HTMLCharacterReference.gperf"
            {"IOcy;", "Ё"},
-#line 2216 "HTMLCharacterReference.gperf"
+#line 2217 "HTMLCharacterReference.gperf"
            {"xrArr;", "⟹"},
-#line 746 "HTMLCharacterReference.gperf"
+#line 747 "HTMLCharacterReference.gperf"
            {"bigcap;", "⋂"},
            {""},
-#line 29 "HTMLCharacterReference.gperf"
+#line 30 "HTMLCharacterReference.gperf"
            {"Acy;", "А"},
-#line 115 "HTMLCharacterReference.gperf"
+#line 116 "HTMLCharacterReference.gperf"
            {"Dopf;", "𝔻"},
            {""},
            {""},
            {""},
-#line 1855 "HTMLCharacterReference.gperf"
+#line 1856 "HTMLCharacterReference.gperf"
            {"roarr;", "⇾"},
            {""},
            {""},
            {""},
            {""},
-#line 1318 "HTMLCharacterReference.gperf"
+#line 1319 "HTMLCharacterReference.gperf"
            {"ldrushar;", "⥋"},
-#line 89 "HTMLCharacterReference.gperf"
+#line 90 "HTMLCharacterReference.gperf"
            {"Coproduct;", "∐"},
-#line 1345 "HTMLCharacterReference.gperf"
+#line 1346 "HTMLCharacterReference.gperf"
            {"lesseqqgtr;", "⪋"},
-#line 1963 "HTMLCharacterReference.gperf"
+#line 1964 "HTMLCharacterReference.gperf"
            {"squarf;", "▪"},
            {""},
            {""},
            {""},
-#line 557 "HTMLCharacterReference.gperf"
+#line 558 "HTMLCharacterReference.gperf"
            {"ThickSpace;", "  "},
-#line 1247 "HTMLCharacterReference.gperf"
+#line 1248 "HTMLCharacterReference.gperf"
            {"isinsv;", "⋳"},
            {""},
-#line 447 "HTMLCharacterReference.gperf"
+#line 448 "HTMLCharacterReference.gperf"
            {"PrecedesTilde;", "≾"},
            {""},
            {""},
-#line 972 "HTMLCharacterReference.gperf"
+#line 973 "HTMLCharacterReference.gperf"
            {"divonx;", "⋇"},
            {""},
-#line 2129 "HTMLCharacterReference.gperf"
+#line 2130 "HTMLCharacterReference.gperf"
            {"upsi;", "υ"},
-#line 2043 "HTMLCharacterReference.gperf"
+#line 2044 "HTMLCharacterReference.gperf"
            {"tdot;", "⃛"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1521 "HTMLCharacterReference.gperf"
+#line 1522 "HTMLCharacterReference.gperf"
            {"nhArr;", "⇎"},
-#line 844 "HTMLCharacterReference.gperf"
+#line 845 "HTMLCharacterReference.gperf"
            {"capcup;", "⩇"},
            {""},
            {""},
-#line 1169 "HTMLCharacterReference.gperf"
+#line 1170 "HTMLCharacterReference.gperf"
            {"gvnE;", "≩︀"},
            {""},
-#line 914 "HTMLCharacterReference.gperf"
+#line 915 "HTMLCharacterReference.gperf"
            {"cularr;", "↶"},
            {""},
            {""},
-#line 1425 "HTMLCharacterReference.gperf"
+#line 1426 "HTMLCharacterReference.gperf"
            {"lvnE;", "≨︀"},
            {""},
-#line 378 "HTMLCharacterReference.gperf"
+#line 379 "HTMLCharacterReference.gperf"
            {"NotPrecedes;", "⊀"},
            {""},
            {""},
@@ -5168,42 +5169,42 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1232 "HTMLCharacterReference.gperf"
+#line 1233 "HTMLCharacterReference.gperf"
            {"intercal;", "⊺"},
-#line 253 "HTMLCharacterReference.gperf"
+#line 254 "HTMLCharacterReference.gperf"
            {"Jopf;", "𝕁"},
            {""},
            {""},
            {""},
-#line 1427 "HTMLCharacterReference.gperf"
-           {"macr", "¯"},
 #line 1428 "HTMLCharacterReference.gperf"
+           {"macr", "¯"},
+#line 1429 "HTMLCharacterReference.gperf"
            {"macr;", "¯"},
            {""},
-#line 218 "HTMLCharacterReference.gperf"
+#line 219 "HTMLCharacterReference.gperf"
            {"Hstrok;", "Ħ"},
            {""},
-#line 1874 "HTMLCharacterReference.gperf"
+#line 1875 "HTMLCharacterReference.gperf"
            {"rtrie;", "⊵"},
-#line 1517 "HTMLCharacterReference.gperf"
+#line 1518 "HTMLCharacterReference.gperf"
            {"nges;", "⩾̸"},
            {""},
            {""},
-#line 460 "HTMLCharacterReference.gperf"
+#line 461 "HTMLCharacterReference.gperf"
            {"REG", "®"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 461 "HTMLCharacterReference.gperf"
+#line 462 "HTMLCharacterReference.gperf"
            {"REG;", "®"},
-#line 631 "HTMLCharacterReference.gperf"
+#line 632 "HTMLCharacterReference.gperf"
            {"Xopf;", "𝕏"},
            {""},
            {""},
            {""},
-#line 1671 "HTMLCharacterReference.gperf"
+#line 1672 "HTMLCharacterReference.gperf"
            {"or;", "∨"},
            {""},
            {""},
@@ -5214,140 +5215,140 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1809 "HTMLCharacterReference.gperf"
+#line 1810 "HTMLCharacterReference.gperf"
            {"rbrke;", "⦌"},
-#line 1190 "HTMLCharacterReference.gperf"
+#line 1191 "HTMLCharacterReference.gperf"
            {"hookrightarrow;", "↪"},
            {""},
-#line 2186 "HTMLCharacterReference.gperf"
+#line 2187 "HTMLCharacterReference.gperf"
            {"vsupnE;", "⫌︀"},
            {""},
            {""},
            {""},
-#line 934 "HTMLCharacterReference.gperf"
+#line 935 "HTMLCharacterReference.gperf"
            {"cuwed;", "⋏"},
            {""},
-#line 1343 "HTMLCharacterReference.gperf"
+#line 1344 "HTMLCharacterReference.gperf"
            {"lessdot;", "⋖"},
-#line 445 "HTMLCharacterReference.gperf"
+#line 446 "HTMLCharacterReference.gperf"
            {"PrecedesEqual;", "⪯"},
            {""},
            {""},
-#line 2151 "HTMLCharacterReference.gperf"
+#line 2152 "HTMLCharacterReference.gperf"
            {"vangrt;", "⦜"},
            {""},
            {""},
            {""},
            {""},
-#line 1831 "HTMLCharacterReference.gperf"
+#line 1832 "HTMLCharacterReference.gperf"
            {"rfr;", "𝔯"},
            {""},
            {""},
-#line 1683 "HTMLCharacterReference.gperf"
+#line 1684 "HTMLCharacterReference.gperf"
            {"orv;", "⩛"},
            {""},
-#line 757 "HTMLCharacterReference.gperf"
+#line 758 "HTMLCharacterReference.gperf"
            {"bigvee;", "⋁"},
-#line 1504 "HTMLCharacterReference.gperf"
+#line 1505 "HTMLCharacterReference.gperf"
            {"nearrow;", "↗"},
-#line 2141 "HTMLCharacterReference.gperf"
+#line 2142 "HTMLCharacterReference.gperf"
            {"utri;", "▵"},
            {""},
            {""},
            {""},
-#line 2144 "HTMLCharacterReference.gperf"
-           {"uuml", "ü"},
 #line 2145 "HTMLCharacterReference.gperf"
+           {"uuml", "ü"},
+#line 2146 "HTMLCharacterReference.gperf"
            {"uuml;", "ü"},
-#line 520 "HTMLCharacterReference.gperf"
+#line 521 "HTMLCharacterReference.gperf"
            {"Sopf;", "𝕊"},
-#line 1681 "HTMLCharacterReference.gperf"
+#line 1682 "HTMLCharacterReference.gperf"
            {"oror;", "⩖"},
-#line 1565 "HTMLCharacterReference.gperf"
+#line 1566 "HTMLCharacterReference.gperf"
            {"nprcue;", "⋠"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1779 "HTMLCharacterReference.gperf"
+#line 1780 "HTMLCharacterReference.gperf"
            {"rHar;", "⥤"},
            {""},
            {""},
            {""},
-#line 873 "HTMLCharacterReference.gperf"
+#line 874 "HTMLCharacterReference.gperf"
            {"circlearrowright;", "↻"},
            {""},
            {""},
-#line 2088 "HTMLCharacterReference.gperf"
+#line 2089 "HTMLCharacterReference.gperf"
            {"tscr;", "𝓉"},
            {""},
            {""},
            {""},
-#line 875 "HTMLCharacterReference.gperf"
+#line 876 "HTMLCharacterReference.gperf"
            {"circledS;", "Ⓢ"},
-#line 1390 "HTMLCharacterReference.gperf"
+#line 1391 "HTMLCharacterReference.gperf"
            {"lozf;", "⧫"},
-#line 1668 "HTMLCharacterReference.gperf"
+#line 1669 "HTMLCharacterReference.gperf"
            {"opar;", "⦷"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 323 "HTMLCharacterReference.gperf"
+#line 324 "HTMLCharacterReference.gperf"
            {"Lstrok;", "Ł"},
-#line 1772 "HTMLCharacterReference.gperf"
+#line 1773 "HTMLCharacterReference.gperf"
            {"questeq;", "≟"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1025 "HTMLCharacterReference.gperf"
+#line 1026 "HTMLCharacterReference.gperf"
            {"elinters;", "⏧"},
-#line 2211 "HTMLCharacterReference.gperf"
+#line 2212 "HTMLCharacterReference.gperf"
            {"xnis;", "⋻"},
-#line 1378 "HTMLCharacterReference.gperf"
+#line 1379 "HTMLCharacterReference.gperf"
            {"longmapsto;", "⟼"},
            {""},
            {""},
            {""},
-#line 2143 "HTMLCharacterReference.gperf"
+#line 2144 "HTMLCharacterReference.gperf"
            {"uuarr;", "⇈"},
-#line 1217 "HTMLCharacterReference.gperf"
+#line 1218 "HTMLCharacterReference.gperf"
            {"imacr;", "ī"},
            {""},
-#line 296 "HTMLCharacterReference.gperf"
+#line 297 "HTMLCharacterReference.gperf"
            {"LeftUpVector;", "↿"},
            {""},
-#line 243 "HTMLCharacterReference.gperf"
+#line 244 "HTMLCharacterReference.gperf"
            {"Iopf;", "𝕀"},
-#line 259 "HTMLCharacterReference.gperf"
+#line 260 "HTMLCharacterReference.gperf"
            {"Kappa;", "Κ"},
            {""},
            {""},
-#line 1121 "HTMLCharacterReference.gperf"
+#line 1122 "HTMLCharacterReference.gperf"
            {"gel;", "⋛"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2013 "HTMLCharacterReference.gperf"
+#line 2014 "HTMLCharacterReference.gperf"
            {"supe;", "⊇"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2205 "HTMLCharacterReference.gperf"
+#line 2206 "HTMLCharacterReference.gperf"
            {"xhArr;", "⟺"},
-#line 1968 "HTMLCharacterReference.gperf"
+#line 1969 "HTMLCharacterReference.gperf"
            {"ssmile;", "⌣"},
            {""},
            {""},
-#line 1546 "HTMLCharacterReference.gperf"
+#line 1547 "HTMLCharacterReference.gperf"
            {"nopf;", "𝕟"},
            {""},
            {""},
@@ -5355,13 +5356,13 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1672 "HTMLCharacterReference.gperf"
+#line 1673 "HTMLCharacterReference.gperf"
            {"orarr;", "↻"},
            {""},
            {""},
-#line 1692 "HTMLCharacterReference.gperf"
-           {"ouml", "ö"},
 #line 1693 "HTMLCharacterReference.gperf"
+           {"ouml", "ö"},
+#line 1694 "HTMLCharacterReference.gperf"
            {"ouml;", "ö"},
            {""},
            {""},
@@ -5371,28 +5372,28 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1268 "HTMLCharacterReference.gperf"
+#line 1269 "HTMLCharacterReference.gperf"
            {"khcy;", "х"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 518 "HTMLCharacterReference.gperf"
+#line 519 "HTMLCharacterReference.gperf"
            {"Sigma;", "Σ"},
            {""},
-#line 2084 "HTMLCharacterReference.gperf"
+#line 2085 "HTMLCharacterReference.gperf"
            {"triplus;", "⨹"},
-#line 1467 "HTMLCharacterReference.gperf"
+#line 1468 "HTMLCharacterReference.gperf"
            {"nGt;", "≫⃒"},
-#line 2226 "HTMLCharacterReference.gperf"
+#line 2227 "HTMLCharacterReference.gperf"
            {"yacy;", "я"},
            {""},
-#line 2053 "HTMLCharacterReference.gperf"
+#line 2054 "HTMLCharacterReference.gperf"
            {"thinsp;", " "},
            {""},
            {""},
-#line 652 "HTMLCharacterReference.gperf"
+#line 653 "HTMLCharacterReference.gperf"
            {"Zopf;", "ℤ"},
            {""},
            {""},
@@ -5400,7 +5401,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1069 "HTMLCharacterReference.gperf"
+#line 1070 "HTMLCharacterReference.gperf"
            {"expectation;", "ℰ"},
            {""},
            {""},
@@ -5410,31 +5411,31 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1687 "HTMLCharacterReference.gperf"
+#line 1688 "HTMLCharacterReference.gperf"
            {"osol;", "⊘"},
            {""},
            {""},
            {""},
-#line 985 "HTMLCharacterReference.gperf"
+#line 986 "HTMLCharacterReference.gperf"
            {"downarrow;", "↓"},
            {""},
            {""},
            {""},
-#line 553 "HTMLCharacterReference.gperf"
+#line 554 "HTMLCharacterReference.gperf"
            {"Tcy;", "Т"},
            {""},
-#line 946 "HTMLCharacterReference.gperf"
+#line 947 "HTMLCharacterReference.gperf"
            {"dblac;", "˝"},
-#line 1108 "HTMLCharacterReference.gperf"
+#line 1109 "HTMLCharacterReference.gperf"
            {"frown;", "⌢"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 233 "HTMLCharacterReference.gperf"
+#line 234 "HTMLCharacterReference.gperf"
            {"Im;", "ℑ"},
-#line 1857 "HTMLCharacterReference.gperf"
+#line 1858 "HTMLCharacterReference.gperf"
            {"ropar;", "⦆"},
            {""},
            {""},
@@ -5453,29 +5454,29 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 269 "HTMLCharacterReference.gperf"
+#line 270 "HTMLCharacterReference.gperf"
            {"Lambda;", "Λ"},
            {""},
-#line 436 "HTMLCharacterReference.gperf"
+#line 437 "HTMLCharacterReference.gperf"
            {"Pcy;", "П"},
            {""},
-#line 1342 "HTMLCharacterReference.gperf"
+#line 1343 "HTMLCharacterReference.gperf"
            {"lessapprox;", "⪅"},
            {""},
            {""},
-#line 1634 "HTMLCharacterReference.gperf"
+#line 1635 "HTMLCharacterReference.gperf"
            {"oS;", "Ⓢ"},
            {""},
            {""},
            {""},
            {""},
-#line 2240 "HTMLCharacterReference.gperf"
+#line 2241 "HTMLCharacterReference.gperf"
            {"zcy;", "з"},
-#line 1655 "HTMLCharacterReference.gperf"
+#line 1656 "HTMLCharacterReference.gperf"
            {"ohm;", "Ω"},
-#line 819 "HTMLCharacterReference.gperf"
+#line 820 "HTMLCharacterReference.gperf"
            {"boxvh;", "┼"},
-#line 148 "HTMLCharacterReference.gperf"
+#line 149 "HTMLCharacterReference.gperf"
            {"Dstrok;", "Đ"},
            {""},
            {""},
@@ -5484,83 +5485,83 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2113 "HTMLCharacterReference.gperf"
+#line 2114 "HTMLCharacterReference.gperf"
            {"uharr;", "↾"},
            {""},
-#line 2040 "HTMLCharacterReference.gperf"
+#line 2041 "HTMLCharacterReference.gperf"
            {"tcaron;", "ť"},
            {""},
-#line 884 "HTMLCharacterReference.gperf"
+#line 885 "HTMLCharacterReference.gperf"
            {"clubsuit;", "♣"},
            {""},
            {""},
-#line 1305 "HTMLCharacterReference.gperf"
+#line 1306 "HTMLCharacterReference.gperf"
            {"lbrack;", "["},
            {""},
            {""},
-#line 498 "HTMLCharacterReference.gperf"
+#line 499 "HTMLCharacterReference.gperf"
            {"Ropf;", "ℝ"},
            {""},
-#line 1457 "HTMLCharacterReference.gperf"
+#line 1458 "HTMLCharacterReference.gperf"
            {"mnplus;", "∓"},
            {""},
-#line 2038 "HTMLCharacterReference.gperf"
+#line 2039 "HTMLCharacterReference.gperf"
            {"tau;", "τ"},
            {""},
            {""},
-#line 576 "HTMLCharacterReference.gperf"
+#line 577 "HTMLCharacterReference.gperf"
            {"Udblac;", "Ű"},
            {""},
            {""},
-#line 1479 "HTMLCharacterReference.gperf"
+#line 1480 "HTMLCharacterReference.gperf"
            {"nang;", "∠⃒"},
            {""},
            {""},
            {""},
            {""},
-#line 167 "HTMLCharacterReference.gperf"
+#line 168 "HTMLCharacterReference.gperf"
            {"Eopf;", "𝔼"},
-#line 2203 "HTMLCharacterReference.gperf"
+#line 2204 "HTMLCharacterReference.gperf"
            {"xdtri;", "▽"},
            {""},
            {""},
-#line 60 "HTMLCharacterReference.gperf"
-           {"COPY", "©"},
 #line 61 "HTMLCharacterReference.gperf"
+           {"COPY", "©"},
+#line 62 "HTMLCharacterReference.gperf"
            {"COPY;", "©"},
            {""},
-#line 834 "HTMLCharacterReference.gperf"
+#line 835 "HTMLCharacterReference.gperf"
            {"bullet;", "•"},
            {""},
            {""},
-#line 2213 "HTMLCharacterReference.gperf"
+#line 2214 "HTMLCharacterReference.gperf"
            {"xopf;", "𝕩"},
            {""},
-#line 1267 "HTMLCharacterReference.gperf"
+#line 1268 "HTMLCharacterReference.gperf"
            {"kgreen;", "ĸ"},
-#line 1822 "HTMLCharacterReference.gperf"
+#line 1823 "HTMLCharacterReference.gperf"
            {"real;", "ℜ"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1138 "HTMLCharacterReference.gperf"
+#line 1139 "HTMLCharacterReference.gperf"
            {"glE;", "⪒"},
            {""},
            {""},
            {""},
            {""},
-#line 1915 "HTMLCharacterReference.gperf"
+#line 1916 "HTMLCharacterReference.gperf"
            {"shortparallel;", "∥"},
-#line 199 "HTMLCharacterReference.gperf"
+#line 200 "HTMLCharacterReference.gperf"
            {"Gopf;", "𝔾"},
-#line 1501 "HTMLCharacterReference.gperf"
+#line 1502 "HTMLCharacterReference.gperf"
            {"neArr;", "⇗"},
            {""},
-#line 2109 "HTMLCharacterReference.gperf"
+#line 2110 "HTMLCharacterReference.gperf"
            {"ufr;", "𝔲"},
-#line 1466 "HTMLCharacterReference.gperf"
+#line 1467 "HTMLCharacterReference.gperf"
            {"nGg;", "⋙̸"},
            {""},
            {""},
@@ -5568,7 +5569,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1284 "HTMLCharacterReference.gperf"
+#line 1285 "HTMLCharacterReference.gperf"
            {"langd;", "⦑"},
            {""},
            {""},
@@ -5578,33 +5579,33 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 743 "HTMLCharacterReference.gperf"
+#line 744 "HTMLCharacterReference.gperf"
            {"beth;", "ℶ"},
            {""},
            {""},
            {""},
-#line 2096 "HTMLCharacterReference.gperf"
+#line 2097 "HTMLCharacterReference.gperf"
            {"uHar;", "⥣"},
            {""},
            {""},
-#line 100 "HTMLCharacterReference.gperf"
+#line 101 "HTMLCharacterReference.gperf"
            {"Dagger;", "‡"},
-#line 915 "HTMLCharacterReference.gperf"
+#line 916 "HTMLCharacterReference.gperf"
            {"cularrp;", "⤽"},
-#line 609 "HTMLCharacterReference.gperf"
+#line 610 "HTMLCharacterReference.gperf"
            {"Vcy;", "В"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2122 "HTMLCharacterReference.gperf"
+#line 2123 "HTMLCharacterReference.gperf"
            {"uogon;", "ų"},
            {""},
            {""},
            {""},
            {""},
-#line 2112 "HTMLCharacterReference.gperf"
+#line 2113 "HTMLCharacterReference.gperf"
            {"uharl;", "↿"},
            {""},
            {""},
@@ -5624,24 +5625,24 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1446 "HTMLCharacterReference.gperf"
+#line 1447 "HTMLCharacterReference.gperf"
            {"mid;", "∣"},
-#line 1895 "HTMLCharacterReference.gperf"
+#line 1896 "HTMLCharacterReference.gperf"
            {"sdot;", "⋅"},
-#line 69 "HTMLCharacterReference.gperf"
+#line 70 "HTMLCharacterReference.gperf"
            {"Ccirc;", "Ĉ"},
            {""},
            {""},
            {""},
-#line 544 "HTMLCharacterReference.gperf"
-           {"THORN", "Þ"},
 #line 545 "HTMLCharacterReference.gperf"
+           {"THORN", "Þ"},
+#line 546 "HTMLCharacterReference.gperf"
            {"THORN;", "Þ"},
-#line 1438 "HTMLCharacterReference.gperf"
+#line 1439 "HTMLCharacterReference.gperf"
            {"mcomma;", "⨩"},
            {""},
            {""},
-#line 558 "HTMLCharacterReference.gperf"
+#line 559 "HTMLCharacterReference.gperf"
            {"ThinSpace;", " "},
            {""},
            {""},
@@ -5649,77 +5650,77 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 571 "HTMLCharacterReference.gperf"
+#line 572 "HTMLCharacterReference.gperf"
            {"Ubrcy;", "Ў"},
            {""},
            {""},
-#line 1649 "HTMLCharacterReference.gperf"
+#line 1650 "HTMLCharacterReference.gperf"
            {"ofr;", "𝔬"},
            {""},
-#line 1550 "HTMLCharacterReference.gperf"
+#line 1551 "HTMLCharacterReference.gperf"
            {"notinE;", "⋹̸"},
            {""},
            {""},
-#line 2089 "HTMLCharacterReference.gperf"
+#line 2090 "HTMLCharacterReference.gperf"
            {"tscy;", "ц"},
            {""},
            {""},
            {""},
            {""},
-#line 463 "HTMLCharacterReference.gperf"
+#line 464 "HTMLCharacterReference.gperf"
            {"Rang;", "⟫"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1827 "HTMLCharacterReference.gperf"
+#line 1828 "HTMLCharacterReference.gperf"
            {"reg", "®"},
            {""},
            {""},
            {""},
-#line 1456 "HTMLCharacterReference.gperf"
+#line 1457 "HTMLCharacterReference.gperf"
            {"mldr;", "…"},
            {""},
-#line 1828 "HTMLCharacterReference.gperf"
+#line 1829 "HTMLCharacterReference.gperf"
            {"reg;", "®"},
            {""},
            {""},
            {""},
-#line 87 "HTMLCharacterReference.gperf"
+#line 88 "HTMLCharacterReference.gperf"
            {"ContourIntegral;", "∮"},
            {""},
            {""},
            {""},
            {""},
-#line 2048 "HTMLCharacterReference.gperf"
+#line 2049 "HTMLCharacterReference.gperf"
            {"theta;", "θ"},
            {""},
            {""},
-#line 1853 "HTMLCharacterReference.gperf"
+#line 1854 "HTMLCharacterReference.gperf"
            {"rnmid;", "⫮"},
            {""},
-#line 799 "HTMLCharacterReference.gperf"
+#line 800 "HTMLCharacterReference.gperf"
            {"boxdL;", "╕"},
-#line 1669 "HTMLCharacterReference.gperf"
+#line 1670 "HTMLCharacterReference.gperf"
            {"operp;", "⦹"},
-#line 696 "HTMLCharacterReference.gperf"
+#line 697 "HTMLCharacterReference.gperf"
            {"angrtvb;", "⊾"},
-#line 2228 "HTMLCharacterReference.gperf"
+#line 2229 "HTMLCharacterReference.gperf"
            {"ycy;", "ы"},
            {""},
-#line 1477 "HTMLCharacterReference.gperf"
+#line 1478 "HTMLCharacterReference.gperf"
            {"nabla;", "∇"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1962 "HTMLCharacterReference.gperf"
+#line 1963 "HTMLCharacterReference.gperf"
            {"square;", "□"},
            {""},
            {""},
-#line 349 "HTMLCharacterReference.gperf"
+#line 350 "HTMLCharacterReference.gperf"
            {"Nopf;", "ℕ"},
            {""},
            {""},
@@ -5733,14 +5734,14 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1346 "HTMLCharacterReference.gperf"
+#line 1347 "HTMLCharacterReference.gperf"
            {"lessgtr;", "≶"},
            {""},
            {""},
            {""},
-#line 1387 "HTMLCharacterReference.gperf"
+#line 1388 "HTMLCharacterReference.gperf"
            {"lowbar;", "_"},
-#line 1389 "HTMLCharacterReference.gperf"
+#line 1390 "HTMLCharacterReference.gperf"
            {"lozenge;", "◊"},
            {""},
            {""},
@@ -5748,48 +5749,48 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1624 "HTMLCharacterReference.gperf"
+#line 1625 "HTMLCharacterReference.gperf"
            {"nvlt;", "<⃒"},
            {""},
-#line 1285 "HTMLCharacterReference.gperf"
+#line 1286 "HTMLCharacterReference.gperf"
            {"langle;", "⟨"},
            {""},
            {""},
-#line 2210 "HTMLCharacterReference.gperf"
+#line 2211 "HTMLCharacterReference.gperf"
            {"xmap;", "⟼"},
            {""},
            {""},
-#line 1868 "HTMLCharacterReference.gperf"
+#line 1869 "HTMLCharacterReference.gperf"
            {"rsqb;", "]"},
            {""},
-#line 1966 "HTMLCharacterReference.gperf"
+#line 1967 "HTMLCharacterReference.gperf"
            {"sscr;", "𝓈"},
            {""},
-#line 937 "HTMLCharacterReference.gperf"
+#line 938 "HTMLCharacterReference.gperf"
            {"cylcty;", "⌭"},
            {""},
-#line 1376 "HTMLCharacterReference.gperf"
+#line 1377 "HTMLCharacterReference.gperf"
            {"longleftarrow;", "⟵"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2139 "HTMLCharacterReference.gperf"
+#line 2140 "HTMLCharacterReference.gperf"
            {"utdot;", "⋰"},
            {""},
-#line 886 "HTMLCharacterReference.gperf"
+#line 887 "HTMLCharacterReference.gperf"
            {"colone;", "≔"},
            {""},
            {""},
-#line 2082 "HTMLCharacterReference.gperf"
+#line 2083 "HTMLCharacterReference.gperf"
            {"trie;", "≜"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 234 "HTMLCharacterReference.gperf"
+#line 235 "HTMLCharacterReference.gperf"
            {"Imacr;", "Ī"},
            {""},
            {""},
@@ -5798,16 +5799,16 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 971 "HTMLCharacterReference.gperf"
+#line 972 "HTMLCharacterReference.gperf"
            {"divideontimes;", "⋇"},
            {""},
-#line 786 "HTMLCharacterReference.gperf"
+#line 787 "HTMLCharacterReference.gperf"
            {"boxHu;", "╧"},
            {""},
-#line 517 "HTMLCharacterReference.gperf"
+#line 518 "HTMLCharacterReference.gperf"
            {"ShortUpArrow;", "↑"},
            {""},
-#line 37 "HTMLCharacterReference.gperf"
+#line 38 "HTMLCharacterReference.gperf"
            {"Aopf;", "𝔸"},
            {""},
            {""},
@@ -5817,11 +5818,11 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1825 "HTMLCharacterReference.gperf"
+#line 1826 "HTMLCharacterReference.gperf"
            {"reals;", "ℝ"},
            {""},
            {""},
-#line 1174 "HTMLCharacterReference.gperf"
+#line 1175 "HTMLCharacterReference.gperf"
            {"hardcy;", "ъ"},
            {""},
            {""},
@@ -5832,9 +5833,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 428 "HTMLCharacterReference.gperf"
+#line 429 "HTMLCharacterReference.gperf"
            {"Otimes;", "⨷"},
-#line 1836 "HTMLCharacterReference.gperf"
+#line 1837 "HTMLCharacterReference.gperf"
            {"rhov;", "ϱ"},
            {""},
            {""},
@@ -5843,10 +5844,10 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 795 "HTMLCharacterReference.gperf"
+#line 796 "HTMLCharacterReference.gperf"
            {"boxVh;", "╫"},
            {""},
-#line 291 "HTMLCharacterReference.gperf"
+#line 292 "HTMLCharacterReference.gperf"
            {"LeftTriangle;", "⊲"},
            {""},
            {""},
@@ -5854,36 +5855,36 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1673 "HTMLCharacterReference.gperf"
+#line 1674 "HTMLCharacterReference.gperf"
            {"ord;", "⩝"},
-#line 675 "HTMLCharacterReference.gperf"
+#line 676 "HTMLCharacterReference.gperf"
            {"amalg;", "⨿"},
            {""},
-#line 1881 "HTMLCharacterReference.gperf"
+#line 1882 "HTMLCharacterReference.gperf"
            {"sc;", "≻"},
            {""},
-#line 1678 "HTMLCharacterReference.gperf"
-           {"ordm", "º"},
 #line 1679 "HTMLCharacterReference.gperf"
+           {"ordm", "º"},
+#line 1680 "HTMLCharacterReference.gperf"
            {"ordm;", "º"},
            {""},
            {""},
            {""},
            {""},
-#line 1897 "HTMLCharacterReference.gperf"
+#line 1898 "HTMLCharacterReference.gperf"
            {"sdote;", "⩦"},
            {""},
            {""},
-#line 105 "HTMLCharacterReference.gperf"
+#line 106 "HTMLCharacterReference.gperf"
            {"Del;", "∇"},
            {""},
            {""},
            {""},
            {""},
-#line 1439 "HTMLCharacterReference.gperf"
+#line 1440 "HTMLCharacterReference.gperf"
            {"mcy;", "м"},
            {""},
-#line 806 "HTMLCharacterReference.gperf"
+#line 807 "HTMLCharacterReference.gperf"
            {"boxhd;", "┬"},
            {""},
            {""},
@@ -5898,59 +5899,59 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 146 "HTMLCharacterReference.gperf"
+#line 147 "HTMLCharacterReference.gperf"
            {"Downarrow;", "⇓"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1893 "HTMLCharacterReference.gperf"
+#line 1894 "HTMLCharacterReference.gperf"
            {"scsim;", "≿"},
            {""},
            {""},
-#line 261 "HTMLCharacterReference.gperf"
+#line 262 "HTMLCharacterReference.gperf"
            {"Kcy;", "К"},
-#line 1993 "HTMLCharacterReference.gperf"
+#line 1994 "HTMLCharacterReference.gperf"
            {"succ;", "≻"},
            {""},
            {""},
-#line 293 "HTMLCharacterReference.gperf"
+#line 294 "HTMLCharacterReference.gperf"
            {"LeftTriangleEqual;", "⊴"},
            {""},
            {""},
-#line 363 "HTMLCharacterReference.gperf"
+#line 364 "HTMLCharacterReference.gperf"
            {"NotGreaterSlantEqual;", "⩾̸"},
            {""},
            {""},
            {""},
            {""},
-#line 1811 "HTMLCharacterReference.gperf"
+#line 1812 "HTMLCharacterReference.gperf"
            {"rbrkslu;", "⦐"},
-#line 209 "HTMLCharacterReference.gperf"
+#line 210 "HTMLCharacterReference.gperf"
            {"HARDcy;", "Ъ"},
            {""},
-#line 1832 "HTMLCharacterReference.gperf"
+#line 1833 "HTMLCharacterReference.gperf"
            {"rhard;", "⇁"},
            {""},
            {""},
-#line 737 "HTMLCharacterReference.gperf"
+#line 738 "HTMLCharacterReference.gperf"
            {"becaus;", "∵"},
            {""},
-#line 1975 "HTMLCharacterReference.gperf"
+#line 1976 "HTMLCharacterReference.gperf"
            {"sub;", "⊂"},
            {""},
            {""},
-#line 2131 "HTMLCharacterReference.gperf"
+#line 2132 "HTMLCharacterReference.gperf"
            {"upsilon;", "υ"},
            {""},
            {""},
            {""},
-#line 91 "HTMLCharacterReference.gperf"
+#line 92 "HTMLCharacterReference.gperf"
            {"Cross;", "⨯"},
            {""},
            {""},
-#line 2249 "HTMLCharacterReference.gperf"
+#line 2250 "HTMLCharacterReference.gperf"
            {"zwj;", "‍"},
            {""},
            {""},
@@ -5958,93 +5959,93 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1362 "HTMLCharacterReference.gperf"
+#line 1363 "HTMLCharacterReference.gperf"
            {"lltri;", "◺"},
            {""},
            {""},
            {""},
-#line 360 "HTMLCharacterReference.gperf"
+#line 361 "HTMLCharacterReference.gperf"
            {"NotGreaterFullEqual;", "≧̸"},
            {""},
-#line 1884 "HTMLCharacterReference.gperf"
+#line 1885 "HTMLCharacterReference.gperf"
            {"scaron;", "š"},
            {""},
-#line 874 "HTMLCharacterReference.gperf"
+#line 875 "HTMLCharacterReference.gperf"
            {"circledR;", "®"},
-#line 1883 "HTMLCharacterReference.gperf"
+#line 1884 "HTMLCharacterReference.gperf"
            {"scap;", "⪸"},
-#line 625 "HTMLCharacterReference.gperf"
+#line 626 "HTMLCharacterReference.gperf"
            {"Wedge;", "⋀"},
            {""},
            {""},
-#line 756 "HTMLCharacterReference.gperf"
+#line 757 "HTMLCharacterReference.gperf"
            {"biguplus;", "⨄"},
            {""},
            {""},
-#line 2184 "HTMLCharacterReference.gperf"
+#line 2185 "HTMLCharacterReference.gperf"
            {"vsubnE;", "⫋︀"},
            {""},
-#line 1682 "HTMLCharacterReference.gperf"
+#line 1683 "HTMLCharacterReference.gperf"
            {"orslope;", "⩗"},
            {""},
-#line 163 "HTMLCharacterReference.gperf"
+#line 164 "HTMLCharacterReference.gperf"
            {"Emacr;", "Ē"},
            {""},
            {""},
-#line 238 "HTMLCharacterReference.gperf"
+#line 239 "HTMLCharacterReference.gperf"
            {"Integral;", "∫"},
-#line 47 "HTMLCharacterReference.gperf"
+#line 48 "HTMLCharacterReference.gperf"
            {"Backslash;", "∖"},
            {""},
            {""},
            {""},
            {""},
-#line 125 "HTMLCharacterReference.gperf"
+#line 126 "HTMLCharacterReference.gperf"
            {"DoubleLongLeftArrow;", "⟸"},
            {""},
            {""},
            {""},
-#line 1471 "HTMLCharacterReference.gperf"
+#line 1472 "HTMLCharacterReference.gperf"
            {"nLl;", "⋘̸"},
-#line 126 "HTMLCharacterReference.gperf"
+#line 127 "HTMLCharacterReference.gperf"
            {"DoubleLongLeftRightArrow;", "⟺"},
-#line 122 "HTMLCharacterReference.gperf"
+#line 123 "HTMLCharacterReference.gperf"
            {"DoubleLeftArrow;", "⇐"},
            {""},
            {""},
-#line 1124 "HTMLCharacterReference.gperf"
+#line 1125 "HTMLCharacterReference.gperf"
            {"geqslant;", "⩾"},
            {""},
            {""},
-#line 1112 "HTMLCharacterReference.gperf"
+#line 1113 "HTMLCharacterReference.gperf"
            {"gacute;", "ǵ"},
            {""},
-#line 1334 "HTMLCharacterReference.gperf"
+#line 1335 "HTMLCharacterReference.gperf"
            {"leqslant;", "⩽"},
-#line 627 "HTMLCharacterReference.gperf"
+#line 628 "HTMLCharacterReference.gperf"
            {"Wopf;", "𝕎"},
            {""},
-#line 1279 "HTMLCharacterReference.gperf"
+#line 1280 "HTMLCharacterReference.gperf"
            {"lacute;", "ĺ"},
            {""},
            {""},
            {""},
-#line 1006 "HTMLCharacterReference.gperf"
-           {"eacute", "é"},
 #line 1007 "HTMLCharacterReference.gperf"
+           {"eacute", "é"},
+#line 1008 "HTMLCharacterReference.gperf"
            {"eacute;", "é"},
            {""},
            {""},
            {""},
            {""},
-#line 839 "HTMLCharacterReference.gperf"
+#line 840 "HTMLCharacterReference.gperf"
            {"cacute;", "ć"},
            {""},
            {""},
            {""},
-#line 654 "HTMLCharacterReference.gperf"
-           {"aacute", "á"},
 #line 655 "HTMLCharacterReference.gperf"
+           {"aacute", "á"},
+#line 656 "HTMLCharacterReference.gperf"
            {"aacute;", "á"},
            {""},
            {""},
@@ -6054,9 +6055,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 567 "HTMLCharacterReference.gperf"
-           {"Uacute", "Ú"},
 #line 568 "HTMLCharacterReference.gperf"
+           {"Uacute", "Ú"},
+#line 569 "HTMLCharacterReference.gperf"
            {"Uacute;", "Ú"},
            {""},
            {""},
@@ -6070,26 +6071,26 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 423 "HTMLCharacterReference.gperf"
+#line 424 "HTMLCharacterReference.gperf"
            {"Oscr;", "𝒪"},
            {""},
            {""},
            {""},
-#line 935 "HTMLCharacterReference.gperf"
+#line 936 "HTMLCharacterReference.gperf"
            {"cwconint;", "∲"},
            {""},
            {""},
            {""},
            {""},
-#line 721 "HTMLCharacterReference.gperf"
+#line 722 "HTMLCharacterReference.gperf"
            {"awconint;", "∳"},
-#line 344 "HTMLCharacterReference.gperf"
+#line 345 "HTMLCharacterReference.gperf"
            {"NestedLessLess;", "≪"},
-#line 768 "HTMLCharacterReference.gperf"
+#line 769 "HTMLCharacterReference.gperf"
            {"blk14;", "░"},
            {""},
            {""},
-#line 397 "HTMLCharacterReference.gperf"
+#line 398 "HTMLCharacterReference.gperf"
            {"NotTilde;", "≁"},
            {""},
            {""},
@@ -6097,26 +6098,26 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 769 "HTMLCharacterReference.gperf"
+#line 770 "HTMLCharacterReference.gperf"
            {"blk34;", "▓"},
            {""},
            {""},
            {""},
-#line 1653 "HTMLCharacterReference.gperf"
+#line 1654 "HTMLCharacterReference.gperf"
            {"ogt;", "⧁"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2177 "HTMLCharacterReference.gperf"
+#line 2178 "HTMLCharacterReference.gperf"
            {"vltri;", "⊲"},
            {""},
            {""},
            {""},
-#line 563 "HTMLCharacterReference.gperf"
+#line 564 "HTMLCharacterReference.gperf"
            {"Topf;", "𝕋"},
-#line 1949 "HTMLCharacterReference.gperf"
+#line 1950 "HTMLCharacterReference.gperf"
            {"sqcap;", "⊓"},
            {""},
            {""},
@@ -6125,22 +6126,22 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1735 "HTMLCharacterReference.gperf"
+#line 1736 "HTMLCharacterReference.gperf"
            {"pr;", "≺"},
            {""},
            {""},
            {""},
            {""},
-#line 315 "HTMLCharacterReference.gperf"
+#line 316 "HTMLCharacterReference.gperf"
            {"Longleftarrow;", "⟸"},
            {""},
-#line 767 "HTMLCharacterReference.gperf"
+#line 768 "HTMLCharacterReference.gperf"
            {"blk12;", "▒"},
-#line 1028 "HTMLCharacterReference.gperf"
+#line 1029 "HTMLCharacterReference.gperf"
            {"elsdot;", "⪗"},
            {""},
            {""},
-#line 1319 "HTMLCharacterReference.gperf"
+#line 1320 "HTMLCharacterReference.gperf"
            {"ldsh;", "↲"},
            {""},
            {""},
@@ -6149,38 +6150,38 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 887 "HTMLCharacterReference.gperf"
+#line 888 "HTMLCharacterReference.gperf"
            {"coloneq;", "≔"},
            {""},
-#line 442 "HTMLCharacterReference.gperf"
+#line 443 "HTMLCharacterReference.gperf"
            {"Popf;", "ℙ"},
            {""},
            {""},
            {""},
            {""},
-#line 1468 "HTMLCharacterReference.gperf"
+#line 1469 "HTMLCharacterReference.gperf"
            {"nGtv;", "≫̸"},
            {""},
            {""},
-#line 910 "HTMLCharacterReference.gperf"
+#line 911 "HTMLCharacterReference.gperf"
            {"cudarrl;", "⤸"},
            {""},
-#line 2247 "HTMLCharacterReference.gperf"
+#line 2248 "HTMLCharacterReference.gperf"
            {"zopf;", "𝕫"},
            {""},
-#line 2223 "HTMLCharacterReference.gperf"
+#line 2224 "HTMLCharacterReference.gperf"
            {"xwedge;", "⋀"},
            {""},
            {""},
-#line 1872 "HTMLCharacterReference.gperf"
+#line 1873 "HTMLCharacterReference.gperf"
            {"rtimes;", "⋊"},
-#line 1650 "HTMLCharacterReference.gperf"
+#line 1651 "HTMLCharacterReference.gperf"
            {"ogon;", "˛"},
-#line 1759 "HTMLCharacterReference.gperf"
+#line 1760 "HTMLCharacterReference.gperf"
            {"prsim;", "≾"},
            {""},
            {""},
-#line 1269 "HTMLCharacterReference.gperf"
+#line 1270 "HTMLCharacterReference.gperf"
            {"kjcy;", "ќ"},
            {""},
            {""},
@@ -6188,19 +6189,19 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1950 "HTMLCharacterReference.gperf"
+#line 1951 "HTMLCharacterReference.gperf"
            {"sqcaps;", "⊓︀"},
            {""},
-#line 1886 "HTMLCharacterReference.gperf"
+#line 1887 "HTMLCharacterReference.gperf"
            {"sce;", "⪰"},
-#line 85 "HTMLCharacterReference.gperf"
+#line 86 "HTMLCharacterReference.gperf"
            {"Congruent;", "≡"},
-#line 1426 "HTMLCharacterReference.gperf"
+#line 1427 "HTMLCharacterReference.gperf"
            {"mDDot;", "∺"},
            {""},
-#line 760 "HTMLCharacterReference.gperf"
+#line 761 "HTMLCharacterReference.gperf"
            {"blacklozenge;", "⧫"},
-#line 1854 "HTMLCharacterReference.gperf"
+#line 1855 "HTMLCharacterReference.gperf"
            {"roang;", "⟭"},
            {""},
            {""},
@@ -6208,10 +6209,10 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1075 "HTMLCharacterReference.gperf"
+#line 1076 "HTMLCharacterReference.gperf"
            {"fflig;", "ﬀ"},
            {""},
-#line 1554 "HTMLCharacterReference.gperf"
+#line 1555 "HTMLCharacterReference.gperf"
            {"notinvc;", "⋶"},
            {""},
            {""},
@@ -6219,16 +6220,16 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1862 "HTMLCharacterReference.gperf"
+#line 1863 "HTMLCharacterReference.gperf"
            {"rpargt;", "⦔"},
-#line 1757 "HTMLCharacterReference.gperf"
+#line 1758 "HTMLCharacterReference.gperf"
            {"prop;", "∝"},
            {""},
            {""},
-#line 50 "HTMLCharacterReference.gperf"
+#line 51 "HTMLCharacterReference.gperf"
            {"Bcy;", "Б"},
            {""},
-#line 1880 "HTMLCharacterReference.gperf"
+#line 1881 "HTMLCharacterReference.gperf"
            {"sbquo;", "‚"},
            {""},
            {""},
@@ -6239,27 +6240,27 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1737 "HTMLCharacterReference.gperf"
+#line 1738 "HTMLCharacterReference.gperf"
            {"prap;", "⪷"},
            {""},
            {""},
            {""},
-#line 633 "HTMLCharacterReference.gperf"
+#line 634 "HTMLCharacterReference.gperf"
            {"YAcy;", "Я"},
            {""},
-#line 2159 "HTMLCharacterReference.gperf"
+#line 2160 "HTMLCharacterReference.gperf"
            {"varrho;", "ϱ"},
            {""},
-#line 1902 "HTMLCharacterReference.gperf"
-           {"sect", "§"},
 #line 1903 "HTMLCharacterReference.gperf"
+           {"sect", "§"},
+#line 1904 "HTMLCharacterReference.gperf"
            {"sect;", "§"},
            {""},
            {""},
-#line 144 "HTMLCharacterReference.gperf"
+#line 145 "HTMLCharacterReference.gperf"
            {"DownTee;", "⊤"},
            {""},
-#line 1913 "HTMLCharacterReference.gperf"
+#line 1914 "HTMLCharacterReference.gperf"
            {"shcy;", "ш"},
            {""},
            {""},
@@ -6268,87 +6269,87 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1627 "HTMLCharacterReference.gperf"
+#line 1628 "HTMLCharacterReference.gperf"
            {"nvrtrie;", "⊵⃒"},
-#line 537 "HTMLCharacterReference.gperf"
+#line 538 "HTMLCharacterReference.gperf"
            {"SucceedsTilde;", "≿"},
            {""},
-#line 1896 "HTMLCharacterReference.gperf"
+#line 1897 "HTMLCharacterReference.gperf"
            {"sdotb;", "⊡"},
-#line 1941 "HTMLCharacterReference.gperf"
+#line 1942 "HTMLCharacterReference.gperf"
            {"softcy;", "ь"},
            {""},
            {""},
            {""},
-#line 34 "HTMLCharacterReference.gperf"
+#line 35 "HTMLCharacterReference.gperf"
            {"Amacr;", "Ā"},
-#line 532 "HTMLCharacterReference.gperf"
+#line 533 "HTMLCharacterReference.gperf"
            {"Subset;", "⋐"},
            {""},
            {""},
-#line 621 "HTMLCharacterReference.gperf"
+#line 622 "HTMLCharacterReference.gperf"
            {"Vopf;", "𝕍"},
-#line 1860 "HTMLCharacterReference.gperf"
+#line 1861 "HTMLCharacterReference.gperf"
            {"rotimes;", "⨵"},
            {""},
            {""},
            {""},
            {""},
-#line 1810 "HTMLCharacterReference.gperf"
+#line 1811 "HTMLCharacterReference.gperf"
            {"rbrksld;", "⦎"},
-#line 1996 "HTMLCharacterReference.gperf"
+#line 1997 "HTMLCharacterReference.gperf"
            {"succeq;", "⪰"},
-#line 2017 "HTMLCharacterReference.gperf"
+#line 2018 "HTMLCharacterReference.gperf"
            {"suplarr;", "⥻"},
-#line 441 "HTMLCharacterReference.gperf"
+#line 442 "HTMLCharacterReference.gperf"
            {"Poincareplane;", "ℌ"},
-#line 943 "HTMLCharacterReference.gperf"
+#line 944 "HTMLCharacterReference.gperf"
            {"dash;", "‐"},
-#line 1198 "HTMLCharacterReference.gperf"
-           {"iacute", "í"},
 #line 1199 "HTMLCharacterReference.gperf"
+           {"iacute", "í"},
+#line 1200 "HTMLCharacterReference.gperf"
            {"iacute;", "í"},
            {""},
            {""},
            {""},
-#line 944 "HTMLCharacterReference.gperf"
+#line 945 "HTMLCharacterReference.gperf"
            {"dashv;", "⊣"},
            {""},
            {""},
-#line 733 "HTMLCharacterReference.gperf"
+#line 734 "HTMLCharacterReference.gperf"
            {"bbrktbrk;", "⎶"},
            {""},
-#line 1982 "HTMLCharacterReference.gperf"
+#line 1983 "HTMLCharacterReference.gperf"
            {"subne;", "⊊"},
-#line 881 "HTMLCharacterReference.gperf"
+#line 882 "HTMLCharacterReference.gperf"
            {"cirmid;", "⫯"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1758 "HTMLCharacterReference.gperf"
+#line 1759 "HTMLCharacterReference.gperf"
            {"propto;", "∝"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1530 "HTMLCharacterReference.gperf"
+#line 1531 "HTMLCharacterReference.gperf"
            {"nlE;", "≦̸"},
            {""},
-#line 932 "HTMLCharacterReference.gperf"
+#line 933 "HTMLCharacterReference.gperf"
            {"curvearrowright;", "↷"},
            {""},
            {""},
            {""},
            {""},
-#line 636 "HTMLCharacterReference.gperf"
-           {"Yacute", "Ý"},
 #line 637 "HTMLCharacterReference.gperf"
+           {"Yacute", "Ý"},
+#line 638 "HTMLCharacterReference.gperf"
            {"Yacute;", "Ý"},
            {""},
-#line 1607 "HTMLCharacterReference.gperf"
+#line 1608 "HTMLCharacterReference.gperf"
            {"ntriangleleft;", "⋪"},
            {""},
            {""},
@@ -6361,7 +6362,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1957 "HTMLCharacterReference.gperf"
+#line 1958 "HTMLCharacterReference.gperf"
            {"sqsup;", "⊐"},
            {""},
            {""},
@@ -6370,7 +6371,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 535 "HTMLCharacterReference.gperf"
+#line 536 "HTMLCharacterReference.gperf"
            {"SucceedsEqual;", "⪰"},
            {""},
            {""},
@@ -6389,7 +6390,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 268 "HTMLCharacterReference.gperf"
+#line 269 "HTMLCharacterReference.gperf"
            {"Lacute;", "Ĺ"},
            {""},
            {""},
@@ -6398,25 +6399,25 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2233 "HTMLCharacterReference.gperf"
+#line 2234 "HTMLCharacterReference.gperf"
            {"yopf;", "𝕪"},
            {""},
-#line 1159 "HTMLCharacterReference.gperf"
+#line 1160 "HTMLCharacterReference.gperf"
            {"gtlPar;", "⦕"},
-#line 1916 "HTMLCharacterReference.gperf"
+#line 1917 "HTMLCharacterReference.gperf"
            {"shy", "­"},
            {""},
            {""},
-#line 1262 "HTMLCharacterReference.gperf"
+#line 1263 "HTMLCharacterReference.gperf"
            {"kappa;", "κ"},
            {""},
-#line 1866 "HTMLCharacterReference.gperf"
+#line 1867 "HTMLCharacterReference.gperf"
            {"rscr;", "𝓇"},
-#line 1917 "HTMLCharacterReference.gperf"
+#line 1918 "HTMLCharacterReference.gperf"
            {"shy;", "­"},
-#line 1326 "HTMLCharacterReference.gperf"
-           {"leftrightarrow;", "↔"},
 #line 1327 "HTMLCharacterReference.gperf"
+           {"leftrightarrow;", "↔"},
+#line 1328 "HTMLCharacterReference.gperf"
            {"leftrightarrows;", "⇆"},
            {""},
            {""},
@@ -6426,14 +6427,14 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 665 "HTMLCharacterReference.gperf"
-           {"aelig", "æ"},
 #line 666 "HTMLCharacterReference.gperf"
+           {"aelig", "æ"},
+#line 667 "HTMLCharacterReference.gperf"
            {"aelig;", "æ"},
            {""},
            {""},
            {""},
-#line 1807 "HTMLCharacterReference.gperf"
+#line 1808 "HTMLCharacterReference.gperf"
            {"rbrace;", "}"},
            {""},
            {""},
@@ -6441,7 +6442,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1167 "HTMLCharacterReference.gperf"
+#line 1168 "HTMLCharacterReference.gperf"
            {"gtrsim;", "≳"},
            {""},
            {""},
@@ -6452,12 +6453,12 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 976 "HTMLCharacterReference.gperf"
+#line 977 "HTMLCharacterReference.gperf"
            {"dollar;", "$"},
            {""},
-#line 1803 "HTMLCharacterReference.gperf"
+#line 1804 "HTMLCharacterReference.gperf"
            {"ratio;", "∶"},
-#line 1739 "HTMLCharacterReference.gperf"
+#line 1740 "HTMLCharacterReference.gperf"
            {"pre;", "⪯"},
            {""},
            {""},
@@ -6469,31 +6470,31 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 472 "HTMLCharacterReference.gperf"
+#line 473 "HTMLCharacterReference.gperf"
            {"ReverseUpEquilibrium;", "⥯"},
            {""},
-#line 1553 "HTMLCharacterReference.gperf"
+#line 1554 "HTMLCharacterReference.gperf"
            {"notinvb;", "⋷"},
            {""},
-#line 221 "HTMLCharacterReference.gperf"
+#line 222 "HTMLCharacterReference.gperf"
            {"IEcy;", "Е"},
-#line 1981 "HTMLCharacterReference.gperf"
+#line 1982 "HTMLCharacterReference.gperf"
            {"subnE;", "⫋"},
-#line 566 "HTMLCharacterReference.gperf"
+#line 567 "HTMLCharacterReference.gperf"
            {"Tstrok;", "Ŧ"},
            {""},
            {""},
-#line 1444 "HTMLCharacterReference.gperf"
-           {"micro", "µ"},
 #line 1445 "HTMLCharacterReference.gperf"
+           {"micro", "µ"},
+#line 1446 "HTMLCharacterReference.gperf"
            {"micro;", "µ"},
            {""},
            {""},
            {""},
-#line 1609 "HTMLCharacterReference.gperf"
+#line 1610 "HTMLCharacterReference.gperf"
            {"ntriangleright;", "⋫"},
            {""},
-#line 1610 "HTMLCharacterReference.gperf"
+#line 1611 "HTMLCharacterReference.gperf"
            {"ntrianglerighteq;", "⋭"},
            {""},
            {""},
@@ -6503,15 +6504,15 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1890 "HTMLCharacterReference.gperf"
+#line 1891 "HTMLCharacterReference.gperf"
            {"scnap;", "⪺"},
            {""},
-#line 1790 "HTMLCharacterReference.gperf"
+#line 1791 "HTMLCharacterReference.gperf"
            {"rarr;", "→"},
            {""},
            {""},
            {""},
-#line 1447 "HTMLCharacterReference.gperf"
+#line 1448 "HTMLCharacterReference.gperf"
            {"midast;", "*"},
            {""},
            {""},
@@ -6530,24 +6531,24 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1455 "HTMLCharacterReference.gperf"
+#line 1456 "HTMLCharacterReference.gperf"
            {"mlcp;", "⫛"},
            {""},
-#line 1194 "HTMLCharacterReference.gperf"
+#line 1195 "HTMLCharacterReference.gperf"
            {"hslash;", "ℏ"},
            {""},
            {""},
            {""},
-#line 367 "HTMLCharacterReference.gperf"
+#line 368 "HTMLCharacterReference.gperf"
            {"NotLeftTriangle;", "⋪"},
            {""},
            {""},
-#line 368 "HTMLCharacterReference.gperf"
+#line 369 "HTMLCharacterReference.gperf"
            {"NotLeftTriangleBar;", "⧏̸"},
            {""},
-#line 369 "HTMLCharacterReference.gperf"
+#line 370 "HTMLCharacterReference.gperf"
            {"NotLeftTriangleEqual;", "⋬"},
-#line 1361 "HTMLCharacterReference.gperf"
+#line 1362 "HTMLCharacterReference.gperf"
            {"llhard;", "⥫"},
            {""},
            {""},
@@ -6555,45 +6556,45 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 299 "HTMLCharacterReference.gperf"
+#line 300 "HTMLCharacterReference.gperf"
            {"LeftVectorBar;", "⥒"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1800 "HTMLCharacterReference.gperf"
+#line 1801 "HTMLCharacterReference.gperf"
            {"rarrtl;", "↣"},
-#line 414 "HTMLCharacterReference.gperf"
-           {"Ograve", "Ò"},
 #line 415 "HTMLCharacterReference.gperf"
+           {"Ograve", "Ò"},
+#line 416 "HTMLCharacterReference.gperf"
            {"Ograve;", "Ò"},
-#line 1328 "HTMLCharacterReference.gperf"
+#line 1329 "HTMLCharacterReference.gperf"
            {"leftrightharpoons;", "⇋"},
            {""},
-#line 1708 "HTMLCharacterReference.gperf"
+#line 1709 "HTMLCharacterReference.gperf"
            {"pfr;", "𝔭"},
-#line 876 "HTMLCharacterReference.gperf"
+#line 877 "HTMLCharacterReference.gperf"
            {"circledast;", "⊛"},
-#line 1615 "HTMLCharacterReference.gperf"
+#line 1616 "HTMLCharacterReference.gperf"
            {"nvDash;", "⊭"},
            {""},
            {""},
-#line 1459 "HTMLCharacterReference.gperf"
+#line 1460 "HTMLCharacterReference.gperf"
            {"mopf;", "𝕞"},
            {""},
-#line 327 "HTMLCharacterReference.gperf"
+#line 328 "HTMLCharacterReference.gperf"
            {"MediumSpace;", " "},
-#line 1690 "HTMLCharacterReference.gperf"
+#line 1691 "HTMLCharacterReference.gperf"
            {"otimes;", "⊗"},
            {""},
-#line 1526 "HTMLCharacterReference.gperf"
+#line 1527 "HTMLCharacterReference.gperf"
            {"nisd;", "⋺"},
            {""},
            {""},
-#line 1983 "HTMLCharacterReference.gperf"
+#line 1984 "HTMLCharacterReference.gperf"
            {"subplus;", "⪿"},
-#line 1322 "HTMLCharacterReference.gperf"
+#line 1323 "HTMLCharacterReference.gperf"
            {"leftarrowtail;", "↢"},
            {""},
            {""},
@@ -6609,44 +6610,44 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1806 "HTMLCharacterReference.gperf"
+#line 1807 "HTMLCharacterReference.gperf"
            {"rbbrk;", "❳"},
-#line 263 "HTMLCharacterReference.gperf"
+#line 264 "HTMLCharacterReference.gperf"
            {"Kopf;", "𝕂"},
            {""},
            {""},
            {""},
            {""},
-#line 1812 "HTMLCharacterReference.gperf"
+#line 1813 "HTMLCharacterReference.gperf"
            {"rcaron;", "ř"},
-#line 170 "HTMLCharacterReference.gperf"
+#line 171 "HTMLCharacterReference.gperf"
            {"EqualTilde;", "≂"},
            {""},
-#line 738 "HTMLCharacterReference.gperf"
+#line 739 "HTMLCharacterReference.gperf"
            {"because;", "∵"},
            {""},
            {""},
-#line 1608 "HTMLCharacterReference.gperf"
+#line 1609 "HTMLCharacterReference.gperf"
            {"ntrianglelefteq;", "⋬"},
            {""},
            {""},
            {""},
            {""},
-#line 2135 "HTMLCharacterReference.gperf"
+#line 2136 "HTMLCharacterReference.gperf"
            {"urcrop;", "⌎"},
-#line 1910 "HTMLCharacterReference.gperf"
+#line 1911 "HTMLCharacterReference.gperf"
            {"sfrown;", "⌢"},
            {""},
            {""},
            {""},
-#line 1165 "HTMLCharacterReference.gperf"
+#line 1166 "HTMLCharacterReference.gperf"
            {"gtreqqless;", "⪌"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 380 "HTMLCharacterReference.gperf"
+#line 381 "HTMLCharacterReference.gperf"
            {"NotPrecedesSlantEqual;", "⋠"},
            {""},
            {""},
@@ -6658,17 +6659,17 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2014 "HTMLCharacterReference.gperf"
+#line 2015 "HTMLCharacterReference.gperf"
            {"supedot;", "⫄"},
            {""},
-#line 1798 "HTMLCharacterReference.gperf"
+#line 1799 "HTMLCharacterReference.gperf"
            {"rarrpl;", "⥅"},
-#line 2133 "HTMLCharacterReference.gperf"
+#line 2134 "HTMLCharacterReference.gperf"
            {"urcorn;", "⌝"},
            {""},
            {""},
            {""},
-#line 2232 "HTMLCharacterReference.gperf"
+#line 2233 "HTMLCharacterReference.gperf"
            {"yicy;", "ї"},
            {""},
            {""},
@@ -6680,7 +6681,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1645 "HTMLCharacterReference.gperf"
+#line 1646 "HTMLCharacterReference.gperf"
            {"odot;", "⊙"},
            {""},
            {""},
@@ -6690,35 +6691,35 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2064 "HTMLCharacterReference.gperf"
+#line 2065 "HTMLCharacterReference.gperf"
            {"tint;", "∭"},
-#line 1740 "HTMLCharacterReference.gperf"
+#line 1741 "HTMLCharacterReference.gperf"
            {"prec;", "≺"},
            {""},
            {""},
            {""},
-#line 2105 "HTMLCharacterReference.gperf"
+#line 2106 "HTMLCharacterReference.gperf"
            {"udarr;", "⇅"},
            {""},
-#line 1577 "HTMLCharacterReference.gperf"
+#line 1578 "HTMLCharacterReference.gperf"
            {"nsccue;", "⋡"},
-#line 1296 "HTMLCharacterReference.gperf"
+#line 1297 "HTMLCharacterReference.gperf"
            {"larrsim;", "⥳"},
            {""},
-#line 1797 "HTMLCharacterReference.gperf"
+#line 1798 "HTMLCharacterReference.gperf"
            {"rarrlp;", "↬"},
            {""},
            {""},
-#line 925 "HTMLCharacterReference.gperf"
+#line 926 "HTMLCharacterReference.gperf"
            {"curlyeqprec;", "⋞"},
            {""},
            {""},
            {""},
-#line 507 "HTMLCharacterReference.gperf"
+#line 508 "HTMLCharacterReference.gperf"
            {"Sacute;", "Ś"},
-#line 1760 "HTMLCharacterReference.gperf"
+#line 1761 "HTMLCharacterReference.gperf"
            {"prurel;", "⊰"},
-#line 2138 "HTMLCharacterReference.gperf"
+#line 2139 "HTMLCharacterReference.gperf"
            {"uscr;", "𝓊"},
            {""},
            {""},
@@ -6728,7 +6729,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 347 "HTMLCharacterReference.gperf"
+#line 348 "HTMLCharacterReference.gperf"
            {"NoBreak;", "⁠"},
            {""},
            {""},
@@ -6737,7 +6738,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1543 "HTMLCharacterReference.gperf"
+#line 1544 "HTMLCharacterReference.gperf"
            {"nltri;", "⋪"},
            {""},
            {""},
@@ -6746,37 +6747,37 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1959 "HTMLCharacterReference.gperf"
-           {"sqsupset;", "⊐"},
-#line 1691 "HTMLCharacterReference.gperf"
-           {"otimesas;", "⨶"},
 #line 1960 "HTMLCharacterReference.gperf"
+           {"sqsupset;", "⊐"},
+#line 1692 "HTMLCharacterReference.gperf"
+           {"otimesas;", "⨶"},
+#line 1961 "HTMLCharacterReference.gperf"
            {"sqsupseteq;", "⊒"},
-#line 1712 "HTMLCharacterReference.gperf"
+#line 1713 "HTMLCharacterReference.gperf"
            {"phone;", "☎"},
            {""},
-#line 1856 "HTMLCharacterReference.gperf"
+#line 1857 "HTMLCharacterReference.gperf"
            {"robrk;", "⟧"},
            {""},
-#line 1637 "HTMLCharacterReference.gperf"
+#line 1638 "HTMLCharacterReference.gperf"
            {"oast;", "⊛"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1751 "HTMLCharacterReference.gperf"
+#line 1752 "HTMLCharacterReference.gperf"
            {"prnap;", "⪹"},
            {""},
            {""},
            {""},
-#line 224 "HTMLCharacterReference.gperf"
-           {"Iacute", "Í"},
 #line 225 "HTMLCharacterReference.gperf"
+           {"Iacute", "Í"},
+#line 226 "HTMLCharacterReference.gperf"
            {"Iacute;", "Í"},
            {""},
            {""},
-#line 301 "HTMLCharacterReference.gperf"
+#line 302 "HTMLCharacterReference.gperf"
            {"Leftrightarrow;", "⇔"},
            {""},
            {""},
@@ -6784,54 +6785,54 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 748 "HTMLCharacterReference.gperf"
+#line 749 "HTMLCharacterReference.gperf"
            {"bigcup;", "⋃"},
            {""},
-#line 1129 "HTMLCharacterReference.gperf"
+#line 1130 "HTMLCharacterReference.gperf"
            {"gesdotol;", "⪄"},
            {""},
-#line 102 "HTMLCharacterReference.gperf"
+#line 103 "HTMLCharacterReference.gperf"
            {"Dashv;", "⫤"},
            {""},
-#line 2246 "HTMLCharacterReference.gperf"
+#line 2247 "HTMLCharacterReference.gperf"
            {"zigrarr;", "⇝"},
            {""},
-#line 1623 "HTMLCharacterReference.gperf"
+#line 1624 "HTMLCharacterReference.gperf"
            {"nvle;", "≤⃒"},
-#line 2073 "HTMLCharacterReference.gperf"
+#line 2074 "HTMLCharacterReference.gperf"
            {"trade;", "™"},
-#line 1478 "HTMLCharacterReference.gperf"
+#line 1479 "HTMLCharacterReference.gperf"
            {"nacute;", "ń"},
            {""},
-#line 697 "HTMLCharacterReference.gperf"
+#line 698 "HTMLCharacterReference.gperf"
            {"angrtvbd;", "⦝"},
            {""},
            {""},
-#line 725 "HTMLCharacterReference.gperf"
+#line 726 "HTMLCharacterReference.gperf"
            {"backepsilon;", "϶"},
            {""},
-#line 124 "HTMLCharacterReference.gperf"
+#line 125 "HTMLCharacterReference.gperf"
            {"DoubleLeftTee;", "⫤"},
            {""},
            {""},
            {""},
            {""},
-#line 2099 "HTMLCharacterReference.gperf"
+#line 2100 "HTMLCharacterReference.gperf"
            {"uarr;", "↑"},
            {""},
-#line 1684 "HTMLCharacterReference.gperf"
+#line 1685 "HTMLCharacterReference.gperf"
            {"oscr;", "ℴ"},
            {""},
-#line 926 "HTMLCharacterReference.gperf"
+#line 927 "HTMLCharacterReference.gperf"
            {"curlyeqsucc;", "⋟"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1794 "HTMLCharacterReference.gperf"
+#line 1795 "HTMLCharacterReference.gperf"
            {"rarrc;", "⤳"},
-#line 372 "HTMLCharacterReference.gperf"
+#line 373 "HTMLCharacterReference.gperf"
            {"NotLessGreater;", "≸"},
            {""},
            {""},
@@ -6839,18 +6840,18 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 878 "HTMLCharacterReference.gperf"
+#line 879 "HTMLCharacterReference.gperf"
            {"circleddash;", "⊝"},
            {""},
            {""},
            {""},
            {""},
-#line 645 "HTMLCharacterReference.gperf"
+#line 646 "HTMLCharacterReference.gperf"
            {"Zacute;", "Ź"},
            {""},
            {""},
            {""},
-#line 955 "HTMLCharacterReference.gperf"
+#line 956 "HTMLCharacterReference.gperf"
            {"delta;", "δ"},
            {""},
            {""},
@@ -6861,19 +6862,19 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 295 "HTMLCharacterReference.gperf"
+#line 296 "HTMLCharacterReference.gperf"
            {"LeftUpTeeVector;", "⥠"},
            {""},
            {""},
            {""},
            {""},
-#line 1953 "HTMLCharacterReference.gperf"
+#line 1954 "HTMLCharacterReference.gperf"
            {"sqsub;", "⊏"},
            {""},
            {""},
            {""},
            {""},
-#line 297 "HTMLCharacterReference.gperf"
+#line 298 "HTMLCharacterReference.gperf"
            {"LeftUpVectorBar;", "⥘"},
            {""},
            {""},
@@ -6883,18 +6884,18 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 319 "HTMLCharacterReference.gperf"
+#line 320 "HTMLCharacterReference.gperf"
            {"LowerLeftArrow;", "↙"},
            {""},
            {""},
            {""},
-#line 1998 "HTMLCharacterReference.gperf"
+#line 1999 "HTMLCharacterReference.gperf"
            {"succneqq;", "⪶"},
-#line 586 "HTMLCharacterReference.gperf"
+#line 587 "HTMLCharacterReference.gperf"
            {"UnionPlus;", "⊎"},
            {""},
            {""},
-#line 1826 "HTMLCharacterReference.gperf"
+#line 1827 "HTMLCharacterReference.gperf"
            {"rect;", "▭"},
            {""},
            {""},
@@ -6902,25 +6903,25 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 120 "HTMLCharacterReference.gperf"
+#line 121 "HTMLCharacterReference.gperf"
            {"DoubleDot;", "¨"},
-#line 1223 "HTMLCharacterReference.gperf"
+#line 1224 "HTMLCharacterReference.gperf"
            {"imped;", "Ƶ"},
            {""},
-#line 1176 "HTMLCharacterReference.gperf"
+#line 1177 "HTMLCharacterReference.gperf"
            {"harrcir;", "⥈"},
            {""},
            {""},
            {""},
            {""},
-#line 1763 "HTMLCharacterReference.gperf"
+#line 1764 "HTMLCharacterReference.gperf"
            {"puncsp;", " "},
            {""},
-#line 55 "HTMLCharacterReference.gperf"
+#line 56 "HTMLCharacterReference.gperf"
            {"Bopf;", "𝔹"},
            {""},
            {""},
-#line 950 "HTMLCharacterReference.gperf"
+#line 951 "HTMLCharacterReference.gperf"
            {"ddagger;", "‡"},
            {""},
            {""},
@@ -6928,15 +6929,15 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 265 "HTMLCharacterReference.gperf"
+#line 266 "HTMLCharacterReference.gperf"
            {"LJcy;", "Љ"},
            {""},
            {""},
            {""},
            {""},
-#line 88 "HTMLCharacterReference.gperf"
+#line 89 "HTMLCharacterReference.gperf"
            {"Copf;", "ℂ"},
-#line 1079 "HTMLCharacterReference.gperf"
+#line 1080 "HTMLCharacterReference.gperf"
            {"fjlig;", "fj"},
            {""},
            {""},
@@ -6945,39 +6946,39 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1185 "HTMLCharacterReference.gperf"
+#line 1186 "HTMLCharacterReference.gperf"
            {"hksearow;", "⤥"},
-#line 352 "HTMLCharacterReference.gperf"
+#line 353 "HTMLCharacterReference.gperf"
            {"NotCupCap;", "≭"},
            {""},
-#line 462 "HTMLCharacterReference.gperf"
+#line 463 "HTMLCharacterReference.gperf"
            {"Racute;", "Ŕ"},
            {""},
            {""},
            {""},
-#line 1706 "HTMLCharacterReference.gperf"
+#line 1707 "HTMLCharacterReference.gperf"
            {"perp;", "⊥"},
            {""},
            {""},
-#line 1869 "HTMLCharacterReference.gperf"
-           {"rsquo;", "’"},
 #line 1870 "HTMLCharacterReference.gperf"
+           {"rsquo;", "’"},
+#line 1871 "HTMLCharacterReference.gperf"
            {"rsquor;", "’"},
            {""},
            {""},
            {""},
            {""},
-#line 286 "HTMLCharacterReference.gperf"
+#line 287 "HTMLCharacterReference.gperf"
            {"LeftRightArrow;", "↔"},
-#line 152 "HTMLCharacterReference.gperf"
-           {"Eacute", "É"},
 #line 153 "HTMLCharacterReference.gperf"
+           {"Eacute", "É"},
+#line 154 "HTMLCharacterReference.gperf"
            {"Eacute;", "É"},
            {""},
            {""},
            {""},
            {""},
-#line 1674 "HTMLCharacterReference.gperf"
+#line 1675 "HTMLCharacterReference.gperf"
            {"order;", "ℴ"},
            {""},
            {""},
@@ -6986,19 +6987,19 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1978 "HTMLCharacterReference.gperf"
+#line 1979 "HTMLCharacterReference.gperf"
            {"sube;", "⊆"},
            {""},
-#line 1433 "HTMLCharacterReference.gperf"
+#line 1434 "HTMLCharacterReference.gperf"
            {"mapsto;", "↦"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2134 "HTMLCharacterReference.gperf"
+#line 2135 "HTMLCharacterReference.gperf"
            {"urcorner;", "⌝"},
-#line 1265 "HTMLCharacterReference.gperf"
+#line 1266 "HTMLCharacterReference.gperf"
            {"kcy;", "к"},
            {""},
            {""},
@@ -7006,24 +7007,24 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1042 "HTMLCharacterReference.gperf"
+#line 1043 "HTMLCharacterReference.gperf"
            {"eplus;", "⩱"},
            {""},
            {""},
-#line 1921 "HTMLCharacterReference.gperf"
+#line 1922 "HTMLCharacterReference.gperf"
            {"sim;", "∼"},
            {""},
-#line 740 "HTMLCharacterReference.gperf"
+#line 741 "HTMLCharacterReference.gperf"
            {"bepsi;", "϶"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2068 "HTMLCharacterReference.gperf"
+#line 2069 "HTMLCharacterReference.gperf"
            {"topcir;", "⫱"},
            {""},
-#line 1377 "HTMLCharacterReference.gperf"
+#line 1378 "HTMLCharacterReference.gperf"
            {"longleftrightarrow;", "⟷"},
            {""},
            {""},
@@ -7031,7 +7032,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 700 "HTMLCharacterReference.gperf"
+#line 701 "HTMLCharacterReference.gperf"
            {"angzarr;", "⍼"},
            {""},
            {""},
@@ -7039,44 +7040,44 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 945 "HTMLCharacterReference.gperf"
+#line 946 "HTMLCharacterReference.gperf"
            {"dbkarow;", "⤏"},
-#line 1814 "HTMLCharacterReference.gperf"
+#line 1815 "HTMLCharacterReference.gperf"
            {"rceil;", "⌉"},
            {""},
            {""},
-#line 1475 "HTMLCharacterReference.gperf"
+#line 1476 "HTMLCharacterReference.gperf"
            {"nVDash;", "⊯"},
            {""},
            {""},
            {""},
-#line 1971 "HTMLCharacterReference.gperf"
+#line 1972 "HTMLCharacterReference.gperf"
            {"starf;", "★"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2146 "HTMLCharacterReference.gperf"
+#line 2147 "HTMLCharacterReference.gperf"
            {"uwangle;", "⦧"},
            {""},
            {""},
            {""},
-#line 783 "HTMLCharacterReference.gperf"
+#line 784 "HTMLCharacterReference.gperf"
            {"boxHD;", "╦"},
            {""},
-#line 1743 "HTMLCharacterReference.gperf"
+#line 1744 "HTMLCharacterReference.gperf"
            {"preceq;", "⪯"},
            {""},
-#line 1927 "HTMLCharacterReference.gperf"
+#line 1928 "HTMLCharacterReference.gperf"
            {"siml;", "⪝"},
            {""},
-#line 1648 "HTMLCharacterReference.gperf"
+#line 1649 "HTMLCharacterReference.gperf"
            {"ofcir;", "⦿"},
            {""},
-#line 446 "HTMLCharacterReference.gperf"
+#line 447 "HTMLCharacterReference.gperf"
            {"PrecedesSlantEqual;", "≼"},
-#line 80 "HTMLCharacterReference.gperf"
+#line 81 "HTMLCharacterReference.gperf"
            {"ClockwiseContourIntegral;", "∲"},
            {""},
            {""},
@@ -7086,31 +7087,31 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 96 "HTMLCharacterReference.gperf"
+#line 97 "HTMLCharacterReference.gperf"
            {"DDotrahd;", "⤑"},
-#line 1481 "HTMLCharacterReference.gperf"
+#line 1482 "HTMLCharacterReference.gperf"
            {"napE;", "⩰̸"},
-#line 1216 "HTMLCharacterReference.gperf"
+#line 1217 "HTMLCharacterReference.gperf"
            {"ijlig;", "ĳ"},
            {""},
            {""},
            {""},
-#line 1580 "HTMLCharacterReference.gperf"
+#line 1581 "HTMLCharacterReference.gperf"
            {"nshortmid;", "∤"},
            {""},
-#line 877 "HTMLCharacterReference.gperf"
+#line 878 "HTMLCharacterReference.gperf"
            {"circledcirc;", "⊚"},
            {""},
            {""},
            {""},
-#line 805 "HTMLCharacterReference.gperf"
+#line 806 "HTMLCharacterReference.gperf"
            {"boxhU;", "╨"},
            {""},
            {""},
            {""},
-#line 97 "HTMLCharacterReference.gperf"
+#line 98 "HTMLCharacterReference.gperf"
            {"DJcy;", "Ђ"},
-#line 121 "HTMLCharacterReference.gperf"
+#line 122 "HTMLCharacterReference.gperf"
            {"DoubleDownArrow;", "⇓"},
            {""},
            {""},
@@ -7131,28 +7132,28 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2152 "HTMLCharacterReference.gperf"
+#line 2153 "HTMLCharacterReference.gperf"
            {"varepsilon;", "ϵ"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2167 "HTMLCharacterReference.gperf"
+#line 2168 "HTMLCharacterReference.gperf"
            {"vartriangleright;", "⊳"},
            {""},
-#line 1792 "HTMLCharacterReference.gperf"
+#line 1793 "HTMLCharacterReference.gperf"
            {"rarrb;", "⇥"},
            {""},
-#line 1932 "HTMLCharacterReference.gperf"
+#line 1933 "HTMLCharacterReference.gperf"
            {"slarr;", "←"},
            {""},
-#line 1054 "HTMLCharacterReference.gperf"
+#line 1055 "HTMLCharacterReference.gperf"
            {"equivDD;", "⩸"},
            {""},
-#line 2114 "HTMLCharacterReference.gperf"
+#line 2115 "HTMLCharacterReference.gperf"
            {"uhblk;", "▀"},
-#line 2101 "HTMLCharacterReference.gperf"
+#line 2102 "HTMLCharacterReference.gperf"
            {"ubreve;", "ŭ"},
            {""},
            {""},
@@ -7160,27 +7161,27 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1646 "HTMLCharacterReference.gperf"
+#line 1647 "HTMLCharacterReference.gperf"
            {"odsold;", "⦼"},
            {""},
            {""},
            {""},
-#line 335 "HTMLCharacterReference.gperf"
+#line 336 "HTMLCharacterReference.gperf"
            {"Nacute;", "Ń"},
            {""},
-#line 1914 "HTMLCharacterReference.gperf"
+#line 1915 "HTMLCharacterReference.gperf"
            {"shortmid;", "∣"},
            {""},
            {""},
            {""},
            {""},
-#line 1140 "HTMLCharacterReference.gperf"
+#line 1141 "HTMLCharacterReference.gperf"
            {"glj;", "⪤"},
-#line 203 "HTMLCharacterReference.gperf"
+#line 204 "HTMLCharacterReference.gperf"
            {"GreaterGreater;", "⪢"},
-#line 546 "HTMLCharacterReference.gperf"
+#line 547 "HTMLCharacterReference.gperf"
            {"TRADE;", "™"},
-#line 1958 "HTMLCharacterReference.gperf"
+#line 1959 "HTMLCharacterReference.gperf"
            {"sqsupe;", "⊒"},
            {""},
            {""},
@@ -7204,24 +7205,24 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2110 "HTMLCharacterReference.gperf"
-           {"ugrave", "ù"},
 #line 2111 "HTMLCharacterReference.gperf"
+           {"ugrave", "ù"},
+#line 2112 "HTMLCharacterReference.gperf"
            {"ugrave;", "ù"},
            {""},
            {""},
            {""},
            {""},
-#line 2054 "HTMLCharacterReference.gperf"
+#line 2055 "HTMLCharacterReference.gperf"
            {"thkap;", "≈"},
            {""},
            {""},
            {""},
-#line 1539 "HTMLCharacterReference.gperf"
+#line 1540 "HTMLCharacterReference.gperf"
            {"nles;", "⩽̸"},
-#line 426 "HTMLCharacterReference.gperf"
-           {"Otilde", "Õ"},
 #line 427 "HTMLCharacterReference.gperf"
+           {"Otilde", "Õ"},
+#line 428 "HTMLCharacterReference.gperf"
            {"Otilde;", "Õ"},
            {""},
            {""},
@@ -7238,35 +7239,35 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1704 "HTMLCharacterReference.gperf"
+#line 1705 "HTMLCharacterReference.gperf"
            {"period;", "."},
            {""},
-#line 2132 "HTMLCharacterReference.gperf"
+#line 2133 "HTMLCharacterReference.gperf"
            {"upuparrows;", "⇈"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 24 "HTMLCharacterReference.gperf"
-           {"Aacute", "Á"},
 #line 25 "HTMLCharacterReference.gperf"
+           {"Aacute", "Á"},
+#line 26 "HTMLCharacterReference.gperf"
            {"Aacute;", "Á"},
            {""},
-#line 1955 "HTMLCharacterReference.gperf"
-           {"sqsubset;", "⊏"},
-#line 2002 "HTMLCharacterReference.gperf"
-           {"sung;", "♪"},
 #line 1956 "HTMLCharacterReference.gperf"
+           {"sqsubset;", "⊏"},
+#line 2003 "HTMLCharacterReference.gperf"
+           {"sung;", "♪"},
+#line 1957 "HTMLCharacterReference.gperf"
            {"sqsubseteq;", "⊑"},
            {""},
            {""},
            {""},
-#line 1329 "HTMLCharacterReference.gperf"
+#line 1330 "HTMLCharacterReference.gperf"
            {"leftrightsquigarrow;", "↭"},
-#line 1888 "HTMLCharacterReference.gperf"
+#line 1889 "HTMLCharacterReference.gperf"
            {"scirc;", "ŝ"},
-#line 928 "HTMLCharacterReference.gperf"
+#line 929 "HTMLCharacterReference.gperf"
            {"curlywedge;", "⋏"},
            {""},
            {""},
@@ -7277,7 +7278,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1364 "HTMLCharacterReference.gperf"
+#line 1365 "HTMLCharacterReference.gperf"
            {"lmoust;", "⎰"},
            {""},
            {""},
@@ -7285,26 +7286,26 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1436 "HTMLCharacterReference.gperf"
+#line 1437 "HTMLCharacterReference.gperf"
            {"mapstoup;", "↥"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1762 "HTMLCharacterReference.gperf"
+#line 1763 "HTMLCharacterReference.gperf"
            {"psi;", "ψ"},
-#line 83 "HTMLCharacterReference.gperf"
+#line 84 "HTMLCharacterReference.gperf"
            {"Colon;", "∷"},
-#line 302 "HTMLCharacterReference.gperf"
+#line 303 "HTMLCharacterReference.gperf"
            {"LessEqualGreater;", "⋚"},
            {""},
            {""},
            {""},
            {""},
-#line 1651 "HTMLCharacterReference.gperf"
-           {"ograve", "ò"},
 #line 1652 "HTMLCharacterReference.gperf"
+           {"ograve", "ò"},
+#line 1653 "HTMLCharacterReference.gperf"
            {"ograve;", "ò"},
            {""},
            {""},
@@ -7313,31 +7314,31 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 364 "HTMLCharacterReference.gperf"
+#line 365 "HTMLCharacterReference.gperf"
            {"NotGreaterTilde;", "≵"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 777 "HTMLCharacterReference.gperf"
+#line 778 "HTMLCharacterReference.gperf"
            {"bowtie;", "⋈"},
            {""},
-#line 1782 "HTMLCharacterReference.gperf"
+#line 1783 "HTMLCharacterReference.gperf"
            {"radic;", "√"},
            {""},
-#line 106 "HTMLCharacterReference.gperf"
+#line 107 "HTMLCharacterReference.gperf"
            {"Delta;", "Δ"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1274 "HTMLCharacterReference.gperf"
+#line 1275 "HTMLCharacterReference.gperf"
            {"lAtail;", "⤛"},
            {""},
            {""},
-#line 2136 "HTMLCharacterReference.gperf"
+#line 2137 "HTMLCharacterReference.gperf"
            {"uring;", "ů"},
            {""},
            {""},
@@ -7345,7 +7346,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1946 "HTMLCharacterReference.gperf"
+#line 1947 "HTMLCharacterReference.gperf"
            {"spades;", "♠"},
            {""},
            {""},
@@ -7365,7 +7366,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1929 "HTMLCharacterReference.gperf"
+#line 1930 "HTMLCharacterReference.gperf"
            {"simne;", "≆"},
            {""},
            {""},
@@ -7374,34 +7375,34 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 316 "HTMLCharacterReference.gperf"
+#line 317 "HTMLCharacterReference.gperf"
            {"Longleftrightarrow;", "⟺"},
            {""},
            {""},
-#line 1074 "HTMLCharacterReference.gperf"
+#line 1075 "HTMLCharacterReference.gperf"
            {"ffilig;", "ﬃ"},
            {""},
            {""},
            {""},
            {""},
-#line 2051 "HTMLCharacterReference.gperf"
+#line 2052 "HTMLCharacterReference.gperf"
            {"thickapprox;", "≈"},
            {""},
-#line 2042 "HTMLCharacterReference.gperf"
+#line 2043 "HTMLCharacterReference.gperf"
            {"tcy;", "т"},
            {""},
-#line 292 "HTMLCharacterReference.gperf"
+#line 293 "HTMLCharacterReference.gperf"
            {"LeftTriangleBar;", "⧏"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2011 "HTMLCharacterReference.gperf"
+#line 2012 "HTMLCharacterReference.gperf"
            {"supdot;", "⪾"},
            {""},
            {""},
-#line 1709 "HTMLCharacterReference.gperf"
+#line 1710 "HTMLCharacterReference.gperf"
            {"phi;", "φ"},
            {""},
            {""},
@@ -7414,15 +7415,15 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 395 "HTMLCharacterReference.gperf"
+#line 396 "HTMLCharacterReference.gperf"
            {"NotSuperset;", "⊃⃒"},
            {""},
            {""},
            {""},
            {""},
-#line 1748 "HTMLCharacterReference.gperf"
+#line 1749 "HTMLCharacterReference.gperf"
            {"prime;", "′"},
-#line 341 "HTMLCharacterReference.gperf"
+#line 342 "HTMLCharacterReference.gperf"
            {"NegativeThinSpace;", "​"},
            {""},
            {""},
@@ -7441,37 +7442,37 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1451 "HTMLCharacterReference.gperf"
+#line 1452 "HTMLCharacterReference.gperf"
            {"minus;", "−"},
            {""},
            {""},
            {""},
            {""},
-#line 1994 "HTMLCharacterReference.gperf"
+#line 1995 "HTMLCharacterReference.gperf"
            {"succapprox;", "⪸"},
            {""},
            {""},
-#line 752 "HTMLCharacterReference.gperf"
+#line 753 "HTMLCharacterReference.gperf"
            {"bigsqcup;", "⨆"},
            {""},
            {""},
            {""},
-#line 1703 "HTMLCharacterReference.gperf"
+#line 1704 "HTMLCharacterReference.gperf"
            {"percnt;", "%"},
            {""},
            {""},
-#line 1928 "HTMLCharacterReference.gperf"
+#line 1929 "HTMLCharacterReference.gperf"
            {"simlE;", "⪟"},
            {""},
            {""},
            {""},
            {""},
-#line 1068 "HTMLCharacterReference.gperf"
+#line 1069 "HTMLCharacterReference.gperf"
            {"exist;", "∃"},
            {""},
            {""},
            {""},
-#line 73 "HTMLCharacterReference.gperf"
+#line 74 "HTMLCharacterReference.gperf"
            {"CenterDot;", "·"},
            {""},
            {""},
@@ -7479,27 +7480,27 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 547 "HTMLCharacterReference.gperf"
+#line 548 "HTMLCharacterReference.gperf"
            {"TSHcy;", "Ћ"},
            {""},
            {""},
            {""},
-#line 1540 "HTMLCharacterReference.gperf"
+#line 1541 "HTMLCharacterReference.gperf"
            {"nless;", "≮"},
            {""},
-#line 1749 "HTMLCharacterReference.gperf"
+#line 1750 "HTMLCharacterReference.gperf"
            {"primes;", "ℙ"},
            {""},
            {""},
            {""},
-#line 1824 "HTMLCharacterReference.gperf"
+#line 1825 "HTMLCharacterReference.gperf"
            {"realpart;", "ℜ"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 65 "HTMLCharacterReference.gperf"
+#line 66 "HTMLCharacterReference.gperf"
            {"Cayleys;", "ℭ"},
            {""},
            {""},
@@ -7513,13 +7514,13 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1733 "HTMLCharacterReference.gperf"
-           {"pound", "£"},
 #line 1734 "HTMLCharacterReference.gperf"
+           {"pound", "£"},
+#line 1735 "HTMLCharacterReference.gperf"
            {"pound;", "£"},
            {""},
            {""},
-#line 187 "HTMLCharacterReference.gperf"
+#line 188 "HTMLCharacterReference.gperf"
            {"GJcy;", "Ѓ"},
            {""},
            {""},
@@ -7527,10 +7528,10 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1654 "HTMLCharacterReference.gperf"
+#line 1655 "HTMLCharacterReference.gperf"
            {"ohbar;", "⦵"},
            {""},
-#line 1026 "HTMLCharacterReference.gperf"
+#line 1027 "HTMLCharacterReference.gperf"
            {"ell;", "ℓ"},
            {""},
            {""},
@@ -7539,7 +7540,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1544 "HTMLCharacterReference.gperf"
+#line 1545 "HTMLCharacterReference.gperf"
            {"nltrie;", "⋬"},
            {""},
            {""},
@@ -7548,9 +7549,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 409 "HTMLCharacterReference.gperf"
-           {"Ocirc", "Ô"},
 #line 410 "HTMLCharacterReference.gperf"
+           {"Ocirc", "Ô"},
+#line 411 "HTMLCharacterReference.gperf"
            {"Ocirc;", "Ô"},
            {""},
            {""},
@@ -7559,12 +7560,12 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 305 "HTMLCharacterReference.gperf"
+#line 306 "HTMLCharacterReference.gperf"
            {"LessLess;", "⪡"},
            {""},
-#line 672 "HTMLCharacterReference.gperf"
+#line 673 "HTMLCharacterReference.gperf"
            {"aleph;", "ℵ"},
-#line 1694 "HTMLCharacterReference.gperf"
+#line 1695 "HTMLCharacterReference.gperf"
            {"ovbar;", "⌽"},
            {""},
            {""},
@@ -7581,15 +7582,15 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 451 "HTMLCharacterReference.gperf"
+#line 452 "HTMLCharacterReference.gperf"
            {"Proportional;", "∝"},
            {""},
            {""},
-#line 872 "HTMLCharacterReference.gperf"
+#line 873 "HTMLCharacterReference.gperf"
            {"circlearrowleft;", "↺"},
-#line 2238 "HTMLCharacterReference.gperf"
+#line 2239 "HTMLCharacterReference.gperf"
            {"zacute;", "ź"},
-#line 1815 "HTMLCharacterReference.gperf"
+#line 1816 "HTMLCharacterReference.gperf"
            {"rcub;", "}"},
            {""},
            {""},
@@ -7597,11 +7598,11 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 470 "HTMLCharacterReference.gperf"
+#line 471 "HTMLCharacterReference.gperf"
            {"ReverseElement;", "∋"},
            {""},
            {""},
-#line 730 "HTMLCharacterReference.gperf"
+#line 731 "HTMLCharacterReference.gperf"
            {"barwed;", "⌅"},
            {""},
            {""},
@@ -7616,14 +7617,14 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 342 "HTMLCharacterReference.gperf"
+#line 343 "HTMLCharacterReference.gperf"
            {"NegativeVeryThinSpace;", "​"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1930 "HTMLCharacterReference.gperf"
+#line 1931 "HTMLCharacterReference.gperf"
            {"simplus;", "⨤"},
            {""},
            {""},
@@ -7631,36 +7632,36 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1745 "HTMLCharacterReference.gperf"
+#line 1746 "HTMLCharacterReference.gperf"
            {"precneqq;", "⪵"},
            {""},
            {""},
            {""},
            {""},
-#line 869 "HTMLCharacterReference.gperf"
+#line 870 "HTMLCharacterReference.gperf"
            {"cirE;", "⧃"},
            {""},
            {""},
            {""},
            {""},
-#line 1560 "HTMLCharacterReference.gperf"
+#line 1561 "HTMLCharacterReference.gperf"
            {"nparallel;", "∦"},
            {""},
-#line 1850 "HTMLCharacterReference.gperf"
+#line 1851 "HTMLCharacterReference.gperf"
            {"rlm;", "‏"},
-#line 70 "HTMLCharacterReference.gperf"
+#line 71 "HTMLCharacterReference.gperf"
            {"Cconint;", "∰"},
            {""},
            {""},
            {""},
            {""},
-#line 1556 "HTMLCharacterReference.gperf"
+#line 1557 "HTMLCharacterReference.gperf"
            {"notniva;", "∌"},
            {""},
-#line 1270 "HTMLCharacterReference.gperf"
+#line 1271 "HTMLCharacterReference.gperf"
            {"kopf;", "𝕜"},
            {""},
-#line 1954 "HTMLCharacterReference.gperf"
+#line 1955 "HTMLCharacterReference.gperf"
            {"sqsube;", "⊑"},
            {""},
            {""},
@@ -7672,15 +7673,15 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 289 "HTMLCharacterReference.gperf"
+#line 290 "HTMLCharacterReference.gperf"
            {"LeftTeeArrow;", "↤"},
            {""},
-#line 334 "HTMLCharacterReference.gperf"
+#line 335 "HTMLCharacterReference.gperf"
            {"NJcy;", "Њ"},
            {""},
            {""},
            {""},
-#line 744 "HTMLCharacterReference.gperf"
+#line 745 "HTMLCharacterReference.gperf"
            {"between;", "≬"},
            {""},
            {""},
@@ -7693,33 +7694,33 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1761 "HTMLCharacterReference.gperf"
+#line 1762 "HTMLCharacterReference.gperf"
            {"pscr;", "𝓅"},
            {""},
            {""},
            {""},
-#line 129 "HTMLCharacterReference.gperf"
+#line 130 "HTMLCharacterReference.gperf"
            {"DoubleRightTee;", "⊨"},
            {""},
            {""},
-#line 589 "HTMLCharacterReference.gperf"
+#line 590 "HTMLCharacterReference.gperf"
            {"UpArrow;", "↑"},
            {""},
-#line 564 "HTMLCharacterReference.gperf"
+#line 565 "HTMLCharacterReference.gperf"
            {"TripleDot;", "⃛"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1793 "HTMLCharacterReference.gperf"
+#line 1794 "HTMLCharacterReference.gperf"
            {"rarrbfs;", "⤠"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1867 "HTMLCharacterReference.gperf"
+#line 1868 "HTMLCharacterReference.gperf"
            {"rsh;", "↱"},
            {""},
            {""},
@@ -7729,7 +7730,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1529 "HTMLCharacterReference.gperf"
+#line 1530 "HTMLCharacterReference.gperf"
            {"nlArr;", "⇍"},
            {""},
            {""},
@@ -7738,35 +7739,35 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1875 "HTMLCharacterReference.gperf"
+#line 1876 "HTMLCharacterReference.gperf"
            {"rtrif;", "▸"},
            {""},
            {""},
-#line 1453 "HTMLCharacterReference.gperf"
+#line 1454 "HTMLCharacterReference.gperf"
            {"minusd;", "∸"},
            {""},
            {""},
            {""},
-#line 354 "HTMLCharacterReference.gperf"
+#line 355 "HTMLCharacterReference.gperf"
            {"NotElement;", "∉"},
            {""},
            {""},
-#line 1848 "HTMLCharacterReference.gperf"
+#line 1849 "HTMLCharacterReference.gperf"
            {"rlarr;", "⇄"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1695 "HTMLCharacterReference.gperf"
+#line 1696 "HTMLCharacterReference.gperf"
            {"par;", "∥"},
-#line 1701 "HTMLCharacterReference.gperf"
+#line 1702 "HTMLCharacterReference.gperf"
            {"part;", "∂"},
            {""},
            {""},
            {""},
            {""},
-#line 1951 "HTMLCharacterReference.gperf"
+#line 1952 "HTMLCharacterReference.gperf"
            {"sqcup;", "⊔"},
            {""},
            {""},
@@ -7777,7 +7778,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1434 "HTMLCharacterReference.gperf"
+#line 1435 "HTMLCharacterReference.gperf"
            {"mapstodown;", "↧"},
            {""},
            {""},
@@ -7798,49 +7799,49 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2224 "HTMLCharacterReference.gperf"
-           {"yacute", "ý"},
 #line 2225 "HTMLCharacterReference.gperf"
+           {"yacute", "ý"},
+#line 2226 "HTMLCharacterReference.gperf"
            {"yacute;", "ý"},
            {""},
            {""},
            {""},
-#line 1469 "HTMLCharacterReference.gperf"
+#line 1470 "HTMLCharacterReference.gperf"
            {"nLeftarrow;", "⇍"},
            {""},
            {""},
            {""},
-#line 2059 "HTMLCharacterReference.gperf"
-           {"times", "×"},
 #line 2060 "HTMLCharacterReference.gperf"
+           {"times", "×"},
+#line 2061 "HTMLCharacterReference.gperf"
            {"times;", "×"},
-#line 2081 "HTMLCharacterReference.gperf"
+#line 2082 "HTMLCharacterReference.gperf"
            {"tridot;", "◬"},
            {""},
-#line 619 "HTMLCharacterReference.gperf"
+#line 620 "HTMLCharacterReference.gperf"
            {"VeryThinSpace;", " "},
-#line 38 "HTMLCharacterReference.gperf"
+#line 39 "HTMLCharacterReference.gperf"
            {"ApplyFunction;", "⁡"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2140 "HTMLCharacterReference.gperf"
+#line 2141 "HTMLCharacterReference.gperf"
            {"utilde;", "ũ"},
            {""},
-#line 2033 "HTMLCharacterReference.gperf"
+#line 2034 "HTMLCharacterReference.gperf"
            {"swarrow;", "↙"},
            {""},
            {""},
            {""},
-#line 1952 "HTMLCharacterReference.gperf"
+#line 1953 "HTMLCharacterReference.gperf"
            {"sqcups;", "⊔︀"},
-#line 2018 "HTMLCharacterReference.gperf"
+#line 2019 "HTMLCharacterReference.gperf"
            {"supmult;", "⫂"},
-#line 1894 "HTMLCharacterReference.gperf"
+#line 1895 "HTMLCharacterReference.gperf"
            {"scy;", "с"},
-#line 984 "HTMLCharacterReference.gperf"
+#line 985 "HTMLCharacterReference.gperf"
            {"doublebarwedge;", "⌆"},
            {""},
            {""},
@@ -7853,7 +7854,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1310 "HTMLCharacterReference.gperf"
+#line 1311 "HTMLCharacterReference.gperf"
            {"lcedil;", "ļ"},
            {""},
            {""},
@@ -7861,37 +7862,37 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 400 "HTMLCharacterReference.gperf"
+#line 401 "HTMLCharacterReference.gperf"
            {"NotTildeTilde;", "≉"},
            {""},
-#line 851 "HTMLCharacterReference.gperf"
-           {"ccedil", "ç"},
 #line 852 "HTMLCharacterReference.gperf"
+           {"ccedil", "ç"},
+#line 853 "HTMLCharacterReference.gperf"
            {"ccedil;", "ç"},
-#line 1984 "HTMLCharacterReference.gperf"
+#line 1985 "HTMLCharacterReference.gperf"
            {"subrarr;", "⥹"},
            {""},
            {""},
-#line 1878 "HTMLCharacterReference.gperf"
+#line 1879 "HTMLCharacterReference.gperf"
            {"rx;", "℞"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 171 "HTMLCharacterReference.gperf"
+#line 172 "HTMLCharacterReference.gperf"
            {"Equilibrium;", "⇌"},
            {""},
            {""},
            {""},
-#line 2150 "HTMLCharacterReference.gperf"
+#line 2151 "HTMLCharacterReference.gperf"
            {"vDash;", "⊨"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2022 "HTMLCharacterReference.gperf"
+#line 2023 "HTMLCharacterReference.gperf"
            {"supset;", "⊃"},
            {""},
            {""},
@@ -7906,7 +7907,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2208 "HTMLCharacterReference.gperf"
+#line 2209 "HTMLCharacterReference.gperf"
            {"xlArr;", "⟸"},
            {""},
            {""},
@@ -7918,14 +7919,14 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1688 "HTMLCharacterReference.gperf"
-           {"otilde", "õ"},
 #line 1689 "HTMLCharacterReference.gperf"
+           {"otilde", "õ"},
+#line 1690 "HTMLCharacterReference.gperf"
            {"otilde;", "õ"},
            {""},
-#line 1791 "HTMLCharacterReference.gperf"
+#line 1792 "HTMLCharacterReference.gperf"
            {"rarrap;", "⥵"},
-#line 343 "HTMLCharacterReference.gperf"
+#line 344 "HTMLCharacterReference.gperf"
            {"NestedGreaterGreater;", "≫"},
            {""},
            {""},
@@ -7946,29 +7947,29 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1638 "HTMLCharacterReference.gperf"
+#line 1639 "HTMLCharacterReference.gperf"
            {"ocir;", "⊚"},
            {""},
            {""},
-#line 398 "HTMLCharacterReference.gperf"
+#line 399 "HTMLCharacterReference.gperf"
            {"NotTildeEqual;", "≄"},
            {""},
            {""},
            {""},
-#line 1588 "HTMLCharacterReference.gperf"
+#line 1589 "HTMLCharacterReference.gperf"
            {"nsqsupe;", "⋣"},
            {""},
-#line 986 "HTMLCharacterReference.gperf"
+#line 987 "HTMLCharacterReference.gperf"
            {"downdownarrows;", "⇊"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 320 "HTMLCharacterReference.gperf"
+#line 321 "HTMLCharacterReference.gperf"
            {"LowerRightArrow;", "↘"},
            {""},
-#line 1817 "HTMLCharacterReference.gperf"
+#line 1818 "HTMLCharacterReference.gperf"
            {"rdca;", "⤷"},
            {""},
            {""},
@@ -7980,7 +7981,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2083 "HTMLCharacterReference.gperf"
+#line 2084 "HTMLCharacterReference.gperf"
            {"triminus;", "⨺"},
            {""},
            {""},
@@ -7996,18 +7997,18 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1003 "HTMLCharacterReference.gperf"
+#line 1004 "HTMLCharacterReference.gperf"
            {"dzigrarr;", "⟿"},
-#line 1923 "HTMLCharacterReference.gperf"
-           {"sime;", "≃"},
 #line 1924 "HTMLCharacterReference.gperf"
+           {"sime;", "≃"},
+#line 1925 "HTMLCharacterReference.gperf"
            {"simeq;", "≃"},
            {""},
            {""},
            {""},
-#line 306 "HTMLCharacterReference.gperf"
+#line 307 "HTMLCharacterReference.gperf"
            {"LessSlantEqual;", "⩽"},
-#line 2154 "HTMLCharacterReference.gperf"
+#line 2155 "HTMLCharacterReference.gperf"
            {"varnothing;", "∅"},
            {""},
            {""},
@@ -8017,9 +8018,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2137 "HTMLCharacterReference.gperf"
+#line 2138 "HTMLCharacterReference.gperf"
            {"urtri;", "◹"},
-#line 1470 "HTMLCharacterReference.gperf"
+#line 1471 "HTMLCharacterReference.gperf"
            {"nLeftrightarrow;", "⇎"},
            {""},
            {""},
@@ -8029,21 +8030,21 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2142 "HTMLCharacterReference.gperf"
+#line 2143 "HTMLCharacterReference.gperf"
            {"utrif;", "▴"},
            {""},
            {""},
            {""},
            {""},
-#line 2069 "HTMLCharacterReference.gperf"
+#line 2070 "HTMLCharacterReference.gperf"
            {"topf;", "𝕥"},
            {""},
            {""},
            {""},
-#line 1324 "HTMLCharacterReference.gperf"
+#line 1325 "HTMLCharacterReference.gperf"
            {"leftharpoonup;", "↼"},
            {""},
-#line 1218 "HTMLCharacterReference.gperf"
+#line 1219 "HTMLCharacterReference.gperf"
            {"image;", "ℑ"},
            {""},
            {""},
@@ -8053,9 +8054,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1696 "HTMLCharacterReference.gperf"
-           {"para", "¶"},
 #line 1697 "HTMLCharacterReference.gperf"
+           {"para", "¶"},
+#line 1698 "HTMLCharacterReference.gperf"
            {"para;", "¶"},
            {""},
            {""},
@@ -8067,15 +8068,15 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 84 "HTMLCharacterReference.gperf"
+#line 85 "HTMLCharacterReference.gperf"
            {"Colone;", "⩴"},
            {""},
            {""},
-#line 1661 "HTMLCharacterReference.gperf"
+#line 1662 "HTMLCharacterReference.gperf"
            {"olt;", "⧀"},
            {""},
            {""},
-#line 1711 "HTMLCharacterReference.gperf"
+#line 1712 "HTMLCharacterReference.gperf"
            {"phmmat;", "ℳ"},
            {""},
            {""},
@@ -8085,64 +8086,64 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1997 "HTMLCharacterReference.gperf"
+#line 1998 "HTMLCharacterReference.gperf"
            {"succnapprox;", "⪺"},
            {""},
            {""},
-#line 1330 "HTMLCharacterReference.gperf"
+#line 1331 "HTMLCharacterReference.gperf"
            {"leftthreetimes;", "⋋"},
            {""},
            {""},
            {""},
-#line 755 "HTMLCharacterReference.gperf"
+#line 756 "HTMLCharacterReference.gperf"
            {"bigtriangleup;", "△"},
-#line 139 "HTMLCharacterReference.gperf"
+#line 140 "HTMLCharacterReference.gperf"
            {"DownLeftVector;", "↽"},
            {""},
            {""},
-#line 140 "HTMLCharacterReference.gperf"
+#line 141 "HTMLCharacterReference.gperf"
            {"DownLeftVectorBar;", "⥖"},
-#line 1906 "HTMLCharacterReference.gperf"
+#line 1907 "HTMLCharacterReference.gperf"
            {"setminus;", "∖"},
-#line 1379 "HTMLCharacterReference.gperf"
+#line 1380 "HTMLCharacterReference.gperf"
            {"longrightarrow;", "⟶"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2030 "HTMLCharacterReference.gperf"
+#line 2031 "HTMLCharacterReference.gperf"
            {"swArr;", "⇙"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2063 "HTMLCharacterReference.gperf"
+#line 2064 "HTMLCharacterReference.gperf"
            {"timesd;", "⨰"},
            {""},
            {""},
            {""},
-#line 807 "HTMLCharacterReference.gperf"
+#line 808 "HTMLCharacterReference.gperf"
            {"boxhu;", "┴"},
            {""},
            {""},
-#line 411 "HTMLCharacterReference.gperf"
+#line 412 "HTMLCharacterReference.gperf"
            {"Ocy;", "О"},
            {""},
-#line 1710 "HTMLCharacterReference.gperf"
+#line 1711 "HTMLCharacterReference.gperf"
            {"phiv;", "ϕ"},
            {""},
-#line 727 "HTMLCharacterReference.gperf"
+#line 728 "HTMLCharacterReference.gperf"
            {"backsim;", "∽"},
            {""},
            {""},
            {""},
-#line 1657 "HTMLCharacterReference.gperf"
+#line 1658 "HTMLCharacterReference.gperf"
            {"olarr;", "↺"},
-#line 219 "HTMLCharacterReference.gperf"
+#line 220 "HTMLCharacterReference.gperf"
            {"HumpDownHump;", "≎"},
-#line 536 "HTMLCharacterReference.gperf"
+#line 537 "HTMLCharacterReference.gperf"
            {"SucceedsSlantEqual;", "≽"},
            {""},
            {""},
@@ -8150,7 +8151,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2125 "HTMLCharacterReference.gperf"
+#line 2126 "HTMLCharacterReference.gperf"
            {"updownarrow;", "↕"},
            {""},
            {""},
@@ -8159,21 +8160,21 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2102 "HTMLCharacterReference.gperf"
-           {"ucirc", "û"},
 #line 2103 "HTMLCharacterReference.gperf"
+           {"ucirc", "û"},
+#line 2104 "HTMLCharacterReference.gperf"
            {"ucirc;", "û"},
-#line 1656 "HTMLCharacterReference.gperf"
+#line 1657 "HTMLCharacterReference.gperf"
            {"oint;", "∮"},
            {""},
            {""},
-#line 1675 "HTMLCharacterReference.gperf"
+#line 1676 "HTMLCharacterReference.gperf"
            {"orderof;", "ℴ"},
            {""},
            {""},
            {""},
            {""},
-#line 1833 "HTMLCharacterReference.gperf"
+#line 1834 "HTMLCharacterReference.gperf"
            {"rharu;", "⇀"},
            {""},
            {""},
@@ -8182,11 +8183,11 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1741 "HTMLCharacterReference.gperf"
+#line 1742 "HTMLCharacterReference.gperf"
            {"precapprox;", "⪷"},
            {""},
            {""},
-#line 1430 "HTMLCharacterReference.gperf"
+#line 1431 "HTMLCharacterReference.gperf"
            {"malt;", "✠"},
            {""},
            {""},
@@ -8197,10 +8198,10 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1834 "HTMLCharacterReference.gperf"
+#line 1835 "HTMLCharacterReference.gperf"
            {"rharul;", "⥬"},
            {""},
-#line 274 "HTMLCharacterReference.gperf"
+#line 275 "HTMLCharacterReference.gperf"
            {"Lcedil;", "Ļ"},
            {""},
            {""},
@@ -8214,14 +8215,14 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 751 "HTMLCharacterReference.gperf"
+#line 752 "HTMLCharacterReference.gperf"
            {"bigotimes;", "⨂"},
            {""},
            {""},
            {""},
-#line 1819 "HTMLCharacterReference.gperf"
-           {"rdquo;", "”"},
 #line 1820 "HTMLCharacterReference.gperf"
+           {"rdquo;", "”"},
+#line 1821 "HTMLCharacterReference.gperf"
            {"rdquor;", "”"},
            {""},
            {""},
@@ -8231,39 +8232,39 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 312 "HTMLCharacterReference.gperf"
+#line 313 "HTMLCharacterReference.gperf"
            {"LongLeftArrow;", "⟵"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1859 "HTMLCharacterReference.gperf"
+#line 1860 "HTMLCharacterReference.gperf"
            {"roplus;", "⨮"},
            {""},
            {""},
-#line 1979 "HTMLCharacterReference.gperf"
+#line 1980 "HTMLCharacterReference.gperf"
            {"subedot;", "⫃"},
            {""},
            {""},
            {""},
            {""},
-#line 747 "HTMLCharacterReference.gperf"
+#line 748 "HTMLCharacterReference.gperf"
            {"bigcirc;", "◯"},
            {""},
-#line 1606 "HTMLCharacterReference.gperf"
+#line 1607 "HTMLCharacterReference.gperf"
            {"ntlg;", "≸"},
-#line 1639 "HTMLCharacterReference.gperf"
-           {"ocirc", "ô"},
 #line 1640 "HTMLCharacterReference.gperf"
+           {"ocirc", "ô"},
+#line 1641 "HTMLCharacterReference.gperf"
            {"ocirc;", "ô"},
            {""},
-#line 2023 "HTMLCharacterReference.gperf"
-           {"supseteq;", "⊇"},
 #line 2024 "HTMLCharacterReference.gperf"
+           {"supseteq;", "⊇"},
+#line 2025 "HTMLCharacterReference.gperf"
            {"supseteqq;", "⫆"},
            {""},
-#line 1182 "HTMLCharacterReference.gperf"
+#line 1183 "HTMLCharacterReference.gperf"
            {"hellip;", "…"},
            {""},
            {""},
@@ -8289,7 +8290,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1622 "HTMLCharacterReference.gperf"
+#line 1623 "HTMLCharacterReference.gperf"
            {"nvlArr;", "⤂"},
            {""},
            {""},
@@ -8305,15 +8306,15 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1876 "HTMLCharacterReference.gperf"
+#line 1877 "HTMLCharacterReference.gperf"
            {"rtriltri;", "⧎"},
-#line 1788 "HTMLCharacterReference.gperf"
-           {"raquo", "»"},
 #line 1789 "HTMLCharacterReference.gperf"
+           {"raquo", "»"},
+#line 1790 "HTMLCharacterReference.gperf"
            {"raquo;", "»"},
            {""},
            {""},
-#line 62 "HTMLCharacterReference.gperf"
+#line 63 "HTMLCharacterReference.gperf"
            {"Cacute;", "Ć"},
            {""},
            {""},
@@ -8326,20 +8327,20 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1111 "HTMLCharacterReference.gperf"
+#line 1112 "HTMLCharacterReference.gperf"
            {"gEl;", "⪌"},
            {""},
            {""},
-#line 1261 "HTMLCharacterReference.gperf"
+#line 1262 "HTMLCharacterReference.gperf"
            {"jukcy;", "є"},
            {""},
            {""},
            {""},
            {""},
-#line 2173 "HTMLCharacterReference.gperf"
+#line 2174 "HTMLCharacterReference.gperf"
            {"vellip;", "⋮"},
            {""},
-#line 1882 "HTMLCharacterReference.gperf"
+#line 1883 "HTMLCharacterReference.gperf"
            {"scE;", "⪴"},
            {""},
            {""},
@@ -8349,19 +8350,19 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1454 "HTMLCharacterReference.gperf"
+#line 1455 "HTMLCharacterReference.gperf"
            {"minusdu;", "⨪"},
            {""},
            {""},
            {""},
-#line 941 "HTMLCharacterReference.gperf"
+#line 942 "HTMLCharacterReference.gperf"
            {"daleth;", "ℸ"},
            {""},
-#line 118 "HTMLCharacterReference.gperf"
+#line 119 "HTMLCharacterReference.gperf"
            {"DotEqual;", "≐"},
-#line 1865 "HTMLCharacterReference.gperf"
+#line 1866 "HTMLCharacterReference.gperf"
            {"rsaquo;", "›"},
-#line 127 "HTMLCharacterReference.gperf"
+#line 128 "HTMLCharacterReference.gperf"
            {"DoubleLongRightArrow;", "⟹"},
            {""},
            {""},
@@ -8376,17 +8377,17 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 136 "HTMLCharacterReference.gperf"
+#line 137 "HTMLCharacterReference.gperf"
            {"DownBreve;", "̑"},
            {""},
-#line 2091 "HTMLCharacterReference.gperf"
+#line 2092 "HTMLCharacterReference.gperf"
            {"tstrok;", "ŧ"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2086 "HTMLCharacterReference.gperf"
+#line 2087 "HTMLCharacterReference.gperf"
            {"tritime;", "⨻"},
            {""},
            {""},
@@ -8399,15 +8400,15 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 728 "HTMLCharacterReference.gperf"
+#line 729 "HTMLCharacterReference.gperf"
            {"backsimeq;", "⋍"},
            {""},
            {""},
-#line 1901 "HTMLCharacterReference.gperf"
+#line 1902 "HTMLCharacterReference.gperf"
            {"searrow;", "↘"},
            {""},
            {""},
-#line 1644 "HTMLCharacterReference.gperf"
+#line 1645 "HTMLCharacterReference.gperf"
            {"odiv;", "⨸"},
            {""},
            {""},
@@ -8418,11 +8419,11 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2085 "HTMLCharacterReference.gperf"
+#line 2086 "HTMLCharacterReference.gperf"
            {"trisb;", "⧍"},
-#line 177 "HTMLCharacterReference.gperf"
+#line 178 "HTMLCharacterReference.gperf"
            {"Exists;", "∃"},
-#line 281 "HTMLCharacterReference.gperf"
+#line 282 "HTMLCharacterReference.gperf"
            {"LeftDoubleBracket;", "⟦"},
            {""},
            {""},
@@ -8434,9 +8435,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1801 "HTMLCharacterReference.gperf"
+#line 1802 "HTMLCharacterReference.gperf"
            {"rarrw;", "↝"},
-#line 731 "HTMLCharacterReference.gperf"
+#line 732 "HTMLCharacterReference.gperf"
            {"barwedge;", "⌅"},
            {""},
            {""},
@@ -8444,11 +8445,11 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1816 "HTMLCharacterReference.gperf"
+#line 1817 "HTMLCharacterReference.gperf"
            {"rcy;", "р"},
            {""},
            {""},
-#line 317 "HTMLCharacterReference.gperf"
+#line 318 "HTMLCharacterReference.gperf"
            {"Longrightarrow;", "⟹"},
            {""},
            {""},
@@ -8484,7 +8485,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1945 "HTMLCharacterReference.gperf"
+#line 1946 "HTMLCharacterReference.gperf"
            {"sopf;", "𝕤"},
            {""},
            {""},
@@ -8497,29 +8498,29 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 510 "HTMLCharacterReference.gperf"
+#line 511 "HTMLCharacterReference.gperf"
            {"Scedil;", "Ş"},
            {""},
            {""},
            {""},
            {""},
-#line 294 "HTMLCharacterReference.gperf"
+#line 295 "HTMLCharacterReference.gperf"
            {"LeftUpDownVector;", "⥑"},
            {""},
            {""},
-#line 258 "HTMLCharacterReference.gperf"
+#line 259 "HTMLCharacterReference.gperf"
            {"KJcy;", "Ќ"},
            {""},
-#line 379 "HTMLCharacterReference.gperf"
+#line 380 "HTMLCharacterReference.gperf"
            {"NotPrecedesEqual;", "⪯̸"},
            {""},
-#line 2165 "HTMLCharacterReference.gperf"
+#line 2166 "HTMLCharacterReference.gperf"
            {"vartheta;", "ϑ"},
            {""},
            {""},
            {""},
            {""},
-#line 538 "HTMLCharacterReference.gperf"
+#line 539 "HTMLCharacterReference.gperf"
            {"SuchThat;", "∋"},
            {""},
            {""},
@@ -8549,12 +8550,12 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 772 "HTMLCharacterReference.gperf"
+#line 773 "HTMLCharacterReference.gperf"
            {"bnequiv;", "≡⃥"},
            {""},
            {""},
            {""},
-#line 1251 "HTMLCharacterReference.gperf"
+#line 1252 "HTMLCharacterReference.gperf"
            {"iukcy;", "і"},
            {""},
            {""},
@@ -8568,14 +8569,14 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1964 "HTMLCharacterReference.gperf"
+#line 1965 "HTMLCharacterReference.gperf"
            {"squf;", "▪"},
            {""},
-#line 1494 "HTMLCharacterReference.gperf"
+#line 1495 "HTMLCharacterReference.gperf"
            {"ncedil;", "ņ"},
            {""},
            {""},
-#line 1736 "HTMLCharacterReference.gperf"
+#line 1737 "HTMLCharacterReference.gperf"
            {"prE;", "⪳"},
            {""},
            {""},
@@ -8583,12 +8584,12 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 135 "HTMLCharacterReference.gperf"
+#line 136 "HTMLCharacterReference.gperf"
            {"DownArrowUpArrow;", "⇵"},
            {""},
            {""},
            {""},
-#line 1918 "HTMLCharacterReference.gperf"
+#line 1919 "HTMLCharacterReference.gperf"
            {"sigma;", "σ"},
            {""},
            {""},
@@ -8609,60 +8610,60 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1078 "HTMLCharacterReference.gperf"
+#line 1079 "HTMLCharacterReference.gperf"
            {"filig;", "ﬁ"},
            {""},
            {""},
            {""},
-#line 314 "HTMLCharacterReference.gperf"
+#line 315 "HTMLCharacterReference.gperf"
            {"LongRightArrow;", "⟶"},
            {""},
-#line 1448 "HTMLCharacterReference.gperf"
+#line 1449 "HTMLCharacterReference.gperf"
            {"midcir;", "⫰"},
            {""},
            {""},
-#line 1871 "HTMLCharacterReference.gperf"
+#line 1872 "HTMLCharacterReference.gperf"
            {"rthree;", "⋌"},
            {""},
-#line 2037 "HTMLCharacterReference.gperf"
+#line 2038 "HTMLCharacterReference.gperf"
            {"target;", "⌖"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1423 "HTMLCharacterReference.gperf"
+#line 1424 "HTMLCharacterReference.gperf"
            {"luruhar;", "⥦"},
            {""},
            {""},
-#line 1081 "HTMLCharacterReference.gperf"
+#line 1082 "HTMLCharacterReference.gperf"
            {"fllig;", "ﬂ"},
            {""},
            {""},
            {""},
            {""},
-#line 1449 "HTMLCharacterReference.gperf"
-           {"middot", "·"},
 #line 1450 "HTMLCharacterReference.gperf"
+           {"middot", "·"},
+#line 1451 "HTMLCharacterReference.gperf"
            {"middot;", "·"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1347 "HTMLCharacterReference.gperf"
+#line 1348 "HTMLCharacterReference.gperf"
            {"lesssim;", "≲"},
            {""},
            {""},
            {""},
            {""},
-#line 753 "HTMLCharacterReference.gperf"
+#line 754 "HTMLCharacterReference.gperf"
            {"bigstar;", "★"},
-#line 1938 "HTMLCharacterReference.gperf"
+#line 1939 "HTMLCharacterReference.gperf"
            {"smt;", "⪪"},
-#line 2025 "HTMLCharacterReference.gperf"
-           {"supsetneq;", "⊋"},
 #line 2026 "HTMLCharacterReference.gperf"
+           {"supsetneq;", "⊋"},
+#line 2027 "HTMLCharacterReference.gperf"
            {"supsetneqq;", "⫌"},
            {""},
            {""},
@@ -8673,16 +8674,16 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1898 "HTMLCharacterReference.gperf"
+#line 1899 "HTMLCharacterReference.gperf"
            {"seArr;", "⇘"},
            {""},
-#line 51 "HTMLCharacterReference.gperf"
+#line 52 "HTMLCharacterReference.gperf"
            {"Because;", "∵"},
            {""},
            {""},
            {""},
            {""},
-#line 449 "HTMLCharacterReference.gperf"
+#line 450 "HTMLCharacterReference.gperf"
            {"Product;", "∏"},
            {""},
            {""},
@@ -8690,7 +8691,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 328 "HTMLCharacterReference.gperf"
+#line 329 "HTMLCharacterReference.gperf"
            {"Mellintrf;", "ℳ"},
            {""},
            {""},
@@ -8703,50 +8704,50 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2124 "HTMLCharacterReference.gperf"
+#line 2125 "HTMLCharacterReference.gperf"
            {"uparrow;", "↑"},
            {""},
            {""},
-#line 389 "HTMLCharacterReference.gperf"
+#line 390 "HTMLCharacterReference.gperf"
            {"NotSubset;", "⊂⃒"},
            {""},
-#line 2050 "HTMLCharacterReference.gperf"
+#line 2051 "HTMLCharacterReference.gperf"
            {"thetav;", "ϑ"},
            {""},
-#line 1778 "HTMLCharacterReference.gperf"
+#line 1779 "HTMLCharacterReference.gperf"
            {"rBarr;", "⤏"},
            {""},
-#line 287 "HTMLCharacterReference.gperf"
+#line 288 "HTMLCharacterReference.gperf"
            {"LeftRightVector;", "⥎"},
-#line 467 "HTMLCharacterReference.gperf"
+#line 468 "HTMLCharacterReference.gperf"
            {"Rcedil;", "Ŗ"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2104 "HTMLCharacterReference.gperf"
+#line 2105 "HTMLCharacterReference.gperf"
            {"ucy;", "у"},
            {""},
-#line 2010 "HTMLCharacterReference.gperf"
+#line 2011 "HTMLCharacterReference.gperf"
            {"supE;", "⫆"},
            {""},
            {""},
-#line 132 "HTMLCharacterReference.gperf"
+#line 133 "HTMLCharacterReference.gperf"
            {"DoubleVerticalBar;", "∥"},
-#line 523 "HTMLCharacterReference.gperf"
+#line 524 "HTMLCharacterReference.gperf"
            {"SquareIntersection;", "⊓"},
            {""},
            {""},
            {""},
-#line 1780 "HTMLCharacterReference.gperf"
+#line 1781 "HTMLCharacterReference.gperf"
            {"race;", "∽̱"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1775 "HTMLCharacterReference.gperf"
+#line 1776 "HTMLCharacterReference.gperf"
            {"rAarr;", "⇛"},
            {""},
            {""},
@@ -8755,31 +8756,31 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1363 "HTMLCharacterReference.gperf"
+#line 1364 "HTMLCharacterReference.gperf"
            {"lmidot;", "ŀ"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1776 "HTMLCharacterReference.gperf"
+#line 1777 "HTMLCharacterReference.gperf"
            {"rArr;", "⇒"},
            {""},
            {""},
            {""},
-#line 193 "HTMLCharacterReference.gperf"
+#line 194 "HTMLCharacterReference.gperf"
            {"Gcedil;", "Ģ"},
            {""},
-#line 1942 "HTMLCharacterReference.gperf"
+#line 1943 "HTMLCharacterReference.gperf"
            {"sol;", "/"},
-#line 419 "HTMLCharacterReference.gperf"
+#line 420 "HTMLCharacterReference.gperf"
            {"Oopf;", "𝕆"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 123 "HTMLCharacterReference.gperf"
+#line 124 "HTMLCharacterReference.gperf"
            {"DoubleLeftRightArrow;", "⇔"},
            {""},
            {""},
@@ -8795,21 +8796,21 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 476 "HTMLCharacterReference.gperf"
+#line 477 "HTMLCharacterReference.gperf"
            {"RightArrow;", "→"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1452 "HTMLCharacterReference.gperf"
+#line 1453 "HTMLCharacterReference.gperf"
            {"minusb;", "⊟"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1744 "HTMLCharacterReference.gperf"
+#line 1745 "HTMLCharacterReference.gperf"
            {"precnapprox;", "⪹"},
            {""},
            {""},
@@ -8817,11 +8818,11 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1641 "HTMLCharacterReference.gperf"
+#line 1642 "HTMLCharacterReference.gperf"
            {"ocy;", "о"},
-#line 1257 "HTMLCharacterReference.gperf"
+#line 1258 "HTMLCharacterReference.gperf"
            {"jmath;", "ȷ"},
-#line 1919 "HTMLCharacterReference.gperf"
+#line 1920 "HTMLCharacterReference.gperf"
            {"sigmaf;", "ς"},
            {""},
            {""},
@@ -8829,12 +8830,12 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1713 "HTMLCharacterReference.gperf"
+#line 1714 "HTMLCharacterReference.gperf"
            {"pi;", "π"},
            {""},
            {""},
            {""},
-#line 2163 "HTMLCharacterReference.gperf"
+#line 2164 "HTMLCharacterReference.gperf"
            {"varsupsetneq;", "⊋︀"},
            {""},
            {""},
@@ -8850,7 +8851,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 671 "HTMLCharacterReference.gperf"
+#line 672 "HTMLCharacterReference.gperf"
            {"alefsym;", "ℵ"},
            {""},
            {""},
@@ -8859,23 +8860,23 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1753 "HTMLCharacterReference.gperf"
+#line 1754 "HTMLCharacterReference.gperf"
            {"prod;", "∏"},
            {""},
-#line 1931 "HTMLCharacterReference.gperf"
+#line 1932 "HTMLCharacterReference.gperf"
            {"simrarr;", "⥲"},
            {""},
-#line 1715 "HTMLCharacterReference.gperf"
+#line 1716 "HTMLCharacterReference.gperf"
            {"piv;", "ϖ"},
            {""},
-#line 256 "HTMLCharacterReference.gperf"
+#line 257 "HTMLCharacterReference.gperf"
            {"Jukcy;", "Є"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 371 "HTMLCharacterReference.gperf"
+#line 372 "HTMLCharacterReference.gperf"
            {"NotLessEqual;", "≰"},
            {""},
            {""},
@@ -8896,7 +8897,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 399 "HTMLCharacterReference.gperf"
+#line 400 "HTMLCharacterReference.gperf"
            {"NotTildeFullEqual;", "≇"},
            {""},
            {""},
@@ -8908,7 +8909,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 355 "HTMLCharacterReference.gperf"
+#line 356 "HTMLCharacterReference.gperf"
            {"NotEqual;", "≠"},
            {""},
            {""},
@@ -8916,16 +8917,16 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1365 "HTMLCharacterReference.gperf"
+#line 1366 "HTMLCharacterReference.gperf"
            {"lmoustache;", "⎰"},
-#line 337 "HTMLCharacterReference.gperf"
+#line 338 "HTMLCharacterReference.gperf"
            {"Ncedil;", "Ņ"},
            {""},
-#line 1233 "HTMLCharacterReference.gperf"
+#line 1234 "HTMLCharacterReference.gperf"
            {"intlarhk;", "⨗"},
            {""},
            {""},
-#line 506 "HTMLCharacterReference.gperf"
+#line 507 "HTMLCharacterReference.gperf"
            {"SOFTcy;", "Ь"},
            {""},
            {""},
@@ -8936,7 +8937,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1977 "HTMLCharacterReference.gperf"
+#line 1978 "HTMLCharacterReference.gperf"
            {"subdot;", "⪽"},
            {""},
            {""},
@@ -8945,41 +8946,41 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 726 "HTMLCharacterReference.gperf"
+#line 727 "HTMLCharacterReference.gperf"
            {"backprime;", "‵"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 673 "HTMLCharacterReference.gperf"
+#line 674 "HTMLCharacterReference.gperf"
            {"alpha;", "α"},
            {""},
-#line 178 "HTMLCharacterReference.gperf"
+#line 179 "HTMLCharacterReference.gperf"
            {"ExponentialE;", "ⅇ"},
            {""},
            {""},
-#line 2169 "HTMLCharacterReference.gperf"
+#line 2170 "HTMLCharacterReference.gperf"
            {"vdash;", "⊢"},
            {""},
            {""},
            {""},
            {""},
-#line 1823 "HTMLCharacterReference.gperf"
+#line 1824 "HTMLCharacterReference.gperf"
            {"realine;", "ℛ"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1348 "HTMLCharacterReference.gperf"
+#line 1349 "HTMLCharacterReference.gperf"
            {"lfisht;", "⥼"},
-#line 1558 "HTMLCharacterReference.gperf"
+#line 1559 "HTMLCharacterReference.gperf"
            {"notnivc;", "⋽"},
            {""},
            {""},
            {""},
-#line 202 "HTMLCharacterReference.gperf"
+#line 203 "HTMLCharacterReference.gperf"
            {"GreaterFullEqual;", "≧"},
            {""},
            {""},
@@ -8995,7 +8996,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 247 "HTMLCharacterReference.gperf"
+#line 248 "HTMLCharacterReference.gperf"
            {"Iukcy;", "І"},
            {""},
            {""},
@@ -9014,24 +9015,24 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 137 "HTMLCharacterReference.gperf"
+#line 138 "HTMLCharacterReference.gperf"
            {"DownLeftRightVector;", "⥐"},
            {""},
            {""},
            {""},
            {""},
-#line 1222 "HTMLCharacterReference.gperf"
+#line 1223 "HTMLCharacterReference.gperf"
            {"imof;", "⊷"},
-#line 1323 "HTMLCharacterReference.gperf"
+#line 1324 "HTMLCharacterReference.gperf"
            {"leftharpoondown;", "↽"},
-#line 957 "HTMLCharacterReference.gperf"
+#line 958 "HTMLCharacterReference.gperf"
            {"dfisht;", "⥿"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 345 "HTMLCharacterReference.gperf"
+#line 346 "HTMLCharacterReference.gperf"
            {"NewLine;", "\n"},
            {""},
            {""},
@@ -9043,10 +9044,10 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2095 "HTMLCharacterReference.gperf"
+#line 2096 "HTMLCharacterReference.gperf"
            {"uArr;", "⇑"},
            {""},
-#line 1221 "HTMLCharacterReference.gperf"
+#line 1222 "HTMLCharacterReference.gperf"
            {"imath;", "ı"},
            {""},
            {""},
@@ -9061,7 +9062,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 649 "HTMLCharacterReference.gperf"
+#line 650 "HTMLCharacterReference.gperf"
            {"ZeroWidthSpace;", "​"},
            {""},
            {""},
@@ -9073,10 +9074,10 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 754 "HTMLCharacterReference.gperf"
+#line 755 "HTMLCharacterReference.gperf"
            {"bigtriangledown;", "▽"},
            {""},
-#line 1858 "HTMLCharacterReference.gperf"
+#line 1859 "HTMLCharacterReference.gperf"
            {"ropf;", "𝕣"},
            {""},
            {""},
@@ -9086,7 +9087,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 311 "HTMLCharacterReference.gperf"
+#line 312 "HTMLCharacterReference.gperf"
            {"Lmidot;", "Ŀ"},
            {""},
            {""},
@@ -9098,14 +9099,14 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1431 "HTMLCharacterReference.gperf"
+#line 1432 "HTMLCharacterReference.gperf"
            {"maltese;", "✠"},
            {""},
            {""},
            {""},
-#line 533 "HTMLCharacterReference.gperf"
+#line 534 "HTMLCharacterReference.gperf"
            {"SubsetEqual;", "⊆"},
-#line 2126 "HTMLCharacterReference.gperf"
+#line 2127 "HTMLCharacterReference.gperf"
            {"upharpoonleft;", "↿"},
            {""},
            {""},
@@ -9119,7 +9120,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 353 "HTMLCharacterReference.gperf"
+#line 354 "HTMLCharacterReference.gperf"
            {"NotDoubleVerticalBar;", "∦"},
            {""},
            {""},
@@ -9139,7 +9140,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1429 "HTMLCharacterReference.gperf"
+#line 1430 "HTMLCharacterReference.gperf"
            {"male;", "♂"},
            {""},
            {""},
@@ -9154,11 +9155,11 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2164 "HTMLCharacterReference.gperf"
+#line 2165 "HTMLCharacterReference.gperf"
            {"varsupsetneqq;", "⫌︀"},
            {""},
            {""},
-#line 2061 "HTMLCharacterReference.gperf"
+#line 2062 "HTMLCharacterReference.gperf"
            {"timesb;", "⊠"},
            {""},
            {""},
@@ -9167,7 +9168,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2130 "HTMLCharacterReference.gperf"
+#line 2131 "HTMLCharacterReference.gperf"
            {"upsih;", "ϒ"},
            {""},
            {""},
@@ -9183,15 +9184,15 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1545 "HTMLCharacterReference.gperf"
+#line 1546 "HTMLCharacterReference.gperf"
            {"nmid;", "∤"},
            {""},
            {""},
-#line 200 "HTMLCharacterReference.gperf"
+#line 201 "HTMLCharacterReference.gperf"
            {"GreaterEqual;", "≥"},
            {""},
            {""},
-#line 416 "HTMLCharacterReference.gperf"
+#line 417 "HTMLCharacterReference.gperf"
            {"Omacr;", "Ō"},
            {""},
            {""},
@@ -9204,33 +9205,33 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1557 "HTMLCharacterReference.gperf"
+#line 1558 "HTMLCharacterReference.gperf"
            {"notnivb;", "⋾"},
-#line 2062 "HTMLCharacterReference.gperf"
+#line 2063 "HTMLCharacterReference.gperf"
            {"timesbar;", "⨱"},
            {""},
            {""},
            {""},
-#line 1804 "HTMLCharacterReference.gperf"
+#line 1805 "HTMLCharacterReference.gperf"
            {"rationals;", "ℚ"},
            {""},
            {""},
            {""},
            {""},
-#line 1680 "HTMLCharacterReference.gperf"
+#line 1681 "HTMLCharacterReference.gperf"
            {"origof;", "⊶"},
-#line 340 "HTMLCharacterReference.gperf"
+#line 341 "HTMLCharacterReference.gperf"
            {"NegativeThickSpace;", "​"},
            {""},
            {""},
-#line 1783 "HTMLCharacterReference.gperf"
-           {"raemptyv;", "⦳"},
 #line 1784 "HTMLCharacterReference.gperf"
+           {"raemptyv;", "⦳"},
+#line 1785 "HTMLCharacterReference.gperf"
            {"rang;", "⟩"},
            {""},
            {""},
            {""},
-#line 615 "HTMLCharacterReference.gperf"
+#line 616 "HTMLCharacterReference.gperf"
            {"VerticalBar;", "∣"},
            {""},
            {""},
@@ -9238,14 +9239,14 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2127 "HTMLCharacterReference.gperf"
+#line 2128 "HTMLCharacterReference.gperf"
            {"upharpoonright;", "↾"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1795 "HTMLCharacterReference.gperf"
+#line 1796 "HTMLCharacterReference.gperf"
            {"rarrfs;", "⤞"},
            {""},
            {""},
@@ -9263,7 +9264,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1863 "HTMLCharacterReference.gperf"
+#line 1864 "HTMLCharacterReference.gperf"
            {"rppolint;", "⨒"},
            {""},
            {""},
@@ -9274,15 +9275,15 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 552 "HTMLCharacterReference.gperf"
+#line 553 "HTMLCharacterReference.gperf"
            {"Tcedil;", "Ţ"},
            {""},
            {""},
            {""},
-#line 804 "HTMLCharacterReference.gperf"
+#line 805 "HTMLCharacterReference.gperf"
            {"boxhD;", "╥"},
            {""},
-#line 1587 "HTMLCharacterReference.gperf"
+#line 1588 "HTMLCharacterReference.gperf"
            {"nsqsube;", "⋢"},
            {""},
            {""},
@@ -9301,15 +9302,15 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2117 "HTMLCharacterReference.gperf"
+#line 2118 "HTMLCharacterReference.gperf"
            {"ulcrop;", "⌏"},
            {""},
            {""},
            {""},
            {""},
-#line 2166 "HTMLCharacterReference.gperf"
+#line 2167 "HTMLCharacterReference.gperf"
            {"vartriangleleft;", "⊲"},
-#line 1660 "HTMLCharacterReference.gperf"
+#line 1661 "HTMLCharacterReference.gperf"
            {"oline;", "‾"},
            {""},
            {""},
@@ -9319,7 +9320,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 607 "HTMLCharacterReference.gperf"
+#line 608 "HTMLCharacterReference.gperf"
            {"VDash;", "⊫"},
            {""},
            {""},
@@ -9330,10 +9331,10 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2115 "HTMLCharacterReference.gperf"
+#line 2116 "HTMLCharacterReference.gperf"
            {"ulcorn;", "⌜"},
            {""},
-#line 2012 "HTMLCharacterReference.gperf"
+#line 2013 "HTMLCharacterReference.gperf"
            {"supdsub;", "⫘"},
            {""},
            {""},
@@ -9350,13 +9351,13 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2123 "HTMLCharacterReference.gperf"
+#line 2124 "HTMLCharacterReference.gperf"
            {"uopf;", "𝕦"},
            {""},
            {""},
-#line 1263 "HTMLCharacterReference.gperf"
+#line 1264 "HTMLCharacterReference.gperf"
            {"kappav;", "ϰ"},
-#line 1980 "HTMLCharacterReference.gperf"
+#line 1981 "HTMLCharacterReference.gperf"
            {"submult;", "⫁"},
            {""},
            {""},
@@ -9379,7 +9380,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 478 "HTMLCharacterReference.gperf"
+#line 479 "HTMLCharacterReference.gperf"
            {"RightArrowLeftArrow;", "⇄"},
            {""},
            {""},
@@ -9387,13 +9388,13 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1506 "HTMLCharacterReference.gperf"
+#line 1507 "HTMLCharacterReference.gperf"
            {"nequiv;", "≢"},
            {""},
            {""},
-#line 927 "HTMLCharacterReference.gperf"
+#line 928 "HTMLCharacterReference.gperf"
            {"curlyvee;", "⋎"},
-#line 1885 "HTMLCharacterReference.gperf"
+#line 1886 "HTMLCharacterReference.gperf"
            {"sccue;", "≽"},
            {""},
            {""},
@@ -9405,7 +9406,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1985 "HTMLCharacterReference.gperf"
+#line 1986 "HTMLCharacterReference.gperf"
            {"subset;", "⊂"},
            {""},
            {""},
@@ -9421,33 +9422,33 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1658 "HTMLCharacterReference.gperf"
+#line 1659 "HTMLCharacterReference.gperf"
            {"olcir;", "⦾"},
-#line 236 "HTMLCharacterReference.gperf"
+#line 237 "HTMLCharacterReference.gperf"
            {"Implies;", "⇒"},
            {""},
-#line 283 "HTMLCharacterReference.gperf"
+#line 284 "HTMLCharacterReference.gperf"
            {"LeftDownVector;", "⇃"},
            {""},
            {""},
-#line 284 "HTMLCharacterReference.gperf"
+#line 285 "HTMLCharacterReference.gperf"
            {"LeftDownVectorBar;", "⥙"},
-#line 765 "HTMLCharacterReference.gperf"
+#line 766 "HTMLCharacterReference.gperf"
            {"blacktriangleright;", "▸"},
-#line 1802 "HTMLCharacterReference.gperf"
+#line 1803 "HTMLCharacterReference.gperf"
            {"ratail;", "⤚"},
            {""},
-#line 1995 "HTMLCharacterReference.gperf"
+#line 1996 "HTMLCharacterReference.gperf"
            {"succcurlyeq;", "≽"},
            {""},
            {""},
            {""},
-#line 1667 "HTMLCharacterReference.gperf"
+#line 1668 "HTMLCharacterReference.gperf"
            {"oopf;", "𝕠"},
-#line 280 "HTMLCharacterReference.gperf"
+#line 281 "HTMLCharacterReference.gperf"
            {"LeftCeiling;", "⌈"},
            {""},
-#line 1786 "HTMLCharacterReference.gperf"
+#line 1787 "HTMLCharacterReference.gperf"
            {"range;", "⦥"},
            {""},
            {""},
@@ -9479,11 +9480,11 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1830 "HTMLCharacterReference.gperf"
+#line 1831 "HTMLCharacterReference.gperf"
            {"rfloor;", "⌋"},
            {""},
            {""},
-#line 616 "HTMLCharacterReference.gperf"
+#line 617 "HTMLCharacterReference.gperf"
            {"VerticalLine;", "|"},
            {""},
            {""},
@@ -9506,7 +9507,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1943 "HTMLCharacterReference.gperf"
+#line 1944 "HTMLCharacterReference.gperf"
            {"solb;", "⧄"},
            {""},
            {""},
@@ -9518,9 +9519,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1499 "HTMLCharacterReference.gperf"
+#line 1500 "HTMLCharacterReference.gperf"
            {"ndash;", "–"},
-#line 1573 "HTMLCharacterReference.gperf"
+#line 1574 "HTMLCharacterReference.gperf"
            {"nrightarrow;", "↛"},
            {""},
            {""},
@@ -9541,7 +9542,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1630 "HTMLCharacterReference.gperf"
+#line 1631 "HTMLCharacterReference.gperf"
            {"nwarhk;", "⤣"},
            {""},
            {""},
@@ -9555,16 +9556,16 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 401 "HTMLCharacterReference.gperf"
+#line 402 "HTMLCharacterReference.gperf"
            {"NotVerticalBar;", "∤"},
-#line 310 "HTMLCharacterReference.gperf"
+#line 311 "HTMLCharacterReference.gperf"
            {"Lleftarrow;", "⇚"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2044 "HTMLCharacterReference.gperf"
+#line 2045 "HTMLCharacterReference.gperf"
            {"telrec;", "⌕"},
            {""},
            {""},
@@ -9573,23 +9574,23 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2107 "HTMLCharacterReference.gperf"
+#line 2108 "HTMLCharacterReference.gperf"
            {"udhar;", "⥮"},
            {""},
            {""},
-#line 1705 "HTMLCharacterReference.gperf"
+#line 1706 "HTMLCharacterReference.gperf"
            {"permil;", "‰"},
            {""},
            {""},
            {""},
-#line 412 "HTMLCharacterReference.gperf"
+#line 413 "HTMLCharacterReference.gperf"
            {"Odblac;", "Ő"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 49 "HTMLCharacterReference.gperf"
+#line 50 "HTMLCharacterReference.gperf"
            {"Barwed;", "⌆"},
            {""},
            {""},
@@ -9601,9 +9602,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1933 "HTMLCharacterReference.gperf"
+#line 1934 "HTMLCharacterReference.gperf"
            {"smallsetminus;", "∖"},
-#line 1939 "HTMLCharacterReference.gperf"
+#line 1940 "HTMLCharacterReference.gperf"
            {"smte;", "⪬"},
            {""},
            {""},
@@ -9611,28 +9612,28 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 391 "HTMLCharacterReference.gperf"
+#line 392 "HTMLCharacterReference.gperf"
            {"NotSucceeds;", "⊁"},
            {""},
            {""},
            {""},
            {""},
-#line 1030 "HTMLCharacterReference.gperf"
+#line 1031 "HTMLCharacterReference.gperf"
            {"empty;", "∅"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 214 "HTMLCharacterReference.gperf"
+#line 215 "HTMLCharacterReference.gperf"
            {"HilbertSpace;", "ℋ"},
-#line 1220 "HTMLCharacterReference.gperf"
+#line 1221 "HTMLCharacterReference.gperf"
            {"imagpart;", "ℑ"},
            {""},
            {""},
-#line 1738 "HTMLCharacterReference.gperf"
+#line 1739 "HTMLCharacterReference.gperf"
            {"prcue;", "≼"},
-#line 2116 "HTMLCharacterReference.gperf"
+#line 2117 "HTMLCharacterReference.gperf"
            {"ulcorner;", "⌜"},
            {""},
            {""},
@@ -9640,11 +9641,11 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1702 "HTMLCharacterReference.gperf"
+#line 1703 "HTMLCharacterReference.gperf"
            {"pcy;", "п"},
            {""},
            {""},
-#line 145 "HTMLCharacterReference.gperf"
+#line 146 "HTMLCharacterReference.gperf"
            {"DownTeeArrow;", "↧"},
            {""},
            {""},
@@ -9652,7 +9653,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1925 "HTMLCharacterReference.gperf"
+#line 1926 "HTMLCharacterReference.gperf"
            {"simg;", "⪞"},
            {""},
            {""},
@@ -9660,10 +9661,10 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 500 "HTMLCharacterReference.gperf"
+#line 501 "HTMLCharacterReference.gperf"
            {"Rrightarrow;", "⇛"},
            {""},
-#line 1464 "HTMLCharacterReference.gperf"
+#line 1465 "HTMLCharacterReference.gperf"
            {"multimap;", "⊸"},
            {""},
            {""},
@@ -9674,7 +9675,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 471 "HTMLCharacterReference.gperf"
+#line 472 "HTMLCharacterReference.gperf"
            {"ReverseEquilibrium;", "⇋"},
            {""},
            {""},
@@ -9696,7 +9697,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 758 "HTMLCharacterReference.gperf"
+#line 759 "HTMLCharacterReference.gperf"
            {"bigwedge;", "⋀"},
            {""},
            {""},
@@ -9714,9 +9715,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 260 "HTMLCharacterReference.gperf"
+#line 261 "HTMLCharacterReference.gperf"
            {"Kcedil;", "Ķ"},
-#line 1621 "HTMLCharacterReference.gperf"
+#line 1622 "HTMLCharacterReference.gperf"
            {"nvinfin;", "⧞"},
            {""},
            {""},
@@ -9733,7 +9734,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 762 "HTMLCharacterReference.gperf"
+#line 763 "HTMLCharacterReference.gperf"
            {"blacktriangle;", "▴"},
            {""},
            {""},
@@ -9749,9 +9750,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1986 "HTMLCharacterReference.gperf"
-           {"subseteq;", "⊆"},
 #line 1987 "HTMLCharacterReference.gperf"
+           {"subseteq;", "⊆"},
+#line 1988 "HTMLCharacterReference.gperf"
            {"subseteqq;", "⫅"},
            {""},
            {""},
@@ -9761,15 +9762,15 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1659 "HTMLCharacterReference.gperf"
+#line 1660 "HTMLCharacterReference.gperf"
            {"olcross;", "⦻"},
            {""},
            {""},
-#line 201 "HTMLCharacterReference.gperf"
+#line 202 "HTMLCharacterReference.gperf"
            {"GreaterEqualLess;", "⋛"},
            {""},
            {""},
-#line 2119 "HTMLCharacterReference.gperf"
+#line 2120 "HTMLCharacterReference.gperf"
            {"umacr;", "ū"},
            {""},
            {""},
@@ -9792,13 +9793,13 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1879 "HTMLCharacterReference.gperf"
+#line 1880 "HTMLCharacterReference.gperf"
            {"sacute;", "ś"},
            {""},
            {""},
-#line 1676 "HTMLCharacterReference.gperf"
-           {"ordf", "ª"},
 #line 1677 "HTMLCharacterReference.gperf"
+           {"ordf", "ª"},
+#line 1678 "HTMLCharacterReference.gperf"
            {"ordf;", "ª"},
            {""},
            {""},
@@ -9810,12 +9811,12 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 128 "HTMLCharacterReference.gperf"
+#line 129 "HTMLCharacterReference.gperf"
            {"DoubleRightArrow;", "⇒"},
            {""},
            {""},
            {""},
-#line 1937 "HTMLCharacterReference.gperf"
+#line 1938 "HTMLCharacterReference.gperf"
            {"smile;", "⌣"},
            {""},
            {""},
@@ -9851,9 +9852,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1940 "HTMLCharacterReference.gperf"
+#line 1941 "HTMLCharacterReference.gperf"
            {"smtes;", "⪬︀"},
-#line 1662 "HTMLCharacterReference.gperf"
+#line 1663 "HTMLCharacterReference.gperf"
            {"omacr;", "ō"},
            {""},
            {""},
@@ -9884,17 +9885,17 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1922 "HTMLCharacterReference.gperf"
+#line 1923 "HTMLCharacterReference.gperf"
            {"simdot;", "⩪"},
            {""},
            {""},
            {""},
-#line 78 "HTMLCharacterReference.gperf"
+#line 79 "HTMLCharacterReference.gperf"
            {"CirclePlus;", "⊕"},
            {""},
            {""},
            {""},
-#line 1808 "HTMLCharacterReference.gperf"
+#line 1809 "HTMLCharacterReference.gperf"
            {"rbrack;", "]"},
            {""},
            {""},
@@ -9916,7 +9917,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1534 "HTMLCharacterReference.gperf"
+#line 1535 "HTMLCharacterReference.gperf"
            {"nleftarrow;", "↚"},
            {""},
            {""},
@@ -9928,7 +9929,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 79 "HTMLCharacterReference.gperf"
+#line 80 "HTMLCharacterReference.gperf"
            {"CircleTimes;", "⊗"},
            {""},
            {""},
@@ -9949,17 +9950,17 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 592 "HTMLCharacterReference.gperf"
+#line 593 "HTMLCharacterReference.gperf"
            {"UpDownArrow;", "↕"},
            {""},
-#line 1785 "HTMLCharacterReference.gperf"
+#line 1786 "HTMLCharacterReference.gperf"
            {"rangd;", "⦒"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1031 "HTMLCharacterReference.gperf"
+#line 1032 "HTMLCharacterReference.gperf"
            {"emptyset;", "∅"},
            {""},
            {""},
@@ -9991,9 +9992,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 67 "HTMLCharacterReference.gperf"
-           {"Ccedil", "Ç"},
 #line 68 "HTMLCharacterReference.gperf"
+           {"Ccedil", "Ç"},
+#line 69 "HTMLCharacterReference.gperf"
            {"Ccedil;", "Ç"},
            {""},
            {""},
@@ -10003,7 +10004,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1926 "HTMLCharacterReference.gperf"
+#line 1927 "HTMLCharacterReference.gperf"
            {"simgE;", "⪠"},
            {""},
            {""},
@@ -10024,7 +10025,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 33 "HTMLCharacterReference.gperf"
+#line 34 "HTMLCharacterReference.gperf"
            {"Alpha;", "Α"},
            {""},
            {""},
@@ -10050,9 +10051,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 407 "HTMLCharacterReference.gperf"
-           {"Oacute", "Ó"},
 #line 408 "HTMLCharacterReference.gperf"
+           {"Oacute", "Ó"},
+#line 409 "HTMLCharacterReference.gperf"
            {"Oacute;", "Ó"},
            {""},
            {""},
@@ -10068,10 +10069,10 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1502 "HTMLCharacterReference.gperf"
+#line 1503 "HTMLCharacterReference.gperf"
            {"nearhk;", "⤤"},
            {""},
-#line 141 "HTMLCharacterReference.gperf"
+#line 142 "HTMLCharacterReference.gperf"
            {"DownRightTeeVector;", "⥟"},
            {""},
            {""},
@@ -10087,7 +10088,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1707 "HTMLCharacterReference.gperf"
+#line 1708 "HTMLCharacterReference.gperf"
            {"pertenk;", "‱"},
            {""},
            {""},
@@ -10102,18 +10103,18 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2161 "HTMLCharacterReference.gperf"
+#line 2162 "HTMLCharacterReference.gperf"
            {"varsubsetneq;", "⊊︀"},
            {""},
            {""},
-#line 1535 "HTMLCharacterReference.gperf"
+#line 1536 "HTMLCharacterReference.gperf"
            {"nleftrightarrow;", "↮"},
-#line 2155 "HTMLCharacterReference.gperf"
+#line 2156 "HTMLCharacterReference.gperf"
            {"varphi;", "ϕ"},
-#line 1742 "HTMLCharacterReference.gperf"
+#line 1743 "HTMLCharacterReference.gperf"
            {"preccurlyeq;", "≼"},
            {""},
-#line 1787 "HTMLCharacterReference.gperf"
+#line 1788 "HTMLCharacterReference.gperf"
            {"rangle;", "⟩"},
            {""},
            {""},
@@ -10129,9 +10130,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1988 "HTMLCharacterReference.gperf"
-           {"subsetneq;", "⊊"},
 #line 1989 "HTMLCharacterReference.gperf"
+           {"subsetneq;", "⊊"},
+#line 1990 "HTMLCharacterReference.gperf"
            {"subsetneqq;", "⫋"},
            {""},
            {""},
@@ -10142,7 +10143,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2106 "HTMLCharacterReference.gperf"
+#line 2107 "HTMLCharacterReference.gperf"
            {"udblac;", "ű"},
            {""},
            {""},
@@ -10151,7 +10152,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 485 "HTMLCharacterReference.gperf"
+#line 486 "HTMLCharacterReference.gperf"
            {"RightTee;", "⊢"},
            {""},
            {""},
@@ -10159,9 +10160,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 216 "HTMLCharacterReference.gperf"
+#line 217 "HTMLCharacterReference.gperf"
            {"HorizontalLine;", "─"},
-#line 2027 "HTMLCharacterReference.gperf"
+#line 2028 "HTMLCharacterReference.gperf"
            {"supsim;", "⫈"},
            {""},
            {""},
@@ -10170,34 +10171,34 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 487 "HTMLCharacterReference.gperf"
+#line 488 "HTMLCharacterReference.gperf"
            {"RightTeeVector;", "⥛"},
            {""},
            {""},
            {""},
            {""},
-#line 1947 "HTMLCharacterReference.gperf"
+#line 1948 "HTMLCharacterReference.gperf"
            {"spadesuit;", "♠"},
            {""},
            {""},
            {""},
            {""},
-#line 1172 "HTMLCharacterReference.gperf"
+#line 1173 "HTMLCharacterReference.gperf"
            {"half;", "½"},
            {""},
            {""},
            {""},
-#line 1892 "HTMLCharacterReference.gperf"
+#line 1893 "HTMLCharacterReference.gperf"
            {"scpolint;", "⨓"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1976 "HTMLCharacterReference.gperf"
+#line 1977 "HTMLCharacterReference.gperf"
            {"subE;", "⫅"},
            {""},
-#line 1214 "HTMLCharacterReference.gperf"
+#line 1215 "HTMLCharacterReference.gperf"
            {"iinfin;", "⧜"},
            {""},
            {""},
@@ -10229,24 +10230,24 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1643 "HTMLCharacterReference.gperf"
+#line 1644 "HTMLCharacterReference.gperf"
            {"odblac;", "ő"},
            {""},
            {""},
            {""},
-#line 988 "HTMLCharacterReference.gperf"
+#line 989 "HTMLCharacterReference.gperf"
            {"downharpoonright;", "⇂"},
            {""},
            {""},
            {""},
-#line 1732 "HTMLCharacterReference.gperf"
+#line 1733 "HTMLCharacterReference.gperf"
            {"popf;", "𝕡"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2029 "HTMLCharacterReference.gperf"
+#line 2030 "HTMLCharacterReference.gperf"
            {"supsup;", "⫖"},
            {""},
            {""},
@@ -10260,16 +10261,16 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 432 "HTMLCharacterReference.gperf"
+#line 433 "HTMLCharacterReference.gperf"
            {"OverBrace;", "⏞"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2100 "HTMLCharacterReference.gperf"
+#line 2101 "HTMLCharacterReference.gperf"
            {"ubrcy;", "ў"},
-#line 1293 "HTMLCharacterReference.gperf"
+#line 1294 "HTMLCharacterReference.gperf"
            {"larrhk;", "↩"},
            {""},
            {""},
@@ -10279,7 +10280,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 497 "HTMLCharacterReference.gperf"
+#line 498 "HTMLCharacterReference.gperf"
            {"Rightarrow;", "⇒"},
            {""},
            {""},
@@ -10294,7 +10295,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1889 "HTMLCharacterReference.gperf"
+#line 1890 "HTMLCharacterReference.gperf"
            {"scnE;", "⪶"},
            {""},
            {""},
@@ -10308,7 +10309,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 138 "HTMLCharacterReference.gperf"
+#line 139 "HTMLCharacterReference.gperf"
            {"DownLeftTeeVector;", "⥞"},
            {""},
            {""},
@@ -10316,7 +10317,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 76 "HTMLCharacterReference.gperf"
+#line 77 "HTMLCharacterReference.gperf"
            {"CircleDot;", "⊙"},
            {""},
            {""},
@@ -10333,25 +10334,25 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 610 "HTMLCharacterReference.gperf"
+#line 611 "HTMLCharacterReference.gperf"
            {"Vdash;", "⊩"},
            {""},
            {""},
-#line 1730 "HTMLCharacterReference.gperf"
+#line 1731 "HTMLCharacterReference.gperf"
            {"pm;", "±"},
            {""},
            {""},
-#line 1474 "HTMLCharacterReference.gperf"
+#line 1475 "HTMLCharacterReference.gperf"
            {"nRightarrow;", "⇏"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1846 "HTMLCharacterReference.gperf"
+#line 1847 "HTMLCharacterReference.gperf"
            {"ring;", "˚"},
            {""},
-#line 1781 "HTMLCharacterReference.gperf"
+#line 1782 "HTMLCharacterReference.gperf"
            {"racute;", "ŕ"},
            {""},
            {""},
@@ -10359,9 +10360,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 611 "HTMLCharacterReference.gperf"
+#line 612 "HTMLCharacterReference.gperf"
            {"Vdashl;", "⫦"},
-#line 1625 "HTMLCharacterReference.gperf"
+#line 1626 "HTMLCharacterReference.gperf"
            {"nvltrie;", "⊴⃒"},
            {""},
            {""},
@@ -10388,11 +10389,11 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 493 "HTMLCharacterReference.gperf"
+#line 494 "HTMLCharacterReference.gperf"
            {"RightUpVector;", "↾"},
-#line 20 "HTMLCharacterReference.gperf"
-           {"AElig", "Æ"},
 #line 21 "HTMLCharacterReference.gperf"
+           {"AElig", "Æ"},
+#line 22 "HTMLCharacterReference.gperf"
            {"AElig;", "Æ"},
            {""},
            {""},
@@ -10421,7 +10422,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2162 "HTMLCharacterReference.gperf"
+#line 2163 "HTMLCharacterReference.gperf"
            {"varsubsetneqq;", "⫋︀"},
            {""},
            {""},
@@ -10430,9 +10431,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2092 "HTMLCharacterReference.gperf"
+#line 2093 "HTMLCharacterReference.gperf"
            {"twixt;", "≬"},
-#line 2000 "HTMLCharacterReference.gperf"
+#line 2001 "HTMLCharacterReference.gperf"
            {"succsim;", "≿"},
            {""},
            {""},
@@ -10446,16 +10447,16 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 424 "HTMLCharacterReference.gperf"
-           {"Oslash", "Ø"},
 #line 425 "HTMLCharacterReference.gperf"
+           {"Oslash", "Ø"},
+#line 426 "HTMLCharacterReference.gperf"
            {"Oslash;", "Ø"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1821 "HTMLCharacterReference.gperf"
+#line 1822 "HTMLCharacterReference.gperf"
            {"rdsh;", "↳"},
            {""},
            {""},
@@ -10475,7 +10476,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 519 "HTMLCharacterReference.gperf"
+#line 520 "HTMLCharacterReference.gperf"
            {"SmallCircle;", "∘"},
            {""},
            {""},
@@ -10483,7 +10484,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 477 "HTMLCharacterReference.gperf"
+#line 478 "HTMLCharacterReference.gperf"
            {"RightArrowBar;", "⇥"},
            {""},
            {""},
@@ -10496,7 +10497,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 52 "HTMLCharacterReference.gperf"
+#line 53 "HTMLCharacterReference.gperf"
            {"Bernoullis;", "ℬ"},
            {""},
            {""},
@@ -10505,13 +10506,13 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 618 "HTMLCharacterReference.gperf"
+#line 619 "HTMLCharacterReference.gperf"
            {"VerticalTilde;", "≀"},
            {""},
            {""},
            {""},
            {""},
-#line 356 "HTMLCharacterReference.gperf"
+#line 357 "HTMLCharacterReference.gperf"
            {"NotEqualTilde;", "≂̸"},
            {""},
            {""},
@@ -10520,16 +10521,16 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 396 "HTMLCharacterReference.gperf"
+#line 397 "HTMLCharacterReference.gperf"
            {"NotSupersetEqual;", "⊉"},
            {""},
            {""},
            {""},
-#line 1750 "HTMLCharacterReference.gperf"
+#line 1751 "HTMLCharacterReference.gperf"
            {"prnE;", "⪵"},
            {""},
            {""},
-#line 1849 "HTMLCharacterReference.gperf"
+#line 1850 "HTMLCharacterReference.gperf"
            {"rlhar;", "⇌"},
            {""},
            {""},
@@ -10538,9 +10539,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1076 "HTMLCharacterReference.gperf"
+#line 1077 "HTMLCharacterReference.gperf"
            {"ffllig;", "ﬄ"},
-#line 2034 "HTMLCharacterReference.gperf"
+#line 2035 "HTMLCharacterReference.gperf"
            {"swnwar;", "⤪"},
            {""},
            {""},
@@ -10552,12 +10553,12 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2052 "HTMLCharacterReference.gperf"
+#line 2053 "HTMLCharacterReference.gperf"
            {"thicksim;", "∼"},
            {""},
            {""},
            {""},
-#line 2094 "HTMLCharacterReference.gperf"
+#line 2095 "HTMLCharacterReference.gperf"
            {"twoheadrightarrow;", "↠"},
            {""},
            {""},
@@ -10570,7 +10571,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2118 "HTMLCharacterReference.gperf"
+#line 2119 "HTMLCharacterReference.gperf"
            {"ultri;", "◸"},
            {""},
            {""},
@@ -10578,7 +10579,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 433 "HTMLCharacterReference.gperf"
+#line 434 "HTMLCharacterReference.gperf"
            {"OverBracket;", "⎴"},
            {""},
            {""},
@@ -10590,11 +10591,11 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1317 "HTMLCharacterReference.gperf"
+#line 1318 "HTMLCharacterReference.gperf"
            {"ldrdhar;", "⥧"},
            {""},
            {""},
-#line 1440 "HTMLCharacterReference.gperf"
+#line 1441 "HTMLCharacterReference.gperf"
            {"mdash;", "—"},
            {""},
            {""},
@@ -10604,7 +10605,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1186 "HTMLCharacterReference.gperf"
+#line 1187 "HTMLCharacterReference.gperf"
            {"hkswarow;", "⤦"},
            {""},
            {""},
@@ -10616,16 +10617,16 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 142 "HTMLCharacterReference.gperf"
+#line 143 "HTMLCharacterReference.gperf"
            {"DownRightVector;", "⇁"},
            {""},
-#line 418 "HTMLCharacterReference.gperf"
+#line 419 "HTMLCharacterReference.gperf"
            {"Omicron;", "Ο"},
-#line 143 "HTMLCharacterReference.gperf"
+#line 144 "HTMLCharacterReference.gperf"
            {"DownRightVectorBar;", "⥗"},
-#line 2097 "HTMLCharacterReference.gperf"
-           {"uacute", "ú"},
 #line 2098 "HTMLCharacterReference.gperf"
+           {"uacute", "ú"},
+#line 2099 "HTMLCharacterReference.gperf"
            {"uacute;", "ú"},
            {""},
            {""},
@@ -10639,7 +10640,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 486 "HTMLCharacterReference.gperf"
+#line 487 "HTMLCharacterReference.gperf"
            {"RightTeeArrow;", "↦"},
            {""},
            {""},
@@ -10654,13 +10655,13 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 431 "HTMLCharacterReference.gperf"
+#line 432 "HTMLCharacterReference.gperf"
            {"OverBar;", "‾"},
-#line 1487 "HTMLCharacterReference.gperf"
+#line 1488 "HTMLCharacterReference.gperf"
            {"naturals;", "ℕ"},
            {""},
            {""},
-#line 1264 "HTMLCharacterReference.gperf"
+#line 1265 "HTMLCharacterReference.gperf"
            {"kcedil;", "ķ"},
            {""},
            {""},
@@ -10681,7 +10682,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 492 "HTMLCharacterReference.gperf"
+#line 493 "HTMLCharacterReference.gperf"
            {"RightUpTeeVector;", "⥜"},
            {""},
            {""},
@@ -10693,7 +10694,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 763 "HTMLCharacterReference.gperf"
+#line 764 "HTMLCharacterReference.gperf"
            {"blacktriangledown;", "▾"},
            {""},
            {""},
@@ -10701,19 +10702,19 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 357 "HTMLCharacterReference.gperf"
+#line 358 "HTMLCharacterReference.gperf"
            {"NotExists;", "∄"},
-#line 222 "HTMLCharacterReference.gperf"
+#line 223 "HTMLCharacterReference.gperf"
            {"IJlig;", "Ĳ"},
-#line 304 "HTMLCharacterReference.gperf"
+#line 305 "HTMLCharacterReference.gperf"
            {"LessGreater;", "≶"},
            {""},
            {""},
            {""},
            {""},
-#line 1635 "HTMLCharacterReference.gperf"
-           {"oacute", "ó"},
 #line 1636 "HTMLCharacterReference.gperf"
+           {"oacute", "ó"},
+#line 1637 "HTMLCharacterReference.gperf"
            {"oacute;", "ó"},
            {""},
            {""},
@@ -10726,7 +10727,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1756 "HTMLCharacterReference.gperf"
+#line 1757 "HTMLCharacterReference.gperf"
            {"profsurf;", "⌓"},
            {""},
            {""},
@@ -10739,7 +10740,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1700 "HTMLCharacterReference.gperf"
+#line 1701 "HTMLCharacterReference.gperf"
            {"parsl;", "⫽"},
            {""},
            {""},
@@ -10765,7 +10766,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 276 "HTMLCharacterReference.gperf"
+#line 277 "HTMLCharacterReference.gperf"
            {"LeftAngleBracket;", "⟨"},
            {""},
            {""},
@@ -10781,19 +10782,19 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1944 "HTMLCharacterReference.gperf"
+#line 1945 "HTMLCharacterReference.gperf"
            {"solbar;", "⌿"},
            {""},
            {""},
            {""},
            {""},
-#line 77 "HTMLCharacterReference.gperf"
+#line 78 "HTMLCharacterReference.gperf"
            {"CircleMinus;", "⊖"},
            {""},
            {""},
            {""},
            {""},
-#line 90 "HTMLCharacterReference.gperf"
+#line 91 "HTMLCharacterReference.gperf"
            {"CounterClockwiseContourIntegral;", "∳"},
            {""},
            {""},
@@ -10830,7 +10831,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2016 "HTMLCharacterReference.gperf"
+#line 2017 "HTMLCharacterReference.gperf"
            {"suphsub;", "⫗"},
            {""},
            {""},
@@ -10841,7 +10842,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 882 "HTMLCharacterReference.gperf"
+#line 883 "HTMLCharacterReference.gperf"
            {"cirscir;", "⧂"},
            {""},
            {""},
@@ -10852,7 +10853,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1486 "HTMLCharacterReference.gperf"
+#line 1487 "HTMLCharacterReference.gperf"
            {"natural;", "♮"},
            {""},
            {""},
@@ -10865,20 +10866,20 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 109 "HTMLCharacterReference.gperf"
+#line 110 "HTMLCharacterReference.gperf"
            {"DiacriticalDot;", "˙"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 235 "HTMLCharacterReference.gperf"
+#line 236 "HTMLCharacterReference.gperf"
            {"ImaginaryI;", "ⅈ"},
            {""},
            {""},
            {""},
            {""},
-#line 590 "HTMLCharacterReference.gperf"
+#line 591 "HTMLCharacterReference.gperf"
            {"UpArrowBar;", "⤒"},
            {""},
            {""},
@@ -10895,7 +10896,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 393 "HTMLCharacterReference.gperf"
+#line 394 "HTMLCharacterReference.gperf"
            {"NotSucceedsSlantEqual;", "⋡"},
            {""},
            {""},
@@ -10907,7 +10908,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1905 "HTMLCharacterReference.gperf"
+#line 1906 "HTMLCharacterReference.gperf"
            {"seswar;", "⤩"},
            {""},
            {""},
@@ -10920,15 +10921,15 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 421 "HTMLCharacterReference.gperf"
+#line 422 "HTMLCharacterReference.gperf"
            {"OpenCurlyQuote;", "‘"},
            {""},
            {""},
-#line 2070 "HTMLCharacterReference.gperf"
+#line 2071 "HTMLCharacterReference.gperf"
            {"topfork;", "⫚"},
            {""},
            {""},
-#line 434 "HTMLCharacterReference.gperf"
+#line 435 "HTMLCharacterReference.gperf"
            {"OverParenthesis;", "⏜"},
            {""},
            {""},
@@ -10936,7 +10937,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 110 "HTMLCharacterReference.gperf"
+#line 111 "HTMLCharacterReference.gperf"
            {"DiacriticalDoubleAcute;", "˝"},
            {""},
            {""},
@@ -10945,7 +10946,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1799 "HTMLCharacterReference.gperf"
+#line 1800 "HTMLCharacterReference.gperf"
            {"rarrsim;", "⥴"},
            {""},
            {""},
@@ -11002,7 +11003,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2041 "HTMLCharacterReference.gperf"
+#line 2042 "HTMLCharacterReference.gperf"
            {"tcedil;", "ţ"},
            {""},
            {""},
@@ -11022,7 +11023,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1847 "HTMLCharacterReference.gperf"
+#line 1848 "HTMLCharacterReference.gperf"
            {"risingdotseq;", "≓"},
            {""},
            {""},
@@ -11034,7 +11035,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1647 "HTMLCharacterReference.gperf"
+#line 1648 "HTMLCharacterReference.gperf"
            {"oelig;", "œ"},
            {""},
            {""},
@@ -11043,7 +11044,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 330 "HTMLCharacterReference.gperf"
+#line 331 "HTMLCharacterReference.gperf"
            {"MinusPlus;", "∓"},
            {""},
            {""},
@@ -11061,7 +11062,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1912 "HTMLCharacterReference.gperf"
+#line 1913 "HTMLCharacterReference.gperf"
            {"shchcy;", "щ"},
            {""},
            {""},
@@ -11075,7 +11076,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1698 "HTMLCharacterReference.gperf"
+#line 1699 "HTMLCharacterReference.gperf"
            {"parallel;", "∥"},
            {""},
            {""},
@@ -11084,14 +11085,14 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 475 "HTMLCharacterReference.gperf"
+#line 476 "HTMLCharacterReference.gperf"
            {"RightAngleBracket;", "⟩"},
            {""},
            {""},
            {""},
-#line 1685 "HTMLCharacterReference.gperf"
-           {"oslash", "ø"},
 #line 1686 "HTMLCharacterReference.gperf"
+           {"oslash", "ø"},
+#line 1687 "HTMLCharacterReference.gperf"
            {"oslash;", "ø"},
            {""},
            {""},
@@ -11103,7 +11104,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1747 "HTMLCharacterReference.gperf"
+#line 1748 "HTMLCharacterReference.gperf"
            {"precsim;", "≾"},
            {""},
            {""},
@@ -11130,7 +11131,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1581 "HTMLCharacterReference.gperf"
+#line 1582 "HTMLCharacterReference.gperf"
            {"nshortparallel;", "∦"},
            {""},
            {""},
@@ -11168,7 +11169,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 591 "HTMLCharacterReference.gperf"
+#line 592 "HTMLCharacterReference.gperf"
            {"UpArrowDownArrow;", "⇅"},
            {""},
            {""},
@@ -11191,7 +11192,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1999 "HTMLCharacterReference.gperf"
+#line 2000 "HTMLCharacterReference.gperf"
            {"succnsim;", "⋩"},
            {""},
            {""},
@@ -11247,13 +11248,13 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1664 "HTMLCharacterReference.gperf"
+#line 1665 "HTMLCharacterReference.gperf"
            {"omicron;", "ο"},
            {""},
            {""},
            {""},
            {""},
-#line 880 "HTMLCharacterReference.gperf"
+#line 881 "HTMLCharacterReference.gperf"
            {"cirfnint;", "⨐"},
            {""},
            {""},
@@ -11275,7 +11276,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 390 "HTMLCharacterReference.gperf"
+#line 391 "HTMLCharacterReference.gperf"
            {"NotSubsetEqual;", "⊈"},
            {""},
            {""},
@@ -11296,9 +11297,9 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2035 "HTMLCharacterReference.gperf"
-           {"szlig", "ß"},
 #line 2036 "HTMLCharacterReference.gperf"
+           {"szlig", "ß"},
+#line 2037 "HTMLCharacterReference.gperf"
            {"szlig;", "ß"},
            {""},
            {""},
@@ -11330,7 +11331,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1920 "HTMLCharacterReference.gperf"
+#line 1921 "HTMLCharacterReference.gperf"
            {"sigmav;", "ς"},
            {""},
            {""},
@@ -11364,7 +11365,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1754 "HTMLCharacterReference.gperf"
+#line 1755 "HTMLCharacterReference.gperf"
            {"profalar;", "⌮"},
            {""},
            {""},
@@ -11380,7 +11381,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1731 "HTMLCharacterReference.gperf"
+#line 1732 "HTMLCharacterReference.gperf"
            {"pointint;", "⨕"},
            {""},
            {""},
@@ -11398,7 +11399,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1887 "HTMLCharacterReference.gperf"
+#line 1888 "HTMLCharacterReference.gperf"
            {"scedil;", "ş"},
            {""},
            {""},
@@ -11416,17 +11417,17 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 313 "HTMLCharacterReference.gperf"
+#line 314 "HTMLCharacterReference.gperf"
            {"LongLeftRightArrow;", "⟷"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1851 "HTMLCharacterReference.gperf"
+#line 1852 "HTMLCharacterReference.gperf"
            {"rmoust;", "⎱"},
            {""},
-#line 2090 "HTMLCharacterReference.gperf"
+#line 2091 "HTMLCharacterReference.gperf"
            {"tshcy;", "ћ"},
            {""},
            {""},
@@ -11445,7 +11446,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2128 "HTMLCharacterReference.gperf"
+#line 2129 "HTMLCharacterReference.gperf"
            {"uplus;", "⊎"},
            {""},
            {""},
@@ -11471,10 +11472,10 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1777 "HTMLCharacterReference.gperf"
+#line 1778 "HTMLCharacterReference.gperf"
            {"rAtail;", "⤜"},
            {""},
-#line 2028 "HTMLCharacterReference.gperf"
+#line 2029 "HTMLCharacterReference.gperf"
            {"supsub;", "⫔"},
            {""},
            {""},
@@ -11487,7 +11488,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1071 "HTMLCharacterReference.gperf"
+#line 1072 "HTMLCharacterReference.gperf"
            {"fallingdotseq;", "≒"},
            {""},
            {""},
@@ -11510,7 +11511,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 64 "HTMLCharacterReference.gperf"
+#line 65 "HTMLCharacterReference.gperf"
            {"CapitalDifferentialD;", "ⅅ"},
            {""},
            {""},
@@ -11527,7 +11528,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1670 "HTMLCharacterReference.gperf"
+#line 1671 "HTMLCharacterReference.gperf"
            {"oplus;", "⊕"},
            {""},
            {""},
@@ -11544,7 +11545,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 282 "HTMLCharacterReference.gperf"
+#line 283 "HTMLCharacterReference.gperf"
            {"LeftDownTeeVector;", "⥡"},
            {""},
            {""},
@@ -11569,7 +11570,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1990 "HTMLCharacterReference.gperf"
+#line 1991 "HTMLCharacterReference.gperf"
            {"subsim;", "⫇"},
            {""},
            {""},
@@ -11594,10 +11595,10 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 559 "HTMLCharacterReference.gperf"
+#line 560 "HTMLCharacterReference.gperf"
            {"Tilde;", "∼"},
            {""},
-#line 617 "HTMLCharacterReference.gperf"
+#line 618 "HTMLCharacterReference.gperf"
            {"VerticalSeparator;", "❘"},
            {""},
            {""},
@@ -11626,7 +11627,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1435 "HTMLCharacterReference.gperf"
+#line 1436 "HTMLCharacterReference.gperf"
            {"mapstoleft;", "↤"},
            {""},
            {""},
@@ -11634,7 +11635,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 491 "HTMLCharacterReference.gperf"
+#line 492 "HTMLCharacterReference.gperf"
            {"RightUpDownVector;", "⥏"},
            {""},
            {""},
@@ -11649,7 +11650,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1992 "HTMLCharacterReference.gperf"
+#line 1993 "HTMLCharacterReference.gperf"
            {"subsup;", "⫓"},
            {""},
            {""},
@@ -11665,7 +11666,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1891 "HTMLCharacterReference.gperf"
+#line 1892 "HTMLCharacterReference.gperf"
            {"scnsim;", "⋩"},
            {""},
            {""},
@@ -11722,7 +11723,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1718 "HTMLCharacterReference.gperf"
+#line 1719 "HTMLCharacterReference.gperf"
            {"plankv;", "ℏ"},
            {""},
            {""},
@@ -11744,7 +11745,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2049 "HTMLCharacterReference.gperf"
+#line 2050 "HTMLCharacterReference.gperf"
            {"thetasym;", "ϑ"},
            {""},
            {""},
@@ -11760,10 +11761,10 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 114 "HTMLCharacterReference.gperf"
+#line 115 "HTMLCharacterReference.gperf"
            {"DifferentialD;", "ⅆ"},
            {""},
-#line 365 "HTMLCharacterReference.gperf"
+#line 366 "HTMLCharacterReference.gperf"
            {"NotHumpDownHump;", "≎̸"},
            {""},
            {""},
@@ -11782,7 +11783,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2160 "HTMLCharacterReference.gperf"
+#line 2161 "HTMLCharacterReference.gperf"
            {"varsigma;", "ς"},
            {""},
            {""},
@@ -11795,7 +11796,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1719 "HTMLCharacterReference.gperf"
+#line 1720 "HTMLCharacterReference.gperf"
            {"plus;", "+"},
            {""},
            {""},
@@ -11827,12 +11828,12 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1726 "HTMLCharacterReference.gperf"
-           {"plusmn", "±"},
 #line 1727 "HTMLCharacterReference.gperf"
+           {"plusmn", "±"},
+#line 1728 "HTMLCharacterReference.gperf"
            {"plusmn;", "±"},
            {""},
-#line 1746 "HTMLCharacterReference.gperf"
+#line 1747 "HTMLCharacterReference.gperf"
            {"precnsim;", "⋨"},
            {""},
            {""},
@@ -11861,7 +11862,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 764 "HTMLCharacterReference.gperf"
+#line 765 "HTMLCharacterReference.gperf"
            {"blacktriangleleft;", "◂"},
            {""},
            {""},
@@ -11882,7 +11883,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1752 "HTMLCharacterReference.gperf"
+#line 1753 "HTMLCharacterReference.gperf"
            {"prnsim;", "⋨"},
            {""},
            {""},
@@ -11930,7 +11931,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1813 "HTMLCharacterReference.gperf"
+#line 1814 "HTMLCharacterReference.gperf"
            {"rcedil;", "ŗ"},
            {""},
            {""},
@@ -11951,7 +11952,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1936 "HTMLCharacterReference.gperf"
+#line 1937 "HTMLCharacterReference.gperf"
            {"smid;", "∣"},
            {""},
            {""},
@@ -11986,7 +11987,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 481 "HTMLCharacterReference.gperf"
+#line 482 "HTMLCharacterReference.gperf"
            {"RightDownTeeVector;", "⥝"},
            {""},
            {""},
@@ -11995,7 +11996,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1725 "HTMLCharacterReference.gperf"
+#line 1726 "HTMLCharacterReference.gperf"
            {"pluse;", "⩲"},
            {""},
            {""},
@@ -12133,13 +12134,13 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1729 "HTMLCharacterReference.gperf"
+#line 1730 "HTMLCharacterReference.gperf"
            {"plustwo;", "⨧"},
            {""},
            {""},
            {""},
            {""},
-#line 1844 "HTMLCharacterReference.gperf"
+#line 1845 "HTMLCharacterReference.gperf"
            {"rightsquigarrow;", "↝"},
            {""},
            {""},
@@ -12155,7 +12156,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 435 "HTMLCharacterReference.gperf"
+#line 436 "HTMLCharacterReference.gperf"
            {"PartialD;", "∂"},
            {""},
            {""},
@@ -12173,7 +12174,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 82 "HTMLCharacterReference.gperf"
+#line 83 "HTMLCharacterReference.gperf"
            {"CloseCurlyQuote;", "’"},
            {""},
            {""},
@@ -12194,7 +12195,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 987 "HTMLCharacterReference.gperf"
+#line 988 "HTMLCharacterReference.gperf"
            {"downharpoonleft;", "⇃"},
            {""},
            {""},
@@ -12246,7 +12247,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2055 "HTMLCharacterReference.gperf"
+#line 2056 "HTMLCharacterReference.gperf"
            {"thksim;", "∼"},
            {""},
            {""},
@@ -12258,7 +12259,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1032 "HTMLCharacterReference.gperf"
+#line 1033 "HTMLCharacterReference.gperf"
            {"emptyv;", "∅"},
            {""},
            {""},
@@ -12273,7 +12274,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2031 "HTMLCharacterReference.gperf"
+#line 2032 "HTMLCharacterReference.gperf"
            {"swarhk;", "⤦"},
            {""},
            {""},
@@ -12294,7 +12295,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 348 "HTMLCharacterReference.gperf"
+#line 349 "HTMLCharacterReference.gperf"
            {"NonBreakingSpace;", " "},
            {""},
            {""},
@@ -12305,7 +12306,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 81 "HTMLCharacterReference.gperf"
+#line 82 "HTMLCharacterReference.gperf"
            {"CloseCurlyDoubleQuote;", "”"},
            {""},
            {""},
@@ -12316,7 +12317,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1721 "HTMLCharacterReference.gperf"
+#line 1722 "HTMLCharacterReference.gperf"
            {"plusb;", "⊞"},
            {""},
            {""},
@@ -12339,7 +12340,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1219 "HTMLCharacterReference.gperf"
+#line 1220 "HTMLCharacterReference.gperf"
            {"imagline;", "ℐ"},
            {""},
            {""},
@@ -12358,14 +12359,14 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 382 "HTMLCharacterReference.gperf"
+#line 383 "HTMLCharacterReference.gperf"
            {"NotRightTriangle;", "⋫"},
            {""},
            {""},
-#line 383 "HTMLCharacterReference.gperf"
+#line 384 "HTMLCharacterReference.gperf"
            {"NotRightTriangleBar;", "⧐̸"},
            {""},
-#line 384 "HTMLCharacterReference.gperf"
+#line 385 "HTMLCharacterReference.gperf"
            {"NotRightTriangleEqual;", "⋭"},
            {""},
            {""},
@@ -12408,13 +12409,13 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2074 "HTMLCharacterReference.gperf"
+#line 2075 "HTMLCharacterReference.gperf"
            {"triangle;", "▵"},
-#line 2078 "HTMLCharacterReference.gperf"
+#line 2079 "HTMLCharacterReference.gperf"
            {"triangleq;", "≜"},
            {""},
            {""},
-#line 2076 "HTMLCharacterReference.gperf"
+#line 2077 "HTMLCharacterReference.gperf"
            {"triangleleft;", "◃"},
            {""},
            {""},
@@ -12435,13 +12436,13 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2075 "HTMLCharacterReference.gperf"
+#line 2076 "HTMLCharacterReference.gperf"
            {"triangledown;", "▿"},
-#line 1841 "HTMLCharacterReference.gperf"
+#line 1842 "HTMLCharacterReference.gperf"
            {"rightleftarrows;", "⇄"},
            {""},
            {""},
-#line 495 "HTMLCharacterReference.gperf"
+#line 496 "HTMLCharacterReference.gperf"
            {"RightVector;", "⇀"},
            {""},
            {""},
@@ -12470,7 +12471,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2077 "HTMLCharacterReference.gperf"
+#line 2078 "HTMLCharacterReference.gperf"
            {"trianglelefteq;", "⊴"},
            {""},
            {""},
@@ -12492,16 +12493,16 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 482 "HTMLCharacterReference.gperf"
+#line 483 "HTMLCharacterReference.gperf"
            {"RightDownVector;", "⇂"},
            {""},
            {""},
-#line 483 "HTMLCharacterReference.gperf"
+#line 484 "HTMLCharacterReference.gperf"
            {"RightDownVectorBar;", "⥕"},
            {""},
            {""},
            {""},
-#line 1724 "HTMLCharacterReference.gperf"
+#line 1725 "HTMLCharacterReference.gperf"
            {"plusdu;", "⨥"},
            {""},
            {""},
@@ -12511,7 +12512,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 392 "HTMLCharacterReference.gperf"
+#line 393 "HTMLCharacterReference.gperf"
            {"NotSucceedsEqual;", "⪰̸"},
            {""},
            {""},
@@ -12528,13 +12529,13 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1723 "HTMLCharacterReference.gperf"
+#line 1724 "HTMLCharacterReference.gperf"
            {"plusdo;", "∔"},
            {""},
            {""},
            {""},
            {""},
-#line 381 "HTMLCharacterReference.gperf"
+#line 382 "HTMLCharacterReference.gperf"
            {"NotReverseElement;", "∌"},
            {""},
            {""},
@@ -12559,7 +12560,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 394 "HTMLCharacterReference.gperf"
+#line 395 "HTMLCharacterReference.gperf"
            {"NotSucceedsTilde;", "≿̸"},
            {""},
            {""},
@@ -12569,7 +12570,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1842 "HTMLCharacterReference.gperf"
+#line 1843 "HTMLCharacterReference.gperf"
            {"rightleftharpoons;", "⇌"},
            {""},
            {""},
@@ -12628,7 +12629,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1935 "HTMLCharacterReference.gperf"
+#line 1936 "HTMLCharacterReference.gperf"
            {"smeparsl;", "⧤"},
            {""},
            {""},
@@ -12656,7 +12657,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 420 "HTMLCharacterReference.gperf"
+#line 421 "HTMLCharacterReference.gperf"
            {"OpenCurlyDoubleQuote;", "“"},
            {""},
            {""},
@@ -12698,7 +12699,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1973 "HTMLCharacterReference.gperf"
+#line 1974 "HTMLCharacterReference.gperf"
            {"straightphi;", "ϕ"},
            {""},
            {""},
@@ -12774,7 +12775,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1899 "HTMLCharacterReference.gperf"
+#line 1900 "HTMLCharacterReference.gperf"
            {"searhk;", "⤥"},
            {""},
            {""},
@@ -12791,7 +12792,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1840 "HTMLCharacterReference.gperf"
+#line 1841 "HTMLCharacterReference.gperf"
            {"rightharpoonup;", "⇀"},
            {""},
            {""},
@@ -12810,13 +12811,13 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1665 "HTMLCharacterReference.gperf"
+#line 1666 "HTMLCharacterReference.gperf"
            {"omid;", "⦶"},
            {""},
            {""},
            {""},
            {""},
-#line 417 "HTMLCharacterReference.gperf"
+#line 418 "HTMLCharacterReference.gperf"
            {"Omega;", "Ω"},
            {""},
            {""},
@@ -12828,7 +12829,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1991 "HTMLCharacterReference.gperf"
+#line 1992 "HTMLCharacterReference.gperf"
            {"subsub;", "⫕"},
            {""},
            {""},
@@ -12845,7 +12846,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 366 "HTMLCharacterReference.gperf"
+#line 367 "HTMLCharacterReference.gperf"
            {"NotHumpEqual;", "≏̸"},
            {""},
            {""},
@@ -12867,7 +12868,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1852 "HTMLCharacterReference.gperf"
+#line 1853 "HTMLCharacterReference.gperf"
            {"rmoustache;", "⎱"},
            {""},
            {""},
@@ -12890,7 +12891,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1714 "HTMLCharacterReference.gperf"
+#line 1715 "HTMLCharacterReference.gperf"
            {"pitchfork;", "⋔"},
            {""},
            {""},
@@ -12909,14 +12910,14 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2079 "HTMLCharacterReference.gperf"
+#line 2080 "HTMLCharacterReference.gperf"
            {"triangleright;", "▹"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1829 "HTMLCharacterReference.gperf"
+#line 1830 "HTMLCharacterReference.gperf"
            {"rfisht;", "⥽"},
            {""},
            {""},
@@ -12932,7 +12933,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1839 "HTMLCharacterReference.gperf"
+#line 1840 "HTMLCharacterReference.gperf"
            {"rightharpoondown;", "⇁"},
            {""},
            {""},
@@ -12949,7 +12950,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 406 "HTMLCharacterReference.gperf"
+#line 407 "HTMLCharacterReference.gperf"
            {"OElig;", "Œ"},
            {""},
            {""},
@@ -13008,10 +13009,10 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 303 "HTMLCharacterReference.gperf"
+#line 304 "HTMLCharacterReference.gperf"
            {"LessFullEqual;", "≦"},
            {""},
-#line 484 "HTMLCharacterReference.gperf"
+#line 485 "HTMLCharacterReference.gperf"
            {"RightFloor;", "⌋"},
            {""},
            {""},
@@ -13089,7 +13090,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1699 "HTMLCharacterReference.gperf"
+#line 1700 "HTMLCharacterReference.gperf"
            {"parsim;", "⫳"},
            {""},
            {""},
@@ -13114,14 +13115,14 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1642 "HTMLCharacterReference.gperf"
+#line 1643 "HTMLCharacterReference.gperf"
            {"odash;", "⊝"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1716 "HTMLCharacterReference.gperf"
+#line 1717 "HTMLCharacterReference.gperf"
            {"planck;", "ℏ"},
            {""},
            {""},
@@ -13140,7 +13141,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2080 "HTMLCharacterReference.gperf"
+#line 2081 "HTMLCharacterReference.gperf"
            {"trianglerighteq;", "⊵"},
            {""},
            {""},
@@ -13166,7 +13167,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2108 "HTMLCharacterReference.gperf"
+#line 2109 "HTMLCharacterReference.gperf"
            {"ufisht;", "⥾"},
            {""},
            {""},
@@ -13179,14 +13180,14 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2015 "HTMLCharacterReference.gperf"
+#line 2016 "HTMLCharacterReference.gperf"
            {"suphsol;", "⟉"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 1441 "HTMLCharacterReference.gperf"
+#line 1442 "HTMLCharacterReference.gperf"
            {"measuredangle;", "∡"},
            {""},
            {""},
@@ -13214,10 +13215,10 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2058 "HTMLCharacterReference.gperf"
+#line 2059 "HTMLCharacterReference.gperf"
            {"tilde;", "˜"},
            {""},
-#line 1666 "HTMLCharacterReference.gperf"
+#line 1667 "HTMLCharacterReference.gperf"
            {"ominus;", "⊖"},
            {""},
            {""},
@@ -13267,14 +13268,14 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2120 "HTMLCharacterReference.gperf"
+#line 2121 "HTMLCharacterReference.gperf"
            {"uml", "¨"},
            {""},
            {""},
            {""},
            {""},
            {""},
-#line 2121 "HTMLCharacterReference.gperf"
+#line 2122 "HTMLCharacterReference.gperf"
            {"uml;", "¨"},
            {""},
            {""},
@@ -13310,7 +13311,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 164 "HTMLCharacterReference.gperf"
+#line 165 "HTMLCharacterReference.gperf"
            {"EmptySmallSquare;", "◻"},
            {""},
            {""},
@@ -13320,7 +13321,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 494 "HTMLCharacterReference.gperf"
+#line 495 "HTMLCharacterReference.gperf"
            {"RightUpVectorBar;", "⥔"},
            {""},
            {""},
@@ -13357,7 +13358,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 181 "HTMLCharacterReference.gperf"
+#line 182 "HTMLCharacterReference.gperf"
            {"FilledSmallSquare;", "◼"},
            {""},
            {""},
@@ -13369,7 +13370,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1837 "HTMLCharacterReference.gperf"
+#line 1838 "HTMLCharacterReference.gperf"
            {"rightarrow;", "→"},
            {""},
            {""},
@@ -13423,7 +13424,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1663 "HTMLCharacterReference.gperf"
+#line 1664 "HTMLCharacterReference.gperf"
            {"omega;", "ω"},
            {""},
            {""},
@@ -13531,7 +13532,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2188 "HTMLCharacterReference.gperf"
+#line 2189 "HTMLCharacterReference.gperf"
            {"vzigzag;", "⦚"},
            {""},
            {""},
@@ -13548,7 +13549,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1843 "HTMLCharacterReference.gperf"
+#line 1844 "HTMLCharacterReference.gperf"
            {"rightrightarrows;", "⇉"},
            {""},
            {""},
@@ -13674,7 +13675,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 241 "HTMLCharacterReference.gperf"
+#line 242 "HTMLCharacterReference.gperf"
            {"InvisibleTimes;", "⁢"},
            {""},
            {""},
@@ -13735,7 +13736,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 339 "HTMLCharacterReference.gperf"
+#line 340 "HTMLCharacterReference.gperf"
            {"NegativeMediumSpace;", "​"},
            {""},
            {""},
@@ -13761,7 +13762,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 440 "HTMLCharacterReference.gperf"
+#line 441 "HTMLCharacterReference.gperf"
            {"PlusMinus;", "±"},
            {""},
            {""},
@@ -13769,7 +13770,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 112 "HTMLCharacterReference.gperf"
+#line 113 "HTMLCharacterReference.gperf"
            {"DiacriticalTilde;", "˜"},
            {""},
            {""},
@@ -13885,7 +13886,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 108 "HTMLCharacterReference.gperf"
+#line 109 "HTMLCharacterReference.gperf"
            {"DiacriticalAcute;", "´"},
            {""},
            {""},
@@ -13974,7 +13975,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 307 "HTMLCharacterReference.gperf"
+#line 308 "HTMLCharacterReference.gperf"
            {"LessTilde;", "≲"},
            {""},
            {""},
@@ -14095,7 +14096,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1796 "HTMLCharacterReference.gperf"
+#line 1797 "HTMLCharacterReference.gperf"
            {"rarrhk;", "↪"},
            {""},
            {""},
@@ -14153,7 +14154,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2093 "HTMLCharacterReference.gperf"
+#line 2094 "HTMLCharacterReference.gperf"
            {"twoheadleftarrow;", "↞"},
            {""},
            {""},
@@ -14327,7 +14328,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1755 "HTMLCharacterReference.gperf"
+#line 1756 "HTMLCharacterReference.gperf"
            {"profline;", "⌒"},
            {""},
            {""},
@@ -14348,7 +14349,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1720 "HTMLCharacterReference.gperf"
+#line 1721 "HTMLCharacterReference.gperf"
            {"plusacir;", "⨣"},
            {""},
            {""},
@@ -14443,7 +14444,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 488 "HTMLCharacterReference.gperf"
+#line 489 "HTMLCharacterReference.gperf"
            {"RightTriangle;", "⊳"},
            {""},
            {""},
@@ -14742,7 +14743,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1934 "HTMLCharacterReference.gperf"
+#line 1935 "HTMLCharacterReference.gperf"
            {"smashp;", "⨳"},
            {""},
            {""},
@@ -14796,7 +14797,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 240 "HTMLCharacterReference.gperf"
+#line 241 "HTMLCharacterReference.gperf"
            {"InvisibleComma;", "⁣"},
            {""},
            {""},
@@ -14823,7 +14824,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1972 "HTMLCharacterReference.gperf"
+#line 1973 "HTMLCharacterReference.gperf"
            {"straightepsilon;", "ϵ"},
            {""},
            {""},
@@ -15041,7 +15042,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 479 "HTMLCharacterReference.gperf"
+#line 480 "HTMLCharacterReference.gperf"
            {"RightCeiling;", "⌉"},
            {""},
            {""},
@@ -15190,7 +15191,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 560 "HTMLCharacterReference.gperf"
+#line 561 "HTMLCharacterReference.gperf"
            {"TildeEqual;", "≃"},
            {""},
            {""},
@@ -15270,7 +15271,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 496 "HTMLCharacterReference.gperf"
+#line 497 "HTMLCharacterReference.gperf"
            {"RightVectorBar;", "⥓"},
            {""},
            {""},
@@ -15342,11 +15343,11 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 562 "HTMLCharacterReference.gperf"
+#line 563 "HTMLCharacterReference.gperf"
            {"TildeTilde;", "≈"},
            {""},
            {""},
-#line 480 "HTMLCharacterReference.gperf"
+#line 481 "HTMLCharacterReference.gperf"
            {"RightDoubleBracket;", "⟧"},
            {""},
            {""},
@@ -15420,7 +15421,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 111 "HTMLCharacterReference.gperf"
+#line 112 "HTMLCharacterReference.gperf"
            {"DiacriticalGrave;", "`"},
            {""},
            {""},
@@ -15561,7 +15562,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 182 "HTMLCharacterReference.gperf"
+#line 183 "HTMLCharacterReference.gperf"
            {"FilledVerySmallSquare;", "▪"},
            {""},
            {""},
@@ -15649,7 +15650,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1717 "HTMLCharacterReference.gperf"
+#line 1718 "HTMLCharacterReference.gperf"
            {"planckh;", "ℎ"},
            {""},
            {""},
@@ -15675,7 +15676,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1728 "HTMLCharacterReference.gperf"
+#line 1729 "HTMLCharacterReference.gperf"
            {"plussim;", "⨦"},
            {""},
            {""},
@@ -15786,7 +15787,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1722 "HTMLCharacterReference.gperf"
+#line 1723 "HTMLCharacterReference.gperf"
            {"pluscir;", "⨢"},
            {""},
            {""},
@@ -15945,7 +15946,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 165 "HTMLCharacterReference.gperf"
+#line 166 "HTMLCharacterReference.gperf"
            {"EmptyVerySmallSquare;", "▫"},
            {""},
            {""},
@@ -16125,7 +16126,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1877 "HTMLCharacterReference.gperf"
+#line 1878 "HTMLCharacterReference.gperf"
            {"ruluhar;", "⥨"},
            {""},
            {""},
@@ -16389,7 +16390,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 593 "HTMLCharacterReference.gperf"
+#line 594 "HTMLCharacterReference.gperf"
            {"UpEquilibrium;", "⥮"},
            {""},
            {""},
@@ -16603,7 +16604,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 503 "HTMLCharacterReference.gperf"
+#line 504 "HTMLCharacterReference.gperf"
            {"RuleDelayed;", "⧴"},
            {""},
            {""},
@@ -16772,7 +16773,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 561 "HTMLCharacterReference.gperf"
+#line 562 "HTMLCharacterReference.gperf"
            {"TildeFullEqual;", "≅"},
            {""},
            {""},
@@ -16846,7 +16847,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1838 "HTMLCharacterReference.gperf"
+#line 1839 "HTMLCharacterReference.gperf"
            {"rightarrowtail;", "↣"},
            {""},
            {""},
@@ -17088,7 +17089,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 490 "HTMLCharacterReference.gperf"
+#line 491 "HTMLCharacterReference.gperf"
            {"RightTriangleEqual;", "⊵"},
            {""},
            {""},
@@ -17109,7 +17110,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1845 "HTMLCharacterReference.gperf"
+#line 1846 "HTMLCharacterReference.gperf"
            {"rightthreetimes;", "⋌"},
            {""},
            {""},
@@ -17223,7 +17224,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 489 "HTMLCharacterReference.gperf"
+#line 490 "HTMLCharacterReference.gperf"
            {"RightTriangleBar;", "⧐"},
            {""},
            {""},
@@ -17677,7 +17678,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 2087 "HTMLCharacterReference.gperf"
+#line 2088 "HTMLCharacterReference.gperf"
            {"trpezium;", "⏢"},
            {""},
            {""},
@@ -17854,7 +17855,7 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
            {""},
            {""},
            {""},
-#line 1818 "HTMLCharacterReference.gperf"
+#line 1819 "HTMLCharacterReference.gperf"
            {"rdldhar;", "⥩"}};
 
     if (len <= MAX_WORD_LENGTH && len >= MIN_WORD_LENGTH)
@@ -17871,4 +17872,6 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
     }
     return 0;
 }
-#line 2251 "HTMLCharacterReference.gperf"
+#line 2252 "HTMLCharacterReference.gperf"
+
+// NOLINTEND(google-runtime-int,hicpp-use-nullptr,modernize-use-nullptr)

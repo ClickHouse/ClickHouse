@@ -108,12 +108,12 @@ namespace
                     // null terminate the sequence
                     seq.push_back('\0');
                     // lookup the html sequence in the perfect hashmap.
-                    auto res = hash.Lookup(seq.data(), strlen(seq.data()));
+                    const auto * res = hash.Lookup(seq.data(), strlen(seq.data()));
                     // reset so that it's reused in the next iteration
                     seq.clear();
                     if (res)
                     {
-                        auto glyph = res->glyph;
+                        const auto * glyph = res->glyph;
                         for (size_t i = 0; i < strlen(glyph); ++i)
                         {
                             *dst_pos = glyph[i];
