@@ -305,17 +305,18 @@ void executeQueryWithParallelReplicas(
         LOG_DEBUG(&Poco::Logger::get("executeQueryWithParallelReplicas"), "Parallel replicas query in shard scope: shard_num={} cluster={}",
                   shard_num, not_optimized_cluster->getName());
 
-        const auto shard_replicas_num = not_optimized_cluster->getShardsAddresses()[shard_num - 1].size();
-        all_replicas_count = std::min(static_cast<size_t>(settings.max_parallel_replicas), shard_replicas_num);
-
-        /// shard_num is 1-based, but getClusterWithSingleShard expects 0-based index
-        new_cluster = not_optimized_cluster->getClusterWithSingleShard(shard_num - 1);
+        // get cluster for shard specified by shard_num
+        // shard_num is 1-based, but getClusterWithSingleShard expects 0-based index
+        auto single_shard_cluster = not_optimized_cluster->getClusterWithSingleShard(shard_num - 1);
+        // convert cluster to representation expected by parallel replicas
+        new_cluster = single_shard_cluster->getClusterWithReplicasAsShards(settings);
     }
     else
     {
         new_cluster = not_optimized_cluster->getClusterWithReplicasAsShards(settings);
-        all_replicas_count = std::min(static_cast<size_t>(settings.max_parallel_replicas), new_cluster->getShardCount());
     }
+
+    all_replicas_count = std::min(static_cast<size_t>(settings.max_parallel_replicas), new_cluster->getShardCount());
 
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(all_replicas_count);
     auto external_tables = new_context->getExternalTables();
