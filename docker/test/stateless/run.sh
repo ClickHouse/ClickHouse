@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# shellcheck disable=SC1091
+# shellcheck disable=SC2034
+source /setup_export_logs.sh
+
 # fail on errors, verbose and export all env variables
 set -e -x -a
 
@@ -36,21 +40,7 @@ fi
 ./setup_minio.sh stateless
 ./setup_hdfs_minicluster.sh
 
-# Setup a cluster for logs export to ClickHouse Cloud
-# Note: these variables are provided to the Docker run command by the Python script in tests/ci
-if [ -n "${CLICKHOUSE_CI_LOGS_HOST}" ]
-then
-    echo "
-    remote_servers:
-        system_logs_export:
-            shard:
-                replica:
-                    secure: 1
-                    user: ci
-                    host: '${CLICKHOUSE_CI_LOGS_HOST}'
-                    password: '${CLICKHOUSE_CI_LOGS_PASSWORD}'
-    " > /etc/clickhouse-server/config.d/system_logs_export.yaml
-fi
+config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
@@ -116,20 +106,7 @@ do
     sleep 1
 done
 
-# Initialize export of system logs to ClickHouse Cloud
-if [ -n "${CLICKHOUSE_CI_LOGS_HOST}" ]
-then
-    export EXTRA_COLUMNS_EXPRESSION="$PULL_REQUEST_NUMBER AS pull_request_number, '$COMMIT_SHA' AS commit_sha, '$CHECK_START_TIME' AS check_start_time, '$CHECK_NAME' AS check_name, '$INSTANCE_TYPE' AS instance_type"
-    # TODO: Check if the password will appear in the logs.
-    export CONNECTION_PARAMETERS="--secure --user ci --host ${CLICKHOUSE_CI_LOGS_HOST} --password ${CLICKHOUSE_CI_LOGS_PASSWORD}"
-
-    ./setup_export_logs.sh
-
-    # Unset variables after use
-    export CONNECTION_PARAMETERS=''
-    export CLICKHOUSE_CI_LOGS_HOST=''
-    export CLICKHOUSE_CI_LOGS_PASSWORD=''
-fi
+setup_logs_replication
 
 attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
 
@@ -255,10 +232,16 @@ do
     fi
 done
 
+data_path_config="--path=/var/lib/clickhouse/"
+if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
+    # We need s3 storage configuration (but it's more likely that clickhouse-local will fail for some reason)
+    data_path_config="--config-file=/etc/clickhouse-server/config.xml"
+fi
+
 # Also export trace log in flamegraph-friendly format.
 for trace_type in CPU Memory Real
 do
-    clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "
+    clickhouse-local "data_path_config" --only-system-tables -q "
             select
                 arrayStringConcat((arrayMap(x -> concat(splitByChar('/', addressToLine(x))[-1], '#', demangle(addressToSymbol(x)) ), trace)), ';') AS stack,
                 count(*) AS samples

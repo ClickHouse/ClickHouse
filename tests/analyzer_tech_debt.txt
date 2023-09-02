@@ -128,3 +128,4 @@
 01940_custom_tld_sharding_key
 02815_range_dict_no_direct_join
 00826_cross_to_inner_join_with_reordering
+02861_join_on_nullsafe_compare

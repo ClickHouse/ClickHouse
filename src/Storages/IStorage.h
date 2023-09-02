@@ -602,7 +602,7 @@ public:
     /// Checks that table could be dropped right now
     /// Otherwise - throws an exception with detailed information.
     /// We do not use mutex because it is not very important that the size could change during the operation.
-    virtual void checkTableCanBeDropped() const {}
+    virtual void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const {}
     /// Similar to above but checks for DETACH. It's only used for DICTIONARIES.
     virtual void checkTableCanBeDetached() const {}
 

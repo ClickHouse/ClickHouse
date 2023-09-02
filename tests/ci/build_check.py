@@ -31,6 +31,7 @@ from version_helper import (
 )
 from clickhouse_helper import (
     ClickHouseHelper,
+    CiLogsCredentials,
     prepare_tests_results_for_clickhouse,
     get_instance_type,
 )
@@ -375,8 +376,8 @@ def main():
     # Upload profile data
     ch_helper = ClickHouseHelper()
 
-    clickhouse_ci_logs_host = os.getenv("CLICKHOUSE_CI_LOGS_HOST", "")
-    if clickhouse_ci_logs_host:
+    ci_logs_credentials = CiLogsCredentials(Path("/dev/null"))
+    if ci_logs_credentials.host:
         instance_type = get_instance_type()
         query = f"""INSERT INTO build_time_trace
 (
@@ -420,9 +421,9 @@ FORMAT JSONCompactEachRow"""
 
         auth = {
             "X-ClickHouse-User": "ci",
-            "X-ClickHouse-Key": os.getenv("CLICKHOUSE_CI_LOGS_PASSWORD", ""),
+            "X-ClickHouse-Key": ci_logs_credentials.password,
         }
-        url = f"https://{clickhouse_ci_logs_host}/"
+        url = f"https://{ci_logs_credentials.host}/"
         profiles_dir = temp_path / "profiles_source"
         os.makedirs(profiles_dir, exist_ok=True)
         logging.info("Processing profile JSON files from {GIT_REPO_ROOT}/build_docker")
