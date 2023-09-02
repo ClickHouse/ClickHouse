@@ -928,6 +928,9 @@ FileSegmentsHolder::~FileSegmentsHolder()
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentHolderCompleteMicroseconds);
 
+    FileSegment::setCallerId(cache_user_id);
+    SCOPE_EXIT({ FileSegment::resetCallerId(); });
+
     if (!complete_on_dtor)
         return;
 

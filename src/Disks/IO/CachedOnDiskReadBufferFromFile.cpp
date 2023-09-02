@@ -133,6 +133,8 @@ void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
         file_segments = cache->getOrSet(cache_key, offset, size, file_size.value(), create_settings);
     }
 
+    file_segments->setCacheUser(cache_user_id);
+
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
      * interval (no holes). Each segment in returned list has state: DOWNLOADED, DOWNLOADING or EMPTY.

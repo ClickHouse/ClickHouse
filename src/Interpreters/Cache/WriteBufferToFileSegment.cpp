@@ -33,6 +33,7 @@ WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegmentsHolderPtr segment
     , segment_holder(std::move(segment_holder_))
     , cache_user_id(FileCache::getCallerId())
 {
+    segment_holder->setCacheUser(cache_user_id);
 }
 
 /// If it throws an exception, the file segment will be incomplete, so you should not use it in the future.

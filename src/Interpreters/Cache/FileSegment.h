@@ -327,6 +327,8 @@ struct FileSegmentsHolder : private boost::noncopyable
 
     ~FileSegmentsHolder();
 
+    void setCacheUser(const std::string & cache_user_id_) { cache_user_id = cache_user_id_; }
+
     bool empty() const { return file_segments.empty(); }
 
     size_t size() const { return file_segments.size(); }
@@ -354,6 +356,7 @@ struct FileSegmentsHolder : private boost::noncopyable
 private:
     FileSegments file_segments{};
     const bool complete_on_dtor = true;
+    std::string cache_user_id;
 
     FileSegments::iterator completeAndPopFrontImpl();
 };

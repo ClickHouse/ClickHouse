@@ -152,6 +152,7 @@ FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSeg
     /// We set max_file_segment_size to be downloaded,
     /// if we have less size to write, file segment will be resized in complete() method.
     file_segments = cache->set(key, offset, cache->getMaxFileSegmentSize(), create_settings);
+    file_segments->setCacheUser(cache_user_id);
     chassert(file_segments->size() == 1);
     return file_segments->front();
 }
