@@ -200,10 +200,11 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
 
         prefetch_future = {};
         prefetch_buffer.swap(memory);
-        last_prefetch_info = {};
 
         if (read_settings.enable_filesystem_read_prefetches_log)
             appendToPrefetchLog(FilesystemPrefetchState::USED, result.size, result.execution_watch);
+
+        last_prefetch_info = {};
 
         ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedReads);
         ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedBytes, result.size);

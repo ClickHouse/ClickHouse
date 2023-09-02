@@ -86,8 +86,7 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request)
     auto watch = std::make_unique<Stopwatch>(CLOCK_REALTIME);
 
     reader.set(request.buf, request.size);
-    if (request.offset)
-        reader.seek(request.offset, SEEK_SET);
+    reader.seek(request.offset, SEEK_SET);
     if (request.ignore)
         reader.ignore(request.ignore);
 
