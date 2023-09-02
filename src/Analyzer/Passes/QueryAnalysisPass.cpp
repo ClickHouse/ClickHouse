@@ -77,6 +77,12 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Identifier.h>
+#include <Parsers/FunctionParameterValuesVisitor.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Storages/StorageView.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Parsers/QueryParameterVisitor.h>
 
 namespace ProfileEvents
 {
@@ -6210,7 +6216,48 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     QueryExpressionsAliasVisitor & expressions_visitor,
     bool nested_table_function)
 {
+
+    String database_name = scope.context->getCurrentDatabase();
+    String table_name = table_function_node->getOriginalAST()->as<ASTFunction>()->name;
+
+    if (table_function_node->getOriginalAST()->as<ASTFunction>()->is_compound_name)
+    {
+        std::vector<std::string> parts;
+        splitInto<'.'>(parts, table_function_node->getOriginalAST()->as<ASTFunction>()->name);
+
+        if (parts.size() == 2)
+        {
+            database_name = parts[0];
+            table_name = parts[1];
+        }
+    }
+
     auto & table_function_node_typed = table_function_node->as<TableFunctionNode &>();
+
+    StoragePtr table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, scope.context->getQueryContext());
+    if (table)
+    {
+        if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
+        {
+            auto query = table->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
+            NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_function_node->getOriginalAST());
+            StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
+
+            ASTCreateQuery create;
+            create.select = query->as<ASTSelectWithUnionQuery>();
+            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, scope.context);
+            auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
+                                                     create,
+                                                     ColumnsDescription(sample_block.getNamesAndTypesList()),
+                    /* comment */ "",
+                    /* is_parameterized_view */ true);
+            res->startup();
+            table_function_node->getOriginalAST()->as<ASTFunction>()->prefer_subquery_to_function_formatting = true;
+            table_function_node_typed.resolve(std::move(res), scope.context);
+            return;
+        }
+    }
+
 
     if (!nested_table_function)
         expressions_visitor.visit(table_function_node_typed.getArgumentsNode());

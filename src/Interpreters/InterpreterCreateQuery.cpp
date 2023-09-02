@@ -76,7 +76,8 @@
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
-
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Parsers/QueryParameterVisitor.h>
 
 namespace DB
 {
@@ -745,12 +746,43 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
     else if (create.select)
     {
-
         Block as_select_sample;
 
         if (getContext()->getSettingsRef().allow_experimental_analyzer)
         {
-            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
+            if (create.isParameterizedView())
+            {
+                auto select = create.select->clone();
+
+                ///Get all query parameters
+                const auto parameters = analyzeReceiveQueryParamsWithType(select);
+                NameToNameMap parameter_values;
+
+                for (const auto & parameter : parameters)
+                {
+                    const auto data_type = DataTypeFactory::instance().get(parameter.second);
+                    /// Todo improve getting default values & include more datatypes
+                    if (data_type->isValueRepresentedByNumber() || parameter.second == "String")
+                        parameter_values[parameter.first] = "1";
+                    else if (parameter.second.starts_with("Array") || parameter.second.starts_with("Map"))
+                        parameter_values[parameter.first] = "[]";
+                    else
+                        parameter_values[parameter.first] = " ";
+                    LOG_INFO(&Poco::Logger::get("InterpreterCreateQuery"), "parameter =  {}  = {} ", parameter.first, parameter_values[parameter.first]);
+
+                }
+
+                /// Replace with default parameters
+                ReplaceQueryParameterVisitor visitor(parameter_values);
+                visitor.visit(select);
+
+                as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select, getContext());
+            }
+            else
+            {
+                as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
+            }
+
         }
         else
         {

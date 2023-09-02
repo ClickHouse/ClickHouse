@@ -100,6 +100,9 @@ public:
     /// Resolve table function with table function, storage and context
     void resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context, std::vector<size_t> unresolved_arguments_indexes_);
 
+    /// Resolve table function as parameterized view with storage and context
+    void resolve(StoragePtr storage_value, ContextPtr context);
+
     /// Get storage id, throws exception if function node is not resolved
     const StorageID & getStorageID() const;
 
