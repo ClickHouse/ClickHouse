@@ -177,6 +177,23 @@ class RMRCommand : public IKeeperClientCommand
     String getHelpMessage() const override { return "{} <path> -- Recursively deletes path. Confirmation required"; }
 };
 
+class ReconfigCommand : public IKeeperClientCommand
+{
+    enum class Operation : Int64 {
+        ADD = 0,
+        REMOVE = 1,
+        SET = 2,
+    };
+
+    String getName() const override { return "reconfig"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override { return "{} <add|remove|set> \"<arg>\" [version] -- Reconfigures a ZooKeeper cluster. See https://clickhouse.com/docs/en/guides/sre/keeper/clickhouse-keeper#reconfiguration"; }
+};
+
 class HelpCommand : public IKeeperClientCommand
 {
     String getName() const override { return "help"; }

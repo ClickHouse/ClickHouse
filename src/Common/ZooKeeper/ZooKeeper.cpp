@@ -877,6 +877,24 @@ void ZooKeeper::handleEphemeralNodeExistence(const std::string & path, const std
     }
 }
 
+Coordination::ReconfigResponse ZooKeeper::reconfig(
+    const std::string & joining,
+    const std::string & leaving,
+    const std::string & new_members,
+    int32_t version)
+{
+    auto future_result = asyncReconfig(joining, leaving, new_members, version);
+
+    if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
+    {
+        impl->finalize(fmt::format("Operation timeout on {}", Coordination::OpNum::Reconfig));
+        throw KeeperException(Coordination::Error::ZOPERATIONTIMEOUT);
+    }
+
+    return future_result.get();
+}
+
+
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
     return std::make_shared<ZooKeeper>(args, zk_log);
@@ -1223,6 +1241,27 @@ std::future<Coordination::SyncResponse> ZooKeeper::asyncSync(const std::string &
     };
 
     impl->sync(path, std::move(callback));
+    return future;
+}
+
+std::future<Coordination::ReconfigResponse> ZooKeeper::asyncReconfig(
+    const std::string & joining,
+    const std::string & leaving,
+    const std::string & new_members,
+    int32_t version)
+{
+    auto promise = std::make_shared<std::promise<Coordination::ReconfigResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise](const Coordination::ReconfigResponse & response) mutable
+    {
+        if (response.error != Coordination::Error::ZOK)
+            promise->set_exception(std::make_exception_ptr(KeeperException(response.error)));
+        else
+            promise->set_value(response);
+    };
+
+    impl->reconfig(joining, leaving, new_members, version, std::move(callback));
     return future;
 }
 

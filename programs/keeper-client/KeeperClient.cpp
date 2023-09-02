@@ -83,8 +83,11 @@ std::vector<String> KeeperClient::getCompletions(const String & prefix) const
 
 void KeeperClient::askConfirmation(const String & prompt, std::function<void()> && callback)
 {
+    if (!ask_confirmation)
+        return callback();
+
     std::cout << prompt << " Continue?\n";
-    need_confirmation = true;
+    waiting_confirmation = true;
     confirmation_callback = callback;
 }
 
@@ -184,6 +187,7 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
         std::make_shared<FindBigFamily>(),
         std::make_shared<RMCommand>(),
         std::make_shared<RMRCommand>(),
+        std::make_shared<ReconfigCommand>(),
         std::make_shared<HelpCommand>(),
         std::make_shared<FourLetterWordCommand>(),
     });
@@ -216,17 +220,6 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     EventNotifier::init();
 }
 
-void KeeperClient::executeQuery(const String & query)
-{
-    std::vector<String> queries;
-    boost::algorithm::split(queries, query, boost::is_any_of(";"));
-
-    for (const auto & query_text : queries)
-    {
-        if (!query_text.empty())
-            processQueryText(query_text);
-    }
-}
 
 bool KeeperClient::processQueryText(const String & text)
 {
@@ -235,29 +228,44 @@ bool KeeperClient::processQueryText(const String & text)
 
     try
     {
-        if (need_confirmation)
+        if (waiting_confirmation)
         {
-            need_confirmation = false;
+            waiting_confirmation = false;
             if (text.size() == 1 && (text == "y" || text == "Y"))
                 confirmation_callback();
             return true;
         }
 
         KeeperParser parser;
-        String message;
         const char * begin = text.data();
-        ASTPtr res = tryParseQuery(parser, begin, begin + text.size(), message, true, "", false, 0, 0, false);
+        const char * end = begin + text.size();
 
-        if (!res)
+        while (begin < end)
         {
-            std::cerr << message << "\n";
-            return true;
+            String message;
+            ASTPtr res = tryParseQuery(
+                parser,
+                begin,
+                end,
+                /* out_error_message = */ message,
+                /* hilite = */ true,
+                /* description = */ "",
+                /* allow_multi_statements = */ true,
+                /* max_query_size = */ 0,
+                /* max_parser_depth = */ 0,
+                /* skip_insignificant = */ false);
+
+            if (!res)
+            {
+                std::cerr << message << "\n";
+                return true;
+            }
+
+            auto * query = res->as<ASTKeeperQuery>();
+
+            auto command = KeeperClient::commands.find(query->command);
+            command->second->execute(query, this);
         }
-
-        auto * query = res->as<ASTKeeperQuery>();
-
-        auto command = KeeperClient::commands.find(query->command);
-        command->second->execute(query, this);
     }
     catch (Coordination::Exception & err)
     {
@@ -286,7 +294,7 @@ void KeeperClient::runInteractive()
     while (true)
     {
         String prompt;
-        if (need_confirmation)
+        if (waiting_confirmation)
             prompt = "[y/n] ";
         else
             prompt = cwd.string() + " :) ";
@@ -320,7 +328,10 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     zookeeper = std::make_unique<zkutil::ZooKeeper>(zk_args);
 
     if (config().has("query"))
-        executeQuery(config().getString("query"));
+    {
+        ask_confirmation = false;
+        processQueryText(config().getString("query"));
+    }
     else
         runInteractive();
 
