@@ -9,11 +9,11 @@ namespace DB
 
 bool LSCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
-    String arg;
-    if (!parseKeeperPath(pos, expected, arg))
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
         return true;
 
-    node->args.push_back(std::move(arg));
+    node->args.push_back(std::move(path));
     return true;
 }
 
@@ -42,11 +42,11 @@ void LSCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) con
 
 bool CDCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
-    String arg;
-    if (!parseKeeperPath(pos, expected, arg))
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
         return true;
 
-    node->args.push_back(std::move(arg));
+    node->args.push_back(std::move(path));
     return true;
 }
 
@@ -64,11 +64,12 @@ void CDCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) con
 
 bool SetCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
-    String arg;
-    if (!parseKeeperPath(pos, expected, arg))
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
         return false;
-    node->args.push_back(std::move(arg));
+    node->args.push_back(std::move(path));
 
+    String arg;
     if (!parseKeeperArg(pos, expected, arg))
         return false;
     node->args.push_back(std::move(arg));
@@ -93,11 +94,12 @@ void SetCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) co
 
 bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
-    String arg;
-    if (!parseKeeperPath(pos, expected, arg))
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
         return false;
-    node->args.push_back(std::move(arg));
+    node->args.push_back(std::move(path));
 
+    String arg;
     if (!parseKeeperArg(pos, expected, arg))
         return false;
     node->args.push_back(std::move(arg));
@@ -143,10 +145,10 @@ void TouchCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) 
 
 bool GetCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
-    String arg;
-    if (!parseKeeperPath(pos, expected, arg))
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
         return false;
-    node->args.push_back(std::move(arg));
+    node->args.push_back(std::move(path));
 
     return true;
 }
@@ -158,11 +160,11 @@ void GetCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) co
 
 bool GetStatCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
-    String arg;
-    if (!parseKeeperPath(pos, expected, arg))
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
         return true;
 
-    node->args.push_back(std::move(arg));
+    node->args.push_back(std::move(path));
     return true;
 }
 
@@ -325,10 +327,10 @@ void FindBigFamily::execute(const ASTKeeperQuery * query, KeeperClient * client)
 
 bool RMCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
-    String arg;
-    if (!parseKeeperPath(pos, expected, arg))
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
         return false;
-    node->args.push_back(std::move(arg));
+    node->args.push_back(std::move(path));
 
     return true;
 }
@@ -340,10 +342,10 @@ void RMCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) con
 
 bool RMRCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
-    String arg;
-    if (!parseKeeperPath(pos, expected, arg))
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
         return false;
-    node->args.push_back(std::move(arg));
+    node->args.push_back(std::move(path));
 
     return true;
 }
@@ -353,6 +355,49 @@ void RMRCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) co
     String path = client->getAbsolutePath(query->args[0].safeGet<String>());
     client->askConfirmation("You are going to recursively delete path " + path,
                             [client, path]{ client->zookeeper->removeRecursive(path); });
+}
+
+bool ReconfigCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
+{
+    ReconfigCommand::Operation operation;
+    if (ParserKeyword{"ADD"}.ignore(pos, expected))
+        operation = ReconfigCommand::Operation::ADD;
+    else if (ParserKeyword{"REMOVE"}.ignore(pos, expected))
+        operation = ReconfigCommand::Operation::REMOVE;
+    else if (ParserKeyword{"SET"}.ignore(pos, expected))
+        operation = ReconfigCommand::Operation::SET;
+    else
+        return false;
+
+    node->args.push_back(operation);
+    ParserToken{TokenType::Whitespace}.ignore(pos);
+
+    String arg;
+    if (!parseKeeperArg(pos, expected, arg))
+        return false;
+    node->args.push_back(std::move(arg));
+
+    return true;
+}
+
+void ReconfigCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient * client) const
+{
+    String joining;
+    String leaving;
+    String new_members;
+
+    auto operation = query->args[0].get<ReconfigCommand::Operation>();
+    if (operation == static_cast<Int64>(ReconfigCommand::Operation::ADD))
+        joining = query->args[1].safeGet<DB::String>();
+    else if (operation == static_cast<Int64>(ReconfigCommand::Operation::REMOVE))
+        leaving = query->args[1].safeGet<DB::String>();
+    else if (operation == static_cast<Int64>(ReconfigCommand::Operation::SET))
+        new_members = query->args[1].safeGet<DB::String>();
+    else
+        UNREACHABLE();
+
+    auto response = client->zookeeper->reconfig(joining, leaving, new_members);
+    std::cout << response.value << '\n';
 }
 
 bool HelpCommand::parse(IParser::Pos & /* pos */, std::shared_ptr<ASTKeeperQuery> & /* node */, Expected & /* expected */) const
