@@ -1,5 +1,5 @@
 /* C++ code produced by gperf version 3.1 */
-/* Command-line: gperf -t --output-file=HTMLCharacterReference.generated.cpp HTMLCharacterReference.gperf  */
+/* Command-line: /usr/bin/gperf -t --output-file=HTMLCharacterReference.generated.cpp HTMLCharacterReference.gperf  */
 /* Computed positions: -k'1-8,12,14' */
 
 #if !( \

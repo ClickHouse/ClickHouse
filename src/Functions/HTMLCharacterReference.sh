@@ -23,11 +23,3 @@ const char *glyph;
 # character reference as available at https://html.spec.whatwg.org/multipage/named-characters.html
 curl -X GET https://html.spec.whatwg.org/entities.json |  jq -r 'keys[] as $k | "\"\($k)\", \(.[$k] | .characters|tojson)"' | sed 's/^"&/"/' >> HTMLCharacterReference.gperf
 echo '%%' >> HTMLCharacterReference.gperf
-
-if ! command -V gperf &> /dev/null
-then
-  echo "error: gperf command not found. Install gperf to continue."
-  exit 1
-fi;
-
-gperf -t --output-file=HTMLCharacterReference.generated.cpp HTMLCharacterReference.gperf
