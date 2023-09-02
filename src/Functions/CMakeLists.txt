@@ -119,7 +119,10 @@ if (USE_GPERF)
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
             BYPRODUCTS "${CMAKE_CURRENT_SOURCE_DIR}/HTMLCharacterReference.gperf"
             )
-    add_custom_target(generate-html-char-ref ${GPERF} -t HTMLCharacterReference.gperf --output-file=HTMLCharacterReference.generated.cpp && clang-format -i HTMLCharacterReference.generated.cpp
+    add_custom_target(generate-html-char-ref ${GPERF} -t HTMLCharacterReference.gperf --output-file=HTMLCharacterReference.generated.cpp
+            && clang-format -i HTMLCharacterReference.generated.cpp
+            # for clang-tidy, since string.h is deprecated
+            && sed -i 's/\#include <string.h>/\#include <cstring>/g' HTMLCharacterReference.generated.cpp
             SOURCES HTMLCharacterReference.gperf
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
             )
