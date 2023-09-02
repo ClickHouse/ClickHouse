@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # shellcheck disable=SC1091
+# shellcheck disable=SC2034
 source /setup_export_logs.sh
 
 # fail on errors, verbose and export all env variables
