@@ -258,7 +258,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     if (global_ctx->data->getSettings()->allow_experimental_block_number_column
         && global_ctx->metadata_snapshot->getGroupByTTLs().empty()
-        && !global_ctx->storage_columns.contains(BlockNumberColumn.name))
+        && !global_ctx->storage_columns.contains(BlockNumberColumn.name)
+        && global_ctx->storage_snapshot->storage.getName() != "ReplacingMergeTree")
     {
         global_ctx->storage_columns.emplace_back(BlockNumberColumn);
         global_ctx->all_column_names.emplace_back(BlockNumberColumn.name);
@@ -1010,7 +1011,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     {
         if (data_settings->allow_experimental_block_number_column
             && global_ctx->metadata_snapshot->getGroupByTTLs().empty()
-            && global_ctx->deduplicate_by_columns.empty())
+            && global_ctx->deduplicate_by_columns.empty()
+            && global_ctx->storage_snapshot->storage.getName() != "ReplacingMergeTree")
         {
             for (const auto & col : global_ctx->merging_column_names)
             {
