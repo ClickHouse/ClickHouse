@@ -20,6 +20,7 @@
 #include <IO/S3/PocoHTTPClientFactory.h>
 #include <IO/S3/AWSLogger.h>
 #include <IO/S3/Credentials.h>
+#include <Interpreters/Context.h>
 
 #include <Common/assert_cast.h>
 
@@ -866,7 +867,9 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     const ThrottlerPtr & put_request_throttler,
     const String & protocol)
 {
-    auto proxy_configuration_resolver = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::protocolFromString(protocol));
+    auto context = Context::getGlobalContextInstance();
+    chassert(context);
+    auto proxy_configuration_resolver = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::protocolFromString(protocol), context->getConfigRef());
 
     auto per_request_configuration = [=] () { return proxy_configuration_resolver->resolve(); };
     auto error_report = [=] (const DB::ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
