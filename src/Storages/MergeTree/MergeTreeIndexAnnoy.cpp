@@ -25,12 +25,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static constexpr auto DISTANCE_FUNCTION_L2 = "L2Distance";
-static constexpr auto DISTANCE_FUNCTION_COSINE = "cosineDistance";
-
-static constexpr auto DEFAULT_TREES = 100uz;
-static constexpr auto DEFAULT_DISTANCE_FUNCTION = DISTANCE_FUNCTION_L2;
-
 template <typename Distance>
 AnnoyIndexWithSerialization<Distance>::AnnoyIndexWithSerialization(size_t dimensions)
     : Base::AnnoyIndex(dimensions)
@@ -172,7 +166,8 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
             if (offsets[i + 1] - offsets[i] != size)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column {} must have equal length", index_column_name);
 
-        index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(size);
+        if (!index)
+            index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(size);
 
         /// Add all rows of block
         index->add_item(index->get_n_items(), array.data());
@@ -195,7 +190,8 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
         if (data.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple has 0 rows, {} rows expected", rows_read);
 
-        index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(data[0].size());
+        if (!index)
+            index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(data[0].size());
 
         for (const auto & item : data)
             index->add_item(index->get_n_items(), item.data());
@@ -318,10 +314,12 @@ MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(const Selec
 
 MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index)
 {
+    static constexpr auto DEFAULT_DISTANCE_FUNCTION = DISTANCE_FUNCTION_L2;
     String distance_function = DEFAULT_DISTANCE_FUNCTION;
     if (!index.arguments.empty())
         distance_function = index.arguments[0].get<String>();
 
+    static constexpr auto DEFAULT_TREES = 100uz;
     UInt64 trees = DEFAULT_TREES;
     if (index.arguments.size() > 1)
         trees = index.arguments[1].get<UInt64>();

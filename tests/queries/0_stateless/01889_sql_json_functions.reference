@@ -77,6 +77,10 @@ SELECT JSON_QUERY('{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}', '$.
 [0, 1, 4, 0, -1, -4]
 SELECT JSON_QUERY('{"1key":1}', '$.1key');
 [1]
+SELECT JSON_QUERY('{"123":1}', '$.123');
+[1]
+SELECT JSON_QUERY('{"123":1}', '$[123]');
+
 SELECT JSON_QUERY('{"hello":1}', '$[hello]');
 [1]
 SELECT JSON_QUERY('{"hello":1}', '$["hello"]');

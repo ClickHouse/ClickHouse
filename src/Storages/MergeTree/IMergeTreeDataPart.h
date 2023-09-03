@@ -264,6 +264,8 @@ public:
     /// Some old parts don't have metadata version, so we set it to the current table's version when loading the part
     bool old_part_with_no_metadata_version_on_disk = false;
 
+    bool new_part_was_committed_to_zookeeper_after_rename_on_disk = false;
+
     using TTLInfo = MergeTreeDataPartTTLInfo;
     using TTLInfos = MergeTreeDataPartTTLInfos;
 
@@ -375,7 +377,7 @@ public:
                                                    const DiskTransactionPtr & disk_transaction) const;
 
     /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
-    MutableDataPartStoragePtr makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
+    MutableDataPartStoragePtr makeCloneOnDisk(const DiskPtr & disk, const String & directory_name, const WriteSettings & write_settings) const;
 
     /// Checks that .bin and .mrk files exist.
     ///
@@ -475,12 +477,6 @@ public:
     /// Moar hardening: this method is supposed to be used for debug assertions
     bool assertHasValidVersionMetadata() const;
 
-    /// Get checksums of metadata file in part directory
-    IMergeTreeDataPart::uint128 getActualChecksumByFile(const String & file_name) const;
-
-    /// Check metadata in cache is consistent with actual metadata on disk(if use_metadata_cache is true)
-    std::unordered_map<String, uint128> checkMetadata() const;
-
     /// True if the part supports lightweight delete mutate.
     bool supportLightweightDeleteMutate() const;
 
@@ -529,9 +525,6 @@ protected:
     String parent_part_name;
 
     std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
-
-    /// Disabled when USE_ROCKSDB is OFF or use_metadata_cache is set to false in merge tree settings
-    bool use_metadata_cache = false;
 
     mutable PartMetadataManagerPtr metadata_manager;
 
