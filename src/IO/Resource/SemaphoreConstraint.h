@@ -78,7 +78,10 @@ public:
         requests++;
         cost += request->cost;
         child_active = child_now_active;
-
+        if (!active())
+            busy_periods++;
+        dequeued_requests++;
+        dequeued_cost += request->cost;
         return {request, active()};
     }
 
@@ -111,6 +114,30 @@ public:
     {
         std::unique_lock lock(mutex);
         return active();
+    }
+
+    size_t activeChildren() override
+    {
+        std::unique_lock lock(mutex);
+        return child_active ? 1 : 0;
+    }
+
+    bool isSatisfied() override
+    {
+        std::unique_lock lock(mutex);
+        return satisfied();
+    }
+
+    std::pair<Int64, Int64> getInflights()
+    {
+        std::unique_lock lock(mutex);
+        return {requests, cost};
+    }
+
+    std::pair<Int64, Int64> getLimits()
+    {
+        std::unique_lock lock(mutex);
+        return {max_requests, max_cost};
     }
 
 private:

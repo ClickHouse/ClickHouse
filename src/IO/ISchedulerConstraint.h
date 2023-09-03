@@ -44,6 +44,9 @@ public:
         }
     }
 
+    /// For introspection of current state (true = satisfied, false = violated)
+    virtual bool isSatisfied();
+
 protected:
     // Reference to nearest parent that is also derived from ISchedulerConstraint.
     // Request can traverse through multiple constraints while being dequeue from hierarchy,

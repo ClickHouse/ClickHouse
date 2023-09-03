@@ -7,7 +7,7 @@
 #include <boost/noncopyable.hpp>
 
 #include <memory>
-#include <unordered_map>
+#include <functional>
 
 namespace DB
 {
@@ -46,6 +46,9 @@ public:
     /// Obtain a classifier instance required to get access to resources.
     /// Note that it holds resource configuration, so should be destructed when query is done.
     virtual ClassifierPtr acquire(const String & classifier_name) = 0;
+
+    /// For introspection, see `system.scheduler` table
+    virtual void forEachNode(std::function<void(const String & resource, const String & path, const String & type, const SchedulerNodePtr & node)> visitor) = 0;
 };
 
 using ResourceManagerPtr = std::shared_ptr<IResourceManager>;
