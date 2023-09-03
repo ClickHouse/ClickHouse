@@ -76,6 +76,7 @@ def create_table(node, table_name, **additional_settings):
         "old_parts_lifetime": 0,
         "index_granularity": 512,
         "temporary_directories_lifetime": 1,
+        "allow_experimental_block_number_column": 0,
     }
     settings.update(additional_settings)
 

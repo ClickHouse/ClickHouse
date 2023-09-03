@@ -30,7 +30,8 @@ def create_table(cluster, table_name, additional_settings=None):
             storage_policy='hdfs',
             old_parts_lifetime=0,
             index_granularity=512,
-            temporary_directories_lifetime=1
+            temporary_directories_lifetime=1,
+            allow_experimental_block_number_column=false
         """.format(
         table_name
     )
