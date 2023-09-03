@@ -197,6 +197,7 @@ CI_CONFIG = CiConfig(
             "package_msan",
             "package_debug",
             "binary_release",
+            "fuzzers",
         ],
         "ClickHouse special build check": [
             "binary_tidy",
