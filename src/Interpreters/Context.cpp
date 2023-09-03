@@ -92,7 +92,6 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
-#include <Storages/MergeTree/MergeTreeMetadataCache.h>
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
 #include <Interpreters/ClusterDiscovery.h>
@@ -351,11 +350,6 @@ struct ContextSharedPart : boost::noncopyable
 
     bool is_server_completely_started = false;
 
-#if USE_ROCKSDB
-    /// Global merge tree metadata cache, stored in rocksdb.
-    MergeTreeMetadataCachePtr merge_tree_metadata_cache;
-#endif
-
     ContextSharedPart()
         : access_control(std::make_unique<AccessControl>())
         , global_overcommit_tracker(&process_list)
@@ -585,15 +579,6 @@ struct ContextSharedPart : boost::noncopyable
             trace_collector.reset();
             /// Stop zookeeper connection
             zookeeper.reset();
-
-#if USE_ROCKSDB
-            /// Shutdown merge tree metadata cache
-            if (merge_tree_metadata_cache)
-            {
-                merge_tree_metadata_cache->shutdown();
-                merge_tree_metadata_cache.reset();
-            }
-#endif
         }
 
         /// Can be removed without context lock
@@ -2960,13 +2945,6 @@ std::map<String, zkutil::ZooKeeperPtr> Context::getAuxiliaryZooKeepers() const
     return shared->auxiliary_zookeepers;
 }
 
-#if USE_ROCKSDB
-MergeTreeMetadataCachePtr Context::tryGetMergeTreeMetadataCache() const
-{
-    return shared->merge_tree_metadata_cache;
-}
-#endif
-
 void Context::resetZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
@@ -3255,13 +3233,6 @@ void Context::initializeTraceCollector()
 {
     shared->initializeTraceCollector(getTraceLog());
 }
-
-#if USE_ROCKSDB
-void Context::initializeMergeTreeMetadataCache(const String & dir, size_t size)
-{
-    shared->merge_tree_metadata_cache = MergeTreeMetadataCache::create(dir, size);
-}
-#endif
 
 /// Call after unexpected crash happen.
 void Context::handleCrash() const
