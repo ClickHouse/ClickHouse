@@ -182,6 +182,10 @@ CI_CONFIG = CiConfig(
             package_type="binary",
             static_binary_name="s390x",
         ),
+        "fuzzers": BuildConfig(
+            compiler="clang-16",
+            package_type="fuzzers",
+        ),
     },
     builds_report_config={
         "ClickHouse build check": [
