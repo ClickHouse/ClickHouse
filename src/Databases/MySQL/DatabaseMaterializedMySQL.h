@@ -7,6 +7,7 @@
 #include <mysqlxx/Pool.h>
 #include <Core/MySQL/MySQLClient.h>
 #include <base/UUID.h>
+#include <Databases/AlterDatabaseCommands.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/MySQL/MaterializedMySQLSettings.h>
@@ -36,9 +37,12 @@ public:
     void rethrowExceptionIfNeeded() const;
 
     void setException(const std::exception_ptr & exception);
+
+    MaterializedMySQLSettingsPtr getSettings() const;
+
 protected:
 
-    std::unique_ptr<MaterializedMySQLSettings> settings;
+    MultiVersion<MaterializedMySQLSettings> settings;
 
     MaterializedMySQLSyncThread materialize_thread;
 
@@ -67,6 +71,7 @@ public:
 
     StoragePtr tryGetTable(const String & name, ContextPtr context_) const override;
 
+    friend class DatabaseMaterializedTablesIterator;
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
 
     void checkIsInternalQuery(ContextPtr context_, const char * method) const;
@@ -75,7 +80,9 @@ public:
 
     void stopReplication() override;
 
-    friend class DatabaseMaterializedTablesIterator;
+    void checkAlterIsPossible(const AlterDatabaseCommands & commands) override;
+
+    void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
 };
 
 }

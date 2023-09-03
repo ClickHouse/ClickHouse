@@ -490,14 +490,8 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
     ASTPtr ast;
 
     auto settings = getContext()->getSettingsRef();
-    {
-        std::lock_guard lock(mutex);
-        auto database_metadata_path = getContext()->getPath() + "metadata/" + escapeForFileName(database_name) + ".sql";
-        ast = parseQueryFromMetadata(log, getContext(), database_metadata_path, true);
-        auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.attach = false;
-        ast_create_query.setDatabase(database_name);
-    }
+    auto database_metadata_path = getDatabaseMetadataFilePath();
+    ast = parseQueryFromMetadata(log, getContext(), database_metadata_path, false);
     if (!ast)
     {
         /// Handle databases (such as default) for which there are no database.sql files.
@@ -507,10 +501,13 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
         ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
     }
 
-    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
+    auto & ast_create_query = ast->as<ASTCreateQuery &>();
+    ast_create_query.attach = false;
+    ast_create_query.setDatabase(database_name);
+
+    if (!comment.empty())
     {
-        auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(comment));
     }
 
     return ast;
@@ -564,6 +561,11 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_n
         else
             throw;
     }
+}
+
+String DatabaseOnDisk::getDatabaseMetadataFilePath() const
+{
+    return getContext()->getPath() + "metadata/" + escapeForFileName(database_name) + ".sql";
 }
 
 void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const IteratingFunction & process_metadata_file) const
@@ -751,8 +753,57 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
     return create_table_query;
 }
 
-void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context)
+void DatabaseOnDisk::persistCreateDatabaseQuery(const ASTPtr & ast, const DatabaseMetadataPersistedCallback & commit_cb) const
 {
+    std::lock_guard lock(mutex);
+    persistCreateDatabaseQueryUnlocked(ast, commit_cb);
+}
+
+void DatabaseOnDisk::persistCreateDatabaseQueryUnlocked(const ASTPtr & ast, const DatabaseMetadataPersistedCallback & commit_cb) const
+{
+    auto database_metadata_path = getDatabaseMetadataFilePath();
+    ASTPtr ast_clone = ast->clone();
+    auto & create = ast_clone->as<ASTCreateQuery &>();
+    if (create.storage && create.storage->engine && create.storage->engine->name != getEngineName())
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Altering database engine is not allowed");
+    }
+    if (create.uuid != UUIDHelpers::Nil)
+    {
+        create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
+    }
+    create.attach = true;
+    create.if_not_exists = false;
+
+    WriteBufferFromOwnString statement_buf;
+    formatAST(create, statement_buf, false);
+    writeChar('\n', statement_buf);
+    String statement = statement_buf.str();
+
+    auto database_metadata_tmp_path = database_metadata_path + ".tmp";
+
+    WriteBufferFromFile out(database_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
+    writeString(statement, out);
+
+    out.next();
+    if (getContext()->getSettingsRef().fsync_metadata)
+        out.sync();
+    out.close();
+    try
+    {
+        commit_cb();
+        fs::rename(database_metadata_tmp_path, database_metadata_path);
+    }
+    catch (...)
+    {
+        fs::remove(database_metadata_tmp_path);
+        throw;
+    }
+}
+
+void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr /*query_context*/)
+{
+    std::lock_guard lock(mutex);
     auto create_query = getCreateDatabaseQuery()->clone();
     auto * create = create_query->as<ASTCreateQuery>();
     auto * settings = create->storage->settings;
@@ -777,27 +828,7 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
         create->storage->set(create->storage->settings, storage_settings->clone());
     }
 
-    create->attach = true;
-    create->if_not_exists = false;
-
-    WriteBufferFromOwnString statement_buf;
-    formatAST(*create, statement_buf, false);
-    writeChar('\n', statement_buf);
-    String statement = statement_buf.str();
-
-    String database_name_escaped = escapeForFileName(TSA_SUPPRESS_WARNING_FOR_READ(database_name));   /// FIXME
-    fs::path metadata_root_path = fs::canonical(query_context->getGlobalContext()->getPath());
-    fs::path metadata_file_tmp_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql.tmp");
-    fs::path metadata_file_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql");
-
-    WriteBufferFromFile out(metadata_file_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
-    writeString(statement, out);
-
-    out.next();
-    if (getContext()->getSettingsRef().fsync_metadata)
-        out.sync();
-    out.close();
-
-    fs::rename(metadata_file_tmp_path, metadata_file_path);
+    persistCreateDatabaseQueryUnlocked(create_query, []{});
 }
+
 }

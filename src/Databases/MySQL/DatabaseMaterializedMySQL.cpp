@@ -19,6 +19,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -33,7 +34,7 @@ DatabaseMaterializedMySQL::DatabaseMaterializedMySQL(
     std::unique_ptr<MaterializedMySQLSettings> settings_)
     : DatabaseAtomic(database_name_, metadata_path_, uuid, "DatabaseMaterializedMySQL(" + database_name_ + ")", context_)
     , settings(std::move(settings_))
-    , materialize_thread(context_, database_name_, mysql_database_name_, std::move(pool_), std::move(client_), settings.get())
+    , materialize_thread(context_, database_name_, mysql_database_name_, std::move(pool_), std::move(client_), settings)
 {
 }
 
@@ -41,7 +42,7 @@ void DatabaseMaterializedMySQL::rethrowExceptionIfNeeded() const
 {
     std::lock_guard lock(mutex);
 
-    if (!settings->allows_query_when_mysql_lost && exception)
+    if (!getSettings()->allows_query_when_mysql_lost && exception)
     {
         try
         {
@@ -162,6 +163,70 @@ void DatabaseMaterializedMySQL::stopReplication()
 {
     materialize_thread.stopSynchronization();
     started_up = false;
+}
+
+void DatabaseMaterializedMySQL::checkAlterIsPossible(const AlterDatabaseCommands & commands)
+{
+    static std::set<String> not_changeable_settings{
+        "max_sync_threads",
+    };
+    auto existing_settings = getSettings();
+    for (const auto & setting_command : commands.getSettingCommands())
+    {
+        for (const auto & change : setting_command->settings_changes)
+        {
+            if (not_changeable_settings.contains(change.name))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED, "ALTER DATABASE MODIFY SETTING for setting '{}' is not implemented", change.name);
+            existing_settings->checkCanSet(change.name, change.value);
+        }
+        for (const auto & reset : setting_command->settings_resets)
+        {
+            if (not_changeable_settings.contains(reset))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER DATABASE RESET SETTING for setting '{}' is not implemented", reset);
+        }
+    }
+}
+
+MaterializedMySQLSettingsPtr DatabaseMaterializedMySQL::getSettings() const
+{
+    return settings.get();
+}
+
+void DatabaseMaterializedMySQL::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context)
+{
+    if (!settings_changes.empty())
+    {
+        std::lock_guard lock(mutex);
+        ASTPtr ast = getCreateDatabaseQuery();
+        auto * create = ast->as<ASTCreateQuery>();
+        if (!create || !create->storage)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Malformed CREATE DATABASE metadata");
+
+        if (!create->storage->settings)
+        {
+            auto new_settings = std::make_shared<ASTSetQuery>();
+            new_settings->is_standalone = false;
+            create->storage->set(create->storage->settings, std::move(new_settings));
+        }
+        auto & new_database_settings = create->storage->settings->as<ASTSetQuery &>().changes;
+        for (const auto & change : settings_changes)
+        {
+            if (change.value.getType() == Field::Types::Null) // RESET SETTING
+                new_database_settings.removeSetting(change.name);
+            else
+                new_database_settings.setSetting(change.name, change.value);
+        }
+
+        persistCreateDatabaseQueryUnlocked(ast, [&]
+        {
+            MaterializedMySQLSettings copy = *getSettings();
+            copy.resetToDefault();
+            copy.loadFromConfig(query_context->getConfigRef());
+            copy.applyChanges(new_database_settings);
+            settings.set(std::make_unique<MaterializedMySQLSettings>(std::move(copy)));
+        });
+    }
 }
 
 }

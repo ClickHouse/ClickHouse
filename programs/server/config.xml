@@ -1330,6 +1330,13 @@
     </merge_tree>
     -->
 
+    <!-- Config to provide default values for MaterializedMySQL database settings -->
+    <!--
+    <materialized_mysql>
+        <max_bytes_in_buffers>16777216</max_bytes_in_buffers>
+    </materialized_mysql>
+    -->
+
     <!-- Protection from accidental DROP.
          If size of a MergeTree table is greater than max_table_size_to_drop (in bytes) than table could not be dropped with any DROP query.
          If you want do delete one table and don't want to change clickhouse-server config, you could create special file <clickhouse-path>/flags/force_drop_table and make DROP once.

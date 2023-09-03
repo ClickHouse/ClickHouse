@@ -164,6 +164,37 @@ INSTANTIATE_TEST_SUITE_P(ParserOptimizeQuery_FAIL, ParserTest,
         }
 )));
 
+INSTANTIATE_TEST_SUITE_P(ParserAlterQuery, ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserAlterQuery>()),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>
+        {
+            {
+                "ALTER DATABASE db ADD TABLE OVERRIDE t1 (COLUMNS (foo UInt32 MATERIALIZED xxHash32(id)))",
+                "ALTER DATABASE db\n    ADD TABLE OVERRIDE `t1`\n(\n        COLUMNS\n        (\n            `foo` UInt32 MATERIALIZED xxHash32(`id`)\n        )\n)"
+            },
+            {
+                "ALTER DATABASE db MODIFY TABLE OVERRIDE t1 (COLUMNS (id UInt64))",
+                "ALTER DATABASE db\n    MODIFY TABLE OVERRIDE `t1`\n(\n        COLUMNS\n        (\n            `id` UInt64\n        )\n)"
+            },
+            {
+                "ALTER DATABASE db DROP TABLE OVERRIDE t1",
+                "ALTER DATABASE db\n    DROP TABLE OVERRIDE `t1`"
+            },
+            {
+                "ALTER DATABASE db2 MODIFY SETTING foo=2, bar=4",
+                "ALTER DATABASE db2\n    MODIFY SETTING foo = 2, bar = 4"
+            },
+            {
+                "ALTER DATABASE db2 RESET SETTING foo,bar",
+                "ALTER DATABASE db2\n    RESET SETTING foo, bar"
+            },
+            {
+                "ALTER DATABASE db2 DROP TABLE OVERRIDE t2, MODIFY TABLE OVERRIDE t3 (SAMPLE BY xxHash32(id)), ADD TABLE OVERRIDE t1 (COLUMNS (seq UInt64 CODEC(DoubleDelta), seqmod7 MATERIALIZED seq % 7, seqmod5 ALIAS seq % 5, INDEX seq_idx (seq) TYPE minmax GRANULARITY 3, CONSTRAINT seq_c CHECK seq > 0) PARTITION BY (seqmod7) ORDER BY seq SAMPLE BY seq TTL `inserted` + INTERVAL 1 MONTH DELETE)",
+                "ALTER DATABASE db2\n    DROP TABLE OVERRIDE `t2`,\n    MODIFY TABLE OVERRIDE `t3`\n(\n        SAMPLE BY xxHash32(`id`)\n),\n    ADD TABLE OVERRIDE `t1`\n(\n        COLUMNS\n        (\n            `seq` UInt64 CODEC(DoubleDelta),\n            `seqmod7` MATERIALIZED `seq` % 7,\n            `seqmod5` ALIAS `seq` % 5,\n            INDEX seq_idx `seq` TYPE minmax GRANULARITY 3,\n            CONSTRAINT seq_c CHECK `seq` > 0\n        )\n        PARTITION BY `seqmod7`\n        ORDER BY `seq`\n        SAMPLE BY `seq`\n        TTL `inserted` + toIntervalMonth(1)\n)"
+            }
+        }
+)));
 
 INSTANTIATE_TEST_SUITE_P(ParserAlterCommand_MODIFY_COMMENT, ParserTest,
     ::testing::Combine(

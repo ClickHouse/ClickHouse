@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 
 #include <Access/Common/AccessRightsElement.h>
+#include <Databases/AlterDatabaseCommands.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
@@ -197,37 +198,16 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
     BlockIO res;
     getContext()->checkAccess(getRequiredAccess());
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(alter.getDatabase());
-    AlterCommands alter_commands;
+    AlterDatabaseCommands alter_database_commands;
 
     for (const auto & child : alter.command_list->children)
     {
-        auto * command_ast = child->as<ASTAlterCommand>();
-        if (auto alter_command = AlterCommand::parse(command_ast))
-            alter_commands.emplace_back(std::move(*alter_command));
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER DATABASE query");
+        if (auto * command_ast = child->as<ASTAlterCommand>())
+            alter_database_commands.addCommand(*command_ast);
     }
 
-    if (!alter_commands.empty())
-    {
-        /// Only ALTER SETTING is supported.
-        for (const auto & command : alter_commands)
-        {
-            if (command.type != AlterCommand::MODIFY_DATABASE_SETTING)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported alter type for database engines");
-        }
-
-        for (const auto & command : alter_commands)
-        {
-            if (!command.ignore)
-            {
-                if (command.type == AlterCommand::MODIFY_DATABASE_SETTING)
-                    database->applySettingsChanges(command.settings_changes, getContext());
-                else
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported alter command");
-            }
-        }
-    }
+    alter_database_commands.prepareAll(database, getContext());
+    alter_database_commands.applyAll(database, getContext());
 
     return res;
 }
@@ -433,8 +413,16 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             break;
         }
         case ASTAlterCommand::MODIFY_DATABASE_SETTING:
+        case ASTAlterCommand::RESET_DATABASE_SETTING:
         {
             required_access.emplace_back(AccessType::ALTER_DATABASE_SETTINGS, database, table);
+            break;
+        }
+        case ASTAlterCommand::ADD_TABLE_OVERRIDE:
+        case ASTAlterCommand::DROP_TABLE_OVERRIDE:
+        case ASTAlterCommand::MODIFY_TABLE_OVERRIDE:
+        {
+            required_access.emplace_back(AccessType::CREATE_DATABASE, database, table);
             break;
         }
         case ASTAlterCommand::NO_TYPE: break;

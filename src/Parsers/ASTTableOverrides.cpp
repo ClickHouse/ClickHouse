@@ -36,6 +36,8 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings_, FormatState 
         settings.ostr << hl_keyword << "TABLE OVERRIDE " << hl_none;
         ASTIdentifier(table_name).formatImpl(settings, state, frame);
     }
+    if (omit_empty_parens && !columns && (!storage || storage->children.empty()))
+        return;
     auto override_frame = frame;
     if (is_standalone)
     {
@@ -70,16 +72,56 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings_, FormatState 
         format_storage_elem(storage->order_by, "ORDER BY");
         format_storage_elem(storage->sample_by, "SAMPLE BY");
         format_storage_elem(storage->ttl_table, "TTL");
+        format_storage_elem(storage->settings, "SETTINGS");
     }
 
     if (is_standalone)
         settings.ostr << nl_or_nothing << ')';
 }
 
+bool ASTTableOverride::modifiesStorage() const
+{
+    bool has_non_alias_columns = false;
+    if (columns && columns->columns)
+        for (const auto & column_ast : columns->columns->children)
+            if (auto * column = column_ast->as<ASTColumnDeclaration>())
+                has_non_alias_columns |= column->default_specifier != "ALIAS";
+    bool has_storage_params
+        = storage && (storage->partition_by || storage->primary_key || storage->order_by || storage->sample_by || storage->ttl_table);
+    return has_non_alias_columns || has_storage_params;
+}
+
+bool ASTTableOverride::modifiesColumn(const String & name) const
+{
+    return columns && columns->columns
+        && std::find_if(
+               columns->columns->children.begin(),
+               columns->columns->children.end(),
+               [&](const ASTPtr & c) { return c->as<ASTColumnDeclaration &>().name == name; })
+        != columns->columns->children.end();
+}
+
+bool ASTTableOverride::modifiesIndex(const String & name) const
+{
+    return columns && columns->indices
+        && std::find_if(
+               columns->indices->children.begin(),
+               columns->indices->children.end(),
+               [&](const ASTPtr & c) { return c->as<ASTIndexDeclaration &>().name == name; })
+        != columns->indices->children.end();
+}
+
+bool ASTTableOverride::empty() const
+{
+    return (!columns || columns->children.empty()) && (!storage || storage->children.empty());
+}
+
 ASTPtr ASTTableOverrideList::clone() const
 {
     auto res = std::make_shared<ASTTableOverrideList>(*this);
     res->cloneChildren();
+    res->positions.clear();
+    res->positions.insert(positions.begin(), positions.end());
     return res;
 }
 

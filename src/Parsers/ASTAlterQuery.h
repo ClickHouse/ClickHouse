@@ -72,7 +72,11 @@ public:
 
         LIVE_VIEW_REFRESH,
 
+        ADD_TABLE_OVERRIDE,
+        DROP_TABLE_OVERRIDE,
+        MODIFY_TABLE_OVERRIDE,
         MODIFY_DATABASE_SETTING,
+        RESET_DATABASE_SETTING,
 
         MODIFY_COMMENT,
     };
@@ -155,6 +159,15 @@ public:
     /// For MODIFY_QUERY
     ASTPtr select;
 
+    /// For DATABASE_{ADD,DROP,MODIFY}_TABLE_OVERRIDE
+    ASTPtr table_override;
+
+    /// For DATABASE_MODIFY_SETTING
+    ASTPtr database_settings_changes;
+
+    /// For DATABASE_RESET_SETTING
+    ASTPtr database_settings_resets;
+
     /** In ALTER CHANNEL, ADD, DROP, SUSPEND, RESUME, REFRESH, MODIFY queries, the list of live views is stored here
      */
     ASTPtr values;
@@ -207,6 +220,8 @@ public:
     String getID(char delim) const override;
 
     ASTPtr clone() const override;
+
+    static const char * typeToString(Type type);
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

@@ -53,7 +53,9 @@ public:
         bool exchange,
         bool dictionary) override;
 
-    ASTPtr getCreateDatabaseQuery() const override;
+    ASTPtr getCreateDatabaseQuery() const override TSA_REQUIRES(mutex);
+
+    void persistCreateDatabaseQuery(const ASTPtr & ast, const DatabaseMetadataPersistedCallback & commit_cb) const override;
 
     void drop(ContextPtr context) override;
 
@@ -82,6 +84,10 @@ protected:
     using IteratingFunction = std::function<void(const String &)>;
 
     void iterateMetadataFiles(ContextPtr context, const IteratingFunction & process_metadata_file) const;
+
+    String getDatabaseMetadataFilePath() const TSA_REQUIRES(mutex);
+
+    void persistCreateDatabaseQueryUnlocked(const ASTPtr & ast, const DatabaseMetadataPersistedCallback & commit_cb) const TSA_REQUIRES(mutex);
 
     ASTPtr getCreateTableQueryImpl(
         const String & table_name,

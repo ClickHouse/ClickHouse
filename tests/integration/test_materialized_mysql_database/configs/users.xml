@@ -5,6 +5,16 @@
             <allow_introspection_functions>1</allow_introspection_functions>
             <optimize_on_insert>0</optimize_on_insert>
         </default>
+        <disable_bytes_settings>
+            <allow_experimental_database_materialized_mysql>1</allow_experimental_database_materialized_mysql>
+            <external_storage_max_read_rows>1</external_storage_max_read_rows>
+            <external_storage_max_read_bytes>0</external_storage_max_read_bytes>
+        </disable_bytes_settings>
+        <disable_rows_settings>
+            <allow_experimental_database_materialized_mysql>1</allow_experimental_database_materialized_mysql>
+            <external_storage_max_read_rows>0</external_storage_max_read_rows>
+            <external_storage_max_read_bytes>1</external_storage_max_read_bytes>
+        </disable_rows_settings>
     </profiles>
 
     <users>
@@ -16,5 +26,19 @@
             <profile>default</profile>
             <named_collection_control>1</named_collection_control>
         </default>
+        <disable_bytes_settings>
+            <password></password>
+            <networks incl="networks" replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>disable_bytes_settings</profile>
+        </disable_bytes_settings>
+        <disable_rows_settings>
+            <password></password>
+            <networks incl="networks" replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>disable_rows_settings</profile>
+        </disable_rows_settings>
     </users>
 </clickhouse>

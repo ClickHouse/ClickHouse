@@ -331,14 +331,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
         return command;
     }
-    else if (command_ast->type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
-    {
-        AlterCommand command;
-        command.ast = command_ast->clone();
-        command.type = AlterCommand::MODIFY_DATABASE_SETTING;
-        command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
-        return command;
-    }
     else if (command_ast->type == ASTAlterCommand::RESET_SETTING)
     {
         AlterCommand command;
@@ -1142,7 +1134,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             /// The change of data type to/from Object is broken, so disable it for now
             if (command.data_type)
             {
-                const GetColumnsOptions options(GetColumnsOptions::AllPhysical);
+                const GetColumnsOptions options(GetColumnsOptions::All);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
 
                 if (command.data_type->getName().contains("Object")

@@ -30,9 +30,11 @@ class ASTCreateQuery;
 class AlterCommands;
 class SettingsChanges;
 using DictionariesWithID = std::vector<std::pair<String, UUID>>;
+using DatabaseMetadataPersistedCallback = std::function<void()>;
 struct ParsedTablesMetadata;
 struct QualifiedTableName;
 class IRestoreCoordination;
+class AlterDatabaseCommands;
 
 namespace ErrorCodes
 {
@@ -289,6 +291,13 @@ public:
         comment = std::move(new_comment);
     }
 
+    /// Persist the ATTACH DATABASE query to the appropriate location.
+    /// The database should have an empty name and be an attach.
+    virtual void persistCreateDatabaseQuery(const ASTPtr & /*ast*/, const DatabaseMetadataPersistedCallback & /*persist_cb*/ = [](){}) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: ALTER DATABASE is not supported", getEngineName());
+    }
+
     /// Get name of database.
     String getDatabaseName() const
     {
@@ -341,6 +350,11 @@ public:
     virtual void stopReplication()
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread!", getEngineName());
+    }
+
+    virtual void checkAlterIsPossible(const AlterDatabaseCommands & /*commands*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} does not support ALTER DATABASE", getEngineName());
     }
 
     virtual bool shouldReplicateQuery(const ContextPtr & /*query_context*/, const ASTPtr & /*query_ptr*/) const { return false; }

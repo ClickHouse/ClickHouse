@@ -240,10 +240,10 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             MySQLClient client(configuration.host, configuration.port, configuration.username, configuration.password);
             auto mysql_pool = mysqlxx::Pool(configuration.database, configuration.host, configuration.username, configuration.password, configuration.port);
 
-            auto materialize_mode_settings = std::make_unique<MaterializedMySQLSettings>();
-
+            auto materialized_mysql_settings = std::make_unique<MaterializedMySQLSettings>();
+            materialized_mysql_settings->loadFromConfig(context->getConfigRef());
             if (engine_define->settings)
-                materialize_mode_settings->loadFromQuery(*engine_define);
+                materialized_mysql_settings->loadFromQuery(*engine_define);
 
             if (uuid == UUIDHelpers::Nil)
             {
@@ -258,7 +258,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
             return std::make_shared<DatabaseMaterializedMySQL>(
                 context, database_name, metadata_path, uuid, configuration.database, std::move(mysql_pool),
-                std::move(client), std::move(materialize_mode_settings));
+                std::move(client), std::move(materialized_mysql_settings));
         }
         catch (...)
         {

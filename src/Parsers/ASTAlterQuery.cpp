@@ -13,7 +13,7 @@ namespace ErrorCodes
 
 String ASTAlterCommand::getID(char delim) const
 {
-    return fmt::format("AlterCommand{}{}", delim, type);
+    return fmt::format("AlterCommand{}{}", delim, typeToString(type));
 }
 
 ASTPtr ASTAlterCommand::clone() const
@@ -61,6 +61,11 @@ ASTPtr ASTAlterCommand::clone() const
         res->settings_resets = settings_resets->clone();
         res->children.push_back(res->settings_resets);
     }
+    if (select)
+    {
+        res->select = select->clone();
+        res->children.push_back(res->select);
+    }
     if (values)
     {
         res->values = values->clone();
@@ -76,8 +81,84 @@ ASTPtr ASTAlterCommand::clone() const
         res->comment = comment->clone();
         res->children.push_back(res->comment);
     }
+    if (table_override)
+    {
+        res->table_override = table_override->clone();
+        res->children.push_back(res->table_override);
+    }
+    if (database_settings_changes)
+    {
+        res->database_settings_changes = database_settings_changes->clone();
+        res->children.push_back(res->database_settings_changes);
+    }
+    if (database_settings_resets)
+    {
+        res->database_settings_resets = database_settings_resets->clone();
+        res->children.push_back(res->database_settings_resets);
+    }
 
     return res;
+}
+
+const char * ASTAlterCommand::typeToString(ASTAlterCommand::Type type)
+{
+    switch (type)
+    {
+        case ADD_COLUMN: return "ADD_COLUMN";
+        case DROP_COLUMN: return "DROP_COLUMN";
+        case MODIFY_COLUMN: return "MODIFY_COLUMN";
+        case COMMENT_COLUMN: return "COMMENT_COLUMN";
+        case RENAME_COLUMN: return "RENAME_COLUMN";
+        case MATERIALIZE_COLUMN: return "MATERIALIZE_COLUMN";
+
+        case MODIFY_ORDER_BY: return "MODIFY_ORDER_BY";
+        case MODIFY_SAMPLE_BY: return "MODIFY_SAMPLE_BY";
+        case MODIFY_TTL: return "MODIFY_TTL";
+        case MATERIALIZE_TTL: return "MATERIALIZE_TTL";
+        case MODIFY_SETTING: return "MODIFY_SETTING";
+        case RESET_SETTING: return "RESET_SETTING";
+        case MODIFY_QUERY: return "MODIFY_QUERY";
+        case REMOVE_TTL: return "REMOVE_TTL";
+        case REMOVE_SAMPLE_BY: return "REMOVE_SAMPLE_BY";
+
+        case ADD_INDEX: return "ADD_INDEX";
+        case DROP_INDEX: return "DROP_INDEX";
+        case MATERIALIZE_INDEX: return "MATERIALIZE_INDEX";
+
+        case ADD_CONSTRAINT: return "ADD_CONSTRAINT";
+        case DROP_CONSTRAINT: return "DROP_CONSTRAINT";
+
+        case ADD_PROJECTION: return "ADD_PROJECTION";
+        case DROP_PROJECTION: return "DROP_PROJECTION";
+        case MATERIALIZE_PROJECTION: return "MATERIALIZE_PROJECTION";
+
+        case DROP_PARTITION: return "DROP_PARTITION";
+        case DROP_DETACHED_PARTITION: return "DROP_DETACHED_PARTITION";
+        case ATTACH_PARTITION: return "ATTACH_PARTITION";
+        case MOVE_PARTITION: return "MOVE_PARTITION";
+        case REPLACE_PARTITION: return "REPLACE_PARTITION";
+        case FETCH_PARTITION: return "FETCH_PARTITION";
+        case FREEZE_PARTITION: return "FREEZE_PARTITION";
+        case FREEZE_ALL: return "FREEZE_ALL";
+        case UNFREEZE_PARTITION: return "UNFREEZE_PARTITION";
+        case UNFREEZE_ALL: return "UNFREEZE_ALL";
+
+        case DELETE: return "DELETE";
+        case UPDATE: return "UPDATE";
+
+        case NO_TYPE: return "NO_TYPE";
+
+        case LIVE_VIEW_REFRESH: return "LIVE_VIEW_REFRESH";
+
+        case ADD_TABLE_OVERRIDE: return "ADD_TABLE_OVERRIDE";
+        case DROP_TABLE_OVERRIDE: return "DROP_TABLE_OVERRIDE";
+        case MODIFY_TABLE_OVERRIDE: return "MODIFY_TABLE_OVERRIDE";
+        case MODIFY_DATABASE_SETTING: return "MODIFY_DATABASE_SETTING";
+        case RESET_DATABASE_SETTING: return "RESET_DATABASE_SETTING";
+
+        case MODIFY_COMMENT: return "MODIFY_COMMENT";
+    }
+    UNREACHABLE();
 }
 
 void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -415,11 +496,6 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "RESET SETTING " << (settings.hilite ? hilite_none : "");
         settings_resets->formatImpl(settings, state, frame);
     }
-    else if (type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY SETTING " << (settings.hilite ? hilite_none : "");
-        settings_changes->formatImpl(settings, state, frame);
-    }
     else if (type == ASTAlterCommand::MODIFY_QUERY)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY QUERY " << settings.nl_or_ws
@@ -438,6 +514,31 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO ";
         rename_to->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::ADD_TABLE_OVERRIDE)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD " << (settings.hilite ? hilite_none : "");
+        table_override->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::DROP_TABLE_OVERRIDE)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "DROP " << (settings.hilite ? hilite_none : "");
+        table_override->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::MODIFY_TABLE_OVERRIDE)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY " << (settings.hilite ? hilite_none : "");
+        table_override->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY SETTING " << (settings.hilite ? hilite_none : "");
+        database_settings_changes->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::RESET_DATABASE_SETTING)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "RESET SETTING " << (settings.hilite ? hilite_none : "");
+        database_settings_resets->formatImpl(settings, state, frame);
     }
     else
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");

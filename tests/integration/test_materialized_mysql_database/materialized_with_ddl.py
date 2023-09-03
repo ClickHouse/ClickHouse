@@ -1,3 +1,4 @@
+import re
 import time
 
 import pymysql.cursors
@@ -5,12 +6,16 @@ import pytest
 from helpers.network import PartitionManager
 import logging
 from helpers.client import QueryRuntimeException
-from helpers.cluster import get_docker_compose_path, run_and_check
-import random
+from helpers.cluster import ClickHouseInstance
 
 import threading
-from multiprocessing.dummy import Pool
 from helpers.test_tools import assert_eq_with_retry
+from .utils import ReplicationHelper
+
+NOT_IMPLEMENTED = 48
+INVALID_ALTER_DATABASE_QUERY = 707
+TABLE_OVERRIDE_ALREADY_EXISTS = 708
+TABLE_OVERRIDE_NOT_FOUND = 709
 
 
 def check_query(
@@ -20,6 +25,7 @@ def check_query(
     retry_count=30,
     interval_seconds=1,
     on_failure=None,
+    user=None,
 ):
     latest_result = ""
 
@@ -31,18 +37,17 @@ def check_query(
             if result_set == latest_result:
                 return
 
-            logging.debug(f"latest_result {latest_result}")
+            logging.debug("latest_result %s", latest_result)
             time.sleep(interval_seconds)
         except Exception as e:
-            logging.debug(f"check_query retry {i+1} exception {e}")
+            logging.debug("check_query retry %d exception %s", i + 1, str(e))
             time.sleep(interval_seconds)
-    else:
-        latest_result = clickhouse_node.query(query)
-        if on_failure is not None and latest_result != result_set:
-            on_failure(latest_result, result_set)
-        assert (
-            latest_result == result_set
-        ), f"Got result '{latest_result}', expected result '{result_set}'"
+    latest_result = clickhouse_node.query(query, user=user)
+    if on_failure is not None and latest_result != result_set:
+        on_failure(latest_result, result_set)
+    assert (
+        latest_result == result_set
+    ), f"Got result '{latest_result}', expected result '{result_set}'"
 
 
 def dml_with_materialized_mysql_database(clickhouse_node, mysql_node, service_name):
@@ -2158,9 +2163,9 @@ def move_to_prewhere_and_column_filtering(clickhouse_node, mysql_node, service_n
     mysql_node.query("DROP DATABASE cond_on_key_col")
 
 
-def mysql_settings_test(clickhouse_node, mysql_node, service_name):
+def mysql_settings_test(clickhouse_node, mysql_node, service_name, user):
     mysql_node.query("DROP DATABASE IF EXISTS test_database")
-    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database", user=user)
     mysql_node.query("CREATE DATABASE test_database")
     mysql_node.query(
         "CREATE TABLE test_database.a (id INT(11) NOT NULL PRIMARY KEY, value VARCHAR(255))"
@@ -2171,20 +2176,25 @@ def mysql_settings_test(clickhouse_node, mysql_node, service_name):
     clickhouse_node.query(
         "CREATE DATABASE test_database ENGINE = MaterializedMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(
             service_name
-        )
+        ),
+        user=user,
     )
     check_query(
-        clickhouse_node, "SELECT COUNT() FROM test_database.a FORMAT TSV", "2\n"
+        clickhouse_node,
+        "SELECT COUNT() FROM test_database.a FORMAT TSV",
+        "2\n",
+        user=user,
     )
 
     assert (
         clickhouse_node.query(
-            "SELECT COUNT(DISTINCT  blockNumber()) FROM test_database.a FORMAT TSV"
+            "SELECT COUNT(DISTINCT  blockNumber()) FROM test_database.a FORMAT TSV",
+            user=user,
         )
         == "1\n"
     )
 
-    clickhouse_node.query("DROP DATABASE test_database")
+    clickhouse_node.query("DROP DATABASE test_database", user=user)
     mysql_node.query("DROP DATABASE test_database")
 
 
@@ -2714,3 +2724,290 @@ def table_with_indexes(clickhouse_node, mysql_node, service_name):
 
     mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
     clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+
+
+def alter_database_settings_test(replication: ReplicationHelper):
+    db = "alter_database_settings"
+    mysql_node = replication.mysql
+    clickhouse_node = replication.clickhouse
+    replication.create_db_mysql(db)
+    mysql_node.query(
+        f"CREATE TABLE {db}.t1 (id INT PRIMARY KEY, name VARCHAR(20) NOT NULL)"
+    )
+    mysql_node.query(f"INSERT INTO {db}.t1 VALUES(1,'a'),(2,'b')")
+    replication.create_db_ch(db, settings="max_bytes_in_buffers=67108864")
+    check_query(clickhouse_node, f"SHOW TABLES FROM {db}", "t1\n")
+    check_query(clickhouse_node, f"SELECT count() FROM {db}.t1", "2\n")
+
+    def should_pass(modify_commands):
+        clickhouse_node.query(f"ALTER DATABASE {db} {modify_commands}")
+
+    def should_fail(modify_commands, code):
+        with pytest.raises(
+            QueryRuntimeException, match=re.compile(f"\nCode: {code}\\.", re.MULTILINE)
+        ):
+            clickhouse_node.query(f"ALTER DATABASE {db} {modify_commands}")
+
+    def create_query() -> str:
+        return clickhouse_node.query(f"SHOW CREATE DATABASE {db}")
+
+    def assert_setting(name, value):
+        q = "'" if isinstance(value, str) else ""
+        expect = f"{name} = {q}{value}{q}"
+        create = create_query()
+        assert expect in create, f"expected to find `{expect}` in {create}"
+
+    def assert_no_setting(name):
+        no_expect = f"{name} = "
+        create = create_query()
+        assert (
+            not no_expect in create
+        ), f"expected not to find `{no_expect}` in {create}"
+
+    assert_no_setting("max_flush_data_time")
+
+    should_fail("MODIFY SETTING max_sync_threads=1", NOT_IMPLEMENTED)
+
+    should_fail("RESET SETTING max_sync_threads", NOT_IMPLEMENTED)
+    should_fail(
+        "MODIFY SETTING max_flush_data_time=1000, max_flush_data_time=2000",
+        INVALID_ALTER_DATABASE_QUERY,
+    )
+    should_pass("RESET SETTING max_flush_data_time, max_flush_data_time")
+    should_pass("RESET SETTING max_flush_data_time")
+    should_pass("MODIFY SETTING max_flush_data_time=5000, max_flush_data_time=5000")
+    should_pass("MODIFY SETTING max_flush_data_time=5000")
+    assert_setting("max_flush_data_time", 5000)
+    assert_setting(
+        "max_bytes_in_buffers", 67108864
+    )  # this value is from CREATE DATABASE above
+
+    should_pass("MODIFY SETTING max_bytes_in_buffers = 33554432")
+    assert_setting("max_bytes_in_buffers", 33554432)
+
+    should_pass("RESET SETTING max_bytes_in_buffers")
+    assert_no_setting("max_bytes_in_buffers")
+
+    should_pass("RESET SETTING max_flush_data_time")
+    assert_no_setting("max_flush_data_time")
+
+
+def alter_database_table_overrides(replication: ReplicationHelper):
+    db = "alter_database"
+    clickhouse_node = replication.clickhouse
+    mysql_node = replication.mysql
+    allow_recreate = {"allow_alter_database_to_drop_and_recreate_if_needed": "1"}
+
+    def check_column(
+        table,
+        name,
+        expected_type=None,
+        expected_default_kind=None,
+        expected_default_expr=None,
+        /,
+        exists=True,
+    ):
+        expected_result = (
+            f"{expected_type}\t{expected_default_kind}\t{expected_default_expr}\n"
+            if exists
+            else ""
+        )
+        return check_query(
+            clickhouse_node,
+            f"SELECT type, default_kind, default_expression FROM system.columns WHERE database = '{db}' AND table = '{table}' AND name = '{name}'",
+            expected_result,
+        )
+
+    def check_index(
+        table,
+        name,
+        expected_expr=None,
+        expected_type=None,
+        expected_granularity=None,
+        /,
+        exists=True,
+    ):
+        expected_result = (
+            f"{expected_type}\t{expected_expr}\t{expected_granularity}\n"
+            if exists
+            else ""
+        )
+        return check_query(
+            clickhouse_node,
+            f"SELECT type, expr, granularity FROM system.data_skipping_indices WHERE database = '{db}' AND table = '{table}' AND name = '{name}'",
+            expected_result,
+        )
+
+    def should_fail(sql, code=None, message=None):
+        match = "" if code is None else f"\nCode: {code}\\."
+        if message is not None:
+            match += f".*{message}"
+        with pytest.raises(
+            QueryRuntimeException, match=re.compile(match, re.MULTILINE)
+        ):
+            clickhouse_node.query(f"/* expecting error: {match} */ {sql}")
+
+    replication.create_db_mysql(db)
+    mysql_node.query(f"CREATE TABLE {db}.t1 (id INT PRIMARY KEY, b_id INT)")
+    mysql_node.query(f"CREATE TABLE {db}.t2 (id INT PRIMARY KEY)")
+    replication.create_db_ch(
+        db, table_overrides="TABLE OVERRIDE t1 (COLUMNS (idmod3 Int8 ALIAS id % 3))"
+    )
+
+    # This override is from the original CREATE DATABASE query
+    check_column("t1", "idmod3", "Int8", "ALIAS", "id % 3")
+
+    logging.debug("%s", clickhouse_node.query(f"SHOW CREATE TABLE {db}.t1"))
+    clickhouse_node.query(
+        f"""ALTER DATABASE {db} MODIFY TABLE OVERRIDE t1 (
+            COLUMNS (
+                idmod3 Int8 ALIAS id % 3,
+                INDEX b_id (b_id % 32) TYPE set(32) GRANULARITY 1
+            ))"""
+    )
+    check_index("t1", "b_id", "b_id % 32", "set", "1")
+    clickhouse_node.query(
+        f"""ALTER DATABASE {db} MODIFY TABLE OVERRIDE t1 (
+            COLUMNS (
+                idmod3 Int8 ALIAS id % 3,
+                INDEX b_id_32 (b_id % 32) TYPE set(32) GRANULARITY 1,
+                INDEX b_id_64 (b_id % 64) TYPE set(64) GRANULARITY 2
+            ))"""
+    )
+    check_index("t1", "b_id", exists=False)
+    check_index("t1", "b_id_32", "b_id % 32", "set", "1")
+    check_index("t1", "b_id_64", "b_id % 64", "set", "2")
+
+    # We can alter table overrides without recreating the database if:
+    #
+    #  * the table does not exist yet
+    #    -OR-
+    #  * the ALTER command only touches columns and indices, not storage parameters (ORDER BY, PARTITION BY, etc)
+    #
+
+    # Can not change storage parameters of overrides for existing tables:
+    # should_throw(f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t1 (PARTITION BY (id % 3))", INVALID_ALTER_DATABASE_QUERY)
+    # check_index("t1", "b_id_32", exists=False)
+    # check_index("t1", "b_id_64", exists=False)
+
+    # Refer to a non-existing override:
+    should_fail(
+        f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t2 (PARTITION BY (id % 3))",
+        code=TABLE_OVERRIDE_NOT_FOUND,
+    )
+    should_fail(
+        f"ALTER DATABASE {db} DROP TABLE OVERRIDE t2", code=TABLE_OVERRIDE_NOT_FOUND
+    )
+
+    # Try to add an override that exists:
+    should_fail(
+        f"ALTER DATABASE {db} ADD TABLE OVERRIDE t1 (COLUMNS (idmod3 Int8 ALIAS id % 3))",
+        code=TABLE_OVERRIDE_ALREADY_EXISTS,
+    )
+
+    # Should not be allowed to refer to the same override in two alter commands:
+    should_fail(
+        f"ALTER DATABASE {db} DROP TABLE OVERRIDE t1, DROP TABLE OVERRIDE t1",
+        code=INVALID_ALTER_DATABASE_QUERY,
+    )
+    should_fail(
+        f"ALTER DATABASE {db} ADD TABLE OVERRIDE t2 (ORDER BY id), DROP TABLE OVERRIDE t2",
+        code=INVALID_ALTER_DATABASE_QUERY,
+    )
+
+    # For tables that do not exist, we can ADD/MODIFY/DROP overrides with storage parameters:
+    clickhouse_node.query(
+        f"ALTER DATABASE {db} ADD TABLE OVERRIDE t3 (PARTITION BY (id % 3))"
+    )  # t3 does not exist
+    clickhouse_node.query(
+        f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t3 (PARTITION BY (id % 5))"
+    )
+    clickhouse_node.query(f"ALTER DATABASE {db} DROP TABLE OVERRIDE t3")
+
+    # We can add a columns-only override for an existing table:
+    clickhouse_node.query(
+        f"ALTER DATABASE {db} ADD TABLE OVERRIDE t2 \
+        (COLUMNS (idmod4 Int8 ALIAS id % 4))"
+    )
+    check_column("t2", "idmod4", "Int8", "ALIAS", "id % 4")
+
+    # We can modify column aliases:
+    clickhouse_node.query(
+        f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t2 \
+        (COLUMNS (idmod2 Int8 ALIAS id % 2, idmod3 Int8 ALIAS id % 3))"
+    )
+    check_column("t2", "idmod2", "Int8", "ALIAS", "id % 2")
+    check_column("t2", "idmod3", "Int8", "ALIAS", "id % 3")
+    check_column("t2", "idmod4", exists=False)
+
+    # We can drop overrides with only column aliases:
+    clickhouse_node.query(f"ALTER DATABASE {db} DROP TABLE OVERRIDE t2")
+    check_column("t2", "idmod3", exists=False)
+
+    # We can add overrides that modify storage with the allow-recreate setting:
+    clickhouse_node.query(
+        f"ALTER DATABASE {db} ADD TABLE OVERRIDE t2 \
+        (COLUMNS (idmod4 ALIAS id % 4) PARTITION BY id % 2)",
+        settings=allow_recreate,
+    )
+
+    # We can remove alias columns from an existing override with storage parameters, as long as we do not touch
+    # the storage parameters:
+    clickhouse_node.query(
+        f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t2 \
+        (PARTITION BY id % 2)"
+    )
+
+    # We can add columns alongside storage parameters as long as the storage parameters are unchanged:
+    clickhouse_node.query(
+        f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t2 \
+        (COLUMNS (idmod2 Int8 ALIAS id % 2) PARTITION BY id % 2)"
+    )
+
+    # We can not drop storage parameters without allow-recreate setting:
+    should_fail(
+        f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t2 \
+        (COLUMNS (idmod2 Int8 ALIAS id % 2))",
+        code=INVALID_ALTER_DATABASE_QUERY,
+        message="existing override modifies storage, new override does not",
+    )
+
+    # We can not change storage parameters without allow-recreate setting:
+    should_fail(
+        f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t2 \
+        (COLUMNS (idmod2 Int8 ALIAS id % 2) PARTITION BY id % 4)",
+        code=INVALID_ALTER_DATABASE_QUERY,
+        message="new override modifies storage",
+    )
+
+    # But we can with the allow-recreate setting:
+    clickhouse_node.query(
+        f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t2 \
+        (COLUMNS (idmod2 Int8 ALIAS id % 2) PARTITION BY id % 4)",
+        settings=allow_recreate,
+    )
+
+    clickhouse_node.query(
+        f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t2 \
+        ()",
+        settings=allow_recreate,
+    )
+    clickhouse_node.query(
+        f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t2 \
+        (COLUMNS (idmod2 Int8 ALIAS id % 2))"
+    )
+
+    # We can not add storage parameters back without allow-recreate setting:
+    should_fail(
+        f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t2 \
+        (PARTITION BY id % 2)",
+        code=INVALID_ALTER_DATABASE_QUERY,
+        message="existing override does not modify storage, new override does",
+    )
+
+    # But we can with the allow-create setting:
+    clickhouse_node.query(
+        f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t2 \
+        (PARTITION BY id % 2)",
+        settings=allow_recreate,
+    )

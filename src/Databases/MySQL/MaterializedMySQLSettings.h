@@ -26,7 +26,11 @@ class ASTStorage;
   */
 struct MaterializedMySQLSettings : public BaseSettings<MaterializedMySQLSettingsTraits>
 {
+    void loadFromConfig(const Poco::Util::AbstractConfiguration & config);
+    void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
     void loadFromQuery(ASTStorage & storage_def);
 };
+
+using MaterializedMySQLSettingsPtr = std::shared_ptr<const MaterializedMySQLSettings>;
 
 }
