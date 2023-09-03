@@ -9,7 +9,7 @@ from typing import Callable, Dict, List, Literal
 @dataclass
 class BuildConfig:
     compiler: str
-    package_type: Literal["deb", "binary"]
+    package_type: Literal["deb", "binary", "fuzzers"]
     additional_pkgs: bool = False
     debug_build: bool = False
     sanitizer: str = ""
