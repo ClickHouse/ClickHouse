@@ -451,7 +451,8 @@ The server successfully detected this situation and will download merged part fr
     M(ThreadPoolReaderPageCacheMissBytes, "Number of bytes read inside ThreadPoolReader when read was not done from page cache and was hand off to thread pool.") \
     M(ThreadPoolReaderPageCacheMissElapsedMicroseconds, "Time spent reading data inside the asynchronous job in ThreadPoolReader - when read was not done from page cache.") \
     \
-    M(AsynchronousReadWaitMicroseconds, "Time spent in waiting for asynchronous reads.") \
+    M(AsynchronousReadWaitMicroseconds, "Time spent in waiting for asynchronous reads in asynchronous local read.") \
+    M(SynchronousReadWaitMicroseconds, "Time spent in waiting for synchronous reads in asynchronous local read.") \
     M(AsynchronousRemoteReadWaitMicroseconds, "Time spent in waiting for asynchronous remote reads.") \
     M(SynchronousRemoteReadWaitMicroseconds, "Time spent in waiting for synchronous remote reads.") \
     \
@@ -461,13 +462,6 @@ The server successfully detected this situation and will download merged part fr
     \
     M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.") \
     M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.") \
-    \
-    M(MergeTreeMetadataCacheGet, "Number of rocksdb reads (used for merge tree metadata cache)") \
-    M(MergeTreeMetadataCachePut, "Number of rocksdb puts (used for merge tree metadata cache)") \
-    M(MergeTreeMetadataCacheDelete, "Number of rocksdb deletes (used for merge tree metadata cache)") \
-    M(MergeTreeMetadataCacheSeek, "Number of rocksdb seeks (used for merge tree metadata cache)") \
-    M(MergeTreeMetadataCacheHit, "Number of times the read of meta file was done from MergeTree metadata cache") \
-    M(MergeTreeMetadataCacheMiss, "Number of times the read of meta file was not done from MergeTree metadata cache") \
     \
     M(KafkaRebalanceRevocations, "Number of partition revocations (the first stage of consumer group rebalance)") \
     M(KafkaRebalanceAssignments, "Number of partition assignments (the final stage of consumer group rebalance)") \

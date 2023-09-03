@@ -180,7 +180,7 @@ namespace
     {
         auto protocol = protocol_string == "https" ? ProxyConfigurationResolver::Protocol::HTTPS
                                              : ProxyConfigurationResolver::Protocol::HTTP;
-        auto proxy_config = ProxyConfigurationResolverProvider::get(protocol)->resolve();
+        auto proxy_config = ProxyConfigurationResolverProvider::get(protocol, Context::getGlobalContextInstance()->getConfigRef())->resolve();
 
         return proxyConfigurationToPocoProxyConfiguration(proxy_config);
     }
