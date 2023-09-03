@@ -26,15 +26,11 @@ def test_cluster(start_cluster):
         == "node1\nnode2\n"
     )
     assert (
-        node1.query(
-            "SELECT hostName() FROM cluster('one_shard_two_nodes', system.one)"
-        )
+        node1.query("SELECT hostName() FROM cluster('one_shard_two_nodes', system.one)")
         == "node1\n"
     )
     assert (
-        node2.query(
-            "SELECT hostName() FROM cluster('one_shard_two_nodes', system.one)"
-        )
+        node2.query("SELECT hostName() FROM cluster('one_shard_two_nodes', system.one)")
         == "node2\n"
     )
 
@@ -44,7 +40,7 @@ def test_cluster(start_cluster):
     [
         pytest.param("one_shard_three_nodes"),
         pytest.param("two_shards_three_nodes"),
-    ]
+    ],
 )
 def test_skip_unavailable_replica(start_cluster, cluster):
     assert (
@@ -60,7 +56,7 @@ def test_skip_unavailable_replica(start_cluster, cluster):
     [
         pytest.param("one_shard_three_nodes"),
         pytest.param("two_shards_three_nodes"),
-    ]
+    ],
 )
 def test_error_on_unavailable_replica(start_cluster, cluster):
     # clusterAllReplicas() consider each replica as shard
