@@ -16,7 +16,6 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
-#include <Storages/MergeTree/PartMetadataManagerWithCache.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ColumnsDescription.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -320,7 +319,6 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , part_type(part_type_)
     , parent_part(parent_part_)
     , parent_part_name(parent_part ? parent_part->name : "")
-    , use_metadata_cache(storage.use_metadata_cache)
 {
     if (parent_part)
     {
@@ -1673,14 +1671,7 @@ std::pair<bool, NameSet> IMergeTreeDataPart::canRemovePart() const
 
 void IMergeTreeDataPart::initializePartMetadataManager()
 {
-#if USE_ROCKSDB
-    if (auto metadata_cache = storage.getContext()->tryGetMergeTreeMetadataCache(); metadata_cache && use_metadata_cache)
-        metadata_manager = std::make_shared<PartMetadataManagerWithCache>(this, metadata_cache);
-    else
-        metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(this);
-#else
-        metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(this);
-#endif
+    metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(this);
 }
 
 void IMergeTreeDataPart::initializeIndexGranularityInfo()
@@ -2063,34 +2054,6 @@ String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
 
     const auto hash_value = hash.get128();
     return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
-}
-
-IMergeTreeDataPart::uint128 IMergeTreeDataPart::getActualChecksumByFile(const String & file_name) const
-{
-    assert(use_metadata_cache);
-
-    const auto filenames_without_checksums = getFileNamesWithoutChecksums();
-    auto it = checksums.files.find(file_name);
-    if (!filenames_without_checksums.contains(file_name) && it != checksums.files.end())
-    {
-        return it->second.file_hash;
-    }
-
-    if (!getDataPartStorage().exists(file_name))
-    {
-        return {};
-    }
-    std::unique_ptr<ReadBufferFromFileBase> in_file = getDataPartStorage().readFile(file_name, {}, std::nullopt, std::nullopt);
-    HashingReadBuffer in_hash(*in_file);
-
-    String value;
-    readStringUntilEOF(value, in_hash);
-    return in_hash.getHash();
-}
-
-std::unordered_map<String, IMergeTreeDataPart::uint128> IMergeTreeDataPart::checkMetadata() const
-{
-    return metadata_manager->check();
 }
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
