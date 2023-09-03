@@ -71,17 +71,20 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         Field max_requests;
         Field max_cost;
 
-        if (auto parent = dynamic_cast<FairPolicy *>(node->parent))
-            vruntime = parent->getChildVRuntime(node.get());
-        if (auto ptr = dynamic_cast<FairPolicy *>(node.get()))
+        if (auto * parent = dynamic_cast<FairPolicy *>(node->parent))
+        {
+            if (auto value = parent->getChildVRuntime(node.get()))
+                vruntime = *value;
+        }
+        if (auto * ptr = dynamic_cast<FairPolicy *>(node.get()))
             system_vruntime = ptr->getSystemVRuntime();
-        if (auto ptr = dynamic_cast<FifoQueue *>(node.get()))
+        if (auto * ptr = dynamic_cast<FifoQueue *>(node.get()))
             std::tie(queue_length, queue_cost) = ptr->getQueueLengthAndCost();
-        if (auto ptr = dynamic_cast<ISchedulerQueue *>(node.get()))
+        if (auto * ptr = dynamic_cast<ISchedulerQueue *>(node.get()))
             budget = ptr->getBudget();
-        if (auto ptr = dynamic_cast<ISchedulerConstraint *>(node.get()))
+        if (auto * ptr = dynamic_cast<ISchedulerConstraint *>(node.get()))
             is_satisfied = ptr->isSatisfied();
-        if (auto ptr = dynamic_cast<SemaphoreConstraint *>(node.get()))
+        if (auto * ptr = dynamic_cast<SemaphoreConstraint *>(node.get()))
         {
             std::tie(inflight_requests, inflight_cost) = ptr->getInflights();
             std::tie(max_requests, max_cost) = ptr->getLimits();
