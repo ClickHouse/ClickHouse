@@ -102,7 +102,10 @@ def _expect_artifacts(build_config: BuildConfig) -> bool:
 
 
 def build_clickhouse(
-    packager_cmd: str, logs_path: Path, build_output_path: Path, expect_artifacts: bool = True
+    packager_cmd: str,
+    logs_path: Path,
+    build_output_path: Path,
+    expect_artifacts: bool = True,
 ) -> Tuple[Path, bool]:
     build_log_path = logs_path / BUILD_LOG_NAME
     success = False
@@ -317,7 +320,9 @@ def main():
     os.makedirs(logs_path, exist_ok=True)
 
     start = time.time()
-    log_path, success = build_clickhouse(packager_cmd, logs_path, build_output_path, _expect_artifacts(build_config))
+    log_path, success = build_clickhouse(
+        packager_cmd, logs_path, build_output_path, _expect_artifacts(build_config)
+    )
     elapsed = int(time.time() - start)
     subprocess.check_call(
         f"sudo chown -R ubuntu:ubuntu {build_output_path}", shell=True
