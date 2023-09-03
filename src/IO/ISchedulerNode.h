@@ -3,6 +3,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/Priority.h>
+#include "base/types.h"
 
 #include <IO/ResourceRequest.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -176,7 +177,10 @@ public:
     /// Returns true iff node is active
     virtual bool isActive() = 0;
 
-    /// Returns the first request to be executed as the first component of resuting pair.
+    /// Returns number of active children
+    virtual size_t activeChildren() = 0;
+
+    /// Returns the first request to be executed as the first component of resulting pair.
     /// The second pair component is `true` iff node is still active after dequeueing.
     virtual std::pair<ResourceRequest *, bool> dequeueRequest() = 0;
 
@@ -215,6 +219,11 @@ public:
     String basename;
     SchedulerNodeInfo info;
     ISchedulerNode * parent = nullptr;
+
+    /// Introspection
+    std::atomic<UInt64> dequeued_requests{0};
+    std::atomic<UInt64> dequeued_cost{0};
+    std::atomic<UInt64> busy_periods{0};
 };
 
 using SchedulerNodePtr = std::shared_ptr<ISchedulerNode>;
