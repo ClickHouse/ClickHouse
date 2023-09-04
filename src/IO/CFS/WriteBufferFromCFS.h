@@ -29,7 +29,7 @@ public:
         const Poco::Util::AbstractConfiguration & config_,
         const WriteSettings write_settings_ = {},
         size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        int flags = O_WRONLY);
+        int flags = -1);
 
     WriteBufferFromCFS(WriteBufferFromCFS &&) = default;
 

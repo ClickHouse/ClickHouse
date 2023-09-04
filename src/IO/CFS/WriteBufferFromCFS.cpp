@@ -2,6 +2,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/CFS/WriteBufferFromCFS.h>
 #include <sys/uio.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -35,7 +36,15 @@ struct WriteBufferFromCFS::WriteBufferFromCFSImpl
             flags = flags & ~O_DIRECT;
 #endif
 
-        fd = ::open(cfs_file_path.c_str(), flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT | O_CLOEXEC : flags | O_CLOEXEC);
+        flags = flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT | O_CLOEXEC : flags | O_CLOEXEC;
+
+#if defined(OS_LINUX)
+        mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
+        fd = ::open(cfs_file_path.c_str(), flags, mode);
+#else
+        fd = ::open(cfs_file_path.c_str(), flags);
+#endif
+
         if (-1 == fd)
             throwFromErrnoWithPath("Cannot open file " + cfs_file_path, cfs_file_path,
                                 errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);

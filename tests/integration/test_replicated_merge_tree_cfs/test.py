@@ -141,15 +141,13 @@ def test_cfs_zero_copy_replication_insert(cluster):
             "INSERT INTO cfs_test_insert VALUES (toDateTime('2023-08-21 00:00:00'), 10)"
         )
         node2.query("SYSTEM SYNC REPLICA cfs_test_insert")
-        # Wait sync data from leader
-        time.sleep(1)
         assert_cluster(
             cluster, "SELECT count() FROM cfs_test_insert FORMAT Values", "(1)", True
         )
         assert_cluster(
             cluster,
-            "SELECT id FROM cfs_test_insert ORDER BY dt FORMAT Values",
-            "(10)",
+            "SELECT * FROM cfs_test_insert ORDER BY dt FORMAT Values",
+            "('2023-08-21 00:00:00',10)",
             True,
         )
         assert_cluster(
