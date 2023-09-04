@@ -42,6 +42,8 @@ public:
 
     bool equals(ISchedulerNode * other) override
     {
+        if (!ISchedulerNode::equals(other))
+            return false;
         if (auto * o = dynamic_cast<PriorityPolicy *>(other))
             return true;
         return false;
