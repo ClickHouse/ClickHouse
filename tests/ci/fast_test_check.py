@@ -154,7 +154,7 @@ def main():
 
     run_log_path = os.path.join(logs_path, "run.log")
     expired_timeout = None
-    with TeePopen(run_cmd, run_log_path, timeout= 65) as process:
+    with TeePopen(run_cmd, run_log_path, timeout=65) as process:
         try:
             retcode = process.wait()
             if retcode == 0:
@@ -195,8 +195,14 @@ def main():
     else:
         state, description, test_results, additional_logs = process_results(output_path)
 
-    if (expired_timeout is not None):
-        test_results.append(TestResult(f"Timeout expired for process execution: {run_cmd}", "FAIL", expired_timeout))
+    if expired_timeout is not None:
+        test_results.append(
+            TestResult(
+                f"Timeout expired for process execution: {run_cmd}",
+                "FAIL",
+                expired_timeout,
+            )
+        )
 
     ch_helper = ClickHouseHelper()
     s3_path_prefix = os.path.join(
