@@ -211,7 +211,8 @@ public:
 
     std::optional<double> getChildVRuntime(ISchedulerNode * child) const
     {
-        for (const auto & item : items) {
+        for (const auto & item : items)
+        {
             if (child == item.child)
                 return item.vruntime;
         }
