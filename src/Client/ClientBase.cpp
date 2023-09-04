@@ -2680,8 +2680,8 @@ void ClientBase::init(int argc, char ** argv)
     stderr_is_a_tty = isatty(STDERR_FILENO);
     terminal_width = getTerminalWidth();
 
-    Arguments common_arguments{""}; /// 0th argument is ignored.
     std::vector<Arguments> external_tables_arguments;
+    Arguments common_arguments = {""}; /// 0th argument is ignored.
     std::vector<Arguments> hosts_and_ports_arguments;
 
     readArguments(argc, argv, common_arguments, external_tables_arguments, hosts_and_ports_arguments);
@@ -2699,7 +2699,6 @@ void ClientBase::init(int argc, char ** argv)
     }
 
 
-    po::variables_map options;
     OptionsDescription options_description;
     options_description.main_description.emplace(createOptionsDescription("Main options", terminal_width));
 
@@ -2711,7 +2710,7 @@ void ClientBase::init(int argc, char ** argv)
 
         ("config-file,C", po::value<std::string>(), "config-file path")
 
-        ("query,q", po::value<std::vector<std::string>>(), R"(query; can be specified multiple times (--query "SELECT 1" --query "SELECT 2"...))")
+        ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(query; can be specified multiple times (--query "SELECT 1" --query "SELECT 2"...))")
         ("queries-file", po::value<std::vector<std::string>>()->multitoken(), "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
         ("multiquery,n", "If specified, multiple queries separated by semicolons can be listed after --query. For convenience, it is also possible to omit --query and pass the queries directly after --multiquery.")
         ("multiline,m", "If specified, allow multiline queries (do not send the query on Enter)")
@@ -2771,6 +2770,7 @@ void ClientBase::init(int argc, char ** argv)
         std::transform(external_options.begin(), external_options.end(), std::back_inserter(cmd_options), getter);
     }
 
+    po::variables_map options;
     parseAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
 
