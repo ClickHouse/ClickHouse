@@ -17,12 +17,7 @@ import json
 import base64
 import random
 
-if os.environ.get("AWS_LAMBDA_ENV", "0") == "1":
-    # For AWS labmda (python 3.7)
-    from botocore.vendored import requests
-else:
-    # For running locally
-    import requests
+import requests  # type: ignore
 
 DRY_RUN_MARK = "<no url, dry run>"
 
@@ -61,7 +56,7 @@ WHERE 1
     AND test_name NOT IN (
         SELECT test_name FROM checks WHERE 1
         AND check_start_time >= now - INTERVAL 1 MONTH
-        AND (check_start_time + check_duration_ms / 1000) BETWEEN now - INTERVAL 2 WEEK AND now - INTERVAL extended_check_period HOUR 
+        AND (check_start_time + check_duration_ms / 1000) BETWEEN now - INTERVAL 2 WEEK AND now - INTERVAL extended_check_period HOUR
         AND pull_request_number = 0
         AND check_status != 'success'
         AND test_status LIKE 'F%')
@@ -95,11 +90,11 @@ FAILED_CHECKS_PERCENTAGE_QUERY = """
 SELECT if(toHour(now('Europe/Amsterdam')) = 12, v, 0)
 FROM
 (
-    SELECT 
-        countDistinctIf((commit_sha, check_name), (test_status LIKE 'F%') AND (check_status != 'success')) 
+    SELECT
+        countDistinctIf((commit_sha, check_name), (test_status LIKE 'F%') AND (check_status != 'success'))
             / countDistinct((commit_sha, check_name)) AS v
     FROM checks
-    WHERE 1 
+    WHERE 1
         AND (pull_request_number = 0)
         AND (test_status != 'SKIPPED')
         AND (check_start_time > (now() - toIntervalDay(1)))
@@ -315,7 +310,7 @@ def check_and_alert():
     )
 
 
-def lambda_handler(event, context):
+def handler(event, context):
     try:
         check_and_alert()
         return {"statusCode": 200, "body": "OK"}
