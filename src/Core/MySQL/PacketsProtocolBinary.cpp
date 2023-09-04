@@ -7,6 +7,8 @@
 #include "Columns/ColumnLowCardinality.h"
 #include "Columns/ColumnVector.h"
 #include "Columns/ColumnsDateTime.h"
+#include "Core/DecimalFunctions.h"
+#include "DataTypes/DataTypeDateTime64.h"
 #include "DataTypes/DataTypeLowCardinality.h"
 #include "DataTypes/DataTypeNullable.h"
 #include "DataTypes/DataTypesNumber.h"
@@ -74,46 +76,66 @@ namespace MySQLProtocol
                         payload_size += 8;
                         break;
                     case TypeIndex::Date: {
-                        UInt16 value = assert_cast<const ColumnVector<UInt16> &>(*col).getData()[row_num];
-                        if (value == 0)
-                        {
-                            payload_size += 1; // length only, no other fields
-                        }
-                        else
-                        {
-                            payload_size += 5;
-                        }
+                        payload_size += 5;
                         break;
                     }
                     case TypeIndex::Date32: {
-                        Int32 value = assert_cast<const ColumnVector<Int32> &>(*col).getData()[row_num];
-                        if (value == 0)
-                        {
-                            payload_size += 1; // length only, no other fields
-                        }
-                        else
-                        {
-                            payload_size += 5;
-                        }
+                        payload_size += 5;
                         break;
                     }
                     case TypeIndex::DateTime: {
                         UInt32 value = assert_cast<const ColumnVector<UInt32> &>(*col).getData()[row_num];
-                        if (value == 0)
+                        LocalDateTime ldt = LocalDateTime(value, DateLUT::instance(getDateTimeTimezone(*data_type)));
+
+                        bool has_time = !(ldt.hour() == 0 && ldt.minute() == 0 && ldt.second() == 0);
+                        if (has_time)
                         {
-                            payload_size += 1; // length only, no other fields
+                            payload_size += 8;
                         }
                         else
                         {
-                            LocalDateTime ldt = LocalDateTime(value, DateLUT::instance(getDateTimeTimezone(*data_type)));
-                            if (ldt.second() == 0 && ldt.minute() == 0 && ldt.hour() == 0)
-                            {
-                                payload_size += 5;
-                            }
-                            else
-                            {
-                                payload_size += 8;
-                            }
+                            payload_size += 5;
+                        }
+                        break;
+                    }
+                    case TypeIndex::DateTime64: {
+                        const auto * date_time_type = typeid_cast<const DataTypeDateTime64 *>(data_type.get());
+                        UInt32 scale = date_time_type->getScale();
+
+                        static constexpr UInt32 MaxScale = DecimalUtils::max_precision<DateTime64>;
+                        scale = scale > MaxScale ? MaxScale : scale;
+
+                        const auto dt64 = assert_cast<const ColumnDateTime64 &>(*col).getData()[row_num];
+                        auto components = DecimalUtils::split(dt64, scale);
+
+                        using T = typename DateTime64::NativeType;
+                        if (dt64.value < 0 && components.fractional)
+                        {
+                            components.fractional
+                                = DecimalUtils::scaleMultiplier<T>(scale) + (components.whole ? T(-1) : T(1)) * components.fractional;
+                            --components.whole;
+                        }
+                        if (scale > 6)
+                        {
+                            // MySQL Timestamp has max scale of 6
+                            components.fractional /= static_cast<int>(pow(10, scale - 6));
+                        }
+
+                        LocalDateTime ldt = LocalDateTime(components.whole, DateLUT::instance(getDateTimeTimezone(*data_type)));
+
+                        bool has_microseconds = components.fractional != 0;
+                        bool has_time = !(ldt.hour() == 0 && ldt.minute() == 0 && ldt.second() == 0);
+                        if (has_microseconds)
+                        {
+                            payload_size += 12;
+                        }
+                        else if (has_time)
+                        {
+                            payload_size += 8;
+                        }
+                        else
+                        {
+                            payload_size += 5;
                         }
                         break;
                     }
@@ -199,73 +221,133 @@ namespace MySQLProtocol
                     }
                     case TypeIndex::Date: {
                         UInt16 value = assert_cast<const ColumnVector<UInt16> &>(*col).getData()[row_num];
-                        if (value != 0)
-                        {
-                            LocalDate ld = LocalDate(DayNum(value));
-                            buffer.write(static_cast<char>(4)); // bytes_following
-                            auto year = ld.year();
-                            auto month = ld.month();
-                            auto day = ld.day();
-                            buffer.write(reinterpret_cast<const char *>(&year), 2);
-                            buffer.write(reinterpret_cast<const char *>(&month), 1);
-                            buffer.write(reinterpret_cast<const char *>(&day), 1);
-                        }
-                        else
-                        {
-                            buffer.write(static_cast<char>(0));
-                        }
+                        LocalDate ld = LocalDate(DayNum(value));
+                        buffer.write(static_cast<char>(4)); // bytes_following
+                        auto year = ld.year();
+                        auto month = ld.month();
+                        auto day = ld.day();
+                        buffer.write(reinterpret_cast<const char *>(&year), 2);
+                        buffer.write(reinterpret_cast<const char *>(&month), 1);
+                        buffer.write(reinterpret_cast<const char *>(&day), 1);
                         break;
                     }
                     case TypeIndex::Date32: {
                         Int32 value = assert_cast<const ColumnVector<Int32> &>(*col).getData()[row_num];
-                        if (value != 0)
-                        {
-                            LocalDate ld = LocalDate(ExtendedDayNum(value));
-                            buffer.write(static_cast<char>(4)); // bytes_following
-                            auto year = ld.year();
-                            auto month = ld.month();
-                            auto day = ld.day();
-                            buffer.write(reinterpret_cast<const char *>(&year), 2);
-                            buffer.write(reinterpret_cast<const char *>(&month), 1);
-                            buffer.write(reinterpret_cast<const char *>(&day), 1);
-                        }
-                        else
-                        {
-                            buffer.write(static_cast<char>(0));
-                        }
+                        LocalDate ld = LocalDate(ExtendedDayNum(value));
+                        buffer.write(static_cast<char>(4)); // bytes_following
+                        auto year = ld.year();
+                        auto month = ld.month();
+                        auto day = ld.day();
+                        buffer.write(reinterpret_cast<const char *>(&year), 2);
+                        buffer.write(reinterpret_cast<const char *>(&month), 1);
+                        buffer.write(reinterpret_cast<const char *>(&day), 1);
                         break;
                     }
                     case TypeIndex::DateTime: {
                         UInt32 value = assert_cast<const ColumnVector<UInt32> &>(*col).getData()[row_num];
-                        if (value != 0)
+                        String timezone = getDateTimeTimezone(*data_type);
+                        LocalDateTime ldt = LocalDateTime(value, DateLUT::instance(timezone));
+                        int year = ldt.year();
+                        int month = ldt.month();
+                        int day = ldt.day();
+                        int hour = ldt.hour();
+                        int minute = ldt.minute();
+                        int second = ldt.second();
+                        bool has_time = !(hour == 0 && minute == 0 && second == 0);
+                        size_t bytes_following = has_time ? 7 : 4;
+                        buffer.write(reinterpret_cast<const char *>(&bytes_following), 1);
+                        buffer.write(reinterpret_cast<const char *>(&year), 2);
+                        buffer.write(reinterpret_cast<const char *>(&month), 1);
+                        buffer.write(reinterpret_cast<const char *>(&day), 1);
+                        if (has_time)
                         {
-                            LocalDateTime ldt = LocalDateTime(value, DateLUT::instance(getDateTimeTimezone(*data_type)));
-                            int year = ldt.year();
-                            int month = ldt.month();
-                            int day = ldt.day();
-                            int hour = ldt.hour();
-                            int minute = ldt.minute();
-                            int second = ldt.second();
-                            bool has_time = !(hour == 0 && minute == 0 && second == 0);
-                            size_t bytes_following = has_time ? 7 : 4;
-                            buffer.write(reinterpret_cast<const char *>(&bytes_following), 1);
-                            buffer.write(reinterpret_cast<const char *>(&year), 2);
-                            buffer.write(reinterpret_cast<const char *>(&month), 1);
-                            buffer.write(reinterpret_cast<const char *>(&day), 1);
-                            if (has_time)
-                            {
-                                buffer.write(reinterpret_cast<const char *>(&hour), 1);
-                                buffer.write(reinterpret_cast<const char *>(&minute), 1);
-                                buffer.write(reinterpret_cast<const char *>(&second), 1);
-                            }
-                        }
-                        else
-                        {
-                            buffer.write(static_cast<char>(0));
+                            buffer.write(reinterpret_cast<const char *>(&hour), 1);
+                            buffer.write(reinterpret_cast<const char *>(&minute), 1);
+                            buffer.write(reinterpret_cast<const char *>(&second), 1);
                         }
                         break;
                     }
+                    case TypeIndex::DateTime64: {
+                        const auto * date_time_type = typeid_cast<const DataTypeDateTime64 *>(data_type.get());
+                        UInt32 scale = date_time_type->getScale();
 
+                        static constexpr UInt32 MaxScale = DecimalUtils::max_precision<DateTime64>;
+                        scale = scale > MaxScale ? MaxScale : scale;
+
+                        const auto dt64 = assert_cast<const ColumnDateTime64 &>(*col).getData()[row_num];
+                        auto components = DecimalUtils::split(dt64, scale);
+
+                        using T = typename DateTime64::NativeType;
+                        if (dt64.value < 0 && components.fractional)
+                        {
+                            components.fractional
+                                = DecimalUtils::scaleMultiplier<T>(scale) + (components.whole ? T(-1) : T(1)) * components.fractional;
+                            --components.whole;
+                        }
+
+                        if (components.fractional != 0)
+                        {
+                            if (scale > 6)
+                            {
+                                // MySQL Timestamp has max scale of 6
+                                components.fractional /= static_cast<int>(pow(10, scale - 6));
+                            }
+                            else
+                            {
+                                // fractional == 1 is a different microsecond value depending on the scale
+                                // Scale 1 = 100 000
+                                // Scale 2 = 010 000
+                                // Scale 3 = 001 000
+                                // Scale 4 = 000 100
+                                // Scale 5 = 000 010
+                                // Scale 6 = 000 001
+                                components.fractional *= static_cast<int>(pow(10, 6 - scale));
+                            }
+                        }
+
+                        String timezone = getDateTimeTimezone(*data_type);
+                        std::cout << "Timezone is " << timezone << std::endl;
+                        LocalDateTime ldt = LocalDateTime(components.whole, DateLUT::instance(timezone));
+                        auto year = ldt.year();
+                        auto month = ldt.month();
+                        auto day = ldt.day();
+                        auto hour = ldt.hour();
+                        auto minute = ldt.minute();
+                        auto second = ldt.second();
+
+                        bool has_time = !(hour == 0 && minute == 0 && second == 0);
+                        bool has_microseconds = components.fractional != 0;
+
+                        if (has_microseconds)
+                        {
+                            buffer.write(static_cast<char>(11)); // bytes_following
+                            buffer.write(reinterpret_cast<const char *>(&year), 2);
+                            buffer.write(reinterpret_cast<const char *>(&month), 1);
+                            buffer.write(reinterpret_cast<const char *>(&day), 1);
+                            buffer.write(reinterpret_cast<const char *>(&hour), 1);
+                            buffer.write(reinterpret_cast<const char *>(&minute), 1);
+                            buffer.write(reinterpret_cast<const char *>(&second), 1);
+                            buffer.write(reinterpret_cast<const char *>(&components.fractional), 4);
+                        }
+                        else if (has_time)
+                        {
+                            buffer.write(static_cast<char>(7)); // bytes_following
+                            buffer.write(reinterpret_cast<const char *>(&year), 2);
+                            buffer.write(reinterpret_cast<const char *>(&month), 1);
+                            buffer.write(reinterpret_cast<const char *>(&day), 1);
+                            buffer.write(reinterpret_cast<const char *>(&hour), 1);
+                            buffer.write(reinterpret_cast<const char *>(&minute), 1);
+                            buffer.write(reinterpret_cast<const char *>(&second), 1);
+                        }
+                        else
+                        {
+                            buffer.write(static_cast<char>(4)); // bytes_following
+                            buffer.write(reinterpret_cast<const char *>(&year), 2);
+                            buffer.write(reinterpret_cast<const char *>(&month), 1);
+                            buffer.write(reinterpret_cast<const char *>(&day), 1);
+                        }
+                        break;
+                    }
                     default:
                         writeLengthEncodedString(serialized[i], buffer);
                         break;
