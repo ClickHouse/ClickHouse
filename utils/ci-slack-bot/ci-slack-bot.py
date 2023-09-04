@@ -111,7 +111,7 @@ ALL_RECENT_FAILURES_QUERY = """
 WITH
     '{}' AS name_substr,
     90 AS interval_days,
-    ('Stateless tests (asan)', 'Stateless tests (address)', 'Stateless tests (address, actions)') AS backport_and_release_specific_checks
+    ('Stateless tests (asan)', 'Stateless tests (address)', 'Stateless tests (address, actions)', 'Integration tests (asan) [1/3]', 'Stateless tests (tsan) [1/3]') AS backport_and_release_specific_checks
 SELECT
     toStartOfDay(check_start_time) AS d,
     count(),

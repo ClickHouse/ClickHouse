@@ -66,10 +66,11 @@ void ReplaceQueryParameterVisitor::visitChildren(ASTPtr & ast)
 const String & ReplaceQueryParameterVisitor::getParamValue(const String & name)
 {
     auto search = query_parameters.find(name);
-    if (search != query_parameters.end())
-        return search->second;
-    else
+    if (search == query_parameters.end())
         throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Substitution {} is not set", backQuote(name));
+
+    ++num_replaced_parameters;
+    return search->second;
 }
 
 void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
@@ -131,6 +132,7 @@ void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
     if (ast_identifier->children.empty())
         return;
 
+    bool replaced_parameter = false;
     auto & name_parts = ast_identifier->name_parts;
     for (size_t i = 0, j = 0, size = name_parts.size(); i < size; ++i)
     {
@@ -138,8 +140,13 @@ void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
         {
             const auto & ast_param = ast_identifier->children[j++]->as<ASTQueryParameter &>();
             name_parts[i] = getParamValue(ast_param.name);
+            replaced_parameter = true;
         }
     }
+
+    /// Do not touch AST if there are no parameters
+    if (!replaced_parameter)
+        return;
 
     /// FIXME: what should this mean?
     if (!ast_identifier->semantic->special && name_parts.size() >= 2)

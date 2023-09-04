@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# shellcheck disable=SC1091
+# shellcheck disable=SC2034
+source /setup_export_logs.sh
+
 # fail on errors, verbose and export all env variables
 set -e -x -a
 
@@ -35,6 +39,8 @@ fi
 
 ./setup_minio.sh stateless
 ./setup_hdfs_minicluster.sh
+
+config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
@@ -92,7 +98,15 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     MAX_RUN_TIME=$((MAX_RUN_TIME != 0 ? MAX_RUN_TIME : 9000))    # set to 2.5 hours if 0 (unlimited)
 fi
 
-sleep 5
+
+# Wait for the server to start, but not for too long.
+for _ in {1..100}
+do
+    clickhouse-client --query "SELECT 1" && break
+    sleep 1
+done
+
+setup_logs_replication
 
 attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
 
@@ -218,10 +232,16 @@ do
     fi
 done
 
+data_path_config="--path=/var/lib/clickhouse/"
+if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
+    # We need s3 storage configuration (but it's more likely that clickhouse-local will fail for some reason)
+    data_path_config="--config-file=/etc/clickhouse-server/config.xml"
+fi
+
 # Also export trace log in flamegraph-friendly format.
 for trace_type in CPU Memory Real
 do
-    clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "
+    clickhouse-local "data_path_config" --only-system-tables -q "
             select
                 arrayStringConcat((arrayMap(x -> concat(splitByChar('/', addressToLine(x))[-1], '#', demangle(addressToSymbol(x)) ), trace)), ';') AS stack,
                 count(*) AS samples

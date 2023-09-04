@@ -8,6 +8,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
+#include <Backups/SettingsFieldOptionalString.h>
 
 
 namespace DB
@@ -162,8 +163,10 @@ namespace
     M(Bool, allow_unresolved_access_dependencies) \
     M(RestoreUDFCreationMode, create_function) \
     M(Bool, allow_s3_native_copy) \
+    M(Bool, use_same_s3_credentials_for_base_backup) \
     M(Bool, internal) \
     M(String, host_id) \
+    M(OptionalString, storage_policy) \
     M(OptionalUUID, restore_uuid)
 
 
