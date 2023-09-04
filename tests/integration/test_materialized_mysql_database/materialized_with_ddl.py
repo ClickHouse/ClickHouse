@@ -1249,7 +1249,7 @@ def err_sync_user_privs_with_materialized_mysql_database(
     )
     assert "priv_err_db" in clickhouse_node.query("SHOW DATABASES")
     assert "test_table_1" not in clickhouse_node.query("SHOW TABLES FROM priv_err_db")
-    clickhouse_node.query_with_retry("DETACH DATABASE priv_err_db")
+    clickhouse_node.query_with_retry("DETACH DATABASE priv_err_db SYNC")
 
     mysql_node.query("REVOKE SELECT ON priv_err_db.* FROM 'test'@'%'")
     time.sleep(3)
@@ -1442,7 +1442,7 @@ def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_nam
             time.sleep(sleep_time)
             clickhouse_node.query("SELECT * FROM test_database.test_table")
 
-    clickhouse_node.query_with_retry("DETACH DATABASE test_database")
+    clickhouse_node.query_with_retry("DETACH DATABASE test_database SYNC")
     clickhouse_node.query("ATTACH DATABASE test_database")
     check_query(
         clickhouse_node,
@@ -1506,7 +1506,7 @@ def mysql_killed_while_insert(clickhouse_node, mysql_node, service_name):
 
         mysql_node.alloc_connection()
 
-        clickhouse_node.query_with_retry("DETACH DATABASE kill_mysql_while_insert")
+        clickhouse_node.query_with_retry("DETACH DATABASE kill_mysql_while_insert SYNC")
         clickhouse_node.query("ATTACH DATABASE kill_mysql_while_insert")
 
         result = mysql_node.query_and_get_data(
@@ -2592,6 +2592,20 @@ def named_collections(clickhouse_node, mysql_node, service_name):
         f"/* expect: (1, 'a', 1), (2, 'b', 2) */ SELECT * FROM {db}.t1",
         "1\ta\t1\n2\tb\t2\n",
     )
+    clickhouse_node.query(f"ALTER NAMED COLLECTION {db} SET port=9999")
+    clickhouse_node.query_with_retry(f"DETACH DATABASE {db} SYNC")
+    mysql_node.query(f"INSERT INTO {db}.t1 VALUES (3, 'c', 3)")
+    assert "ConnectionFailed:" in clickhouse_node.query_and_get_error(
+        f"ATTACH DATABASE {db}"
+    )
+    clickhouse_node.query(f"ALTER NAMED COLLECTION {db} SET port=3306")
+    clickhouse_node.query(f"ATTACH DATABASE {db}")
+    check_query(
+        clickhouse_node,
+        f"/* expect: (1, 'a', 1), (2, 'b', 2), (3, 'c', 3) */ SELECT * FROM {db}.t1",
+        "1\ta\t1\n2\tb\t2\n3\tc\t3\n",
+    )
+
     clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
     mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
 
@@ -2623,3 +2637,37 @@ def create_table_as_select(clickhouse_node, mysql_node, service_name):
 
     clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
     mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+
+
+def table_with_indexes(clickhouse_node, mysql_node, service_name):
+    db = "table_with_indexes"
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db}")
+
+    mysql_node.query(
+        f"CREATE TABLE {db}.t1(id INT NOT NULL PRIMARY KEY,"
+        f"data varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL) ENGINE = InnoDB"
+    )
+
+    mysql_node.query(f"INSERT INTO {db}.t1 VALUES(1, 'some test string 1')")
+    mysql_node.query(f"INSERT INTO {db}.t1 VALUES(2, 'some test string 2')")
+
+    clickhouse_node.query(
+        f"""
+        CREATE DATABASE {db} ENGINE = MaterializeMySQL('{service_name}:3306', '{db}', 'root', 'clickhouse')
+        TABLE OVERRIDE t1 (COLUMNS (
+            INDEX data_idx data TYPE ngrambf_v1(5, 65536, 4, 0) GRANULARITY 1
+        ))
+        """
+    )
+
+    check_query(
+        clickhouse_node,
+        "SELECT data_uncompressed_bytes FROM system.data_skipping_indices WHERE "
+        "database = 'table_with_indexes' and table = 't1' and name = 'data_idx'",
+        "65536\n",
+    )
+
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")

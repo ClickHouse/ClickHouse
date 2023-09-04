@@ -110,6 +110,9 @@ using CustomizeCountDistinctVisitor = InDepthNodeVisitor<OneTypeMatcher<Customiz
 char countifdistinct[] = "countifdistinct";
 using CustomizeCountIfDistinctVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<countifdistinct>>, true>;
 
+char countdistinctif[] = "countdistinctif";
+using CustomizeCountDistinctIfVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<countdistinctif>>, true>;
+
 char in[] = "in";
 using CustomizeInVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<in>>, true>;
 
@@ -385,6 +388,44 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
     else
         return;
 
+    NameSet required_by_interpolate;
+
+    if (select_query->interpolate())
+    {
+        auto & children = select_query->interpolate()->children;
+        if (!children.empty())
+        {
+            NameToNameSetMap expressions;
+
+            auto interpolate_visitor = [](const ASTPtr ast, NameSet & columns) -> void
+            {
+                auto interpolate_visitor_impl = [](const ASTPtr node, NameSet & cols, auto self) -> void
+                {
+                    if (const auto * ident = node->as<ASTIdentifier>())
+                        cols.insert(ident->name());
+                    else if (const auto * func = node->as<ASTFunction>())
+                        for (const auto & elem : func->arguments->children)
+                            self(elem, cols, self);
+                };
+                interpolate_visitor_impl(ast, columns, interpolate_visitor_impl);
+            };
+
+            for (const auto & elem : children)
+            {
+                if (auto * interpolate = elem->as<ASTInterpolateElement>())
+                {
+                    NameSet needed_columns;
+                    interpolate_visitor(interpolate->expr, needed_columns);
+                    expressions.emplace(interpolate->column, std::move(needed_columns));
+                }
+            }
+
+            for (const auto & name : required_result_columns)
+                if (const auto it = expressions.find(name); it != expressions.end())
+                    required_by_interpolate.insert(it->second.begin(), it->second.end());
+        }
+    }
+
     ASTs new_elements;
     new_elements.reserve(elements.size());
 
@@ -399,6 +440,11 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
         {
             new_elements.push_back(elem);
             --it->second;
+        }
+        else if (required_by_interpolate.contains(name))
+        {
+            /// Columns required by interpolate expression are not always in the required_result_columns
+            new_elements.push_back(elem);
         }
         else if (select_query->distinct || hasArrayJoin(elem))
         {
@@ -1367,6 +1413,12 @@ void TreeRewriter::normalize(
 
     CustomizeIfDistinctVisitor::Data data_distinct_if{"DistinctIf"};
     CustomizeIfDistinctVisitor(data_distinct_if).visit(query);
+
+    if (settings.rewrite_count_distinct_if_with_count_distinct_implementation)
+    {
+        CustomizeCountDistinctIfVisitor::Data data_count_distinct_if{settings.count_distinct_implementation.toString() + "If"};
+        CustomizeCountDistinctIfVisitor(data_count_distinct_if).visit(query);
+    }
 
     ExistsExpressionVisitor::Data exists;
     ExistsExpressionVisitor(exists).visit(query);

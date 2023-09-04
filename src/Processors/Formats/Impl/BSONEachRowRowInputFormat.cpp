@@ -372,6 +372,9 @@ void BSONEachRowRowInputFormat::readArray(IColumn & column, const DataTypePtr & 
     size_t document_start = in->count();
     BSONSizeT document_size;
     readBinary(document_size, *in);
+    if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
+
     while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
     {
         auto nested_bson_type = getBSONType(readBSONType(*in));
@@ -399,6 +402,9 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
     size_t document_start = in->count();
     BSONSizeT document_size;
     readBinary(document_size, *in);
+    if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
+
     while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
     {
         auto nested_bson_type = getBSONType(readBSONType(*in));
@@ -457,6 +463,9 @@ void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & da
     size_t document_start = in->count();
     BSONSizeT document_size;
     readBinary(document_size, *in);
+    if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
+
     while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
     {
         auto nested_bson_type = getBSONType(readBSONType(*in));
@@ -696,6 +705,8 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         {
             BSONSizeT size;
             readBinary(size, in);
+            if (size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", size);
             in.ignore(size - sizeof(size));
             break;
         }
@@ -735,6 +746,8 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         {
             BSONSizeT size;
             readBinary(size, in);
+            if (size < sizeof(BSONSizeT))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid java code_w_scope size: {}", size);
             in.ignore(size - sizeof(size));
             break;
         }
@@ -775,6 +788,9 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
 
     current_document_start = in->count();
     readBinary(current_document_size, *in);
+    if (current_document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", current_document_size);
+
     while (in->count() - current_document_start + sizeof(BSON_DOCUMENT_END) != current_document_size)
     {
         auto type = getBSONType(readBSONType(*in));
@@ -822,6 +838,22 @@ void BSONEachRowRowInputFormat::resetParser()
     prev_positions.clear();
 }
 
+size_t BSONEachRowRowInputFormat::countRows(size_t max_block_size)
+{
+    size_t num_rows = 0;
+    BSONSizeT document_size;
+    while (!in->eof() && num_rows < max_block_size)
+    {
+        readBinary(document_size, *in);
+        if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
+        in->ignore(document_size - sizeof(BSONSizeT));
+        ++num_rows;
+    }
+
+    return num_rows;
+}
+
 BSONEachRowSchemaReader::BSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & settings_)
     : IRowWithNamesSchemaReader(in_, settings_)
 {
@@ -865,7 +897,7 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
             in.ignore(size);
             return std::make_shared<DataTypeString>();
         }
-        case BSONType::OBJECT_ID:;
+        case BSONType::OBJECT_ID:
         {
             in.ignore(BSON_OBJECT_ID_SIZE);
             return makeNullable(std::make_shared<DataTypeFixedString>(BSON_OBJECT_ID_SIZE));

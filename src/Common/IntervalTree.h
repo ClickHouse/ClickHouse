@@ -3,8 +3,8 @@
 #include <base/defines.h>
 #include <base/sort.h>
 
-#include <vector>
 #include <utility>
+#include <vector>
 
 
 namespace DB
@@ -119,7 +119,8 @@ public:
         return true;
     }
 
-    template <typename TValue = Value, std::enable_if_t<!std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true, typename... Args>
+    template <typename TValue = Value, bool = true, typename... Args>
+    requires(!std::is_same_v<TValue, IntervalTreeVoidValue>)
     ALWAYS_INLINE bool emplace(Interval interval, Args &&... args)
     {
         assert(!tree_is_built);

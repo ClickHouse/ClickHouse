@@ -60,6 +60,7 @@ public:
 
     ~GraceHashJoin() override;
 
+    std::string getName() const override { return "GraceHashJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     void initialize(const Block & sample_block) override;

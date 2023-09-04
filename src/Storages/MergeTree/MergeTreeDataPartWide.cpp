@@ -29,7 +29,7 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
 
 IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
     const NamesAndTypesList & columns_to_read,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     const MarkRanges & mark_ranges,
     UncompressedCache * uncompressed_cache,
     MarkCache * mark_cache,
@@ -41,7 +41,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
     auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
     return std::make_unique<MergeTreeReaderWide>(
         read_info, columns_to_read,
-        metadata_snapshot, uncompressed_cache,
+        storage_snapshot, uncompressed_cache,
         mark_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback);
 }
@@ -130,13 +130,13 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
             MarkInCompressedFile mark;
             size_t granularity;
 
-            readBinary(mark.offset_in_compressed_file, *marks_reader);
-            readBinary(mark.offset_in_decompressed_block, *marks_reader);
+            readBinaryLittleEndian(mark.offset_in_compressed_file, *marks_reader);
+            readBinaryLittleEndian(mark.offset_in_decompressed_block, *marks_reader);
             ++marks_count;
 
             if (index_granularity_info_.mark_type.adaptive)
             {
-                readIntBinary(granularity, *marks_reader);
+                readBinaryLittleEndian(granularity, *marks_reader);
                 index_granularity_.appendMark(granularity);
             }
         }
