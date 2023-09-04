@@ -1147,14 +1147,13 @@ public:
                 {
                     if (files_iterator->isReadFromArchive())
                     {
-                        struct stat file_stat;
                         if (files_iterator->isSingleFileReadFromArchive())
                         {
                             auto archive = files_iterator->next();
                             if (archive.empty())
                                 return {};
 
-                            file_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
+                            auto file_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
                             if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
                                 continue;
 
@@ -1168,6 +1167,9 @@ public:
                             read_buf = archive_reader->readFile(*filename_override, /*throw_on_not_found=*/false);
                             if (!read_buf)
                                 continue;
+
+                            if (auto progress_callback = context->getFileProgressCallback())
+                                progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
                         }
                         else
                         {
@@ -1179,8 +1181,8 @@ public:
                                     if (archive.empty())
                                         return {};
 
-                                    file_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
-                                    if (context->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
+                                    current_archive_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
+                                    if (context->getSettingsRef().engine_file_skip_empty_files && current_archive_stat.st_size == 0)
                                         continue;
 
                                     archive_reader = createArchiveReader(archive);
@@ -1209,10 +1211,12 @@ public:
 
                             chassert(file_enumerator);
                             current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
-                            if (need_only_count && tryGetCountFromCache(file_stat))
+                            if (need_only_count && tryGetCountFromCache(current_archive_stat))
                                 continue;
 
                             read_buf = archive_reader->readFile(std::move(file_enumerator));
+                            if (auto progress_callback = context->getFileProgressCallback())
+                                progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
                         }
                     }
                     else
@@ -1358,6 +1362,7 @@ private:
     StorageSnapshotPtr storage_snapshot;
     FilesIteratorPtr files_iterator;
     String current_path;
+    struct stat current_archive_stat;
     std::optional<String> filename_override;
     Block sample_block;
     std::unique_ptr<ReadBuffer> read_buf;
@@ -1438,7 +1443,7 @@ Pipe StorageFile::read(
     /// Set total number of bytes to process. For progress bar.
     auto progress_callback = context->getFileProgressCallback();
 
-    if (progress_callback)
+    if (progress_callback && !archive_info)
         progress_callback(FileProgress(0, total_bytes_to_read));
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
