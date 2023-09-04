@@ -900,7 +900,10 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
         if (arguments.size() > 1)
             time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
         else if (arguments.size() == 1)
-            time_zone = &DateLUT::instance();
+        {
+            auto non_null_args = createBlockWithNestedColumns(arguments);
+            time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0);
+        }
 
         if constexpr (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>)
             time_zone = &DateLUT::instance();
