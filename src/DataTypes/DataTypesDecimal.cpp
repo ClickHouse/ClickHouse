@@ -81,14 +81,14 @@ SerializationPtr DataTypeDecimal<T>::doGetDefaultSerialization() const
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 2)
-        throw Exception(
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Decimal data type family must have exactly two arguments: precision and scale");
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Decimal data type family must have exactly two arguments: precision and scale");
 
     const auto * precision = arguments->children[0]->as<ASTLiteral>();
     const auto * scale = arguments->children[1]->as<ASTLiteral>();
 
-    if (!precision || precision->value.getType() != Field::Types::UInt64 || !scale
-        || !(scale->value.getType() == Field::Types::Int64 || scale->value.getType() == Field::Types::UInt64))
+    if (!precision || precision->value.getType() != Field::Types::UInt64 ||
+        !scale || !(scale->value.getType() == Field::Types::Int64 || scale->value.getType() == Field::Types::UInt64))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Decimal data type family must have two numbers as its arguments");
 
     UInt64 precision_value = precision->value.get<UInt64>();
@@ -101,15 +101,13 @@ template <typename T>
 static DataTypePtr createExact(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
-        throw Exception(
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Decimal32 | Decimal64 | Decimal128 | Decimal256 data type family must have exactly one arguments: scale");
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+        "Decimal32 | Decimal64 | Decimal128 | Decimal256 data type family must have exactly one arguments: scale");
     const auto * scale_arg = arguments->children[0]->as<ASTLiteral>();
 
     if (!scale_arg || !(scale_arg->value.getType() == Field::Types::Int64 || scale_arg->value.getType() == Field::Types::UInt64))
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Decimal32 | Decimal64 | Decimal128 | Decimal256 data type family must have a one number as its argument");
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+        "Decimal32 | Decimal64 | Decimal128 | Decimal256 data type family must have a one number as its argument");
 
     UInt64 precision = DecimalUtils::max_precision<T>;
     UInt64 scale = scale_arg->value.get<UInt64>();
