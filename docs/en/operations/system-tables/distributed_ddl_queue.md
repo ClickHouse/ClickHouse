@@ -19,7 +19,7 @@ Columns:
 - `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — Host Port.
 - `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Status of the query.
 - `exception_code` ([Enum8](../../sql-reference/data-types/enum.md)) — Exception code.
-- `exception_text` ([Nullable(String)](../../sql-reference/data-types/string.md)) - Exception error
+- `exception_text` ([Nullable(String)](../../sql-reference/data-types/string.md)) - Exception message
 - `query_finish_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Query finish time.
 - `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Duration of query execution (in milliseconds).
 
