@@ -959,7 +959,7 @@ extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
 
     if (!isClickhouseApp("local", argv))
     {
-        std::cerr << "\033[31m" << "ClickHouse compiled in fuzzing mode, only clickhouse client is available." << "\033[0m" << std::endl;
+        std::cerr << "\033[31m" << "ClickHouse compiled in fuzzing mode, only clickhouse local is available." << "\033[0m" << std::endl;
         exit(1);
     }
 
