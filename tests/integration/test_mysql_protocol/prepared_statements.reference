@@ -74,8 +74,8 @@ m type is CHAR, value: {'qux':144,'text':255}
 Row #1
 d type is DATE, value: 1970-01-01
 d32 type is DATE, value: 1900-01-01
-dt type is TIMESTAMP, value: 1970-01-01 01:00:00.0
-dt64_3 type is TIMESTAMP, value: 1900-01-01 00:00:00.0
+dt type is TIMESTAMP, value: 1970-01-01 00:00:00.0
+dt64_3 type is TIMESTAMP, value: 1900-01-01 00:00:00.001
 dt64_6 type is TIMESTAMP, value: 1900-01-01 00:00:00.000001
 dt64_9 type is TIMESTAMP, value: 1900-01-01 00:00:00.0
 Row #2

@@ -73,7 +73,7 @@ CREATE TABLE ps_date_types
 (
     d      Date,
     d32    Date32,
-    dt     DateTime,
+    dt     DateTime('UTC'),
     dt64_3 DateTime64(3, 'UTC'),
     dt64_6 DateTime64(6, 'UTC'),
     dt64_9 DateTime64(9, 'UTC')
@@ -115,3 +115,13 @@ VALUES ('2022-04-13 03:17:45',
         '2022-04-13 03:17:45.00001',
         '2022-04-13 03:17:45.0000001',
         '2022-04-13 03:17:45.00000001');
+
+CREATE TABLE ps_datetime_timezones
+(
+    dt     DateTime('Europe/Amsterdam'),
+    dt64_3 DateTime64(3, 'Asia/Shanghai')
+) ENGINE MergeTree ORDER BY dt;
+
+INSERT INTO ps_datetime_timezones
+VALUES ('2022-09-04 20:31:05', '2022-09-04 20:31:05.022'),
+       ('1970-01-01 00:00:00', '1969-12-31 16:00:00');
