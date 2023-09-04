@@ -1601,15 +1601,14 @@ struct ConvertImplGenericFromString
                 {
                     serialization_from.deserializeWholeText(column_to, read_buffer, format_settings);
                 }
-                catch (Exception &)
+                catch (const Exception & e)
                 {
-                    if (auto * nullable_column = typeid_cast<ColumnNullable *>(&column_to))
+                    if (e.code() == ErrorCodes::CANNOT_PARSE_BOOL && typeid_cast<ColumnNullable *>(&column_to))
                     {
                         column_to.insertDefault();
                         continue;
                     }
-                    else
-                        throw;
+                    throw;
                 }
 
                 if (!read_buffer.eof())
