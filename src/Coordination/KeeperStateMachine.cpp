@@ -271,8 +271,6 @@ bool KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
     if (op_num == Coordination::OpNum::SessionID || op_num == Coordination::OpNum::Reconfig)
         return true;
 
-    std::lock_guard lock(storage_and_responses_lock);
-
     if (storage->isFinalized())
         return false;
 
@@ -422,7 +420,6 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             parsed_request_cache.erase(request_for_session->session_id);
         }
 
-        std::lock_guard lock(storage_and_responses_lock);
         KeeperStorage::ResponsesForSessions responses_for_sessions
             = storage->processRequest(request_for_session->request, request_for_session->session_id, request_for_session->zxid);
         for (auto & response_for_session : responses_for_sessions)

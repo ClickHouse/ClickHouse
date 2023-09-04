@@ -142,7 +142,7 @@ private:
     CoordinationSettingsPtr coordination_settings;
 
     /// Main state machine logic
-    KeeperStoragePtr storage TSA_PT_GUARDED_BY(storage_and_responses_lock);
+    KeeperStoragePtr storage;
 
     /// Save/Load and Serialize/Deserialize logic for snapshots.
     KeeperSnapshotManager snapshot_manager;

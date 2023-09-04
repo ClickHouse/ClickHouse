@@ -147,7 +147,7 @@ int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, Poco::L
     return max_zxid;
 }
 
-void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::string & snapshot_path, Poco::Logger * log)
+void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::string & snapshot_path, Poco::Logger * log) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     LOG_INFO(log, "Deserializing storage snapshot {}", snapshot_path);
     int64_t zxid = getZxidFromName(snapshot_path);
@@ -474,7 +474,7 @@ bool hasErrorsInMultiRequest(Coordination::ZooKeeperRequestPtr request)
 
 }
 
-bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, Poco::Logger * /*log*/)
+bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, Poco::Logger * /*log*/) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     int64_t checksum;
     Coordination::read(checksum, in);
@@ -553,7 +553,7 @@ void deserializeLogAndApplyToStorage(KeeperStorage & storage, const std::string 
     LOG_INFO(log, "Finished {} deserialization, totally read {} records", log_path, counter);
 }
 
-void deserializeLogsAndApplyToStorage(KeeperStorage & storage, const std::string & path, Poco::Logger * log)
+void deserializeLogsAndApplyToStorage(KeeperStorage & storage, const std::string & path, Poco::Logger * log) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     namespace fs = std::filesystem;
     std::map<int64_t, std::string> existing_logs;
