@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 
-# A trivial stateless slack bot that notifies about new broken tests in ClickHouse CI.
-# It checks what happened to our CI during the last check_period hours (1 hour) and notifies us in slack if necessary.
-# This script should be executed once each check_period hours (1 hour).
-# It will post duplicate messages if you run it more often; it will lose some messages if you run it less often.
-#
-# You can run it locally with no arguments, it will work in a dry-run mode. Or you can set your own SLACK_URL_DEFAULT.
-# Feel free to add more checks, more details to messages, or better heuristics.
-# NOTE There's no deployment automation for now,
-# an AWS Lambda (slack-ci-bot-test lambda in CI-CD) has to be updated manually after changing this script.
-#
-# See also: https://aretestsgreenyet.com/
+"""
+A trivial stateless slack bot that notifies about new broken tests in ClickHouse CI.
+It checks what happened to our CI during the last check_period hours (1 hour) and
+  notifies us in slack if necessary.
+This script should be executed once each check_period hours (1 hour).
+It will post duplicate messages if you run it more often; it will lose some messages
+  if you run it less often.
+
+You can run it locally with no arguments, it will work in a dry-run mode.
+  Or you can set your own SLACK_URL_DEFAULT.
+Feel free to add more checks, more details to messages, or better heuristics.
+
+See also: https://aretestsgreenyet.com/
+"""
 
 import os
 import json
@@ -29,7 +32,8 @@ REPORT_NO_FAILURES_PROBABILITY = 0.99
 
 MAX_TESTS_TO_REPORT = 4
 
-# Slack has a stupid limitation on message size, it splits long messages into multiple ones breaking formatting
+# Slack has a stupid limitation on message size, it splits long messages into multiple,
+# ones breaking formatting
 MESSAGE_LENGTH_LIMIT = 4000
 
 # Find tests that failed in master during the last check_period * 24 hours,
