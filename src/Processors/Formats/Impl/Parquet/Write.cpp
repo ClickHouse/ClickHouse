@@ -605,7 +605,7 @@ void writeColumnImpl(
 
         if (use_dictionary)
         {
-            dict_encoded_pages.push_back({.header = std::move(header)});
+            dict_encoded_pages.push_back({.header = std::move(header), .data = {}});
             std::swap(dict_encoded_pages.back().data, compressed);
         }
         else
