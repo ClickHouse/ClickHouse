@@ -12,9 +12,9 @@ class ASTFunction;
 class ASTStatisticDeclaration : public IAST
 {
 public:
-    String name;
-    IAST * columns;
-    ASTFunction * type;
+    String column_name;
+    /// We do not support to set bucket number for tdigest
+    String type;
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Stat"; }

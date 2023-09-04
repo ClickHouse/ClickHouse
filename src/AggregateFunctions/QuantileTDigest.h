@@ -345,7 +345,7 @@ public:
 
         for (const auto & c : centroids)
         {
-            std::cerr << "c "<< c.mean << " "<< c.count << std::endl;
+            /// std::cerr << "c "<< c.mean << " "<< c.count << std::endl;
             Float64 current_x = sum + c.count * 0.5;
             if (c.mean >= value)
             {
@@ -355,12 +355,13 @@ public:
 
                 Float64 left = prev_x + 0.5 * (prev_count == 1);
                 Float64 right = current_x - 0.5 * (c.count == 1);
-                return checkOverflow<Float64>(interpolate(
+                Float64 result = checkOverflow<Float64>(interpolate(
                     static_cast<Value>(value),
                     prev_mean,
                     static_cast<Value>(left),
                     c.mean,
                     static_cast<Value>(right)));
+                return result;
             }
             sum += c.count;
             prev_mean = c.mean;

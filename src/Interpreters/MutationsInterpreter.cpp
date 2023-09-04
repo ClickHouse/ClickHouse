@@ -728,13 +728,13 @@ void MutationsInterpreter::prepare(bool dry_run)
                     std::cbegin(statistics_desc), std::end(statistics_desc),
                     [&](const StatisticDescription & statistic)
                     {
-                        return statistic.name == command.statistic_name;
+                        return statistic.column_name == command.statistic_column_name;
                     });
             if (it == std::cend(statistics_desc))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statistic: {}", command.statistic_name);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statistic column: {}", command.statistic_column_name);
 
             dependencies.emplace(it->column_name, ColumnDependency::STATISTIC);
-            materialized_statistics.emplace(command.statistic_name);
+            materialized_statistics.emplace(command.statistic_column_name);
         }
         else if (command.type == MutationCommand::MATERIALIZE_PROJECTION)
         {
@@ -755,7 +755,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::DROP_STATISTIC)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
-            materialized_statistics.erase(command.statistic_name);
+            materialized_statistics.erase(command.statistic_column_name);
         }
         else if (command.type == MutationCommand::DROP_PROJECTION)
         {

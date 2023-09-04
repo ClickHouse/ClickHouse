@@ -12,23 +12,19 @@ ASTPtr ASTStatisticDeclaration::clone() const
 {
     auto res = std::make_shared<ASTStatisticDeclaration>();
 
-    res->name = name;
+    res->column_name = column_name;
+    res->type = type;
 
-    if (columns)
-        res->set(res->columns, columns->clone());
-    if (type)
-        res->set(res->type, type->clone());
-    return std::move(res);
+    return res;
 }
 
 
-void ASTStatisticDeclaration::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTStatisticDeclaration::formatImpl(const FormatSettings & s, FormatState &, FormatStateStacked) const
 {
-    s.ostr << backQuoteIfNeed(name);
+    s.ostr << backQuoteIfNeed(column_name);
     s.ostr << " ";
-    columns->formatImpl(s, state, frame);
     s.ostr << (s.hilite ? hilite_keyword : "") << " TYPE " << (s.hilite ? hilite_none : "");
-    type->formatImpl(s, state, frame);
+    s.ostr << backQuoteIfNeed(type);
 }
 
 }

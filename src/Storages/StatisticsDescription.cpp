@@ -25,35 +25,20 @@ StatisticDescription StatisticDescription::getStatisticFromAST(const ASTPtr & de
     if (!stat_definition)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create statistic from non ASTStatisticDeclaration AST");
 
-    if (stat_definition->name.empty())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Statistic must have name in definition.");
-
-    // type == nullptr => auto
-    if (!stat_definition->type)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "TYPE is required for statistics");
-
-    if (stat_definition->type->parameters && !stat_definition->type->parameters->children.empty())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Statistics type cannot have parameters");
-
     StatisticDescription stat;
     stat.definition_ast = definition_ast->clone();
-    stat.name = stat_definition->name;
-    stat.type = Poco::toLower(stat_definition->type->name);
+    stat.type = Poco::toLower(stat_definition->type);
+    if (stat.type != "tdigest")
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Incorrect type name {}", stat.type);
+    String column_name = stat_definition->column_name;
 
-    ASTPtr expr_list = extractKeyExpressionList(stat_definition->columns->clone());
-    if (expr_list->children.size() != 1)
-    {
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Statistic must contain exactly one column");
-    }
-    for (const auto & ast : expr_list->children)
-    {
-        ASTIdentifier* ident = ast->as<ASTIdentifier>();
-        if (!ident || !columns.hasPhysical(ident->getColumnName()))
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Incorrect column");
-        const auto & column = columns.get(ident->getColumnName());
-        stat.column_name = column.name;
-        stat.data_type = column.type;
-    }
+    if (!columns.hasPhysical(column_name))
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Incorrect column name {}", column_name);
+
+    const auto & column = columns.getPhysical(column_name);
+    stat.column_name = column.name;
+    /// TODO: check if it is numeric.
+    stat.data_type = column.type;
 
     UNUSED(context);
 
@@ -62,7 +47,6 @@ StatisticDescription StatisticDescription::getStatisticFromAST(const ASTPtr & de
 
 StatisticDescription::StatisticDescription(const StatisticDescription & other)
     : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
-    , name(other.name)
     , type(other.type)
     , column_name(other.column_name)
     , data_type(other.data_type)
@@ -79,7 +63,6 @@ StatisticDescription & StatisticDescription::operator=(const StatisticDescriptio
     else
         definition_ast.reset();
 
-    name = other.name;
     type = other.type;
     column_name = other.column_name;
     data_type = other.data_type;
@@ -91,7 +74,7 @@ StatisticDescription & StatisticDescription::operator=(const StatisticDescriptio
 bool StatisticsDescriptions::has(const String & name) const
 {
     for (const auto & statistic : *this)
-        if (statistic.name == name)
+        if (statistic.column_name == name)
             return true;
     return false;
 }

@@ -206,20 +206,12 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD STATISTIC " << (if_not_exists ? "IF NOT EXISTS " : "")
                       << (settings.hilite ? hilite_none : "");
         statistic_decl->formatImpl(settings, state, frame);
-
-        if (first)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FIRST " << (settings.hilite ? hilite_none : "");
-        else if (statistic) /// AFTER
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " AFTER " << (settings.hilite ? hilite_none : "");
-            statistic->formatImpl(settings, state, frame);
-        }
     }
     else if (type == ASTAlterCommand::DROP_STATISTIC)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << (clear_statistic ? "CLEAR " : "DROP ") << "INDEX "
                       << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
-        statistic->formatImpl(settings, state, frame);
+        statistic_decl->formatImpl(settings, state, frame);
         if (partition)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
@@ -229,7 +221,7 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     else if (type == ASTAlterCommand::MATERIALIZE_STATISTIC)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "MATERIALIZE STATISTIC " << (settings.hilite ? hilite_none : "");
-        statistic->formatImpl(settings, state, frame);
+        statistic_decl->formatImpl(settings, state, frame);
         if (partition)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");

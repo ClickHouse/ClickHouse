@@ -121,8 +121,8 @@ struct AlterCommand
     String projection_name;
 
     ASTPtr statistic_decl = nullptr;
-    String after_statistic_name;
-    String statistic_name;
+    String statistic_column_name;
+    String statistic_type;
 
     /// For MODIFY TTL
     ASTPtr ttl = nullptr;

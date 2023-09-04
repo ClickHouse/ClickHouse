@@ -134,7 +134,6 @@ public:
     ASTPtr projection;
 
     ASTPtr statistic_decl;
-    ASTPtr statistic;
 
     /** Used in DROP PARTITION, ATTACH PARTITION FROM, UPDATE, DELETE queries.
      *  The value or ID of the partition is stored here.

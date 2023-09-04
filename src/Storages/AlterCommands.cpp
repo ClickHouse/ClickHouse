@@ -242,13 +242,10 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         const auto & ast_stat_decl = command_ast->statistic_decl->as<ASTStatisticDeclaration &>();
 
-        command.statistic_name = ast_stat_decl.name;
-
-        if (command_ast->statistic)
-            command.after_statistic_name = command_ast->statistic->as<ASTIdentifier &>().name();
+        command.statistic_column_name = ast_stat_decl.column_name;
+        command.statistic_type = ast_stat_decl.type;
 
         command.if_not_exists = command_ast->if_not_exists;
-        command.first = command_ast->first;
 
         return command;
     }
@@ -316,7 +313,10 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::DROP_STATISTIC;
-        command.statistic_name = command_ast->statistic->as<ASTIdentifier &>().name();
+        const auto & ast_stat_decl = command_ast->statistic_decl->as<ASTStatisticDeclaration &>();
+
+        command.statistic_column_name = ast_stat_decl.column_name;
+        command.statistic_type = ast_stat_decl.type;
         command.if_exists = command_ast->if_exists;
         command.clear = command_ast->clear_statistic;
 
@@ -589,18 +589,15 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == ADD_STATISTIC)
     {
-        if (std::any_of(
+        if (!if_not_exists && std::any_of(
                 metadata.statistics.cbegin(),
                 metadata.statistics.cend(),
                 [this](const auto & statistic)
                 {
-                    return statistic.name == statistic_name;
+                    return statistic.column_name == statistic_column_name && statistic.type == statistic_type;
                 }))
         {
-            if (if_not_exists)
-                return;
-            else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add statistic {} : statistic with this name already exists", statistic_name);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add statistic {} with type {}: statistic on this column with this type already exists", statistic_column_name, statistic_type);
         }
 
         auto insert_it = metadata.statistics.end();
@@ -608,22 +605,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         /// insert the index in the beginning of the indices list
         if (first)
             insert_it = metadata.statistics.begin();
-
-        if (!after_statistic_name.empty())
-        {
-            insert_it = std::find_if(
-                    metadata.statistics.begin(),
-                    metadata.statistics.end(),
-                    [this](const auto & statistic)
-                    {
-                        return statistic.name == after_statistic_name;
-                    });
-
-            if (insert_it == metadata.statistics.end())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong statistic name. Cannot find statistic {} to insert after", backQuote(after_statistic_name));
-
-            ++insert_it;
-        }
 
         metadata.statistics.emplace(insert_it, StatisticDescription::getStatisticFromAST(statistic_decl, metadata.columns, context));
     }
@@ -636,14 +617,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                     metadata.statistics.end(),
                     [this](const auto & statistic)
                     {
-                        return statistic.name == statistic_name;
+                        return statistic.column_name == statistic_column_name && statistic.type == statistic_type;
                     });
 
             if (erase_it == metadata.statistics.end())
             {
                 if (if_exists)
                     return;
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong statistic name. Cannot find statistic {} to drop", backQuote(statistic_name));
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong statistic name. Cannot find statistic {} with type {} to drop", backQuote(statistic_column_name), statistic_type);
             }
 
             metadata.statistics.erase(erase_it);
@@ -976,7 +957,15 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     }
     else if (type == DROP_STATISTIC)
     {
+        result.type = MutationCommand::Type::DROP_STATISTIC;
+        result.column_name = statistic_column_name;
 
+        if (clear)
+            result.clear = true;
+        if (partition)
+            result.partition = partition;
+
+        result.predicate = nullptr;
     }
     else if (type == DROP_PROJECTION)
     {

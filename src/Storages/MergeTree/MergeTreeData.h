@@ -422,6 +422,8 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
+    ConditionEstimator getConditionEstimatorByPredicate(const SelectQueryInfo &, ContextPtr) const override;
+
     bool supportsFinal() const override;
 
     bool supportsSubcolumns() const override { return true; }

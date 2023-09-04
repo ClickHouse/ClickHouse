@@ -12,9 +12,7 @@ struct StatisticDescription
     /// Definition AST of statistic
     ASTPtr definition_ast;
 
-    /// Statistic name
-    String name;
-
+    /// the type of statistic, right now it's only tdigest.
     String type;
 
     /// Names of statistic columns

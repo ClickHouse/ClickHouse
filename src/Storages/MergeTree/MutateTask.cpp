@@ -459,7 +459,7 @@ static std::set<StatisticPtr> getStatisticsToRecalculate(const StorageMetadataPt
     const auto & stats = metadata_snapshot->getStatistics();
     for (const auto & stat_desc : stats)
     {
-        if (materialized_stats.contains(stat_desc.name))
+        if (materialized_stats.contains(stat_desc.column_name))
         {
             stats_to_recalc.insert(stats_factory.get(stat_desc));
         }
@@ -1358,13 +1358,13 @@ private:
         const auto & statistics = ctx->metadata_snapshot->getStatistics();
         for (const auto & stat : statistics)
         {
-            if (ctx->materialized_statistics.contains(stat.name))
+            if (ctx->materialized_statistics.contains(stat.column_name))
             {
                 stats.push_back(MergeTreeStatisticFactory::instance().get(stat));
             }
             else
             {
-                auto prefix = fmt::format("{}{}.", STAT_FILE_PREFIX, stat.name);
+                auto prefix = fmt::format("{}{}.", STAT_FILE_PREFIX, stat.column_name);
                 auto it = ctx->source_part->checksums.files.upper_bound(prefix);
                 while (it != ctx->source_part->checksums.files.end())
                 {

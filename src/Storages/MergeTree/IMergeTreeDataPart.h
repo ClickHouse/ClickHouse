@@ -169,6 +169,8 @@ public:
 
     void remove();
 
+    Statistics loadStatistics() const;
+
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);

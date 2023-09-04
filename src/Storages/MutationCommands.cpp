@@ -6,6 +6,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTStatisticDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
@@ -76,7 +77,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.type = MATERIALIZE_STATISTIC;
         res.partition = command->partition;
         res.predicate = nullptr;
-        res.statistic_name = command->statistic->as<ASTIdentifier &>().name();
+        res.statistic_column_name = command->statistic_decl->as<ASTStatisticDeclaration &>().column_name;
         return res;
     }
     else if (command->type == ASTAlterCommand::MATERIALIZE_PROJECTION)

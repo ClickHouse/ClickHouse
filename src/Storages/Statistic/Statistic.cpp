@@ -143,7 +143,7 @@ void MergeTreeStatisticFactory::registerCreator(const std::string & stat_type, C
 
 MergeTreeStatisticFactory::MergeTreeStatisticFactory()
 {
-    registerCreator("t_digest", TDigestCreator);
+    registerCreator("tdigest", TDigestCreator);
 
     ///registerCreator("cm_sketch", CMSketchCreator);
 }

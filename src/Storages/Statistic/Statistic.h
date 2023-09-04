@@ -13,7 +13,6 @@
 #include <boost/core/noncopyable.hpp>
 
 /// this is for user-defined statistic.
-/// For auto collected statisic, we can use 'auto_statistic_'
 constexpr auto STAT_FILE_PREFIX = "statistic_";
 constexpr auto STAT_FILE_SUFFIX = ".stat";
 
@@ -28,37 +27,38 @@ class IStatistic
 {
 public:
     explicit IStatistic(const StatisticDescription & stat_)
-        : statistics(stat_)
+        : stat(stat_)
     {
     }
     virtual ~IStatistic() = default;
 
+    /// statistic_[col_name]_[type]
     String getFileName() const
     {
-        return STAT_FILE_PREFIX + name();
-    }
-
-    const String & name() const
-    {
-        return statistics.name;
+        return STAT_FILE_PREFIX + columnName();
     }
 
     const String & columnName() const
     {
-        return statistics.column_name;
+        return stat.column_name;
     }
 
-    /// const String& type() const = 0;
-    /// virtual StatisticType statisticType() const = 0;
+    const String & type() const
+    {
+        return stat.type;
+    }
 
     virtual void serialize(WriteBuffer & buf) = 0;
+
     virtual void deserialize(ReadBuffer & buf) = 0;
+
     virtual void update(const Block & block) = 0;
+
     virtual UInt64 count() = 0;
 
 protected:
 
-    const StatisticDescription & statistics;
+    const StatisticDescription & stat;
 
 };
 
@@ -66,7 +66,7 @@ class TDigestStatistic : public IStatistic
 {
     QuantileTDigest<Float64> data;
 public:
-    explicit TDigestStatistic(const StatisticDescription & stat) : IStatistic(stat)
+    explicit TDigestStatistic(const StatisticDescription & stat_) : IStatistic(stat_)
     {
     }
 
@@ -88,7 +88,7 @@ public:
 
     void update(const Block & block) override
     {
-        const auto & column_with_type = block.getByName(statistics.column_name);
+        const auto & column_with_type = block.getByName(columnName());
         size_t size = block.rows();
 
         for (size_t i = 0; i < size; ++i)
@@ -141,11 +141,11 @@ private:
     /// This is used to assume that condition is likely to have good selectivity.
     static constexpr auto threshold = 2;
 
-    UInt64 total_count;
+    UInt64 total_count = 0;
 
     struct PartColumnEstimator
     {
-        UInt64 part_count;
+        UInt64 part_count = 0;
 
         std::shared_ptr<TDigestStatistic> t_digest;
 
@@ -184,6 +184,7 @@ private:
         {
             estimators[part_name].merge(statistic);
         }
+
         Float64 estimateLess(Float64 val) const
         {
             if (estimators.empty())
@@ -210,18 +211,18 @@ private:
     std::pair<std::string, Float64> extractBinaryOp(const RPNBuilderTreeNode & node, const std::string & column_name) const;
 
 public:
-
     ConditionEstimator() = default;
 
     /// TODO: Support the condition consists of CNF/DNF like (cond1 and cond2) or (cond3) ...
     /// Right now we only support simple condition like col = val / col < val
     Float64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
-    void merge(std::string part_name, StatisticPtr statistic)
+    void merge(std::string part_name, UInt64 part_count, StatisticPtr statistic)
     {
-        column_estimators[statistic->columnName()].merge(part_name, statistic);
+        total_count += part_count;
+        if (statistic != nullptr)
+            column_estimators[statistic->columnName()].merge(part_name, statistic);
     }
-
 };
 
 
