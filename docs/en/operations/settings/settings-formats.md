@@ -638,7 +638,7 @@ Disabled by default.
 
 When enabled, escape special characters in Markdown.
 
-[CommonMark](https://spec.commonmark.org/0.30/#example-12) defines the following special characters that can be escaped by \:
+[Common Mark](https://spec.commonmark.org/0.30/#example-12) defines the following special characters that can be escaped by \:
 
 ```
 ! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~
