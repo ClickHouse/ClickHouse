@@ -11,7 +11,7 @@ class DeriveStatistics : public PlanStepVisitor<Statistics>
 public:
     using Base = PlanStepVisitor<Statistics>;
 
-    explicit DeriveStatistics(const std::vector<Statistics> & input_statistics_) : input_statistics(input_statistics_) { }
+    explicit DeriveStatistics(const StatisticsList & input_statistics_) : input_statistics(input_statistics_) { }
 
     Statistics visit(QueryPlanStepPtr step) override;
 
@@ -19,11 +19,13 @@ public:
 
     Statistics visit(ReadFromMergeTree & step) override;
 
+    Statistics visit(ExpressionStep & step) override;
+
+    Statistics visit(FilterStep & step) override;
+
     Statistics visit(AggregatingStep & step) override;
 
     Statistics visit(MergingAggregatedStep & step) override;
-
-    Statistics visit(ExpressionStep & step) override;
 
     Statistics visit(SortingStep & step) override;
 
@@ -36,7 +38,7 @@ public:
     Statistics visit(ExchangeDataStep & step) override;
 
 private:
-    const std::vector<Statistics> & input_statistics;
+    const StatisticsList & input_statistics;
 };
 
 }

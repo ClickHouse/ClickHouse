@@ -126,6 +126,7 @@ Float64 OptimizeInputs::enforceGroupNode(
                 .always_read_till_end = exact_rows_before_limit,
                 .limit = limit,
                 .result_description = sort_description};
+            /// TODO(wjc) NPE if required_prop.distribution.type == any
             exchange_step->setSortInfo(sort_info);
         }
     }

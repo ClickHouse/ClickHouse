@@ -44,7 +44,7 @@ void DeriveStats::execute()
 
 void DeriveStats::deriveStats()
 {
-    std::vector<Statistics> child_statistics;
+    StatisticsList child_statistics;
     for (auto * child_group : group_node.getChildren())
     {
         Statistics stat = child_group->getStatistics();

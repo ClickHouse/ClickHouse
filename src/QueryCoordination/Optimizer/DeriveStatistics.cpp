@@ -1,4 +1,5 @@
 #include <QueryCoordination/Optimizer/DeriveStatistics.h>
+#include <QueryCoordination/Optimizer/Statistics/PredicateStatsCalculator.h>
 
 
 namespace DB
@@ -11,63 +12,77 @@ Statistics DeriveStatistics::visit(QueryPlanStepPtr step)
 
 Statistics DeriveStatistics::visitDefault()
 {
-    size_t input_row_size = input_statistics.front().getOutputRowSize();
+    Float64 input_row_size = input_statistics.front().getOutputRowSize(); /// TODO source step
 
     Statistics statistics;
     statistics.setOutputRowSize(input_row_size);
     return statistics;
 }
 
-Statistics DeriveStatistics::visit(ReadFromMergeTree & /*step*/)
+Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
 {
     Statistics statistics;
-    statistics.setOutputRowSize(/*step.getAnalysisResult().selected_rows*/ 100000);
+    statistics.setOutputRowSize(step.getAnalysisResult().selected_rows);
+    /// TODO add column statistics
+    /// step.getRealColumnNames()
+    /// statistics.addColumnStatistics();
+    if (!step.getFilters().empty())
+    {
+        for (auto & filter : step.getFilters()) /// TODO and
+            PredicateStatsCalculator::calculateStatistics(filter, input_statistics);
+    }
+    return statistics;
+}
+
+Statistics DeriveStatistics::visit(ExpressionStep & /*step*/)
+{
+    Float64 input_row_size = input_statistics.front().getOutputRowSize();
+
+    Statistics statistics;
+    statistics.setOutputRowSize(input_row_size);
+    return statistics;
+}
+
+Statistics DeriveStatistics::visit(FilterStep & step)
+{
+    Statistics statistics = PredicateStatsCalculator::calculateStatistics(step.getExpression(), input_statistics);
     return statistics;
 }
 
 Statistics DeriveStatistics::visit(AggregatingStep & step)
 {
-    size_t input_row_size = input_statistics.front().getOutputRowSize();
+    Float64 input_row_size = input_statistics.front().getOutputRowSize();
 
     Statistics statistics;
 
     if (step.isFinal())
     {
-        statistics.setOutputRowSize(std::max(size_t(1), input_row_size / 4)); /// fake agg
+        statistics.setOutputRowSize(std::max(1.0, input_row_size / 4)); /// fake agg
     }
     else
     {
-        statistics.setOutputRowSize(std::max(size_t(1), input_row_size / 2));
+        statistics.setOutputRowSize(std::max(1.0, input_row_size / 2));
     }
     return statistics;
 }
 
 Statistics DeriveStatistics::visit(MergingAggregatedStep & /*step*/)
 {
-    size_t input_row_size = input_statistics.front().getOutputRowSize();
+    Float64 input_row_size = input_statistics.front().getOutputRowSize();
 
     Statistics statistics;
     statistics.setOutputRowSize(input_row_size / 2);
     return statistics;
 }
 
-Statistics DeriveStatistics::visit(ExpressionStep & /*step*/)
-{
-    size_t input_row_size = input_statistics.front().getOutputRowSize();
-
-    Statistics statistics;
-    statistics.setOutputRowSize(input_row_size); /// TODO filter ?
-    return statistics;
-}
-
 Statistics DeriveStatistics::visit(SortingStep & step)
 {
-    size_t input_row_size = input_statistics.front().getOutputRowSize();
+    Float64 input_row_size = input_statistics.front().getOutputRowSize();
 
     Statistics statistics;
     if (step.getLimit())
     {
-        statistics.setOutputRowSize(std::min(input_row_size, size_t(step.getLimit())));
+        statistics.setOutputRowSize(std::min(input_row_size, static_cast<Float64>(step.getLimit())));
     }
     else
     {
@@ -79,12 +94,12 @@ Statistics DeriveStatistics::visit(SortingStep & step)
 
 Statistics DeriveStatistics::visit(LimitStep & step)
 {
-    size_t input_row_size = input_statistics.front().getOutputRowSize();
+    Float64 input_row_size = input_statistics.front().getOutputRowSize();
 
     Statistics statistics;
     if (step.getLimit())
     {
-        statistics.setOutputRowSize(std::min(input_row_size, size_t(step.getLimit())));
+        statistics.setOutputRowSize(std::min(input_row_size, static_cast<Float64>(step.getLimit())));
     }
     else
     {
@@ -95,7 +110,7 @@ Statistics DeriveStatistics::visit(LimitStep & step)
 
 Statistics DeriveStatistics::visit(JoinStep & /*step*/)
 {
-    size_t input_row_size = input_statistics.front().getOutputRowSize();
+    Float64 input_row_size = input_statistics.front().getOutputRowSize();
 
     /// TODO inner join, cross join
     Statistics statistics;
@@ -105,7 +120,7 @@ Statistics DeriveStatistics::visit(JoinStep & /*step*/)
 
 Statistics DeriveStatistics::visit(UnionStep & /*step*/)
 {
-    size_t input_row_size = 0;
+    Float64 input_row_size = 0;
     for (const auto & input_statistic : input_statistics)
     {
         input_row_size += input_statistic.getOutputRowSize();
@@ -118,7 +133,7 @@ Statistics DeriveStatistics::visit(UnionStep & /*step*/)
 
 Statistics DeriveStatistics::visit(ExchangeDataStep & /*step*/)
 {
-    size_t input_row_size = input_statistics.front().getOutputRowSize();
+    Float64 input_row_size = input_statistics.front().getOutputRowSize();
 
     Statistics statistics;
     statistics.setOutputRowSize(input_row_size);
