@@ -64,7 +64,7 @@ public:
         /// Optional. Useful when implementation needs to do ignore().
         size_t offset = 0;
 
-        std::unique_ptr<Stopwatch> execution_watch;
+        std::unique_ptr<Stopwatch> execution_watch = {};
 
         operator std::tuple<size_t &, size_t &>() { return {size, offset}; }
     };
@@ -74,6 +74,7 @@ public:
     /// or destroy the whole reader before destroying the buffer for request.
     /// The method can be called concurrently from multiple threads.
     virtual std::future<Result> submit(Request request) = 0;
+    virtual Result execute(Request request) = 0;
 
     virtual void wait() = 0;
 
