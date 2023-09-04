@@ -28,10 +28,10 @@ public:
         Poco::Util::LayeredConfiguration & config,
         po::variables_map & options) const override
     {
-        if (options.count("diskFrom"))
-            config.setString("diskFrom", options["diskFrom"].as<String>());
-        if (options.count("diskTo"))
-            config.setString("diskTo", options["diskTo"].as<String>());
+        if (options.count("disk-from"))
+            config.setString("disk-from", options["disk-from"].as<String>());
+        if (options.count("disk-to"))
+            config.setString("disk-to", options["disk-to"].as<String>());
     }
 
     void execute(
@@ -45,8 +45,8 @@ public:
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
         }
 
-        String disk_name_from = config.getString("diskFrom", config.getString("disk", "default"));
-        String disk_name_to = config.getString("diskTo", config.getString("disk", "default"));
+        String disk_name_from = config.getString("disk-from", config.getString("disk", "default"));
+        String disk_name_to = config.getString("disk-to", config.getString("disk", "default"));
 
         const String & path_from = command_arguments[0];
         const String & path_to =  command_arguments[1];
