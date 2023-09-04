@@ -96,8 +96,17 @@ def get_packager_cmd(
     return cmd
 
 
+def _expect_artifacts(build_config: BuildConfig) -> bool:
+    if build_config.package_type == "fuzzers":
+        return False
+    return True
+
+
 def build_clickhouse(
-    packager_cmd: str, logs_path: Path, build_output_path: Path
+    packager_cmd: str,
+    logs_path: Path,
+    build_output_path: Path,
+    expect_artifacts: bool = True,
 ) -> Tuple[Path, bool]:
     build_log_path = logs_path / BUILD_LOG_NAME
     success = False
@@ -109,7 +118,7 @@ def build_clickhouse(
             build_results = []
 
         if retcode == 0:
-            if len(build_results) > 0:
+            if not expect_artifacts or len(build_results) > 0:
                 success = True
                 logging.info("Built successfully")
             else:
@@ -312,7 +321,9 @@ def main():
     os.makedirs(logs_path, exist_ok=True)
 
     start = time.time()
-    log_path, success = build_clickhouse(packager_cmd, logs_path, build_output_path)
+    log_path, success = build_clickhouse(
+        packager_cmd, logs_path, build_output_path, _expect_artifacts(build_config)
+    )
     elapsed = int(time.time() - start)
     subprocess.check_call(
         f"sudo chown -R ubuntu:ubuntu {build_output_path}", shell=True
