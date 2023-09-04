@@ -860,19 +860,20 @@ public:
         if (!times)
             return nullptr;
 
-        const ColumnConst * format_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
-        const ColumnConst * time_zone_column = nullptr;
-        const DateLUTImpl * time_zone = nullptr;
-        if (arguments.size() == 2)
-            time_zone = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
-        else if (arguments.size() > 2)
-            time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[2].column.get());
-        if (!format_column)
+        String format;
+        if (const auto * format_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
+            format = format_column->getValue<String>();
+        else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {} of second ('format') argument of function {}. Must be constant string.",
                 arguments[1].column->getName(), getName());
 
-        String format = format_column->getValue<String>();
+        const ColumnConst * const_time_zone_column = nullptr;
+        const DateLUTImpl * time_zone = nullptr;
+        if (arguments.size() == 2)
+            time_zone = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
+        else if (arguments.size() > 2)
+            const_time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[2].column.get());
 
         UInt32 scale [[maybe_unused]] = 0;
         if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
@@ -902,12 +903,12 @@ public:
 
         if (castType(arguments[0].type.get(), [&]([[maybe_unused]] const auto & type) { return true; }))
         {
-            if (time_zone_column)
+            if (const_time_zone_column)
                 time_zone = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
         }
         else if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
         {
-            if (time_zone_column)
+            if (const_time_zone_column)
                 time_zone = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
         }
         else
@@ -952,7 +953,7 @@ public:
         auto * pos = begin;
         for (size_t i = 0; i < vec.size(); ++i)
         {
-            if (!time_zone_column && arguments.size() > 2)
+            if (!const_time_zone_column && arguments.size() > 2)
             {
                 if (!arguments[2].column.get()->getDataAt(i).toString().empty())
                     time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i).toString());
