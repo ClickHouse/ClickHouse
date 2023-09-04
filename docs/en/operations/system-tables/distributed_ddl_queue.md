@@ -15,7 +15,7 @@ Columns:
 - `query` ([String](../../sql-reference/data-types/string.md)) — Query executed.
 - `settings` ([Map(String, String)](../../sql-reference/data-types/map.md)) - Settings used in the DDL operation
 - `query_create_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Query created time.
-- `host` ([String](../../sql-reference/data-types/string.md)) — HostName
+- `host` ([String](../../sql-reference/data-types/string.md)) — Hostname
 - `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — Host Port.
 - `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Status of the query.
 - `exception_code` ([Enum8](../../sql-reference/data-types/enum.md)) — Exception code from [ClickHouse Keeper](../../operations/tips.md#zookeeper).
