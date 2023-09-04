@@ -32,6 +32,8 @@ from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from upload_result_helper import upload_results
 from version_helper import get_version_from_repo
+from report import TestResult
+from subprocess import TimeoutExpired
 
 NAME = "Fast test"
 
@@ -151,12 +153,17 @@ def main():
         os.makedirs(logs_path)
 
     run_log_path = os.path.join(logs_path, "run.log")
-    with TeePopen(run_cmd, run_log_path, timeout=90 * 60) as process:
-        retcode = process.wait()
-        if retcode == 0:
-            logging.info("Run successfully")
-        else:
-            logging.info("Run failed")
+    expired_timeout = None
+    with TeePopen(run_cmd, run_log_path, timeout= 65) as process:
+        try:
+            retcode = process.wait()
+            if retcode == 0:
+                logging.info("Run successfully")
+            else:
+                logging.info("Run failed")
+        except TimeoutExpired as timeout_ex:
+            logging.info(f"Timeout expired for process execution: {run_cmd}")
+            expired_timeout = timeout_ex.timeout
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
@@ -187,6 +194,9 @@ def main():
         state = "failure"
     else:
         state, description, test_results, additional_logs = process_results(output_path)
+
+    if (expired_timeout is not None):
+        test_results.append(TestResult(f"Timeout expired for process execution: {run_cmd}", "FAIL", expired_timeout))
 
     ch_helper = ClickHouseHelper()
     s3_path_prefix = os.path.join(
