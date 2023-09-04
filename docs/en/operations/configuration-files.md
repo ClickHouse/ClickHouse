@@ -67,7 +67,7 @@ Substitutions can also be performed from ZooKeeper. To do this, specify the attr
 
 ## Encrypting and Hiding Configuration {#encryption}
 
-You can use symmetric encryption to encrypt a configuration element, for example, a password field. To do so, first configure the [encryption codec](../sql-reference/statements/create/table.md#encryption-codecs), then add attribute `encrypted_by` with the name of the encryption codec as value to the element to encrypt.
+You can use symmetric encryption to encrypt a configuration element, for example, a plaintext password or private key. To do so, first configure the [encryption codec](../sql-reference/statements/create/table.md#encryption-codecs), then add attribute `encrypted_by` with the name of the encryption codec as value to the element to encrypt.
 
 Unlike attributes `from_zk`, `from_env` and `incl` (or element `include`), no substitution, i.e. decryption of the encrypted value, is performed in the preprocessed file. Decryption happens only at runtime in the server process.
 
@@ -102,7 +102,7 @@ Example:
 961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85
 ```
 
-Even with applied encryption in the preprocessed file the elements are still saved in plain text. In case this is a problem, we suggest two alternatives: either set file permissions of the preprocessed file to 600 or use the `hide_in_preprocessed` attribute.
+Even with encrypted configuration elements, encrypted elements still appear in the preprocessed configuration file. If this is a problem for your ClickHouse deployment, we suggest two alternatives: either set file permissions of the preprocessed file to 600 or use the `hide_in_preprocessed` attribute.
 
 Example:
 
