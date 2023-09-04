@@ -1,4 +1,4 @@
-The list of funtions generated via following query
+The list of functions generated via following query
 
 ```
     clickhouse-client -q "select concat('\"', name, '\"') from system.functions union all select concat('\"', alias_to, '\"') from system.functions where alias_to != '' " > functions.dict
