@@ -321,8 +321,8 @@ def lambda_handler(event, context):
         return {"statusCode": 200, "body": "OK"}
     except Exception as e:
         send_to_slack(
-            "I failed, please help me (see ClickHouse/utils/ci-slack-bot/ci-slack-bot.py): "
-            + str(e)
+            "I failed, please help me "
+            f"(see ClickHouse/ClickHouse/tests/ci/slack_bot_ci_lambda/app.py): {e}"
         )
         return {"statusCode": 200, "body": "FAIL"}
 
