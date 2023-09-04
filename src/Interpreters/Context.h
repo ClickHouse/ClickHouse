@@ -1,6 +1,6 @@
 #pragma once
 
-#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
 #include <base/types.h>
 #include <Common/isLocalAddress.h>
@@ -195,11 +195,6 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
-
-#if USE_ROCKSDB
-class MergeTreeMetadataCache;
-using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
-#endif
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
@@ -899,10 +894,6 @@ public:
     UInt64 getClientProtocolVersion() const;
     void setClientProtocolVersion(UInt64 version);
 
-#if USE_ROCKSDB
-    MergeTreeMetadataCachePtr tryGetMergeTreeMetadataCache() const;
-#endif
-
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
     std::shared_ptr<KeeperDispatcher> & tryGetKeeperDispatcher() const;
@@ -1006,10 +997,6 @@ public:
 
     /// Call after initialization before using trace collector.
     void initializeTraceCollector();
-
-#if USE_ROCKSDB
-    void initializeMergeTreeMetadataCache(const String & dir, size_t size);
-#endif
 
     /// Call after unexpected crash happen.
     void handleCrash() const;

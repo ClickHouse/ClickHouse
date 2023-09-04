@@ -345,6 +345,10 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
             if (database->shouldBeEmptyOnDetach())
             {
+                /// Cancel restarting replicas in that database, wait for remaining RESTART queries to finish.
+                /// So it will not startup tables concurrently with the flushAndPrepareForShutdown call below.
+                auto restart_replica_lock = DatabaseCatalog::instance().getLockForDropDatabase(database_name);
+
                 ASTDropQuery query_for_table;
                 query_for_table.kind = query.kind;
                 // For truncate operation on database, drop the tables
@@ -363,8 +367,9 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 std::vector<std::pair<String, bool>> tables_to_drop;
                 for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
                 {
-                    iterator->table()->flushAndPrepareForShutdown();
-                    tables_to_drop.push_back({iterator->name(), iterator->table()->isDictionary()});
+                    auto table_ptr = iterator->table();
+                    table_ptr->flushAndPrepareForShutdown();
+                    tables_to_drop.push_back({iterator->name(), table_ptr->isDictionary()});
                 }
 
                 for (const auto & table : tables_to_drop)
