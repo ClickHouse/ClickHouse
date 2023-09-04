@@ -450,11 +450,11 @@ void checkForUsersNotInMainConfig(
 
 /// Unused in other builds
 #if defined(OS_LINUX)
-static String readString(const String & path)
+static String readLine(const String & path)
 {
     ReadBufferFromFile in(path);
     String contents;
-    readStringUntilEOF(contents, in);
+    readStringUntilNewlineInto(contents, in);
     return contents;
 }
 
@@ -479,9 +479,16 @@ static void sanityChecks(Server & server)
 #if defined(OS_LINUX)
     try
     {
+        const std::unordered_set<std::string> fastClockSources = {
+            // ARM clock
+            "arch_sys_counter",
+            // KVM guest clock
+            "kvm-clock",
+            // X86 clock
+            "tsc",
+        };
         const char * filename = "/sys/devices/system/clocksource/clocksource0/current_clocksource";
-        String clocksource = readString(filename);
-        if (clocksource.find("tsc") == std::string::npos && clocksource.find("kvm-clock") == std::string::npos)
+        if (!fastClockSources.contains(readLine(filename)))
             server.context()->addWarningMessage("Linux is not using a fast clock source. Performance can be degraded. Check " + String(filename));
     }
     catch (...)
@@ -501,7 +508,7 @@ static void sanityChecks(Server & server)
     try
     {
         const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
-        if (readString(filename).find("[always]") != std::string::npos)
+        if (readLine(filename).find("[always]") != std::string::npos)
             server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\". Check " + String(filename));
     }
     catch (...)
@@ -1031,41 +1038,6 @@ try
         fs::create_directories(path / "metadata_dropped/");
     }
 
-#if USE_ROCKSDB
-    /// Initialize merge tree metadata cache
-    if (config().has("merge_tree_metadata_cache"))
-    {
-        global_context->addWarningMessage("The setting 'merge_tree_metadata_cache' is enabled."
-            " But the feature of 'metadata cache in RocksDB' is experimental and is not ready for production."
-            " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production."
-            " See the corresponding report at https://github.com/ClickHouse/ClickHouse/issues/51182");
-
-        fs::create_directories(path / "rocksdb/");
-        size_t size = config().getUInt64("merge_tree_metadata_cache.lru_cache_size", 256 << 20);
-        bool continue_if_corrupted = config().getBool("merge_tree_metadata_cache.continue_if_corrupted", false);
-        try
-        {
-            LOG_DEBUG(log, "Initializing MergeTree metadata cache, lru_cache_size: {} continue_if_corrupted: {}",
-                ReadableSize(size), continue_if_corrupted);
-            global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
-        }
-        catch (...)
-        {
-            if (continue_if_corrupted)
-            {
-                /// Rename rocksdb directory and reinitialize merge tree metadata cache
-                time_t now = time(nullptr);
-                fs::rename(path / "rocksdb", path / ("rocksdb.old." + std::to_string(now)));
-                global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
-            }
-            else
-            {
-                throw;
-            }
-        }
-    }
-#endif
-
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
         throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Both http and https interserver ports are specified");
 
@@ -1111,37 +1083,43 @@ try
 
     String uncompressed_cache_policy = server_settings.uncompressed_cache_policy;
     size_t uncompressed_cache_size = server_settings.uncompressed_cache_size;
+    double uncompressed_cache_size_ratio = server_settings.uncompressed_cache_size_ratio;
     if (uncompressed_cache_size > max_cache_size)
     {
         uncompressed_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
+    global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size, uncompressed_cache_size_ratio);
 
     String mark_cache_policy = server_settings.mark_cache_policy;
     size_t mark_cache_size = server_settings.mark_cache_size;
+    double mark_cache_size_ratio = server_settings.mark_cache_size_ratio;
     if (mark_cache_size > max_cache_size)
     {
         mark_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
-    global_context->setMarkCache(mark_cache_policy, mark_cache_size);
+    global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
 
+    String index_uncompressed_cache_policy = server_settings.index_uncompressed_cache_policy;
     size_t index_uncompressed_cache_size = server_settings.index_uncompressed_cache_size;
+    double index_uncompressed_cache_size_ratio = server_settings.index_uncompressed_cache_size_ratio;
     if (index_uncompressed_cache_size > max_cache_size)
     {
         index_uncompressed_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
+    global_context->setIndexUncompressedCache(index_uncompressed_cache_policy, index_uncompressed_cache_size, index_uncompressed_cache_size_ratio);
 
+    String index_mark_cache_policy = server_settings.index_mark_cache_policy;
     size_t index_mark_cache_size = server_settings.index_mark_cache_size;
+    double index_mark_cache_size_ratio = server_settings.index_mark_cache_size_ratio;
     if (index_mark_cache_size > max_cache_size)
     {
         index_mark_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    global_context->setIndexMarkCache(index_mark_cache_size);
+    global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
     size_t mmap_cache_size = server_settings.mmap_cache_size;
     if (mmap_cache_size > max_cache_size)

@@ -186,7 +186,9 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
 
 bool applyTrivialCountIfPossible(
     QueryPlan & query_plan,
-    const TableNode & table_node,
+    SelectQueryInfo & select_query_info,
+    const TableNode * table_node,
+    const TableFunctionNode * table_function_node,
     const QueryTreeNodePtr & query_tree,
     ContextMutablePtr & query_context,
     const Names & columns_names)
@@ -195,7 +197,7 @@ bool applyTrivialCountIfPossible(
     if (!settings.optimize_trivial_count_query)
         return false;
 
-    const auto & storage = table_node.getStorage();
+    const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
     if (!storage->supportsTrivialCountOptimization())
         return false;
 
@@ -205,6 +207,9 @@ bool applyTrivialCountIfPossible(
         RowPolicyFilterType::SELECT_FILTER);
     if (row_policy_filter)
         return {};
+
+    if (select_query_info.additional_filter_ast)
+        return false;
 
     /** Transaction check here is necessary because
       * MergeTree maintains total count for all parts in Active state and it simply returns that number for trivial select count() from table query.
@@ -216,9 +221,13 @@ bool applyTrivialCountIfPossible(
         return false;
 
     /// can't apply if FINAL
-    if (table_node.getTableExpressionModifiers().has_value() &&
-        (table_node.getTableExpressionModifiers()->hasFinal() || table_node.getTableExpressionModifiers()->hasSampleSizeRatio() ||
-            table_node.getTableExpressionModifiers()->hasSampleOffsetRatio()))
+    if (table_node && table_node->getTableExpressionModifiers().has_value() &&
+        (table_node->getTableExpressionModifiers()->hasFinal() || table_node->getTableExpressionModifiers()->hasSampleSizeRatio() ||
+         table_node->getTableExpressionModifiers()->hasSampleOffsetRatio()))
+        return false;
+    else if (table_function_node && table_function_node->getTableExpressionModifiers().has_value() &&
+        (table_function_node->getTableExpressionModifiers()->hasFinal() || table_function_node->getTableExpressionModifiers()->hasSampleSizeRatio() ||
+         table_function_node->getTableExpressionModifiers()->hasSampleOffsetRatio()))
         return false;
 
     // TODO: It's possible to optimize count() given only partition predicates
@@ -242,6 +251,11 @@ bool applyTrivialCountIfPossible(
     const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node.getAggregateFunction().get());
     if (!count_func)
         return false;
+
+    /// Some storages can optimize trivial count in read() method instead of totalRows() because it still can
+    /// require reading some data (but much faster than reading columns).
+    /// Set a special flag in query info so the storage will see it and optimize count in read() method.
+    select_query_info.optimize_trivial_count = true;
 
     /// Get number of rows
     std::optional<UInt64> num_rows = storage->totalRows(settings);
@@ -275,7 +289,8 @@ bool applyTrivialCountIfPossible(
     DataTypes argument_types;
     argument_types.reserve(columns_names.size());
     {
-        const Block source_header = table_node.getStorageSnapshot()->getSampleBlockForColumns(columns_names);
+        const Block source_header = table_node ? table_node->getStorageSnapshot()->getSampleBlockForColumns(columns_names)
+                                               : table_function_node->getStorageSnapshot()->getSampleBlockForColumns(columns_names);
         for (const auto & column_name : columns_names)
             argument_types.push_back(source_header.getByName(column_name).type);
     }
@@ -649,9 +664,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         /// Apply trivial_count optimization if possible
         bool is_trivial_count_applied = !select_query_options.only_analyze &&
             is_single_table_expression &&
-            table_node &&
+            (table_node || table_function_node) &&
             select_query_info.has_aggregates &&
-            applyTrivialCountIfPossible(query_plan, *table_node, select_query_info.query_tree, planner_context->getMutableQueryContext(), table_expression_data.getColumnNames());
+            settings.additional_table_filters.value.empty() &&
+            applyTrivialCountIfPossible(query_plan, table_expression_query_info, table_node, table_function_node, select_query_info.query_tree, planner_context->getMutableQueryContext(), table_expression_data.getColumnNames());
 
         if (is_trivial_count_applied)
         {
@@ -778,6 +794,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                   */
                 if (!query_plan.getMaxThreads() || is_remote)
                     query_plan.setMaxThreads(max_threads_execute_query);
+
+                query_plan.setConcurrencyControl(settings.use_concurrency_control);
             }
             else
             {
