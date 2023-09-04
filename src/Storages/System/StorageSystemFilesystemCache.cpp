@@ -68,9 +68,10 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
             res_columns[i++]->insert(toString(file_segment->getKind()));
             res_columns[i++]->insert(file_segment->isUnbound());
 
-            std::error_code ignored;
-            if (fs::exists(path, ignored))
-                res_columns[i++]->insert(fs::file_size(path));
+            std::error_code ec;
+            auto size = fs::file_size(path, ec);
+            if (!ec)
+                res_columns[i++]->insert(size);
             else
                 res_columns[i++]->insertDefault();
         }
