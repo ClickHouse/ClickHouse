@@ -768,8 +768,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                         parameter_values[parameter.first] = "[]";
                     else
                         parameter_values[parameter.first] = " ";
-                    LOG_INFO(&Poco::Logger::get("InterpreterCreateQuery"), "parameter =  {}  = {} ", parameter.first, parameter_values[parameter.first]);
-
                 }
 
                 /// Replace with default parameters
