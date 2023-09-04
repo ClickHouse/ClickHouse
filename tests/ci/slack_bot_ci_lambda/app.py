@@ -1,28 +1,26 @@
 #!/usr/bin/env python3
 
-# A trivial stateless slack bot that notifies about new broken tests in ClickHouse CI.
-# It checks what happened to our CI during the last check_period hours (1 hour) and notifies us in slack if necessary.
-# This script should be executed once each check_period hours (1 hour).
-# It will post duplicate messages if you run it more often; it will lose some messages if you run it less often.
-#
-# You can run it locally with no arguments, it will work in a dry-run mode. Or you can set your own SLACK_URL_DEFAULT.
-# Feel free to add more checks, more details to messages, or better heuristics.
-# NOTE There's no deployment automation for now,
-# an AWS Lambda (slack-ci-bot-test lambda in CI-CD) has to be updated manually after changing this script.
-#
-# See also: https://aretestsgreenyet.com/
+"""
+A trivial stateless slack bot that notifies about new broken tests in ClickHouse CI.
+It checks what happened to our CI during the last check_period hours (1 hour) and
+  notifies us in slack if necessary.
+This script should be executed once each check_period hours (1 hour).
+It will post duplicate messages if you run it more often; it will lose some messages
+  if you run it less often.
+
+You can run it locally with no arguments, it will work in a dry-run mode.
+  Or you can set your own SLACK_URL_DEFAULT.
+Feel free to add more checks, more details to messages, or better heuristics.
+
+See also: https://aretestsgreenyet.com/
+"""
 
 import os
 import json
 import base64
 import random
 
-if os.environ.get("AWS_LAMBDA_ENV", "0") == "1":
-    # For AWS labmda (python 3.7)
-    from botocore.vendored import requests
-else:
-    # For running locally
-    import requests
+import requests  # type: ignore
 
 DRY_RUN_MARK = "<no url, dry run>"
 
@@ -34,7 +32,8 @@ REPORT_NO_FAILURES_PROBABILITY = 0.99
 
 MAX_TESTS_TO_REPORT = 4
 
-# Slack has a stupid limitation on message size, it splits long messages into multiple ones breaking formatting
+# Slack has a stupid limitation on message size, it splits long messages into multiple,
+# ones breaking formatting
 MESSAGE_LENGTH_LIMIT = 4000
 
 # Find tests that failed in master during the last check_period * 24 hours,
@@ -61,7 +60,7 @@ WHERE 1
     AND test_name NOT IN (
         SELECT test_name FROM checks WHERE 1
         AND check_start_time >= now - INTERVAL 1 MONTH
-        AND (check_start_time + check_duration_ms / 1000) BETWEEN now - INTERVAL 2 WEEK AND now - INTERVAL extended_check_period HOUR 
+        AND (check_start_time + check_duration_ms / 1000) BETWEEN now - INTERVAL 2 WEEK AND now - INTERVAL extended_check_period HOUR
         AND pull_request_number = 0
         AND check_status != 'success'
         AND test_status LIKE 'F%')
@@ -95,11 +94,11 @@ FAILED_CHECKS_PERCENTAGE_QUERY = """
 SELECT if(toHour(now('Europe/Amsterdam')) = 12, v, 0)
 FROM
 (
-    SELECT 
-        countDistinctIf((commit_sha, check_name), (test_status LIKE 'F%') AND (check_status != 'success')) 
+    SELECT
+        countDistinctIf((commit_sha, check_name), (test_status LIKE 'F%') AND (check_status != 'success'))
             / countDistinct((commit_sha, check_name)) AS v
     FROM checks
-    WHERE 1 
+    WHERE 1
         AND (pull_request_number = 0)
         AND (test_status != 'SKIPPED')
         AND (check_start_time > (now() - toIntervalDay(1)))
@@ -111,7 +110,7 @@ ALL_RECENT_FAILURES_QUERY = """
 WITH
     '{}' AS name_substr,
     90 AS interval_days,
-    ('Stateless tests (asan)', 'Stateless tests (address)', 'Stateless tests (address, actions)') AS backport_and_release_specific_checks
+    ('Stateless tests (asan)', 'Stateless tests (address)', 'Stateless tests (address, actions)', 'Integration tests (asan) [1/3]', 'Stateless tests (tsan) [1/3]') AS backport_and_release_specific_checks
 SELECT
     toStartOfDay(check_start_time) AS d,
     count(),
@@ -315,14 +314,14 @@ def check_and_alert():
     )
 
 
-def lambda_handler(event, context):
+def handler(event, context):
     try:
         check_and_alert()
         return {"statusCode": 200, "body": "OK"}
     except Exception as e:
         send_to_slack(
-            "I failed, please help me (see ClickHouse/utils/ci-slack-bot/ci-slack-bot.py): "
-            + str(e)
+            "I failed, please help me "
+            f"(see ClickHouse/ClickHouse/tests/ci/slack_bot_ci_lambda/app.py): {e}"
         )
         return {"statusCode": 200, "body": "FAIL"}
 
