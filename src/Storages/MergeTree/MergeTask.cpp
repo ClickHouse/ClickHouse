@@ -16,7 +16,6 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Storages/BlockNumberColumn.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -256,10 +255,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     if (local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
         ctx->need_remove_expired_values = true;
 
-    if (global_ctx->data->getSettings()->allow_experimental_block_number_column
-        && global_ctx->metadata_snapshot->getGroupByTTLs().empty()
-        && !global_ctx->storage_columns.contains(BlockNumberColumn.name)
-        && global_ctx->storage_snapshot->storage.getName() != "ReplacingMergeTree")
+    if (supportsBlockNumberColumn(global_ctx) && !global_ctx->storage_columns.contains(BlockNumberColumn.name))
     {
         global_ctx->storage_columns.emplace_back(BlockNumberColumn);
         global_ctx->all_column_names.emplace_back(BlockNumberColumn.name);
@@ -1009,10 +1005,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     if (global_ctx->deduplicate)
     {
-        if (data_settings->allow_experimental_block_number_column
-            && global_ctx->metadata_snapshot->getGroupByTTLs().empty()
-            && global_ctx->deduplicate_by_columns.empty()
-            && global_ctx->storage_snapshot->storage.getName() != "ReplacingMergeTree")
+        if (supportsBlockNumberColumn(global_ctx))
         {
             for (const auto & col : global_ctx->merging_column_names)
             {
