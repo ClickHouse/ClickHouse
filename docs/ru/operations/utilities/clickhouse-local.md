@@ -110,3 +110,42 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ├──────────┼──────────┤
 ...
 ```
+
+## Запрос данных в файле с помощью SQL {#query_data_in_file}
+
+Часто `clickhouse-local` используется для выполнения специальных запросов к файлам, когда не нужно вставлять данные в таблицу. `clickhouse-local` может транслировать данные из файла во временную таблицу и выполнить ваш SQL.
+
+Если файл находится на той же машине, что и `clickhouse-local`, то можно просто указать файл для загрузки. Следующий файл `reviews.tsv` содержит выборку отзывов о товарах Amazon:
+
+```bash
+./clickhouse local -q "SELECT * FROM 'reviews.tsv'"
+```
+
+Эта команда является сокращением команды:
+
+```bash
+./clickhouse local -q "SELECT * FROM file('reviews.tsv')"
+```
+
+ClickHouse знает, что файл использует формат, разделенный табуляцией, из расширения имени файла. Если необходимо явно указать формат, просто добавьте один из [множества входных форматов ClickHouse](../../interfaces/formats.md):
+
+```bash
+./clickhouse local -q "SELECT * FROM file('reviews.tsv', 'TabSeparated')"
+```
+
+Функция таблицы `file` создает таблицу, и вы можете использовать `DESCRIBE` для просмотра предполагаемой схемы:
+
+```bash
+./clickhouse local -q "DESCRIBE file('reviews.tsv')"
+```
+
+:::tip
+В имени файла разрешается использовать [Шаблоны поиска](/docs/ru/sql-reference/table-functions/file.md/#globs-in-path).
+
+Примеры:
+
+```bash
+./clickhouse local -q "SELECT * FROM 'reviews*.jsonl'"
+./clickhouse local -q "SELECT * FROM 'review_?.csv'"
+./clickhouse local -q "SELECT * FROM 'review_{1..3}.csv'"
+```
