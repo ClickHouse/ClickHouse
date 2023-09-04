@@ -32,6 +32,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <base/getFQDNOrHostName.h>
+#include <base/scope_guard.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -618,7 +619,13 @@ std::optional<StorageKafka2::TopicPartitionLocks> StorageKafka2::lockTopicPartit
             lock_info.committed_offset = getNumber(keeper_ref, *path_it + commit_file_name);
             lock_info.intent_size = getNumber(keeper_ref, *path_it + intent_file_name);
 
-
+            LOG_TRACE(
+                log,
+                "Locked topic partition: {}:{} at offset {} with intent size {}",
+                tp_it->topic,
+                tp_it->partition_id,
+                lock_info.committed_offset.value_or(0),
+                lock_info.intent_size.value_or(0));
             locks.emplace(TopicPartition(*tp_it), std::move(lock_info));
         }
     }
@@ -985,14 +992,20 @@ bool StorageKafka2::streamToViews(size_t idx)
     consumer_info.consume_from_topic_partition_index
         = (consumer_info.consume_from_topic_partition_index + 1) % consumer_info.topic_partitions.size();
 
-    auto [blocks, last_offset] = pollConsumer(*consumer_info.consumer, topic_partition, kafka_context);
+    bool needs_offset_reset = false;
+    SCOPE_EXIT({
+        if (!needs_offset_reset)
+            return;
+        consumer_info.consumer->updateOffsets(consumer_info.topic_partitions);
+    });
+    auto [blocks, last_read_offset] = pollConsumer(*consumer_info.consumer, topic_partition, kafka_context);
 
     if (blocks.empty())
     {
         LOG_TRACE(log, "Consumer #{} didn't get any messages", idx);
+        needs_offset_reset = false;
         return true;
     }
-
 
     auto converting_dag = ActionsDAG::makeConvertingActions(
         blocks.front().cloneEmpty().getColumnsWithTypeAndName(),
@@ -1010,8 +1023,8 @@ bool StorageKafka2::streamToViews(size_t idx)
     // It will be cancelled on underlying layer (kafka buffer)
 
     auto & lock_info = consumer_info.locks.at(topic_partition);
-    const auto intent = lock_info.committed_offset.value_or(0);
-    saveIntent(topic_partition, intent);
+    lock_info.intent_size = last_read_offset - lock_info.committed_offset.value_or(0);
+    saveIntent(topic_partition, *lock_info.intent_size);
     std::atomic_size_t rows = 0;
     {
         block_io.pipeline.complete(Pipe{std::make_shared<BlocksListSource>(std::move(blocks))});
@@ -1021,10 +1034,11 @@ bool StorageKafka2::streamToViews(size_t idx)
         executor.execute();
     }
 
-    saveCommittedOffset(topic_partition, last_offset);
-    lock_info.intent_size = intent;
-    lock_info.committed_offset = last_offset;
-    topic_partition.offset = last_offset;
+    saveCommittedOffset(topic_partition, last_read_offset);
+    lock_info.intent_size.reset();
+    lock_info.committed_offset = last_read_offset;
+    topic_partition.offset = last_read_offset + 1;
+    needs_offset_reset = false;
 
     UInt64 milliseconds = watch.elapsedMilliseconds();
     LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", formatReadableQuantity(rows), table_id.getNameForLogs(), milliseconds);

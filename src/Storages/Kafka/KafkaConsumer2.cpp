@@ -268,6 +268,8 @@ void KafkaConsumer2::updateOffsets(const TopicPartitions & topic_partitions)
 void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic_partitions)
 {
     queues.clear();
+    messages.clear();
+    current = messages.end();
     // cppkafka itself calls assign(), but in order to detach the queues here we have to do the assignment manually. Later on we have to reassign the topic partitions with correct offsets.
     consumer->assign(topic_partitions);
     for (const auto & topic_partition : topic_partitions)
