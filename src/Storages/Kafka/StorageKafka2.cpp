@@ -583,7 +583,6 @@ std::optional<StorageKafka2::TopicPartitionLocks> StorageKafka2::lockTopicPartit
     for (auto try_count{0}; try_count < 10; ++try_count)
     {
         Coordination::Responses responses;
-        // TODO(antaljanosbenjamin): this can go wrong if we start a new session simultaneously from multiple threads.
         auto & keeper_ref = getZooKeeper();
 
         if (const auto code = keeper_ref.tryMulti(ops, responses); code == Coordination::Error::ZOK)
@@ -1038,6 +1037,7 @@ zkutil::ZooKeeper & StorageKafka2::getZooKeeper()
 {
     if (keeper->expired())
     {
+        // TODO(antaljanosbenjamin): this can go wrong if we start a new session simultaneously from multiple threads.
         keeper = keeper->startNewSession();
         //TODO(antaljanosbenjamin): handle ephemeral nodes
     }
