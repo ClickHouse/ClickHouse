@@ -33,16 +33,16 @@
 #define MAX_HASH_VALUE 110600
 /* maximum key range = 110526, duplicates = 0 */
 
-class tldLookupHash
+class TopLevelDomainLookupHash
 {
 private:
     static inline unsigned int hash(const char * str, size_t len);
 
 public:
-    static const char * is_valid(const char * str, size_t len);
+    static const char * isValid(const char * str, size_t len);
 };
 
-inline unsigned int tldLookupHash::hash(const char * str, size_t len)
+inline unsigned int TopLevelDomainLookupHash::hash(const char * str, size_t len)
 {
     static const unsigned int asso_values[]
         = {110601, 110601, 110601, 110601, 110601, 110601, 110601, 110601, 110601, 110601, 110601, 110601, 110601, 110601, 110601, 110601,
@@ -116,7 +116,7 @@ inline unsigned int tldLookupHash::hash(const char * str, size_t len)
     return hval + asso_values[static_cast<unsigned char>(str[len - 1])];
 }
 
-const char * tldLookupHash::is_valid(const char * str, size_t len)
+const char * TopLevelDomainLookupHash::isValid(const char * str, size_t len)
 {
     static const char * const wordlist[]
         = {"",

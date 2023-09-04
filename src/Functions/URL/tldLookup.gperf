@@ -1,6 +1,6 @@
 %language=C++
-%define lookup-function-name is_valid
-%define class-name tldLookupHash
+%define lookup-function-name isValid
+%define class-name TopLevelDomainLookupHash
 %readonly-tables
 %includes
 %compare-strncmp
