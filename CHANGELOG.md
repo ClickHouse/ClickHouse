@@ -21,7 +21,6 @@
 * Disable support for 3DES in TLS connections. [#52893](https://github.com/ClickHouse/ClickHouse/pull/52893) ([Kenji Noguchi](https://github.com/knoguchi)).
 
 #### New Feature
-* Add new table engine `S3Queue` for streaming data import from s3. Closes [#37012](https://github.com/ClickHouse/ClickHouse/issues/37012). [#49086](https://github.com/ClickHouse/ClickHouse/pull/49086) ([s-kat](https://github.com/s-kat)).
 * Direct import from zip/7z/tar archives. Example: `file('*.zip :: *.csv')`. [#50321](https://github.com/ClickHouse/ClickHouse/pull/50321) ([nikitakeba](https://github.com/nikitakeba)).
 * Add column `ptr` to `system.trace_log` for `trace_type = 'MemorySample'`. This column contains an address of allocation. Added function `flameGraph` which can build flamegraph containing allocated and not released memory. Reworking of [#38391](https://github.com/ClickHouse/ClickHouse/issues/38391). [#45322](https://github.com/ClickHouse/ClickHouse/pull/45322) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * Added table function `azureBlobStorageCluster`. The supported set of features is very similar to table function `s3Cluster`. [#50795](https://github.com/ClickHouse/ClickHouse/pull/50795) ([SmitaRKulkarni](https://github.com/SmitaRKulkarni)).
@@ -44,14 +43,13 @@
 * Add column `name` to `system.clusters` as an alias to cluster. [#53605](https://github.com/ClickHouse/ClickHouse/pull/53605) ([irenjj](https://github.com/irenjj)).
 * The advanced dashboard now allows mass editing (save/load). [#53608](https://github.com/ClickHouse/ClickHouse/pull/53608) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * The advanced dashboard now has an option to maximize charts and move them around. [#53622](https://github.com/ClickHouse/ClickHouse/pull/53622) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* TODO: edit it: Add support for plural units. [#53641](https://github.com/ClickHouse/ClickHouse/pull/53641) ([irenjj](https://github.com/irenjj)).
-* TODO: edit it: Added server setting validate_tcp_client_information determines whether validation of client information enabled when query packet is received. [#53907](https://github.com/ClickHouse/ClickHouse/pull/53907) ([Alexey Gerasimchuck](https://github.com/Demilivor)).
 * Added support for adding and subtracting arrays: `[5,2] + [1,7]`. Division and multiplication were not implemented due to confusion between pointwise multiplication and the scalar product of arguments. Closes [#49939](https://github.com/ClickHouse/ClickHouse/issues/49939). [#52625](https://github.com/ClickHouse/ClickHouse/pull/52625) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
 * Add support for string literals as table names. Closes [#52178](https://github.com/ClickHouse/ClickHouse/issues/52178). [#52635](https://github.com/ClickHouse/ClickHouse/pull/52635) ([hendrik-m](https://github.com/hendrik-m)).
 
 #### Experimental Feature
+* Add new table engine `S3Queue` for streaming data import from s3. Closes [#37012](https://github.com/ClickHouse/ClickHouse/issues/37012). [#49086](https://github.com/ClickHouse/ClickHouse/pull/49086) ([s-kat](https://github.com/s-kat)). It is not ready to use. Do not use it.
 * Enable parallel reading from replicas over distributed table. Related to [#49708](https://github.com/ClickHouse/ClickHouse/issues/49708). [#53005](https://github.com/ClickHouse/ClickHouse/pull/53005) ([Igor Nikonov](https://github.com/devcrafter)).
-* Add experimental support for HNSW as approximate neighbor search method. [#53447](https://github.com/ClickHouse/ClickHouse/pull/53447) ([Davit Vardanyan](https://github.com/davvard)). This is currently intended for those who continue working on the implementation.
+* Add experimental support for HNSW as approximate neighbor search method. [#53447](https://github.com/ClickHouse/ClickHouse/pull/53447) ([Davit Vardanyan](https://github.com/davvard)). This is currently intended for those who continue working on the implementation. Do not use it.
 
 #### Performance Improvement
 * Parquet filter pushdown. I.e. when reading Parquet files, row groups (chunks of the file) are skipped based on the WHERE condition and the min/max values in each column. In particular, if the file is roughly sorted by some column, queries that filter by a short range of that column will be much faster. [#52951](https://github.com/ClickHouse/ClickHouse/pull/52951) ([Michael Kolupaev](https://github.com/al13n321)).
@@ -60,7 +58,7 @@
 * Use filter by file/path before reading in `url`/`file`/`hdfs` table functins. [#53529](https://github.com/ClickHouse/ClickHouse/pull/53529) ([Kruglov Pavel](https://github.com/Avogar)).
 * Enable JIT compilation for AArch64, PowerPC, SystemZ, RISC-V. [#38217](https://github.com/ClickHouse/ClickHouse/pull/38217) ([Maksim Kita](https://github.com/kitaisreal)).
 * Add setting `rewrite_count_distinct_if_with_count_distinct_implementation` to rewrite `countDistinctIf` with `count_distinct_implementation`. Closes [#30642](https://github.com/ClickHouse/ClickHouse/issues/30642). [#46051](https://github.com/ClickHouse/ClickHouse/pull/46051) ([flynn](https://github.com/ucasfl)).
-* TODO: edit it: This patch will provide a method to deal with all the hashsets in parallel before merge. [#50748](https://github.com/ClickHouse/ClickHouse/pull/50748) ([Jiebin Sun](https://github.com/jiebinn)).
+* Speed up merging of states of `uniq` and `uniqExact` aggregate functions by parallelizing conversion before merge. [#50748](https://github.com/ClickHouse/ClickHouse/pull/50748) ([Jiebin Sun](https://github.com/jiebinn)).
 * Optimize aggregation performance of nullable string key when using a large number of variable length keys. [#51399](https://github.com/ClickHouse/ClickHouse/pull/51399) ([LiuNeng](https://github.com/liuneng1994)).
 * Add a pass in Analyzer for time filter optimization with preimage. The performance experiments of SSB on the ICX device (Intel Xeon Platinum 8380 CPU, 80 cores, 160 threads) show that this change could bring an improvement of 8.5% to the geomean QPS when the experimental analyzer is enabled. [#52091](https://github.com/ClickHouse/ClickHouse/pull/52091) ([Zhiguo Zhou](https://github.com/ZhiguoZh)).
 * Optimize the merge if all hash sets are single-level in the `uniqExact` (COUNT DISTINCT) function. [#52973](https://github.com/ClickHouse/ClickHouse/pull/52973) ([Jiebin Sun](https://github.com/jiebinn)).
