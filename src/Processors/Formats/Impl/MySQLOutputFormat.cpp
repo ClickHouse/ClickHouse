@@ -1,3 +1,4 @@
+#include <Processors/Formats/Impl/MySQLOutputFormat.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsProtocolBinary.h>
 #include <Core/MySQL/PacketsProtocolText.h>
@@ -5,8 +6,6 @@
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
-#include <Processors/Formats/Impl/MySQLOutputFormat.h>
-#include "Common/logger_useful.h"
 
 namespace DB
 {
