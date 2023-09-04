@@ -2488,9 +2488,16 @@ void ClientBase::runNonInteractive()
     {
         for (const auto & query : queries)
         {
-            bool result = query_fuzzer_runs ? processWithFuzzing(query) : processQueryText(query);
-            if (!result)
-                return;
+            if (query_fuzzer_runs)
+            {
+                if (!processWithFuzzing(query))
+                    return;
+            }
+            else
+            {
+                if (!processQueryText(query))
+                    return;
+            }
         }
     }
     else
@@ -2500,6 +2507,10 @@ void ClientBase::runNonInteractive()
         ReadBufferFromFileDescriptor in(STDIN_FILENO);
         String text;
         readStringUntilEOF(text, in);
+        if (query_fuzzer_runs)
+            processWithFuzzing(text);
+        else
+            processQueryText(text);
     }
 }
 
@@ -2700,9 +2711,8 @@ void ClientBase::init(int argc, char ** argv)
 
         ("config-file,C", po::value<std::string>(), "config-file path")
 
-        ("query,q", po::value<std::vector<std::string>>(), R"(query; can be specified multiple times (--query "SELECT 1;" --query "SELECT 2;"...))")
-        ("queries-file", po::value<std::vector<std::string>>()->multitoken(),
-            "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
+        ("query,q", po::value<std::vector<std::string>>(), R"(query; can be specified multiple times (--query "SELECT 1" --query "SELECT 2"...))")
+        ("queries-file", po::value<std::vector<std::string>>()->multitoken(), "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
         ("multiquery,n", "If specified, multiple queries separated by semicolons can be listed after --query. For convenience, it is also possible to omit --query and pass the queries directly after --multiquery.")
         ("multiline,m", "If specified, allow multiline queries (do not send the query on Enter)")
         ("database,d", po::value<std::string>(), "database")
@@ -2723,8 +2733,7 @@ void ClientBase::init(int argc, char ** argv)
         ("log-level", po::value<std::string>(), "log level")
         ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
 
-        ("suggestion_limit", po::value<int>()->default_value(10000),
-            "Suggestion limit for how many databases, tables and columns to fetch.")
+        ("suggestion_limit", po::value<int>()->default_value(10000), "Suggestion limit for how many databases, tables and columns to fetch.")
 
         ("format,f", po::value<std::string>(), "default output format")
         ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
