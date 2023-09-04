@@ -113,14 +113,15 @@ ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
 std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(const ConnectionTimeouts & timeouts,
                                                                         const Settings * settings,
                                                                         PoolMode pool_mode,
-                                                                        AsyncCallback async_callback)
+                                                                        AsyncCallback async_callback,
+                                                                        std::optional<bool> skip_unavailable_endpoints)
 {
     TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
         return tryGetEntry(pool, timeouts, fail_message, settings, nullptr, async_callback);
     };
 
-    std::vector<TryResult> results = getManyImpl(settings, pool_mode, try_get_entry);
+    std::vector<TryResult> results = getManyImpl(settings, pool_mode, try_get_entry, skip_unavailable_endpoints);
 
     std::vector<Entry> entries;
     entries.reserve(results.size());
@@ -146,14 +147,15 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     const ConnectionTimeouts & timeouts,
     const Settings * settings, PoolMode pool_mode,
     const QualifiedTableName & table_to_check,
-    AsyncCallback async_callback)
+    AsyncCallback async_callback,
+    std::optional<bool> skip_unavailable_endpoints)
 {
     TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
         return tryGetEntry(pool, timeouts, fail_message, settings, &table_to_check, async_callback);
     };
 
-    return getManyImpl(settings, pool_mode, try_get_entry);
+    return getManyImpl(settings, pool_mode, try_get_entry, skip_unavailable_endpoints);
 }
 
 ConnectionPoolWithFailover::Base::GetPriorityFunc ConnectionPoolWithFailover::makeGetPriorityFunc(const Settings * settings)
@@ -172,13 +174,18 @@ ConnectionPoolWithFailover::Base::GetPriorityFunc ConnectionPoolWithFailover::ma
 std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyImpl(
         const Settings * settings,
         PoolMode pool_mode,
-        const TryGetEntryFunc & try_get_entry)
+        const TryGetEntryFunc & try_get_entry,
+        std::optional<bool> skip_unavailable_endpoints)
 {
     if (nested_pools.empty())
         throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
                             "Cannot get connection from ConnectionPoolWithFailover cause nested pools are empty");
 
-    size_t min_entries = (settings && settings->skip_unavailable_shards) ? 0 : 1;
+    if (!skip_unavailable_endpoints.has_value())
+        skip_unavailable_endpoints = (settings && settings->skip_unavailable_shards);
+
+    size_t min_entries = skip_unavailable_endpoints.value() ? 0 : 1;
+
     size_t max_tries = (settings ?
         size_t{settings->connections_with_failover_max_tries} :
         size_t{DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES});

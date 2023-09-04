@@ -95,3 +95,4 @@ test_odbc_interaction/test.py::test_postgres_insert
 test_zookeeper_config/test.py::test_chroot_with_different_root
 test_zookeeper_config/test.py::test_chroot_with_same_root
 test_merge_tree_azure_blob_storage/test.py::test_table_manipulations
+test_parallel_replicas_skip_shards/test.py::test_skip_unavailable_shards
