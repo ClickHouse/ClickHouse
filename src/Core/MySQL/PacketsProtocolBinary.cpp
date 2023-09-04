@@ -306,7 +306,6 @@ namespace MySQLProtocol
                         }
 
                         String timezone = getDateTimeTimezone(*data_type);
-                        std::cout << "Timezone is " << timezone << std::endl;
                         LocalDateTime ldt = LocalDateTime(components.whole, DateLUT::instance(timezone));
                         auto year = ldt.year();
                         auto month = ldt.month();

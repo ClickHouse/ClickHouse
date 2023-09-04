@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/MySQL/IMySQLReadPacket.h>
 #include <Core/MySQL/IMySQLWritePacket.h>
 
 namespace DB
@@ -10,7 +9,7 @@ namespace MySQLProtocol
     namespace PreparedStatements
     {
         // https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_stmt_prepare.html#sect_protocol_com_stmt_prepare_response_ok
-        class PrepareStatementResponseOK : public IMySQLWritePacket, public IMySQLReadPacket
+        class PrepareStatementResponseOK : public IMySQLWritePacket
         {
         public:
             uint8_t status = 0x00;
@@ -22,8 +21,6 @@ namespace MySQLProtocol
 
         protected:
             size_t getPayloadSize() const override;
-
-            void readPayloadImpl(ReadBuffer & payload) override;
 
             void writePayloadImpl(WriteBuffer & buffer) const override;
 
