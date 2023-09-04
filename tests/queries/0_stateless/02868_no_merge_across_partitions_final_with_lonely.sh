@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-random-settings, no-random-merge-tree-settings
 
 set -e
 
@@ -49,12 +50,8 @@ INSERT INTO with_lonely SELECT number+60000, '2022-11-01', number*10, 2 FROM num
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --do_not_merge_across_partitions_select_final 1"
 
 # mix lonely parts and non-lonely parts
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer 1 --max_bytes_to_read 2000 -q "SELECT max(val), count(*) FROM with_lonely FINAL;"
+${CLICKHOUSE_CLIENT} --max_bytes_to_read 2000 -q "SELECT max(val), count(*) FROM with_lonely FINAL;"
 # only lonely parts
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer 1 --max_bytes_to_read 1000 -q "SELECT max(val), count(*) FROM with_lonely FINAL WHERE dt < '2022-11-01';"
+${CLICKHOUSE_CLIENT} --max_bytes_to_read 1000 -q "SELECT max(val), count(*) FROM with_lonely FINAL WHERE dt < '2022-11-01';"
 # only lonely parts but max_thread = 1, so reading lonely parts with in-order
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer 1 --max_threads 1 --max_bytes_to_read 1000 -q "SELECT max(val), count(*) FROM with_lonely FINAL WHERE dt < '2022-11-01';"
-
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer 0 --max_bytes_to_read 2000 -q "SELECT max(val), count(*) FROM with_lonely FINAL;"
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer 0 --max_bytes_to_read 1000 -q "SELECT max(val), count(*) FROM with_lonely FINAL WHERE dt < '2022-11-01';"
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer 0 --max_threads 1 --max_bytes_to_read 1000 -q "SELECT max(val), count(*) FROM with_lonely FINAL WHERE dt < '2022-11-01';"
+${CLICKHOUSE_CLIENT} --max_threads 1 --max_bytes_to_read 1000 -q "SELECT max(val), count(*) FROM with_lonely FINAL WHERE dt < '2022-11-01';"
