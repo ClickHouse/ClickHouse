@@ -252,6 +252,7 @@ public:
     virtual std::shared_ptr<IDataPartStorage> freeze(
         const std::string & to,
         const std::string & dir_path,
+        const WriteSettings & settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
         const ClonePartParams & params) const = 0;
 
@@ -260,6 +261,7 @@ public:
         const std::string & to,
         const std::string & dir_path,
         const DiskPtr & disk,
+        const WriteSettings & write_settings,
         Poco::Logger * log) const = 0;
 
     /// Change part's root. from_root should be a prefix path of current root path.

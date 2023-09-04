@@ -44,6 +44,9 @@ struct BackupSettings
     /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
     bool allow_s3_native_copy = true;
 
+    /// Whether base backup to S3 should inherit credentials from the BACKUP query.
+    bool use_same_s3_credentials_for_base_backup = false;
+
     /// Allow to use the filesystem cache in passive mode - benefit from the existing cache entries,
     /// but don't put more entries into the cache.
     bool read_from_filesystem_cache = true;

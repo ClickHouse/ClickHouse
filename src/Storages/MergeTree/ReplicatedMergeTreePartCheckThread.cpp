@@ -372,8 +372,6 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
                 return result;
             }
 
-            part->checkMetadata();
-
             LOG_INFO(log, "Part {} looks good.", part_name);
             result.status = {part_name, true, ""};
             result.action = ReplicatedCheckResult::DoNothing;
