@@ -108,7 +108,6 @@ KafkaConsumer2::KafkaConsumer2(
     consumer->set_revocation_callback(
         [this](const cppkafka::TopicPartitionList & topic_partitions)
         {
-            // TODO(antaljanosbenjamin): deal with revocation
             CurrentMetrics::sub(CurrentMetrics::KafkaAssignedPartitions, topic_partitions.size());
             ProfileEvents::increment(ProfileEvents::KafkaRebalanceRevocations);
 
