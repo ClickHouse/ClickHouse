@@ -389,6 +389,8 @@ void MySQLHandler::comStmtPrepare(DB::ReadBuffer & payload)
     if (prepared_statements_map.size() > 10000) /// Shouldn't happen in reality as COM_STMT_CLOSE cleans up the elements
     {
         LOG_ERROR(log, "Too many prepared statements");
+        current_prepared_statement_id = 0;
+        prepared_statements_map.clear();
         packet_endpoint->sendPacket(ERRPacket(), true);
         return;
     }
