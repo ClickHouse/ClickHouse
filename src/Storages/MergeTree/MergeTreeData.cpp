@@ -8604,7 +8604,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
 
 bool MergeTreeData::allowRemoveStaleMovingParts() const
 {
-    return ConfigHelper::getBool(getContext()->getConfigRef(), "allow_remove_stale_moving_parts");
+    return ConfigHelper::getBool(getContext()->getConfigRef(), "allow_remove_stale_moving_parts", /* default_ = */ true);
 }
 
 CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()
