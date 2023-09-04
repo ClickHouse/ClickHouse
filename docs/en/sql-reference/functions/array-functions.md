@@ -1794,6 +1794,330 @@ Return value type is always [Float64](../../sql-reference/data-types/float.md). 
 └─────┴──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## arrayRotateLeft
+
+Rotates an [array](../../sql-reference/data-types/array.md) to the left by the specified number of elements.
+If the number of elements is negative, the array is rotated to the right.
+
+**Syntax**
+
+``` sql
+arrayRotateLeft(arr, n)
+```
+
+**Arguments**
+
+- `arr` — [Array](../../sql-reference/data-types/array.md).
+- `n` — Number of elements to rotate.
+
+**Returned value**
+
+- An array rotated to the left by the specified number of elements.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT arrayRotateLeft([1,2,3,4,5,6], 2) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────┐
+│ [3,4,5,6,1,2] │
+└───────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayRotateLeft([1,2,3,4,5,6], -2) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────┐
+│ [5,6,1,2,3,4] │
+└───────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayRotateLeft(['a','b','c','d','e'], 3) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────────────┐
+│ ['d','e','a','b','c'] │
+└───────────────────────┘
+```
+
+## arrayRotateRight
+
+Rotates an [array](../../sql-reference/data-types/array.md) to the right by the specified number of elements.
+If the number of elements is negative, the array is rotated to the left.
+
+**Syntax**
+
+``` sql
+arrayRotateRight(arr, n)
+```
+
+**Arguments**
+
+- `arr` — [Array](../../sql-reference/data-types/array.md).
+- `n` — Number of elements to rotate.
+
+**Returned value**
+
+- An array rotated to the right by the specified number of elements.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT arrayRotateRight([1,2,3,4,5,6], 2) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────┐
+│ [5,6,1,2,3,4] │
+└───────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayRotateRight([1,2,3,4,5,6], -2) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────┐
+│ [3,4,5,6,1,2] │
+└───────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayRotateRight(['a','b','c','d','e'], 3) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────────────┐
+│ ['c','d','e','a','b'] │
+└───────────────────────┘
+```
+
+## arrayShiftLeft
+
+Shifts an [array](../../sql-reference/data-types/array.md) to the left by the specified number of elements.
+New elements are filled with the provided argument or the default value of the array element type.
+If the number of elements is negative, the array is shifted to the right.
+
+**Syntax**
+
+``` sql
+arrayShiftLeft(arr, n[, default])
+```
+
+**Arguments**
+
+- `arr` — [Array](../../sql-reference/data-types/array.md).
+- `n` — Number of elements to shift.
+- `default` — Optional. Default value for new elements.
+
+**Returned value**
+
+- An array shifted to the left by the specified number of elements.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT arrayShiftLeft([1,2,3,4,5,6], 2) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────┐
+│ [3,4,5,6,0,0] │
+└───────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayShiftLeft([1,2,3,4,5,6], -2) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────┐
+│ [0,0,1,2,3,4] │
+└───────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayShiftLeft([1,2,3,4,5,6], 2, 42) as res;
+```
+
+Result:
+
+``` text
+┌─res─────────────┐
+│ [3,4,5,6,42,42] │
+└─────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayShiftLeft(['a','b','c','d','e','f'], 3, 'foo') as res;
+```
+
+Result:
+
+``` text
+┌─res─────────────────────────────┐
+│ ['d','e','f','foo','foo','foo'] │
+└─────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayShiftLeft([1,2,3,4,5,6] :: Array(UInt16), 2, 4242) as res;
+```
+
+Result:
+
+``` text
+┌─res─────────────────┐
+│ [3,4,5,6,4242,4242] │
+└─────────────────────┘
+```
+
+## arrayShiftRight
+
+Shifts an [array](../../sql-reference/data-types/array.md) to the right by the specified number of elements.
+New elements are filled with the provided argument or the default value of the array element type.
+If the number of elements is negative, the array is shifted to the left.
+
+**Syntax**
+
+``` sql
+arrayShiftRight(arr, n[, default])
+```
+
+**Arguments**
+
+- `arr` — [Array](../../sql-reference/data-types/array.md).
+- `n` — Number of elements to shift.
+- `default` — Optional. Default value for new elements.
+
+**Returned value**
+
+- An array shifted to the right by the specified number of elements.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT arrayShiftRight([1,2,3,4,5,6], 2) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────┐
+│ [0,0,1,2,3,4] │
+└───────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayShiftRight([1,2,3,4,5,6], -2) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────┐
+│ [3,4,5,6,0,0] │
+└───────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayShiftRight([1,2,3,4,5,6], 2, 42) as res;
+```
+
+Result:
+
+``` text
+┌─res─────────────┐
+│ [42,42,1,2,3,4] │
+└─────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayShiftRight(['a','b','c','d','e','f'], 3, 'foo') as res;
+```
+
+Result:
+
+``` text
+┌─res─────────────────────────────┐
+│ ['foo','foo','foo','a','b','c'] │
+└─────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT arrayShiftRight([1,2,3,4,5,6] :: Array(UInt16), 2, 4242) as res;
+```
+
+Result:
+
+``` text
+┌─res─────────────────┐
+│ [4242,4242,1,2,3,4] │
+└─────────────────────┘
+```
+
 ## Distance functions
 
 All supported functions are described in [distance functions documentation](../../sql-reference/functions/distance-functions.md).
