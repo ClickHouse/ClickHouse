@@ -570,6 +570,23 @@ Counters global_counters(global_counters_array);
 const Event Counters::num_counters = END;
 
 
+Timer::Timer(Counters & counters_, Event timer_event_, Resolution resolution_)
+    : counters(counters_), timer_event(timer_event_), resolution(resolution_)
+{
+}
+
+Timer::Timer(Counters & counters_, Event timer_event_, Event counter_event, Resolution resolution_)
+    : Timer(counters_, timer_event_, resolution_)
+{
+    counters.increment(counter_event);
+}
+
+void Timer::end()
+{
+    counters.increment(timer_event, watch.elapsedNanoseconds() / static_cast<UInt64>(resolution));
+    watch.reset();
+}
+
 Counters::Counters(VariableContext level_, Counters * parent_)
     : counters_holder(new Counter[num_counters] {}),
       parent(parent_),
