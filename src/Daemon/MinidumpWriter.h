@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 #include <config.h>
-#include <bits/types/siginfo_t.h>
+#include <csignal>
 
 namespace Poco
 {
@@ -15,5 +15,5 @@ namespace Util
 namespace MinidumpWriter
 {
 void initialize(Poco::Util::LayeredConfiguration & config);
-void signalHandler(int sig, siginfo_t * info, void * context);
+void onFault(int sig, const siginfo_t * info, void * context);
 }

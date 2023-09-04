@@ -161,7 +161,6 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 
     if (sig != SIGTSTP) /// This signal is used for debugging.
     {
-        MinidumpWriter::signalHandler(sig, info, context);
         /// The time that is usually enough for separate thread to print info into log.
         /// Under MSan full stack unwinding with DWARF info about inline functions takes 101 seconds in one case.
         for (size_t i = 0; i < 300; ++i)
@@ -518,6 +517,11 @@ private:
             }
         }
 #endif
+
+        /// If enabled, write minidump for crashing signals
+        static const std::set<int> minidump_exception_signals = {SIGSEGV, SIGABRT, SIGFPE, SIGILL, SIGBUS, SIGTRAP};
+        if (minidump_exception_signals.contains(sig))
+            MinidumpWriter::onFault(sig, &info, context);
 
         /// When everything is done, we will try to send these error messages to client.
         if (thread_ptr)

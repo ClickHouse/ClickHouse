@@ -101,7 +101,7 @@ public:
     ~ExceptionHandler() = default;
 
     // Report a crash signal from an SA_SIGINFO signal handler.
-    bool handleSignal(int sig, siginfo_t * info, void * uc);
+    bool handleSignal(int sig, const siginfo_t * info, void * uc);
 
 private:
     ExceptionHandler(const std::string & dump_path, bool minidump_generate_core)
@@ -148,7 +148,7 @@ void createExceptionHandler(const std::string & dump_path, bool minidump, bool m
     eh = std::unique_ptr<ExceptionHandler>(new ExceptionHandler(dump_path, minidump_generate_core));
 }
 
-void handler(int sig, siginfo_t * info, void * context)
+void handler(int sig, const siginfo_t * info, void * context)
 {
     if (!eh)
         return;
@@ -167,7 +167,7 @@ struct ThreadArgument
 
 // This function runs in a compromised context: see the top of the file.
 // Runs on the crashing thread.
-bool ExceptionHandler::handleSignal(int /*sig*/, siginfo_t * info, void * uc)
+bool ExceptionHandler::handleSignal(int /*sig*/, const siginfo_t * info, void * uc)
 {
     // Allow ourselves to be dumped if the signal is trusted.
     bool signal_trusted = info->si_code > 0;

@@ -1,6 +1,8 @@
 #include "MinidumpWriter.h"
+#include <signal.h>
 #include <atomic>
 #include <filesystem>
+#include <set>
 #include <Poco/Util/LayeredConfiguration.h>
 
 #if USE_BREAKPAD && !defined(CLICKHOUSE_PROGRAM_STANDALONE_BUILD)
@@ -31,7 +33,7 @@ void createExceptionHandler(const std::string & dump_path, bool minidump, bool g
 //                                            |
 //                                            V
 //                                         sys_exit
-void handler(int sig, siginfo_t * info, void * context);
+void handler(int sig, const siginfo_t * info, void * context);
 }
 
 namespace MinidumpWriter
@@ -50,7 +52,7 @@ void initialize([[maybe_unused]] Poco::Util::LayeredConfiguration & config)
     initialized.store(true);
 }
 
-void signalHandler(int sig, siginfo_t * info, void * context)
+void onFault(int sig, const siginfo_t * info, void * context)
 {
     ClickhouseBreakpad::handler(sig, info, context);
 }
@@ -62,7 +64,7 @@ namespace MinidumpWriter
 void initialize(Poco::Util::LayeredConfiguration &)
 {
 }
-void signalHandler(int, siginfo_t *, void *)
+void onFault(int, const siginfo_t *, void *)
 {
 }
 }
