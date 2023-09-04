@@ -343,9 +343,10 @@ void Connection::sendAddendum()
     out->next();
 }
 
+#if USE_SSL
 void Connection::performHandshakeForSSHAuth()
 {
-#if USE_SSL
+
     String challenge;
     {
         writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);
@@ -374,8 +375,12 @@ void Connection::performHandshakeForSSHAuth()
     String signature = ssh_private_key.signString(to_sign);
     writeStringBinary(signature, *out);
     out->next();
+}
 #else
+[[ noreturn ]] void Connection::performHandshakeForSSHAuth()
+{
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
+}
 #endif
 
 }
