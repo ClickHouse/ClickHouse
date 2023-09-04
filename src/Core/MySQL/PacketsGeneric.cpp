@@ -29,7 +29,7 @@ OKPacket::OKPacket(
     uint8_t header_, uint32_t capabilities_, uint64_t affected_rows_, uint32_t status_flags_, int16_t warnings_,
     String session_state_changes_, String info_)
     : header(header_), capabilities(capabilities_), affected_rows(affected_rows_), last_insert_id(0), warnings(warnings_),
-    status_flags(status_flags_), session_state_changes(std::move(session_state_changes_)), info(std::move(info_))
+      status_flags(status_flags_), session_state_changes(std::move(session_state_changes_)), info(std::move(info_))
 {
 }
 
@@ -124,7 +124,8 @@ EOFPacket::EOFPacket() : warnings(0x00), status_flags(0x00)
 {
 }
 
-EOFPacket::EOFPacket(int warnings_, int status_flags_) : warnings(warnings_), status_flags(status_flags_)
+EOFPacket::EOFPacket(int warnings_, int status_flags_)
+    : warnings(warnings_), status_flags(status_flags_)
 {
 }
 
@@ -196,7 +197,8 @@ void ERRPacket::writePayloadImpl(WriteBuffer & buffer) const
     buffer.write(error_message.data(), std::min(error_message.length(), MYSQL_ERRMSG_SIZE));
 }
 
-ResponsePacket::ResponsePacket(UInt32 server_capability_flags_) : ok(OKPacket(server_capability_flags_))
+ResponsePacket::ResponsePacket(UInt32 server_capability_flags_)
+    : ok(OKPacket(server_capability_flags_))
 {
 }
 

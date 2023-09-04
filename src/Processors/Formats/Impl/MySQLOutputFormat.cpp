@@ -17,7 +17,8 @@ using namespace MySQLProtocol::ProtocolText;
 using namespace MySQLProtocol::ProtocolBinary;
 
 MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
-    : IOutputFormat(header_, out_), client_capabilities(settings_.mysql_wire.client_capabilities)
+    : IOutputFormat(header_, out_)
+    , client_capabilities(settings_.mysql_wire.client_capabilities)
 {
     /// MySQlWire is a special format that is usually used as output format for MySQL protocol connections.
     /// In this case we have a correct `sequence_id` stored in `settings_.mysql_wire`.
@@ -137,8 +138,9 @@ void registerOutputFormatMySQLWire(FormatFactory & factory)
 {
     factory.registerOutputFormat(
         "MySQLWire",
-        [](WriteBuffer & buf, const Block & sample, const FormatSettings & settings)
-        { return std::make_shared<MySQLOutputFormat>(buf, sample, settings); });
+        [](WriteBuffer & buf,
+           const Block & sample,
+           const FormatSettings & settings) { return std::make_shared<MySQLOutputFormat>(buf, sample, settings); });
 }
 
 }

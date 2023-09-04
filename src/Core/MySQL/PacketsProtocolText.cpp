@@ -58,33 +58,17 @@ void ComFieldList::readPayloadImpl(ReadBuffer & payload)
     readStringUntilEOF(field_wildcard, payload);
 }
 
-ColumnDefinition::ColumnDefinition() : character_set(0x00), column_length(0), column_type(MYSQL_TYPE_DECIMAL), flags(0x00)
+ColumnDefinition::ColumnDefinition()
+    : character_set(0x00), column_length(0), column_type(MYSQL_TYPE_DECIMAL), flags(0x00)
 {
 }
 
 ColumnDefinition::ColumnDefinition(
-    String schema_,
-    String table_,
-    String org_table_,
-    String name_,
-    String org_name_,
-    uint16_t character_set_,
-    uint32_t column_length_,
-    ColumnType column_type_,
-    uint16_t flags_,
-    uint8_t decimals_,
-    bool with_defaults_)
-    : schema(std::move(schema_))
-    , table(std::move(table_))
-    , org_table(std::move(org_table_))
-    , name(std::move(name_))
-    , org_name(std::move(org_name_))
-    , character_set(character_set_)
-    , column_length(column_length_)
-    , column_type(column_type_)
-    , flags(flags_)
-    , decimals(decimals_)
-    , is_comm_field_list_response(with_defaults_)
+    String schema_, String table_, String org_table_, String name_, String org_name_, uint16_t character_set_, uint32_t column_length_,
+    ColumnType column_type_, uint16_t flags_, uint8_t decimals_, bool with_defaults_)
+    : schema(std::move(schema_)), table(std::move(table_)), org_table(std::move(org_table_)), name(std::move(name_)),
+      org_name(std::move(org_name_)), character_set(character_set_), column_length(column_length_), column_type(column_type_),
+      flags(flags_), decimals(decimals_), is_comm_field_list_response(with_defaults_)
 {
 }
 
@@ -96,9 +80,15 @@ ColumnDefinition::ColumnDefinition(
 
 size_t ColumnDefinition::getPayloadSize() const
 {
-    return 12 + getLengthEncodedStringSize("def") + getLengthEncodedStringSize(schema) + getLengthEncodedStringSize(table)
-        + getLengthEncodedStringSize(org_table) + getLengthEncodedStringSize(name) + getLengthEncodedStringSize(org_name)
-        + getLengthEncodedNumberSize(next_length) + is_comm_field_list_response;
+    return 12 +
+           getLengthEncodedStringSize("def") +
+           getLengthEncodedStringSize(schema) +
+           getLengthEncodedStringSize(table) +
+           getLengthEncodedStringSize(org_table) +
+           getLengthEncodedStringSize(name) +
+           getLengthEncodedStringSize(org_name) +
+           getLengthEncodedNumberSize(next_length) +
+           is_comm_field_list_response;
 }
 
 void ColumnDefinition::readPayloadImpl(ReadBuffer & payload)

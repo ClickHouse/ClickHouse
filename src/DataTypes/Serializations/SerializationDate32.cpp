@@ -28,14 +28,12 @@ void SerializationDate32::deserializeTextEscaped(IColumn & column, ReadBuffer & 
     assert_cast<ColumnInt32 &>(column).getData().push_back(x);
 }
 
-void SerializationDate32::serializeTextEscaped(
-    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationDate32::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeText(column, row_num, ostr, settings);
 }
 
-void SerializationDate32::serializeTextQuoted(
-    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationDate32::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('\'', ostr);
     serializeText(column, row_num, ostr, settings);
@@ -48,11 +46,10 @@ void SerializationDate32::deserializeTextQuoted(IColumn & column, ReadBuffer & i
     assertChar('\'', istr);
     readDateText(x, istr, time_zone);
     assertChar('\'', istr);
-    assert_cast<ColumnInt32 &>(column).getData().push_back(x); /// It's important to do this at the end - for exception safety.
+    assert_cast<ColumnInt32 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
 
-void SerializationDate32::serializeTextJSON(
-    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationDate32::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('"', ostr);
     serializeText(column, row_num, ostr, settings);
@@ -68,8 +65,7 @@ void SerializationDate32::deserializeTextJSON(IColumn & column, ReadBuffer & ist
     assert_cast<ColumnInt32 &>(column).getData().push_back(x);
 }
 
-void SerializationDate32::serializeTextCSV(
-    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationDate32::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('"', ostr);
     serializeText(column, row_num, ostr, settings);

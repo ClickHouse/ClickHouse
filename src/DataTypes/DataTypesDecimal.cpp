@@ -1,13 +1,13 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 
+#include <Common/typeid_cast.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/readDecimalText.h>
 #include <Parsers/ASTLiteral.h>
-#include <Common/typeid_cast.h>
 
 #include <type_traits>
 
