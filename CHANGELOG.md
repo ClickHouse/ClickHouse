@@ -43,8 +43,6 @@
 * Add column `name` to `system.clusters` as an alias to cluster. [#53605](https://github.com/ClickHouse/ClickHouse/pull/53605) ([irenjj](https://github.com/irenjj)).
 * The advanced dashboard now allows mass editing (save/load). [#53608](https://github.com/ClickHouse/ClickHouse/pull/53608) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * The advanced dashboard now has an option to maximize charts and move them around. [#53622](https://github.com/ClickHouse/ClickHouse/pull/53622) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* TODO: edit it: Add support for plural units. [#53641](https://github.com/ClickHouse/ClickHouse/pull/53641) ([irenjj](https://github.com/irenjj)).
-* TODO: edit it: Added server setting validate_tcp_client_information determines whether validation of client information enabled when query packet is received. [#53907](https://github.com/ClickHouse/ClickHouse/pull/53907) ([Alexey Gerasimchuck](https://github.com/Demilivor)).
 * Added support for adding and subtracting arrays: `[5,2] + [1,7]`. Division and multiplication were not implemented due to confusion between pointwise multiplication and the scalar product of arguments. Closes [#49939](https://github.com/ClickHouse/ClickHouse/issues/49939). [#52625](https://github.com/ClickHouse/ClickHouse/pull/52625) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
 * Add support for string literals as table names. Closes [#52178](https://github.com/ClickHouse/ClickHouse/issues/52178). [#52635](https://github.com/ClickHouse/ClickHouse/pull/52635) ([hendrik-m](https://github.com/hendrik-m)).
 
@@ -60,7 +58,7 @@
 * Use filter by file/path before reading in `url`/`file`/`hdfs` table functins. [#53529](https://github.com/ClickHouse/ClickHouse/pull/53529) ([Kruglov Pavel](https://github.com/Avogar)).
 * Enable JIT compilation for AArch64, PowerPC, SystemZ, RISC-V. [#38217](https://github.com/ClickHouse/ClickHouse/pull/38217) ([Maksim Kita](https://github.com/kitaisreal)).
 * Add setting `rewrite_count_distinct_if_with_count_distinct_implementation` to rewrite `countDistinctIf` with `count_distinct_implementation`. Closes [#30642](https://github.com/ClickHouse/ClickHouse/issues/30642). [#46051](https://github.com/ClickHouse/ClickHouse/pull/46051) ([flynn](https://github.com/ucasfl)).
-* TODO: edit it: This patch will provide a method to deal with all the hashsets in parallel before merge. [#50748](https://github.com/ClickHouse/ClickHouse/pull/50748) ([Jiebin Sun](https://github.com/jiebinn)).
+* Speed up merging of states of `uniq` and `uniqExact` aggregate functions by parallelizing conversion before merge. [#50748](https://github.com/ClickHouse/ClickHouse/pull/50748) ([Jiebin Sun](https://github.com/jiebinn)).
 * Optimize aggregation performance of nullable string key when using a large number of variable length keys. [#51399](https://github.com/ClickHouse/ClickHouse/pull/51399) ([LiuNeng](https://github.com/liuneng1994)).
 * Add a pass in Analyzer for time filter optimization with preimage. The performance experiments of SSB on the ICX device (Intel Xeon Platinum 8380 CPU, 80 cores, 160 threads) show that this change could bring an improvement of 8.5% to the geomean QPS when the experimental analyzer is enabled. [#52091](https://github.com/ClickHouse/ClickHouse/pull/52091) ([Zhiguo Zhou](https://github.com/ZhiguoZh)).
 * Optimize the merge if all hash sets are single-level in the `uniqExact` (COUNT DISTINCT) function. [#52973](https://github.com/ClickHouse/ClickHouse/pull/52973) ([Jiebin Sun](https://github.com/jiebinn)).
