@@ -218,22 +218,32 @@ def test_delete_race_leftovers(cluster):
         time.sleep(5)
 
     # Check that we correctly deleted all outdated parts and no leftovers on s3
-    known_remote_paths = set(
-        node.query(
-            f"SELECT remote_path FROM system.remote_data_paths WHERE disk_name = 's32'"
-        ).splitlines()
-    )
-
-    all_remote_paths = set(
-        obj.object_name
-        for obj in cluster.minio_client.list_objects(
-            cluster.minio_bucket, "data2/", recursive=True
+    # Do it with retries because we delete blobs in the background
+    # and it can be race condition between removing from remote_data_paths and deleting blobs
+    all_remote_paths = set()
+    known_remote_paths = set()
+    for i in range(3):
+        known_remote_paths = set(
+            node.query(
+                f"SELECT remote_path FROM system.remote_data_paths WHERE disk_name = 's32'"
+            ).splitlines()
         )
-    )
 
-    # Some blobs can be deleted after we listed remote_data_paths
-    # It's alright, thus we check only that all remote paths are known
-    # (in other words, all remote paths is subset of known paths)
+        all_remote_paths = set(
+            obj.object_name
+            for obj in cluster.minio_client.list_objects(
+                cluster.minio_bucket, "data2/", recursive=True
+            )
+        )
+
+        # Some blobs can be deleted after we listed remote_data_paths
+        # It's alright, thus we check only that all remote paths are known
+        # (in other words, all remote paths is subset of known paths)
+        if all_remote_paths == {p for p in known_remote_paths if p in all_remote_paths}:
+            break
+
+        time.sleep(1)
+
     assert all_remote_paths == {p for p in known_remote_paths if p in all_remote_paths}
 
     # Check that we have all data
