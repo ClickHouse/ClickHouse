@@ -12,6 +12,8 @@ You can run it locally with no arguments, it will work in a dry-run mode.
   Or you can set your own SLACK_URL_DEFAULT.
 Feel free to add more checks, more details to messages, or better heuristics.
 
+It's deployed to slack-bot-ci-lambda in CI/CD account
+
 See also: https://aretestsgreenyet.com/
 """
 
