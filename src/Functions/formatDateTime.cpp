@@ -864,7 +864,7 @@ public:
         const ColumnConst * time_zone_column = nullptr;
         const DateLUTImpl * time_zone = nullptr;
         if (arguments.size() == 2)
-            time_zone = &DateLUT::instance();
+            time_zone = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
         else if (arguments.size() > 2)
             time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[2].column.get());
         if (!format_column)
@@ -953,7 +953,7 @@ public:
         for (size_t i = 0; i < vec.size(); ++i)
         {
             if (!time_zone_column && arguments.size() > 2)
-             {
+            {
                 if (!arguments[2].column.get()->getDataAt(i).toString().empty())
                     time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i).toString());
                 else
