@@ -181,7 +181,7 @@ Result:
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 #### `DEDUPLICATE BY COLUMNS(<regex>)`
-Deduplicate by any column matching a regex: `primary_key`, `secondary_key`, and `partition_key` columns:
+Deduplicate by all columns matching a regex: `primary_key`, `secondary_key`, and `partition_key` columns:
 ```sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY COLUMNS('.*_key');
 ```
