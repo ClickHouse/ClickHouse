@@ -1513,14 +1513,16 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
         for (const auto & child : select_query->select()->children)
             select.insert(child->getAliasOrColumnName());
 
+        NameSet required_by_interpolate;
         /// collect columns required for interpolate expressions -
         /// interpolate expression can use any available column
-        auto find_columns = [&step, &select](IAST * function)
+        auto find_columns = [&step, &select, &required_by_interpolate](IAST * function)
         {
-            auto f_impl = [&step, &select](IAST * fn, auto fi)
+            auto f_impl = [&step, &select, &required_by_interpolate](IAST * fn, auto fi)
             {
                 if (auto * ident = fn->as<ASTIdentifier>())
                 {
+                    required_by_interpolate.insert(ident->getColumnName());
                     /// exclude columns from select expression - they are already available
                     if (!select.contains(ident->getColumnName()))
                         step.addRequiredOutput(ident->getColumnName());
@@ -1536,6 +1538,14 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
 
         for (const auto & interpolate : interpolate_list->children)
             find_columns(interpolate->as<ASTInterpolateElement>()->expr.get());
+
+        if (!required_result_columns.empty())
+        {
+            NameSet required_result_columns_set(required_result_columns.begin(), required_result_columns.end());
+            for (const auto & name : required_by_interpolate)
+                if (!required_result_columns_set.contains(name))
+                    required_result_columns.push_back(name);
+        }
     }
 
     if (optimize_read_in_order)
