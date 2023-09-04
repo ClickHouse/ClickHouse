@@ -363,7 +363,7 @@ void ClusterDiscovery::initialUpdate()
         static size_t fail_count = 0;
         fail_count++;
         /// strict limit on fail count to avoid flaky tests
-        auto is_failed = fail_count < success_chance || std::uniform_int_distribution<>(0, success_chance)(thread_local_rng) != 0;
+        auto is_failed = fail_count < success_chance && std::uniform_int_distribution<>(0, success_chance)(thread_local_rng) != 0;
         if (is_failed)
             throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Failpoint cluster_discovery_faults is triggered");
     });
