@@ -810,7 +810,12 @@ def test_prepared_statements(started_cluster, java_container):
         reference = fp.read()
 
     with open(os.path.join(SCRIPT_DIR, "prepared_statements_test.sql")) as sql:
-        statements = list(filter(lambda s: s != '', map(lambda s: s.strip().replace('\n', ' '), sql.read().split(';'))))
+        statements = list(
+            filter(
+                lambda s: s != "",
+                map(lambda s: s.strip().replace("\n", " "), sql.read().split(";")),
+            )
+        )
 
     for statement in statements:
         node.query(statement, settings={"password": "123"})
@@ -860,14 +865,14 @@ def test_types(started_cluster):
 
     result = cursor.fetchall()[0]
     expected = [
-        ("Int8_column", -(2 ** 7)),
-        ("UInt8_column", 2 ** 8 - 1),
-        ("Int16_column", -(2 ** 15)),
-        ("UInt16_column", 2 ** 16 - 1),
-        ("Int32_column", -(2 ** 31)),
-        ("UInt32_column", 2 ** 32 - 1),
-        ("Int64_column", -(2 ** 63)),
-        ("UInt64_column", 2 ** 64 - 1),
+        ("Int8_column", -(2**7)),
+        ("UInt8_column", 2**8 - 1),
+        ("Int16_column", -(2**15)),
+        ("UInt16_column", 2**16 - 1),
+        ("Int32_column", -(2**31)),
+        ("UInt32_column", 2**32 - 1),
+        ("Int64_column", -(2**63)),
+        ("UInt64_column", 2**64 - 1),
         ("String_column", "тест"),
         ("FixedString_column", "тест"),
         ("Float32_column", 1.5),

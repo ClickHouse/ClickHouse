@@ -1,5 +1,4 @@
 #include <Core/MySQL/PacketsPreparedStatements.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
 
@@ -23,11 +22,6 @@ namespace MySQLProtocol
             buffer.write(reinterpret_cast<const char *>(&reserved_1), 1);
             buffer.write(reinterpret_cast<const char *>(&warnings_count), 2);
             buffer.write(0x0); // RESULTSET_METADATA_NONE
-        }
-
-        void PrepareStatementResponseOK::readPayloadImpl([[maybe_unused]] ReadBuffer & payload)
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PrepareStatementResponseOK::readPayloadImpl is not implemented");
         }
 
         PrepareStatementResponseOK::PrepareStatementResponseOK(
