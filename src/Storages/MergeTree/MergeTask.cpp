@@ -1005,7 +1005,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     if (global_ctx->deduplicate)
     {
-        if (supportsBlockNumberColumn(global_ctx))
+        /// We don't want to deduplicate by block number column
+        /// so if deduplicate_by_columns is empty, add all columns except _block_number
+        if (supportsBlockNumberColumn(global_ctx) && global_ctx->deduplicate_by_columns.empty())
         {
             for (const auto & col : global_ctx->merging_column_names)
             {
