@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # shellcheck disable=SC1091
+# shellcheck disable=SC2034
 source /setup_export_logs.sh
 
 # fail on errors, verbose and export all env variables
@@ -231,10 +232,16 @@ do
     fi
 done
 
+data_path_config="--path=/var/lib/clickhouse/"
+if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
+    # We need s3 storage configuration (but it's more likely that clickhouse-local will fail for some reason)
+    data_path_config="--config-file=/etc/clickhouse-server/config.xml"
+fi
+
 # Also export trace log in flamegraph-friendly format.
 for trace_type in CPU Memory Real
 do
-    clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "
+    clickhouse-local "data_path_config" --only-system-tables -q "
             select
                 arrayStringConcat((arrayMap(x -> concat(splitByChar('/', addressToLine(x))[-1], '#', demangle(addressToSymbol(x)) ), trace)), ';') AS stack,
                 count(*) AS samples
