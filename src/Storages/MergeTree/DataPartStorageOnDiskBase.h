@@ -63,6 +63,7 @@ public:
     MutableDataPartStoragePtr freeze(
         const std::string & to,
         const std::string & dir_path,
+        const WriteSettings & settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
         const ClonePartParams & params) const override;
 
@@ -70,6 +71,7 @@ public:
         const std::string & to,
         const std::string & dir_path,
         const DiskPtr & dst_disk,
+        const WriteSettings & write_settings,
         Poco::Logger * log) const override;
 
     void rename(

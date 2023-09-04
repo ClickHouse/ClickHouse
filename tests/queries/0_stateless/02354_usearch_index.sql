@@ -228,3 +228,35 @@ ORDER BY L2Distance(vector, [10.0, 0.0, 10.0, 0.0])
 LIMIT 3;
 
 DROP TABLE tab;
+
+SELECT '--- Test correctness of Usearch index with > 1 mark';
+
+CREATE TABLE tab(id Int32, vector Array(Float32), INDEX usearch_index vector TYPE usearch()) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes=0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0; -- disable adaptive granularity due to bug
+INSERT INTO tab SELECT number, [toFloat32(number), 0., 0., 0.] from numbers(10000);
+
+SELECT *
+FROM tab
+ORDER BY L2Distance(vector, [1.0, 0.0, 0.0, 0.0])
+LIMIT 1;
+
+SELECT *
+FROM tab
+ORDER BY L2Distance(vector, [9000.0, 0.0, 0.0, 0.0])
+LIMIT 1;
+
+DROP TABLE tab;
+
+CREATE TABLE tab(id Int32, vector Tuple(Float32, Float32, Float32, Float32), INDEX usearch_index vector TYPE usearch()) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes=0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0; -- disable adaptive granularity due to bug
+INSERT INTO tab SELECT number, (toFloat32(number), 0., 0., 0.) from numbers(10000);
+
+SELECT *
+FROM tab
+ORDER BY L2Distance(vector, (1.0, 0.0, 0.0, 0.0))
+LIMIT 1;
+
+SELECT *
+FROM tab
+ORDER BY L2Distance(vector, (9000.0, 0.0, 0.0, 0.0))
+LIMIT 1;
+
+DROP TABLE tab;

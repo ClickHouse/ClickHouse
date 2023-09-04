@@ -5,6 +5,7 @@
 #include <ranges>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <base/defines.h>
 
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 
@@ -769,8 +770,11 @@ void DiskObjectStorageTransaction::createFile(const std::string & path)
         }));
 }
 
-void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path)
+void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path, const WriteSettings & settings)
 {
+    /// NOTE: For native copy we can ignore throttling, so no need to use WriteSettings
+    UNUSED(settings);
+
     operations_to_execute.emplace_back(
         std::make_unique<CopyFileObjectStorageOperation>(object_storage, metadata_storage, from_file_path, to_file_path));
 }
