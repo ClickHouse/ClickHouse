@@ -1,4 +1,4 @@
--- In some version vertical merges after DROP COLUMN had been broken in some cases
+-- In some versions vertical merges after DROP COLUMN was broken in some cases
 
 drop table if exists data;
 
@@ -22,3 +22,4 @@ alter table data add column `features_legacy_Map.id` Array(UInt8), add column `f
 alter table data drop column legacy_features_Map settings mutations_sync=2;
 
 optimize table data final;
+DROP TABLE data;
