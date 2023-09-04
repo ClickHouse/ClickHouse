@@ -47,7 +47,8 @@ NamesAndTypesList StorageSystemScheduler::getNamesAndTypes()
 
 void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    context->getResourceManager()->forEachNode([&] (const String & resource, const String & path, const String & type, const SchedulerNodePtr & node) {
+    context->getResourceManager()->forEachNode([&] (const String & resource, const String & path, const String & type, const SchedulerNodePtr & node)
+    {
         size_t i = 0;
         res_columns[i++]->insert(resource);
         res_columns[i++]->insert(path);
