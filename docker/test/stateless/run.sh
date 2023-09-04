@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # shellcheck disable=SC1091
-# shellcheck disable=SC2034
 source /setup_export_logs.sh
 
 # fail on errors, verbose and export all env variables
@@ -241,7 +240,7 @@ fi
 # Also export trace log in flamegraph-friendly format.
 for trace_type in CPU Memory Real
 do
-    clickhouse-local "data_path_config" --only-system-tables -q "
+    clickhouse-local "$data_path_config" --only-system-tables -q "
             select
                 arrayStringConcat((arrayMap(x -> concat(splitByChar('/', addressToLine(x))[-1], '#', demangle(addressToSymbol(x)) ), trace)), ';') AS stack,
                 count(*) AS samples
