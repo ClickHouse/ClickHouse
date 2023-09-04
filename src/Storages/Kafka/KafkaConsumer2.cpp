@@ -120,30 +120,10 @@ KafkaConsumer2::KafkaConsumer2(
                 CurrentMetrics::sub(CurrentMetrics::KafkaConsumersWithAssignment, 1);
             }
 
-            // we can not flush data to target from that point (it is pulled, not pushed)
-            // so the best we can now it to
-            // 1) repeat last commit in sync mode (async could be still in queue, we need to be sure is is properly committed before rebalance)
-            // 2) stop / brake the current reading:
-            //     * clean buffered non-commited messages
-            //     * set flag / flush
-
-            cleanUnprocessed();
-
-            stalled_status = StalledStatus::REBALANCE_HAPPENED;
             assignment.reset();
             queues.clear();
             needs_offset_update = true;
             waited_for_assignment = 0;
-
-            // for now we use slower (but reliable) sync commit in main loop, so no need to repeat
-            // try
-            // {
-            //     consumer->commit();
-            // }
-            // catch (cppkafka::HandleException & e)
-            // {
-            //     LOG_WARNING(log, "Commit error: {}", e.what());
-            // }
         });
 
     consumer->set_rebalance_error_callback(
@@ -170,7 +150,7 @@ KafkaConsumer2::~KafkaConsumer2()
             {
                 LOG_ERROR(log, "Error during unsubscribe: {}", e.what());
             }
-            drain();
+            drainConsumerQueue();
         }
     }
     catch (const cppkafka::HandleException & e)
@@ -179,17 +159,14 @@ KafkaConsumer2::~KafkaConsumer2()
     }
 }
 
-// Needed to drain rest of the messages / queued callback calls from the consumer
-// after unsubscribe, otherwise consumer will hang on destruction
+// Needed to drain rest of the messages / queued callback calls from the consumer after unsubscribe, otherwise consumer
+// will hang on destruction. Partition queues doesn't have to be attached as events are not handled by those queues.
 // see https://github.com/edenhill/librdkafka/issues/2077
 //     https://github.com/confluentinc/confluent-kafka-go/issues/189 etc.
-void KafkaConsumer2::drain()
+void KafkaConsumer2::drainConsumerQueue()
 {
     auto start_time = std::chrono::steady_clock::now();
     cppkafka::Error last_error(RD_KAFKA_RESP_ERR_NO_ERROR);
-
-    for (auto & [tp, queue] : queues)
-        queue.forward_to_queue(consumer->get_consumer_queue());
 
     while (true)
     {
@@ -224,13 +201,6 @@ void KafkaConsumer2::drain()
     }
 }
 
-void KafkaConsumer2::cleanUnprocessed()
-{
-    messages.clear();
-    current = messages.begin();
-    offsets_stored = 0;
-}
-
 void KafkaConsumer2::pollEvents()
 {
     // All the partition queues are detached, so the consumer shouldn't be able to poll any messages
@@ -263,12 +233,10 @@ KafkaConsumer2::TopicPartitionCounts KafkaConsumer2::getPartitionCounts() const
 
 bool KafkaConsumer2::polledDataUnusable(const TopicPartition & topic_partition) const
 {
-    const auto consumer_in_wrong_state
-        = (stalled_status != StalledStatus::NOT_STALLED) && (stalled_status != StalledStatus::NO_MESSAGES_RETURNED);
     const auto different_topic_partition = current == messages.end()
         ? false
         : (current->get_topic() != topic_partition.topic || current->get_partition() != topic_partition.partition_id);
-    return consumer_in_wrong_state || different_topic_partition;
+    return different_topic_partition;
 }
 
 KafkaConsumer2::TopicPartitions const * KafkaConsumer2::getKafkaAssignment() const
@@ -321,6 +289,7 @@ ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition)
         return getNextMessage();
 
 
+        // TODO(antaljanosbenjamin): check if we should poll new messages or not
     while (true)
     {
         stalled_status = StalledStatus::NO_MESSAGES_RETURNED;
@@ -343,10 +312,6 @@ ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition)
 
         resetIfStopped();
         if (stalled_status == StalledStatus::CONSUMER_STOPPED)
-        {
-            return nullptr;
-        }
-        else if (stalled_status == StalledStatus::REBALANCE_HAPPENED)
         {
             return nullptr;
         }
@@ -452,7 +417,6 @@ void KafkaConsumer2::resetIfStopped()
     if (stopped)
     {
         stalled_status = StalledStatus::CONSUMER_STOPPED;
-        cleanUnprocessed();
     }
 }
 }

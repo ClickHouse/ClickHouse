@@ -99,8 +99,6 @@ public:
 
     inline bool isStalled() const { return stalled_status != StalledStatus::NOT_STALLED; }
 
-    bool polledDataUnusable(const TopicPartition & topic_partition) const;
-
     // Returns the topic partitions that the consumer got from rebalancing the consumer group. If the consumer received
     // no topic partitions or all of them were revoked, it returns a null pointer.
     TopicPartitions const * getKafkaAssignment() const;
@@ -133,7 +131,6 @@ private:
     {
         NOT_STALLED,
         NO_MESSAGES_RETURNED,
-        REBALANCE_HAPPENED,
         CONSUMER_STOPPED,
         NO_ASSIGNMENT,
         ERRORS_RETURNED
@@ -143,7 +140,6 @@ private:
     Poco::Logger * log;
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
-    size_t offsets_stored = 0;
 
     StalledStatus stalled_status = StalledStatus::NO_MESSAGES_RETURNED;
 
@@ -162,8 +158,8 @@ private:
     std::unordered_map<TopicPartition, cppkafka::Queue, OnlyTopicNameAndPartitionIdHash, OnlyTopicNameAndPartitionIdEquality> queues;
     const Names topics;
 
-    void drain();
-    void cleanUnprocessed();
+    bool polledDataUnusable(const TopicPartition & topic_partition) const;
+    void drainConsumerQueue();
     void resetIfStopped();
     /// Return number of messages with an error.
     size_t filterMessageErrors();

@@ -701,6 +701,26 @@ StorageKafka2::pollConsumer(KafkaConsumer2 & consumer, const TopicPartition & to
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
 
+
+    Poco::Timespan max_execution_time = kafka_settings->kafka_flush_interval_ms.changed
+        ? kafka_settings->kafka_flush_interval_ms
+        : getContext()->getSettingsRef().stream_flush_interval_ms;
+
+    Stopwatch total_stopwatch{CLOCK_MONOTONIC_COARSE};
+
+    const auto check_time_limit = [&max_execution_time, &total_stopwatch]()
+    {
+        if (max_execution_time != 0)
+        {
+            auto elapsed_ns = total_stopwatch.elapsed();
+
+            if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
+                return false;
+        }
+
+        return true;
+    };
+
     while (true)
     {
         size_t new_rows = 0;
@@ -713,13 +733,6 @@ StorageKafka2::pollConsumer(KafkaConsumer2 & consumer, const TopicPartition & to
 
         if (new_rows)
         {
-            // In read_kafka_message(), KafkaConsumer::nextImpl()
-            // will be called, that may make something unusable, i.e. clean
-            // KafkaConsumer::messages, which is accessed from
-            // KafkaConsumer::currentTopic() (and other helpers).
-            if (consumer.isStalled())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Polled messages became unusable");
-
             ProfileEvents::increment(ProfileEvents::KafkaRowsRead, new_rows);
 
             const auto & header_list = consumer.currentHeaderList();
@@ -779,10 +792,7 @@ StorageKafka2::pollConsumer(KafkaConsumer2 & consumer, const TopicPartition & to
             total_rows = total_rows + new_rows;
             batch_info.last_offset = consumer.currentOffset();
         }
-        else if (consumer.polledDataUnusable(topic_partition))
-        {
-            break;
-        }
+        // TODO(antaljanosbenjamin): think about this when rebalance is happening, because `isStalled()` will return true
         else if (consumer.isStalled())
         {
             ++failed_poll_attempts;
@@ -801,9 +811,8 @@ StorageKafka2::pollConsumer(KafkaConsumer2 & consumer, const TopicPartition & to
         }
 
         if (!consumer.hasMorePolledMessages()
-            && (total_rows >= kafka_settings->kafka_max_block_size || /*!checkTimeLimit()
-                ||*/
-                failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
+            && (total_rows >= kafka_settings->kafka_max_block_size || !check_time_limit()
+                || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS || consumer.needsOffsetUpdate()))
         {
             break;
         }
@@ -811,14 +820,6 @@ StorageKafka2::pollConsumer(KafkaConsumer2 & consumer, const TopicPartition & to
 
     if (total_rows == 0)
     {
-        return {};
-    }
-    else if (consumer.polledDataUnusable(topic_partition))
-    {
-        // the rows were counted already before by KafkaRowsRead,
-        // so let's count the rows we ignore separately
-        // (they will be retried after the rebalance)
-        ProfileEvents::increment(ProfileEvents::KafkaRowsRejected, total_rows);
         return {};
     }
 
@@ -947,14 +948,15 @@ bool StorageKafka2::streamToViews(size_t idx)
             consumer_info.locks = std::move(*maybe_locks);
 
             consumer_info.topic_partitions.reserve(current_assignment->size());
-            for (const auto& topic_partition : *current_assignment) {
+            for (const auto & topic_partition : *current_assignment)
+            {
                 TopicPartition topic_partition_copy{topic_partition};
-                if( const auto & maybe_committed_offset = consumer_info.locks.at(topic_partition).committed_offset; maybe_committed_offset.has_value())
+                if (const auto & maybe_committed_offset = consumer_info.locks.at(topic_partition).committed_offset;
+                    maybe_committed_offset.has_value())
                     topic_partition_copy.offset = *maybe_committed_offset + 1;
                 else
                     topic_partition_copy.offset = KafkaConsumer2::BEGINNING_OFFSET;
                 consumer_info.topic_partitions.push_back(std::move(topic_partition_copy));
-
             }
         }
         consumer_info.consumer->updateOffsets(consumer_info.topic_partitions);
