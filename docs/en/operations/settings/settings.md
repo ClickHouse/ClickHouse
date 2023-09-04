@@ -2383,6 +2383,23 @@ See also:
 
 - [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
 
+## optimize_count_from_files {#optimize_count_from_files}
+
+Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
+
+Possible values:
+
+- 0 — Optimization disabled.
+- 1 — Optimization enabled.
+
+Default value: `1`.
+
+## use_cache_for_count_from_files {#use_cache_for_count_from_files}
+
+Enables caching of rows number during count from files in table functions `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
+
+Enabled by default.
+
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 - Type: seconds
@@ -4625,4 +4642,20 @@ SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_pars
 ┌─toFloat64('1.7091')─┬─toFloat64('1.5008753E7')─┐
 │              1.7091 │                 15008753 │
 └─────────────────────┴──────────────────────────┘
+```
+
+## validate_tcp_client_information {#validate-tcp-client-information}
+
+Determines whether validation of client information enabled when query packet is received from a client using a TCP connection.
+
+If `true`, an exception will be thrown on invalid client information from the TCP client.
+
+If `false`, the data will not be validated. The server will work with clients of all versions.
+
+The default value is `false`.
+
+**Example**
+
+``` xml
+<validate_tcp_client_information>true</validate_tcp_client_information>
 ```

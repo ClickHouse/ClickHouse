@@ -2,6 +2,7 @@
 #include "Commands.h"
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <Common/EventNotifier.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -156,6 +157,11 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
             .binding("operation-timeout"));
 
     options.addOption(
+        Poco::Util::Option("config-file", "c", "if set, will try to get a connection string from clickhouse config. default `config.xml`")
+            .argument("<file>")
+            .binding("config-file"));
+
+    options.addOption(
         Poco::Util::Option("history-file", "", "set path of history file. default `~/.keeper-client-history`")
             .argument("<file>")
             .binding("history-file"));
@@ -211,7 +217,14 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
         }
     }
 
-    Poco::Logger::root().setLevel(config().getString("log-level", "error"));
+    String default_log_level;
+    if (config().has("query"))
+        /// We don't want to see any information log in query mode, unless it was set explicitly
+        default_log_level = "error";
+    else
+        default_log_level = "information";
+
+    Poco::Logger::root().setLevel(config().getString("log-level", default_log_level));
 
     EventNotifier::init();
 }
@@ -311,9 +324,39 @@ int KeeperClient::main(const std::vector<String> & /* args */)
         return 0;
     }
 
-    auto host = config().getString("host", "localhost");
-    auto port = config().getString("port", "9181");
-    zk_args.hosts = {host + ":" + port};
+    DB::ConfigProcessor config_processor(config().getString("config-file", "config.xml"));
+
+    /// This will handle a situation when clickhouse is running on the embedded config, but config.d folder is also present.
+    config_processor.registerEmbeddedConfig("config.xml", "<clickhouse/>");
+    auto clickhouse_config = config_processor.loadConfig();
+
+    Poco::Util::AbstractConfiguration::Keys keys;
+    clickhouse_config.configuration->keys("zookeeper", keys);
+
+    if (!config().has("host") && !config().has("port") && !keys.empty())
+    {
+        LOG_INFO(&Poco::Logger::get("KeeperClient"), "Found keeper node in the config.xml, will use it for connection");
+
+        for (const auto & key : keys)
+        {
+            String prefix = "zookeeper." + key;
+            String host = clickhouse_config.configuration->getString(prefix + ".host");
+            String port = clickhouse_config.configuration->getString(prefix + ".port");
+
+            if (clickhouse_config.configuration->has(prefix + ".secure"))
+                host = "secure://" + host;
+
+            zk_args.hosts.push_back(host + ":" + port);
+        }
+    }
+    else
+    {
+        String host = config().getString("host", "localhost");
+        String port = config().getString("port", "9181");
+
+        zk_args.hosts.push_back(host + ":" + port);
+    }
+
     zk_args.connection_timeout_ms = config().getInt("connection-timeout", 10) * 1000;
     zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
     zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
