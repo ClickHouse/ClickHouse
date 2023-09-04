@@ -69,6 +69,13 @@ struct SchedulerNodeInfo
     {
         priority.value = value;
     }
+
+    // To check if configuration update required
+    bool equals(const SchedulerNodeInfo & o) const
+    {
+        // `parent` data is not compared intentionally (it is not part of configuration settings)
+        return weight == o.weight && priority == o.priority;
+    }
 };
 
 /*
@@ -158,8 +165,11 @@ public:
 
     virtual ~ISchedulerNode() {}
 
-    // Checks if two nodes configuration is equal
-    virtual bool equals(ISchedulerNode * other) = 0;
+    /// Checks if two nodes configuration is equal
+    virtual bool equals(ISchedulerNode * other)
+    {
+        return info.equals(other->info);
+    }
 
     /// Attach new child
     virtual void attachChild(const std::shared_ptr<ISchedulerNode> & child) = 0;

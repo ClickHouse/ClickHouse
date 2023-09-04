@@ -27,6 +27,8 @@ public:
 
     bool equals(ISchedulerNode * other) override
     {
+        if (!ISchedulerNode::equals(other))
+            return false;
         if (auto * o = dynamic_cast<SemaphoreConstraint *>(other))
             return max_requests == o->max_requests && max_cost == o->max_cost;
         return false;
