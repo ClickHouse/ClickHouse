@@ -211,6 +211,10 @@ namespace MySQLProtocol
                     column_type = ColumnType::MYSQL_TYPE_DATETIME;
                     flags = ColumnDefinitionFlags::BINARY_FLAG;
                     break;
+                case TypeIndex::DateTime64:
+                    column_type = ColumnType::MYSQL_TYPE_DATETIME;
+                    flags = ColumnDefinitionFlags::BINARY_FLAG;
+                    break;
                 case TypeIndex::Decimal32:
                 case TypeIndex::Decimal64:
                     column_type = ColumnType::MYSQL_TYPE_DECIMAL;
