@@ -14,12 +14,12 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric KafkaConsumers;
+extern const Metric KafkaConsumers;
 }
 
 namespace Poco
 {
-    class Logger;
+class Logger;
 }
 
 namespace DB
@@ -40,8 +40,8 @@ public:
         int32_t partition_id;
         int64_t offset{INVALID_OFFSET};
 
-        bool operator==(const TopicPartition&) const = default;
-        bool operator<(const TopicPartition& other) const;
+        bool operator==(const TopicPartition &) const = default;
+        bool operator<(const TopicPartition & other) const;
     };
 
     using TopicPartitions = std::vector<TopicPartition>;
@@ -85,8 +85,7 @@ public:
         size_t poll_timeout_,
         bool intermediate_commit_,
         const std::atomic<bool> & stopped_,
-        const Names & _topics
-    );
+        const Names & _topics);
 
     ~KafkaConsumer2();
 
@@ -96,16 +95,15 @@ public:
 
     auto pollTimeout() const { return poll_timeout; }
 
-    inline bool hasMorePolledMessages() const
-    {
-        return (stalled_status == StalledStatus::NOT_STALLED) && (current != messages.end());
-    }
+    inline bool hasMorePolledMessages() const { return (stalled_status == StalledStatus::NOT_STALLED) && (current != messages.end()); }
 
     inline bool isStalled() const { return stalled_status != StalledStatus::NOT_STALLED; }
 
     bool polledDataUnusable(const TopicPartition & topic_partition) const;
 
-    TopicPartitions const * getAssignment() const;
+    // Returns the topic partitions that the consumer got from rebalancing the consumer group. If the consumer received
+    // no topic partitions or all of them were revoked, it returns a null pointer.
+    TopicPartitions const * getKafkaAssignment() const;
 
     // As the main source of offsets is not Kafka, the offsets needs to pushed to the consumer from outside
     bool needsOffsetUpdate() const { return needs_offset_update; }
@@ -171,7 +169,7 @@ private:
     size_t filterMessageErrors();
     ReadBufferPtr getNextMessage();
 
-    void updateOffsets(const cppkafka::TopicPartitionList & topic_partitions);
+    void initializeQueues(const cppkafka::TopicPartitionList & topic_partitions);
 };
 
 }

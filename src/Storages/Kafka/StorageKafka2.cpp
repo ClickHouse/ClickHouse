@@ -920,7 +920,7 @@ bool StorageKafka2::streamToViews(size_t idx)
 
     LOG_TRACE(log, "Polling consumer #{} for events", idx);
     consumer->pollEvents();
-    if (nullptr == consumer->getAssignment())
+    if (nullptr == consumer->getKafkaAssignment())
         return true;
 
 
@@ -934,7 +934,7 @@ bool StorageKafka2::streamToViews(size_t idx)
         consumer_info.locks.clear();
         consumer_info.topic_partitions.clear();
 
-        if (const auto * current_assignment = consumer->getAssignment(); nullptr != current_assignment)
+        if (const auto * current_assignment = consumer->getKafkaAssignment(); nullptr != current_assignment)
         {
             auto maybe_locks = lockTopicPartitions(*current_assignment);
 

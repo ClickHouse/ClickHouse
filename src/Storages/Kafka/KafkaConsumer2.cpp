@@ -99,9 +99,9 @@ KafkaConsumer2::KafkaConsumer2(
             {
                 assignment->push_back(TopicPartition{topic_partition.get_topic(), topic_partition.get_partition(), INVALID_OFFSET});
             }
-            std::sort(assignment->begin(), assignment->end());
 
-            updateOffsets(topic_partitions);
+            // We need to initialize the queues here in order to detach them from the consumer queue. Otherwise `pollEvents` might eventually poll actual messages also.
+            initializeQueues(topic_partitions);
         });
 
     // called (synchronously, during poll) when we leave the consumer group
@@ -272,7 +272,7 @@ bool KafkaConsumer2::polledDataUnusable(const TopicPartition & topic_partition) 
     return consumer_in_wrong_state || different_topic_partition;
 }
 
-KafkaConsumer2::TopicPartitions const * KafkaConsumer2::getAssignment() const
+KafkaConsumer2::TopicPartitions const * KafkaConsumer2::getKafkaAssignment() const
 {
     if (assignment.has_value())
     {
@@ -284,7 +284,6 @@ KafkaConsumer2::TopicPartitions const * KafkaConsumer2::getAssignment() const
 
 void KafkaConsumer2::updateOffsets(const TopicPartitions & topic_partitions)
 {
-    // TODO(antaljanosbenjamin): Make sure topic_partitions and assignment is in sync.
     cppkafka::TopicPartitionList original_topic_partitions;
     original_topic_partitions.reserve(topic_partitions.size());
     std::transform(
@@ -294,12 +293,12 @@ void KafkaConsumer2::updateOffsets(const TopicPartitions & topic_partitions)
         [](const TopicPartition & tp) {
             return cppkafka::TopicPartition{tp.topic, tp.partition_id, tp.offset};
         });
-    updateOffsets(original_topic_partitions);
+    initializeQueues(original_topic_partitions);
     needs_offset_update = false;
     stalled_status = StalledStatus::NOT_STALLED;
 }
 
-void KafkaConsumer2::updateOffsets(const cppkafka::TopicPartitionList & topic_partitions)
+void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic_partitions)
 {
     queues.clear();
     // cppkafka itself calls assign(), but in order to detach the queues here we have to do the assignment manually. Later on we have to reassign the topic partitions with correct offsets.
