@@ -7,11 +7,12 @@
 #include <Parsers/ASTFunction.h>
 #include <IO/WriteHelpers.h>
 #include "Common/Exception.h"
+#include "DataTypes/IDataType.h"
 #include "base/Decimal_fwd.h"
 #include "base/types.h"
 #include "config.h"
 
-#include <boost/math/common_factor_rt.hpp>
+#include <boost/integer/common_factor.hpp>
 #include <libdivide-config.h>
 #include <libdivide.h>
 
@@ -95,7 +96,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
         }
         else
         {
-            gcd_divider = boost::math::gcd(gcd_divider, unalignedLoad<T>(cur_source));
+            gcd_divider = boost::integer::gcd(gcd_divider, unalignedLoad<T>(cur_source));
         }
         cur_source += sizeof(T);
     }
@@ -240,7 +241,8 @@ namespace
 
 UInt8 getGCDBytesSize(const IDataType * column_type)
 {
-    if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+    WhichDataType which(column_type);
+    if (!(which.isInt() || which.isUInt() || which.isDecimal() || which.isDateOrDate32() || which.isDateTime() ||which.isDateTime64()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec GCD is not applicable for {} because the data type is not of fixed size",
             column_type->getName());
 
