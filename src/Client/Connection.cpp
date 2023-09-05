@@ -197,10 +197,14 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         // You may want to ask a server for a challenge if you want to authenticate using ssh keys
         if (!ssh_private_key.isEmpty())
         {
+#if defined(USE_SSL)
             if (server_revision < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Authentication using SSH keys is not supported by the server");
 
             performHandshakeForSSHAuth();
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Authentication using SSH keys is not supported by the server, because it was built without SSL");
+#endif
         }
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
@@ -343,8 +347,10 @@ void Connection::sendAddendum()
     out->next();
 }
 
+
 void Connection::performHandshakeForSSHAuth()
 {
+#if USE_SSL
     String challenge;
     {
         writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);
@@ -368,16 +374,12 @@ void Connection::performHandshakeForSSHAuth()
         }
     }
 
-#if USE_SSL
     writeVarUInt(Protocol::Client::SSHChallengeResponse, *out);
     String to_sign = packStringForSshSign(challenge);
     String signature = ssh_private_key.signString(to_sign);
     writeStringBinary(signature, *out);
     out->next();
-#else
-    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
 #endif
-
 }
 
 

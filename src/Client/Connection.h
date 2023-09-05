@@ -3,7 +3,6 @@
 
 #include <Poco/Net/StreamSocket.h>
 
-#include "config.h"
 #include <Common/SSH/Wrappers.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
@@ -21,6 +20,8 @@
 
 #include <atomic>
 #include <optional>
+
+#include "config.h"
 
 namespace DB
 {
@@ -263,7 +264,9 @@ private:
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
     String packStringForSshSign(String challenge);
+
     void performHandshakeForSSHAuth();
+
     void sendAddendum();
     void receiveHello(const Poco::Timespan & handshake_timeout);
 
