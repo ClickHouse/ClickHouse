@@ -4859,18 +4859,18 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
 
         IndexSize part_secondary_index_size = part->getSecondaryIndexSize(secondary_index_name);
 
-        auto log_subtract = [&](size_t & from, size_t value, const char * field)
+        auto log_subtract = [this](size_t & from, size_t value, const char * field, const std::string& secondary_index_name_)
         {
             if (value > from)
                 LOG_ERROR(log, "Possibly incorrect index size subtraction: {} - {} = {}, index: {}, field: {}",
-                    from, value, from - value, secondary_index_name, field);
+                          from, value, from - value, secondary_index_name_, field);
 
             from -= value;
         };
 
-        log_subtract(total_secondary_index_size.data_compressed, part_secondary_index_size.data_compressed, ".data_compressed");
-        log_subtract(total_secondary_index_size.data_uncompressed, part_secondary_index_size.data_uncompressed, ".data_uncompressed");
-        log_subtract(total_secondary_index_size.marks, part_secondary_index_size.marks, ".marks");
+        log_subtract(total_secondary_index_size.data_compressed, part_secondary_index_size.data_compressed, ".data_compressed", secondary_index_name);
+        log_subtract(total_secondary_index_size.data_uncompressed, part_secondary_index_size.data_uncompressed, ".data_uncompressed", secondary_index_name);
+        log_subtract(total_secondary_index_size.marks, part_secondary_index_size.marks, ".marks", secondary_index_name);
     }
 }
 
