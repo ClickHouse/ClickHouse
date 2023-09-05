@@ -197,14 +197,14 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         // You may want to ask a server for a challenge if you want to authenticate using ssh keys
         if (!ssh_private_key.isEmpty())
         {
-#if !defined(USE_SSL)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Authentication using SSH keys is not supported by the server, because it was built without SSL");
-#endif
-
+#if defined(USE_SSL)
             if (server_revision < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Authentication using SSH keys is not supported by the server");
 
             performHandshakeForSSHAuth();
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Authentication using SSH keys is not supported by the server, because it was built without SSL");
+#endif
         }
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
