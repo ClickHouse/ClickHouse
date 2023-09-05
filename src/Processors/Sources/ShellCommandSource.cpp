@@ -349,7 +349,7 @@ namespace
         {
             for (auto && send_data_task : send_data_tasks)
             {
-                send_data_threads.emplace_back([task = std::move(send_data_task), this]()
+                send_data_threads.emplace_back([task = std::move(send_data_task), this]() mutable
                 {
                     try
                     {
@@ -359,6 +359,10 @@ namespace
                     {
                         std::lock_guard lock(send_data_lock);
                         exception_during_send_data = std::current_exception();
+
+                        /// task should be reset inside catch block or else it breaks d'tor
+                        /// invariants such as in ~WriteBuffer.
+                        task = {};
                     }
                 });
             }
@@ -435,11 +439,7 @@ namespace
                 }
 
                 if (!executor->pull(chunk))
-                {
-                    if (check_exit_code)
-                        command->wait();
                     return {};
-                }
 
                 current_read_rows += chunk.getNumRows();
             }
@@ -461,6 +461,21 @@ namespace
                 for (auto & thread : send_data_threads)
                     if (thread.joinable())
                         thread.join();
+
+                if (check_exit_code)
+                {
+                    if (process_pool)
+                    {
+                        bool valid_command
+                            = configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read;
+
+                        // We can only wait for pooled commands when they are invalid.
+                        if (!valid_command)
+                            command->wait();
+                    }
+                    else
+                        command->wait();
+                }
 
                 rethrowExceptionDuringSendDataIfNeeded();
             }

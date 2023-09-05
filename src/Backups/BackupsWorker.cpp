@@ -386,6 +386,7 @@ void BackupsWorker::doBackup(
         backup_create_params.backup_uuid = backup_settings.backup_uuid;
         backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
         backup_create_params.allow_s3_native_copy = backup_settings.allow_s3_native_copy;
+        backup_create_params.use_same_s3_credentials_for_base_backup = backup_settings.use_same_s3_credentials_for_base_backup;
         backup_create_params.read_settings = getReadSettingsForBackup(context, backup_settings);
         backup_create_params.write_settings = getWriteSettingsForBackup(context);
         BackupMutablePtr backup = BackupFactory::instance().createBackup(backup_create_params);
@@ -563,8 +564,13 @@ void BackupsWorker::writeBackupEntries(BackupMutablePtr backup, BackupEntries &&
             }
         };
 
-        if (always_single_threaded || !backups_thread_pool->trySchedule([job] { job(true); }))
+        if (always_single_threaded)
+        {
             job(false);
+            continue;
+        }
+
+        backups_thread_pool->scheduleOrThrowOnError([job] { job(true); });
     }
 
     {
@@ -688,6 +694,7 @@ void BackupsWorker::doRestore(
         backup_open_params.base_backup_info = restore_settings.base_backup_info;
         backup_open_params.password = restore_settings.password;
         backup_open_params.allow_s3_native_copy = restore_settings.allow_s3_native_copy;
+        backup_open_params.use_same_s3_credentials_for_base_backup = restore_settings.use_same_s3_credentials_for_base_backup;
         backup_open_params.read_settings = getReadSettingsForRestore(context);
         backup_open_params.write_settings = getWriteSettingsForRestore(context);
         BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
@@ -854,8 +861,7 @@ void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr 
             }
         };
 
-        if (!thread_pool.trySchedule([job] { job(true); }))
-            job(false);
+        thread_pool.scheduleOrThrowOnError([job] { job(true); });
     }
 
     {
