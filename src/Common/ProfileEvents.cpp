@@ -258,6 +258,8 @@ The server successfully detected this situation and will download merged part fr
     M(RWLockReadersWaitMilliseconds, "Total time spent waiting for a read lock to be acquired (in a heavy RWLock).") \
     M(RWLockWritersWaitMilliseconds, "Total time spent waiting for a write lock to be acquired (in a heavy RWLock).") \
     M(DNSError, "Total count of errors in DNS resolution") \
+    M(PartsLockHoldMicroseconds, "Total time spent holding data parts lock in MergeTree tables") \
+    M(PartsLockWaitMicroseconds, "Total time spent waiting for data parts lock in MergeTree tables") \
     \
     M(RealTimeMicroseconds, "Total (wall clock) time spent in processing (queries and other tasks) threads (note that this is a sum).") \
     M(UserTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in user mode. This include time CPU pipeline was stalled due to main memory access, cache misses, branch mispredictions, hyper-threading, etc.") \
@@ -393,8 +395,11 @@ The server successfully detected this situation and will download merged part fr
     M(CachedWriteBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache") \
     M(CachedWriteBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache") \
     \
+    M(FilesystemCacheLoadMetadataMicroseconds, "Time spent loading filesystem cache metadata") \
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache") \
     M(FilesystemCacheEvictedFileSegments, "Number of file segments evicted from filesystem cache") \
+    M(FilesystemCacheEvictionSkippedFileSegments, "Number of file segments skipped for eviction because of being unreleasable") \
+    M(FilesystemCacheEvictionTries, "Number of filesystem cache eviction attempts") \
     M(FilesystemCacheLockKeyMicroseconds, "Lock cache key time") \
     M(FilesystemCacheLockMetadataMicroseconds, "Lock filesystem cache metadata time") \
     M(FilesystemCacheLockCacheMicroseconds, "Lock filesystem cache time") \
@@ -487,8 +492,12 @@ The server successfully detected this situation and will download merged part fr
     M(ScalarSubqueriesLocalCacheHit, "Number of times a read from a scalar subquery was done using the local cache") \
     M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely")                                                                                                                                                                                                 \
     \
-    M(SchemaInferenceCacheHits, "Number of times a schema from cache was used for schema inference") \
-    M(SchemaInferenceCacheMisses, "Number of times a schema is not in cache while schema inference") \
+    M(SchemaInferenceCacheHits, "Number of times the requested source is found in schema cache") \
+    M(SchemaInferenceCacheSchemaHits, "Number of times the schema is found in schema cache during schema inference") \
+    M(SchemaInferenceCacheNumRowsHits, "Number of times the number of rows is found in schema cache during count from files") \
+    M(SchemaInferenceCacheMisses, "Number of times the requested source is not in schema cache") \
+    M(SchemaInferenceCacheSchemaMisses, "Number of times the requested source is in cache but the schema is not in cache while schema inference") \
+    M(SchemaInferenceCacheNumRowsMisses, "Number of times the requested source is in cache but the number of rows is not in cache while count from files") \
     M(SchemaInferenceCacheEvictions, "Number of times a schema from cache was evicted due to overflow") \
     M(SchemaInferenceCacheInvalidations, "Number of times a schema in cache became invalid due to changes in data") \
     \

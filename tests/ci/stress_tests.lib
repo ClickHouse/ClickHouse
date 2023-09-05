@@ -275,3 +275,5 @@ function collect_core_dumps()
       mv $core.zst /test_output/
   done
 }
+
+# vi: ft=bash

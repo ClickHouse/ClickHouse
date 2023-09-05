@@ -3,7 +3,7 @@
 	url = https://github.com/facebook/zstd
 [submodule "contrib/lz4"]
 	path = contrib/lz4
-	url = https://github.com/lz4/lz4
+	url = https://github.com/ClickHouse/lz4
 [submodule "contrib/librdkafka"]
 	path = contrib/librdkafka
 	url = https://github.com/ClickHouse/librdkafka
@@ -13,7 +13,6 @@
 [submodule "contrib/zlib-ng"]
 	path = contrib/zlib-ng
 	url = https://github.com/ClickHouse/zlib-ng
-	branch = clickhouse-2.0.x
 [submodule "contrib/googletest"]
 	path = contrib/googletest
 	url = https://github.com/google/googletest
@@ -47,7 +46,6 @@
 [submodule "contrib/arrow"]
 	path = contrib/arrow
 	url = https://github.com/ClickHouse/arrow
-	branch = blessed/release-6.0.1
 [submodule "contrib/thrift"]
 	path = contrib/thrift
 	url = https://github.com/apache/thrift
@@ -93,7 +91,6 @@
 [submodule "contrib/grpc"]
 	path = contrib/grpc
 	url = https://github.com/ClickHouse/grpc
-	branch = v1.33.2
 [submodule "contrib/aws"]
 	path = contrib/aws
 	url = https://github.com/ClickHouse/aws-sdk-cpp
@@ -140,11 +137,9 @@
 [submodule "contrib/cassandra"]
 	path = contrib/cassandra
 	url = https://github.com/ClickHouse/cpp-driver
-	branch = clickhouse
 [submodule "contrib/libuv"]
 	path = contrib/libuv
 	url = https://github.com/ClickHouse/libuv
-	branch = clickhouse
 [submodule "contrib/fmtlib"]
 	path = contrib/fmtlib
 	url = https://github.com/fmtlib/fmt
@@ -157,11 +152,9 @@
 [submodule "contrib/cyrus-sasl"]
 	path = contrib/cyrus-sasl
 	url = https://github.com/ClickHouse/cyrus-sasl
-	branch = cyrus-sasl-2.1
 [submodule "contrib/croaring"]
 	path = contrib/croaring
 	url = https://github.com/RoaringBitmap/CRoaring
-	branch = v0.2.66
 [submodule "contrib/miniselect"]
 	path = contrib/miniselect
 	url = https://github.com/danlark1/miniselect
@@ -174,7 +167,6 @@
 [submodule "contrib/abseil-cpp"]
 	path = contrib/abseil-cpp
 	url = https://github.com/abseil/abseil-cpp
-	branch = lts_2021_11_02
 [submodule "contrib/dragonbox"]
 	path = contrib/dragonbox
 	url = https://github.com/ClickHouse/dragonbox
@@ -187,7 +179,6 @@
 [submodule "contrib/boringssl"]
 	path = contrib/boringssl
 	url = https://github.com/ClickHouse/boringssl
-	branch = unknown_branch_from_artur
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
 	url = https://github.com/ClickHouse/NuRaft
@@ -248,7 +239,6 @@
 [submodule "contrib/annoy"]
 	path = contrib/annoy
 	url = https://github.com/ClickHouse/annoy
-	branch = ClickHouse-master
 [submodule "contrib/qpl"]
 	path = contrib/qpl
 	url = https://github.com/intel/qpl
@@ -282,7 +272,6 @@
 [submodule "contrib/openssl"]
 	path = contrib/openssl
 	url = https://github.com/openssl/openssl
-	branch = openssl-3.0
 [submodule "contrib/google-benchmark"]
 	path = contrib/google-benchmark
 	url = https://github.com/google/benchmark
