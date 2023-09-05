@@ -1597,15 +1597,11 @@ ActionLock StorageMergeTree::stopMergesAndWaitForPartition(String partition_id)
     LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition partition_id: \"{}\"", partition_id);
     /// Stop all merges and prevent new from starting, BUT unlike stopMergesAndWait(), only wait for the merges on small set of parts to finish.
 
-    LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition before lock: currently_processing_in_background_mutex");
     std::unique_lock lock(currently_processing_in_background_mutex);
-    LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition after  lock: currently_processing_in_background_mutex");
 
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
-    LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition before canceling merges with merger_mutator.merges_blocker");
     auto merge_blocker = merger_mutator.merges_blocker.cancel();
-    LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition after  canceling merges with merger_mutator.merges_blocker");
 
     const DataPartsVector parts_to_wait = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, partition_id);
     LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition parts to wait: {} ({} items)",
