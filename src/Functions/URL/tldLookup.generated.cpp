@@ -110733,6 +110733,6 @@ const char * TopLevelDomainLookupHash::isValid(const char * str, size_t len)
                 return s;
         }
     }
-    return 0;
+    return nullptr;
 }
 #line 5060 "tldLookup.gperf"
