@@ -1,3 +1,4 @@
+#include "IO/S3/Client.h"
 #include "config.h"
 
 #if USE_AWS_S3

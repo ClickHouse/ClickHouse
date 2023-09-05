@@ -1,4 +1,6 @@
 #include <IO/S3/Credentials.h>
+#include <aws/core/auth/SSOCredentialsProvider.h>
+#include "Interpreters/Context.h"
 
 #if USE_AWS_S3
 
@@ -10,6 +12,9 @@
 #    include <aws/core/utils/json/JsonSerializer.h>
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
+
+#    include <aws/core/utils/HashingUtils.h>
+#    include <aws/core/platform/FileSystem.h>
 
 #    include <Common/logger_useful.h>
 
@@ -449,6 +454,180 @@ void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::refreshIfExpired()
     Reload();
 }
 
+class SSOCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
+{
+public:
+    SSOCredentialsProvider();
+    explicit SSOCredentialsProvider(const Aws::String& profile);
+    /**
+        * Retrieves the credentials if found, otherwise returns empty credential set.
+        */
+    Aws::Auth::AWSCredentials GetAWSCredentials() override;
+
+private:
+    Aws::UniquePtr<Aws::Internal::SSOCredentialsClient> m_client;
+    Aws::Auth::AWSCredentials m_credentials;
+
+    // Profile description variables
+    Aws::String m_profileToUse;
+
+    // The AWS account ID that temporary AWS credentials are resolved for.
+    Aws::String m_ssoAccountId;
+    // The AWS region where the SSO directory for the given sso_start_url is hosted.
+    // This is independent of the general region configuration and MUST NOT be conflated.
+    Aws::String m_ssoRegion;
+    // The expiration time of the accessToken.
+    Aws::Utils::DateTime m_expiresAt;
+    // The SSO Token Provider
+    Aws::Auth::SSOBearerTokenProvider m_bearerTokenProvider;
+
+    void Reload() override;
+    void RefreshIfExpired();
+    Aws::String LoadAccessTokenFile(const Aws::String& ssoAccessTokenPath);
+};
+
+static const char SSO_CREDENTIALS_PROVIDER_LOG_TAG[] = "SSOCredentialsProvider";
+
+SSOCredentialsProvider::SSOCredentialsProvider() : m_profileToUse(Aws::Auth::GetConfigProfileName())
+{
+    LOG_INFO(&Poco::Logger::get(SSO_CREDENTIALS_PROVIDER_LOG_TAG), "Setting sso credentials provider to read config from {}",  m_profileToUse);
+}
+
+SSOCredentialsProvider::SSOCredentialsProvider(const Aws::String& profile) : m_profileToUse(profile),
+                                                                             m_bearerTokenProvider(profile)
+{
+    LOG_INFO(&Poco::Logger::get(SSO_CREDENTIALS_PROVIDER_LOG_TAG), "Setting sso credentials provider to read config from {}",  m_profileToUse);
+}
+
+Aws::Auth::AWSCredentials SSOCredentialsProvider::GetAWSCredentials()
+{
+    RefreshIfExpired();
+    Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
+    return m_credentials;
+}
+
+void SSOCredentialsProvider::Reload()
+{
+    auto profile = Aws::Config::GetCachedConfigProfile(m_profileToUse);
+    const auto accessToken = [&]() -> Aws::String {
+        // If we have an SSO Session set, use the refreshed token.
+        if (profile.IsSsoSessionSet()) {
+            m_ssoRegion = profile.GetSsoSession().GetSsoRegion();
+            auto token = m_bearerTokenProvider.GetAWSBearerToken();
+            m_expiresAt = token.GetExpiration();
+            return token.GetToken();
+        }
+        Aws::String hashedStartUrl = Aws::Utils::HashingUtils::HexEncode(Aws::Utils::HashingUtils::CalculateSHA1(profile.GetSsoStartUrl()));
+        auto profileDirectory = Aws::Auth::ProfileConfigFileAWSCredentialsProvider::GetProfileDirectory();
+        Aws::StringStream ssToken;
+        ssToken << profileDirectory;
+        ssToken << Aws::FileSystem::PATH_DELIM << "sso"  << Aws::FileSystem::PATH_DELIM << "cache" << Aws::FileSystem::PATH_DELIM << hashedStartUrl << ".json";
+        auto ssoTokenPath = ssToken.str();
+        LOG_INFO(&Poco::Logger::get(SSO_CREDENTIALS_PROVIDER_LOG_TAG), "Loading token from: {}", ssoTokenPath);
+        m_ssoRegion = profile.GetSsoRegion();
+        return LoadAccessTokenFile(ssoTokenPath);
+    }();
+    if (accessToken.empty()) {
+        LOG_INFO(&Poco::Logger::get(SSO_CREDENTIALS_PROVIDER_LOG_TAG), "Access token for SSO not available");
+        return;
+    }
+    if (m_expiresAt < Aws::Utils::DateTime::Now()) {
+        LOG_INFO(&Poco::Logger::get(SSO_CREDENTIALS_PROVIDER_LOG_TAG), "Cached Token expired at {}", m_expiresAt.ToGmtString(Aws::Utils::DateFormat::ISO_8601));
+        return;
+    }
+    Aws::Internal::SSOCredentialsClient::SSOGetRoleCredentialsRequest request;
+    request.m_ssoAccountId = profile.GetSsoAccountId();
+    request.m_ssoRoleName = profile.GetSsoRoleName();
+    request.m_accessToken = accessToken;
+
+    auto context = DB::Context::getGlobalContextInstance();
+    auto config = ClientFactory::instance().createClientConfiguration(
+        m_ssoRegion,
+        context->getRemoteHostFilter(),
+        static_cast<int>(context->getGlobalContext()->getSettingsRef().s3_max_redirects),
+        context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
+        /* for_disk_s3 = */ true,
+        {},
+        {},
+        "HTTPS"
+    );
+
+    config.scheme = Aws::Http::Scheme::HTTPS;
+    config.region = m_ssoRegion;
+    LOG_INFO(&Poco::Logger::get(SSO_CREDENTIALS_PROVIDER_LOG_TAG), "Passing config to client for region: {}", m_ssoRegion);
+
+    Aws::Vector<Aws::String> retryableErrors;
+    retryableErrors.push_back("TooManyRequestsException");
+
+    config.retryStrategy = Aws::MakeShared<Aws::Client::SpecifiedRetryableErrorsRetryStrategy>(SSO_CREDENTIALS_PROVIDER_LOG_TAG, retryableErrors, 3/*maxRetries*/);
+    m_client = Aws::MakeUnique<Aws::Internal::SSOCredentialsClient>(SSO_CREDENTIALS_PROVIDER_LOG_TAG, config);
+
+    LOG_INFO(&Poco::Logger::get(SSO_CREDENTIALS_PROVIDER_LOG_TAG), "Requesting credentials with AWS_ACCESS_KEY: {}", m_ssoAccountId);
+    auto result = m_client->GetSSOCredentials(request);
+    LOG_INFO(&Poco::Logger::get(SSO_CREDENTIALS_PROVIDER_LOG_TAG), "Successfully retrieved credentials with AWS_ACCESS_KEY: {}", result.creds.GetAWSAccessKeyId());
+
+    m_credentials = result.creds;
+}
+
+void SSOCredentialsProvider::RefreshIfExpired()
+{
+    Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
+    if (!m_credentials.IsExpiredOrEmpty())
+    {
+        return;
+    }
+
+    guard.UpgradeToWriterLock();
+    if (!m_credentials.IsExpiredOrEmpty()) // double-checked lock to avoid refreshing twice
+    {
+        return;
+    }
+
+    Reload();
+}
+
+Aws::String SSOCredentialsProvider::LoadAccessTokenFile(const Aws::String& ssoAccessTokenPath)
+{
+    LOG_INFO(&Poco::Logger::get(SSO_CREDENTIALS_PROVIDER_LOG_TAG), "Preparing to load token from: {}", ssoAccessTokenPath);
+
+    Aws::IFStream inputFile(ssoAccessTokenPath.c_str());
+    if(inputFile)
+    {
+        LOG_INFO(&Poco::Logger::get(SSO_CREDENTIALS_PROVIDER_LOG_TAG), "Reading content from token file: {}", ssoAccessTokenPath);
+
+        Aws::Utils::Json::JsonValue tokenDoc(inputFile);
+        if (!tokenDoc.WasParseSuccessful())
+        {
+            LOG_INFO(&Poco::Logger::get(SSO_CREDENTIALS_PROVIDER_LOG_TAG), "Failed to parse token file: {}", ssoAccessTokenPath);
+            return "";
+        }
+        Aws::Utils::Json::JsonView tokenView(tokenDoc);
+        Aws::String tmpAccessToken, expirationStr;
+        tmpAccessToken = tokenView.GetString("accessToken");
+        expirationStr = tokenView.GetString("expiresAt");
+        Aws::Utils::DateTime expiration(expirationStr, Aws::Utils::DateFormat::ISO_8601);
+
+        LOG_INFO(&Poco::Logger::get(SSO_CREDENTIALS_PROVIDER_LOG_TAG), "Token cache file contains accessToken [{}], expiration [{}]", tmpAccessToken, expirationStr);
+
+        if (tmpAccessToken.empty() || !expiration.WasParseSuccessful()) {
+            LOG_INFO(&Poco::Logger::get(SSO_CREDENTIALS_PROVIDER_LOG_TAG), R"(The SSO session associated with this profile has expired or is otherwise invalid. To refresh this SSO session run aws sso login with the corresponding profile.)");
+            LOG_INFO(
+                &Poco::Logger::get(SSO_CREDENTIALS_PROVIDER_LOG_TAG),
+                "Token cache file failed because {}{}",
+                (tmpAccessToken.empty() ? "AccessToken was empty " : ""),
+                (!expiration.WasParseSuccessful() ? "failed to parse expiration" : ""));
+            return "";
+        }
+        m_expiresAt = expiration;
+        return  tmpAccessToken;
+    }
+    else
+    {
+        LOG_INFO(&Poco::Logger::get(SSO_CREDENTIALS_PROVIDER_LOG_TAG), "Unable to open token file on path: {}", ssoAccessTokenPath);
+        return "";
+    }
+}
+
 S3CredentialsProviderChain::S3CredentialsProviderChain(
         const DB::S3::PocoHTTPClientConfiguration & configuration,
         const Aws::Auth::AWSCredentials & credentials,
@@ -560,6 +739,8 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
             AddProvider(std::make_shared<AWSInstanceProfileCredentialsProvider>(config_loader));
             LOG_INFO(logger, "Added EC2 metadata service credentials provider to the provider chain.");
         }
+
+        AddProvider(std::make_shared<SSOCredentialsProvider>());
     }
 
     /// Quite verbose provider (argues if file with credentials doesn't exist) so iut's the last one
