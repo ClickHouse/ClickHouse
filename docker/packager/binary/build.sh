@@ -97,9 +97,11 @@ if [ -n "$MAKE_DEB" ]; then
   bash -x /build/packages/build
 fi
 
-mv ./programs/clickhouse* /output
-[ -x ./programs/self-extracting/clickhouse ] && mv ./programs/self-extracting/clickhouse /output
-mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
+if [ "$BUILD_TARGET" != "fuzzers" ]; then
+  mv ./programs/clickhouse* /output
+  [ -x ./programs/self-extracting/clickhouse ] && mv ./programs/self-extracting/clickhouse /output
+  mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
+fi
 
 prepare_combined_output () {
     local OUTPUT
