@@ -199,7 +199,7 @@ class GroupArraySortedGeneralImpl final
     DataTypePtr & data_type;
     UInt64 max_elems;
     SerializationPtr serialization;
-    
+
 
 public:
     GroupArraySortedGeneralImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
