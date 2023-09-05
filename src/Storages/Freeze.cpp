@@ -232,6 +232,7 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(Merg
             bool keep_shared = removeFreezedPart(disk, path, partition_directory, local_context, zookeeper);
 
             result.push_back(PartitionCommandResultInfo{
+                .command_type = "UNFREEZE PART",
                 .partition_id = partition_id,
                 .part_name = partition_directory,
                 .backup_path = disk->getPath() + table_directory.generic_string(),
@@ -239,11 +240,11 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(Merg
                 .backup_name = backup_name,
             });
 
-            LOG_DEBUG(log, "Unfreezed part by path {}, keep shared data: {}", disk->getPath() + path, keep_shared);
+            LOG_DEBUG(log, "Unfrozen part by path {}, keep shared data: {}", disk->getPath() + path, keep_shared);
         }
     }
 
-    LOG_DEBUG(log, "Unfreezed {} parts", result.size());
+    LOG_DEBUG(log, "Unfrozen {} parts", result.size());
 
     return result;
 }

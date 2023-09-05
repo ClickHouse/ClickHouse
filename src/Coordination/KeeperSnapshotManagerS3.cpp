@@ -92,7 +92,8 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             auth_settings.region,
             RemoteHostFilter(), s3_max_redirects,
             enable_s3_requests_logging,
-            /* for_disk_s3 = */ false, /* get_request_throttler = */ {}, /* put_request_throttler = */ {});
+            /* for_disk_s3 = */ false, /* get_request_throttler = */ {}, /* put_request_throttler = */ {},
+            new_uri.uri.getScheme());
 
         client_configuration.endpointOverride = new_uri.endpoint;
 
@@ -145,14 +146,14 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
 
         const auto create_writer = [&](const auto & key)
         {
-            return WriteBufferFromS3
-            {
+            return WriteBufferFromS3(
+                s3_client->client,
                 s3_client->client,
                 s3_client->uri.bucket,
                 key,
                 DBMS_DEFAULT_BUFFER_SIZE,
                 request_settings_1
-            };
+            );
         };
 
         LOG_INFO(log, "Will try to upload snapshot on {} to S3", snapshot_file_info.path);
@@ -218,7 +219,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
             }
             catch (...)
             {
-                LOG_INFO(log, "Failed to delete lock file for {} from S3", snapshot_path);
+                LOG_INFO(log, "Failed to delete lock file for {} from S3", snapshot_file_info.path);
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         });

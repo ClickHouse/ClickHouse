@@ -203,6 +203,8 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             sendPartFromMemory(part, out, send_projections);
         else
             sendPartFromDisk(part, out, client_protocol_version, false, send_projections);
+
+        data.addLastSentPart(part->info);
     }
     catch (const NetException &)
     {
@@ -353,8 +355,14 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
 {
     /// It is important to include Outdated parts here because remote replicas cannot reliably
     /// determine the local state of the part, so queries for the parts in these states are completely normal.
-    auto part = data.getPartIfExists(
-        name, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
+    MergeTreeData::DataPartPtr part;
+
+    /// Ephemeral zero-copy lock may be lost for PreActive parts
+    bool zero_copy_enabled = data.getSettings()->allow_remote_fs_zero_copy_replication;
+    if (zero_copy_enabled)
+        part = data.getPartIfExists(name, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
+    else
+        part = data.getPartIfExists(name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
     if (part)
         return part;
 

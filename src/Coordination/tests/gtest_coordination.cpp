@@ -71,18 +71,59 @@ protected:
     DB::KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true);
     Poco::Logger * log{&Poco::Logger::get("CoordinationTest")};
 
-    void setLogDirectory(const std::string & path) { keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", path, 0)); }
+    void setLogDirectory(const std::string & path) { keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", path)); }
 
     void setSnapshotDirectory(const std::string & path)
     {
-        keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", path, 0));
+        keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", path));
     }
 
     void setStateFileDirectory(const std::string & path)
     {
-        keeper_context->setStateFileDisk(std::make_shared<DB::DiskLocal>("StateFile", path, 0));
+        keeper_context->setStateFileDisk(std::make_shared<DB::DiskLocal>("StateFile", path));
     }
 };
+
+TEST_P(CoordinationTest, RaftServerConfigParse)
+{
+    auto parse = Coordination::RaftServerConfig::parse;
+    using Cfg = std::optional<DB::RaftServerConfig>;
+
+    EXPECT_EQ(parse(""), std::nullopt);
+    EXPECT_EQ(parse("="), std::nullopt);
+    EXPECT_EQ(parse("=;"), std::nullopt);
+    EXPECT_EQ(parse("=;;"), std::nullopt);
+    EXPECT_EQ(parse("=:80"), std::nullopt);
+    EXPECT_EQ(parse("server."), std::nullopt);
+    EXPECT_EQ(parse("server.=:80"), std::nullopt);
+    EXPECT_EQ(parse("server.-5=1:2"), std::nullopt);
+    EXPECT_EQ(parse("server.1=host;-123"), std::nullopt);
+    EXPECT_EQ(parse("server.1=host:999"), (Cfg{{1, "host:999"}}));
+    EXPECT_EQ(parse("server.1=host:999;learner"), (Cfg{{1, "host:999", true}}));
+    EXPECT_EQ(parse("server.1=host:999;participant"), (Cfg{{1, "host:999", false}}));
+    EXPECT_EQ(parse("server.1=host:999;learner;25"), (Cfg{{1, "host:999", true, 25}}));
+
+    EXPECT_EQ(parse("server.1=127.0.0.1:80"), (Cfg{{1, "127.0.0.1:80"}}));
+    EXPECT_EQ(
+        parse("server.1=2001:0db8:85a3:0000:0000:8a2e:0370:7334:80"),
+        (Cfg{{1, "2001:0db8:85a3:0000:0000:8a2e:0370:7334:80"}}));
+}
+
+TEST_P(CoordinationTest, RaftServerClusterConfigParse)
+{
+    auto parse = Coordination::parseRaftServers;
+    using Cfg = DB::RaftServerConfig;
+    using Servers = DB::RaftServers;
+
+    EXPECT_EQ(parse(""), Servers{});
+    EXPECT_EQ(parse(","), Servers{});
+    EXPECT_EQ(parse("1,2"), Servers{});
+    EXPECT_EQ(parse("server.1=host:80,server.1=host2:80"), Servers{});
+    EXPECT_EQ(parse("server.1=host:80,server.2=host:80"), Servers{});
+    EXPECT_EQ(
+        parse("server.1=host:80,server.2=host:81"),
+        (Servers{Cfg{1, "host:80"}, Cfg{2, "host:81"}}));
+}
 
 TEST_P(CoordinationTest, BuildTest)
 {
@@ -1503,9 +1544,9 @@ void testLogAndStateMachine(
     using namespace DB;
 
     ChangelogDirTest snapshots("./snapshots");
-    keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("SnapshotDisk", "./snapshots", 0));
+    keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("SnapshotDisk", "./snapshots"));
     ChangelogDirTest logs("./logs");
-    keeper_context->setLogDisk(std::make_shared<DiskLocal>("LogDisk", "./logs", 0));
+    keeper_context->setLogDisk(std::make_shared<DiskLocal>("LogDisk", "./logs"));
 
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
@@ -1575,8 +1616,8 @@ void testLogAndStateMachine(
         restore_machine->commit(i, changelog.entry_at(i)->get_buf());
     }
 
-    auto & source_storage = state_machine->getStorage();
-    auto & restored_storage = restore_machine->getStorage();
+    auto & source_storage = state_machine->getStorageUnsafe();
+    auto & restored_storage = restore_machine->getStorageUnsafe();
 
     EXPECT_EQ(source_storage.container.size(), restored_storage.container.size());
     for (size_t i = 1; i < total_logs + 1; ++i)
@@ -1678,7 +1719,7 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     auto entry_c = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), request_c);
     state_machine->pre_commit(1, entry_c->get_buf());
     state_machine->commit(1, entry_c->get_buf());
-    const auto & storage = state_machine->getStorage();
+    const auto & storage = state_machine->getStorageUnsafe();
 
     EXPECT_EQ(storage.ephemerals.size(), 1);
     std::shared_ptr<ZooKeeperRemoveRequest> request_d = std::make_shared<ZooKeeperRemoveRequest>();
@@ -1727,7 +1768,7 @@ TEST_P(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecommitte
     auto create_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), create_req);
     state_machine->pre_commit(2, create_entry->get_buf());
 
-    const auto & uncommitted_state = state_machine->getStorage().uncommitted_state;
+    const auto & uncommitted_state = state_machine->getStorageUnsafe().uncommitted_state;
     ASSERT_TRUE(uncommitted_state.nodes.contains(node_path));
 
     // commit log entries
@@ -1790,7 +1831,7 @@ TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
     state_machine->commit(2, create_entry->get_buf());
     state_machine->commit(3, set_acl_entry->get_buf());
 
-    const auto & uncommitted_state = state_machine->getStorage().uncommitted_state;
+    const auto & uncommitted_state = state_machine->getStorageUnsafe().uncommitted_state;
     auto node = uncommitted_state.getNode(node_path);
 
     ASSERT_NE(node, nullptr);

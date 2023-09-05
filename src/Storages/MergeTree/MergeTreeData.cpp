@@ -103,6 +103,10 @@
 #include <Poco/Logger.h>
 #include <Poco/Net/NetException.h>
 
+#if USE_AZURE_BLOB_STORAGE
+#include <azure/core/http/http.hpp>
+#endif
+
 template <>
 struct fmt::formatter<DB::DataPartPtr> : fmt::formatter<std::string>
 {
@@ -128,6 +132,8 @@ namespace ProfileEvents
     extern const Event RejectedMutations;
     extern const Event DelayedMutations;
     extern const Event DelayedMutationsMilliseconds;
+    extern const Event PartsLockWaitMicroseconds;
+    extern const Event PartsLockHoldMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -187,8 +193,8 @@ static void checkSuspiciousIndices(const ASTFunction * index_function)
     std::unordered_set<UInt64> unique_index_expression_hashes;
     for (const auto & child : index_function->arguments->children)
     {
-        IAST::Hash hash = child->getTreeHash();
-        UInt64 first_half_of_hash = hash.first;
+        const IAST::Hash hash = child->getTreeHash();
+        const auto & first_half_of_hash = hash.low64;
 
         if (!unique_index_expression_hashes.emplace(first_half_of_hash).second)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -308,6 +314,20 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
             throw Exception(ErrorCodes::METADATA_MISMATCH, "MergeTree data format version on disk doesn't support custom partitioning");
     }
 }
+DataPartsLock::DataPartsLock(std::mutex & data_parts_mutex_)
+    : wait_watch(Stopwatch(CLOCK_MONOTONIC))
+    , lock(data_parts_mutex_)
+    , lock_watch(Stopwatch(CLOCK_MONOTONIC))
+{
+    ProfileEvents::increment(ProfileEvents::PartsLockWaitMicroseconds, wait_watch->elapsedMicroseconds());
+}
+
+
+DataPartsLock::~DataPartsLock()
+{
+    if (lock_watch.has_value())
+        ProfileEvents::increment(ProfileEvents::PartsLockHoldMicroseconds, lock_watch->elapsedMicroseconds());
+}
 
 MergeTreeData::MergeTreeData(
     const StorageID & table_id_,
@@ -334,7 +354,6 @@ MergeTreeData::MergeTreeData(
     , parts_mover(this)
     , background_operations_assignee(*this, BackgroundJobsAssignee::Type::DataProcessing, getContext())
     , background_moves_assignee(*this, BackgroundJobsAssignee::Type::Moving, getContext())
-    , use_metadata_cache(getSettings()->use_metadata_cache)
 {
     context_->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
 
@@ -382,13 +401,8 @@ MergeTreeData::MergeTreeData(
     checkTTLExpressions(metadata_, metadata_);
 
     String reason;
-    if (!canUsePolymorphicParts(*settings, &reason) && !reason.empty())
+    if (!canUsePolymorphicParts(*settings, reason) && !reason.empty())
         LOG_WARNING(log, "{} Settings 'min_rows_for_wide_part'and 'min_bytes_for_wide_part' will be ignored.", reason);
-
-#if !USE_ROCKSDB
-    if (use_metadata_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't use merge tree metadata cache if clickhouse was compiled without rocksdb");
-#endif
 
     common_assignee_trigger = [this] (bool delay) noexcept
     {
@@ -465,9 +479,10 @@ void MergeTreeData::checkProperties(
     const StorageInMemoryMetadata & new_metadata,
     const StorageInMemoryMetadata & old_metadata,
     bool attach,
+    bool allow_empty_sorting_key,
     ContextPtr local_context) const
 {
-    if (!new_metadata.sorting_key.definition_ast)
+    if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
 
     KeyDescription new_sorting_key = new_metadata.sorting_key;
@@ -580,6 +595,9 @@ void MergeTreeData::checkProperties(
             if (projections_names.find(projection.name) != projections_names.end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection with name {} already exists", backQuote(projection.name));
 
+            /// We cannot alter a projection so far. So here we do not try to find a projection in old metadata.
+            bool is_aggregate = projection.type == ProjectionDescription::Type::Aggregate;
+            checkProperties(*projection.metadata, *projection.metadata, attach, is_aggregate, local_context);
             projections_names.insert(projection.name);
         }
     }
@@ -593,7 +611,7 @@ void MergeTreeData::setProperties(
     bool attach,
     ContextPtr local_context)
 {
-    checkProperties(new_metadata, old_metadata, attach, local_context);
+    checkProperties(new_metadata, old_metadata, attach, false, local_context);
     setInMemoryMetadata(new_metadata);
 }
 
@@ -1213,10 +1231,10 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         auto part_size_str = res.size_of_part ? formatReadableSizeWithBinarySuffix(*res.size_of_part) : "failed to calculate size";
 
         LOG_ERROR(log,
-            "Detaching broken part {}{} (size: {}). "
+            "Detaching broken part {} (size: {}). "
             "If it happened after update, it is likely because of backward incompatibility. "
             "You need to resolve this manually",
-            getFullPathOnDisk(part_disk_ptr), part_name, part_size_str);
+            fs::path(getFullPathOnDisk(part_disk_ptr)) / part_name, part_size_str);
     };
 
     try
@@ -1244,6 +1262,12 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     {
         throw;
     }
+#if USE_AZURE_BLOB_STORAGE
+    catch (const Azure::Core::Http::TransportException &)
+    {
+        throw;
+    }
+#endif
     catch (...)
     {
         mark_broken();
@@ -1392,6 +1416,18 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     size_t max_backoff_ms,
     size_t max_tries)
 {
+    auto handle_exception = [&, this](String exception_message, size_t try_no)
+    {
+        if (try_no + 1 == max_tries)
+            throw;
+
+        LOG_DEBUG(log, "Failed to load data part {} at try {} with retryable error: {}. Will retry in {} ms",
+                  part_name, try_no, exception_message, initial_backoff_ms);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(initial_backoff_ms));
+        initial_backoff_ms = std::min(initial_backoff_ms * 2, max_backoff_ms);
+    };
+
     for (size_t try_no = 0; try_no < max_tries; ++try_no)
     {
         try
@@ -1400,15 +1436,17 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
         }
         catch (const Exception & e)
         {
-            if (!isRetryableException(e) || try_no + 1 == max_tries)
+            if (isRetryableException(e))
+                handle_exception(e.message(),try_no);
+            else
                 throw;
-
-            LOG_DEBUG(log, "Failed to load data part {} at try {} with retryable error: {}. Will retry in {} ms",
-                part_name, try_no, e.message(), initial_backoff_ms);
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(initial_backoff_ms));
-            initial_backoff_ms = std::min(initial_backoff_ms * 2, max_backoff_ms);
         }
+#if USE_AZURE_BLOB_STORAGE
+        catch (const Azure::Core::Http::TransportException & e)
+        {
+            handle_exception(e.Message,try_no);
+        }
+#endif
     }
     UNREACHABLE();
 }
@@ -2187,7 +2225,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
 
             const DataPartPtr & part = *it;
 
-            part->last_removal_attemp_time.store(time_now, std::memory_order_relaxed);
+            part->last_removal_attempt_time.store(time_now, std::memory_order_relaxed);
 
             /// Do not remove outdated part if it may be visible for some transaction
             if (!part->version.canBeRemoved())
@@ -2324,7 +2362,7 @@ size_t MergeTreeData::clearOldPartsFromFilesystem(bool force)
     removePartsFinally(parts_to_remove);
     /// This is needed to close files to avoid they reside on disk after being deleted.
     /// NOTE: we can drop files from cache more selectively but this is good enough.
-    getContext()->dropMMappedFileCache();
+    getContext()->clearMMappedFileCache();
 
     return parts_to_remove.size();
 }
@@ -2615,8 +2653,50 @@ size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirectory()
     if (detached_parts.empty())
         return 0;
 
-    PartsTemporaryRename renamed_parts(*this, "detached/");
+    auto get_last_touched_time = [&](const DetachedPartInfo & part_info) -> time_t
+    {
+        auto path = fs::path(relative_data_path) / "detached" / part_info.dir_name;
+        time_t last_change_time = part_info.disk->getLastChanged(path);
+        time_t last_modification_time = part_info.disk->getLastModified(path).epochTime();
+        return std::max(last_change_time, last_modification_time);
+    };
 
+    time_t ttl_seconds = getSettings()->merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds;
+
+    size_t unfinished_deleting_parts = 0;
+    time_t current_time = time(nullptr);
+    for (const auto & part_info : detached_parts)
+    {
+        if (!part_info.dir_name.starts_with("deleting_"))
+            continue;
+
+        time_t startup_time = current_time - static_cast<time_t>(Context::getGlobalContextInstance()->getUptimeSeconds());
+        time_t last_touch_time = get_last_touched_time(part_info);
+
+        /// Maybe it's being deleted right now (for example, in ALTER DROP DETACHED)
+        bool had_restart = last_touch_time < startup_time;
+        bool ttl_expired = last_touch_time + ttl_seconds <= current_time;
+        if (!had_restart && !ttl_expired)
+            continue;
+
+        /// We were trying to delete this detached part but did not finish deleting, probably because the server crashed
+        LOG_INFO(log, "Removing detached part {} that we failed to remove previously", part_info.dir_name);
+        try
+        {
+            removeDetachedPart(part_info.disk, fs::path(relative_data_path) / "detached" / part_info.dir_name / "", part_info.dir_name);
+            ++unfinished_deleting_parts;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+    }
+
+    if (!getSettings()->merge_tree_enable_clear_old_broken_detached)
+        return unfinished_deleting_parts;
+
+    const auto full_path = fs::path(relative_data_path) / "detached";
+    size_t removed_count = 0;
     for (const auto & part_info : detached_parts)
     {
         if (!part_info.valid_name || part_info.prefix.empty())
@@ -2631,31 +2711,24 @@ size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirectory()
         if (!can_be_removed_by_timeout)
             continue;
 
-        time_t current_time = time(nullptr);
-        ssize_t threshold = current_time - getSettings()->merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds;
-        auto path = fs::path(relative_data_path) / "detached" / part_info.dir_name;
-        time_t last_change_time = part_info.disk->getLastChanged(path);
-        time_t last_modification_time = part_info.disk->getLastModified(path).epochTime();
-        time_t last_touch_time = std::max(last_change_time, last_modification_time);
+        ssize_t threshold = current_time - ttl_seconds;
+        time_t last_touch_time = get_last_touched_time(part_info);
 
         if (last_touch_time == 0 || last_touch_time >= threshold)
             continue;
 
-        renamed_parts.addPart(part_info.dir_name, "deleting_" + part_info.dir_name, part_info.disk);
+        const String & old_name = part_info.dir_name;
+        String new_name = "deleting_" + part_info.dir_name;
+        part_info.disk->moveFile(fs::path(full_path) / old_name, fs::path(full_path) / new_name);
+
+        removeDetachedPart(part_info.disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name);
+        LOG_WARNING(log, "Removed broken detached part {} due to a timeout for broken detached parts", old_name);
+        ++removed_count;
     }
 
-    LOG_INFO(log, "Will clean up {} detached parts", renamed_parts.old_and_new_names.size());
+    LOG_INFO(log, "Cleaned up {} detached parts", removed_count);
 
-    renamed_parts.tryRenameAll();
-
-    for (auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
-    {
-        removeDetachedPart(disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name);
-        LOG_DEBUG(log, "Removed broken detached part {} due to a timeout for broken detached parts", old_name);
-        old_name.clear();
-    }
-
-    return renamed_parts.old_and_new_names.size();
+    return removed_count + unfinished_deleting_parts;
 }
 
 size_t MergeTreeData::clearOldWriteAheadLogs()
@@ -2795,7 +2868,7 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
     }
 
     if (!getStorageID().hasUUID())
-        getContext()->dropCaches();
+        getContext()->clearCaches();
 
     /// TODO: remove const_cast
     for (const auto & part : data_parts_by_info)
@@ -2836,9 +2909,9 @@ void MergeTreeData::dropAllData()
     }
 
     /// Tables in atomic databases have UUID and stored in persistent locations.
-    /// No need to drop caches (that are keyed by filesystem path) because collision is not possible.
+    /// No need to clear caches (that are keyed by filesystem path) because collision is not possible.
     if (!getStorageID().hasUUID())
-        getContext()->dropCaches();
+        getContext()->clearCaches();
 
     /// Removing of each data part before recursive removal of directory is to speed-up removal, because there will be less number of syscalls.
     NameSet part_names_failed;
@@ -3162,6 +3235,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             }
         }
 
+        if (command.type == AlterCommand::MODIFY_QUERY)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "ALTER MODIFY QUERY is not supported by MergeTree engines family");
+
         if (command.type == AlterCommand::MODIFY_ORDER_BY && !is_custom_partitioned)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -3286,7 +3363,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
     }
 
-    checkProperties(new_metadata, old_metadata, false, local_context);
+    checkProperties(new_metadata, old_metadata, false, false, local_context);
     checkTTLExpressions(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())
@@ -3319,7 +3396,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 MergeTreeSettings copy = *getSettings();
                 copy.applyChange(changed_setting);
                 String reason;
-                if (!canUsePolymorphicParts(copy, &reason) && !reason.empty())
+                if (!canUsePolymorphicParts(copy, reason) && !reason.empty())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't change settings. Reason: {}", reason);
             }
 
@@ -3344,7 +3421,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 auto copy = getDefaultSettings();
                 copy->applyChanges(new_changes);
                 String reason;
-                if (!canUsePolymorphicParts(*copy, &reason) && !reason.empty())
+                if (!canUsePolymorphicParts(*copy, reason) && !reason.empty())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't change settings. Reason: {}", reason);
             }
 
@@ -3386,8 +3463,9 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(size_t bytes_uncompresse
     using PartType = MergeTreeDataPartType;
     using PartStorageType = MergeTreeDataPartStorageType;
 
-     const auto settings = getSettings();
-     if (!canUsePolymorphicParts(*settings))
+    String out_reason;
+    const auto settings = getSettings();
+    if (!canUsePolymorphicParts(*settings, out_reason))
         return {PartType::Wide, PartStorageType::Full};
 
     auto satisfies = [&](const auto & min_bytes_for, const auto & min_rows_for)
@@ -4023,22 +4101,15 @@ void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part, DataPartsLo
 }
 
 
-void MergeTreeData::outdateBrokenPartAndCloneToDetached(const DataPartPtr & part_to_detach, const String & prefix)
+void MergeTreeData::outdateUnexpectedPartAndCloneToDetached(const DataPartPtr & part_to_detach)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    if (prefix.empty())
-        LOG_INFO(log, "Cloning part {} to {} and making it obsolete.", part_to_detach->getDataPartStorage().getPartDirectory(), part_to_detach->name);
-    else
-        LOG_INFO(log, "Cloning part {} to {}_{} and making it obsolete.", part_to_detach->getDataPartStorage().getPartDirectory(), prefix, part_to_detach->name);
-
-    part_to_detach->makeCloneInDetached(prefix, metadata_snapshot);
+    LOG_INFO(log, "Cloning part {} to unexpected_{} and making it obsolete.", part_to_detach->getDataPartStorage().getPartDirectory(), part_to_detach->name);
+    part_to_detach->makeCloneInDetached("unexpected", getInMemoryMetadataPtr(), /*disk_transaction*/ {});
 
     DataPartsLock lock = lockParts();
+    part_to_detach->is_unexpected_local_part = true;
     if (part_to_detach->getState() == DataPartState::Active)
-    {
-        part_to_detach->outdated_because_broken = true;
         removePartsFromWorkingSet(NO_TRANSACTION_RAW, {part_to_detach}, true, &lock);
-    }
 }
 
 void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool restore_covered)
@@ -4682,24 +4753,24 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartiti
     return res;
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const MergeTreePartInfo & part_info, const MergeTreeData::DataPartStates & valid_states)
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const MergeTreePartInfo & part_info, const MergeTreeData::DataPartStates & valid_states) const
 {
     auto lock = lockParts();
     return getPartIfExistsUnlocked(part_info, valid_states, lock);
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_name, const MergeTreeData::DataPartStates & valid_states)
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_name, const MergeTreeData::DataPartStates & valid_states) const
 {
     auto lock = lockParts();
     return getPartIfExistsUnlocked(part_name, valid_states, lock);
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const String & part_name, const DataPartStates & valid_states, DataPartsLock & acquired_lock)
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const String & part_name, const DataPartStates & valid_states, DataPartsLock & acquired_lock) const
 {
     return getPartIfExistsUnlocked(MergeTreePartInfo::fromPartName(part_name, format_version), valid_states, acquired_lock);
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, DataPartsLock & /* acquired_lock */)
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, DataPartsLock & /* acquired_lock */) const
 {
     auto it = data_parts_by_info.find(part_info);
     if (it == data_parts_by_info.end())
@@ -4781,17 +4852,18 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
         log_subtract(total_column_size.marks, part_column_size.marks, ".marks");
     }
 
-    auto indexes_descriptions = getInMemoryMetadataPtr()->secondary_indices;
-    for (const auto & index : indexes_descriptions)
+    for (auto & [secondary_index_name, total_secondary_index_size] : secondary_index_sizes)
     {
-        IndexSize & total_secondary_index_size = secondary_index_sizes[index.name];
-        IndexSize part_secondary_index_size = part->getSecondaryIndexSize(index.name);
+        if (!part->hasSecondaryIndex(secondary_index_name))
+            continue;
+
+        IndexSize part_secondary_index_size = part->getSecondaryIndexSize(secondary_index_name);
 
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
         {
             if (value > from)
                 LOG_ERROR(log, "Possibly incorrect index size subtraction: {} - {} = {}, index: {}, field: {}",
-                    from, value, from - value, index.name, field);
+                    from, value, from - value, secondary_index_name, field);
 
             from -= value;
         };
@@ -4908,7 +4980,7 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
             throw Exception(ErrorCodes::UNKNOWN_DISK, "All parts of partition '{}' are already on disk '{}'", partition_id, disk->getName());
     }
 
-    MovePartsOutcome moves_outcome = movePartsToSpace(parts, std::static_pointer_cast<Space>(disk));
+    MovePartsOutcome moves_outcome = movePartsToSpace(parts, std::static_pointer_cast<Space>(disk), local_context->getWriteSettings());
     switch (moves_outcome)
     {
         case MovePartsOutcome::MovesAreCancelled:
@@ -4971,7 +5043,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
             throw Exception(ErrorCodes::UNKNOWN_DISK, "All parts of partition '{}' are already on volume '{}'", partition_id, volume->getName());
     }
 
-    MovePartsOutcome moves_outcome = movePartsToSpace(parts, std::static_pointer_cast<Space>(volume));
+    MovePartsOutcome moves_outcome = movePartsToSpace(parts, std::static_pointer_cast<Space>(volume), local_context->getWriteSettings());
     switch (moves_outcome)
     {
         case MovePartsOutcome::MovesAreCancelled:
@@ -5150,12 +5222,12 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
     const DataPartsVector & data_parts,
     const String & data_path_in_backup,
     const BackupSettings & backup_settings,
+    const ReadSettings & read_settings,
     const ContextPtr & local_context)
 {
     MergeTreeData::PartsBackupEntries res;
     std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>> temp_dirs;
     TableLockHolder table_lock;
-    ReadSettings read_settings = local_context->getBackupReadSettings();
 
     for (const auto & part : data_parts)
     {
@@ -5189,6 +5261,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
             part->getFileNamesWithoutChecksums(),
             data_path_in_backup,
             backup_settings,
+            read_settings,
             make_temporary_hard_links,
             backup_entries_from_part,
             &temp_dirs);
@@ -5201,6 +5274,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
                 projection_part->getFileNamesWithoutChecksums(),
                 fs::path{data_path_in_backup} / part->name,
                 backup_settings,
+                read_settings,
                 make_temporary_hard_links,
                 backup_entries_from_part,
                 &temp_dirs);
@@ -5268,7 +5342,7 @@ public:
         auto it = temp_dirs.find(disk);
         if (it == temp_dirs.end())
             it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/")).first;
-        return it->second->getPath();
+        return it->second->getRelativePath();
     }
 
 private:
@@ -5695,6 +5769,10 @@ bool MergeTreeData::supportsLightweightDelete() const
     auto lock = lockParts();
     for (const auto & part : data_parts_by_info)
     {
+        if (part->getState() == MergeTreeDataPartState::Outdated
+            || part->getState() == MergeTreeDataPartState::Deleting)
+            continue;
+
         if (!part->supportLightweightDeleteMutate())
             return false;
     }
@@ -5789,18 +5867,21 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
 {
     const String source_dir = "detached/";
 
-    std::map<String, DiskPtr> name_to_disk;
-
     /// Let's compose a list of parts that should be added.
     if (attach_part)
     {
         const String part_id = partition->as<ASTLiteral &>().value.safeGet<String>();
         validateDetachedPartName(part_id);
-        auto disk = getDiskForDetachedPart(part_id);
-        renamed_parts.addPart(part_id, "attaching_" + part_id, disk);
-
-        if (MergeTreePartInfo::tryParsePartName(part_id, format_version))
-            name_to_disk[part_id] = getDiskForDetachedPart(part_id);
+        if (temporary_parts.contains(String(DETACHED_DIR_NAME) + "/" + part_id))
+        {
+            LOG_WARNING(log, "Will not try to attach part {} because its directory is temporary, "
+                             "probably it's being detached right now", part_id);
+        }
+        else
+        {
+            auto disk = getDiskForDetachedPart(part_id);
+            renamed_parts.addPart(part_id, "attaching_" + part_id, disk);
+        }
     }
     else
     {
@@ -5817,6 +5898,12 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
 
         for (const auto & part_info : detached_parts)
         {
+            if (temporary_parts.contains(String(DETACHED_DIR_NAME) + "/" + part_info.dir_name))
+            {
+                LOG_WARNING(log, "Will not try to attach part {} because its directory is temporary, "
+                                 "probably it's being detached right now", part_info.dir_name);
+                continue;
+            }
             LOG_DEBUG(log, "Found part {}", part_info.dir_name);
             active_parts.add(part_info.dir_name);
         }
@@ -5827,6 +5914,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         for (const auto & part_info : detached_parts)
         {
             const String containing_part = active_parts.getContainingPart(part_info.dir_name);
+            if (containing_part.empty())
+                continue;
 
             LOG_DEBUG(log, "Found containing part {} for part {}", containing_part, part_info.dir_name);
 
@@ -6190,14 +6279,14 @@ void MergeTreeData::Transaction::clear()
     precommitted_parts.clear();
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData::DataPartsLock * acquired_parts_lock)
+MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock * acquired_parts_lock)
 {
     DataPartsVector total_covered_parts;
 
     if (!isEmpty())
     {
         auto settings = data.getSettings();
-        auto parts_lock = acquired_parts_lock ? MergeTreeData::DataPartsLock() : data.lockParts();
+        auto parts_lock = acquired_parts_lock ? DataPartsLock() : data.lockParts();
         auto * owing_parts_lock = acquired_parts_lock ? acquired_parts_lock : &parts_lock;
 
         for (const auto & part : precommitted_parts)
@@ -7008,7 +7097,8 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
 
     ProjectionCandidate * selected_candidate = nullptr;
     size_t min_sum_marks = std::numeric_limits<size_t>::max();
-    if (metadata_snapshot->minmax_count_projection && !has_lightweight_delete_parts.load(std::memory_order_relaxed)) /// Disable ReadFromStorage for parts with lightweight.
+    if (settings.optimize_use_implicit_projections && metadata_snapshot->minmax_count_projection
+        && !has_lightweight_delete_parts.load(std::memory_order_relaxed)) /// Disable ReadFromStorage for parts with lightweight.
         add_projection_candidate(*metadata_snapshot->minmax_count_projection, true);
     std::optional<ProjectionCandidate> minmax_count_projection_candidate;
     if (!candidates.empty())
@@ -7040,7 +7130,9 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
             max_added_blocks.get(),
             query_context);
 
-        // minmax_count_projection should not be used when there is no data to process.
+        // minmax_count_projection cannot be used used when there is no data to process, because
+        // it will produce incorrect result during constant aggregation.
+        // See https://github.com/ClickHouse/ClickHouse/issues/36728
         if (!query_info.minmax_count_projection_block)
             return;
 
@@ -7203,7 +7295,10 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState)
     {
         if (!canUseParallelReplicasBasedOnPKAnalysis(query_context, storage_snapshot, query_info))
+        {
+            query_info.parallel_replicas_disabled = true;
             return QueryProcessingStage::Enum::FetchColumns;
+        }
 
         /// ReplicatedMergeTree
         if (supportsReplication())
@@ -7308,7 +7403,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     const String & tmp_part_prefix,
     const MergeTreePartInfo & dst_part_info,
     const StorageMetadataPtr & metadata_snapshot,
-    const IDataPartStorage::ClonePartParams & params)
+    const IDataPartStorage::ClonePartParams & params,
+    const WriteSettings & write_settings)
 {
     /// Check that the storage policy contains the disk where the src_part is located.
     bool does_storage_policy_allow_same_disk = false;
@@ -7365,7 +7461,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     auto dst_part_storage = src_part_storage->freeze(
         relative_data_path,
         tmp_dst_part_name,
-        /*save_metadata_callback=*/ {},
+        write_settings,
+        /* save_metadata_callback= */ {},
         params);
 
     if (params.metadata_version_to_write.has_value())
@@ -7474,7 +7571,19 @@ void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr data_part) const
         return;
 
     if (data_part->isProjectionPart())
-        data_part = data_part->getParentPart()->shared_from_this();
+    {
+        String parent_part_name = data_part->getParentPartName();
+        auto parent_part = getPartIfExists(parent_part_name, {DataPartState::PreActive, DataPartState::Active, DataPartState::Outdated});
+
+        if (!parent_part)
+        {
+            LOG_WARNING(log, "Did not find parent part {} for potentially broken projection part {}",
+                        parent_part_name, data_part->getDataPartStorage().getFullPath());
+            return;
+        }
+
+        data_part = parent_part;
+    }
 
     if (data_part->getDataPartStorage().isBroken())
     {
@@ -7610,11 +7719,13 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
         auto new_storage = data_part_storage->freeze(
             backup_part_path,
             part->getDataPartStorage().getPartDirectory(),
+            local_context->getWriteSettings(),
             callback,
             params);
 
         part->is_frozen.store(true, std::memory_order_relaxed);
         result.push_back(PartitionCommandResultInfo{
+            .command_type = "FREEZE PART",
             .partition_id = part->info.partition_id,
             .part_name = part->name,
             .backup_path = new_storage->getFullRootPath(),
@@ -7624,7 +7735,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
         ++parts_processed;
     }
 
-    LOG_DEBUG(log, "Freezed {} parts", parts_processed);
+    LOG_DEBUG(log, "Froze {} parts", parts_processed);
     return result;
 }
 
@@ -7762,7 +7873,7 @@ try
         LOG_WARNING(log, "Profile counters are not set");
     }
 
-    part_log->add(part_log_elem);
+    part_log->add(std::move(part_log_elem));
 }
 catch (...)
 {
@@ -7807,7 +7918,8 @@ bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)
     assignee.scheduleMoveTask(std::make_shared<ExecutableLambdaAdapter>(
         [this, moving_tagger] () mutable
         {
-            return moveParts(moving_tagger) == MovePartsOutcome::PartsMoved;
+            WriteSettings write_settings = Context::getGlobalContextInstance()->getWriteSettings();
+            return moveParts(moving_tagger, write_settings, /* wait_for_move_if_zero_copy= */ false) == MovePartsOutcome::PartsMoved;
         }, moves_assignee_trigger, getStorageID()));
     return true;
 }
@@ -7822,7 +7934,7 @@ bool MergeTreeData::areBackgroundMovesNeeded() const
     return policy->getVolumes().size() == 1 && policy->getVolumes()[0]->getDisks().size() > 1;
 }
 
-MovePartsOutcome MergeTreeData::movePartsToSpace(const DataPartsVector & parts, SpacePtr space)
+MovePartsOutcome MergeTreeData::movePartsToSpace(const DataPartsVector & parts, SpacePtr space, const WriteSettings & write_settings)
 {
     if (parts_mover.moves_blocker.isCancelled())
         return MovePartsOutcome::MovesAreCancelled;
@@ -7831,7 +7943,7 @@ MovePartsOutcome MergeTreeData::movePartsToSpace(const DataPartsVector & parts, 
     if (moving_tagger->parts_to_move.empty())
         return MovePartsOutcome::NothingToMove;
 
-    return moveParts(moving_tagger, true);
+    return moveParts(moving_tagger, write_settings, /* wait_for_move_if_zero_copy= */ true);
 }
 
 MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::selectPartsForMove()
@@ -7886,7 +7998,7 @@ MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::checkPartsForMove(co
     return std::make_shared<CurrentlyMovingPartsTagger>(std::move(parts_to_move), *this);
 }
 
-MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger, bool wait_for_move_if_zero_copy)
+MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const WriteSettings & write_settings, bool wait_for_move_if_zero_copy)
 {
     LOG_INFO(log, "Got {} parts to move.", moving_tagger->parts_to_move.size());
 
@@ -7947,7 +8059,7 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
                     {
                         if (lock->isLocked())
                         {
-                            cloned_part = parts_mover.clonePart(moving_part);
+                            cloned_part = parts_mover.clonePart(moving_part, write_settings);
                             parts_mover.swapClonedPart(cloned_part);
                             break;
                         }
@@ -7974,7 +8086,7 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
             }
             else /// Ordinary move as it should be
             {
-                cloned_part = parts_mover.clonePart(moving_part);
+                cloned_part = parts_mover.clonePart(moving_part, write_settings);
                 parts_mover.swapClonedPart(cloned_part);
             }
             write_part_log({});
@@ -8002,22 +8114,23 @@ bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const 
 
 bool MergeTreeData::canUsePolymorphicParts() const
 {
-    return canUsePolymorphicParts(*getSettings(), nullptr);
+    String unused;
+    return canUsePolymorphicParts(*getSettings(), unused);
 }
 
-bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason) const
+bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, String & out_reason) const
 {
     if (!canUseAdaptiveGranularity())
     {
-        if (out_reason && (settings.min_rows_for_wide_part != 0 || settings.min_bytes_for_wide_part != 0
+        if ((settings.min_rows_for_wide_part != 0 || settings.min_bytes_for_wide_part != 0
             || settings.min_rows_for_compact_part != 0 || settings.min_bytes_for_compact_part != 0))
         {
-            *out_reason = fmt::format(
-                    "Table can't create parts with adaptive granularity, but settings"
-                    " min_rows_for_wide_part = {}"
-                    ", min_bytes_for_wide_part = {}"
-                    ". Parts with non-adaptive granularity can be stored only in Wide (default) format.",
-                    settings.min_rows_for_wide_part, settings.min_bytes_for_wide_part);
+            out_reason = fmt::format(
+                "Table can't create parts with adaptive granularity, but settings"
+                " min_rows_for_wide_part = {}"
+                ", min_bytes_for_wide_part = {}"
+                ". Parts with non-adaptive granularity can be stored only in Wide (default) format.",
+                settings.min_rows_for_wide_part, settings.min_bytes_for_wide_part);
         }
 
         return false;
@@ -8415,7 +8528,7 @@ void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
     }
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
+std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name,
         const MergeTreeTransactionPtr & txn)
 {
@@ -8434,6 +8547,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
     ReservationPtr reservation = reserveSpacePreferringTTLRules(metadata_snapshot, 0, move_ttl_infos, time(nullptr), 0, true);
     VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
+    auto tmp_dir_holder = getTemporaryPartDirectoryHolder(EMPTY_PART_TMP_PREFIX + new_part_name);
     auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, EMPTY_PART_TMP_PREFIX + new_part_name)
         .withBytesAndRowsOnDisk(0, 0)
         .withPartInfo(new_part_info)
@@ -8493,12 +8607,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
     out.finalizePart(new_data_part, sync_on_insert);
 
     new_data_part_storage->precommitTransaction();
-    return new_data_part;
+    return std::make_pair(std::move(new_data_part), std::move(tmp_dir_holder));
 }
 
 bool MergeTreeData::allowRemoveStaleMovingParts() const
 {
-    return ConfigHelper::getBool(getContext()->getConfigRef(), "allow_remove_stale_moving_parts");
+    return ConfigHelper::getBool(getContext()->getConfigRef(), "allow_remove_stale_moving_parts", /* default_ = */ true);
 }
 
 CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()

@@ -27,6 +27,9 @@ public:
 
     void describePipeline(FormatSettings & settings) const override;
 
+    void describeActions(JSONBuilder::JSONMap & map) const override;
+    void describeActions(FormatSettings & settings) const override;
+
     const JoinPtr & getJoin() const { return join; }
     bool allowPushDownToRight() const;
 

@@ -22,7 +22,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     ASTs asts, ContextPtr context, bool throw_unknown_collection = true, std::vector<std::pair<std::string, ASTPtr>> * complex_args = nullptr);
 /// Helper function to get named collection for dictionary source.
 /// Dictionaries have collection name as name argument of dict configuration and other arguments are overrides.
-MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
+MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
 
 HTTPHeaderEntries getHeadersFromNamedCollection(const NamedCollection & collection);
 

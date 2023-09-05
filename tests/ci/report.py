@@ -239,7 +239,7 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True) -> TestRes
 @dataclass
 class BuildResult:
     compiler: str
-    build_type: str
+    debug_build: bool
     sanitizer: str
     status: str
     elapsed_seconds: int
@@ -349,7 +349,7 @@ def create_test_html_report(
                 has_log_urls = True
 
             row = "<tr>"
-            has_error = test_result.status in ("FAIL", "FLAKY", "NOT_FAILED")
+            has_error = test_result.status in ("FAIL", "NOT_FAILED")
             if has_error and test_result.raw_logs is not None:
                 row = '<tr class="failed">'
             row += "<td>" + test_result.name + "</td>"
@@ -484,8 +484,8 @@ def create_build_html_report(
     ):
         row = "<tr>"
         row += f"<td>{build_result.compiler}</td>"
-        if build_result.build_type:
-            row += f"<td>{build_result.build_type}</td>"
+        if build_result.debug_build:
+            row += "<td>debug</td>"
         else:
             row += "<td>relwithdebuginfo</td>"
         if build_result.sanitizer:

@@ -1,6 +1,10 @@
 <clickhouse>
     <storage_configuration>
         <disks>
+            <disk_hdfs>
+                <type>hdfs</type>
+                <endpoint>hdfs://hdfs1:9000/</endpoint>
+            </disk_hdfs>
             <log_local>
                 <type>local</type>
                 <path>/var/lib/clickhouse/coordination/logs/</path>

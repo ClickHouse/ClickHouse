@@ -26,31 +26,27 @@ namespace
 {
     std::string getOrCreateDiskFromDiskAST(const ASTFunction & function, ContextPtr context)
     {
+        const auto * function_args_expr = assert_cast<const ASTExpressionList *>(function.arguments.get());
+        const auto & function_args = function_args_expr->children;
+        auto config = getDiskConfigurationFromAST(function_args, context);
+
         std::string disk_name;
-        if (function.name == "disk")
+        if (config->has("name"))
+        {
+            disk_name = config->getString("name");
+        }
+        else
         {
             /// We need a unique name for a created custom disk, but it needs to be the same
             /// after table is reattached or server is restarted, so take a hash of the disk
             /// configuration serialized ast as a disk name suffix.
-            auto disk_setting_string = serializeAST(function, true);
+            auto disk_setting_string = serializeAST(function);
             disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX
                 + toString(sipHash128(disk_setting_string.data(), disk_setting_string.size()));
         }
-        else
-        {
-            static constexpr std::string_view custom_disk_prefix = "disk_";
-
-            if (function.name.size() <= custom_disk_prefix.size() || !function.name.starts_with(custom_disk_prefix))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid disk name: {}", function.name);
-
-            disk_name = function.name.substr(custom_disk_prefix.size());
-        }
 
         auto result_disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
-            const auto * function_args_expr = assert_cast<const ASTExpressionList *>(function.arguments.get());
-            const auto & function_args = function_args_expr->children;
-            auto config = getDiskConfigurationFromAST(disk_name, function_args, context);
-            auto disk = DiskFactory::instance().create(disk_name, *config, disk_name, context, disks_map);
+            auto disk = DiskFactory::instance().create(disk_name, *config, "", context, disks_map);
             /// Mark that disk can be used without storage policy.
             disk->markDiskAsCustom();
             return disk;

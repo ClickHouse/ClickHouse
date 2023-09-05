@@ -12,7 +12,6 @@
 
 namespace DB
 {
-
 using ResponsesQueue = ConcurrentBoundedQueue<KeeperStorage::ResponseForSession>;
 using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
@@ -67,7 +66,9 @@ public:
     // (can happen in case of exception during preprocessing)
     void rollbackRequest(const KeeperStorage::RequestForSession & request_for_session, bool allow_missing);
 
-    void rollbackRequestNoLock(const KeeperStorage::RequestForSession & request_for_session, bool allow_missing);
+    void rollbackRequestNoLock(
+        const KeeperStorage::RequestForSession & request_for_session,
+        bool allow_missing) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     uint64_t last_commit_index() override { return last_committed_idx; }
 
@@ -87,8 +88,13 @@ public:
     int read_logical_snp_obj(
         nuraft::snapshot & s, void *& user_snp_ctx, uint64_t obj_id, nuraft::ptr<nuraft::buffer> & data_out, bool & is_last_obj) override;
 
-    /// just for test
-    KeeperStorage & getStorage() { return *storage; }
+    // This should be used only for tests or keeper-data-dumper because it violates
+    // TSA -- we can't acquire the lock outside of this class or return a storage under lock
+    // in a reasonable way.
+    KeeperStorage & getStorageUnsafe() TSA_NO_THREAD_SAFETY_ANALYSIS
+    {
+        return *storage;
+    }
 
     void shutdownStorage();
 
@@ -122,6 +128,9 @@ public:
     uint64_t getLatestSnapshotBufSize() const;
 
     void recalculateStorageStats();
+
+    void reconfigure(const KeeperStorage::RequestForSession& request_for_session);
+
 private:
     CommitCallback commit_callback;
     /// In our state machine we always have a single snapshot which is stored
@@ -133,7 +142,7 @@ private:
     CoordinationSettingsPtr coordination_settings;
 
     /// Main state machine logic
-    KeeperStoragePtr storage;
+    KeeperStoragePtr storage TSA_PT_GUARDED_BY(storage_and_responses_lock);
 
     /// Save/Load and Serialize/Deserialize logic for snapshots.
     KeeperSnapshotManager snapshot_manager;
@@ -178,6 +187,9 @@ private:
     KeeperContextPtr keeper_context;
 
     KeeperSnapshotManagerS3 * snapshot_manager_s3;
-};
 
+    KeeperStorage::ResponseForSession processReconfiguration(
+        const KeeperStorage::RequestForSession& request_for_session)
+        TSA_REQUIRES(storage_and_responses_lock);
+};
 }

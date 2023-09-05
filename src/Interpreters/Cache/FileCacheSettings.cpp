@@ -39,10 +39,10 @@ void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration &
     enable_filesystem_query_cache_limit = config.getUInt64(config_prefix + ".enable_filesystem_query_cache_limit", false);
     cache_hits_threshold = config.getUInt64(config_prefix + ".cache_hits_threshold", FILECACHE_DEFAULT_HITS_THRESHOLD);
 
-    enable_bypass_cache_with_threashold = config.getUInt64(config_prefix + ".enable_bypass_cache_with_threashold", false);
+    enable_bypass_cache_with_threshold = config.getUInt64(config_prefix + ".enable_bypass_cache_with_threshold", false);
 
-    if (config.has(config_prefix + ".bypass_cache_threashold"))
-        bypass_cache_threashold = parseWithSizeSuffix<uint64_t>(config.getString(config_prefix + ".bypass_cache_threashold"));
+    if (config.has(config_prefix + ".bypass_cache_threshold"))
+        bypass_cache_threshold = parseWithSizeSuffix<uint64_t>(config.getString(config_prefix + ".bypass_cache_threshold"));
 
     if (config.has(config_prefix + ".boundary_alignment"))
         boundary_alignment = parseWithSizeSuffix<uint64_t>(config.getString(config_prefix + ".boundary_alignment"));
@@ -50,7 +50,8 @@ void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration &
     if (config.has(config_prefix + ".background_download_threads"))
         background_download_threads = config.getUInt(config_prefix + ".background_download_threads");
 
-    delayed_cleanup_interval_ms = config.getUInt64(config_prefix + ".delayed_cleanup_interval_ms", FILECACHE_DELAYED_CLEANUP_INTERVAL_MS);
+    if (config.has(config_prefix + ".load_metadata_threads"))
+        load_metadata_threads = config.getUInt(config_prefix + ".load_metadata_threads");
 }
 
 }

@@ -97,8 +97,8 @@ docker run -d \
 
 You may also want to mount:
 
-* `/etc/clickhouse-server/config.d/*.xml` - files with server configuration adjustmenets
-* `/etc/clickhouse-server/users.d/*.xml` - files with user settings adjustmenets
+* `/etc/clickhouse-server/config.d/*.xml` - files with server configuration adjustments
+* `/etc/clickhouse-server/users.d/*.xml` - files with user settings adjustments
 * `/docker-entrypoint-initdb.d/` - folder with database initialization scripts (see below).
 
 ### Linux capabilities
