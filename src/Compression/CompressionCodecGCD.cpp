@@ -89,13 +89,9 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
     while (gcd_divider != T(1) && cur_source < source_end)
     {
         if (cur_source == source)
-        {
             gcd_divider = unalignedLoad<T>(cur_source);
-        }
         else
-        {
             gcd_divider = boost::integer::gcd(gcd_divider, unalignedLoad<T>(cur_source));
-        }
         cur_source += sizeof(T);
     }
 
@@ -258,13 +254,9 @@ void registerCodecGCD(CompressionCodecFactory & factory)
         UInt8 gcd_bytes_size = 1;
 
         if (arguments && !arguments->children.empty())
-        {
             throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "GCD codec must have 0 parameters, given {}", arguments->children.size());
-        }
         else if (column_type)
-        {
             gcd_bytes_size = getGCDBytesSize(column_type);
-        }
 
         return std::make_shared<CompressionCodecGCD>(gcd_bytes_size);
     };
