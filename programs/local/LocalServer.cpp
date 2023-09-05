@@ -657,22 +657,23 @@ void LocalServer::processConfig()
     /// There is no need for concurrent queries, override max_concurrent_queries.
     global_context->getProcessList().setMaxSize(0);
 
-    const size_t memory_amount = getMemoryAmount();
+    const size_t physical_server_memory = getMemoryAmount();
     const double cache_size_to_ram_max_ratio = config().getDouble("cache_size_to_ram_max_ratio", 0.5);
-    const size_t max_cache_size = static_cast<size_t>(memory_amount * cache_size_to_ram_max_ratio);
+    const size_t max_cache_size = static_cast<size_t>(physical_server_memory * cache_size_to_ram_max_ratio);
 
     String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", DEFAULT_UNCOMPRESSED_CACHE_POLICY);
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE);
+    double uncompressed_cache_size_ratio = config().getDouble("uncompressed_cache_size_ratio", DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO);
     if (uncompressed_cache_size > max_cache_size)
     {
         uncompressed_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    if (uncompressed_cache_size)
-        global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
+    global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size, uncompressed_cache_size_ratio);
 
     String mark_cache_policy = config().getString("mark_cache_policy", DEFAULT_MARK_CACHE_POLICY);
     size_t mark_cache_size = config().getUInt64("mark_cache_size", DEFAULT_MARK_CACHE_MAX_SIZE);
+    double mark_cache_size_ratio = config().getDouble("mark_cache_size_ratio", DEFAULT_MARK_CACHE_SIZE_RATIO);
     if (!mark_cache_size)
         LOG_ERROR(log, "Too low mark cache size will lead to severe performance degradation.");
     if (mark_cache_size > max_cache_size)
@@ -680,26 +681,27 @@ void LocalServer::processConfig()
         mark_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
-    if (mark_cache_size)
-        global_context->setMarkCache(mark_cache_policy, mark_cache_size);
+    global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
 
+    String index_uncompressed_cache_policy = config().getString("index_uncompressed_cache_policy", DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY);
     size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE);
+    double index_uncompressed_cache_size_ratio = config().getDouble("index_uncompressed_cache_size_ratio", DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO);
     if (index_uncompressed_cache_size > max_cache_size)
     {
         index_uncompressed_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    if (index_uncompressed_cache_size)
-        global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
+    global_context->setIndexUncompressedCache(index_uncompressed_cache_policy, index_uncompressed_cache_size, index_uncompressed_cache_size_ratio);
 
+    String index_mark_cache_policy = config().getString("index_mark_cache_policy", DEFAULT_INDEX_MARK_CACHE_POLICY);
     size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", DEFAULT_INDEX_MARK_CACHE_MAX_SIZE);
+    double index_mark_cache_size_ratio = config().getDouble("index_mark_cache_size_ratio", DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO);
     if (index_mark_cache_size > max_cache_size)
     {
         index_mark_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    if (index_mark_cache_size)
-        global_context->setIndexMarkCache(index_mark_cache_size);
+    global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
     size_t mmap_cache_size = config().getUInt64("mmap_cache_size", DEFAULT_MMAP_CACHE_MAX_SIZE);
     if (mmap_cache_size > max_cache_size)
@@ -707,11 +709,10 @@ void LocalServer::processConfig()
         mmap_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered mmap file cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    if (mmap_cache_size)
-        global_context->setMMappedFileCache(mmap_cache_size);
+    global_context->setMMappedFileCache(mmap_cache_size);
 
-    /// In Server.cpp (./clickhouse-server), we would initialize the query cache here.
-    /// Intentionally not doing this in clickhouse-local as it doesn't make sense.
+    /// Initialize a dummy query cache.
+    global_context->setQueryCache(0, 0, 0, 0);
 
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_max_size_in_bytes = config().getUInt64("compiled_expression_cache_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE);
@@ -947,48 +948,66 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
 
 #if defined(FUZZING_MODE)
 
+// linked from programs/main.cpp
+bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv);
+
 std::optional<DB::LocalServer> fuzz_app;
 
 extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
 {
-    int & argc = *pargc;
-    char ** argv = *pargv;
+    std::vector<char *> argv(*pargv, *pargv + (*pargc + 1));
+
+    if (!isClickhouseApp("local", argv))
+    {
+        std::cerr << "\033[31m" << "ClickHouse compiled in fuzzing mode, only clickhouse local is available." << "\033[0m" << std::endl;
+        exit(1);
+    }
 
     /// As a user you can add flags to clickhouse binary in fuzzing mode as follows
-    /// clickhouse <set of clickhouse-local specific flag> -- <set of libfuzzer flags>
+    /// clickhouse local <set of clickhouse-local specific flag> -- <set of libfuzzer flags>
 
-    /// Calculate the position of delimiter "--" that separates arguments
-    /// of clickhouse-local and libfuzzer
-    int pos_delim = argc;
-    for (int i = 0; i < argc; ++i)
-    {
-        if (strcmp(argv[i], "--") == 0)
+    char **p = &(*pargv)[1];
+
+    auto it = argv.begin() + 1;
+    for (; *it; ++it)
+        if (strcmp(*it, "--") == 0)
         {
-            pos_delim = i;
+            ++it;
             break;
         }
-    }
+
+    while (*it)
+        if (strncmp(*it, "--", 2) != 0)
+        {
+            *(p++) = *it;
+            it = argv.erase(it);
+        }
+        else
+            ++it;
+
+    *pargc = static_cast<int>(p - &(*pargv)[0]);
+    *p = nullptr;
 
     /// Initialize clickhouse-local app
     fuzz_app.emplace();
-    fuzz_app->init(pos_delim, argv);
+    fuzz_app->init(static_cast<int>(argv.size() - 1), argv.data());
 
-    /// We will leave clickhouse-local specific arguments as is, because libfuzzer will ignore
-    /// all keys starting with --
     return 0;
 }
 
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
-try
 {
-    auto input = String(reinterpret_cast<const char *>(data), size);
-    DB::FunctionGetFuzzerData::update(input);
-    fuzz_app->run();
+    try
+    {
+        auto input = String(reinterpret_cast<const char *>(data), size);
+        DB::FunctionGetFuzzerData::update(input);
+        fuzz_app->run();
+    }
+    catch (...)
+    {
+    }
+
     return 0;
-}
-catch (...)
-{
-    return 1;
 }
 #endif

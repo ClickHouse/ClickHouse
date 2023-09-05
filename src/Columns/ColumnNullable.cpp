@@ -865,10 +865,14 @@ ColumnPtr ColumnNullable::getNestedColumnWithDefaultOnNull() const
         if (next_null_index != start)
             res->insertRangeFrom(*nested_column, start, next_null_index - start);
 
-        if (next_null_index < end)
-            res->insertDefault();
+        size_t next_none_null_index = next_null_index;
+        while (next_none_null_index < end && null_map_data[next_none_null_index])
+            ++next_none_null_index;
 
-        start = next_null_index + 1;
+        if (next_null_index != next_none_null_index)
+            res->insertManyDefaults(next_none_null_index - next_null_index);
+
+        start = next_none_null_index;
     }
     return res;
 }

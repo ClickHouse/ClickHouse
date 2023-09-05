@@ -66,6 +66,8 @@ public:
 
     void shutdownAndDropAllData();
 
+    void shutdownWithoutFlush();
+
     static std::shared_ptr<ISource> createSourceFromFile(const String & file_name);
 
     /// For scheduling via DistributedSink.
