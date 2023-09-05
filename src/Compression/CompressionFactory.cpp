@@ -168,7 +168,9 @@ void registerCodecLZ4(CompressionCodecFactory & factory);
 void registerCodecLZ4HC(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
 void registerCodecMultiple(CompressionCodecFactory & factory);
+#ifdef ENABLE_QPL_COMPRESSION
 void registerCodecDeflateQpl(CompressionCodecFactory & factory);
+#endif
 
 /// Keeper use only general-purpose codecs, so we don't need these special codecs
 /// in standalone build
