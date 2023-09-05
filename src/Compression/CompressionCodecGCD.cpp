@@ -98,7 +98,7 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
     unalignedStore<T>(dest, gcd_divider);
     dest += sizeof(T);
 
-    if (sizeof(T) <= 8)
+    if constexpr (sizeof(T) <= 8)
     {
         /// libdivide support only UInt32 and UInt64.
         using LibdivideT = std::conditional_t<sizeof(T) <= 4, UInt32, UInt64>;
