@@ -194,7 +194,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         sendHello();
         receiveHello(timeouts.handshake_timeout);
 
-#if defined(USE_SSL)
+#if USE_SSL
         // You may want to ask a server for a challenge if you want to authenticate using ssh keys
         if (!ssh_private_key.isEmpty())
         {
