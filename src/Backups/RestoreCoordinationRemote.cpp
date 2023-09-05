@@ -237,10 +237,7 @@ bool RestoreCoordinationRemote::acquireReplicatedSQLObjects(const String & loade
 void RestoreCoordinationRemote::generateUUIDForTable(ASTCreateQuery & create_query)
 {
     String query_str = serializeAST(create_query);
-
-    create_query.setUUID({});
-    String new_uuids_str = create_query.generateRandomUUID().toString();
-    String new_query_str = serializeAST(create_query);
+    String new_uuids_str = create_query.generateRandomUUID(/* always_generate_new_uuid= */ true).toString();
 
     auto holder = with_retries.createRetriesControlHolder("generateUUIDForTable");
     holder.retries_ctl.retryLoop(
@@ -249,25 +246,23 @@ void RestoreCoordinationRemote::generateUUIDForTable(ASTCreateQuery & create_que
             with_retries.renewZooKeeper(zk);
 
             String path = zookeeper_path + "/table_uuids/" + escapeForFileName(query_str);
-            String path2 = zookeeper_path + "/table_uuids/" + escapeForFileName(new_query_str);
 
             Coordination::Requests ops;
             ops.emplace_back(zkutil::makeCreateRequest(path, new_uuids_str, zkutil::CreateMode::Persistent));
-            ops.emplace_back(zkutil::makeCreateRequest(path2, new_uuids_str, zkutil::CreateMode::Persistent));
 
             Coordination::Responses responses;
-            Coordination::Error res = zk->tryMulti(ops, responses);
+            Coordination::Error res = zk->tryCreate(path, new_uuids_str, zkutil::CreateMode::Persistent);
 
             if (res == Coordination::Error::ZOK)
                 return;
 
-            if ((res == Coordination::Error::ZNODEEXISTS) && (responses[0]->error == Coordination::Error::ZNODEEXISTS))
+            if (res == Coordination::Error::ZNODEEXISTS)
             {
                 create_query.setUUID(ASTCreateQuery::UUIDs::fromString(zk->get(path)));
                 return;
             }
 
-            zkutil::KeeperMultiException::check(res, ops, responses);
+            zkutil::KeeperException::fromPath(res, path);
         });
 }
 

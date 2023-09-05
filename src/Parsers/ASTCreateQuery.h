@@ -155,7 +155,7 @@ public:
         String toString() const;
         static UUIDs fromString(const String & str);
     };
-    UUIDs generateRandomUUID();
+    UUIDs generateRandomUUID(bool always_generate_new_uuid = false);
     void setUUID(const UUIDs & uuids);
 
 protected:
