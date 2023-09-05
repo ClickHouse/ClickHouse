@@ -50,17 +50,17 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+CompressionCodecGCD::CompressionCodecGCD(UInt8 gcd_bytes_size_)
+    : gcd_bytes_size(gcd_bytes_size_)
+{
+    setCodecDescription("GCD", {});
+}
+
 UInt32 CompressionCodecGCD::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     return uncompressed_size
            + gcd_bytes_size // To store gcd
            + 2; // Local header
-}
-
-CompressionCodecGCD::CompressionCodecGCD(UInt8 gcd_bytes_size_)
-    : gcd_bytes_size(gcd_bytes_size_)
-{
-    setCodecDescription("GCD", {});
 }
 
 uint8_t CompressionCodecGCD::getMethodByte() const
