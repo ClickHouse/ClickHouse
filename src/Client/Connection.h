@@ -3,7 +3,6 @@
 
 #include <Poco/Net/StreamSocket.h>
 
-#include "config.h"
 #include <Common/SSH/Wrappers.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
@@ -21,6 +20,8 @@
 
 #include <atomic>
 #include <optional>
+
+#include "config.h"
 
 namespace DB
 {
@@ -264,9 +265,6 @@ private:
     void sendHello();
     String packStringForSshSign(String challenge);
 
-#ifndef USE_SSL
-    [[ noreturn ]]
-#endif
     void performHandshakeForSSHAuth();
 
     void sendAddendum();
