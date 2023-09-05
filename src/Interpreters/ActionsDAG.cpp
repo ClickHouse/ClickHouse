@@ -539,16 +539,6 @@ static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * nod
         case ActionsDAG::ActionType::FUNCTION:
         {
             res_column.column = node->function->execute(arguments, res_column.type, 0, true);
-            /**
-              * In header, we only need const columns if they are used for constant folding.
-              * Constants in headers are used for query analysis and optimization.
-              * Therefore, if the function is not suitable for constant folding, the constant shouldn't be in the header.
-              * For example, function hostName() is not suitable for constant folding in distributed queries.
-              * In the new analyzer, we'd like to have a non-constant hostName() in the header.
-              * For the old analyzer, we take a header from DAG, and it's not constant because of a check inside ActionsDAG::addFunctionImpl.
-              */
-            if (!node->function_base->isSuitableForConstantFolding() && res_column.column && isColumnConst(*res_column.column))
-                res_column.column = res_column.column->convertToFullColumnIfConst();
             break;
         }
 
