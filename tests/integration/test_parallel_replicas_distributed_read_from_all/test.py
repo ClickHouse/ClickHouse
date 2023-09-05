@@ -100,7 +100,7 @@ def create_tables(cluster, table_name):
     [
         pytest.param(0),
         pytest.param(1),
-    ]
+    ],
 )
 def test_read_equally_from_each_replica(start_cluster, prefer_localhost_replica):
     """create and populate table in special way (see create_table()),
