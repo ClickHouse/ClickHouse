@@ -74,7 +74,7 @@ The maximum number of threads that will be used for fetching data parts from ano
 
 Type: UInt64
 
-Default: 8
+Default: 16
 
 ## background_merges_mutations_concurrency_ratio
 
@@ -136,7 +136,7 @@ The maximum number of threads that will be used for constantly executing some li
 
 Type: UInt64
 
-Default: 128
+Default: 512
 
 ## backup_threads
 
