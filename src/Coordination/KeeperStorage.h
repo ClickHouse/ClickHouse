@@ -9,6 +9,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/SharedMutex.h>
 #include <Coordination/KeeperContext.h>
 
 #include <base/defines.h>
@@ -138,15 +139,17 @@ public:
     using SessionAndAuth = std::unordered_map<int64_t, AuthIDs>;
     using Watches = std::map<String /* path, relative of root_path */, SessionIDs>;
 
+    mutable SharedMutex main_mutex;
+
+    mutable std::mutex storage_mutex;
+
     int64_t session_id_counter{1};
 
-    mutable std::mutex auth_mutex;
-    SessionAndAuth session_and_auth TSA_GUARDED_BY(auth_mutex);
+    SessionAndAuth session_and_auth;
 
     /// Main hashtable with nodes. Contain all information about data.
     /// All other structures expect session_and_timeout can be restored from
     /// container.
-    mutable std::mutex container_mutex;
     Container container;
 
     // Applying ZooKeeper request to storage consists of two steps:
@@ -250,7 +253,7 @@ public:
         explicit UncommittedState(KeeperStorage & storage_) : storage(storage_) { }
 
         void addDeltas(std::list<Delta> new_deltas);
-        void commit(int64_t commit_zxid);
+        void cleanup(int64_t commit_zxid);
         void rollback(int64_t rollback_zxid);
 
         std::shared_ptr<Node> getNode(StringRef path) const;
@@ -272,7 +275,7 @@ public:
                     if constexpr (std::same_as<TAuth, AuthID>)
                         auth_ptr = &auth;
                     else
-                        auth_ptr = auth.get();
+                        auth_ptr = auth.second.get();
 
                     if (predicate(*auth_ptr))
                         return true;
@@ -281,10 +284,7 @@ public:
             };
 
             if (is_local)
-            {
-                std::lock_guard lock(storage.auth_mutex);
                 return check_auth(storage.session_and_auth[session_id]);
-            }
 
             // check if there are uncommitted
             const auto auth_it = session_and_auth.find(session_id);
@@ -294,7 +294,7 @@ public:
             if (check_auth(auth_it->second))
                 return true;
 
-            std::lock_guard lock(storage.auth_mutex);
+            std::lock_guard lock(storage.storage_mutex);
             return check_auth(storage.session_and_auth[session_id]);
         }
 
@@ -302,7 +302,7 @@ public:
 
         std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path) const;
 
-        std::unordered_map<int64_t, std::list<std::shared_ptr<AuthID>>> session_and_auth;
+        std::unordered_map<int64_t, std::list<std::pair<int64_t, std::shared_ptr<AuthID>>>> session_and_auth;
 
         struct UncommittedNode
         {
@@ -402,7 +402,7 @@ public:
 
     uint64_t nodes_digest{0};
 
-    bool finalized{false};
+    std::atomic<bool> finalized{false};
 
     /// Currently active watches (node_path -> subscribed sessions)
     Watches watches;

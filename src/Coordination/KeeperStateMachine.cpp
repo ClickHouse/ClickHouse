@@ -509,7 +509,6 @@ void KeeperStateMachine::rollbackRequest(const KeeperStorage::RequestForSession 
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
         return;
 
-    std::lock_guard lock(storage_and_responses_lock);
     storage->rollbackRequest(request_for_session.zxid, allow_missing);
 }
 
@@ -756,7 +755,6 @@ std::vector<int64_t> KeeperStateMachine::getDeadSessions()
 
 int64_t KeeperStateMachine::getNextZxid() const
 {
-    std::lock_guard lock(storage_and_responses_lock);
     return storage->getNextZXID();
 }
 
