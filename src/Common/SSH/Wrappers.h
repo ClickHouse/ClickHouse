@@ -71,8 +71,8 @@ class SSHKey
 {
 public:
     bool operator==(const SSHKey &) const = default;
-    [[ noreturn ]] bool isEmpty() { chassert(false); }
-    [[ noreturn ]] String signString(std::string_view) const { chassert(false); }
+    [[ noreturn ]] bool isEmpty() { std::terminate(); }
+    [[ noreturn ]] String signString(std::string_view) const { std::terminate(); }
 };
 }
 #endif
