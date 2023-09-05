@@ -484,8 +484,11 @@ ASTCreateQuery::UUIDs ASTCreateQuery::UUIDs::fromString(const String & str)
     return res;
 }
 
-ASTCreateQuery::UUIDs ASTCreateQuery::generateRandomUUID()
+ASTCreateQuery::UUIDs ASTCreateQuery::generateRandomUUID(bool always_generate_new_uuid)
 {
+    if (always_generate_new_uuid)
+        setUUID({});
+
     if (uuid == UUIDHelpers::Nil)
         uuid = UUIDHelpers::generateV4();
 

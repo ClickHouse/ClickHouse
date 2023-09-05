@@ -73,8 +73,8 @@ void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_quer
             return;
     }
 
-    create_query.setUUID({});
-    auto new_uuids = create_query.generateRandomUUID();
+    auto new_uuids = create_query.generateRandomUUID(/* always_generate_new_uuid= */ true);
+
     String new_query_str = serializeAST(create_query);
 
     {
@@ -82,7 +82,6 @@ void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_quer
         if (find_in_map())
             return;
         create_query_uuids[query_str] = new_uuids;
-        create_query_uuids[new_query_str] = new_uuids;
     }
 }
 

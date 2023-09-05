@@ -1024,8 +1024,15 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
         bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
         bool has_uuid = create.uuid != UUIDHelpers::Nil || create.to_inner_uuid != UUIDHelpers::Nil;
         if (has_uuid && !is_on_cluster && !internal)
+        {
+            /// We don't show the following error message either
+            /// 1) if it's a secondary query (an initiator of a CREATE TABLE ON CLUSTER query
+            /// doesn't know the exact database engines on replicas and generates an UUID, and then the replicas are free to ignore that UUID); or
+            /// 2) if it's an internal query (for example RESTORE uses internal queries to create tables and it generates an UUID
+            /// before creating a table to be possibly ignored if the database engine doesn't need it).
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "{} UUID specified, but engine of database {} is not Atomic", kind, create.getDatabase());
+        }
 
         /// The database doesn't support UUID so we'll ignore it. The UUID could be set here because of either
         /// a) the initiator of `ON CLUSTER` query generated it to ensure the same UUIDs are used on different hosts; or
