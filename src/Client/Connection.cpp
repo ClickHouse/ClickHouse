@@ -381,8 +381,6 @@ void Connection::performHandshakeForSSHAuth()
     out->next();
 }
 
-}
-
 
 void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
 {
