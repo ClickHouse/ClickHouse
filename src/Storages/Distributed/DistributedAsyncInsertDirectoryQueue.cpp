@@ -186,6 +186,15 @@ void DistributedAsyncInsertDirectoryQueue::shutdownAndDropAllData()
     fs::remove_all(path);
 }
 
+void DistributedAsyncInsertDirectoryQueue::shutdownWithoutFlush()
+{
+    /// It's incompatible with should_batch_inserts
+    /// because processFilesWithBatching may push to the queue after shutdown
+    chassert(!should_batch_inserts);
+    pending_files.finish();
+    task_handle->deactivate();
+}
+
 
 void DistributedAsyncInsertDirectoryQueue::run()
 {
@@ -401,7 +410,7 @@ try
         if (!current_file.empty())
             processFile(current_file);
 
-        while (pending_files.tryPop(current_file))
+        while (!pending_files.isFinished() && pending_files.tryPop(current_file))
             processFile(current_file);
     }
 

@@ -217,6 +217,14 @@ Type: UInt32
 Default: 1024
 
 
+## index_mark_cache_policy
+
+Index mark cache policy name.
+
+Type: String
+
+Default: SLRU
+
 ## index_mark_cache_size
 
 Size of cache for index marks. Zero means disabled.
@@ -229,6 +237,21 @@ Type: UInt64
 
 Default: 0
 
+## index_mark_cache_size_ratio
+
+The size of the protected queue in the index mark cache relative to the cache's total size.
+
+Type: Double
+
+Default: 0.5
+
+## index_uncompressed_cache_policy
+
+Index uncompressed cache policy name.
+
+Type: String
+
+Default: SLRU
 
 ## index_uncompressed_cache_size
 
@@ -242,6 +265,13 @@ Type: UInt64
 
 Default: 0
 
+## index_uncompressed_cache_size_ratio
+
+The size of the protected queue in the index uncompressed cache relative to the cache's total size.
+
+Type: Double
+
+Default: 0.5
 
 ## io_thread_pool_queue_size
 
@@ -270,6 +300,14 @@ This setting can be modified at runtime and will take effect immediately.
 Type: UInt64
 
 Default: 5368709120
+
+## mark_cache_size_ratio
+
+The size of the protected queue in the mark cache relative to the cache's total size.
+
+Type: Double
+
+Default: 0.5
 
 ## max_backup_bandwidth_for_server
 
@@ -628,6 +666,14 @@ This setting can be modified at runtime and will take effect immediately.
 Type: UInt64
 
 Default: 0
+
+## uncompressed_cache_size_ratio
+
+The size of the protected queue in the uncompressed cache relative to the cache's total size.
+
+Type: Double
+
+Default: 0.5
 
 ## builtin_dictionaries_reload_interval {#builtin-dictionaries-reload-interval}
 
@@ -2102,6 +2148,47 @@ The default server configuration file `config.xml` contains the following settin
     <buffer_size_rows_flush_threshold>512</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
 </crash_log>
+```
+
+## backup_log {#server_configuration_parameters-backup_log}
+
+Settings for the [backup_log](../../operations/system-tables/backup_log.md) system table for logging `BACKUP` and `RESTORE` operations.
+
+Parameters:
+
+- `database` — Database name.
+- `table` — Table name.
+- `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` is defined.
+- `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` is defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` is defined.
+- `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.
+Default: 1048576.
+- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
+Default: 8192.
+- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
+Default: `max_size_rows / 2`.
+- `flush_on_crash` - Indication whether logs should be dumped to the disk in case of a crash.
+Default: false.
+- `storage_policy` – Name of storage policy to use for the table (optional).
+- `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md#settings) that control the behavior of the MergeTree (optional).
+
+**Example**
+
+```xml
+<clickhouse>
+    <backup_log>
+        <database>system</database>
+        <table>backup_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+        <!-- <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine> -->
+    </backup_log>
+</clickhouse>
 ```
 
 ## query_masking_rules {#query-masking-rules}

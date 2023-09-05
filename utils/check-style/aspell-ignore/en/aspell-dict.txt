@@ -1066,6 +1066,10 @@ arrayReverse
 arrayReverseFill
 arrayReverseSort
 arrayReverseSplit
+arrayRotateLeft
+arrayRotateRight
+arrayShiftLeft
+arrayShiftRight
 arraySlice
 arraySort
 arraySplit
@@ -1328,6 +1332,7 @@ debian
 decodeURLComponent
 decodeURLFormComponent
 decodeXMLComponent
+decodeHTMLComponent
 decompressor
 decrypt
 decrypted
@@ -2253,6 +2258,7 @@ subdirectory
 subexpression
 subexpressions
 subfolder
+subfolders
 subinterval
 subintervals
 subkey
@@ -2564,6 +2570,7 @@ xlarge
 xml
 xxHash
 xz
+yaml
 yandex
 youtube
 zLib
@@ -2577,3 +2584,4 @@ zookeeperSessionUptime
 zstd
 downsampling
 lttb
+hardlink

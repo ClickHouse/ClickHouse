@@ -1,6 +1,6 @@
 #pragma once
 
-#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
 #include <base/types.h>
 #include <Common/isLocalAddress.h>
@@ -104,6 +104,7 @@ class ProcessorsProfileLog;
 class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
 class AsynchronousInsertLog;
+class BackupLog;
 class IAsynchronousReader;
 struct MergeTreeSettings;
 struct InitialAllRangesAnnouncement;
@@ -195,11 +196,6 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
-
-#if USE_ROCKSDB
-class MergeTreeMetadataCache;
-using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
-#endif
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
@@ -895,10 +891,6 @@ public:
     UInt64 getClientProtocolVersion() const;
     void setClientProtocolVersion(UInt64 version);
 
-#if USE_ROCKSDB
-    MergeTreeMetadataCachePtr tryGetMergeTreeMetadataCache() const;
-#endif
-
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
     std::shared_ptr<KeeperDispatcher> & tryGetKeeperDispatcher() const;
@@ -922,28 +914,28 @@ public:
 
     /// --- Caches ------------------------------------------------------------------------------------------
 
-    void setUncompressedCache(const String & uncompressed_cache_policy, size_t max_size_in_bytes);
+    void setUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<UncompressedCache> getUncompressedCache() const;
     void clearUncompressedCache() const;
 
-    void setMarkCache(const String & mark_cache_policy, size_t cache_size_in_bytes);
+    void setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<MarkCache> getMarkCache() const;
     void clearMarkCache() const;
     ThreadPool & getLoadMarksThreadpool() const;
 
-    void setIndexUncompressedCache(size_t max_size_in_bytes);
+    void setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
     void clearIndexUncompressedCache() const;
 
-    void setIndexMarkCache(size_t cache_size_in_bytes);
+    void setIndexMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updateIndexMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<MarkCache> getIndexMarkCache() const;
     void clearIndexMarkCache() const;
 
-    void setMMappedFileCache(size_t cache_size_in_num_entries);
+    void setMMappedFileCache(size_t max_cache_size_in_num_entries);
     void updateMMappedFileCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<MMappedFileCache> getMMappedFileCache() const;
     void clearMMappedFileCache() const;
@@ -1003,10 +995,6 @@ public:
     /// Call after initialization before using trace collector.
     void initializeTraceCollector();
 
-#if USE_ROCKSDB
-    void initializeMergeTreeMetadataCache(const String & dir, size_t size);
-#endif
-
     /// Call after unexpected crash happen.
     void handleCrash() const;
 
@@ -1028,6 +1016,7 @@ public:
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
+    std::shared_ptr<BackupLog> getBackupLog() const;
 
     std::vector<ISystemLog *> getSystemLogs() const;
 
