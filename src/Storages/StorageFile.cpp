@@ -569,16 +569,19 @@ namespace
                 }
                 else
                 {
-                    auto file_enumerator = archive_reader->firstFile();
+                    if (last_read_buffer)
+                        file_enumerator = archive_reader->nextFile(std::move(last_read_buffer));
+                    else
+                        file_enumerator = archive_reader->firstFile();
+
                     if (!file_enumerator)
                     {
-                        read_files_from_archive.clear();
                         ++current_archive_index;
                         continue;
                     }
 
                     const auto * filename = &file_enumerator->getFileName();
-                    while (read_files_from_archive.contains(*filename) || !archive_info.filter(*filename))
+                    while (!archive_info.filter(*filename))
                     {
                         if (!file_enumerator->nextFile())
                         {
@@ -591,7 +594,6 @@ namespace
 
                     if (!archive_reader)
                     {
-                        read_files_from_archive.clear();
                         ++current_archive_index;
                         continue;
                     }
@@ -602,7 +604,6 @@ namespace
                     if (columns_from_cache)
                         return nullptr;
 
-                    read_files_from_archive.insert(*filename);
                     read_buf = archive_reader->readFile(std::move(file_enumerator));
                 }
 
@@ -616,6 +617,11 @@ namespace
         std::optional<ColumnsDescription> getCachedColumns() override
         {
             return columns_from_cache;
+        }
+
+        void setPreviousReadBuffer(std::unique_ptr<ReadBuffer> buffer) override
+        {
+            last_read_buffer = std::move(buffer);
         }
 
         void setNumRowsToLastFile(size_t num_rows) override
@@ -658,13 +664,15 @@ namespace
         const StorageFile::ArchiveInfo & archive_info;
 
         size_t current_archive_index = 0;
-        std::unordered_set<std::string> read_files_from_archive;
 
         bool is_first = true;
 
         std::string last_read_file_path;
 
         std::optional<ColumnsDescription> columns_from_cache;
+
+        std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
+        std::unique_ptr<ReadBuffer> last_read_buffer;
 
         String format;
         const std::optional<FormatSettings> & format_settings;
