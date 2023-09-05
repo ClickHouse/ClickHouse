@@ -20,6 +20,7 @@
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/ZooKeeperLog.h>
+#include <Interpreters/PipelineTrace.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -286,6 +287,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         global_context, "system", "transactions_info_log", config, "transactions_info_log");
     processors_profile_log = createSystemLog<ProcessorsProfileLog>(global_context, "system", "processors_profile_log", config, "processors_profile_log");
     asynchronous_insert_log = createSystemLog<AsynchronousInsertLog>(global_context, "system", "asynchronous_insert_log", config, "asynchronous_insert_log");
+    pipeline_trace_log = createSystemLog<PipelineLog>(global_context, "system", "pipeline_trace_log", config, "pipeline_trace_log");
 
     if (query_log)
         logs.emplace_back(query_log.get());
@@ -324,6 +326,11 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(filesystem_read_prefetches_log.get());
     if (asynchronous_insert_log)
         logs.emplace_back(asynchronous_insert_log.get());
+    if (pipeline_trace_log) 
+    {
+        logs.emplace_back(pipeline_trace_log.get());
+        global_context->addWarningMessage("Table system.pipeline_trace_log is enabled. It may consume additional memory during query execution and disk spaces over the time.");
+    }
 
     try
     {
