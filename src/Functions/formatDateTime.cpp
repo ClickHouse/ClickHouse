@@ -958,7 +958,7 @@ public:
                 if (!arguments[2].column.get()->getDataAt(i).toString().empty())
                     time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i).toString());
                 else
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty and be a valid time zone");
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
             }
             if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
             {

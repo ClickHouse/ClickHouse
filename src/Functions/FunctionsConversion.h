@@ -950,7 +950,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
                         if (!arguments[1].column.get()->getDataAt(i).toString().empty())
                             time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i).toString());
                         else
-                            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty and be a valid time zone");
+                            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
                     }
                     bool is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                     null_map->getData()[i] |= !is_ok;
@@ -967,7 +967,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
                         if (!arguments[1].column.get()->getDataAt(i).toString().empty())
                            time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i).toString());
                         else
-                            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty and be a valid time zone");
+                            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
                     }
                     FormatImpl<FromDataType>::template execute<void>(vec_from[i], write_buffer, &type, time_zone);
                     writeChar(0, write_buffer);
