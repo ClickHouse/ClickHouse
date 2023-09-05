@@ -2,7 +2,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
 
-#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/Context.h>
 #include <Databases/IDatabase.h>
 
