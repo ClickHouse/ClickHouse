@@ -4,6 +4,11 @@
 # Check that replacing one partition on a table with `ALTER TABLE REPLACE PARTITION`
 # doesn't wait for merges on other partitions.
 
+# Manually start merge (with `OPTIMIZE DEDUPLICATE`) on partition 1, 
+# and at the same time, do `REPLACE PARTITION` on partition 2.
+
+# This is a sh-test only to be able to start `OPTIMIZE DEDUPLICATE` in the background.
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
@@ -40,12 +45,13 @@ SELECT partition, count(partition) FROM system.parts WHERE database==currentData
 SYSTEM START MERGES t1;
 EOF
 
-echo starting merge on t1 partiton '1' by 'OPTIMIZE DEDUPLICATE'ing in background process
-# Optimize deduplicate does merge, that is supposed to take some time
+echo Starting merge on t1 partition '1' by \'OPTIMIZE DEDUPLICATE\'ing in a background process
+# Optimize deduplicate does merge, which is supposed to take some time
+# Since this is a synchronous operation, starting it in the background.
 $CLICKHOUSE_CLIENT -nq "OPTIMIZE TABLE t1 PARTITION id '1' DEDUPLICATE BY p;" &
 merge_pid=$!
 
-sleep 0.1 && echo "Give server a moment to start merge"
+sleep 0.1 && echo "Give the server a moment to start merge"
 $CLICKHOUSE_CLIENT -nm <<'EOF'
 -- { echo }
 -- assume merge started
@@ -57,7 +63,7 @@ ALTER TABLE t1 REPLACE PARTITION id '2' FROM t2;
 SELECT * FROM t1 WHERE p=2;
 
 
--- expect merge is still running
+-- Expecting that merge is still running
 SELECT is_mutation, partition_id FROM system.merges WHERE database==currentDatabase() AND table=='t1';
 
 -- Expecting that merge hasn't finished yet (since ALTER TABLE .. REPLACE wasn't waiting for it),
