@@ -7,7 +7,7 @@ namespace DB
 {
 
 template <typename LogElement>
-class SystemLogStorage: private boost::noncopyable, WithContext
+class SystemLogStorage: private boost::noncopyable, protected WithContext
 {
 public:
     using LogElements = std::vector<LogElement>;
@@ -32,7 +32,7 @@ public:
 private:
     ASTPtr getCreateTableQuery();
 
-private:
+protected:
     Poco::Logger * log;
     const StorageID table_id;
     const String storage_def;
