@@ -1416,6 +1416,7 @@ private:
     /// Process one data block, aggregate the data into a hash table.
     template <typename Method>
     void executeImpl(
+        AggregatedDataVariants & result,
         Method & method,
         Arena * aggregates_pool,
         size_t row_begin,
@@ -1556,6 +1557,7 @@ private:
     template <bool no_more_keys, typename State, typename Table>
     void mergeStreamsImplCase(
         Arena * aggregates_pool,
+        AggregatedDataVariants & result,
         State & state,
         Table & data,
         AggregateDataPtr overflow_row,
@@ -1570,6 +1572,7 @@ private:
     void mergeStreamsImpl(
         Block block,
         Arena * aggregates_pool,
+        AggregatedDataVariants & result,
         Method & method,
         Table & data,
         AggregateDataPtr overflow_row,
@@ -1580,6 +1583,7 @@ private:
     template <typename Method, typename Table>
     void mergeStreamsImpl(
         Arena * aggregates_pool,
+        AggregatedDataVariants & result,
         Method & method,
         Table & data,
         AggregateDataPtr overflow_row,
@@ -1607,6 +1611,7 @@ private:
 
     template <typename Method>
     void convertBlockToTwoLevelImpl(
+        AggregatedDataVariants & result,
         Method & method,
         Arena * pool,
         ColumnRawPtrs & key_columns,

@@ -16,8 +16,6 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/StringHashMap.h>
 #include "Exception.h"
-#include "logger_useful.h"
-#include "typeid_cast.h"
 
 #if defined(__AVX512F__) && defined(__AVX512BW__)
 #include <immintrin.h>

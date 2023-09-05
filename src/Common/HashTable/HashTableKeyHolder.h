@@ -171,7 +171,7 @@ struct AdaptiveKeysHolder
             HASH,
         };
         HashMode hash_mode = VALUE_ID;
-        std::shared_ptr<Arena> pool;
+        Arena * pool;
 #if defined(__AVX512F__) && defined(__AVX512BW__)
         static constexpr size_t cache_line_num = 1;
         static constexpr size_t cache_line_num_mask = cache_line_num - 1;

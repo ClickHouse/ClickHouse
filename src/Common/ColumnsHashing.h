@@ -11,9 +11,6 @@
 #include <Common/assert_cast.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/PODArray.h>
-#include "Exception.h"
-#include "PODArray_fwd.h"
-#include "logger_useful.h"
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -758,7 +755,9 @@ struct HashMethodKeysAdaptive
     HashMethodContextPtr ctx;
     AdaptiveHashMethodContext::HashValueIdGeneratorState * value_id_generators_state = nullptr;
 
-    PaddedPODArray<UInt64> value_ids;
+    mutable bool has_generated_value_ids = false;
+
+    mutable PaddedPODArray<UInt64> value_ids;
 
     HashMethodKeysAdaptive(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & ctx_, UInt64 variant_index)
         : key_columns(key_columns_), keys_size(key_columns_.size()), ctx(ctx_)
@@ -775,7 +774,6 @@ struct HashMethodKeysAdaptive
             {
                 adaptive_ctx->value_id_generators[variant_index] = AdaptiveHashMethodContext::HashValueIdGeneratorState();
                 value_id_generators_state = &adaptive_ctx->value_id_generators[variant_index];
-                value_id_generators_state->shared_keys_holder_state.pool = std::make_shared<Arena>();
             }
             else
             {
@@ -801,16 +799,6 @@ struct HashMethodKeysAdaptive
                 value_id_generators_state->value_id_generators[i]->release();
             }
         }
-
-        if (value_id_generators_state->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
-        {
-            value_ids.clear();
-            value_ids.resize_fill(key_columns[0]->size(), 0);
-            for (size_t i = 0; i < keys_size; ++i)
-            {
-                value_id_generators_state->value_id_generators[i]->computeValueId(key_columns[i], &value_ids[0]);
-            }
-        }
     }
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
@@ -819,6 +807,20 @@ struct HashMethodKeysAdaptive
     {
         if (value_id_generators_state->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
         {
+            if (!has_generated_value_ids) [[unlikely]]
+            {
+                has_generated_value_ids = true;
+                if (&pool != value_id_generators_state->shared_keys_holder_state.pool) [[unlikely]]
+                {
+                    value_id_generators_state->shared_keys_holder_state.pool = &pool;
+                }
+                value_ids.clear();
+                value_ids.resize_fill(key_columns[0]->size(), 0);
+                for (size_t i = 0; i < keys_size; ++i)
+                {
+                    value_id_generators_state->value_id_generators[i]->computeValueId(key_columns[i], &value_ids[0]);
+                }
+            }
             auto & value_id = value_ids[row];
             auto & cached_values = value_id_generators_state->shared_keys_holder_state.cached_values;
 
@@ -871,14 +873,12 @@ struct HashMethodKeysAdaptive
 
             }
             else
-            {
                 return AdaptiveKeysHolder{cache_it->second.serialized_keys, &cache_it->second};
-            }
         }
         else
         {
             auto serialized_keys
-                = serializeKeysToPoolContiguous(row, keys_size, key_columns, *value_id_generators_state->shared_keys_holder_state.pool);
+                = serializeKeysToPoolContiguous(row, keys_size, key_columns, pool);
             return AdaptiveKeysHolder{serialized_keys, nullptr};
         }
     }
