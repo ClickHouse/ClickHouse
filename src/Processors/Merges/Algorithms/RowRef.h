@@ -29,6 +29,8 @@ struct SharedChunk : Chunk
     ColumnRawPtrs all_columns;
     ColumnRawPtrs sort_columns;
 
+    MutableColumnPtr replace_final_selection;
+
     using Chunk::Chunk;
     using Chunk::operator=;
 

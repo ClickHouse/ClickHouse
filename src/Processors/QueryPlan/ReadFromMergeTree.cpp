@@ -21,6 +21,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
+#include <Processors/Transforms/SelectByIndicesTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeInOrderSelectProcessor.h>
@@ -943,38 +944,57 @@ static void addMergingFinal(
         switch (merging_params.mode)
         {
             case MergeTreeData::MergingParams::Ordinary:
-                return std::make_shared<MergingSortedTransform>(header, num_outputs,
-                            sort_description, max_block_size, /*max_block_size_bytes=*/0, SortingQueueStrategy::Batch);
+                return std::make_shared<MergingSortedTransform>(
+                    header, num_outputs, sort_description, max_block_size, /*max_block_size_bytes=*/0, SortingQueueStrategy::Batch);
 
             case MergeTreeData::MergingParams::Collapsing:
-                return std::make_shared<CollapsingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.sign_column, true, max_block_size, /*max_block_size_bytes=*/0);
+                return std::make_shared<CollapsingSortedTransform>(
+                    header, num_outputs, sort_description, merging_params.sign_column, true, max_block_size, /*max_block_size_bytes=*/0);
 
             case MergeTreeData::MergingParams::Summing:
-                return std::make_shared<SummingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.columns_to_sum, partition_key_columns, max_block_size, /*max_block_size_bytes=*/0);
+                return std::make_shared<SummingSortedTransform>(
+                    header,
+                    num_outputs,
+                    sort_description,
+                    merging_params.columns_to_sum,
+                    partition_key_columns,
+                    max_block_size,
+                    /*max_block_size_bytes=*/0);
 
             case MergeTreeData::MergingParams::Aggregating:
-                return std::make_shared<AggregatingSortedTransform>(header, num_outputs,
-                            sort_description, max_block_size, /*max_block_size_bytes=*/0);
+                return std::make_shared<AggregatingSortedTransform>(
+                    header, num_outputs, sort_description, max_block_size, /*max_block_size_bytes=*/0);
 
             case MergeTreeData::MergingParams::Replacing:
-                return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size, /*max_block_size_bytes=*/0, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false, /*cleanup*/ !merging_params.is_deleted_column.empty());
+                return std::make_shared<ReplacingSortedTransform>(
+                    header,
+                    num_outputs,
+                    sort_description,
+                    merging_params.is_deleted_column,
+                    merging_params.version_column,
+                    max_block_size,
+                    /*max_block_size_bytes=*/0,
+                    /*out_row_sources_buf_*/ nullptr,
+                    /*use_average_block_sizes*/ false,
+                    /*cleanup*/ !merging_params.is_deleted_column.empty(),
+                    /*require_sorted_output*/ false);
 
             case MergeTreeData::MergingParams::VersionedCollapsing:
-                return std::make_shared<VersionedCollapsingTransform>(header, num_outputs,
-                            sort_description, merging_params.sign_column, max_block_size, /*max_block_size_bytes=*/0);
+                return std::make_shared<VersionedCollapsingTransform>(
+                    header, num_outputs, sort_description, merging_params.sign_column, max_block_size, /*max_block_size_bytes=*/0);
 
             case MergeTreeData::MergingParams::Graphite:
-                return std::make_shared<GraphiteRollupSortedTransform>(header, num_outputs,
-                            sort_description, max_block_size, /*max_block_size_bytes=*/0, merging_params.graphite_params, now);
+                return std::make_shared<GraphiteRollupSortedTransform>(
+                    header, num_outputs, sort_description, max_block_size, /*max_block_size_bytes=*/0, merging_params.graphite_params, now);
         }
 
         UNREACHABLE();
     };
 
     pipe.addTransform(get_merging_processor());
+    if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
+        pipe.addSimpleTransform([](const Block & header_)
+                                { return std::make_shared<SelectByIndicesTransform>(header_); });
 }
 
 
