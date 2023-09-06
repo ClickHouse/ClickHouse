@@ -102,7 +102,6 @@ public:
 
     explicit DefaultCoordinator(size_t replicas_count_)
         : ParallelReplicasReadingCoordinator::ImplInterface(replicas_count_)
-        , announcements(replicas_count_)
         , reading_state(replicas_count_)
     {
     }
@@ -119,7 +118,6 @@ public:
     PartitionToBlockRanges partitions;
 
     size_t sent_initial_requests{0};
-    std::vector<InitialAllRangesAnnouncement> announcements;
 
     Parts all_parts_to_read;
     /// Contains only parts which we haven't started to read from

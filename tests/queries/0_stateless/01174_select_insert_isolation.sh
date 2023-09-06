@@ -56,7 +56,7 @@ thread_select & PID_4=$!
 wait $PID_1 && wait $PID_2 && wait $PID_3
 kill -TERM $PID_4
 wait
-wait_for_queries_to_finish
+wait_for_queries_to_finish 40
 
 $CLICKHOUSE_CLIENT --multiquery --query "
 BEGIN TRANSACTION;

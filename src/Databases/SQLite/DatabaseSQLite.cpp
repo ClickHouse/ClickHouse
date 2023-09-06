@@ -187,6 +187,7 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
     }
     auto table_storage_define = database_engine_define->clone();
     ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
+    ast_storage->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
     auto storage_engine_arguments = ast_storage->engine->arguments;
     auto table_id = storage->getStorageID();
     /// Add table_name to engine arguments

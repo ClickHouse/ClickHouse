@@ -33,7 +33,7 @@ public:
     void SetUp() override
     {
         fs::create_directories(tmp_root);
-        disk = std::make_shared<DB::DiskLocal>("local_disk", tmp_root, 0);
+        disk = std::make_shared<DB::DiskLocal>("local_disk", tmp_root);
     }
 
     void TearDown() override

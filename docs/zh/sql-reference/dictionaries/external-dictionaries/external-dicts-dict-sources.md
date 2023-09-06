@@ -213,8 +213,9 @@ ClickHouse接收来自ODBC-driver的引用符号，并将查询中的所有设�
 
 ### ODBC字典功能的已知漏洞 {#known-vulnerability-of-the-odbc-dictionary-functionality}
 
-    :::info "注意"
-    通过ODBC驱动程序连接参数连接到数据库时 `Servername` 可以取代。 在这种情况下，值 `USERNAME` 和 `PASSWORD` 从 `odbc.ini` 被发送到远程服务器，并且可能会受到损害。
+:::info "注意"
+通过ODBC驱动程序连接参数连接到数据库时 `Servername` 可以取代。 在这种情况下，值 `USERNAME` 和 `PASSWORD` 从 `odbc.ini` 被发送到远程服务器，并且可能会受到损害。
+:::
 
 **不安全使用示例**
 

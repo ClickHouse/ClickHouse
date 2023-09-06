@@ -83,8 +83,6 @@ struct QueryState
         NOT_CANCELLED
     };
 
-    static std::string cancellationStatusToName(CancellationStatus status);
-
     /// Is request cancelled
     CancellationStatus cancellation_status = CancellationStatus::NOT_CANCELLED;
     bool is_connection_closed = false;
@@ -266,7 +264,7 @@ private:
     void sendEndOfStream();
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
-    void sendMergeTreeAllRangesAnnounecementAssumeLocked(InitialAllRangesAnnouncement announcement);
+    void sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRangesAnnouncement announcement);
     void sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request);
     void sendProfileInfo(const ProfileInfo & info);
     void sendTotals(const Block & totals);

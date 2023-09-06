@@ -44,6 +44,7 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->ttl = ttl->clone();
         res->children.push_back(res->ttl);
     }
+
     if (collation)
     {
         res->collation = collation->clone();
@@ -75,6 +76,10 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
         settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "")
                       << (*null_modifier ? "" : "NOT ") << "NULL" << (settings.hilite ? hilite_none : "");
     }
+
+    if (primary_key_specifier)
+        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "")
+                      << "PRIMARY KEY" << (settings.hilite ? hilite_none : "");
 
     if (default_expression)
     {

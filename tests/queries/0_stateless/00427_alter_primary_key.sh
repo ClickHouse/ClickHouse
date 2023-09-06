@@ -7,11 +7,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function perform()
 {
     local query=$1
-    TZ=UTC $CLICKHOUSE_CLIENT \
-         --allow_deprecated_syntax_for_merge_tree=1 \
-        --use_client_time_zone=1 \
-        --input_format_values_interpret_expressions=0 \
-        --query "$query" 2>/dev/null
+    local settings=(
+        --allow_deprecated_syntax_for_merge_tree 1
+        --session_timezone UTC
+        --input_format_values_interpret_expressions 0
+    )
+    TZ=UTC $CLICKHOUSE_CLIENT "${settings[@]}" --query "$query" 2>/dev/null
     if [ "$?" -ne 0 ]; then
         echo "query failed"
     fi

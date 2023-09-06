@@ -119,6 +119,7 @@ FROM dt;
 - [The `date_time_input_format` setting](../../operations/settings/settings-formats.md#date_time_input_format)
 - [The `date_time_output_format` setting](../../operations/settings/settings-formats.md#date_time_output_format)
 - [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
+- [The `session_timezone` setting](../../operations/settings/settings.md#session_timezone)
 - [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-for-working-with-dates-and-times)
 - [`Date` data type](../../sql-reference/data-types/date.md)
 - [`DateTime` data type](../../sql-reference/data-types/datetime.md)
