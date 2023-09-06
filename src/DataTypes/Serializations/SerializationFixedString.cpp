@@ -210,5 +210,16 @@ void SerializationFixedString::deserializeTextCSV(IColumn & column, ReadBuffer &
     read(*this, column, [&istr, &csv = settings.csv](ColumnFixedString::Chars & data) { readCSVStringInto(data, istr, csv); });
 }
 
+void SerializationFixedString::serializeTextMarkdown(
+    const DB::IColumn & column, size_t row_num, DB::WriteBuffer & ostr, const DB::FormatSettings & settings) const
+{
+    if (settings.output_format_markdown_escape_special_characters)
+    {
+        writeMarkdownEscapedString(
+            reinterpret_cast<const char *>(&(assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num])), n, ostr);
+    }
+    else
+        serializeTextEscaped(column, row_num, ostr, settings);
+}
 
 }
