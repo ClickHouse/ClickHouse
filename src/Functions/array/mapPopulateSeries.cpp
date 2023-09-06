@@ -106,7 +106,7 @@ private:
             if (1 < arguments.size())
                 value_type = arguments[1];
 
-            if (arguments.size() < 2 || (value_type && !isArray(value_type)))
+            if (arguments.size() < 2 || !value_type || !isArray(value_type))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Function {} if array argument is passed as key, additional array argument as value must be passed",
                     getName());
