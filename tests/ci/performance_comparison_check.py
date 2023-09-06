@@ -71,7 +71,7 @@ if __name__ == "__main__":
     reports_path = os.getenv("REPORTS_PATH", "./reports")
 
     check_name = sys.argv[1]
-    required_build = CI_CONFIG["tests_config"][check_name]["required_build"]
+    required_build = CI_CONFIG.test_configs[check_name].required_build
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
@@ -120,15 +120,6 @@ if __name__ == "__main__":
             commit, status, report_url, message, check_name_with_group, pr_info
         )
         sys.exit(0)
-
-    test_grep_exclude_filter = CI_CONFIG["tests_config"][check_name][
-        "test_grep_exclude_filter"
-    ]
-    if test_grep_exclude_filter:
-        docker_env += f" -e CHPC_TEST_GREP_EXCLUDE={test_grep_exclude_filter}"
-        logging.info(
-            "Fill fliter our performance tests by grep -v %s", test_grep_exclude_filter
-        )
 
     rerun_helper = RerunHelper(commit, check_name_with_group)
     if rerun_helper.is_already_finished_by_status():
