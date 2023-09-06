@@ -185,18 +185,13 @@ def main():
         state, description, test_results, additional_logs = process_results(output_path)
 
     if timeout_expired is not None:
-        name = f"Timeout expired for process execution: {run_cmd}"
+        name = f"Timeout expired for process execution"
         if len(name) > 140:
             name = name[:136]
             name += " ..."
 
-        test_results.append(
-            TestResult(
-                f"Timeout expired for process execution: {run_cmd}",
-                "FAIL",
-                timeout,
-            )
-        )
+        test_results.append(TestResult(name, "FAIL", timeout))
+
         state = "failure"
         description = test_results[-1].name
 
