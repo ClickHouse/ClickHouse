@@ -502,8 +502,10 @@ void IMergeTreeDataPart::removeIfNeeded()
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "relative_path {} of part {} is invalid or not set",
                                 getDataPartStorage().getPartDirectory(), name);
 
-            const auto part_parent_directory = directoryPath(part_directory);
-            bool is_moving_part = part_parent_directory.ends_with("moving/");
+            fs::path part_directory_path = getDataPartStorage().getRelativePath();
+            if (part_directory_path.filename().empty())
+                part_directory_path = part_directory_path.parent_path();
+            bool is_moving_part = part_directory_path.parent_path().filename() == "moving";
             if (!startsWith(file_name, "tmp") && !endsWith(file_name, ".tmp_proj") && !is_moving_part)
             {
                 LOG_ERROR(
