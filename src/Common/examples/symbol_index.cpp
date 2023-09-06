@@ -6,10 +6,13 @@
 #include <iostream>
 #include <dlfcn.h>
 
-[[maybe_unused]] static NO_INLINE const void * getAddress()
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+static NO_INLINE const void * getAddress()
 {
     return __builtin_return_address(0);
 }
+#pragma GCC diagnostic pop
 
 int main(int argc, char ** argv)
 {
@@ -22,7 +25,8 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    const SymbolIndex & symbol_index = SymbolIndex::instance();
+    auto symbol_index_ptr = SymbolIndex::instance();
+    const SymbolIndex & symbol_index = *symbol_index_ptr;
 
     for (const auto & elem : symbol_index.symbols())
         std::cout << elem.name << ": " << elem.address_begin << " ... " << elem.address_end << "\n";

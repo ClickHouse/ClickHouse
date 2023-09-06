@@ -20,10 +20,11 @@ public:
     {
         command_name = "read";
         command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
-        description = "Read a file from `FROM_PATH` to `TO_PATH`";
-        usage = "read [OPTION]... <FROM_PATH> [<TO_PATH>]";
+        description = "read File `from_path` to `to_path` or to stdout\nPath should be in format './' or './path' or 'path'";
+        usage = "read [OPTION]... <FROM_PATH> <TO_PATH>\nor\nread [OPTION]... <FROM_PATH>";
         command_option_description->add_options()
-            ("output", po::value<String>(), "file to which we are reading, defaults to `stdout`");
+            ("output", po::value<String>(), "set path to file to which we are read")
+            ;
     }
 
     void processOptions(

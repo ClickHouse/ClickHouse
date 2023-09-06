@@ -29,19 +29,18 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
 
 IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
     const NamesAndTypesList & columns_to_read,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     const MarkRanges & mark_ranges,
     UncompressedCache * uncompressed_cache,
     MarkCache * mark_cache,
-    const AlterConversionsPtr & alter_conversions,
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback) const
 {
-    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
+    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this());
     return std::make_unique<MergeTreeReaderWide>(
         read_info, columns_to_read,
-        storage_snapshot, uncompressed_cache,
+        metadata_snapshot, uncompressed_cache,
         mark_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback);
 }
@@ -130,13 +129,13 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
             MarkInCompressedFile mark;
             size_t granularity;
 
-            readBinaryLittleEndian(mark.offset_in_compressed_file, *marks_reader);
-            readBinaryLittleEndian(mark.offset_in_decompressed_block, *marks_reader);
+            readBinary(mark.offset_in_compressed_file, *marks_reader);
+            readBinary(mark.offset_in_decompressed_block, *marks_reader);
             ++marks_count;
 
             if (index_granularity_info_.mark_type.adaptive)
             {
-                readBinaryLittleEndian(granularity, *marks_reader);
+                readIntBinary(granularity, *marks_reader);
                 index_granularity_.appendMark(granularity);
             }
         }
@@ -258,18 +257,6 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
     });
 
     return res;
-}
-
-std::optional<time_t> MergeTreeDataPartWide::getColumnModificationTime(const String & column_name) const
-{
-    try
-    {
-        return getDataPartStorage().getFileLastModified(column_name + DATA_FILE_EXTENSION).epochTime();
-    }
-    catch (const fs::filesystem_error &)
-    {
-        return {};
-    }
 }
 
 String MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & column) const

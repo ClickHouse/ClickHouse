@@ -64,22 +64,20 @@ inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
     /// Optimization by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
 
-    if (prev_positions.size() > key_index
-        && prev_positions[key_index] != Block::NameMap::const_iterator{}
-        && name == prev_positions[key_index]->first)
+    if (prev_positions.size() > key_index && prev_positions[key_index] && name == prev_positions[key_index]->getKey())
     {
-        return prev_positions[key_index]->second;
+        return prev_positions[key_index]->getMapped();
     }
     else
     {
-        const auto it = name_map.find(name);
+        auto * it = name_map.find(name);
 
-        if (it != name_map.end())
+        if (it)
         {
             if (key_index < prev_positions.size())
                 prev_positions[key_index] = it;
 
-            return it->second;
+            return it->getMapped();
         }
         else
             return UNKNOWN_FIELD;
@@ -372,9 +370,6 @@ void BSONEachRowRowInputFormat::readArray(IColumn & column, const DataTypePtr & 
     size_t document_start = in->count();
     BSONSizeT document_size;
     readBinary(document_size, *in);
-    if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
-
     while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
     {
         auto nested_bson_type = getBSONType(readBSONType(*in));
@@ -402,9 +397,6 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
     size_t document_start = in->count();
     BSONSizeT document_size;
     readBinary(document_size, *in);
-    if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
-
     while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
     {
         auto nested_bson_type = getBSONType(readBSONType(*in));
@@ -454,6 +446,11 @@ void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & da
 
     const auto * data_type_map = assert_cast<const DataTypeMap *>(data_type.get());
     const auto & key_data_type = data_type_map->getKeyType();
+    if (!isStringOrFixedString(key_data_type))
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                        "Only maps with String key type are supported in BSON, got key type: {}",
+                        key_data_type->getName());
+
     const auto & value_data_type = data_type_map->getValueType();
     auto & column_map = assert_cast<ColumnMap &>(column);
     auto & key_column = column_map.getNestedData().getColumn(0);
@@ -463,15 +460,11 @@ void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & da
     size_t document_start = in->count();
     BSONSizeT document_size;
     readBinary(document_size, *in);
-    if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
-
     while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
     {
         auto nested_bson_type = getBSONType(readBSONType(*in));
         auto name = readBSONKeyName(*in, current_key_name);
-        ReadBufferFromMemory buf(name.data, name.size);
-        key_data_type->getDefaultSerialization()->deserializeWholeText(key_column, buf, format_settings);
+        key_column.insertData(name.data, name.size);
         readField(value_column, value_data_type, nested_bson_type);
     }
 
@@ -518,7 +511,6 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
             lc_column.insertFromFullColumn(*tmp_column, 0);
             return res;
         }
-        case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8:
         {
             readAndInsertInteger<Int8>(*in, column, data_type, bson_type);
@@ -529,7 +521,6 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
             readAndInsertInteger<UInt8>(*in, column, data_type, bson_type);
             return true;
         }
-        case TypeIndex::Enum16: [[fallthrough]];
         case TypeIndex::Int16:
         {
             readAndInsertInteger<Int16>(*in, column, data_type, bson_type);
@@ -705,8 +696,6 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         {
             BSONSizeT size;
             readBinary(size, in);
-            if (size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", size);
             in.ignore(size - sizeof(size));
             break;
         }
@@ -746,8 +735,6 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         {
             BSONSizeT size;
             readBinary(size, in);
-            if (size < sizeof(BSONSizeT))
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid java code_w_scope size: {}", size);
             in.ignore(size - sizeof(size));
             break;
         }
@@ -788,9 +775,6 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
 
     current_document_start = in->count();
     readBinary(current_document_size, *in);
-    if (current_document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", current_document_size);
-
     while (in->count() - current_document_start + sizeof(BSON_DOCUMENT_END) != current_document_size)
     {
         auto type = getBSONType(readBSONType(*in));
@@ -838,22 +822,6 @@ void BSONEachRowRowInputFormat::resetParser()
     prev_positions.clear();
 }
 
-size_t BSONEachRowRowInputFormat::countRows(size_t max_block_size)
-{
-    size_t num_rows = 0;
-    BSONSizeT document_size;
-    while (!in->eof() && num_rows < max_block_size)
-    {
-        readBinary(document_size, *in);
-        if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
-        in->ignore(document_size - sizeof(BSONSizeT));
-        ++num_rows;
-    }
-
-    return num_rows;
-}
-
 BSONEachRowSchemaReader::BSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & settings_)
     : IRowWithNamesSchemaReader(in_, settings_)
 {
@@ -897,7 +865,7 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
             in.ignore(size);
             return std::make_shared<DataTypeString>();
         }
-        case BSONType::OBJECT_ID:
+        case BSONType::OBJECT_ID:;
         {
             in.ignore(BSON_OBJECT_ID_SIZE);
             return makeNullable(std::make_shared<DataTypeFixedString>(BSON_OBJECT_ID_SIZE));
@@ -1039,9 +1007,6 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
                 "Size of BSON document is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. Increase "
                 "the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, most likely BSON is malformed",
                 min_bytes, document_size);
-
-        if (document_size < sizeof(document_size))
-            throw ParsingException(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
 
         size_t old_size = memory.size();
         memory.resize(old_size + document_size);

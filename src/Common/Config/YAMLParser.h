@@ -2,11 +2,11 @@
 
 #include "config.h"
 
-#include <Common/ErrorCodes.h>
-#include <Common/Exception.h>
-#include <base/types.h>
+#include <string>
+
 #include <Poco/DOM/Document.h>
-#include <Poco/DOM/AutoPtr.h>
+#include "Poco/DOM/AutoPtr.h"
+#include <Common/logger_useful.h>
 
 #if USE_YAML_CPP
 

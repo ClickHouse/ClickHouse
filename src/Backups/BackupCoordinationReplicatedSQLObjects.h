@@ -28,16 +28,8 @@ public:
     BackupCoordinationReplicatedSQLObjects();
     ~BackupCoordinationReplicatedSQLObjects();
 
-    struct DirectoryPathForSQLObject
-    {
-        String loader_zk_path;
-        UserDefinedSQLObjectType object_type;
-        String host_id;
-        String dir_path;
-    };
-
     /// Adds a path to directory keeping user defined SQL objects.
-    void addDirectory(DirectoryPathForSQLObject && directory_path_for_sql_object);
+    void addDirectory(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id, const String & dir_path);
 
     /// Returns all added paths to directories if `host_id` is a host chosen to store user-defined SQL objects.
     Strings getDirectories(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id) const;

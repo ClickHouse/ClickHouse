@@ -81,8 +81,6 @@ def get_cached_members_keys(members: set) -> Keys:
 
 
 def get_token_from_aws() -> str:
-    # We need a separate token, since the clickhouse-ci app does not have
-    # access to the organization members' endpoint
     secret_name = "clickhouse_robot_token"
     session = boto3.session.Session()
     client = session.client(
@@ -132,4 +130,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     output = main(args.token, args.organization, args.team)
 
-    print(f"# Just showing off the keys:\n{output}")
+    print(f"# Just shoing off the keys:\n{output}")

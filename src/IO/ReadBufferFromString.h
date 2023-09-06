@@ -19,10 +19,7 @@ public:
 class ReadBufferFromOwnString : public String, public ReadBufferFromString
 {
 public:
-    template <typename S>
-    explicit ReadBufferFromOwnString(S && s_) : String(std::forward<S>(s_)), ReadBufferFromString(*this)
-    {
-    }
+    explicit ReadBufferFromOwnString(const String & s_): String(s_), ReadBufferFromString(*this) {}
 };
 
 }

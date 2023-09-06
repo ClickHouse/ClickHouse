@@ -3,7 +3,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Storages/IStorage_fwd.h>
 #include <Parsers/IAST_fwd.h>
@@ -145,8 +145,8 @@ protected:
     std::atomic<bool> initialized = false;
     std::atomic<bool> stop_flag = true;
 
-    std::unique_ptr<ThreadFromGlobalPool> main_thread;
-    std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
+    ThreadFromGlobalPool main_thread;
+    ThreadFromGlobalPool cleanup_thread;
 
     /// Size of the pool for query execution.
     size_t pool_size = 1;

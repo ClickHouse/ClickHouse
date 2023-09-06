@@ -171,7 +171,7 @@ void ColumnTuple::popBack(size_t n)
         column->popBack(n);
 }
 
-StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
+StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     StringRef res(begin, 0);
     for (const auto & column : columns)
@@ -495,15 +495,15 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
     max = max_tuple;
 }
 
-void ColumnTuple::forEachSubcolumn(MutableColumnCallback callback)
+void ColumnTuple::forEachSubcolumn(ColumnCallback callback) const
 {
-    for (auto & column : columns)
+    for (const auto & column : columns)
         callback(column);
 }
 
-void ColumnTuple::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+void ColumnTuple::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
 {
-    for (auto & column : columns)
+    for (const auto & column : columns)
     {
         callback(*column);
         column->forEachSubcolumnRecursively(callback);
@@ -552,11 +552,11 @@ ColumnPtr ColumnTuple::compress() const
     }
 
     return ColumnCompressed::create(size(), byte_size,
-        [my_compressed = std::move(compressed)]() mutable
+        [compressed = std::move(compressed)]() mutable
         {
-            for (auto & column : my_compressed)
+            for (auto & column : compressed)
                 column = column->decompress();
-            return ColumnTuple::create(my_compressed);
+            return ColumnTuple::create(compressed);
         });
 }
 

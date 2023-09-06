@@ -2,7 +2,7 @@
 
 #include <Processors/Port.h>
 #include <Processors/IProcessor.h>
-#include <Common/SharedMutex.h>
+#include <Processors/Executors/UpgradableLock.h>
 #include <mutex>
 #include <queue>
 #include <stack>
@@ -156,7 +156,7 @@ private:
     std::vector<bool> source_processors;
     std::mutex processors_mutex;
 
-    SharedMutex nodes_mutex;
+    UpgradableMutex nodes_mutex;
 
     const bool profile_processors;
     bool cancelled = false;

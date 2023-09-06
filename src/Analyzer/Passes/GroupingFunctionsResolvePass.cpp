@@ -46,7 +46,7 @@ public:
     {
     }
 
-    void enterImpl(const QueryTreeNodePtr & node)
+    void visitImpl(const QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "grouping")

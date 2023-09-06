@@ -1,1 +1,1 @@
-SELECT match('', repeat('(', 100000)); -- { serverError 427 }
+SELECT match('', repeat('(', 100000)); -- { serverError 306 }

@@ -87,7 +87,7 @@ void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfigura
         return;
 
     Settings settings;
-    for (const auto & setting : settings.all())
+    for (auto setting : settings.all())
     {
         const auto & name = setting.getName();
         if (config.has(name) && !setting.isObsolete())

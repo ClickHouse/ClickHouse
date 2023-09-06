@@ -20,9 +20,9 @@ sidebar_label: MergeTree
 
 -   **Поддерживает сэмплирование данных.** При необходимости можно задать способ сэмплирования данных в таблице.
 
-:::info Примечание
-Движок [Merge](../special/merge.md#merge) не относится к семейству `*MergeTree`.
-:::
+    :::info
+    Движок [Merge](../special/merge.md#merge) не относится к семейству `*MergeTree`.
+    :::
 ## Создание таблицы {#table_engine-mergetree-creating-a-table}
 
 ``` sql
@@ -115,7 +115,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 <summary>Устаревший способ создания таблицы</summary>
 
-:::note Важно
+:::note "Attention"
 Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ, описанный выше.
 :::
 
@@ -391,7 +391,7 @@ INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARIT
 ## Проекции {#projections}
 Проекции похожи на [материализованные представления](../../../sql-reference/statements/create/view.md#materialized), но определяются на уровне кусков данных. Это обеспечивает гарантии согласованности данных наряду с автоматическим использованием в запросах.
 
-Проекции — это экспериментальная возможность. Чтобы включить поддержку проекций, установите настройку [optimize_use_projections](../../../operations/settings/settings.md#allow-experimental-projection-optimization) в значение `1`. См. также настройку [force_optimize_projection ](../../../operations/settings/settings.md#optimize_use_projections).
+Проекции — это экспериментальная возможность. Чтобы включить поддержку проекций, установите настройку [allow_experimental_projection_optimization](../../../operations/settings/settings.md#allow-experimental-projection-optimization) в значение `1`. См. также настройку [force_optimize_projection ](../../../operations/settings/settings.md#force-optimize-projection).
 
 Проекции не поддерживаются для запросов `SELECT` с модификатором [FINAL](../../../sql-reference/statements/select/from.md#select-from-final).
 

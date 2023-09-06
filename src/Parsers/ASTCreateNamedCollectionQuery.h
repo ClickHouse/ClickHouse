@@ -13,7 +13,6 @@ class ASTCreateNamedCollectionQuery : public IAST, public ASTQueryWithOnCluster
 public:
     std::string collection_name;
     SettingsChanges changes;
-    bool if_not_exists = false;
 
     String getID(char) const override { return "CreateNamedCollectionQuery"; }
 

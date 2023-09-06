@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+
 import os
 import logging
 import sys
@@ -20,15 +21,11 @@ from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
 from s3_helper import S3Helper
 from tee_popen import TeePopen
-from clickhouse_helper import get_instance_type
-from stopwatch import Stopwatch
 
 IMAGE_NAME = "clickhouse/performance-comparison"
 
 
 def get_run_command(
-    check_start_time,
-    check_name,
     workspace,
     result_path,
     repo_tests_path,
@@ -37,24 +34,12 @@ def get_run_command(
     additional_env,
     image,
 ):
-    instance_type = get_instance_type()
-
-    envs = [
-        f"-e CHECK_START_TIME='{check_start_time}'",
-        f"-e CHECK_NAME='{check_name}'",
-        f"-e INSTANCE_TYPE='{instance_type}'",
-        f"-e PR_TO_TEST={pr_to_test}",
-        f"-e SHA_TO_TEST={sha_to_test}",
-    ]
-
-    env_str = " ".join(envs)
-
     return (
         f"docker run --privileged --volume={workspace}:/workspace "
         f"--volume={result_path}:/output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
         f"--cap-add syslog --cap-add sys_admin --cap-add sys_rawio "
-        f"{env_str} {additional_env} "
+        f"-e PR_TO_TEST={pr_to_test} -e SHA_TO_TEST={sha_to_test} {additional_env} "
         f"{image}"
     )
 
@@ -78,9 +63,6 @@ class RamDrive:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-
-    stopwatch = Stopwatch()
-
     temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
     repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
     repo_tests_path = os.path.join(repo_path, "tests")
@@ -176,8 +158,6 @@ if __name__ == "__main__":
     docker_env += "".join([f" -e {name}" for name in env_extra])
 
     run_command = get_run_command(
-        stopwatch.start_time_str,
-        check_name,
         result_path,
         result_path,
         repo_tests_path,
@@ -189,7 +169,6 @@ if __name__ == "__main__":
     logging.info("Going to run command %s", run_command)
 
     run_log_path = os.path.join(temp_path, "run.log")
-    compare_log_path = os.path.join(result_path, "compare.log")
 
     popen_env = os.environ.copy()
     popen_env.update(env_extra)
@@ -203,7 +182,7 @@ if __name__ == "__main__":
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     paths = {
-        "compare.log": compare_log_path,
+        "compare.log": os.path.join(result_path, "compare.log"),
         "output.7z": os.path.join(result_path, "output.7z"),
         "report.html": os.path.join(result_path, "report.html"),
         "all-queries.html": os.path.join(result_path, "all-queries.html"),
@@ -234,12 +213,6 @@ if __name__ == "__main__":
     except Exception:
         traceback.print_exc()
 
-    def too_many_slow(msg):
-        match = re.search(r"(|.* )(\d+) slower.*", msg)
-        # This threshold should be synchronized with the value in https://github.com/ClickHouse/ClickHouse/blob/master/docker/test/performance-comparison/report.py#L629
-        threshold = 5
-        return int(match.group(2).strip()) > threshold if match else False
-
     # Try to fetch status from the report.
     status = ""
     message = ""
@@ -257,7 +230,7 @@ if __name__ == "__main__":
 
         # TODO: Remove me, always green mode for the first time, unless errors
         status = "success"
-        if "errors" in message.lower() or too_many_slow(message.lower()):
+        if "errors" in message.lower():
             status = "failure"
         # TODO: Remove until here
     except Exception:

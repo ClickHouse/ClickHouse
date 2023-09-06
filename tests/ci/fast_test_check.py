@@ -112,9 +112,6 @@ def main():
     rerun_helper = RerunHelper(commit, NAME)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
-        status = rerun_helper.get_finished_status()
-        if status is not None and status.state != "success":
-            sys.exit(1)
         sys.exit(0)
 
     docker_image = get_image_with_version(temp_path, "clickhouse/fasttest")
@@ -144,7 +141,7 @@ def main():
     logs_path.mkdir(parents=True, exist_ok=True)
 
     run_log_path = logs_path / "run.log"
-    with TeePopen(run_cmd, run_log_path, timeout=90 * 60) as process:
+    with TeePopen(run_cmd, run_log_path, timeout=40 * 60) as process:
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")
@@ -199,7 +196,6 @@ def main():
         test_results,
         [run_log_path.as_posix()] + additional_logs,
         NAME,
-        build_urls,
     )
     print(f"::notice ::Report url: {report_url}")
     post_commit_status(commit, state, report_url, description, NAME, pr_info)
@@ -217,11 +213,8 @@ def main():
 
     # Refuse other checks to run if fast test failed
     if state != "success":
-        if state == "error":
-            print("The status is 'error', report failure disregard the labels")
-            sys.exit(1)
-        elif FORCE_TESTS_LABEL in pr_info.labels:
-            print(f"'{FORCE_TESTS_LABEL}' enabled, reporting success")
+        if FORCE_TESTS_LABEL in pr_info.labels and state != "error":
+            print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
             sys.exit(1)
 

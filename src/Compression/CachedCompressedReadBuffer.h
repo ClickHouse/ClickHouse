@@ -36,7 +36,7 @@ private:
 
     bool nextImpl() override;
 
-    void prefetch(Priority priority) override;
+    void prefetch(int64_t priority) override;
 
     /// Passed into file_in.
     ReadBufferFromFileBase::ProfileCallback profile_callback;

@@ -8,33 +8,33 @@ DROP TABLE IF EXISTS test;
 CREATE TABLE test (uid String, version UInt32, is_deleted UInt8) ENGINE = ReplacingMergeTree(version) Order by (uid);
 INSERT INTO test (*) VALUES ('d1', 1, 0), ('d2', 1, 0), ('d6', 1, 0), ('d4', 1, 0), ('d6', 2, 1), ('d3', 1, 0), ('d1', 2, 1), ('d5', 1, 0), ('d4', 2, 1), ('d1', 3, 0), ('d1', 4, 1), ('d4', 3, 0), ('d1', 5, 0);
 SELECT '== Test SELECT ... FINAL - no is_deleted ==';
-select * from test FINAL order by uid;
+select * from test FINAL;
 OPTIMIZE TABLE test FINAL CLEANUP;
-select * from test order by uid;
+select * from test;
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (uid String, version UInt32, is_deleted UInt8) ENGINE = ReplacingMergeTree(version) Order by (uid) SETTINGS clean_deleted_rows='Always';
 INSERT INTO test (*) VALUES ('d1', 1, 0), ('d2', 1, 0), ('d6', 1, 0), ('d4', 1, 0), ('d6', 2, 1), ('d3', 1, 0), ('d1', 2, 1), ('d5', 1, 0), ('d4', 2, 1), ('d1', 3, 0), ('d1', 4, 1), ('d4', 3, 0), ('d1', 5, 0);
 SELECT '== Test SELECT ... FINAL - no is_deleted SETTINGS clean_deleted_rows=Always ==';
-select * from test FINAL order by uid;
+select * from test FINAL;
 OPTIMIZE TABLE test FINAL CLEANUP;
-select * from test order by uid;
+select * from test;
 
 -- Test the new behaviour
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (uid String, version UInt32, is_deleted UInt8) ENGINE = ReplacingMergeTree(version, is_deleted) Order by (uid);
 INSERT INTO test (*) VALUES ('d1', 1, 0), ('d2', 1, 0), ('d6', 1, 0), ('d4', 1, 0), ('d6', 2, 1), ('d3', 1, 0), ('d1', 2, 1), ('d5', 1, 0), ('d4', 2, 1), ('d1', 3, 0), ('d1', 4, 1), ('d4', 3, 0), ('d1', 5, 0);
 SELECT '== Test SELECT ... FINAL ==';
-select * from test FINAL order by uid;
-select * from test order by uid;
+select * from test FINAL;
+select * from test;
 
 SELECT '== Insert backups ==';
 INSERT INTO test (*) VALUES ('d6', 1, 0), ('d4', 1, 0), ('d6', 2, 1), ('d3', 1, 0), ('d1', 2, 1), ('d5', 1, 0), ('d4', 2, 1);
-select * from test FINAL order by uid;
+select * from test FINAL;
 
 SELECT '== Insert a second batch with overlaping data ==';
 INSERT INTO test (*) VALUES ('d4', 1, 0), ('d6', 2, 1), ('d3', 1, 0), ('d1', 2, 1), ('d5', 1, 0), ('d4', 2, 1), ('d1', 3, 1), ('d1', 4, 1), ('d4', 3, 0), ('d1', 5, 0), ('d2', 2, 1), ('d2', 3, 0), ('d3', 2, 1), ('d3', 3, 0);
-select * from test FINAL order by uid;
+select * from test FINAL;
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (uid String, version UInt32, is_deleted UInt8) ENGINE = ReplacingMergeTree(version, is_deleted) Order by (uid);
@@ -45,7 +45,7 @@ INSERT INTO test (*) VALUES ('d1', 1, 0), ('d1', 2, 1), ('d1', 3, 0), ('d1', 4, 
 INSERT INTO test (*) VALUES ('d1', 1, 0), ('d1', 2, 1), ('d1', 3, 0), ('d1', 4, 1), ('d1', 5, 0), ('d2', 1, 0), ('d3', 1, 0), ('d4', 1, 0),  ('d5', 1, 0), ('d6', 1, 0), ('d6', 2, 1);
 SELECT '== Only last version remains after OPTIMIZE W/ CLEANUP ==';
 OPTIMIZE TABLE test FINAL CLEANUP;
-select * from test order by uid;
+select * from test;
 
 -- insert d6 v=3 is_deleted=true (timestamp more recent so this version should be the one take into acount)
 INSERT INTO test (*) VALUES ('d1', 1, 0), ('d1', 2, 1), ('d1', 3, 0), ('d1', 4, 1), ('d1', 5, 0), ('d2', 1, 0), ('d3', 1, 0), ('d4', 1, 0),  ('d5', 1, 0), ('d6', 1, 0), ('d6', 3, 1);
@@ -53,7 +53,7 @@ INSERT INTO test (*) VALUES ('d1', 1, 0), ('d1', 2, 1), ('d1', 3, 0), ('d1', 4, 
 SELECT '== OPTIMIZE W/ CLEANUP (remove d6) ==';
 OPTIMIZE TABLE test FINAL CLEANUP;
 -- No d6 anymore
-select * from test order by uid;
+select * from test;
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (uid String, version UInt32, is_deleted UInt8) ENGINE = ReplacingMergeTree(version, is_deleted) Order by (uid) SETTINGS clean_deleted_rows='Always';
@@ -61,12 +61,12 @@ CREATE TABLE test (uid String, version UInt32, is_deleted UInt8) ENGINE = Replac
 SELECT '== Test of the SETTINGS clean_deleted_rows as Always ==';
 INSERT INTO test (*) VALUES ('d1', 1, 0), ('d2', 1, 0), ('d6', 1, 0), ('d4', 1, 0), ('d6', 2, 1), ('d3', 1, 0), ('d1', 2, 1), ('d5', 1, 0), ('d4', 2, 1), ('d1', 3, 0), ('d1', 4, 1), ('d4', 3, 0), ('d1', 5, 0);
 -- Even if the setting is set to Always, the SELECT FINAL doesn't delete rows
-select * from test FINAL order by uid;
-select * from test order by uid;
+select * from test FINAL;
+select * from test;
 
 OPTIMIZE TABLE test FINAL;
 -- d6 has to be removed since we set clean_deleted_rows as 'Always'
-select * from test order by uid;
+select * from test;
 
 SELECT '== Test of the SETTINGS clean_deleted_rows as Never ==';
 ALTER TABLE test MODIFY SETTING clean_deleted_rows='Never';
@@ -74,7 +74,7 @@ INSERT INTO test (*) VALUES ('d1', 1, 0), ('d2', 1, 0), ('d6', 1, 0), ('d4', 1, 
 INSERT INTO test (*) VALUES ('d1', 1, 0), ('d2', 1, 0), ('d6', 1, 0), ('d4', 1, 0), ('d6', 2, 1), ('d3', 1, 0), ('d1', 2, 1), ('d5', 1, 0), ('d4', 2, 1), ('d1', 3, 0), ('d1', 4, 1), ('d4', 3, 0), ('d1', 5, 0);
 OPTIMIZE TABLE test FINAL;
 -- d6 has NOT to be removed since we set clean_deleted_rows as 'Never'
-select * from test order by uid;
+select * from test;
 
 DROP TABLE IF EXISTS testCleanupR1;
 
@@ -92,7 +92,7 @@ OPTIMIZE TABLE testCleanupR1 FINAL CLEANUP;
 
 -- Only d3 to d5 remain
 SELECT '== (Replicas) Test optimize ==';
-SELECT * FROM testCleanupR1 order by uid;
+SELECT * FROM testCleanupR1;
 
 ------------------------------
 
@@ -110,7 +110,7 @@ OPTIMIZE TABLE testSettingsR1 FINAL;
 
 -- Only d3 to d5 remain
 SELECT '== (Replicas) Test settings ==';
-SELECT * FROM testSettingsR1 order by col1;
+SELECT * FROM testSettingsR1;
 
 
 ------------------------------
@@ -133,28 +133,28 @@ CREATE TABLE testMT (uid String, version UInt32, is_deleted UInt8) ENGINE = Merg
 INSERT INTO testMT (*) VALUES ('d1', 1, 1);
 OPTIMIZE TABLE testMT FINAL CLEANUP;  -- { serverError CANNOT_ASSIGN_OPTIMIZE }
 OPTIMIZE TABLE testMT FINAL;
-SELECT * FROM testMT order by uid;
+SELECT * FROM testMT;
 
 CREATE TABLE testSummingMT (uid String, version UInt32, is_deleted UInt8) ENGINE = SummingMergeTree() Order by (uid) SETTINGS clean_deleted_rows='Always';
 INSERT INTO testSummingMT (*) VALUES ('d1', 1, 1);
 OPTIMIZE TABLE testSummingMT FINAL CLEANUP;  -- { serverError CANNOT_ASSIGN_OPTIMIZE }
 OPTIMIZE TABLE testSummingMT FINAL;
-SELECT * FROM testSummingMT order by uid;
+SELECT * FROM testSummingMT;
 
 CREATE TABLE testAggregatingMT (uid String, version UInt32, is_deleted UInt8) ENGINE = AggregatingMergeTree() Order by (uid) SETTINGS clean_deleted_rows='Always';
 INSERT INTO testAggregatingMT (*) VALUES ('d1', 1, 1);
 OPTIMIZE TABLE testAggregatingMT FINAL CLEANUP;  -- { serverError CANNOT_ASSIGN_OPTIMIZE }
 OPTIMIZE TABLE testAggregatingMT FINAL;
-SELECT * FROM testAggregatingMT order by uid;
+SELECT * FROM testAggregatingMT;
 
 CREATE TABLE testCollapsingMT (uid String, version UInt32, is_deleted UInt8, sign Int8) ENGINE = CollapsingMergeTree(sign) Order by (uid) SETTINGS clean_deleted_rows='Always';
 INSERT INTO testCollapsingMT (*) VALUES ('d1', 1, 1, 1);
 OPTIMIZE TABLE testCollapsingMT FINAL CLEANUP;  -- { serverError CANNOT_ASSIGN_OPTIMIZE }
 OPTIMIZE TABLE testCollapsingMT FINAL;
-SELECT * FROM testCollapsingMT order by uid;
+SELECT * FROM testCollapsingMT;
 
 CREATE TABLE testVersionedCMT (uid String, version UInt32, is_deleted UInt8, sign Int8) ENGINE = VersionedCollapsingMergeTree(sign, version) Order by (uid) SETTINGS clean_deleted_rows='Always';
 INSERT INTO testVersionedCMT (*) VALUES ('d1', 1, 1, 1);
 OPTIMIZE TABLE testVersionedCMT FINAL CLEANUP;  -- { serverError CANNOT_ASSIGN_OPTIMIZE }
 OPTIMIZE TABLE testVersionedCMT FINAL;
-SELECT * FROM testVersionedCMT order by uid;
+SELECT * FROM testVersionedCMT;
