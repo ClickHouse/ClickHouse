@@ -11,8 +11,10 @@ from github import Github
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import format_description, get_commit, post_commit_status
-from env_helper import RUNNER_TEMP
+from docker_images_helper import IMAGES_FILE_PATH, get_image_names
+from env_helper import RUNNER_TEMP, GITHUB_WORKSPACE
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+from git_helper import Runner
 from pr_info import PRInfo
 from report import TestResults, TestResult
 from s3_helper import S3Helper
@@ -45,7 +47,7 @@ def parse_args() -> argparse.Namespace:
         default=RUNNER_TEMP,
         help="path to changed_images_*.json files",
     )
-    parser.add_argument("--reports", default=True, help=argparse.SUPPRESS)
+    parser.add_argument("--reports", default=False, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-reports",
         action="store_false",
@@ -53,7 +55,7 @@ def parse_args() -> argparse.Namespace:
         default=argparse.SUPPRESS,
         help="don't push reports to S3 and github",
     )
-    parser.add_argument("--push", default=True, help=argparse.SUPPRESS)
+    parser.add_argument("--push", default=False, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-push-images",
         action="store_false",
@@ -167,6 +169,66 @@ def create_manifest(image: str, tags: List[str], push: bool) -> Tuple[str, str]:
     return manifest, "OK"
 
 
+def enrich_images(changed_images: Dict[str, str]) -> Dict[str, str]:
+    new_changed_images = changed_images
+    all_image_names = get_image_names(GITHUB_WORKSPACE, IMAGES_FILE_PATH)
+
+    images_to_find_tags_for = [
+        image for image in all_image_names if image not in changed_images
+    ]
+
+    logging.info(f"Trying to find versions for images: {images_to_find_tags_for}")
+
+    COMMIT_SHA_BATCH_SIZE = 100
+    MAX_COMMIT_BATCHES_TO_CHECK = 10
+    # Gets the sha of the last COMMIT_SHA_BATCH_SIZE commits after skipping some commits (see below)
+    LAST_N_ANCESTOR_SHA_COMMAND = f"git log --format=format:'%H' --max-count={COMMIT_SHA_BATCH_SIZE} --skip={{}} --merges"
+    git_runner = Runner()
+
+    GET_COMMIT_SHAS_QUERY = """
+        WITH {commit_shas:Array(String)} AS commit_shas,
+             {images:Array(String)} AS images
+        SELECT
+            substring(test_name, 1, position(test_name, ':') -1) AS image_name,
+            argMax(commit_sha, check_start_time) AS commit_sha
+        FROM checks
+            WHERE
+                check_name == 'Push multi-arch images to Dockerhub'
+                AND position(test_name, checks.commit_sha)
+                AND checks.commit_sha IN commit_shas
+                AND image_name IN images
+        GROUP BY image_name
+        """
+
+    batch_count = 0
+    ch_helper = ClickHouseHelper()
+
+    while True:
+        commit_shas = git_runner(
+            LAST_N_ANCESTOR_SHA_COMMAND.format(batch_count * COMMIT_SHA_BATCH_SIZE)
+        ).split("\n")
+
+        result = ch_helper.select_json_each_row("default", GET_COMMIT_SHAS_QUERY, {'commit_shas': commit_shas, 'images':images_to_find_tags_for})
+        result_as_string = json.dumps(result)
+        logging.info(f"Found images for commits {commit_shas[0]}..{commit_shas[-1]}: {result_as_string}")
+
+        for row in result:
+            image_name = row["image_name"]
+            commit_sha = row["commit_sha"]
+            # As we only get the SHAs of merge commits from master, the PR number will be always 0
+            tag = f"0-{commit_sha}"
+            new_changed_images[image_name] = tag
+            images_to_find_tags_for.remove(image_name)
+
+        batch_count += 1
+
+        # In case we don't find a proper tag for an image in the last COMMIT_SHA_BATCH_SIZE * MAX_COMMIT_BATCHES_TO_CHECK
+        if batch_count >= MAX_COMMIT_BATCHES_TO_CHECK or len(images_to_find_tags_for) == 0:
+            break
+
+    return new_changed_images
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     stopwatch = Stopwatch()
@@ -197,6 +259,9 @@ def main():
             test_results.append(TestResult(manifest, test_result))
             if test_result != "OK":
                 status = "failure"
+
+    # changed_images now contains all the images that are changed in this PR. Let's find the latest tag for the images that are not changed.
+    changed_images = enrich_images(changed_images)
 
     with open(
         os.path.join(args.path, "changed_images.json"), "w", encoding="utf-8"
