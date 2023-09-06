@@ -4,6 +4,20 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+function involved_parallel_replicas () {
+    # Not using current_database = '$CLICKHOUSE_DATABASE' as nested parallel queries aren't run with it
+    $CLICKHOUSE_CLIENT --query "
+        SELECT
+            initial_query_id,
+            countIf(initial_query_id != query_id) != 0  as parallel_replicas_were_used
+        FROM system.query_log
+    WHERE event_date >= yesterday()
+      AND initial_query_id LIKE '$1%'
+    GROUP BY initial_query_id
+    ORDER BY min(event_time_microseconds) ASC
+    FORMAT TSV"
+}
+
 $CLICKHOUSE_CLIENT --query "CREATE TABLE replicas_summary (n Int64) ENGINE = MergeTree() ORDER BY n AS Select * from numbers(100_000)"
 
 # Note that we are not verifying the exact read rows and bytes (apart from not being 0) for 2 reasons:
@@ -44,3 +58,4 @@ echo "
     | grep "Summary" | grep -cv '"read_rows":"0"'
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
+involved_parallel_replicas "${query_id_base}"
