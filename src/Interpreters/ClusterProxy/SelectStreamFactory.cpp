@@ -146,7 +146,9 @@ void SelectStreamFactory::createForShard(
         return;
     });
 
-    if (settings.prefer_localhost_replica && shard_info.isLocal())
+    if (settings.prefer_localhost_replica && shard_info.isLocal()
+        && !context->canUseParallelReplicasOnInitiator())   // fast fix for parallel replicas over distributed with enabled perfer_localhost_replica
+                                                            // basically, prefer_localhost_replica is disabled for now with parallel replicas over distributed
     {
         StoragePtr main_table_storage;
 
@@ -175,12 +177,6 @@ void SelectStreamFactory::createForShard(
             else
                 emplace_local_stream();  /// Let it fail the usual way.
 
-            return;
-        }
-
-        if (shard_info.hasRemoteConnections())
-        {
-            emplace_remote_stream();
             return;
         }
 
