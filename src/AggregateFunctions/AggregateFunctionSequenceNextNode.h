@@ -324,8 +324,7 @@ public:
             return;
 
         if (unlikely(size > max_node_size_deserialize))
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                            "Too large array size (maximum: {})", max_node_size_deserialize);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
 
         auto & value = data(place).value;
 

@@ -52,7 +52,6 @@ protected:
         writeChar(':', out);
         writeIntText(location.line, out);
 
-        out.finalize();
         result = out.complete();
     }
 };

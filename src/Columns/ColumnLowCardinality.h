@@ -160,13 +160,11 @@ public:
 
     void reserve(size_t n) override { idx.reserve(n); }
 
-    /// Don't count the dictionary size as it can be shared between different blocks.
-    size_t byteSize() const override { return idx.getPositions()->byteSize(); }
-
+    size_t byteSize() const override { return idx.getPositions()->byteSize() + getDictionary().byteSize(); }
     size_t byteSizeAt(size_t n) const override { return getDictionary().byteSizeAt(getIndexes().getUInt(n)); }
     size_t allocatedBytes() const override { return idx.getPositions()->allocatedBytes() + getDictionary().allocatedBytes(); }
 
-    void forEachSubcolumn(MutableColumnCallback callback) override
+    void forEachSubcolumn(ColumnCallback callback) const override
     {
         callback(idx.getPositionsPtr());
 
@@ -175,7 +173,7 @@ public:
             callback(dictionary.getColumnUniquePtr());
     }
 
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
     {
         callback(*idx.getPositionsPtr());
         idx.getPositionsPtr()->forEachSubcolumnRecursively(callback);
@@ -303,8 +301,8 @@ public:
 
         void checkSizeOfType();
 
-        MutableColumnPtr detachPositions() { return IColumn::mutate(std::move(positions)); }
-        void attachPositions(MutableColumnPtr positions_);
+        ColumnPtr detachPositions() { return std::move(positions); }
+        void attachPositions(ColumnPtr positions_);
 
         void countKeys(ColumnUInt64::Container & counts) const;
 
@@ -352,9 +350,7 @@ private:
         bool isShared() const { return shared; }
 
         /// Create new dictionary with only keys that are mentioned in positions.
-        void compact(MutableColumnPtr & positions);
-
-        static MutableColumnPtr compact(const IColumnUnique & column_unique, MutableColumnPtr & positions);
+        void compact(ColumnPtr & positions);
 
     private:
         WrappedPtr column_unique;

@@ -517,12 +517,11 @@
     let previous_query = '';
 
     const current_url = new URL(window.location);
-    const opened_locally = location.protocol == 'file:';
 
     const server_address = current_url.searchParams.get('url');
     if (server_address) {
         document.getElementById('url').value = server_address;
-    } else if (!opened_locally) {
+    } else if (location.protocol != 'file:') {
         /// Substitute the address of the server where the page is served.
         document.getElementById('url').value = location.origin;
     }
@@ -531,19 +530,6 @@
     const user_from_url = current_url.searchParams.get('user');
     if (user_from_url) {
         document.getElementById('user').value = user_from_url;
-    }
-
-    const pass_from_url = current_url.searchParams.get('password');
-    if (pass_from_url) {
-        document.getElementById('password').value = pass_from_url;
-	/// Browsers don't allow manipulating history for the 'file:' protocol.
-        if (!opened_locally) {
-            let replaced_pass = current_url.searchParams;
-            replaced_pass.delete('password');
-            window.history.replaceState(null, '',
-                window.location.origin + window.location.pathname + '?'
-                + replaced_pass.toString() + window.location.hash);
-        }
     }
 
     function postImpl(posted_request_num, query)
@@ -562,7 +548,7 @@
             '&max_result_rows=1000&max_result_bytes=10000000&result_overflow_mode=break';
 
         // If play.html is opened locally, append username and password to the URL parameter to avoid CORS issue.
-        if (opened_locally) {
+        if (document.location.href.startsWith("file://")) {
             url += '&user=' + encodeURIComponent(user) +
             '&password=' + encodeURIComponent(password)
         }
@@ -571,7 +557,7 @@
 
         xhr.open('POST', url, true);
         // If play.html is open normally, use Basic auth to prevent username and password being exposed in URL parameters
-        if (!opened_locally) {
+        if (!document.location.href.startsWith("file://")) {
             xhr.setRequestHeader("Authorization", "Basic " + btoa(user+":"+password));
         }
         xhr.onreadystatechange = function()

@@ -12,6 +12,7 @@
 #include <mutex>
 #include <unordered_map>
 
+#include <Common/logger_useful.h>
 #include <base/defines.h>
 
 
@@ -214,19 +215,13 @@ public:
     void setMaxCount(size_t max_count)
     {
         std::lock_guard lock(mutex);
-        cache_policy->setMaxCount(max_count, lock);
+        return cache_policy->setMaxCount(max_count, lock);
     }
 
     void setMaxSize(size_t max_size_in_bytes)
     {
         std::lock_guard lock(mutex);
-        cache_policy->setMaxSize(max_size_in_bytes, lock);
-    }
-
-    void setQuotaForUser(const String & user_name, size_t max_size_in_bytes, size_t max_entries)
-    {
-        std::lock_guard lock(mutex);
-        cache_policy->setQuotaForUser(user_name, max_size_in_bytes, max_entries, lock);
+        return cache_policy->setMaxSize(max_size_in_bytes, lock);
     }
 
     virtual ~CacheBase() = default;

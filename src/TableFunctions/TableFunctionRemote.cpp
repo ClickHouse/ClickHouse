@@ -255,18 +255,15 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
 
         bool treat_local_as_remote = false;
         bool treat_local_port_as_remote = context->getApplicationType() == Context::ApplicationType::LOCAL;
-        ClusterConnectionParameters params{
+        cluster = std::make_shared<Cluster>(
+            context->getSettingsRef(),
+            names,
             username,
             password,
-            static_cast<UInt16>(secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort()),
+            (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort()),
             treat_local_as_remote,
             treat_local_port_as_remote,
-            secure,
-            /* priority= */ Priority{1},
-            /* cluster_name= */ "",
-            /* cluster_secret= */ ""
-        };
-        cluster = std::make_shared<Cluster>(context->getSettingsRef(), names, params);
+            secure);
     }
 
     if (!remote_table_function_ptr && table.empty())
@@ -276,12 +273,12 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     remote_table_id.table_name = table;
 }
 
-StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
+StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const
 {
     /// StorageDistributed supports mismatching structure of remote table, so we can use outdated structure for CREATE ... AS remote(...)
     /// without additional conversion in StorageTableFunctionProxy
     if (cached_columns.empty())
-        cached_columns = getActualTableStructure(context, is_insert_query);
+        cached_columns = getActualTableStructure(context);
 
     assert(cluster);
     StoragePtr res = remote_table_function_ptr
@@ -318,7 +315,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
     return res;
 }
 
-ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr context) const
 {
     assert(cluster);
     return getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);

@@ -1,6 +1,5 @@
 #include <Backups/BackupCoordinationFileInfos.h>
 #include <Common/quoteString.h>
-#include <Common/Exception.h>
 
 
 namespace DB

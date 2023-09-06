@@ -1,5 +1,5 @@
 #include <IO/ZlibInflatingReadBuffer.h>
-#include <IO/WithFileName.h>
+
 
 namespace DB
 {
@@ -99,22 +99,14 @@ bool ZlibInflatingReadBuffer::nextImpl()
             {
                 rc = inflateReset(&zstr);
                 if (rc != Z_OK)
-                    throw Exception(
-                        ErrorCodes::ZLIB_INFLATE_FAILED,
-                        "inflateReset failed: {}{}",
-                        zError(rc),
-                        getExceptionEntryWithFileName(*in));
+                    throw Exception(ErrorCodes::ZLIB_INFLATE_FAILED, "inflateReset failed: {}", zError(rc));
                 return true;
             }
         }
 
         /// If it is not end and not OK, something went wrong, throw exception
         if (rc != Z_OK)
-            throw Exception(
-                ErrorCodes::ZLIB_INFLATE_FAILED,
-                "inflate failed: {}{}",
-                zError(rc),
-                getExceptionEntryWithFileName(*in));
+            throw Exception(ErrorCodes::ZLIB_INFLATE_FAILED, "inflate failed: {}", zError(rc));
     }
     while (working_buffer.empty());
 

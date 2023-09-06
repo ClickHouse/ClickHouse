@@ -386,11 +386,11 @@ ColumnPtr ColumnDecimal<T>::compress() const
 
     const size_t compressed_size = compressed->size();
     return ColumnCompressed::create(data_size, compressed_size,
-        [my_compressed = std::move(compressed), column_size = data_size, my_scale = this->scale]
+        [compressed = std::move(compressed), column_size = data_size, scale = this->scale]
         {
-            auto res = ColumnDecimal<T>::create(column_size, my_scale);
+            auto res = ColumnDecimal<T>::create(column_size, scale);
             ColumnCompressed::decompressBuffer(
-                my_compressed->data(), res->getData().data(), my_compressed->size(), column_size * sizeof(T));
+                compressed->data(), res->getData().data(), compressed->size(), column_size * sizeof(T));
             return res;
         });
 }

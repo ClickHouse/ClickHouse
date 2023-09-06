@@ -38,7 +38,7 @@ function run_query()
 
     echo "$query"
     local opts=(
-        --optimize_use_projections 1
+        --allow_experimental_projection_optimization 1
         --force_optimize_projection 1
         --log_processors_profiles 1
         --query_id "$query_id"

@@ -8,17 +8,16 @@
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Disks/IDisk.h>
+#include <Common/quoteString.h>
 #include <Storages/StorageMemory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Common/quoteString.h>
 #include <Common/atomicRename.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
-#include <Common/ThreadPool.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
@@ -111,7 +110,7 @@ TemporaryTableHolder::TemporaryTableHolder(
 }
 
 TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs) noexcept
-        : WithContext(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id), future_set(std::move(rhs.future_set))
+        : WithContext(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id)
 {
     rhs.id = UUIDHelpers::Nil;
 }
@@ -220,26 +219,8 @@ void DatabaseCatalog::shutdownImpl()
 
     /// We still hold "databases" (instead of std::move) for Buffer tables to flush data correctly.
 
-    /// Delay shutdown of temporary and system databases. They will be shutdown last.
-    /// Because some databases might use them until their shutdown is called, but calling shutdown
-    /// on temporary database means clearing its set of tables, which will lead to unnecessary errors like "table not found".
-    std::vector<DatabasePtr> databases_with_delayed_shutdown;
     for (auto & database : current_databases)
-    {
-        if (database.first == TEMPORARY_DATABASE || database.first == SYSTEM_DATABASE)
-        {
-            databases_with_delayed_shutdown.push_back(database.second);
-            continue;
-        }
-        LOG_TRACE(log, "Shutting down database {}", database.first);
         database.second->shutdown();
-    }
-
-    LOG_TRACE(log, "Shutting down system databases");
-    for (auto & database : databases_with_delayed_shutdown)
-    {
-        database->shutdown();
-    }
 
     {
         std::lock_guard lock(tables_marked_dropped_mutex);
@@ -336,6 +317,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         return db_and_table;
     }
 
+
     if (table_id.database_name == TEMPORARY_DATABASE)
     {
         /// For temporary tables UUIDs are set in Context::resolveStorageID(...).
@@ -368,26 +350,9 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         database = it->second;
     }
 
-    StoragePtr table;
-    if (exception)
-    {
-        try
-        {
-            table = database->getTable(table_id.table_name, context_);
-        }
-        catch (const Exception & e)
-        {
-            exception->emplace(e);
-        }
-    }
-    else
-    {
-        table = database->tryGetTable(table_id.table_name, context_);
-    }
-
-    if (!table && exception && !exception->has_value())
-        exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
-
+    auto table = database->tryGetTable(table_id.table_name, context_);
+    if (!table && exception)
+            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
     if (!table)
         database = nullptr;
 
@@ -721,7 +686,6 @@ DatabaseCatalog::DatabaseCatalog(ContextMutablePtr global_context_)
     , loading_dependencies{"LoadingDeps"}
     , view_dependencies{"ViewDeps"}
     , log(&Poco::Logger::get("DatabaseCatalog"))
-    , first_async_drop_in_queue(tables_marked_dropped.end())
 {
 }
 
@@ -984,17 +948,9 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
 
     std::lock_guard lock(tables_marked_dropped_mutex);
     if (ignore_delay)
-    {
-        /// Insert it before first_async_drop_in_queue, so sync drop queries will have priority over async ones,
-        /// but the queue will remain fair for multiple sync drop queries.
-        tables_marked_dropped.emplace(first_async_drop_in_queue, TableMarkedAsDropped{table_id, table, dropped_metadata_path, drop_time});
-    }
+        tables_marked_dropped.push_front({table_id, table, dropped_metadata_path, drop_time});
     else
-    {
         tables_marked_dropped.push_back({table_id, table, dropped_metadata_path, drop_time + drop_delay_sec});
-        if (first_async_drop_in_queue == tables_marked_dropped.end())
-            --first_async_drop_in_queue;
-    }
     tables_marked_dropped_ids.insert(table_id.uuid);
     CurrentMetrics::add(CurrentMetrics::TablesToDropQueueSize, 1);
 
@@ -1045,8 +1001,6 @@ void DatabaseCatalog::dequeueDroppedTableCleanup(StorageID table_id)
         /// This maybe throw exception.
         renameNoReplace(latest_metadata_dropped_path, table_metadata_path);
 
-        if (first_async_drop_in_queue == it_dropped_table)
-            ++first_async_drop_in_queue;
         tables_marked_dropped.erase(it_dropped_table);
         [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(dropped_table.table_id.uuid);
         assert(removed);
@@ -1109,8 +1063,6 @@ void DatabaseCatalog::dropTableDataTask()
             table = std::move(*it);
             LOG_INFO(log, "Have {} tables in drop queue ({} of them are in use), will try drop {}",
                      tables_marked_dropped.size(), tables_in_use_count, table.table_id.getNameForLogs());
-            if (first_async_drop_in_queue == it)
-                ++first_async_drop_in_queue;
             tables_marked_dropped.erase(it);
             /// Schedule the task as soon as possible, while there are suitable tables to drop.
             schedule_after_ms = 0;
@@ -1147,8 +1099,6 @@ void DatabaseCatalog::dropTableDataTask()
                 table.drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + drop_error_cooldown_sec;
                 std::lock_guard lock(tables_marked_dropped_mutex);
                 tables_marked_dropped.emplace_back(std::move(table));
-                if (first_async_drop_in_queue == tables_marked_dropped.end())
-                    --first_async_drop_in_queue;
                 /// If list of dropped tables was empty, schedule a task to retry deletion.
                 if (tables_marked_dropped.size() == 1)
                 {

@@ -13,6 +13,7 @@
 
 
 #include "Poco/Net/CertificateHandlerFactoryMgr.h"
+#include "Poco/Net/ConsoleCertificateHandler.h"
 #include "Poco/Net/AcceptCertificateHandler.h"
 #include "Poco/Net/RejectCertificateHandler.h"
 
@@ -23,6 +24,7 @@ namespace Net {
 
 CertificateHandlerFactoryMgr::CertificateHandlerFactoryMgr()
 {
+	setFactory("ConsoleCertificateHandler", new CertificateHandlerFactoryImpl<ConsoleCertificateHandler>());
 	setFactory("AcceptCertificateHandler", new CertificateHandlerFactoryImpl<AcceptCertificateHandler>());
 	setFactory("RejectCertificateHandler", new CertificateHandlerFactoryImpl<RejectCertificateHandler>());
 }

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/Macros.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer.h>
@@ -61,8 +60,7 @@ public:
     SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr context,
-        bool async_insert) override;
+        ContextPtr context) override;
 
     /// We want to control the number of rows in a chunk inserted into Kafka
     bool prefersLargeBlocks() const override { return false; }
@@ -80,7 +78,6 @@ public:
 private:
     // Configuration and state
     std::unique_ptr<KafkaSettings> kafka_settings;
-    Macros::MacroExpansionInfo macros_info;
     const Names topics;
     const String brokers;
     const String group;

@@ -76,7 +76,7 @@ public:
 
     bool checkEndOfRow();
     bool checkForSuffixImpl(bool check_eof);
-    inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf, true); }
+    inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf); }
 
     EscapingRule getEscapingRule() const override { return format_settings.custom.escaping_rule; }
 

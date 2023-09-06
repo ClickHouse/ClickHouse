@@ -31,12 +31,14 @@ ColumnString::ColumnString(const ColumnString & src)
     offsets(src.offsets.begin(), src.offsets.end()),
     chars(src.chars.begin(), src.chars.end())
 {
-    Offset last_offset = offsets.empty() ? 0 : offsets.back();
-    /// This will also prevent possible overflow in offset.
-    if (last_offset != chars.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "String offsets has data inconsistent with chars array. Last offset: {}, array length: {}",
-            last_offset, chars.size());
+    if (!offsets.empty())
+    {
+        Offset last_offset = offsets.back();
+
+        /// This will also prevent possible overflow in offset.
+        if (chars.size() != last_offset)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "String offsets has data inconsistent with chars array");
+    }
 }
 
 
@@ -155,7 +157,6 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
     Offsets & res_offsets = res->offsets;
 
     filterArraysImpl<UInt8>(chars, offsets, res_chars, res_offsets, filt, result_size_hint);
-
     return res;
 }
 
@@ -175,7 +176,7 @@ void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
     /// (if not, one of exceptions below will throw) and we can calculate the resulting chars size.
     UInt64 last_offset = offsets_data[from] + (mask.size() - offsets_data.size());
     offsets_data.resize(mask.size());
-    chars_data.resize_fill(last_offset);
+    chars_data.resize_fill(last_offset, 0);
     while (index >= 0)
     {
         offsets_data[index] = last_offset;
@@ -531,8 +532,8 @@ ColumnPtr ColumnString::compress() const
     const size_t offsets_compressed_size = offsets_compressed->size();
     return ColumnCompressed::create(source_offsets_elements, chars_compressed_size + offsets_compressed_size,
         [
-            my_chars_compressed = std::move(chars_compressed),
-            my_offsets_compressed = std::move(offsets_compressed),
+            chars_compressed = std::move(chars_compressed),
+            offsets_compressed = std::move(offsets_compressed),
             source_chars_size,
             source_offsets_elements
         ]
@@ -543,10 +544,10 @@ ColumnPtr ColumnString::compress() const
             res->getOffsets().resize(source_offsets_elements);
 
             ColumnCompressed::decompressBuffer(
-                my_chars_compressed->data(), res->getChars().data(), my_chars_compressed->size(), source_chars_size);
+                chars_compressed->data(), res->getChars().data(), chars_compressed->size(), source_chars_size);
 
             ColumnCompressed::decompressBuffer(
-                my_offsets_compressed->data(), res->getOffsets().data(), my_offsets_compressed->size(), source_offsets_elements * sizeof(Offset));
+                offsets_compressed->data(), res->getOffsets().data(), offsets_compressed->size(), source_offsets_elements * sizeof(Offset));
 
             return res;
         });
@@ -570,11 +571,10 @@ void ColumnString::protect()
 
 void ColumnString::validate() const
 {
-    Offset last_offset = offsets.empty() ? 0 : offsets.back();
-    if (last_offset != chars.size())
+    if (!offsets.empty() && offsets.back() != chars.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "ColumnString validation failed: size mismatch (internal logical error) {} != {}",
-                        last_offset, chars.size());
+                        offsets.back(), chars.size());
 }
 
 }

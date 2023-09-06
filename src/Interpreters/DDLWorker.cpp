@@ -31,11 +31,9 @@
 #include <base/getFQDNOrHostName.h>
 #include <Common/logger_useful.h>
 #include <base/sort.h>
-#include <memory>
 #include <random>
 #include <pcg_random.hpp>
 #include <Common/scope_guard_safe.h>
-#include <Common/ThreadPool.h>
 
 #include <Interpreters/ZooKeeperLog.h>
 
@@ -123,8 +121,8 @@ void DDLWorker::startup()
 {
     [[maybe_unused]] bool prev_stop_flag = stop_flag.exchange(false);
     chassert(prev_stop_flag);
-    main_thread = std::make_unique<ThreadFromGlobalPool>(&DDLWorker::runMainThread, this);
-    cleanup_thread = std::make_unique<ThreadFromGlobalPool>(&DDLWorker::runCleanupThread, this);
+    main_thread = ThreadFromGlobalPool(&DDLWorker::runMainThread, this);
+    cleanup_thread = ThreadFromGlobalPool(&DDLWorker::runCleanupThread, this);
 }
 
 void DDLWorker::shutdown()
@@ -134,10 +132,8 @@ void DDLWorker::shutdown()
     {
         queue_updated_event->set();
         cleanup_event->set();
-        if (main_thread)
-            main_thread->join();
-        if (cleanup_thread)
-            cleanup_thread->join();
+        main_thread.join();
+        cleanup_thread.join();
         worker_pool.reset();
     }
 }
@@ -476,8 +472,6 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
             query_context->setSetting("implicit_transaction", Field{0});
         }
 
-        query_context->setInitialQueryId(task.entry.initial_query_id);
-
         if (!task.is_initial_query)
             query_scope.emplace(query_context);
         executeQuery(istr, ostr, !task.is_initial_query, query_context, {});
@@ -551,7 +545,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     chassert(!task.completely_processed);
 
     /// Setup tracing context on current thread for current DDL
-    OpenTelemetry::TracingContextHolder tracing_ctx_holder(__PRETTY_FUNCTION__,
+    OpenTelemetry::TracingContextHolder tracing_ctx_holder(__PRETTY_FUNCTION__ ,
         task.entry.tracing_context,
         this->context->getOpenTelemetrySpanLog());
     tracing_ctx_holder.root_span.kind = OpenTelemetry::CONSUMER;

@@ -135,7 +135,6 @@ NamesAndAliases PartLogElement::getNamesAndAliases()
     {
         {"ProfileEvents.Names", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}, "mapKeys(ProfileEvents)"},
         {"ProfileEvents.Values", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())}, "mapValues(ProfileEvents)"},
-        {"name", {std::make_shared<DataTypeString>()}, "part_name"},
     };
 }
 
@@ -242,7 +241,7 @@ bool PartLog::addNewParts(
 
             elem.profile_counters = part_log_entry.profile_counters;
 
-            part_log->add(std::move(elem));
+            part_log->add(elem);
         }
     }
     catch (...)

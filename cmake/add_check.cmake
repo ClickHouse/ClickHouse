@@ -5,11 +5,11 @@ if (NOT TARGET check)
     if (CMAKE_CONFIGURATION_TYPES)
         add_custom_target (check COMMAND ${CMAKE_CTEST_COMMAND}
             --force-new-ctest-process --output-on-failure --build-config "$<CONFIGURATION>"
-            WORKING_DIRECTORY ${PROJECT_BINARY_DIR})
+            WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
     else ()
         add_custom_target (check COMMAND ${CMAKE_CTEST_COMMAND}
             --force-new-ctest-process --output-on-failure
-            WORKING_DIRECTORY ${PROJECT_BINARY_DIR})
+            WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
     endif ()
 endif ()
 

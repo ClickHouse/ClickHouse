@@ -157,8 +157,8 @@ public:
     void read(DB::ReadBuffer & buf)
     {
         size_t size = 0;
-        readBinaryLittleEndian(size, buf);
-        readBinaryLittleEndian(total_values, buf);
+        DB::readIntBinary<size_t>(size, buf);
+        DB::readIntBinary<size_t>(total_values, buf);
 
         /// Compatibility with old versions.
         if (size > total_values)
@@ -166,21 +166,20 @@ public:
 
         static constexpr size_t MAX_RESERVOIR_SIZE = 1_GiB;
         if (unlikely(size > MAX_RESERVOIR_SIZE))
-            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                                "Too large array size (maximum: {})", MAX_RESERVOIR_SIZE);
+            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
 
         samples.resize(size);
         for (size_t i = 0; i < size; ++i)
-            readBinaryLittleEndian(samples[i], buf);
+            DB::readPODBinary(samples[i], buf);
 
         sorted = false;
     }
 
     void write(DB::WriteBuffer & buf) const
     {
-        const size_t size = samples.size();
-        writeBinaryLittleEndian(size, buf);
-        writeBinaryLittleEndian(total_values, buf);
+        size_t size = samples.size();
+        DB::writeIntBinary<size_t>(size, buf);
+        DB::writeIntBinary<size_t>(total_values, buf);
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -190,12 +189,12 @@ public:
             /// Here we ensure that padding is zero without changing the protocol.
             /// TODO: After implementation of "versioning aggregate function state",
             /// change the serialization format.
+
             Element elem;
             memset(&elem, 0, sizeof(elem));
             elem = samples[i];
 
-            DB::transformEndianness<std::endian::little>(elem);
-            DB::writeString(reinterpret_cast<const char*>(&elem), sizeof(elem), buf);
+            DB::writePODBinary(elem, buf);
         }
     }
 

@@ -302,16 +302,6 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     }
 }
 
-void MergeJoinAlgorithm::logElapsed(double seconds)
-{
-    LOG_TRACE(log,
-        "Finished pocessing in {} seconds"
-        ", left: {} blocks, {} rows; right: {} blocks, {} rows"
-        ", max blocks loaded to memory: {}",
-        seconds, stat.num_blocks[0], stat.num_rows[0], stat.num_blocks[1], stat.num_rows[1],
-        stat.max_blocks_loaded);
-}
-
 static void prepareChunk(Chunk & chunk)
 {
     if (!chunk)

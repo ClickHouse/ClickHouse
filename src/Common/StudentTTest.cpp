@@ -6,9 +6,6 @@
 #include <sstream>
 #include <stdexcept>
 
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-
 
 namespace
 {
@@ -156,17 +153,19 @@ std::pair<bool, std::string> StudentTTest::compareAndReport(size_t confidence_le
 
     double mean_confidence_interval = table_value * t_statistic;
 
-    DB::WriteBufferFromOwnString out;
+    std::stringstream ss;       // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    ss.exceptions(std::ios::failbit);
 
     if (mean_difference > mean_confidence_interval && (mean_difference - mean_confidence_interval > 0.0001)) /// difference must be more than 0.0001, to take into account connection latency.
     {
-        out << "Difference at " << confidence_level[confidence_level_index] <<  "% confidence: ";
-        out << "mean difference is " << mean_difference << ", but confidence interval is " << mean_confidence_interval;
-        return {false, out.str()};
+        ss << "Difference at " << confidence_level[confidence_level_index] <<  "% confidence: ";
+        ss << std::fixed << std::setprecision(8) << "mean difference is " << mean_difference << ", but confidence interval is " << mean_confidence_interval;
+        return {false, ss.str()};
     }
     else
     {
-        out << "No difference proven at " << confidence_level[confidence_level_index] <<  "% confidence";
-        return {true, out.str()};
+        ss << "No difference proven at " << confidence_level[confidence_level_index] <<  "% confidence";
+        return {true, ss.str()};
     }
 }
+

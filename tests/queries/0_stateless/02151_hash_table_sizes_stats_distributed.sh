@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Tags: long, distributed, no-tsan, no-debug
+# Tags: long, distributed, no-tsan
 
 # These tests don't use `current_database = currentDatabase()` condition, because database name isn't propagated during remote queries.
 
 # shellcheck disable=SC2154
+
+unset CLICKHOUSE_LOG_COMMENT
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -22,10 +22,6 @@ DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster] [SYNC]
 
 Deletes the table.
 
-:::tip
-Also see [UNDROP TABLE](/docs/en/sql-reference/statements/undrop.md)
-:::
-
 Syntax:
 
 ``` sql
@@ -118,21 +114,4 @@ DROP FUNCTION [IF EXISTS] function_name [on CLUSTER cluster]
 ``` sql
 CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
 DROP FUNCTION linear_equation;
-```
-
-## DROP NAMED COLLECTION
-
-Deletes a named collection.
-
-**Syntax**
-
-``` sql
-DROP NAMED COLLECTION [IF EXISTS] name [on CLUSTER cluster]
-```
-
-**Example**
-
-``` sql
-CREATE NAMED COLLECTION foobar AS a = '1', b = '2';
-DROP NAMED COLLECTION foobar;
 ```

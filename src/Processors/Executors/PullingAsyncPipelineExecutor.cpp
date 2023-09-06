@@ -67,7 +67,7 @@ const Block & PullingAsyncPipelineExecutor::getHeader() const
     return lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader();
 }
 
-static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads)
+static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
