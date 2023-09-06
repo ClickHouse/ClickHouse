@@ -42,6 +42,7 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
+#include <Common/FailPoint.h>
 #include <Server/waitServersToFinish.h>
 #include <Core/ServerUUID.h>
 #include <IO/ReadHelpers.h>
@@ -883,6 +884,8 @@ try
             }
         }
     }
+
+    FailPointInjection::enableFromGlobalConfig(config());
 
     int default_oom_score = 0;
 
