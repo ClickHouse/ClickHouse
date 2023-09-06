@@ -5518,7 +5518,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
             error = std::current_exception();
             retryable = true;
         }
-        catch (...) {
+        catch (...)
+        {
             error = std::current_exception();
             retryable = isRetryableException(std::current_exception());
         }
