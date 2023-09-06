@@ -21,6 +21,7 @@ from commit_status_helper import (
     get_commit,
     post_commit_status,
     update_mergeable_check,
+    format_description,
 )
 from docker_pull_helper import get_image_with_version
 from env_helper import S3_BUILDS_BUCKET, TEMP_PATH
@@ -185,15 +186,10 @@ def main():
         state, description, test_results, additional_logs = process_results(output_path)
 
     if timeout_expired is not None:
-        name = f"Timeout expired for process execution"
-        if len(name) > 140:
-            name = name[:136]
-            name += " ..."
-
-        test_results.append(TestResult(name, "FAIL", timeout))
-
+        test_result_name = "Timeout for fast test check is expired"
+        test_results.append(TestResult(test_result_name, "FAIL", timeout))
         state = "failure"
-        description = test_results[-1].name
+        description = format_description(test_result_name)
 
     ch_helper = ClickHouseHelper()
     s3_path_prefix = os.path.join(
