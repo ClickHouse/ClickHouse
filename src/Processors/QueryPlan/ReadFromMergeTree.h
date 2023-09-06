@@ -171,6 +171,7 @@ public:
         std::optional<KeyCondition> minmax_idx_condition;
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
+        std::optional<std::unordered_set<String>> part_values;
     };
 
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
