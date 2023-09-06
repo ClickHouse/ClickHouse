@@ -244,7 +244,7 @@ size_t MergeTreeReaderCompact::readRows(
                 {
                     rethrow_exception(std::current_exception());
                 }
-                catch(Exception & e)
+                catch (Exception & e)
                 {
                     e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
                 }

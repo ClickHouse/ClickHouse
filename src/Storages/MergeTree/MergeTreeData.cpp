@@ -1244,14 +1244,6 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
             .withPartFormatFromDisk()
             .build();
     }
-    catch (const Poco::Net::NetException &)
-    {
-        throw;
-    }
-    catch (const Poco::TimeoutException &)
-    {
-        throw;
-    }
     catch (...)
     {
         /// Don't count the part as broken if there was a retryalbe error
@@ -5516,11 +5508,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         {
             load_part();
         }
-        catch (const Exception & e)
-        {
-            error = std::current_exception();
-            retryable = isRetryableException(e);
-        }
         catch (const Poco::Net::NetException &)
         {
             error = std::current_exception();
@@ -5531,9 +5518,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
             error = std::current_exception();
             retryable = true;
         }
-        catch (...)
-        {
+        catch (...) {
             error = std::current_exception();
+            retryable = isRetryableException(std::current_exception());
         }
 
         if (!error)

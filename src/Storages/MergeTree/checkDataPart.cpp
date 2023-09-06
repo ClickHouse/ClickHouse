@@ -15,6 +15,7 @@
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
 #include <Common/CurrentMetrics.h>
+#include <Poco/Net/NetException.h>
 
 #if USE_AZURE_BLOB_STORAGE
 #include <azure/core/http/http.hpp>
@@ -79,6 +80,14 @@ bool isRetryableException(const std::exception_ptr exception_ptr)
 
         if (e.code() == ErrorCodes::NETWORK_ERROR || e.code() == ErrorCodes::SOCKET_TIMEOUT)
             return true;
+    }
+    catch (const Poco::Net::NetException &)
+    {
+        return true;
+    }
+    catch (const Poco::TimeoutException &)
+    {
+        return true;
     }
 
     /// In fact, there can be other similar situations.
