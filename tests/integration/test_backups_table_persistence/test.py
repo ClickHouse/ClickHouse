@@ -42,12 +42,19 @@ def test_system_backups():
         instance,
         f"SELECT status, error FROM system.backups WHERE id='{backup_id}'",
         TSV([["BACKUP_CREATED", ""]]),
+        200,
     )
 
     instance.query("DROP TABLE test.table SYNC")
 
     [restore_id, status] = restore_table(backup_name)
     assert status == "RESTORING\n" or status == "RESTORED\n"
+    assert_eq_with_retry(
+        instance,
+        f"SELECT status, error FROM system.backups WHERE id='{restore_id}'",
+        TSV([["RESTORED", ""]]),
+        200,
+    )
 
     instance.restart_clickhouse()
 
