@@ -152,17 +152,17 @@ def main():
         os.makedirs(logs_path)
 
     run_log_path = os.path.join(logs_path, "run.log")
-    expired_timeout = None
-    with TeePopen(run_cmd, run_log_path, timeout=65) as process:
-        try:
+    timeout = 65
+    timeout_expired = False
+    with TeePopen(run_cmd, run_log_path, timeout=timeout) as process:
             retcode = process.wait()
-            if retcode == 0:
+            if process.timeout_exceeded:
+                logging.info(f"Timeout expired for process execution: {run_cmd}")
+                timeout_expired = True
+            elif retcode == 0:
                 logging.info("Run successfully")
             else:
                 logging.info("Run failed")
-        except TimeoutExpired as timeout_ex:
-            logging.info(f"Timeout expired for process execution: {run_cmd}")
-            expired_timeout = timeout_ex.timeout
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
@@ -194,15 +194,15 @@ def main():
     else:
         state, description, test_results, additional_logs = process_results(output_path)
 
-    if expired_timeout is not None:
+    if timeout_expired is not None:
         test_results.append(
             TestResult(
                 f"Timeout expired for process execution: {run_cmd}",
                 "FAIL",
-                expired_timeout,
+                timeout,
             )
         )
-        state = "failure"
+        state = "timeout"
         description = test_results[-1].name
 
     ch_helper = ClickHouseHelper()
