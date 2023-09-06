@@ -28,7 +28,7 @@ NamesAndTypesList StorageSystemScheduler::getNamesAndTypes()
         {"is_active", std::make_shared<DataTypeUInt8>()},
         {"active_children", std::make_shared<DataTypeUInt64>()},
         {"dequeued_requests", std::make_shared<DataTypeUInt64>()},
-        {"dequeued_cost", std::make_shared<DataTypeUInt64>()},
+        {"dequeued_cost", std::make_shared<DataTypeInt64>()},
         {"busy_periods", std::make_shared<DataTypeUInt64>()},
         {"vruntime", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>())},
         {"system_vruntime", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>())},

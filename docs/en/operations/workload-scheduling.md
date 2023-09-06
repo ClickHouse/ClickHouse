@@ -11,7 +11,7 @@ When ClickHouse execute multiple queries simultaneously, they may be using share
 Currently only remote disk IO can be scheduled using described method. For CPU scheduling see settings about thread pools and [`concurrent_threads_soft_limit_num`](server-configuration-parameters/settings.md#concurrent_threads_soft_limit_num). For flexible memory limits see [Memory overcommit](settings/memory-overcommit.md)
 :::
 
-## Disk configuration
+## Disk configuration {#disk-config}
 
 To enable IO scheduling for a specific disk, you have to specify `read_resource` and/or `write_resource` in storage configuration. It says ClickHouse what resource should be used for every read and write requests with given disk. Read and write resource can refer to the same resource name, which is useful for local SSDs or HDDs. Multiple different disks also can refer to the same resource, which is useful for remote disks: if you want to be able to allow fair division of network bandwidth between e.g. "production" and "development" workloads.
 
@@ -54,7 +54,7 @@ SELECT count() FROM my_table WHERE value = 42 SETTINGS workload = 'production'
 SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
 ```
 
-## Resource scheduling hierarchy
+## Resource scheduling hierarchy {#hierarchy}
 
 From the standpoint of scheduling subsystem a resource represents a hierarchy of scheduling nodes.
 
@@ -124,7 +124,7 @@ The following example shows how to define IO scheduling hierarchies shown in the
 </clickhouse>
 ```
 
-## Workload classifiers
+## Workload classifiers {#classifiers}
 
 Workload classifiers are used to define mapping from `workload` specified by a query into leaf-queues that should be used for specific resources. At the moment, workload classification is simple: only static mapping is available.
 
@@ -147,3 +147,7 @@ Example:
     </classifiers>
 </clickhouse>
 ```
+
+
+## See also
+ - [system.scheduler](/docs/en/operations/system-tables/scheduler.md)

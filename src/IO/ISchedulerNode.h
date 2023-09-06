@@ -232,7 +232,7 @@ public:
 
     /// Introspection
     std::atomic<UInt64> dequeued_requests{0};
-    std::atomic<UInt64> dequeued_cost{0};
+    std::atomic<ResourceCost> dequeued_cost{0};
     std::atomic<UInt64> busy_periods{0};
 };
 
