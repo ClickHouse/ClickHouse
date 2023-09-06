@@ -56,14 +56,12 @@ def main_download(commit_sha) -> None:
 
     repo_path = Path(REPO_COPY)
     if repo_path.name == "ClickHouse":
+        if repo_path.exists():
+            if len(list(repo_path.iterdir())) > 0:
+                raise Exception(f"Path {repo_path} is not empty")
         repo_path = repo_path.parent
 
-    if repo_path.exists():
-        if len(list(repo_path.iterdir())) > 0:
-            raise Exception(f"Path {repo_path} is not empty")
-    else:
-        repo_path.mkdir(parents=True)
-
+    repo_path.mkdir(parents=True, exist_ok=True)
     decompress_fast(archive_local_path, repo_path)
 
 
