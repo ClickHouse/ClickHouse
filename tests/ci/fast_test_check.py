@@ -155,14 +155,14 @@ def main():
     timeout = 65
     timeout_expired = False
     with TeePopen(run_cmd, run_log_path, timeout=timeout) as process:
-            retcode = process.wait()
-            if process.timeout_exceeded:
-                logging.info(f"Timeout expired for process execution: {run_cmd}")
-                timeout_expired = True
-            elif retcode == 0:
-                logging.info("Run successfully")
-            else:
-                logging.info("Run failed")
+        retcode = process.wait()
+        if process.timeout_exceeded:
+            logging.info(f"Timeout expired for process execution: {run_cmd}")
+            timeout_expired = True
+        elif retcode == 0:
+            logging.info("Run successfully")
+        else:
+            logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
