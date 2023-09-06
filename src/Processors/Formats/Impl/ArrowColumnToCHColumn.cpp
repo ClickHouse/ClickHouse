@@ -720,6 +720,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
                     case TypeIndex::Decimal256:
                         return readColumnWithBigNumberFromBinaryData<ColumnDecimal<Decimal256>>(arrow_column, column_name, type_hint);
                     default:
+                        break;
                 }
             }
             return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
@@ -739,6 +740,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
                     case TypeIndex::UInt256:
                         return readColumnWithBigIntegerFromFixedBinaryData<UInt256>(arrow_column, column_name, type_hint);
                     default:
+                        break;
                 }
             }
 
