@@ -37,9 +37,12 @@ def test_s3_disk():
 
     def write_query(workload):
         try:
-            node.query(f"insert into data select * from numbers(1e5) settings workload='{workload}'")
+            node.query(
+                f"insert into data select * from numbers(1e5) settings workload='{workload}'"
+            )
         except QueryRuntimeException:
             pass
+
     thread1 = threading.Thread(target=write_query, args=["development"])
     thread2 = threading.Thread(target=write_query, args=["production"])
     thread3 = threading.Thread(target=write_query, args=["admin"])
@@ -53,15 +56,21 @@ def test_s3_disk():
     thread1.join()
 
     assert (
-        node.query(f"select dequeued_requests>0 from system.scheduler where resource='network_write' and path='/prio/admin'")
+        node.query(
+            f"select dequeued_requests>0 from system.scheduler where resource='network_write' and path='/prio/admin'"
+        )
         == "1\n"
     )
     assert (
-        node.query(f"select dequeued_requests>0 from system.scheduler where resource='network_write' and path='/prio/fair/dev'")
+        node.query(
+            f"select dequeued_requests>0 from system.scheduler where resource='network_write' and path='/prio/fair/dev'"
+        )
         == "1\n"
     )
     assert (
-        node.query(f"select dequeued_requests>0 from system.scheduler where resource='network_write' and path='/prio/fair/prod'")
+        node.query(
+            f"select dequeued_requests>0 from system.scheduler where resource='network_write' and path='/prio/fair/prod'"
+        )
         == "1\n"
     )
 
@@ -70,6 +79,7 @@ def test_s3_disk():
             node.query(f"select sum(key*key) from data settings workload='{workload}'")
         except QueryRuntimeException:
             pass
+
     thread1 = threading.Thread(target=read_query, args=["development"])
     thread2 = threading.Thread(target=read_query, args=["production"])
     thread3 = threading.Thread(target=read_query, args=["admin"])
@@ -83,15 +93,20 @@ def test_s3_disk():
     thread1.join()
 
     assert (
-        node.query(f"select dequeued_requests>0 from system.scheduler where resource='network_read' and path='/prio/admin'")
+        node.query(
+            f"select dequeued_requests>0 from system.scheduler where resource='network_read' and path='/prio/admin'"
+        )
         == "1\n"
     )
     assert (
-        node.query(f"select dequeued_requests>0 from system.scheduler where resource='network_read' and path='/prio/fair/dev'")
+        node.query(
+            f"select dequeued_requests>0 from system.scheduler where resource='network_read' and path='/prio/fair/dev'"
+        )
         == "1\n"
     )
     assert (
-        node.query(f"select dequeued_requests>0 from system.scheduler where resource='network_read' and path='/prio/fair/prod'")
+        node.query(
+            f"select dequeued_requests>0 from system.scheduler where resource='network_read' and path='/prio/fair/prod'"
+        )
         == "1\n"
     )
-
