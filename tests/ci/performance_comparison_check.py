@@ -7,6 +7,7 @@ import json
 import subprocess
 import traceback
 import re
+from pathlib import Path
 from typing import Dict
 
 from github import Github
@@ -218,15 +219,17 @@ if __name__ == "__main__":
     uploaded = {}  # type: Dict[str, str]
     for name, path in paths.items():
         try:
-            uploaded[name] = s3_helper.upload_test_report_to_s3(path, s3_prefix + name)
+            uploaded[name] = s3_helper.upload_test_report_to_s3(
+                Path(path), s3_prefix + name
+            )
         except Exception:
             uploaded[name] = ""
             traceback.print_exc()
 
     # Upload all images and flamegraphs to S3
     try:
-        s3_helper.upload_test_folder_to_s3(
-            os.path.join(result_path, "images"), s3_prefix + "images"
+        s3_helper.upload_test_directory_to_s3(
+            Path(result_path) / "images", s3_prefix + "images"
         )
     except Exception:
         traceback.print_exc()
