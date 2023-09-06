@@ -42,10 +42,10 @@ select * from tab where (a + b) * c = 8 order by sin(a / b);
 select * from (explain plan actions = 1 select * from tab where (a + b) * c = 8 order by sin(a / b)) where explain ilike '%sort description%';
 
 select * from tab where d + 1 = 2 order by (d + 1) * 4, (a + b) * c;
-select * from (explain plan actions = 1 select * from tab where d + 1 = 2 order by (d + 1) * 4, (a + b) * c) where explain ilike '%sort description%';
+select * from (explain plan actions = 1 select * from tab where d + 1 = 2 order by (d + 1) * 4, (a + b) * c settings optimize_move_to_prewhere=0) where explain ilike '%sort description%';
 
 select * from tab where d + 1 = 3 and (a + b) = 4 and c = 2 order by (d + 1) * 4, sin(a / b);
-select * from (explain plan actions = 1 select * from tab where d + 1 = 3 and (a + b) = 4 and c = 2 order by (d + 1) * 4, sin(a / b)) where explain ilike '%sort description%';
+select * from (explain plan actions = 1 select * from tab where d + 1 = 3 and (a + b) = 4 and c = 2 order by (d + 1) * 4, sin(a / b) settings optimize_move_to_prewhere=0) where explain ilike '%sort description%';
 
 -- Wrong order with fixed point
 select * from tab where (a + b) * c = 8 order by sin(b / a);

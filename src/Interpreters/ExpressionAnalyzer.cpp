@@ -1213,11 +1213,12 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         /// Reasons:
         /// 1. Remove remove source columns which are used only in prewhere actions during prewhere actions execution.
         ///    Example: select A prewhere B > 0. B can be removed at prewhere step.
-        /// 2. Store side columns which were calculated during prewhere actions execution if they are used.
-        ///    Example: select F(A) prewhere F(A) > 0. F(A) can be saved from prewhere step.
+        /// 2. Do NOT store side columns which were calculated during prewhere actions execution if they are used.
+        ///    Example: select F(A) prewhere F(A) > 0. F(A) CANNOT be saved from prewhere step,
+        ///    since it can be changed after applying merge algorithm.
         /// 3. Check if we can remove filter column at prewhere step. If we can, action will store single REMOVE_COLUMN.
-        ColumnsWithTypeAndName columns = prewhere_actions->getResultColumns();
         auto required_columns = prewhere_actions->getRequiredColumns();
+
         NameSet prewhere_input_names;
         NameSet unused_source_columns;
 
@@ -1228,13 +1229,13 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         {
             if (!prewhere_input_names.contains(column.name))
             {
-                columns.emplace_back(column.type, column.name);
+                required_columns.emplace_back(NameAndTypePair{column.name, column.type});
                 unused_source_columns.emplace(column.name);
             }
         }
 
         chain.steps.emplace_back(
-            std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(std::make_shared<ActionsDAG>(std::move(columns))));
+            std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(std::make_shared<ActionsDAG>(std::move(required_columns))));
         chain.steps.back()->additional_input = std::move(unused_source_columns);
         chain.getLastActions();
         chain.addStep();
