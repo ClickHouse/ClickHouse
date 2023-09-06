@@ -3,7 +3,7 @@
 import csv
 import os
 import time
-from typing import Dict, List, Literal, Optional, Union
+from typing import Dict, List, Optional, Union
 import logging
 
 from github import Github
@@ -16,7 +16,16 @@ from github.Repository import Repository
 from ci_config import CI_CONFIG, REQUIRED_CHECKS, CHECK_DESCRIPTIONS, CheckDescription
 from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL
 from pr_info import PRInfo, SKIP_MERGEABLE_CHECK_LABEL
-from report import TestResult, TestResults
+from report import (
+    ERROR,
+    FAILURE,
+    PENDING,
+    StatusType,
+    SUCCESS,
+    TestResult,
+    TestResults,
+    get_worst_status,
+)
 from s3_helper import S3Helper
 from upload_result_helper import upload_results
 
@@ -37,8 +46,8 @@ class RerunHelper:
         # currently we agree even for failed statuses
         for status in self.statuses:
             if self.check_name in status.context and status.state in (
-                "success",
-                "failure",
+                SUCCESS,
+                FAILURE,
             ):
                 return True
         return False
@@ -53,12 +62,12 @@ class RerunHelper:
 def override_status(status: str, check_name: str, invert: bool = False) -> str:
     test_config = CI_CONFIG.test_configs.get(check_name)
     if test_config and test_config.force_tests:
-        return "success"
+        return SUCCESS
 
     if invert:
-        if status == "success":
-            return "error"
-        return "success"
+        if status == SUCCESS:
+            return ERROR
+        return SUCCESS
 
     return status
 
@@ -137,7 +146,7 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
         # W/o pr_info to avoid recursion, and yes, one extra create_ci_report
         post_commit_status(
             commit,
-            "pending",
+            PENDING,
             create_ci_report(pr_info, statuses),
             "The report for running CI",
             CI_STATUS_NAME,
@@ -172,11 +181,11 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
     """The method generates the comment body, as well it updates the CI report"""
 
     def beauty_state(state: str) -> str:
-        if state == "success":
+        if state == SUCCESS:
             return f"🟢 {state}"
-        if state == "pending":
+        if state == PENDING:
             return f"🟡 {state}"
-        if state in ["error", "failure"]:
+        if state in [ERROR, FAILURE]:
             return f"🔴 {state}"
         return state
 
@@ -235,20 +244,7 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
 
 
 def get_worst_state(statuses: CommitStatuses) -> str:
-    worst_status = None
-    states = {"error": 0, "failure": 1, "pending": 2, "success": 3}
-    for status in statuses:
-        if worst_status is None:
-            worst_status = status
-            continue
-        if states[status.state] < states[worst_status.state]:
-            worst_status = status
-        if worst_status.state == "error":
-            break
-
-    if worst_status is None:
-        return ""
-    return worst_status.state
+    return get_worst_status(status.state for status in statuses)
 
 
 def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
@@ -324,7 +320,7 @@ def format_description(description: str) -> str:
 def set_mergeable_check(
     commit: Commit,
     description: str = "",
-    state: Literal["success", "failure"] = "success",
+    state: StatusType = "success",
 ) -> None:
     commit.create_status(
         context=MERGEABLE_NAME,
@@ -363,7 +359,7 @@ def update_mergeable_check(gh: Github, pr_info: PRInfo, check_name: str) -> None
     success = []
     fail = []
     for status in required_checks:
-        if status.state == "success":
+        if status.state == SUCCESS:
             success.append(status.context)
         else:
             fail.append(status.context)
@@ -372,7 +368,7 @@ def update_mergeable_check(gh: Github, pr_info: PRInfo, check_name: str) -> None
         description = "failed: " + ", ".join(fail)
         description = format_description(description)
         if mergeable_status is None or mergeable_status.description != description:
-            set_mergeable_check(commit, description, "failure")
+            set_mergeable_check(commit, description, FAILURE)
         return
 
     description = ", ".join(success)
