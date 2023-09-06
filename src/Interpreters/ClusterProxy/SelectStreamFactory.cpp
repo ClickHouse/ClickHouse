@@ -178,6 +178,12 @@ void SelectStreamFactory::createForShard(
             return;
         }
 
+        if (shard_info.hasRemoteConnections())
+        {
+            emplace_remote_stream();
+            return;
+        }
+
         const auto * replicated_storage = dynamic_cast<const StorageReplicatedMergeTree *>(main_table_storage.get());
 
         if (!replicated_storage)
@@ -187,7 +193,7 @@ void SelectStreamFactory::createForShard(
             return;
         }
 
-        UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
+        const UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
 
         if (!max_allowed_delay)
         {
