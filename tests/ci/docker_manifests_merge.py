@@ -208,9 +208,15 @@ def enrich_images(changed_images: Dict[str, str]) -> Dict[str, str]:
             LAST_N_ANCESTOR_SHA_COMMAND.format(batch_count * COMMIT_SHA_BATCH_SIZE)
         ).split("\n")
 
-        result = ch_helper.select_json_each_row("default", GET_COMMIT_SHAS_QUERY, {'commit_shas': commit_shas, 'images':images_to_find_tags_for})
+        result = ch_helper.select_json_each_row(
+            "default",
+            GET_COMMIT_SHAS_QUERY,
+            {"commit_shas": commit_shas, "images": images_to_find_tags_for},
+        )
         result_as_string = json.dumps(result)
-        logging.info(f"Found images for commits {commit_shas[0]}..{commit_shas[-1]}: {result_as_string}")
+        logging.info(
+            f"Found images for commits {commit_shas[0]}..{commit_shas[-1]}: {result_as_string}"
+        )
 
         for row in result:
             image_name = row["image_name"]
@@ -223,7 +229,10 @@ def enrich_images(changed_images: Dict[str, str]) -> Dict[str, str]:
         batch_count += 1
 
         # In case we don't find a proper tag for an image in the last COMMIT_SHA_BATCH_SIZE * MAX_COMMIT_BATCHES_TO_CHECK
-        if batch_count >= MAX_COMMIT_BATCHES_TO_CHECK or len(images_to_find_tags_for) == 0:
+        if (
+            batch_count >= MAX_COMMIT_BATCHES_TO_CHECK
+            or len(images_to_find_tags_for) == 0
+        ):
             break
 
     return new_changed_images

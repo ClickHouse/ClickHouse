@@ -138,7 +138,7 @@ class ClickHouseHelper:
             "default_format": "JSONEachRow",
         }
         if query_params is not None:
-            for (name, value) in query_params.items():
+            for name, value in query_params.items():
                 params[f"param_{name}"] = str(value)
 
         for i in range(5):

@@ -24,6 +24,7 @@ def get_images_dict(repo_path: str, images_file_path: str) -> ImagesDict:
 
     return images_dict
 
+
 def get_image_names(repo_path: str, images_file_path: str) -> List[str]:
     images_dict = get_images_dict(repo_path, images_file_path)
-    return [info['name'] for (_,info) in images_dict.items()]
+    return [info["name"] for (_, info) in images_dict.items()]
