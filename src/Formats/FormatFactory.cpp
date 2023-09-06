@@ -58,7 +58,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.avro.output_rows_in_file = settings.output_format_avro_rows_in_file;
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
-    format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;
+    format_settings.csv.crlf_end_of_line_for_output = settings.output_format_csv_crlf_end_of_line;
+    format_settings.csv.crlf_end_of_line_for_input = settings.input_format_csv_crlf_end_of_line;
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.csv.tuple_delimiter = settings.format_csv_delimiter;
     format_settings.csv.empty_as_default = settings.input_format_csv_empty_as_default;

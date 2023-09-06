@@ -897,6 +897,12 @@ Use DOS/Windows-style line separator (CRLF) in CSV instead of Unix style (LF).
 
 Disabled by default.
 
+### input_format_csv_crlf_end_of_line {#input_format_csv_crlf_end_of_line}
+
+Use DOS/Windows-style line separator (CRLF) in CSV instead of Unix style (LF).
+
+Disabled by default.
+
 ### input_format_csv_enum_as_number {#input_format_csv_enum_as_number}
 
 When enabled, always treat enum values as enum ids for CSV input format. It's recommended to enable this setting if data contains only enum ids to optimize enum parsing.

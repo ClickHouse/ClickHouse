@@ -149,7 +149,8 @@ struct FormatSettings
         bool allow_single_quotes = true;
         bool allow_double_quotes = true;
         bool empty_as_default = false;
-        bool crlf_end_of_line = false;
+        bool crlf_end_of_line_for_output = false;
+        bool crlf_end_of_line_for_input = false;
         bool enum_as_number = false;
         bool arrays_as_nested_csv = false;
         String null_representation = "\\N";
