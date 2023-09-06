@@ -19,7 +19,6 @@ from env_helper import (
     CI,
     S3_URL,
     S3_DOWNLOAD,
-    S3_ATRIFACTS_BUCKET,
 )
 from compress_files import compress_file_fast
 
@@ -135,13 +134,6 @@ class S3Helper:
             return self._upload_file_to_s3(S3_BUILDS_BUCKET, file_path, s3_path)
         else:
             return S3Helper.copy_file_to_local(S3_BUILDS_BUCKET, file_path, s3_path)
-
-    def upload_actifact_to_s3(self, file_path, commit_sha, file_name):
-        s3_path = f"{commit_sha}/{file_name}"
-        if CI:
-            return self._upload_file_to_s3(S3_ATRIFACTS_BUCKET, file_path, s3_path)
-        else:
-            return S3Helper.copy_file_to_local(S3_ATRIFACTS_BUCKET, file_path, s3_path)
 
     def fast_parallel_upload_dir(
         self, dir_path: Union[str, Path], s3_dir_path: str, bucket_name: str
