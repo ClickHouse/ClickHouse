@@ -15,6 +15,7 @@ from docker_images_helper import IMAGES_FILE_PATH, get_image_names
 from env_helper import RUNNER_TEMP, GITHUB_WORKSPACE
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from git_helper import Runner
+from pprint import pformat
 from pr_info import PRInfo
 from report import TestResults, TestResult
 from s3_helper import S3Helper
@@ -176,6 +177,7 @@ def enrich_images(changed_images: Dict[str, str]) -> Dict[str, str]:
     images_to_find_tags_for = [
         image for image in all_image_names if image not in changed_images
     ]
+    images_to_find_tags_for.sort()
 
     logging.info("Trying to find versions for images: %s", images_to_find_tags_for)
 
@@ -213,12 +215,13 @@ def enrich_images(changed_images: Dict[str, str]) -> Dict[str, str]:
             GET_COMMIT_SHAS_QUERY,
             {"commit_shas": commit_shas, "images": images_to_find_tags_for},
         )
-        result_as_string = json.dumps(result)
+        result.sort(key=lambda x: x["image_name"])
+
         logging.info(
             "Found images for commits %s..%s: %s",
             commit_shas[0],
             commit_shas[-1],
-            result_as_string,
+            pformat(result, sort_dicts=False),
         )
 
         for row in result:
