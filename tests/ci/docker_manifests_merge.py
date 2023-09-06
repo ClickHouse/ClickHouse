@@ -177,7 +177,7 @@ def enrich_images(changed_images: Dict[str, str]) -> Dict[str, str]:
         image for image in all_image_names if image not in changed_images
     ]
 
-    logging.info(f"Trying to find versions for images: {images_to_find_tags_for}")
+    logging.info("Trying to find versions for images: %s", images_to_find_tags_for)
 
     COMMIT_SHA_BATCH_SIZE = 100
     MAX_COMMIT_BATCHES_TO_CHECK = 10
@@ -215,7 +215,10 @@ def enrich_images(changed_images: Dict[str, str]) -> Dict[str, str]:
         )
         result_as_string = json.dumps(result)
         logging.info(
-            f"Found images for commits {commit_shas[0]}..{commit_shas[-1]}: {result_as_string}"
+            "Found images for commits %s..%s: %s",
+            commit_shas[0],
+            commit_shas[-1],
+            result_as_string,
         )
 
         for row in result:
