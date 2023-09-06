@@ -446,10 +446,6 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
 
 void maybeConvertSystemDatabase(ContextMutablePtr context)
 {
-    /// TODO remove this check, convert system database unconditionally
-    if (context->getSettingsRef().allow_deprecated_database_ordinary)
-        return;
-
     maybeConvertOrdinaryDatabaseToAtomic(context, DatabaseCatalog::SYSTEM_DATABASE, /* tables_started */ false);
 }
 
