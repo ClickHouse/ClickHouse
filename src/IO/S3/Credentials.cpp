@@ -1,7 +1,4 @@
 #include <IO/S3/Credentials.h>
-#include <aws/core/auth/AWSCredentialsProvider.h>
-#include <aws/core/auth/SSOCredentialsProvider.h>
-#include "Interpreters/Context.h"
 
 #if USE_AWS_S3
 
@@ -464,7 +461,7 @@ SSOCredentialsProvider::SSOCredentialsProvider(DB::S3::PocoHTTPClientConfigurati
     , expiration_window_seconds(expiration_window_seconds_)
     , logger(&Poco::Logger::get(SSO_CREDENTIALS_PROVIDER_LOG_TAG))
 {
-    LOG_INFO(logger, "Setting sso credentials provider to read config from {}",  profile_to_use);
+    LOG_INFO(logger, "Setting sso credentials provider to read config from {}", profile_to_use);
 }
 
 Aws::Auth::AWSCredentials SSOCredentialsProvider::GetAWSCredentials()
@@ -514,8 +511,6 @@ void SSOCredentialsProvider::Reload()
     request.m_ssoAccountId = profile.GetSsoAccountId();
     request.m_ssoRoleName = profile.GetSsoRoleName();
     request.m_accessToken = access_token;
-
-    auto context = DB::Context::getGlobalContextInstance();
 
     aws_client_configuration.scheme = Aws::Http::Scheme::HTTPS;
     aws_client_configuration.region = sso_region;
