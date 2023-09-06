@@ -14,6 +14,7 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/BackupLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -44,7 +45,7 @@ namespace ErrorCodes
     extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
 }
 
-using OperationID = BackupsWorker::OperationID;
+using OperationID = BackupOperationID;
 namespace Stage = BackupCoordinationStage;
 
 namespace
@@ -230,6 +231,7 @@ BackupsWorker::BackupsWorker(size_t num_backup_threads, size_t num_restore_threa
 
 OperationID BackupsWorker::start(const ASTPtr & backup_or_restore_query, ContextMutablePtr context)
 {
+    backup_log = context->getBackupLog();
     const ASTBackupQuery & backup_query = typeid_cast<const ASTBackupQuery &>(*backup_or_restore_query);
     if (backup_query.kind == ASTBackupQuery::Kind::BACKUP)
         return startMakingBackup(backup_or_restore_query, context);
@@ -450,9 +452,10 @@ void BackupsWorker::doBackup(
         backup.reset();
 
         LOG_INFO(log, "{} {} was created successfully", (backup_settings.internal ? "Internal backup" : "Backup"), backup_name_for_logging);
-        setStatus(backup_id, BackupStatus::BACKUP_CREATED);
         /// NOTE: we need to update metadata again after backup->finalizeWriting(), because backup metadata is written there.
         setNumFilesAndSize(backup_id, num_files, total_size, num_entries, uncompressed_size, compressed_size, 0, 0);
+        /// NOTE: setStatus is called after setNumFilesAndSize in order to have actual information in a backup log record
+        setStatus(backup_id, BackupStatus::BACKUP_CREATED);
     }
     catch (...)
     {
@@ -875,7 +878,7 @@ void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr 
 
 void BackupsWorker::addInfo(const OperationID & id, const String & name, bool internal, BackupStatus status)
 {
-    Info info;
+    BackupOperationInfo info;
     info.id = id;
     info.name = name;
     info.internal = internal;
@@ -895,6 +898,9 @@ void BackupsWorker::addInfo(const OperationID & id, const String & name, bool in
         if (!isFinalStatus(current_status))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot start a backup or restore: ID {} is already in use", id);
     }
+
+    if (backup_log)
+        backup_log->add(BackupLogElement{info});
 
     infos[id] = std::move(info);
 
@@ -929,6 +935,9 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
         info.exception = std::current_exception();
     }
 
+    if (backup_log)
+        backup_log->add(BackupLogElement{info});
+
     num_active_backups += getNumActiveBackupsChange(status) - getNumActiveBackupsChange(old_status);
     num_active_restores += getNumActiveRestoresChange(status) - getNumActiveRestoresChange(old_status);
 }
@@ -938,6 +947,7 @@ void BackupsWorker::setNumFilesAndSize(const OperationID & id, size_t num_files,
                                        UInt64 uncompressed_size, UInt64 compressed_size, size_t num_read_files, UInt64 num_read_bytes)
 
 {
+    /// Current operation's info entry is updated here. The backup_log table is updated on its basis within a subsequent setStatus() call.
     std::lock_guard lock{infos_mutex};
     auto it = infos.find(id);
     if (it == infos.end())
@@ -970,7 +980,7 @@ void BackupsWorker::wait(const OperationID & id, bool rethrow_exception)
     });
 }
 
-BackupsWorker::Info BackupsWorker::getInfo(const OperationID & id) const
+BackupOperationInfo BackupsWorker::getInfo(const OperationID & id) const
 {
     std::lock_guard lock{infos_mutex};
     auto it = infos.find(id);
@@ -979,9 +989,9 @@ BackupsWorker::Info BackupsWorker::getInfo(const OperationID & id) const
     return it->second;
 }
 
-std::vector<BackupsWorker::Info> BackupsWorker::getAllInfos() const
+std::vector<BackupOperationInfo> BackupsWorker::getAllInfos() const
 {
-    std::vector<Info> res_infos;
+    std::vector<BackupOperationInfo> res_infos;
     std::lock_guard lock{infos_mutex};
     for (const auto & info : infos | boost::adaptors::map_values)
     {
