@@ -15,21 +15,11 @@ BackupsStorage::BackupsStorage(ContextPtr context_, const String & database, con
 
 void BackupsStorage::update(const BackupOperationInfo & info)
 {
-    /// Mask all "'" characters in info.error_message, e.g. Disk('backups', '1/') -> Disk(\'backups\', \'1/\')
-    String error_message;
-    error_message.reserve(info.error_message.capacity());
-    for (auto ch : info.error_message)
-    {
-        if (ch == '\'')
-            error_message.push_back('\\');
-        error_message.push_back(ch);
-    }
-
     /// Update current operation's entry
     String query =
         "ALTER TABLE " + table_id.getFullTableName() + " UPDATE"
         + " `status` = " + std::to_string(static_cast<Int8>(info.status))
-        + ", `error` = '" + error_message + "'"
+        + ", `error` = " + quoteString(info.error_message)
         + ", `end_time` = " + std::to_string(std::chrono::system_clock::to_time_t(info.end_time))
         + ", `num_files` = " + std::to_string(info.num_files)
         + ", `total_size` = " + std::to_string(info.total_size)
