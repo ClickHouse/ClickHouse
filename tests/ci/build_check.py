@@ -283,7 +283,7 @@ def main():
         f"sudo chown -R ubuntu:ubuntu {build_output_path}", shell=True
     )
     logging.info("Build finished as %s, log path %s", build_status, log_path)
-        cargo_cache.upload()
+
     if build_status != SUCCESS:
         # We check if docker works, because if it's down, it's infrastructure
         try:
