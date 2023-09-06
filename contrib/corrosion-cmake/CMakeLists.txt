@@ -17,20 +17,22 @@ endif()
 
 message(STATUS "Checking Rust toolchain for current target")
 
-if(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-x86_64")
+# See https://doc.rust-lang.org/nightly/rustc/platform-support.html
+
+if((CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-x86_64") AND (CMAKE_TOOLCHAIN_FILE MATCHES "musl"))
+    set(Rust_CARGO_TARGET "x86_64-unknown-linux-musl")
+elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-x86_64")
     set(Rust_CARGO_TARGET "x86_64-unknown-linux-gnu")
-endif()
-
-if(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-aarch64")
+elseif((CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-aarch64") AND (CMAKE_TOOLCHAIN_FILE MATCHES "musl"))
+    set(Rust_CARGO_TARGET "aarch64-unknown-linux-musl")
+elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-aarch64")
     set(Rust_CARGO_TARGET "aarch64-unknown-linux-gnu")
-endif()
-
-if((CMAKE_TOOLCHAIN_FILE MATCHES "darwin") AND (CMAKE_TOOLCHAIN_FILE MATCHES "x86_64"))
+elseif((CMAKE_TOOLCHAIN_FILE MATCHES "darwin") AND (CMAKE_TOOLCHAIN_FILE MATCHES "x86_64"))
     set(Rust_CARGO_TARGET "x86_64-apple-darwin")
-endif()
-
-if((CMAKE_TOOLCHAIN_FILE MATCHES "freebsd") AND (CMAKE_TOOLCHAIN_FILE MATCHES "x86_64"))
+elseif((CMAKE_TOOLCHAIN_FILE MATCHES "freebsd") AND (CMAKE_TOOLCHAIN_FILE MATCHES "x86_64"))
     set(Rust_CARGO_TARGET "x86_64-unknown-freebsd")
+elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-riscv64")
+    set(Rust_CARGO_TARGET "riscv64gc-unknown-linux-gnu")
 endif()
 
 if(CMAKE_TOOLCHAIN_FILE MATCHES "ppc64le")

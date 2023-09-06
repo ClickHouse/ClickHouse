@@ -25,7 +25,7 @@ void ServerSettings::loadSettingsFromConfig(const Poco::Util::AbstractConfigurat
         "max_remote_write_network_bandwidth_for_server",
     };
 
-    for (auto setting : all())
+    for (const auto & setting : all())
     {
         const auto & name = setting.getName();
         if (config.has(name))

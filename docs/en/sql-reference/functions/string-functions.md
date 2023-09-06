@@ -1230,6 +1230,42 @@ Result:
 < Σ >
 ```
 
+## decodeHTMLComponent
+
+Un-escapes substrings with special meaning in HTML. For example: `&hbar;` `&gt;` `&diamondsuit;` `&heartsuit;` `&lt;` etc.
+
+This function also replaces numeric character references with Unicode characters. Both decimal (like `&#10003;`) and hexadecimal (`&#x2713;`) forms are supported.
+
+**Syntax**
+
+``` sql
+decodeHTMComponent(x)
+```
+
+**Arguments**
+
+- `x` — An input string. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- The un-escaped string.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+``` sql
+SELECT decodeHTMLComponent(''CH');
+SELECT decodeHMLComponent('I&heartsuit;ClickHouse');
+```
+
+Result:
+
+```result
+'CH'
+I♥ClickHouse'
+```
+
 ## extractTextFromHTML
 
 This function extracts plain text from HTML or XHTML.
