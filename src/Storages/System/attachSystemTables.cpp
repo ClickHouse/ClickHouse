@@ -100,7 +100,7 @@
 namespace DB
 {
 
-void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
+void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database, bool attach_backups)
 {
     attach<StorageSystemOne>(context, system_database, "one");
     attach<StorageSystemNumbers>(context, system_database, "numbers", false);
@@ -145,7 +145,8 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemDataSkippingIndices>(context, system_database, "data_skipping_indices");
     attach<StorageSystemLicenses>(context, system_database, "licenses");
     attach<StorageSystemTimeZones>(context, system_database, "time_zones");
-    attach<StorageSystemBackups>(context, system_database, "backups");
+    if (attach_backups)
+        attach<StorageSystemBackups>(context, system_database, "backups");
     attach<StorageSystemSchemaInferenceCache>(context, system_database, "schema_inference_cache");
     attach<StorageSystemDroppedTables>(context, system_database, "dropped_tables");
 #if USE_RDKAFKA
@@ -159,9 +160,9 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
 #endif
 }
 
-void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
+void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper, bool attach_backups)
 {
-    attachSystemTablesLocal(context, system_database);
+    attachSystemTablesLocal(context, system_database, attach_backups);
 
     attach<StorageSystemParts>(context, system_database, "parts");
     attach<StorageSystemProjectionParts>(context, system_database, "projection_parts");

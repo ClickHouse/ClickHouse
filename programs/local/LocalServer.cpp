@@ -754,6 +754,7 @@ void LocalServer::processConfig()
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
         startupSystemTables();
+        global_context->initializeBackupsWorker(false);
 
         if (!config().has("only-system-tables"))
         {
@@ -772,6 +773,7 @@ void LocalServer::processConfig()
         attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+        global_context->initializeBackupsWorker(false);
     }
 
     server_display_name = config().getString("display_name", getFQDNOrHostName());

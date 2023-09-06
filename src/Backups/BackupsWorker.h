@@ -26,13 +26,16 @@ using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBacku
 using DataRestoreTasks = std::vector<std::function<void()>>;
 struct ReadSettings;
 class BackupLog;
+class BackupsStorage;
 
 /// Manager of backups and restores: executes backups and restores' threads in the background.
 /// Keeps information about backups and restores started in this session.
 class BackupsWorker
 {
 public:
-    BackupsWorker(size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_);
+    BackupsWorker(ContextPtr global_context, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_, bool persistent_storage);
+
+    ~BackupsWorker();
 
     /// Waits until all tasks have been completed.
     void shutdown();
@@ -92,6 +95,7 @@ private:
     std::unique_ptr<ThreadPool> restores_thread_pool;
 
     std::unordered_map<BackupOperationID, BackupOperationInfo> infos;
+    std::unique_ptr<BackupsStorage> storage;
     std::shared_ptr<BackupLog> backup_log;
     std::condition_variable status_changed;
     std::atomic<size_t> num_active_backups = 0;

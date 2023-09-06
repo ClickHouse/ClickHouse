@@ -241,7 +241,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::optional<Lemmatizers> lemmatizers;
 #endif
 
-    std::optional<BackupsWorker> backups_worker;
+    std::shared_ptr<BackupsWorker> backups_worker;
 
     String default_profile_name;                                /// Default profile name used for default values.
     String system_profile_name;                                 /// Profile used by system processes
@@ -2210,16 +2210,8 @@ BackupsWorker & Context::getBackupsWorker() const
 {
     auto lock = getLock();
 
-    const bool allow_concurrent_backups = this->getConfigRef().getBool("backups.allow_concurrent_backups", true);
-    const bool allow_concurrent_restores = this->getConfigRef().getBool("backups.allow_concurrent_restores", true);
-
-    const auto & config = getConfigRef();
-    const auto & settings_ref = getSettingsRef();
-    UInt64 backup_threads = config.getUInt64("backup_threads", settings_ref.backup_threads);
-    UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref.restore_threads);
-
     if (!shared->backups_worker)
-        shared->backups_worker.emplace(backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "backups_worker must have already been created at this point");
 
     return *shared->backups_worker;
 }
@@ -3232,6 +3224,18 @@ void Context::initializeSystemLogs()
 void Context::initializeTraceCollector()
 {
     shared->initializeTraceCollector(getTraceLog());
+}
+
+void Context::initializeBackupsWorker(bool persistent_storage)
+{
+    const auto & config = getConfigRef();
+    const bool allow_concurrent_backups = config.getBool("backups.allow_concurrent_backups", true);
+    const bool allow_concurrent_restores = config.getBool("backups.allow_concurrent_restores", true);
+    const auto & settings_ref = getSettingsRef();
+    UInt64 backup_threads = config.getUInt64("backup_threads", settings_ref.backup_threads);
+    UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref.restore_threads);
+
+    shared->backups_worker = std::make_shared<BackupsWorker>(getGlobalContext(), backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores, persistent_storage);
 }
 
 /// Call after unexpected crash happen.

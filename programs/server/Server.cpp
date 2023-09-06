@@ -1671,6 +1671,8 @@ try
         attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper);
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+        /// Initialize backups worker and persistent system.backups table
+        global_context->initializeBackupsWorker(true);
         /// Firstly remove partially dropped databases, to avoid race with MaterializedMySQLSyncThread,
         /// that may execute DROP before loadMarkedAsDroppedTables() in background,
         /// and so loadMarkedAsDroppedTables() will find it and try to add, and UUID will overlap.

@@ -338,4 +338,6 @@ void validateEngineDefinition(const String & engine, const String & description)
 
 #define INSTANTIATE_SYSTEM_LOG_STORAGE(ELEMENT) template class SystemLogStorage<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_STORAGE)
+
+INSTANTIATE_SYSTEM_LOG_STORAGE(BackupInfoElement)
 }
