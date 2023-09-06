@@ -3,6 +3,9 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Field.h>
 #include <Parsers/IAST.h>
