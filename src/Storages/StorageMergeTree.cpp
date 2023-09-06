@@ -13,7 +13,6 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/typeid_cast.h>
 #include <Common/ThreadPool.h>
-#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/Context.h>
@@ -255,6 +254,13 @@ void StorageMergeTree::read(
             processed_stage, nullptr, enable_parallel_reading))
             query_plan = std::move(*plan);
     }
+
+    /// Now, copy of parts that is required for the query, stored in the processors,
+    /// while snapshot_data.parts includes all parts, even one that had been filtered out with partition pruning,
+    /// reset them to avoid holding them.
+    auto & snapshot_data = assert_cast<MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+    snapshot_data.parts = {};
+    snapshot_data.alter_conversions = {};
 }
 
 std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
@@ -281,7 +287,7 @@ StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & met
         *this, metadata_snapshot, settings.max_partitions_per_insert_block, local_context);
 }
 
-void StorageMergeTree::checkTableCanBeDropped() const
+void StorageMergeTree::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const
 {
     if (!supportsReplication() && isStaticStorage())
         return;
@@ -1982,6 +1988,7 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
         renamed_parts.old_and_new_names[i].old_name.clear();
 
         results.push_back(PartitionCommandResultInfo{
+            .command_type = "ATTACH_PART",
             .partition_id = loaded_parts[i]->info.partition_id,
             .part_name = loaded_parts[i]->name,
             .old_part_name = old_name,
@@ -2027,7 +2034,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
         IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
-        auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot, clone_params);
+        auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot, clone_params, local_context->getWriteSettings());
         dst_parts.emplace_back(std::move(dst_part));
         dst_parts_locks.emplace_back(std::move(part_lock));
     }
@@ -2126,7 +2133,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
         IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
-        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot, clone_params);
+        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot, clone_params, local_context->getWriteSettings());
         dst_parts.emplace_back(std::move(dst_part));
         dst_parts_locks.emplace_back(std::move(part_lock));
     }
@@ -2213,7 +2220,6 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
                 auto & part_mutable = const_cast<IMergeTreeDataPart &>(*part);
                 part_mutable.writeChecksums(part->checksums, local_context->getWriteSettings());
 
-                part->checkMetadata();
                 results.emplace_back(part->name, true, "Checksums recounted and written to disk.");
             }
             catch (const Exception & ex)
@@ -2227,7 +2233,6 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
             try
             {
                 checkDataPart(part, true);
-                part->checkMetadata();
                 results.emplace_back(part->name, true, "");
             }
             catch (const Exception & ex)

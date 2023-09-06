@@ -184,7 +184,9 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
             PullingAsyncPipelineExecutor executor(io.pipeline);
             io.pipeline.setProgressCallback(data.getContext()->getProgressCallback());
-            while (block.rows() == 0 && executor.pull(block));
+            while (block.rows() == 0 && executor.pull(block))
+            {
+            }
 
             if (block.rows() == 0)
             {
@@ -216,7 +218,8 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
             Block tmp_block;
             while (tmp_block.rows() == 0 && executor.pull(tmp_block))
-                ;
+            {
+            }
 
             if (tmp_block.rows() != 0)
                 throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
