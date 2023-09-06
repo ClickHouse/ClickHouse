@@ -36,6 +36,23 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 run_check.py
+  CheckoutSourceCode:
+    runs-on: [self-hosted, builder]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/checkout_source_code
+          EOF
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+          submodules: true
+          fetch-depth: 0
+      - name: Upload source code to artifacts
+        run: |
+          cd "$REPO_COPY/tests/ci" && python3 checkout_repo_upload.py --tmp_path "$TEMP_PATH" --debug
   PythonUnitTests:
     runs-on: [self-hosted, style-checker]
     steps:
