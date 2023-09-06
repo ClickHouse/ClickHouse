@@ -55,6 +55,10 @@ bool PullingPipelineExecutor::pull(Chunk & chunk)
         return false;
 
     chunk = pulling_format->getChunk();
+
+    if (!chunk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PullingPipelineExecutor::pull() returned true with an empty block");
+
     return true;
 }
 
