@@ -766,7 +766,12 @@ def run_describe_query(instance, file, connection_string):
 def run_count_query(instance, file, connection_string, drop_cache_on_retry = False):
     query = f"select count() from azureBlobStorage('{connection_string}', 'cont', '{file}', auto, auto, 'x UInt64')"
     if drop_cache_on_retry:
-        return azure_query(node=instance,query=query,query_on_retry="system drop schema cache for azure")
+        return azure_query(
+            node=instance,
+            query=query,
+            query_on_retry="system drop schema cache for azure"
+        )
+
     return azure_query(instance, query)
 
 
