@@ -1,5 +1,8 @@
 #include <Interpreters/PipelineTrace.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 
 namespace DB 
 {
@@ -16,6 +19,10 @@ NamesAndTypesList PipelineLogElement::getNamesAndTypes()
 {
     return
     {
+        {"event_date", std::make_shared<DataTypeDate>()},
+        {"event_time", std::make_shared<DataTypeDateTime>()},
+        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
+
         {"query_id", std::make_shared<DataTypeString>()},
         {"thread_id", std::make_shared<DataTypeUInt64>()},
         {"processor_name", std::make_shared<DataTypeString>()},

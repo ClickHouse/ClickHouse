@@ -24,6 +24,9 @@ struct PipelineLogElement
     using PipelineLogStageType = DataTypeEnum8;
     static const PipelineLogStageType::Values pipeline_stage_values;
 
+    time_t event_time{};
+    Decimal64 event_time_microseconds{};
+
     String query_id{};
     UInt64 thread_id{};
     String processor_name{};
