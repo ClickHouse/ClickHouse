@@ -78,10 +78,10 @@ public:
     struct IndexStat
     {
         IndexType type;
-        std::string name;
-        std::string description;
-        std::string condition;
-        std::vector<std::string> used_keys;
+        std::string name = {};
+        std::string description = {};
+        std::string condition = {};
+        std::vector<std::string> used_keys = {};
         size_t num_parts_after;
         size_t num_granules_after;
     };
@@ -226,7 +226,7 @@ public:
     size_t getNumStreams() const { return requested_num_streams; }
     bool isParallelReadingEnabled() const { return read_task_callback != std::nullopt; }
 
-    void onAddFilterFinish() override;
+    void applyFilters() override;
 
 private:
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToReadImpl(

@@ -29,6 +29,7 @@ cp ${tmp_dir}/tmp.csv ${tmp_dir}/tmp3_1.csv
 cp ${tmp_dir}/tmp.csv ${tmp_dir}/tmp3_2.csv
 cp ${tmp_dir}/tmp.csv ${tmp_dir}/tmp4.csv
 cp ${tmp_dir}/tmp.csv ${tmp_dir}/tmp5.csv
+cp ${tmp_dir}/tmp.csv ${tmp_dir}/tmp6.csv
 
 ### Checking that renaming works
 
@@ -113,6 +114,15 @@ ${CLICKHOUSE_CLIENT} --rename-files-after-processing="processed_%f_%%%%e" -q "SE
     2>&1| grep "Odd number of consecutive percentage signs" > /dev/null && echo "OK"
 if [ -e "${tmp_dir}/tmp5.csv" ]; then
     echo "tmp5.csv"
+fi
+
+# check full file name placeholder
+${CLICKHOUSE_CLIENT} --rename-files-after-processing="%a.processed" -q "SELECT COUNT(*) FROM file('${unique_name}/tmp6.csv')"
+if [ -e "${tmp_dir}/tmp6.csv.processed" ]; then
+  echo "tmp6.csv.processed"
+fi
+if [ ! -e "${tmp_dir}/tmp6.csv" ]; then
+    echo "!tmp6.csv"
 fi
 
 # Clean

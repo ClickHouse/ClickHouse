@@ -28,7 +28,7 @@ StoragePtr TableFunctionHDFS::getStorage(
         compression_method_);
 }
 
-ColumnsDescription TableFunctionHDFS::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionHDFS::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     if (structure == "auto")
     {

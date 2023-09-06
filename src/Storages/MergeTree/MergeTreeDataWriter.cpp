@@ -39,6 +39,7 @@ namespace ProfileEvents
     extern const Event MergeTreeDataProjectionWriterRows;
     extern const Event MergeTreeDataProjectionWriterUncompressedBytes;
     extern const Event MergeTreeDataProjectionWriterCompressedBytes;
+    extern const Event RejectedInserts;
 }
 
 namespace DB
@@ -58,7 +59,8 @@ void buildScatterSelector(
         const ColumnRawPtrs & columns,
         PODArray<size_t> & partition_num_to_first_row,
         IColumn::Selector & selector,
-        size_t max_parts)
+        size_t max_parts,
+        ContextPtr context)
 {
     /// Use generic hashed variant since partitioning is unlikely to be a bottleneck.
     using Data = HashMap<UInt128, size_t, UInt128TrivialHash>;
@@ -66,6 +68,8 @@ void buildScatterSelector(
 
     size_t num_rows = columns[0]->size();
     size_t partitions_count = 0;
+    size_t throw_on_limit = context->getSettingsRef().throw_on_max_partitions_per_insert_block;
+
     for (size_t i = 0; i < num_rows; ++i)
     {
         Data::key_type key = hash128(i, columns.size(), columns);
@@ -75,7 +79,9 @@ void buildScatterSelector(
 
         if (inserted)
         {
-            if (max_parts && partitions_count >= max_parts)
+            if (max_parts && partitions_count >= max_parts && throw_on_limit)
+            {
+                ProfileEvents::increment(ProfileEvents::RejectedInserts);
                 throw Exception(ErrorCodes::TOO_MANY_PARTS,
                                 "Too many partitions for single INSERT block (more than {}). "
                                 "The limit is controlled by 'max_partitions_per_insert_block' setting. "
@@ -85,6 +91,7 @@ void buildScatterSelector(
                                 "for a table is under 1000..10000. Please note, that partitioning is not intended "
                                 "to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). "
                                 "Partitions are intended for data manipulation (DROP PARTITION, etc).", max_parts);
+            }
 
             partition_num_to_first_row.push_back(i);
             it->getMapped() = partitions_count;
@@ -101,6 +108,18 @@ void buildScatterSelector(
 
         if (partitions_count > 1)
             selector[i] = it->getMapped();
+    }
+    // Checking partitions per insert block again here outside the loop above
+    // so we can log the total number of partitions that would have parts created
+    if (max_parts && partitions_count >= max_parts && !throw_on_limit)
+    {
+        const auto & client_info = context->getClientInfo();
+        Poco::Logger * log = &Poco::Logger::get("MergeTreeDataWriter");
+
+        LOG_WARNING(log, "INSERT query from initial_user {} (query ID: {}) inserted a block "
+                         "that created parts in {} partitions. This is being logged "
+                         "rather than throwing an exception as throw_on_max_partitions_per_insert_block=false.",
+                         client_info.initial_user, client_info.initial_query_id, partitions_count);
     }
 }
 
@@ -171,23 +190,23 @@ void MergeTreeDataWriter::TemporaryPart::finalize()
         projection->getDataPartStorage().precommitTransaction();
 }
 
-std::vector<ChunkOffsetsPtr> scatterOffsetsBySelector(ChunkOffsetsPtr chunk_offsets, const IColumn::Selector & selector, size_t partition_num)
+std::vector<AsyncInsertInfoPtr> scatterAsyncInsertInfoBySelector(AsyncInsertInfoPtr async_insert_info, const IColumn::Selector & selector, size_t partition_num)
 {
-    if (nullptr == chunk_offsets)
+    if (nullptr == async_insert_info)
     {
         return {};
     }
     if (selector.empty())
     {
-        return {chunk_offsets};
+        return {async_insert_info};
     }
-    std::vector<ChunkOffsetsPtr> result(partition_num);
+    std::vector<AsyncInsertInfoPtr> result(partition_num);
     std::vector<Int64> last_row_for_partition(partition_num, -1);
     size_t offset_idx = 0;
     for (size_t i = 0; i < selector.size(); ++i)
     {
         ++last_row_for_partition[selector[i]];
-        if (i + 1 == chunk_offsets->offsets[offset_idx])
+        if (i + 1 == async_insert_info->offsets[offset_idx])
         {
             for (size_t part_id = 0; part_id < last_row_for_partition.size(); ++part_id)
             {
@@ -196,9 +215,12 @@ std::vector<ChunkOffsetsPtr> scatterOffsetsBySelector(ChunkOffsetsPtr chunk_offs
                     continue;
                 size_t offset = static_cast<size_t>(last_row + 1);
                 if (result[part_id] == nullptr)
-                    result[part_id] = std::make_shared<ChunkOffsets>();
+                    result[part_id] = std::make_shared<AsyncInsertInfo>();
                 if (result[part_id]->offsets.empty() || offset > *result[part_id]->offsets.rbegin())
+                {
                     result[part_id]->offsets.push_back(offset);
+                    result[part_id]->tokens.push_back(async_insert_info->tokens[offset_idx]);
+                }
             }
             ++offset_idx;
         }
@@ -207,7 +229,7 @@ std::vector<ChunkOffsetsPtr> scatterOffsetsBySelector(ChunkOffsetsPtr chunk_offs
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
-    const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, ChunkOffsetsPtr chunk_offsets)
+    const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, AsyncInsertInfoPtr async_insert_info)
 {
     BlocksWithPartition result;
     if (!block || !block.rows())
@@ -218,8 +240,11 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     if (!metadata_snapshot->hasPartitionKey()) /// Table is not partitioned.
     {
         result.emplace_back(Block(block), Row{});
-        if (chunk_offsets != nullptr)
-            result[0].offsets = std::move(chunk_offsets->offsets);
+        if (async_insert_info != nullptr)
+        {
+            result[0].offsets = std::move(async_insert_info->offsets);
+            result[0].tokens = std::move(async_insert_info->tokens);
+        }
         return result;
     }
 
@@ -234,9 +259,9 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     PODArray<size_t> partition_num_to_first_row;
     IColumn::Selector selector;
-    buildScatterSelector(partition_columns, partition_num_to_first_row, selector, max_parts);
+    buildScatterSelector(partition_columns, partition_num_to_first_row, selector, max_parts, context);
 
-    auto chunk_offsets_with_partition = scatterOffsetsBySelector(chunk_offsets, selector, partition_num_to_first_row.size());
+    auto async_insert_info_with_partition = scatterAsyncInsertInfoBySelector(async_insert_info, selector, partition_num_to_first_row.size());
 
     size_t partitions_count = partition_num_to_first_row.size();
     result.reserve(partitions_count);
@@ -255,8 +280,11 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
         /// NOTE: returning a copy of the original block so that calculated partition key columns
         /// do not interfere with possible calculated primary key columns of the same name.
         result.emplace_back(Block(block), get_partition(0));
-        if (!chunk_offsets_with_partition.empty())
-            result[0].offsets = std::move(chunk_offsets_with_partition[0]->offsets);
+        if (!async_insert_info_with_partition.empty())
+        {
+            result[0].offsets = std::move(async_insert_info_with_partition[0]->offsets);
+            result[0].tokens = std::move(async_insert_info_with_partition[0]->tokens);
+        }
         return result;
     }
 
@@ -270,8 +298,11 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
             result[i].block.getByPosition(col).column = std::move(scattered[i]);
     }
 
-    for (size_t i = 0; i < chunk_offsets_with_partition.size(); ++i)
-        result[i].offsets = std::move(chunk_offsets_with_partition[i]->offsets);
+    for (size_t i = 0; i < async_insert_info_with_partition.size(); ++i)
+    {
+        result[i].offsets = std::move(async_insert_info_with_partition[i]->offsets);
+        result[i].tokens = std::move(async_insert_info_with_partition[i]->tokens);
+    }
 
     return result;
 }

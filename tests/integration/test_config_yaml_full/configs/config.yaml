@@ -67,52 +67,6 @@ remote_servers:
       replica:
         host: localhost
         port: 9000
-  test_cluster_two_shards_localhost:
-    shard:
-      - replica:
-          host: localhost
-          port: 9000
-      - replica:
-          host: localhost
-          port: 9000
-  test_cluster_two_shards:
-    shard:
-      - replica:
-          host: 127.0.0.1
-          port: 9000
-      - replica:
-          host: 127.0.0.2
-          port: 9000
-  test_cluster_two_shards_internal_replication:
-    shard:
-      - internal_replication: true
-        replica:
-          host: 127.0.0.1
-          port: 9000
-      - internal_replication: true
-        replica:
-          host: 127.0.0.2
-          port: 9000
-  test_shard_localhost_secure:
-    shard:
-      replica:
-        host: localhost
-        port: 9440
-        secure: 1
-  test_shard_localhost_secure_empty_tag:
-    shard:
-      replica:
-        host: localhost
-        port: 9440
-        secure:
-  test_unavailable_shard:
-    shard:
-      - replica:
-          host: localhost
-          port: 9000
-      - replica:
-          host: localhost
-          port: 1
 builtin_dictionaries_reload_interval: 3600
 max_session_timeout: 3600
 default_session_timeout: 60

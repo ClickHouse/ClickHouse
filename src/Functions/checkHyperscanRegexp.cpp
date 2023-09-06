@@ -45,8 +45,8 @@ bool isLargerThanFifty(std::string_view str)
 /// Check for sub-patterns of the form x{n} or x{n,} can be expensive. Ignore spaces before/after n and m.
 bool SlowWithHyperscanChecker::isSlowOneRepeat(std::string_view regexp)
 {
-    re2_st::StringPiece haystack(regexp.data(), regexp.size());
-    re2_st::StringPiece matches[2];
+    std::string_view haystack(regexp.data(), regexp.size());
+    std::string_view matches[2];
     size_t start_pos = 0;
     while (start_pos < haystack.size())
     {
@@ -67,8 +67,8 @@ bool SlowWithHyperscanChecker::isSlowOneRepeat(std::string_view regexp)
 /// Check if sub-patterns of the form x{n,m} can be expensive. Ignore spaces before/after n and m.
 bool SlowWithHyperscanChecker::isSlowTwoRepeats(std::string_view regexp)
 {
-    re2_st::StringPiece haystack(regexp.data(), regexp.size());
-    re2_st::StringPiece matches[3];
+    std::string_view haystack(regexp.data(), regexp.size());
+    std::string_view matches[3];
     size_t start_pos = 0;
     while (start_pos < haystack.size())
     {

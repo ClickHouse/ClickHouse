@@ -78,12 +78,6 @@ namespace Net
     public:
         HTTPFixedLengthInputStream(HTTPSession & session, HTTPFixedLengthStreamBuf::ContentLength length);
         ~HTTPFixedLengthInputStream();
-
-        void * operator new(std::size_t size);
-        void operator delete(void * ptr);
-
-    private:
-        static Poco::MemoryPool _pool;
     };
 
 
@@ -93,12 +87,6 @@ namespace Net
     public:
         HTTPFixedLengthOutputStream(HTTPSession & session, HTTPFixedLengthStreamBuf::ContentLength length);
         ~HTTPFixedLengthOutputStream();
-
-        void * operator new(std::size_t size);
-        void operator delete(void * ptr);
-
-    private:
-        static Poco::MemoryPool _pool;
     };
 
 

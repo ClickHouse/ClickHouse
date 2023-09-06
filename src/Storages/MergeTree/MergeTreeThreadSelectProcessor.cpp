@@ -45,8 +45,6 @@ void MergeTreeThreadSelectAlgorithm::finalizeNewTask()
 
     /// Allows pool to reduce number of threads in case of too slow reads.
     auto profile_callback = [this](ReadBufferFromFileBase::ProfileInfo info_) { pool->profileFeedback(info_); };
-    const auto & metadata_snapshot = storage_snapshot->metadata;
-
     IMergeTreeReader::ValueSizeMap value_size_map;
 
     if (reader && part_name != last_read_part_name)
@@ -57,7 +55,7 @@ void MergeTreeThreadSelectAlgorithm::finalizeNewTask()
     /// task->reader.valid() means there is a prefetched reader in this test, use it.
     const bool init_new_readers = !reader || task->reader.valid() || part_name != last_read_part_name;
     if (init_new_readers)
-        initializeMergeTreeReadersForCurrentTask(metadata_snapshot, value_size_map, profile_callback);
+        initializeMergeTreeReadersForCurrentTask(value_size_map, profile_callback);
 
     last_read_part_name = part_name;
 }

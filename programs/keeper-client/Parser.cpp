@@ -30,7 +30,7 @@ bool parseKeeperPath(IParser::Pos & pos, Expected & expected, String & path)
         return parseIdentifierOrStringLiteral(pos, expected, path);
 
     String result;
-    while (pos->type == TokenType::BareWord || pos->type == TokenType::Slash || pos->type == TokenType::Dot)
+    while (pos->type != TokenType::Whitespace && pos->type != TokenType::EndOfStream)
     {
         result.append(pos->begin, pos->end);
         ++pos;

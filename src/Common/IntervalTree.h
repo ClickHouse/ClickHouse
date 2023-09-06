@@ -3,8 +3,8 @@
 #include <base/defines.h>
 #include <base/sort.h>
 
-#include <vector>
 #include <utility>
+#include <vector>
 
 
 namespace DB
@@ -27,39 +27,15 @@ struct Interval
 };
 
 template <typename IntervalStorageType>
-bool operator<(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
+auto operator<=>(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
 {
-    return std::tie(lhs.left, lhs.right) < std::tie(rhs.left, rhs.right);
-}
-
-template <typename IntervalStorageType>
-bool operator<=(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
-{
-    return std::tie(lhs.left, lhs.right) <= std::tie(rhs.left, rhs.right);
+    return std::tie(lhs.left, lhs.right) <=> std::tie(rhs.left, rhs.right);
 }
 
 template <typename IntervalStorageType>
 bool operator==(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
 {
     return std::tie(lhs.left, lhs.right) == std::tie(rhs.left, rhs.right);
-}
-
-template <typename IntervalStorageType>
-bool operator!=(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
-{
-    return std::tie(lhs.left, lhs.right) != std::tie(rhs.left, rhs.right);
-}
-
-template <typename IntervalStorageType>
-bool operator>(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
-{
-    return std::tie(lhs.left, lhs.right) > std::tie(rhs.left, rhs.right);
-}
-
-template <typename IntervalStorageType>
-bool operator>=(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
-{
-    return std::tie(lhs.left, lhs.right) >= std::tie(rhs.left, rhs.right);
 }
 
 struct IntervalTreeVoidValue
@@ -143,7 +119,8 @@ public:
         return true;
     }
 
-    template <typename TValue = Value, std::enable_if_t<!std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true, typename... Args>
+    template <typename TValue = Value, typename... Args>
+    requires(!std::is_same_v<TValue, IntervalTreeVoidValue>)
     ALWAYS_INLINE bool emplace(Interval interval, Args &&... args)
     {
         assert(!tree_is_built);
