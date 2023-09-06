@@ -1415,7 +1415,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
         {
             rethrow_exception(exception_ptr);
         }
-        catch(const Exception & e)
+        catch (const Exception & e)
         {
             exception_message = e.message();
         }

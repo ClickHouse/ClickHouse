@@ -72,7 +72,8 @@ bool isRetryableException(const std::exception_ptr exception_ptr)
         return true;
     }
 #endif
-    catch (const Exception & e) {
+    catch (const Exception & e)
+    {
         if (isNotEnoughMemoryErrorCode(e.code()))
             return true;
 
