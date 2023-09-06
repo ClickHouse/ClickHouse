@@ -131,12 +131,16 @@ class ClickHouseHelper:
             if not safe:
                 raise
 
-    def _select_and_get_json_each_row(self, db, query):
+    def _select_and_get_json_each_row(self, db, query, query_params):
         params = {
             "database": db,
             "query": query,
             "default_format": "JSONEachRow",
         }
+        if query_params is not None:
+            for (name, value) in query_params.items():
+                params[f"param_{name}"] = str(value)
+
         for i in range(5):
             response = None
             try:
@@ -146,13 +150,13 @@ class ClickHouseHelper:
             except Exception as ex:
                 logging.warning("Cannot insert with exception %s", str(ex))
                 if response:
-                    logging.warning("Reponse text %s", response.text)
+                    logging.warning("Response text %s", response.text)
                 time.sleep(0.1 * i)
 
         raise Exception("Cannot fetch data from clickhouse")
 
-    def select_json_each_row(self, db, query):
-        text = self._select_and_get_json_each_row(db, query)
+    def select_json_each_row(self, db, query, query_params=None):
+        text = self._select_and_get_json_each_row(db, query, query_params)
         result = []
         for line in text.split("\n"):
             if line:
