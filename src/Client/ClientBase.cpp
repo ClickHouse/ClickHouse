@@ -1147,7 +1147,18 @@ void ClientBase::onEndOfStream()
         bool is_running = false;
         output_format->setStartTime(
             clock_gettime_ns(CLOCK_MONOTONIC) - static_cast<UInt64>(progress_indication.elapsedSeconds() * 1000000000), is_running);
-        output_format->finalize();
+
+        try
+        {
+            output_format->finalize();
+        }
+        catch (...)
+        {
+            /// Format should be reset to make it work for subsequent query
+            /// (otherwise it will throw again in resetOutput())
+            output_format.reset();
+            throw;
+        }
     }
 
     resetOutput();
@@ -1471,8 +1482,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             sendDataFromPipe(
                 std::move(pipe),
                 parsed_query,
-                have_data_in_stdin
-            );
+                have_data_in_stdin);
         }
         catch (Exception & e)
         {

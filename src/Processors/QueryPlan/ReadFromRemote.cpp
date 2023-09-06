@@ -245,6 +245,8 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
                 LOG_INFO(log, "cluster_for_parallel_replicas has been set for the query but has no effect: {}. Distributed table cluster is used: {}",
                          cluster_for_parallel_replicas, cluster_name);
         }
+
+        LOG_TRACE(&Poco::Logger::get("ReadFromRemote"), "Setting `cluster_for_parallel_replicas` to {}", cluster_name);
         context->setSetting("cluster_for_parallel_replicas", cluster_name);
     }
 

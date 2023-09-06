@@ -54,23 +54,21 @@ def get_fasttest_cmd(workspace, output_path, repo_path, pr_number, commit_sha, i
     )
 
 
-def process_results(result_folder: str) -> Tuple[str, str, TestResults, List[str]]:
+def process_results(result_folder: Path) -> Tuple[str, str, TestResults, List[str]]:
     test_results = []  # type: TestResults
     additional_files = []
     # Just upload all files from result_folder.
     # If task provides processed results, then it's responsible for content of
     # result_folder
-    if os.path.exists(result_folder):
+    if result_folder.exists():
         test_files = [
-            f
-            for f in os.listdir(result_folder)
-            if os.path.isfile(os.path.join(result_folder, f))
-        ]
-        additional_files = [os.path.join(result_folder, f) for f in test_files]
+            f for f in result_folder.iterdir() if f.is_file()
+        ]  # type: List[Path]
+        additional_files = [f.absolute().as_posix() for f in test_files]
 
     status = []
-    status_path = os.path.join(result_folder, "check_status.tsv")
-    if os.path.exists(status_path):
+    status_path = result_folder / "check_status.tsv"
+    if status_path.exists():
         logging.info("Found test_results.tsv")
         with open(status_path, "r", encoding="utf-8") as status_file:
             status = list(csv.reader(status_file, delimiter="\t"))
@@ -80,7 +78,7 @@ def process_results(result_folder: str) -> Tuple[str, str, TestResults, List[str
     state, description = status[0][0], status[0][1]
 
     try:
-        results_path = Path(result_folder) / "test_results.tsv"
+        results_path = result_folder / "test_results.tsv"
         test_results = read_test_results(results_path)
         if len(test_results) == 0:
             return "error", "Empty test_results.tsv", test_results, additional_files
@@ -100,10 +98,9 @@ def main():
 
     stopwatch = Stopwatch()
 
-    temp_path = TEMP_PATH
+    temp_path = Path(TEMP_PATH)
 
-    if not os.path.exists(temp_path):
-        os.makedirs(temp_path)
+    temp_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
 
@@ -124,17 +121,14 @@ def main():
 
     s3_helper = S3Helper()
 
-    workspace = os.path.join(temp_path, "fasttest-workspace")
-    if not os.path.exists(workspace):
-        os.makedirs(workspace)
+    workspace = temp_path / "fasttest-workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
 
-    output_path = os.path.join(temp_path, "fasttest-output")
-    if not os.path.exists(output_path):
-        os.makedirs(output_path)
+    output_path = temp_path / "fasttest-output"
+    output_path.mkdir(parents=True, exist_ok=True)
 
-    repo_path = os.path.join(temp_path, "fasttest-repo")
-    if not os.path.exists(repo_path):
-        os.makedirs(repo_path)
+    repo_path = temp_path / "fasttest-repo"
+    repo_path.mkdir(parents=True, exist_ok=True)
 
     run_cmd = get_fasttest_cmd(
         workspace,
@@ -146,11 +140,10 @@ def main():
     )
     logging.info("Going to run fasttest with cmd %s", run_cmd)
 
-    logs_path = os.path.join(temp_path, "fasttest-logs")
-    if not os.path.exists(logs_path):
-        os.makedirs(logs_path)
+    logs_path = temp_path / "fasttest-logs"
+    logs_path.mkdir(parents=True, exist_ok=True)
 
-    run_log_path = os.path.join(logs_path, "run.log")
+    run_log_path = logs_path / "run.log"
     with TeePopen(run_cmd, run_log_path, timeout=90 * 60) as process:
         retcode = process.wait()
         if retcode == 0:
@@ -161,9 +154,7 @@ def main():
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     test_output_files = os.listdir(output_path)
-    additional_logs = []
-    for f in test_output_files:
-        additional_logs.append(os.path.join(output_path, f))
+    additional_logs = [os.path.join(output_path, f) for f in test_output_files]
 
     test_log_exists = (
         "test_log.txt" in test_output_files or "test_result.txt" in test_output_files
@@ -194,8 +185,8 @@ def main():
         pr_info.sha,
         "fast_tests",
     )
-    build_urls = s3_helper.upload_build_folder_to_s3(
-        os.path.join(output_path, "binaries"),
+    build_urls = s3_helper.upload_build_directory_to_s3(
+        output_path / "binaries",
         s3_path_prefix,
         keep_dirs_in_s3_path=False,
         upload_symlinks=False,
@@ -206,7 +197,7 @@ def main():
         pr_info.number,
         pr_info.sha,
         test_results,
-        [run_log_path] + additional_logs,
+        [run_log_path.as_posix()] + additional_logs,
         NAME,
         build_urls,
     )

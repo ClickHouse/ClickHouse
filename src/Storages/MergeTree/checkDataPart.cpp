@@ -16,7 +16,6 @@
 #include <IO/S3Common.h>
 #include <Common/CurrentMetrics.h>
 
-
 namespace CurrentMetrics
 {
     extern const Metric ReplicatedChecks;

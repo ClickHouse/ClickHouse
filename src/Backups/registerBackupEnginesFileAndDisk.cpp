@@ -103,7 +103,6 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
 {
     auto creator_fn = [](const BackupFactory::CreateParams & params) -> std::unique_ptr<IBackup>
     {
-        String backup_name_for_logging = params.backup_info.toStringForLogging();
         const String & engine_name = params.backup_info.backup_engine_name;
 
         if (!params.backup_info.id_arg.empty())
@@ -172,7 +171,13 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
                 reader = std::make_shared<BackupReaderFile>(path, params.read_settings, params.write_settings);
             else
                 reader = std::make_shared<BackupReaderDisk>(disk, path, params.read_settings, params.write_settings);
-            return std::make_unique<BackupImpl>(backup_name_for_logging, archive_params, params.base_backup_info, reader, params.context);
+            return std::make_unique<BackupImpl>(
+                params.backup_info,
+                archive_params,
+                params.base_backup_info,
+                reader,
+                params.context,
+                params.use_same_s3_credentials_for_base_backup);
         }
         else
         {
@@ -182,7 +187,7 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
             else
                 writer = std::make_shared<BackupWriterDisk>(disk, path, params.read_settings, params.write_settings);
             return std::make_unique<BackupImpl>(
-                backup_name_for_logging,
+                params.backup_info,
                 archive_params,
                 params.base_backup_info,
                 writer,
@@ -190,7 +195,8 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
                 params.is_internal_backup,
                 params.backup_coordination,
                 params.backup_uuid,
-                params.deduplicate_files);
+                params.deduplicate_files,
+                params.use_same_s3_credentials_for_base_backup);
         }
     };
 

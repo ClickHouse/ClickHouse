@@ -86,4 +86,10 @@ std::shared_ptr<ReadBuffer> WriteBufferToFileSegment::getReadBufferImpl()
     return std::make_shared<ReadBufferFromFile>(file_segment->getPathInLocalCache());
 }
 
+WriteBufferToFileSegment::~WriteBufferToFileSegment()
+{
+    /// To be sure that file exists before destructor of segment_holder is called
+    WriteBufferFromFileDecorator::finalize();
+}
+
 }

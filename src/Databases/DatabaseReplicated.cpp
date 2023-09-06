@@ -263,7 +263,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
 std::vector<UInt8> DatabaseReplicated::tryGetAreReplicasActive(const ClusterPtr & cluster_) const
 {
     Strings paths;
-    const auto & addresses_with_failover = cluster->getShardsAddresses();
+    const auto & addresses_with_failover = cluster_->getShardsAddresses();
     const auto & shards_info = cluster_->getShardsInfo();
     for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
     {

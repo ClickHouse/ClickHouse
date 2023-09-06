@@ -98,4 +98,23 @@ String BackupInfo::toStringForLogging() const
     return toAST()->formatForLogging();
 }
 
+void BackupInfo::copyS3CredentialsTo(BackupInfo & dest) const
+{
+    /// named_collection case, no need to update
+    if (!dest.id_arg.empty() || !id_arg.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "use_same_s3_credentials_for_base_backup is not compatible with named_collections");
+
+    if (backup_engine_name != "S3")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "use_same_s3_credentials_for_base_backup supported only for S3, got {}", toStringForLogging());
+    if (dest.backup_engine_name != "S3")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "use_same_s3_credentials_for_base_backup supported only for S3, got {}", dest.toStringForLogging());
+    if (args.size() != 3)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "use_same_s3_credentials_for_base_backup requires access_key_id, secret_access_key, got {}", toStringForLogging());
+
+    auto & dest_args = dest.args;
+    dest_args.resize(3);
+    dest_args[1] = args[1];
+    dest_args[2] = args[2];
+}
+
 }
