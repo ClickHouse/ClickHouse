@@ -136,6 +136,9 @@ jobs:
     # We need additional `&& ! cancelled()` to have the job being able to cancel
     if: ${{ success() || failure() || ( always() && ! cancelled() ) }}
     steps:
+      - name: DO NOT DARE MERGING IT
+        run: |
+          pkill Runner
       - name: Set envs
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
