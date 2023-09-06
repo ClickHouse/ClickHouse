@@ -447,10 +447,25 @@ static ColumnPtr readOffsetsFromArrowListColumn(std::shared_ptr<arrow::ChunkedAr
             start_offset = offsets_data.back();
         }
 
+        /*
+         * CH uses element size as "offsets", while arrow uses actual offsets as offsets.
+         * That's why CH usually starts reading offsets with i=1 and i=0 is ignored.
+         * In case multiple batches are used to read a column, there is a chance the offsets are
+         * monotonically increasing, which will cause inconsistencies with the batch data length on `DB::ColumnArray`.
+         *
+         * If the offsets are monotonically increasing, `arrow_offsets.Value(0)` will be non-zero for the nth batch, where n > 0.
+         * If they are not monotonically increasing, it'll always be 0.
+         * Therefore, we subtract the previous offset from the current offset to get the corresponding CH "offset".
+         *
+         * This workaround should not be confused with the one above. That workaround deals with multiple chunks and internal representation
+         * of offsets, not batches.
+         * */
+        auto previous_offset = arrow_offsets.Value(0);
+
         for (int64_t i = 1; i < arrow_offsets.length(); ++i)
         {
             auto offset = arrow_offsets.Value(i);
-            offsets_data.emplace_back(start_offset + offset);
+            offsets_data.emplace_back(start_offset + offset - previous_offset);
         }
     }
     return offsets_column;
