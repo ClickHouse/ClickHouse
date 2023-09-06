@@ -884,35 +884,32 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/)
     {
         auto datetime_arg = arguments[0];
-        datetime_arg.column = datetime_arg.column->convertToFullColumnIfConst();
-
-        const auto & col_with_type_and_name =  columnGetNested(datetime_arg);
-        ColumnUInt8::MutablePtr null_map = copyNullMap(datetime_arg.column);
-
-        const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
 
         const DateLUTImpl * time_zone = nullptr;
         const ColumnConst * time_zone_column = nullptr;
 
-        if (arguments.size() > 1)
-            time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
-        else if (arguments.size() == 1)
+        if (arguments.size() == 1)
         {
             auto non_null_args = createBlockWithNestedColumns(arguments);
             time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0);
         }
-
-        if constexpr (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>)
-            time_zone = &DateLUT::instance();
-        /// For argument of Date or DateTime type, second argument with time zone could be specified.
-        if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
+        else /// When we have a column for timezone
         {
-            if (time_zone_column)
+            datetime_arg.column = datetime_arg.column->convertToFullColumnIfConst();
+
+            if constexpr (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>)
+                time_zone = &DateLUT::instance();
+            /// For argument of Date or DateTime type, second argument with time zone could be specified.
+            if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
             {
-                auto non_null_args = createBlockWithNestedColumns(arguments);
-                time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0);
+                if ((time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get())))
+                {
+                    auto non_null_args = createBlockWithNestedColumns(arguments);
+                    time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0);
+                }
             }
         }
+        const auto & col_with_type_and_name = columnGetNested(datetime_arg);
 
         if (const auto col_from = checkAndGetColumn<ColVecType>(col_with_type_and_name.column.get()))
         {
@@ -937,6 +934,9 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
             offsets_to.resize(size);
 
             WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
+            const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
+
+            ColumnUInt8::MutablePtr null_map = copyNullMap(datetime_arg.column);
 
             if (null_map)
             {
