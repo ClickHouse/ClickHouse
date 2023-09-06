@@ -642,7 +642,6 @@ void Cluster::initMisc()
 
 std::unique_ptr<Cluster> Cluster::getClusterWithReplicasAsShards(const Settings & settings, size_t max_replicas_from_shard) const
 {
-    LOG_DEBUG(&Poco::Logger::get(__FUNCTION__), "max_replicas_from_shard={}\n{}", max_replicas_from_shard, StackTrace().toString());
     return std::unique_ptr<Cluster>{ new Cluster(ReplicasAsShardsTag{}, *this, settings, max_replicas_from_shard)};
 }
 
