@@ -1,5 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionLTTB.h>
+#include <AggregateFunctions/AggregateFunctionLargestTriangleThreeBuckets.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 
@@ -17,7 +17,7 @@ namespace
 {
 
     AggregateFunctionPtr
-    createAggregateFunctionLTTB(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    createAggregateFunctionLargestTriangleThreeBuckets(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
     {
         assertBinary(name, argument_types);
 
@@ -36,15 +36,15 @@ namespace
                 "Aggregate function {} only supports Date, Date32, DateTime, DateTime64 and Number as the second argument",
                 name);
 
-        return std::make_shared<AggregateFunctionLTTB>(argument_types, parameters);
+        return std::make_shared<AggregateFunctionLargestTriangleThreeBuckets>(argument_types, parameters);
     }
 
 }
 
 
-void registerAggregateFunctionLTTB(AggregateFunctionFactory & factory)
+void registerAggregateFunctionLargestTriangleThreeBuckets(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("lttb", createAggregateFunctionLTTB);
+    factory.registerFunction("largestTriangleThreeBuckets", createAggregateFunctionLargestTriangleThreeBuckets);
 }
 
 

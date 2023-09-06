@@ -33,7 +33,7 @@ namespace ErrorCodes
 }
 
 
-struct LTTBData : public StatisticalSample<Float64, Float64>
+struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float64>
 {
     void add(const Float64 xval, const Float64 yval, Arena * arena)
     {
@@ -146,7 +146,7 @@ struct LTTBData : public StatisticalSample<Float64, Float64>
     }
 };
 
-class AggregateFunctionLTTB final : public IAggregateFunctionDataHelper<LTTBData, AggregateFunctionLTTB>
+class AggregateFunctionLargestTriangleThreeBuckets final : public IAggregateFunctionDataHelper<LargestTriangleThreeBucketsData, AggregateFunctionLargestTriangleThreeBuckets>
 {
 private:
     UInt64 total_buckets{0};
@@ -154,8 +154,8 @@ private:
     TypeIndex y_type;
 
 public:
-    explicit AggregateFunctionLTTB(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<LTTBData, AggregateFunctionLTTB>({arguments}, {}, createResultType(arguments))
+    explicit AggregateFunctionLargestTriangleThreeBuckets(const DataTypes & arguments, const Array & params)
+        : IAggregateFunctionDataHelper<LargestTriangleThreeBucketsData, AggregateFunctionLargestTriangleThreeBuckets>({arguments}, {}, createResultType(arguments))
     {
         if (params.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require one parameter", getName());
@@ -170,7 +170,7 @@ public:
         this->y_type = WhichDataType(arguments[1]).idx;
     }
 
-    String getName() const override { return "lttb"; }
+    String getName() const override { return "largestTriangleThreeBuckets"; }
 
     bool allocatesMemoryInArena() const override { return true; }
 

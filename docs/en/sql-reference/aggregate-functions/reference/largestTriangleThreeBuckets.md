@@ -1,10 +1,10 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/lttb
+slug: /en/sql-reference/aggregate-functions/reference/largestTriangleThreeBuckets
 sidebar_position: 312
-sidebar_label: lttb
+sidebar_label: largestTriangleThreeBuckets
 ---
 
-# lttb
+# largestTriangleThreeBuckets
 
 Applies the [Largest-Triangle-Three-Buckets](https://skemman.is/bitstream/1946/15343/3/SS_MSthesis.pdf) algorithm to the input data.
 The algorithm is used for downsampling time series data for visualization. It is designed to operate on series sorted by x coordinate.
@@ -13,7 +13,7 @@ It works by dividing the sorted series into buckets and then finding the largest
 **Syntax**
 
 ``` sql
-lttb(n)(x, y)
+largestTriangleThreeBuckets(n)(x, y)
 ```
 
 the function will sort data by `x` and then apply the downsampling algorithm to the sorted data.
@@ -53,14 +53,14 @@ Input table:
 Query:
 
 ``` sql
-SELECT lttb(4)(x, y) FROM lttb_test;
+SELECT largestTriangleThreeBuckets(4)(x, y) FROM largestTriangleThreeBuckets_test;
 ```
 
 Result:
 
 ``` text
-┌────────lttb(3)(x, y)───────────┐
-│ [(1,10),(3,15),(5,40),(10,70)] │
-└────────────────────────────────┘
+┌────────largestTriangleThreeBuckets(3)(x, y)───────────┐
+│           [(1,10),(3,15),(5,40),(10,70)]              │
+└───────────────────────────────────────────────────────┘
 ```
 

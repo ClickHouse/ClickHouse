@@ -1388,6 +1388,7 @@ dmesg
 domainWithoutWWW
 dont
 dotProduct
+downsampling
 dplyr
 dragonbox
 dropoff
@@ -1688,6 +1689,7 @@ kurtsamp
 laion
 lang
 laravel
+largestTriangleThreeBuckets
 latencies
 ldap
 leftPad
@@ -2582,6 +2584,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-downsampling
-lttb
 hardlink
