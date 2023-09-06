@@ -427,25 +427,11 @@ static ColumnPtr readOffsetsFromArrowListColumn(std::shared_ptr<arrow::ChunkedAr
     ColumnArray::Offsets & offsets_data = assert_cast<ColumnVector<UInt64> &>(*offsets_column).getData();
     offsets_data.reserve(arrow_column->length());
 
-    uint64_t start_offset = 0u;
-
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         arrow::ListArray & list_chunk = dynamic_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
         auto arrow_offsets_array = list_chunk.offsets();
         auto & arrow_offsets = dynamic_cast<arrow::Int32Array &>(*arrow_offsets_array);
-
-        /*
-         * It seems like arrow::ListArray::values() (nested column data) might or might not be shared across chunks.
-         * When it is shared, the offsets will be monotonically increasing. Otherwise, the offsets will be zero based.
-         * In order to account for both cases, the starting offset is updated whenever a zero-based offset is found.
-         * More info can be found in: https://lists.apache.org/thread/rrwfb9zo2dc58dhd9rblf20xd7wmy7jm and
-         * https://github.com/ClickHouse/ClickHouse/pull/43297
-         * */
-        if (list_chunk.offset() == 0)
-        {
-            start_offset = offsets_data.back();
-        }
 
         /*
          * CH uses element size as "offsets", while arrow uses actual offsets as offsets.
@@ -457,15 +443,17 @@ static ColumnPtr readOffsetsFromArrowListColumn(std::shared_ptr<arrow::ChunkedAr
          * If they are not monotonically increasing, it'll always be 0.
          * Therefore, we subtract the previous offset from the current offset to get the corresponding CH "offset".
          *
-         * This workaround should not be confused with the one above. That workaround deals with multiple chunks and internal representation
-         * of offsets, not batches.
+         * The same might happen for multiple chunks. In this case, we need to add the last offset of the previous chunk, hence
+         * `offsets.back()`.
          * */
-        auto previous_offset = arrow_offsets.Value(0);
+        uint64_t previous_offset = arrow_offsets.Value(0);
 
         for (int64_t i = 1; i < arrow_offsets.length(); ++i)
         {
             auto offset = arrow_offsets.Value(i);
-            offsets_data.emplace_back(start_offset + offset - previous_offset);
+            uint64_t elements = offset - previous_offset;
+            previous_offset = offset;
+            offsets_data.emplace_back(offsets_data.back() + elements);
         }
     }
     return offsets_column;
