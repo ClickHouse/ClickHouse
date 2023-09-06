@@ -54,13 +54,19 @@ add_library(_base64
         "${LIBRARY_DIR}/lib/arch/sse42/codec.c"
         "${LIBRARY_DIR}/lib/arch/avx/codec.c"
         "${LIBRARY_DIR}/lib/arch/avx2/codec.c"
+        # Even though AVX512 is not supported, we still need to compile this file
+        # because the run-time codec choose requires the functions from this file
+        # to be present.
         "${LIBRARY_DIR}/lib/arch/avx512/codec.c"
+
+        # Tables
+        "${LIBRARY_DIR}/lib/tables/table_dec_32bit.h"
+        "${LIBRARY_DIR}/lib/tables/table_enc_12bit.h"
 
         "${LIBRARY_DIR}/lib/arch/neon32/codec.c"
         "${LIBRARY_DIR}/lib/arch/neon64/codec.c"
         "${LIBRARY_DIR}/lib/codecs.h"
-        "${CMAKE_CURRENT_BINARY_DIR}/config.h"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tables.h")
+        "${CMAKE_CURRENT_BINARY_DIR}/config.h")
 
 if(HAVE_AVX)
     set_source_files_properties(${LIBRARY_DIR}/lib/arch/avx/codec.c PROPERTIES COMPILE_FLAGS -mavx)
