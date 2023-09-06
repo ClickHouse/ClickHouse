@@ -1329,10 +1329,10 @@ ddl
 deallocation
 deallocations
 debian
+decodeHTMLComponent
 decodeURLComponent
 decodeURLFormComponent
 decodeXMLComponent
-decodeHTMLComponent
 decompressor
 decrypt
 decrypted
@@ -1558,6 +1558,7 @@ gzipped
 hadoop
 halfMD
 halfday
+hardlink
 hardlinks
 hasAll
 hasAny
@@ -1637,6 +1638,7 @@ isNotNull
 isNull
 isValidJSON
 isValidUTF
+isZeroOrNull
 iteratively
 jaccard
 javaHash
