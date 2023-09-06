@@ -132,6 +132,8 @@ public:
     void reconfigure(const KeeperStorage::RequestForSession& request_for_session);
 
 private:
+    mutable SharedMutex storage_mutex;
+
     CommitCallback commit_callback;
     /// In our state machine we always have a single snapshot which is stored
     /// in memory in compressed (serialized) format.
@@ -161,7 +163,7 @@ private:
     /// we can get strange cases when, for example client send read request with
     /// watch and after that receive watch response and only receive response
     /// for request.
-    mutable std::mutex storage_and_responses_lock;
+    mutable std::mutex process_and_responses_lock;
 
     std::unordered_map<int64_t, std::unordered_map<Coordination::XID, std::shared_ptr<KeeperStorage::RequestForSession>>> parsed_request_cache;
     uint64_t min_request_size_to_cache{0};
@@ -189,7 +191,6 @@ private:
     KeeperSnapshotManagerS3 * snapshot_manager_s3;
 
     KeeperStorage::ResponseForSession processReconfiguration(
-        const KeeperStorage::RequestForSession& request_for_session)
-        TSA_REQUIRES(storage_and_responses_lock);
+        const KeeperStorage::RequestForSession& request_for_session);
 };
 }
