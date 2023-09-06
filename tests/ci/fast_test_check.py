@@ -26,13 +26,12 @@ from docker_pull_helper import get_image_with_version
 from env_helper import S3_BUILDS_BUCKET, TEMP_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
-from report import TestResults, read_test_results
+from report import TestResult, TestResults, read_test_results
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from upload_result_helper import upload_results
 from version_helper import get_version_from_repo
-from report import TestResult
 from subprocess import TimeoutExpired
 
 NAME = "Fast test"
@@ -203,6 +202,8 @@ def main():
                 expired_timeout,
             )
         )
+        state = "failure"
+        description = test_results[-1].name
 
     ch_helper = ClickHouseHelper()
     s3_path_prefix = os.path.join(
