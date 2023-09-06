@@ -228,7 +228,7 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
                 else
                 {
                     Field field = parseStringToField(value, attr.type);
-                    node->attributes[name_] = RegexTreeNode::AttributeValue{.field = std::move(field), .original_value = value};
+                    node->attributes[name_] = RegexTreeNode::AttributeValue{.field = std::move(field), .pieces = {}, .original_value = value};
                 }
             }
         }

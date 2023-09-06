@@ -35,6 +35,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/StorageS3Cluster.h>
 #include <Core/ExternalTable.h>
+#include <Core/ServerSettings.h>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -112,6 +113,20 @@ NameToNameMap convertToQueryParameters(const Settings & passed_params)
         query_parameters.emplace(param.getName(), value);
     }
     return query_parameters;
+}
+
+// This function corrects the wrong client_name from the old client.
+// Old clients 28.7 and some intermediate versions of 28.7 were sending different ClientInfo.client_name
+// "ClickHouse client" was sent with the hello message.
+// "ClickHouse" or "ClickHouse " was sent with the query message.
+void correctQueryClientInfo(const ClientInfo & session_client_info, ClientInfo & client_info)
+{
+    if (client_info.getVersionNumber() <= VersionNumber(23, 8, 1) &&
+        session_client_info.client_name == "ClickHouse client" &&
+        (client_info.client_name == "ClickHouse" || client_info.client_name == "ClickHouse "))
+    {
+        client_info.client_name = "ClickHouse client";
+    }
 }
 
 void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo & client_info)
@@ -456,7 +471,7 @@ void TCPHandler::runImpl()
                 if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
                     return;
 
-                sendMergeTreeAllRangesAnnounecementAssumeLocked(announcement);
+                sendMergeTreeAllRangesAnnouncementAssumeLocked(announcement);
                 ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
                 ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());
             });
@@ -1029,9 +1044,9 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
 }
 
 
-void TCPHandler::sendMergeTreeAllRangesAnnounecementAssumeLocked(InitialAllRangesAnnouncement announcement)
+void TCPHandler::sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRangesAnnouncement announcement)
 {
-    writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnounecement, *out);
+    writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnouncement, *out);
     announcement.serialize(*out);
     out->next();
 }
@@ -1532,7 +1547,11 @@ void TCPHandler::receiveQuery()
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
     {
         client_info.read(*in, client_tcp_protocol_version);
-        validateClientInfo(session->getClientInfo(), client_info);
+
+        correctQueryClientInfo(session->getClientInfo(), client_info);
+        const auto & config_ref = Context::getGlobalContextInstance()->getServerSettings();
+        if (config_ref.validate_tcp_client_information)
+            validateClientInfo(session->getClientInfo(), client_info);
     }
 
     /// Per query settings are also passed via TCP.
