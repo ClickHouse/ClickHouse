@@ -32,7 +32,6 @@ from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from upload_result_helper import upload_results
 from version_helper import get_version_from_repo
-from subprocess import TimeoutExpired
 
 NAME = "Fast test"
 
@@ -202,7 +201,7 @@ def main():
                 timeout,
             )
         )
-        state = "timeout"
+        state = "failure"
         description = test_results[-1].name
 
     ch_helper = ClickHouseHelper()
