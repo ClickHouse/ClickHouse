@@ -444,7 +444,8 @@ static ColumnPtr readOffsetsFromArrowListColumn(std::shared_ptr<arrow::ChunkedAr
          * Therefore, we subtract the previous offset from the current offset to get the corresponding CH "offset".
          *
          * The same might happen for multiple chunks. In this case, we need to add the last offset of the previous chunk, hence
-         * `offsets.back()`.
+         * `offsets.back()`. More info can be found in https://lists.apache.org/thread/rrwfb9zo2dc58dhd9rblf20xd7wmy7jm,
+         * https://github.com/ClickHouse/ClickHouse/pull/43297 and https://github.com/ClickHouse/ClickHouse/pull/54370
          * */
         uint64_t previous_offset = arrow_offsets.Value(0);
 
