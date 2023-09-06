@@ -147,8 +147,8 @@ void SelectStreamFactory::createForShard(
     });
 
     if (settings.prefer_localhost_replica && shard_info.isLocal()
-        && !context->canUseParallelReplicasOnInitiator())   // fast fix for parallel replicas over distributed with enabled perfer_localhost_replica
-                                                            // basically, prefer_localhost_replica is disabled for now with parallel replicas over distributed
+        // fast fix for parallel replicas over distributed with enabled perfer_localhost_replica, -> disable it for now
+        && (context->getParallelReplicasMode() == Context::ParallelReplicasMode::READ_TASKS && settings.max_parallel_replicas > 1))
     {
         StoragePtr main_table_storage;
 
