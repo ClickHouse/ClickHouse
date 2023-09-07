@@ -3,7 +3,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/Priority.h>
-#include "base/types.h"
+#include <base/types.h>
 
 #include <IO/ResourceRequest.h>
 #include <Poco/Util/AbstractConfiguration.h>
