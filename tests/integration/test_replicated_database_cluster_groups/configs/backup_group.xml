@@ -1,0 +1,3 @@
+<clickhouse>
+    <database_replicated_cluster_group>backups</database_replicated_cluster_group>
+</clickhouse>

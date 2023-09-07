@@ -101,6 +101,7 @@ private:
     } cluster_auth_info;
 
     void fillClusterAuthInfo(String collection_name, const Poco::Util::AbstractConfiguration & config);
+    String getClusterGroup(const Poco::Util::AbstractConfiguration & config);
 
     void checkQueryValid(const ASTPtr & query, ContextPtr query_context) const;
 
@@ -127,6 +128,7 @@ private:
     String shard_name;
     String replica_name;
     String replica_path;
+    String cluster_path;
     DatabaseReplicatedSettings db_settings;
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
