@@ -4890,6 +4890,16 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
             if (from_attach_thread)
             {
                 restarting_thread.shutdown(/* part_of_full_shutdown */false);
+
+                auto data_parts_exchange_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, InterserverIOEndpointPtr{});
+                if (data_parts_exchange_ptr)
+                {
+                    getContext()->getInterserverIOHandler().removeEndpointIfExists(data_parts_exchange_ptr->getId(getEndpointName()));
+                    /// Ask all parts exchange handlers to finish asap. New ones will fail to start
+                    data_parts_exchange_ptr->blocker.cancelForever();
+                    /// Wait for all of them
+                    std::lock_guard lock(data_parts_exchange_ptr->rwlock);
+                }
             }
             else
             {
