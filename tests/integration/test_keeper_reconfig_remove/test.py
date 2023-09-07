@@ -32,7 +32,9 @@ def started_cluster():
 
 
 def create_client(node: ClickHouseInstance):
-    return ku.KeeperClient(cluster.server_bin_path, cluster.get_instance_ip(node.name), 9181)
+    return ku.KeeperClient(
+        cluster.server_bin_path, cluster.get_instance_ip(node.name), 9181
+    )
 
 
 def test_reconfig_remove_followers_from_3(started_cluster):
@@ -123,4 +125,4 @@ def test_reconfig_remove_followers_from_3(started_cluster):
 
     assert not node1.contains_in_log(log_msg_removed)
     assert node2.contains_in_log(log_msg_removed)
-    assert "Mode: standalone" in zk1.execute_query('stat')
+    assert "Mode: standalone" in zk1.execute_query("stat")

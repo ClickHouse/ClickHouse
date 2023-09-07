@@ -35,7 +35,9 @@ def started_cluster():
 
 
 def create_client(node: ClickHouseInstance):
-    return ku.KeeperClient(cluster.server_bin_path, cluster.get_instance_ip(node.name), 9181)
+    return ku.KeeperClient(
+        cluster.server_bin_path, cluster.get_instance_ip(node.name), 9181
+    )
 
 
 def test_reconfig_remove_2_and_leader(started_cluster):

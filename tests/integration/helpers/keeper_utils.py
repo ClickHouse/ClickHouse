@@ -10,7 +10,9 @@ from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.client import CommandRequest
 
 
-def execute_keeper_client_query(cluster: ClickHouseCluster, node: ClickHouseInstance, query: str) -> str:
+def execute_keeper_client_query(
+    cluster: ClickHouseCluster, node: ClickHouseInstance, query: str
+) -> str:
     request = CommandRequest(
         [
             cluster.server_bin_path,
@@ -33,8 +35,7 @@ class KeeperException(Exception):
 
 
 class KeeperClient(object):
-
-    SEPARATOR = b'\a\a\a\a\n'
+    SEPARATOR = b"\a\a\a\a\n"
 
     def __init__(self, bin_path: str, host: str, port: int):
         self.bin_path = bin_path
@@ -44,15 +45,15 @@ class KeeperClient(object):
         self.proc = subprocess.Popen(
             [
                 bin_path,
-                'keeper-client',
-                '--host',
+                "keeper-client",
+                "--host",
                 host,
-                '--port',
+                "--port",
                 str(port),
-                '--log-level',
-                'error',
-                '--tests-mode',
-                '--no-confirmation',
+                "--log-level",
+                "error",
+                "--tests-mode",
+                "--no-confirmation",
             ],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -70,10 +71,10 @@ class KeeperClient(object):
 
         self.stopped = False
 
-    def execute_query(self, query: str, timeout: float = 10.) -> str:
+    def execute_query(self, query: str, timeout: float = 10.0) -> str:
         output = io.BytesIO()
 
-        self.proc.stdin.write(query.encode() + b'\n')
+        self.proc.stdin.write(query.encode() + b"\n")
         self.proc.stdin.flush()
 
         events = self.poller.poll(timeout)
@@ -95,65 +96,83 @@ class KeeperClient(object):
                     raise KeeperException(self.proc.stderr.readline().strip().decode())
 
             else:
-                raise ValueError(f'Failed to read from pipe. Flag {event}')
+                raise ValueError(f"Failed to read from pipe. Flag {event}")
 
         data = output.getvalue().strip().decode()
         return data
 
-    def cd(self, path: str, timeout: float = 10.):
-        self.execute_query(f'cd {path}', timeout)
+    def cd(self, path: str, timeout: float = 10.0):
+        self.execute_query(f"cd {path}", timeout)
 
-    def ls(self, path: str, timeout: float = 10.) -> list[str]:
-        return self.execute_query(f'ls {path}', timeout).split(' ')
+    def ls(self, path: str, timeout: float = 10.0) -> list[str]:
+        return self.execute_query(f"ls {path}", timeout).split(" ")
 
-    def create(self, path: str, value: str, timeout: float = 10.):
-        self.execute_query(f'create {path} {value}', timeout)
+    def create(self, path: str, value: str, timeout: float = 10.0):
+        self.execute_query(f"create {path} {value}", timeout)
 
-    def get(self, path: str, timeout: float = 10.) -> str:
-        return self.execute_query(f'get {path}', timeout)
+    def get(self, path: str, timeout: float = 10.0) -> str:
+        return self.execute_query(f"get {path}", timeout)
 
-    def exists(self, path: str, timeout: float = 10.) -> bool:
-        return bool(int(self.execute_query(f'exists {path}', timeout)))
+    def exists(self, path: str, timeout: float = 10.0) -> bool:
+        return bool(int(self.execute_query(f"exists {path}", timeout)))
 
     def stop(self):
         if not self.stopped:
             self.stopped = True
-            self.proc.communicate(b'exit\n', timeout=10.)
+            self.proc.communicate(b"exit\n", timeout=10.0)
 
-    def sync(self, path: str, timeout: float = 10.):
-        self.execute_query(f'sync {path}', timeout)
+    def sync(self, path: str, timeout: float = 10.0):
+        self.execute_query(f"sync {path}", timeout)
 
-    def touch(self, path: str, timeout: float = 10.):
-        self.execute_query(f'touch {path}', timeout)
+    def touch(self, path: str, timeout: float = 10.0):
+        self.execute_query(f"touch {path}", timeout)
 
-    def find_big_family(self, path: str, n: int = 10, timeout: float = 10.) -> str:
-        return self.execute_query(f'find_big_family {path} {n}', timeout)
+    def find_big_family(self, path: str, n: int = 10, timeout: float = 10.0) -> str:
+        return self.execute_query(f"find_big_family {path} {n}", timeout)
 
-    def find_super_nodes(self, threshold: int, timeout: float = 10.) -> str:
-        return self.execute_query(f'find_super_nodes {threshold}', timeout)
+    def find_super_nodes(self, threshold: int, timeout: float = 10.0) -> str:
+        return self.execute_query(f"find_super_nodes {threshold}", timeout)
 
-    def delete_stale_backups(self, timeout: float = 10.) -> str:
-        return self.execute_query('delete_stale_backups', timeout)
+    def delete_stale_backups(self, timeout: float = 10.0) -> str:
+        return self.execute_query("delete_stale_backups", timeout)
 
-    def reconfig(self, joining: tp.Optional[str], leaving: tp.Optional[str], new_members: tp.Optional[str], timeout: float = 10.) -> str:
+    def reconfig(
+        self,
+        joining: tp.Optional[str],
+        leaving: tp.Optional[str],
+        new_members: tp.Optional[str],
+        timeout: float = 10.0,
+    ) -> str:
         if bool(joining) + bool(leaving) + bool(new_members) != 1:
-            raise ValueError('Exactly one of joining, leaving or new_members must be specified')
+            raise ValueError(
+                "Exactly one of joining, leaving or new_members must be specified"
+            )
 
         if joining is not None:
-            operation = 'add'
+            operation = "add"
         elif leaving is not None:
-            operation = 'remove'
+            operation = "remove"
         elif new_members is not None:
-            operation = 'set'
+            operation = "set"
         else:
-            raise ValueError('At least one of joining, leaving or new_members must be specified')
+            raise ValueError(
+                "At least one of joining, leaving or new_members must be specified"
+            )
 
-        return self.execute_query(f'reconfig {operation} {joining or leaving or new_members}', timeout)
+        return self.execute_query(
+            f"reconfig {operation} {joining or leaving or new_members}", timeout
+        )
 
     @classmethod
     @contextlib.contextmanager
-    def from_cluster(cls, cluster: ClickHouseCluster, keeper_node: str, port: tp.Optional[int] = None) -> 'KeeperClient':
-        client = cls(cluster.server_bin_path, cluster.get_instance_ip(keeper_node), port or cluster.zookeeper_port)
+    def from_cluster(
+        cls, cluster: ClickHouseCluster, keeper_node: str, port: tp.Optional[int] = None
+    ) -> "KeeperClient":
+        client = cls(
+            cluster.server_bin_path,
+            cluster.get_instance_ip(keeper_node),
+            port or cluster.zookeeper_port,
+        )
 
         try:
             yield client
