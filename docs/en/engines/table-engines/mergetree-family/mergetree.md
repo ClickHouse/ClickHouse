@@ -1220,7 +1220,6 @@ Configuration markup:
             <account_name>account</account_name>
             <account_key>pass123</account_key>
             <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
-            <cache_enabled>true</cache_enabled>
             <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
         </blob_storage_disk>
@@ -1248,8 +1247,6 @@ Limit parameters (mainly for internal usage):
 
 Other parameters:
 * `metadata_path` - Path on local FS to store metadata files for Blob Storage. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.
-* `cache_enabled` - Allows to cache mark and index files on local FS. Default value is `true`.
-* `cache_path` - Path on local FS where to store cached mark and index files. Default value is `/var/lib/clickhouse/disks/<disk_name>/cache/`.
 * `skip_access_check` - If true, disk access checks will not be performed on disk start-up. Default value is `false`.
 
 Examples of working configurations can be found in integration tests directory (see e.g. [test_merge_tree_azure_blob_storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) or [test_azure_blob_storage_zero_copy_replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml)).
