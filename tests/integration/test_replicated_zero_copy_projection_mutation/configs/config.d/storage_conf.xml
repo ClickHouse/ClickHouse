@@ -9,14 +9,6 @@
                 <secret_access_key>minio123</secret_access_key>
                 <skip_access_check>true</skip_access_check>
             </s3>
-            <broken_s3>
-                <type>s3</type>
-                <endpoint>http://resolver:8081/root/data/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
-                <skip_access_check>true</skip_access_check>
-                <retry_attempts>0</retry_attempts>
-            </broken_s3>
         </disks>
         <policies>
             <s3>
@@ -26,13 +18,6 @@
                     </main>
                 </volumes>
             </s3>
-            <broken_s3>
-                 <volumes>
-                    <main>
-                        <disk>broken_s3</disk>
-                    </main>
-                </volumes>
-            </broken_s3>
         </policies>
     </storage_configuration>
 
