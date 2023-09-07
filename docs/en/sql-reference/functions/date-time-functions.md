@@ -987,6 +987,10 @@ Result:
 └───────────────────────────────────────────────┘
 ```
 
+**See Also**
+
+- [addDate](#addDate)
+
 ## date\_sub
 
 Subtracts the time interval or date interval from the provided date or date with time.
@@ -1132,6 +1136,41 @@ Result:
 ┌─minus(toDateTime('2018-12-18 01:02:03'), toIntervalMonth(5))─┐
 │                                          2018-07-18 01:02:03 │
 └──────────────────────────────────────────────────────────────┘
+```
+
+## addDate
+
+Adds the time interval or date interval to the provided date or date with time.
+
+**Syntax**
+
+``` sql
+addDate(date, interval)
+```
+
+**Arguments**
+
+- `date` — The date or date with time to which `value` is added. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+- `interval` — Interval to add. [Interval](../../sql-reference/data-types/special-data-types/interval.md).
+
+**Returned value**
+
+Date or date with time obtained by adding `value`, expressed in `unit`, to `date`.
+
+Type: [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Example**
+
+```sql
+SELECT addDate(toDate('2018-01-01'), INTERVAL 3 YEAR);
+```
+
+Result:
+
+```text
+┌─addDate(toDate('2018-01-01'), toIntervalYear(3))─┐
+│                                       2021-01-01 │
+└──────────────────────────────────────────────────┘
 ```
 
 ## now
