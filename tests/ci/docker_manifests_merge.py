@@ -9,11 +9,7 @@ import subprocess
 from typing import List, Dict, Tuple
 from github import Github
 
-from clickhouse_helper import (
-    ClickHouseHelper,
-    prepare_tests_results_for_clickhouse,
-    CHException,
-)
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import format_description, get_commit, post_commit_status
 from docker_images_helper import IMAGES_FILE_PATH, get_image_names
 from env_helper import RUNNER_TEMP, GITHUB_WORKSPACE
@@ -187,7 +183,7 @@ def enrich_images(changed_images: Dict[str, str]) -> Dict[str, str]:
     )
 
     COMMIT_SHA_BATCH_SIZE = 100
-    MAX_TRIES_COUNT = 10
+    MAX_COMMIT_BATCHES_TO_CHECK = 10
     # Gets the sha of the last COMMIT_SHA_BATCH_SIZE commits after skipping some commits (see below)
     LAST_N_ANCESTOR_SHA_COMMAND = f"git log --format=format:'%H' --max-count={COMMIT_SHA_BATCH_SIZE} --skip={{}} --merges"
     git_runner = Runner()
@@ -208,43 +204,36 @@ def enrich_images(changed_images: Dict[str, str]) -> Dict[str, str]:
         """
 
     batch_count = 0
-    try_count = 0
     ch_helper = ClickHouseHelper()
 
-    while try_count <= MAX_TRIES_COUNT and len(images_to_find_tags_for) != 0:
+    while batch_count <= MAX_COMMIT_BATCHES_TO_CHECK and len(images_to_find_tags_for) != 0:
         commit_shas = git_runner(
             LAST_N_ANCESTOR_SHA_COMMAND.format(batch_count * COMMIT_SHA_BATCH_SIZE)
         ).split("\n")
 
-        try:
-            result = ch_helper.select_json_each_row(
-                "default",
-                GET_COMMIT_SHAS_QUERY,
-                {"commit_shas": commit_shas, "images": images_to_find_tags_for},
-            )
-            result.sort(key=lambda x: x["image_name"])
+        result = ch_helper.select_json_each_row(
+            "default",
+            GET_COMMIT_SHAS_QUERY,
+            {"commit_shas": commit_shas, "images": images_to_find_tags_for},
+        )
+        result.sort(key=lambda x: x["image_name"])
 
-            logging.info(
-                "Found images for commits %s..%s:\n %s",
-                commit_shas[0],
-                commit_shas[-1],
-                "\n ".join(f"{im['image_name']}:{im['commit_sha']}" for im in result),
-            )
+        logging.info(
+            "Found images for commits %s..%s:\n %s",
+            commit_shas[0],
+            commit_shas[-1],
+            "\n ".join(f"{im['image_name']}:{im['commit_sha']}" for im in result),
+        )
 
-            for row in result:
-                image_name = row["image_name"]
-                commit_sha = row["commit_sha"]
-                # As we only get the SHAs of merge commits from master, the PR number will be always 0
-                tag = f"0-{commit_sha}"
-                new_changed_images[image_name] = tag
-                images_to_find_tags_for.remove(image_name)
+        for row in result:
+            image_name = row["image_name"]
+            commit_sha = row["commit_sha"]
+            # As we only get the SHAs of merge commits from master, the PR number will be always 0
+            tag = f"0-{commit_sha}"
+            new_changed_images[image_name] = tag
+            images_to_find_tags_for.remove(image_name)
 
-            batch_count += 1
-
-        except CHException as ex:
-            logging.warning("Request for ClickHouse failed: %s", ex)
-
-        try_count += 1
+        batch_count += 1
 
     return new_changed_images
 
