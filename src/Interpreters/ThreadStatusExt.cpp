@@ -80,6 +80,7 @@ void ThreadGroup::linkThread(UInt64 thread_id)
 void ThreadGroup::unlinkThread()
 {
     std::lock_guard lock(mutex);
+    chassert(active_thread_count > 0);
     --active_thread_count;
 }
 
