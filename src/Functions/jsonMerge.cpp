@@ -1,7 +1,3 @@
-#include "config.h"
-
-#if USE_RAPIDJSON
-
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -10,6 +6,9 @@
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/FieldVisitorToString.h>
+#include "config.h"
+
+#if USE_RAPIDJSON
 
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
@@ -109,7 +108,7 @@ namespace
 REGISTER_FUNCTION(jsonMerge)
 {
     factory.registerFunction<FunctionjsonMerge>(FunctionDocumentation{
-        .description="Return the merged JSON object, which is formed by merging multiple JSON objects."});
+        .description="Return the merged JSON object string, which is formed by merging multiple JSON objects."});
 }
 
 }
