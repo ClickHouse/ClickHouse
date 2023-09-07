@@ -209,6 +209,7 @@ def enrich_images(changed_images: Dict[str, str]) -> Dict[str, str]:
 
     batch_count = 0
     try_count = 0
+    ch_helper = ClickHouseHelper()
 
     while try_count <= MAX_TRIES_COUNT and len(images_to_find_tags_for) != 0:
         commit_shas = git_runner(
