@@ -6387,22 +6387,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             for (const auto & part : precommitted_parts)
             {
                 DataPartPtr covering_part;
-                DataPartsVector covered_active_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
-
-                /// outdated parts should be also collected here
-                /// the visible outdated parts should be tried to be removed
-                /// more likely the conflict happens at the removing visible outdated parts, what is right actually
-                DataPartsVector covered_outdated_parts = data.getCoveredOutdatedParts(part, *owing_parts_lock);
-
-                LOG_TEST(data.log, "Got {} oudated parts covered by {} (TID {} CSN {}): {}",
-                         covered_outdated_parts.size(), part->getNameWithState(), txn->tid, txn->getSnapshot(), fmt::join(getPartsNames(covered_outdated_parts), ", "));
-                data.filterVisibleDataParts(covered_outdated_parts, txn->getSnapshot(), txn->tid);
-
-                DataPartsVector covered_parts;
-                covered_parts.reserve(covered_active_parts.size() + covered_outdated_parts.size());
-                std::move(covered_active_parts.begin(), covered_active_parts.end(), std::back_inserter(covered_parts));
-                std::move(covered_outdated_parts.begin(), covered_outdated_parts.end(), std::back_inserter(covered_parts));
-
+                DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
                 MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
             }
         }
