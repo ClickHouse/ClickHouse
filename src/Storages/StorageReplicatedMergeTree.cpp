@@ -1799,17 +1799,18 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_check_missing_part, bool only_fetch_within_region)
 {
     const auto & storage_settings_ptr = getSettings();
-    bool fetch_cover_part_from_same_region = storage_settings_ptr->fetch_covered_part_within_region_only;
+    bool fetch_cover_part_from_same_region
+        = geo_replication_controller.isValid() && storage_settings_ptr->fetch_covered_part_within_region_only;
+
     String replica;
     if (fetch_cover_part_from_same_region && !only_fetch_within_region)
     {
         /// Find the exact part first, if cannot then probably the exact part has lost and we can
         /// fetch covered part instead
         replica = findReplicaHavingPart(entry, true, false);
-        if (replica.empty())
-            replica = findReplicaHavingCoveringPart(entry, true, false);
     }
-    else
+
+    if (replica.empty())
     {
         /// Looking for covering part. After that entry.actual_new_part_name may be filled.
         replica = findReplicaHavingCoveringPart(entry, true, only_fetch_within_region);
