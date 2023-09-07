@@ -65,6 +65,17 @@ void JSONRowInputFormat::readSuffix()
     }
 }
 
+void JSONRowInputFormat::setReadBuffer(DB::ReadBuffer & in_)
+{
+    peekable_buf->setSubBuffer(in_);
+}
+
+void JSONRowInputFormat::resetParser()
+{
+    JSONEachRowRowInputFormat::resetParser();
+    peekable_buf->reset();
+}
+
 JSONRowSchemaReader::JSONRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
     : JSONRowSchemaReader(std::make_unique<PeekableReadBuffer>(in_), format_settings_)
 {
