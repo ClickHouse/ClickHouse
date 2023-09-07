@@ -4207,7 +4207,7 @@ SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_pars
 └─────────────────────┴──────────────────────────┘
 ```
 
-## ignore_eacces_multidirectory_globs {#ignore_eacces_multidirectory_globs}
+## ignore_access_denied_multidirectory_globs {#ignore_access_denied_multidirectory_globs}
 
 Позволяет игнорировать ошибку 'permission denied', возникающую при использовании шаблона `{}`, содержащего `/` внутри себя.
 Работает для [File](../../sql-reference/table-functions/file.md#globs_in_path) и [HDFS](../../sql-reference/table-functions/hdfs.md).
@@ -4237,12 +4237,12 @@ my_directory/
 Если данная настройка имеет значение 1, то недоступные директории будут тихо пропущены, даже если они явно указаны внутри `{}`.
 
 ```sql
-SELECT _path, _file FROM file('my_directory/{data1/f1,data2/f2}.csv', CSV) SETTINGS ignore_eacces_multidirectory_globs = 0;
+SELECT _path, _file FROM file('my_directory/{data1/f1,data2/f2}.csv', CSV) SETTINGS ignore_access_denied_multidirectory_globs = 0;
 
 Code: 1001. DB::Exception: std::__1::__fs::filesystem::filesystem_error: filesystem error: in directory_iterator::directory_iterator(...): Permission denied
 ```
 ```sql
-SELECT _path, _file FROM file('my_directory/{data1/f1,data2/f2}.csv', CSV) SETTINGS ignore_eacces_multidirectory_globs = 1;
+SELECT _path, _file FROM file('my_directory/{data1/f1,data2/f2}.csv', CSV) SETTINGS ignore_access_denied_multidirectory_globs = 1;
 
 ┌─_path───────────────────┬─_file───────┐
 │ <full path to file>     │ <file name> │

@@ -104,7 +104,7 @@ void listFilesWithRegexpMatchingImpl(
     const std::string & path_for_ls,
     const std::string & for_match,
     size_t & total_bytes_to_read,
-    bool ignore_eacces_multidirectory_globs,
+    bool ignore_access_denied_multidirectory_globs,
     std::vector<std::string> & result,
     bool recursive = false);
 
@@ -123,14 +123,14 @@ void listFilesWithFoldedRegexpMatchingImpl(const std::string & path_for_ls,
                                            size_t & total_bytes_to_read,
                                            const size_t max_depth,
                                            const size_t next_slash_after_glob_pos,
-                                           bool ignore_eacces_multidirectory_globs,
+                                           bool ignore_access_denied_multidirectory_globs,
                                            std::vector<std::string> & result)
 {
     if (!max_depth)
         return;
 
     const fs::directory_iterator end;
-    fs::directory_iterator it = ignore_eacces_multidirectory_globs
+    fs::directory_iterator it = ignore_access_denied_multidirectory_globs
         ? fs::directory_iterator(path_for_ls, fs::directory_options::skip_permission_denied)
         : fs::directory_iterator(path_for_ls);
     for (; it != end; ++it)
@@ -150,7 +150,7 @@ void listFilesWithFoldedRegexpMatchingImpl(const std::string & path_for_ls,
             {
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "" ,
                                                 suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, ignore_eacces_multidirectory_globs, result);
+                                                total_bytes_to_read, ignore_access_denied_multidirectory_globs, result);
             }
         }
         else if (it->is_directory())
@@ -158,7 +158,7 @@ void listFilesWithFoldedRegexpMatchingImpl(const std::string & path_for_ls,
             listFilesWithFoldedRegexpMatchingImpl(fs::path(full_path), processed_suffix + dir_or_file_name,
                                                   suffix_with_globs, matcher, total_bytes_to_read,
                                                   max_depth - 1, next_slash_after_glob_pos,
-                                                  ignore_eacces_multidirectory_globs, result);
+                                                  ignore_access_denied_multidirectory_globs, result);
         }
 
     }
@@ -171,7 +171,7 @@ void listFilesWithRegexpMatchingImpl(
     const std::string & path_for_ls,
     const std::string & for_match,
     size_t & total_bytes_to_read,
-    bool ignore_eacces_multidirectory_globs,
+    bool ignore_access_denied_multidirectory_globs,
     std::vector<std::string> & result,
     bool recursive)
 {
@@ -231,7 +231,7 @@ void listFilesWithRegexpMatchingImpl(
     {
         listFilesWithFoldedRegexpMatchingImpl(fs::path(prefix_without_globs), "", suffix_with_globs, matcher,
                                               total_bytes_to_read, slashes_in_glob, next_slash_after_glob_pos,
-                                              ignore_eacces_multidirectory_globs, result);
+                                              ignore_access_denied_multidirectory_globs, result);
         return;
     }
 
@@ -257,12 +257,12 @@ void listFilesWithRegexpMatchingImpl(
             {
                 listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
                                                 looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
-                                                total_bytes_to_read, ignore_eacces_multidirectory_globs, result, recursive);
+                                                total_bytes_to_read, ignore_access_denied_multidirectory_globs, result, recursive);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, ignore_eacces_multidirectory_globs, result);
+                                                total_bytes_to_read, ignore_access_denied_multidirectory_globs, result);
         }
     }
 }
@@ -271,10 +271,10 @@ std::vector<std::string> listFilesWithRegexpMatching(
     const std::string & path_for_ls,
     const std::string & for_match,
     size_t & total_bytes_to_read,
-    bool ignore_eacces_multidirectory_globs)
+    bool ignore_access_denied_multidirectory_globs)
 {
     std::vector<std::string> result;
-    listFilesWithRegexpMatchingImpl(path_for_ls, for_match, total_bytes_to_read, ignore_eacces_multidirectory_globs, result);
+    listFilesWithRegexpMatchingImpl(path_for_ls, for_match, total_bytes_to_read, ignore_access_denied_multidirectory_globs, result);
     return result;
 }
 
@@ -439,7 +439,7 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     else
     {
         /// We list only non-directory files.
-        paths = listFilesWithRegexpMatching("/", path, total_bytes_to_read, context->getSettingsRef().ignore_eacces_multidirectory_globs);
+        paths = listFilesWithRegexpMatching("/", path, total_bytes_to_read, context->getSettingsRef().ignore_access_denied_multidirectory_globs);
         can_be_directory = false;
     }
 

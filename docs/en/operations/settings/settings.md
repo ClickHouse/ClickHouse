@@ -4660,7 +4660,7 @@ The default value is `false`.
 <validate_tcp_client_information>true</validate_tcp_client_information>
 ```
 
-## ignore_eacces_multidirectory_globs {#ignore_eacces_multidirectory_globs}
+## ignore_access_denied_multidirectory_globs {#ignore_access_denied_multidirectory_globs}
 
 Allows to ignore 'permission denied' errors when using multi-directory `{}` globs for [File](../../sql-reference/table-functions/file.md#globs_in_path) and [HDFS](../../sql-reference/table-functions/hdfs.md) storages.
 This setting is only applicable when multi directory `{}` glob is used.
@@ -4689,12 +4689,12 @@ It happens because a multi-directory glob requires a recursive search in _all_ a
 If this setting is on, all inaccessible directories will be silently skipped, even if they are explicitly specified inside `{}`.
 
 ```sql
-SELECT _path, _file FROM file('my_directory/{data1/f1,data2/f2}.csv', CSV) SETTINGS ignore_eacces_multidirectory_globs = 0;
+SELECT _path, _file FROM file('my_directory/{data1/f1,data2/f2}.csv', CSV) SETTINGS ignore_access_denied_multidirectory_globs = 0;
 
 Code: 1001. DB::Exception: std::__1::__fs::filesystem::filesystem_error: filesystem error: in directory_iterator::directory_iterator(...): Permission denied
 ```
 ```sql
-SELECT _path, _file FROM file('my_directory/{data1/f1,data2/f2}.csv', CSV) SETTINGS ignore_eacces_multidirectory_globs = 1;
+SELECT _path, _file FROM file('my_directory/{data1/f1,data2/f2}.csv', CSV) SETTINGS ignore_access_denied_multidirectory_globs = 1;
 
 ┌─_path───────────────────┬─_file───────┐
 │ <full path to file>     │ <file name> │
