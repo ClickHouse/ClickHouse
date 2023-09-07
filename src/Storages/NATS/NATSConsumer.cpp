@@ -86,7 +86,6 @@ void NATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, vo
             .message = message_received,
             .subject = subject,
         };
-
         if (!nats_consumer->received.push(std::move(data)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to received queue");
 
