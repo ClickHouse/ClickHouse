@@ -1,8 +1,4 @@
-if(ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_S390X)
-    option (ENABLE_BASE64 "Enable base64" ${ENABLE_LIBRARIES})
-elseif(ENABLE_BASE64)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "base64 library is only supported on x86_64 and aarch64")
-endif()
+option (ENABLE_BASE64 "Enable base64" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_BASE64)
     message(STATUS "Not using base64")
@@ -13,7 +9,7 @@ SET(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aklomp-base64")
 
 set(HAVE_NEON32 0)
 set(HAVE_NEON64 0)
-if (ARCH_AARCH64)
+if (ARCH_AARCH64 AND NOT NO_ARMV81_OR_HIGHER)
     set(HAVE_NEON64 1)
 endif ()
 
@@ -33,7 +29,7 @@ cast_to_bool(AVX   "-mavx")
 cast_to_bool(AVX2  "-mavx2")
 
 set(HAVE_FAST_UNALIGNED_ACCESS 0)
-if(HAVE_SSSE3 OR HAVE_SSE41 OR HAVE_SSE42 OR HAVE_AVX OR HAVE_AVX2 OR ARCH_AARCH64)
+if(HAVE_SSSE3 OR HAVE_SSE41 OR HAVE_SSE42 OR HAVE_AVX OR HAVE_AVX2 OR HAVE_NEON64)
     set(HAVE_FAST_UNALIGNED_ACCESS 1)
 endif ()
 
@@ -48,23 +44,21 @@ add_library(_base64
 
         # Codec implementations
         "${LIBRARY_DIR}/lib/arch/generic/codec.c"
-
+        "${LIBRARY_DIR}/lib/arch/neon32/codec.c"
+        "${LIBRARY_DIR}/lib/arch/neon64/codec.c"
         "${LIBRARY_DIR}/lib/arch/ssse3/codec.c"
         "${LIBRARY_DIR}/lib/arch/sse41/codec.c"
         "${LIBRARY_DIR}/lib/arch/sse42/codec.c"
+        # ClickHouse does not support AVX* by default. We still need to compile these files
+        # because the run-time codec detection requires functions from these file to be present.
         "${LIBRARY_DIR}/lib/arch/avx/codec.c"
         "${LIBRARY_DIR}/lib/arch/avx2/codec.c"
-        # Even though AVX512 is not supported, we still need to compile this file
-        # because the run-time codec choose requires the functions from this file
-        # to be present.
         "${LIBRARY_DIR}/lib/arch/avx512/codec.c"
 
         # Tables
         "${LIBRARY_DIR}/lib/tables/table_dec_32bit.h"
         "${LIBRARY_DIR}/lib/tables/table_enc_12bit.h"
 
-        "${LIBRARY_DIR}/lib/arch/neon32/codec.c"
-        "${LIBRARY_DIR}/lib/arch/neon64/codec.c"
         "${LIBRARY_DIR}/lib/codecs.h"
         "${CMAKE_CURRENT_BINARY_DIR}/config.h")
 
