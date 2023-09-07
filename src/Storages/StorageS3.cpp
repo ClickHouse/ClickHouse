@@ -1246,13 +1246,11 @@ void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configur
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
 
     auto filename = collection.getOrDefault<String>("filename", "");
-    String url;
     if (!filename.empty())
-        url = std::filesystem::path(collection.get<String>("url")) / filename;
+        configuration.url = S3::URI(std::filesystem::path(collection.get<String>("url")) / filename);
     else
-        url = collection.get<String>("url");
+        configuration.url = S3::URI(collection.get<String>("url"));
 
-    configuration.url = S3::URI(url);
     configuration.auth_settings.access_key_id = collection.getOrDefault<String>("access_key_id", "");
     configuration.auth_settings.secret_access_key = collection.getOrDefault<String>("secret_access_key", "");
     configuration.auth_settings.use_environment_credentials = collection.getOrDefault<UInt64>("use_environment_credentials", 1);
@@ -1260,8 +1258,6 @@ void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configur
     configuration.auth_settings.expiration_window_seconds = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
 
     configuration.format = collection.getOrDefault<String>("format", configuration.format);
-    if (configuration.format == "auto")
-        configuration.format = FormatFactory::instance().getFormatFromFileName(Poco::URI(url).getPath(), true);
     configuration.compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
     configuration.structure = collection.getOrDefault<String>("structure", "auto");
 
