@@ -9,7 +9,11 @@ import subprocess
 from typing import List, Dict, Tuple
 from github import Github
 
-from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from clickhouse_helper import (
+    ClickHouseHelper,
+    prepare_tests_results_for_clickhouse,
+    CHException,
+)
 from commit_status_helper import format_description, get_commit, post_commit_status
 from docker_images_helper import IMAGES_FILE_PATH, get_image_names
 from env_helper import RUNNER_TEMP, GITHUB_WORKSPACE
@@ -206,7 +210,9 @@ def enrich_images(changed_images: Dict[str, str]) -> Dict[str, str]:
     batch_count = 0
     ch_helper = ClickHouseHelper()
 
-    while batch_count <= MAX_COMMIT_BATCHES_TO_CHECK and len(images_to_find_tags_for) != 0:
+    while (
+        batch_count <= MAX_COMMIT_BATCHES_TO_CHECK and len(images_to_find_tags_for) != 0
+    ):
         commit_shas = git_runner(
             LAST_N_ANCESTOR_SHA_COMMAND.format(batch_count * COMMIT_SHA_BATCH_SIZE)
         ).split("\n")
@@ -269,8 +275,11 @@ def main():
             if test_result != "OK":
                 status = "failure"
 
-    # changed_images now contains all the images that are changed in this PR. Let's find the latest tag for the images that are not changed.
-    changed_images = enrich_images(changed_images)
+    try:
+        # changed_images now contains all the images that are changed in this PR. Let's find the latest tag for the images that are not changed.
+        changed_images = enrich_images(changed_images)
+    except CHException as ex:
+        logging.warning("Couldn't get proper tags for not changed images: %s", ex)
 
     with open(
         os.path.join(args.path, "changed_images.json"), "w", encoding="utf-8"
