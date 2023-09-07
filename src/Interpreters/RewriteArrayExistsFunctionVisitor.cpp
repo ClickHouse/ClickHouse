@@ -15,6 +15,28 @@ void RewriteArrayExistsFunctionMatcher::visit(ASTPtr & ast, Data & data)
 
         visit(*func, ast, data);
     }
+    else if (auto * join = ast->as<ASTTableJoin>())
+    {
+        if (join->using_expression_list)
+        {
+            auto it = std::find(join->children.begin(), join->children.end(), join->using_expression_list);
+
+            visit(join->using_expression_list, data);
+
+            if (it && *it != join->using_expression_list)
+                *it = join->using_expression_list;
+        }
+
+        if (join->on_expression)
+        {
+            auto it = std::find(join->children.begin(), join->children.end(), join->on_expression);
+
+            visit(join->on_expression, data);
+
+            if (it && *it != join->on_expression)
+                *it = join->on_expression;
+        }
+    }
 }
 
 void RewriteArrayExistsFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data &)
@@ -77,19 +99,11 @@ void RewriteArrayExistsFunctionMatcher::visit(const ASTFunction & func, ASTPtr &
     }
 }
 
-bool RewriteArrayExistsFunctionMatcher::needChildVisit(const ASTPtr & ast, const ASTPtr & child)
+bool RewriteArrayExistsFunctionMatcher::needChildVisit(const ASTPtr & ast, const ASTPtr &)
 {
-    /// SELECT ... JOIN ... ON arrayExists(x -> x = 1, arr)
-    /// A JOIN on expression is invalid, ignore it to avoid segmentation fault
-
+    /// Children of ASTTableJoin are handled separately in visit() function
     if (auto * join = ast->as<ASTTableJoin>())
-    {
-        if (auto * func = child->as<ASTFunction>())
-        {
-            if (func->name == "arrayExists")
-                return false;
-        }
-    }
+        return false;
 
     return true;
 }
