@@ -82,6 +82,35 @@ LIFETIME(MIN 0 MAX 1000)
 LAYOUT(FLAT())
 ```
 
+:::note
+When using the SQL console in [ClickHouse Cloud](https://clickhouse.com), you must specify a user (`default` or any other user with the role `default_role`) and password when creating a dictionary.
+:::note
+
+```sql
+CREATE USER IF NOT EXISTS clickhouse_admin
+IDENTIFIED WITH sha256_password BY 'passworD43$x';
+
+GRANT default_role TO clickhouse_admin;
+
+CREATE DATABASE foo_db;
+
+CREATE TABLE foo_db.source_table (
+    id UInt64,
+    value String
+) ENGINE = MergeTree
+PRIMARY KEY id;
+
+CREATE DICTIONARY foo_db.id_value_dictionary
+(
+    id UInt64,
+    value String
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'source_table' USER 'clickhouse_admin' PASSWORD 'passworD43$x' DB 'foo_db' ))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000);
+```
+
 ### Create a dictionary from a table in a remote ClickHouse service
 
 Input table (in the remote ClickHouse service) `source_table`:

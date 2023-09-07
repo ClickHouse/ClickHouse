@@ -133,6 +133,12 @@ void DelayedSource::work()
 
     processors = Pipe::detachProcessors(std::move(pipe));
 
+    if (rows_before_limit)
+    {
+        for (auto & processor : processors)
+            processor->setRowsBeforeLimitCounter(rows_before_limit);
+    }
+
     synchronizePorts(totals_output, totals, header, processors);
     synchronizePorts(extremes_output, extremes, header, processors);
 }
@@ -148,7 +154,9 @@ Processors DelayedSource::expandPipeline()
         inputs.emplace_back(outputs.front().getHeader(), this);
         /// Connect checks that header is same for ports.
         connect(*output, inputs.back());
-        inputs.back().setNeeded();
+
+        if (output == main_output)
+            inputs.back().setNeeded();
     }
 
     /// Executor will check that all processors are connected.

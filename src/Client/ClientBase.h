@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string_view>
 #include "Common/NamePrompter.h"
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/ProgressIndication.h>
@@ -24,6 +25,7 @@ namespace po = boost::program_options;
 namespace DB
 {
 
+static constexpr std::string_view DEFAULT_CLIENT_NAME = "client";
 
 static const NameSet exit_strings
 {
@@ -148,6 +150,7 @@ private:
     void cancelQuery();
 
     void onProgress(const Progress & value);
+    void onTimezoneUpdate(const String & tz);
     void onData(Block & block, ASTPtr parsed_query);
     void onLogData(Block & block);
     void onTotals(Block & block, ASTPtr parsed_query);

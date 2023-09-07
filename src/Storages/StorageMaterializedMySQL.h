@@ -41,6 +41,13 @@ public:
 
     void drop() override { nested_storage->drop(); }
 
+    bool supportsTrivialCountOptimization() const override { return false; }
+
+    IndexSizeByName getSecondaryIndexSizes() const override
+    {
+        return nested_storage->getSecondaryIndexSizes();
+    }
+
 private:
     [[noreturn]] static void throwNotAllowed()
     {

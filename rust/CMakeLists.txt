@@ -14,6 +14,13 @@ macro(configure_rustc)
         set(RUST_CFLAGS "${RUST_CFLAGS} --sysroot ${CMAKE_SYSROOT}")
     endif()
 
+    if(CCACHE_EXECUTABLE MATCHES "/sccache$")
+        message(STATUS "Using RUSTC_WRAPPER: ${CCACHE_EXECUTABLE}")
+        set(RUSTCWRAPPER "rustc-wrapper = \"${CCACHE_EXECUTABLE}\"")
+    else()
+        set(RUSTCWRAPPER "")
+    endif()
+
     set(RUSTFLAGS "[]")
     set(RUST_CARGO_BUILD_STD "")
     # For more info: https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html#memorysanitizer
@@ -55,6 +62,8 @@ function(clickhouse_import_crate)
         endif()
     endif()
 
+    # Note, here --offline is not used, since on CI vendor archive is used, and
+    # passing --offline here will be inconvenient for local development.
     corrosion_import_crate(NO_STD ${ARGN} PROFILE ${profile})
 endfunction()
 
@@ -88,3 +97,4 @@ endfunction()
 
 add_rust_subdirectory (BLAKE3)
 add_rust_subdirectory (skim)
+add_rust_subdirectory (prql)

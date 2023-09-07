@@ -122,6 +122,7 @@ FROM dt
 -   [Настройка `date_time_input_format`](../../operations/settings/index.md#settings-date_time_input_format)
 -   [Настройка `date_time_output_format`](../../operations/settings/index.md)
 -   [Конфигурационный параметр сервера `timezone`](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
+-   [Параметр `session_timezone`](../../operations/settings/settings.md#session_timezone)
 -   [Операторы для работы с датой и временем](../../sql-reference/operators/index.md#operators-datetime)
 -   [Тип данных `Date`](date.md)
 -   [Тип данных `DateTime64`](datetime64.md)

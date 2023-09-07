@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/hdfs
-sidebar_position: 45
+sidebar_position: 80
 sidebar_label: hdfs
 ---
 
@@ -79,7 +79,7 @@ SELECT count(*)
 FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV', 'name String, value UInt32')
 ```
 
-:::note    
+:::note
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
 

@@ -10,6 +10,27 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+Int64 IntervalKind::toAvgNanoseconds() const
+{
+    static constexpr Int64 NANOSECONDS_PER_MICROSECOND = 1000;
+    static constexpr auto NANOSECONDS_PER_MILLISECOND = NANOSECONDS_PER_MICROSECOND * 1000;
+    static constexpr auto NANOSECONDS_PER_SECOND = NANOSECONDS_PER_MILLISECOND * 1000;
+
+    switch (kind)
+    {
+        case IntervalKind::Millisecond:
+            return NANOSECONDS_PER_MILLISECOND;
+        case IntervalKind::Microsecond:
+            return NANOSECONDS_PER_MICROSECOND;
+        case IntervalKind::Nanosecond:
+            return 1;
+        default:
+            return toAvgSeconds() * NANOSECONDS_PER_SECOND;
+    }
+
+    UNREACHABLE();
+}
+
 Int32 IntervalKind::toAvgSeconds() const
 {
     switch (kind)

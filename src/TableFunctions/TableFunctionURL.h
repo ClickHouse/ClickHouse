@@ -32,7 +32,7 @@ public:
         return signature;
     }
 
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
     static void addColumnsStructureToArguments(ASTs & args, const String & desired_structure, const ContextPtr & context);
 
