@@ -12,6 +12,9 @@ from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 from report import TestResults
 
+class CHException(Exception):
+    pass
+
 
 class InsertException(Exception):
     pass
@@ -148,12 +151,12 @@ class ClickHouseHelper:
                 response.raise_for_status()
                 return response.text
             except Exception as ex:
-                logging.warning("Cannot insert with exception %s", str(ex))
+                logging.warning("Select query failed with exception %s", str(ex))
                 if response:
                     logging.warning("Response text %s", response.text)
                 time.sleep(0.1 * i)
 
-        raise Exception("Cannot fetch data from clickhouse")
+        raise CHException("Cannot fetch data from clickhouse")
 
     def select_json_each_row(self, db, query, query_params=None):
         text = self._select_and_get_json_each_row(db, query, query_params)
