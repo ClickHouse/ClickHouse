@@ -982,6 +982,7 @@ acos
 acosh
 activecube
 activerecord
+addDate
 addDays
 addHours
 addMinutes
