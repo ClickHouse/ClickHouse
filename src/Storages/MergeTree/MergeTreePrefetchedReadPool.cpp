@@ -59,11 +59,11 @@ void MergeTreePrefetchedReadPool::PrefetechedReaders::wait()
 
 MergeTreeReadTask::Readers MergeTreePrefetchedReadPool::PrefetechedReaders::get()
 {
+    SCOPE_EXIT({ is_valid = false; });
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
     for (auto & prefetch_future : prefetch_futures)
         prefetch_future.get();
 
-    is_valid = false;
     return std::move(readers);
 }
 
