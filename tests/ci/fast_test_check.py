@@ -145,8 +145,8 @@ def main():
     logs_path.mkdir(parents=True, exist_ok=True)
 
     run_log_path = logs_path / "run.log"
-    timeout = 65
     timeout_expired = False
+    timeout = 90 * 60
     with TeePopen(run_cmd, run_log_path, timeout=timeout) as process:
         retcode = process.wait()
         if process.timeout_exceeded:
@@ -186,7 +186,7 @@ def main():
         state, description, test_results, additional_logs = process_results(output_path)
 
     if timeout_expired is not None:
-        test_result_name = "Timeout for fast test check is expired"
+        test_result_name = "Check timeout expired"
         test_results.append(TestResult(test_result_name, "FAIL", timeout))
         state = "failure"
         description = format_description(test_result_name)
