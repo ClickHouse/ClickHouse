@@ -15,7 +15,6 @@ from docker_images_helper import IMAGES_FILE_PATH, get_image_names
 from env_helper import RUNNER_TEMP, GITHUB_WORKSPACE
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from git_helper import Runner
-from pprint import pformat
 from pr_info import PRInfo
 from report import TestResults, TestResult
 from s3_helper import S3Helper
@@ -179,7 +178,9 @@ def enrich_images(changed_images: Dict[str, str]) -> Dict[str, str]:
     ]
     images_to_find_tags_for.sort()
 
-    logging.info("Trying to find versions for images: %s", images_to_find_tags_for)
+    logging.info(
+        "Trying to find versions for images:\n %s", "\n ".join(images_to_find_tags_for)
+    )
 
     COMMIT_SHA_BATCH_SIZE = 100
     MAX_COMMIT_BATCHES_TO_CHECK = 10
@@ -221,7 +222,7 @@ def enrich_images(changed_images: Dict[str, str]) -> Dict[str, str]:
             "Found images for commits %s..%s: %s",
             commit_shas[0],
             commit_shas[-1],
-            pformat(result, sort_dicts=False),
+            "\n ".join(f"{im['image_name']}:{im['commit_sha']}" for im in result),
         )
 
         for row in result:
