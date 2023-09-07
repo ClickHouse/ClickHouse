@@ -210,9 +210,7 @@ def enrich_images(changed_images: Dict[str, str]) -> Dict[str, str]:
     batch_count = 0
     try_count = 0
 
-    while (
-        try_count <= MAX_TRIES_COUNT and len(images_to_find_tags_for) != 0
-    ):
+    while try_count <= MAX_TRIES_COUNT and len(images_to_find_tags_for) != 0:
         commit_shas = git_runner(
             LAST_N_ANCESTOR_SHA_COMMAND.format(batch_count * COMMIT_SHA_BATCH_SIZE)
         ).split("\n")
@@ -246,7 +244,6 @@ def enrich_images(changed_images: Dict[str, str]) -> Dict[str, str]:
             logging.warning("Request for ClickHouse failed: %s", ex)
 
         try_count += 1
-
 
     return new_changed_images
 

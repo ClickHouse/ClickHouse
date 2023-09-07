@@ -12,6 +12,7 @@ from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 from report import TestResults
 
+
 class CHException(Exception):
     pass
 
