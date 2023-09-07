@@ -57,6 +57,8 @@ private:
     StorageNATS & storage;
     std::vector<SubscriptionPtr> subscriptions;
     std::vector<String> subjects;
+    std::mutex received_mutex;
+    std::condition_variable received_cv;
     Poco::Logger * log;
     const std::atomic<bool> & stopped;
 
