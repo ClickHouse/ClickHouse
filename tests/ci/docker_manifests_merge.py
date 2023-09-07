@@ -226,7 +226,7 @@ def enrich_images(changed_images: Dict[str, str]) -> Dict[str, str]:
             result.sort(key=lambda x: x["image_name"])
 
             logging.info(
-                "Found images for commits %s..%s: %s",
+                "Found images for commits %s..%s:\n %s",
                 commit_shas[0],
                 commit_shas[-1],
                 "\n ".join(f"{im['image_name']}:{im['commit_sha']}" for im in result),
