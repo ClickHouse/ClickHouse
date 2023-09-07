@@ -53,9 +53,24 @@ namespace DB
 /// Using this block the client can initialize the output formatter and display the prefix of resulting table
 /// beforehand.
 
+namespace EncodedUserInfo
+{
+
 /// Marker of the inter-server secret (passed in the user name)
 /// (anyway user cannot be started with a whitespace)
 const char USER_INTERSERVER_MARKER[] = " INTERSERVER SECRET ";
+/// Marker of the SSH keys based authentication (passed in the user name)
+const char SSH_KEY_AUTHENTICAION_MARKER[] = " SSH KEY AUTHENTICATION ";
+
+struct SSHKeyAuthenticationData
+{
+    String user;
+
+    String encodeBase64() const;
+    void decodeBase64(const String & source);
+};
+
+};
 
 namespace Protocol
 {

@@ -318,7 +318,7 @@ void Connection::sendHello()
     /// (NOTE we do not check for DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET, since we cannot ignore inter-server secret if it was requested)
     if (!cluster_secret.empty())
     {
-        writeStringBinary(USER_INTERSERVER_MARKER, *out);
+        writeStringBinary(EncodedUserInfo::USER_INTERSERVER_MARKER, *out);
         writeStringBinary("" /* password */, *out);
 
 #if USE_SSL
@@ -328,6 +328,17 @@ void Connection::sendHello()
                         "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
 #endif
     }
+#if USE_SSL
+    /// Just inform server that we will authenticate using SSH keys.
+    else if (!ssh_private_key.isEmpty())
+    {
+        EncodedUserInfo::SSHKeyAuthenticationData data;
+        data.user = user;
+
+        writeStringBinary(fmt::format("{}{}", EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER, data.encodeBase64()), *out);
+        writeStringBinary(password, *out);
+    }
+#endif
     else
     {
         writeStringBinary(user, *out);

@@ -233,14 +233,12 @@ void TCPHandler::runImpl()
     try
     {
         receiveHello();
-        sendHello();
-
-        authenticate();
 
         /// In interserver mode queries are executed without a session context.
         if (!is_interserver_mode)
             session->makeSessionContext();
 
+        sendHello();
         if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             receiveAddendum();
 
@@ -1266,6 +1264,9 @@ void TCPHandler::authenticate()
     /// Perform handshake for SSH authentication
     if (session->getAuthenticationTypeOrLogInFailure(user) == AuthenticationType::SSH_KEY)
     {
+        if (!is_ssh_based_auth)
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Expected authentication with SSH key");
+
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot authenticate user with SSH key, because client version is too old");
 
@@ -1368,7 +1369,7 @@ void TCPHandler::receiveHello()
         (!user.empty() ? ", user: " + user : "")
     );
 
-    is_interserver_mode = (user == USER_INTERSERVER_MARKER) && password.empty();
+    is_interserver_mode = (user == EncodedUserInfo::USER_INTERSERVER_MARKER) && password.empty();
     if (is_interserver_mode)
     {
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
@@ -1377,6 +1378,20 @@ void TCPHandler::receiveHello()
         receiveClusterNameAndSalt();
         return;
     }
+
+    is_ssh_based_auth = startsWith(user, EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) && password.empty();
+    if (is_ssh_based_auth)
+    {
+        EncodedUserInfo::SSHKeyAuthenticationData data;
+        user.erase(0, String(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER).size());
+        data.decodeBase64(user);
+        user = data.user;
+    }
+
+    authenticate();
+
+    /// TODO: Receive new packet from Client with authentication method
+    /// If it is not SSH perform authentication right here. It will break compatibility: new client and old server ??
 }
 
 void TCPHandler::receiveAddendum()

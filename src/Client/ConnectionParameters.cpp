@@ -50,7 +50,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
         {
             password = config.getString("password", "");
             /// if the value of --password is omitted, the password will be set implicitly to "\n"
-            if (password == "\n")
+            if (password == ASK_PASSWORD)
                 password_prompt = true;
         }
         if (password_prompt)
