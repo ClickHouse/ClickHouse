@@ -111,6 +111,7 @@ def generate_random_files(
     to_generate = [
         (f"{prefix}/test_{i}.csv", i) for i in range(start_ind, start_ind + count)
     ]
+    print(f"Generating files: {to_generate}")
     to_generate.sort(key=lambda x: x[0])
 
     for filename, i in to_generate:
@@ -179,29 +180,58 @@ def run_query(instance, query, stdin=None, settings=None):
 
 @pytest.mark.parametrize("mode", AVAILABLE_MODES)
 def test_delete_after_processing(started_cluster, mode):
-    prefix = "delete"
     bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances["instance"]
-    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    node = started_cluster.instances["instance"]
 
-    total_values = generate_random_files(5, prefix, started_cluster, bucket)
-    instance.query(
+    table_name = "test.delete_after_processing"
+    dst_table_name = "test.delete_after_processing_dst"
+    mv_name = "test.delete_after_processing_mv"
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    files_num = 5
+    row_num = 10
+
+    prefix = "delete"
+    total_values = generate_random_files(
+        files_num, prefix, started_cluster, bucket, row_num=row_num
+    )
+    node.query(
         f"""
-        DROP TABLE IF EXISTS test.s3_queue;
-        CREATE TABLE test.s3_queue ({table_format})
+        DROP TABLE IF EXISTS {table_name};
+        DROP TABLE IF EXISTS {dst_table_name};
+        DROP TABLE IF EXISTS {mv_name};
+        CREATE TABLE {table_name} ({table_format})
         ENGINE = S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{prefix}/*', {AUTH}'CSV')
         SETTINGS
             mode = '{mode}',
             keeper_path = '/clickhouse/test_delete_{mode}',
             s3queue_loading_retries = 3,
             after_processing='delete';
+
+        CREATE TABLE {dst_table_name} ({table_format}, _path String)
+        ENGINE = MergeTree()
+        ORDER BY column1;
+
+        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *, _path FROM {table_name};
         """
     )
 
-    get_query = f"SELECT * FROM test.s3_queue ORDER BY column1, column2, column3"
+    expected_count = files_num * row_num
+    for _ in range(100):
+        count = int(node.query(f"SELECT count() FROM {dst_table_name}"))
+        print(f"{count}/{expected_count}")
+        if count == expected_count:
+            break
+        time.sleep(1)
+
+    assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == expected_count
+    assert int(node.query(f"SELECT uniq(_path) FROM {dst_table_name}")) == files_num
     assert [
-        list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()
+        list(map(int, l.split()))
+        for l in node.query(
+            f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1, column2, column3"
+        ).splitlines()
     ] == sorted(total_values, key=lambda x: (x[0], x[1], x[2]))
+
     minio = started_cluster.minio_client
     objects = list(minio.list_objects(started_cluster.minio_bucket, recursive=True))
     assert len(objects) == 0
