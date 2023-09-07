@@ -86,9 +86,7 @@ def test_reconfig_replace_leader(started_cluster):
     ku.wait_configs_equal(config, zk2)
 
     node4.start_clickhouse()
-    config = zk2.reconfig(
-        joining="server.4=node4:9234", leaving=None, new_members=None
-    )
+    config = zk2.reconfig(joining="server.4=node4:9234", leaving=None, new_members=None)
     ku.wait_until_connected(cluster, node4)
 
     print("After adding 4", config)

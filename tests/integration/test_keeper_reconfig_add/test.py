@@ -47,7 +47,9 @@ def started_cluster():
 
 
 def create_client(node: ClickHouseInstance):
-    return ku.KeeperClient(cluster.server_bin_path, cluster.get_instance_ip(node.name), 9181)
+    return ku.KeeperClient(
+        cluster.server_bin_path, cluster.get_instance_ip(node.name), 9181
+    )
 
 
 def test_reconfig_add():
@@ -77,9 +79,7 @@ def test_reconfig_add():
         zk1.create(f"/test_three_{i}", "somedata")
 
     node2.start_clickhouse()
-    config = zk1.reconfig(
-        joining="server.2=node2:9234", leaving=None, new_members=None
-    )
+    config = zk1.reconfig(joining="server.2=node2:9234", leaving=None, new_members=None)
     ku.wait_until_connected(cluster, node2)
     print("After adding 2", config)
 
@@ -115,9 +115,7 @@ def test_reconfig_add():
         zk2.create(f"/test_four_{i}", "somedata")
 
     node3.start_clickhouse()
-    config = zk2.reconfig(
-        joining="server.3=node3:9234", leaving=None, new_members=None
-    )
+    config = zk2.reconfig(joining="server.3=node3:9234", leaving=None, new_members=None)
     ku.wait_until_connected(cluster, node3)
 
     print("After adding 3", config)
