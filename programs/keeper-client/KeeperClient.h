@@ -49,6 +49,9 @@ public:
 
 protected:
     void runInteractive();
+    void runInteractiveReplxx();
+    void runInteractiveInputStream();
+
     bool processQueryText(const String & text);
 
     void loadCommands(std::vector<Command> && new_commands);
