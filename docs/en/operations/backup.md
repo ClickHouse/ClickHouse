@@ -277,7 +277,7 @@ If you don't want to keep persistent information about backup and restore operat
 </clickhouse>
 ```
 
-Currenttly, only two engines — `MergeTree` and `Memory` — can be specified for the `system.backups` table.
+Currently, only two engines — `MergeTree` and `Memory` — can be specified for the `system.backups` table.
 
 ## Configuring BACKUP/RESTORE to use an S3 Endpoint
 
