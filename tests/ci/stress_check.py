@@ -16,12 +16,12 @@ from clickhouse_helper import (
     ClickHouseHelper,
     prepare_tests_results_for_clickhouse,
 )
-from commit_status_helper import RerunHelper, get_commit, post_commit_status
+from commit_status_helper import RerunHelper, get_commit, post_commit_status, format_description
 from docker_pull_helper import DockerImage, get_image_with_version
 from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import TestResults, read_test_results
+from report import TestResult, TestResults, read_test_results
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -169,9 +169,14 @@ def run_stress_test(docker_image_name):
     )
     logging.info("Going to run stress test: %s", run_command)
 
-    with TeePopen(run_command, run_log_path, timeout=60 * 150) as process:
+    timeout_expired = False
+    timeout = 60 * 150
+    with TeePopen(run_command, run_log_path, timeout=timeout) as process:
         retcode = process.wait()
-        if retcode == 0:
+        if process.timeout_exceeded:
+            logging.info(f"Timeout expired for command: {run_command}")
+            timeout_expired = True
+        elif retcode == 0:
             logging.info("Run successfully")
         else:
             logging.info("Run failed")
@@ -183,6 +188,13 @@ def run_stress_test(docker_image_name):
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path, run_log_path
     )
+
+    if timeout_expired:
+        test_result_name = "Check timeout expired"
+        test_results.append(TestResult(test_result_name, "FAIL", timeout))
+        state = "failure"
+        description = format_description(test_result_name)
+
     ch_helper = ClickHouseHelper()
 
     report_url = upload_results(
