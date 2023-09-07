@@ -8,17 +8,17 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CURL_OUTPUT=$(echo 'SELECT number FROM numbers(10)' | \
   ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&max_block_size=1&send_progress_in_http_headers=1&http_headers_progress_interval_ms=0&output_format_parallel_formatting=0" --data-binary @- 2>&1)
 
-ELAPSED_NS_PROGRESS=$(echo "${CURL_OUTPUT}" | \
+ELAPSED_NS_PROGRESS="$(echo "${CURL_OUTPUT}" | \
   grep 'X-ClickHouse-Progress' | \
   awk '{print $3}' | \
-  sed -E 's/.*"elapsed_ns":"?([^,"]*)"?.*/\1/'
-  )
+  jq -cM '.elapsed_ns | tonumber'
+  )"
 
-ELAPSED_NS_SUMMARY=$(echo "${CURL_OUTPUT}" | \
+ELAPSED_NS_SUMMARY="$(echo "${CURL_OUTPUT}" | \
   grep 'X-ClickHouse-Summary' | \
   awk '{print $3}' | \
-  sed -E 's/.*"elapsed_ns":"?([^,"]*)"?.*/\1/'
-  )
+  jq -cM '.elapsed_ns | tonumber'
+  )"
 
 
 ALL_ARE_NON_ZERO=1
