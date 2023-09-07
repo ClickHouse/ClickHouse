@@ -181,32 +181,7 @@ BACKUP TABLE helloworld.my_first_table TO Disk('backups', '1.zip') ASYNC
 1 row in set. Elapsed: 0.001 sec.
 ```
 
-```
-SELECT
-    *
-FROM system.backups
-where id='7678b0b3-f519-4e6e-811f-5a0781a4eb52'
-FORMAT Vertical
-```
-```response
-Row 1:
-──────
-id:                7678b0b3-f519-4e6e-811f-5a0781a4eb52
-name:              Disk('backups', '1.zip')
-#highlight-next-line
-status:            BACKUP_FAILED
-num_files:         0
-uncompressed_size: 0
-compressed_size:   0
-#highlight-next-line
-error:             Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 22.8.2.11 (official build))
-start_time:        2022-08-30 09:21:46
-end_time:          2022-08-30 09:21:46
-
-1 row in set. Elapsed: 0.002 sec.
-```
-
-Along with `system.backups` table, all backup and restore operations are also tracked in the system log table [backup_log](../operations/system-tables/backup_log.md): 
+All backup and restore operations are tracked in the [backup_log](../operations/system-tables/backup_log.md) system log table: 
 ```
 SELECT *
 FROM system.backup_log
@@ -254,6 +229,33 @@ bytes_read:              0
 
 2 rows in set. Elapsed: 0.075 sec. 
 ```
+
+Along with [backup_log](../operations/system-tables/backup_log.md) system log table, all backup and restore operations are also recorded to the `system.backups` table:
+```
+SELECT *
+FROM system.backups
+WHERE id = '7678b0b3-f519-4e6e-811f-5a0781a4eb52'
+FORMAT Vertical
+```
+```response
+Row 1:
+──────
+id:                7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:              Disk('backups', '1.zip')
+#highlight-next-line
+status:            BACKUP_FAILED
+num_files:         0
+uncompressed_size: 0
+compressed_size:   0
+#highlight-next-line
+error:             Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 22.8.2.11 (official build))
+start_time:        2022-08-30 09:21:46
+end_time:          2022-08-30 09:21:46
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+`system.backups` is a persistent [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#mergetree)-based system table that has the same columns as its counterpart, [backup_log](../operations/system-tables/backup_log.md), except `event_date` and `event_time_microseconds`.
 
 ## Configuring BACKUP/RESTORE to use an S3 Endpoint
 
