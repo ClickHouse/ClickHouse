@@ -393,6 +393,18 @@ struct UInt128HashCRC32
     }
 };
 
+#elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+
+struct UInt128HashCRC32
+{
+    size_t operator()(UInt128 x) const
+    {
+        UInt64 crc = -1ULL;
+        crc = s390x_crc32(crc, x.items[UInt128::_impl::little(0)]);
+        crc = s390x_crc32(crc, x.items[UInt128::_impl::little(1)]);
+        return crc;
+    }
+};
 #else
 
 /// On other platforms we do not use CRC32. NOTE This can be confusing.
@@ -451,6 +463,19 @@ struct UInt256HashCRC32
     }
 };
 
+#elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+struct UInt256HashCRC32
+{
+    size_t operator()(UInt256 x) const
+    {
+        UInt64 crc = -1ULL;
+        crc = s390x_crc32(crc, x.items[UInt256::_impl::little(0)]);
+        crc = s390x_crc32(crc, x.items[UInt256::_impl::little(1)]);
+        crc = s390x_crc32(crc, x.items[UInt256::_impl::little(2)]);
+        crc = s390x_crc32(crc, x.items[UInt256::_impl::little(3)]);
+        return crc;
+    }
+};
 #else
 
 /// We do not need to use CRC32 on other platforms. NOTE This can be confusing.
