@@ -2,6 +2,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 namespace DB
 {
@@ -75,5 +76,23 @@ void RewriteArrayExistsFunctionMatcher::visit(const ASTFunction & func, ASTPtr &
         return;
     }
 }
+
+bool RewriteArrayExistsFunctionMatcher::needChildVisit(const ASTPtr & ast, const ASTPtr & child)
+{
+    /// SELECT ... JOIN ... ON arrayExists(x -> x = 1, arr)
+    /// A JOIN on expression is invalid, ignore it to avoid segmentation fault
+
+    if (auto * join = ast->as<ASTTableJoin>())
+    {
+        if (auto * func = child->as<ASTFunction>())
+        {
+            if (func->name == "arrayExists")
+                return false;
+        }
+    }
+
+    return true;
+}
+
 
 }
