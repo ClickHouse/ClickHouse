@@ -21,6 +21,16 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+// TERMINOLOGY:
+// Job (`LoadJob`) - The smallest part of loading process, executed by worker. Job can depend on the other jobs. Jobs are grouped in tasks.
+// Task (`LoadTask`) - Owning holder of a set of jobs. Should be held during the whole job lifetime. Cancels all jobs on destruction.
+// Goal jobs (goals) - a subset of "final" jobs of a task (usually no job in task depend on a goal job).
+//      By default all jobs in task are included in goal jobs.
+//      Goals should used if you need to create a job that depends on a task (to avoid placing all jobs of the task in dependencies).
+// Pool (worker pool) - A set of workers with specific priority. Every job is assigned to a pool. Job can change its pool dynamically.
+// Priority (pool priority) - Constant integer value showing relative priority of a pool. Lower value means higher priority.
+// AsyncLoader - scheduling system responsible for job dependency tracking and worker management respecting pool priorities.
+
 class LoadJob;
 using LoadJobPtr = std::shared_ptr<LoadJob>;
 using LoadJobSet = std::unordered_set<LoadJobPtr>;
@@ -43,6 +53,7 @@ enum class LoadStatus
 // Smallest indivisible part of a loading process. Load job can have multiple dependencies, thus jobs constitute a direct acyclic graph (DAG).
 // Job encapsulates a function to be executed by `AsyncLoader` as soon as job functions of all dependencies are successfully executed.
 // Job can be waited for by an arbitrary number of threads. See `AsyncLoader` class description for more details.
+// WARNING: jobs are usually held with ownership by tasks (see `LoadTask`). You are encouraged to add jobs into a tasks as soon as the are created.
 class LoadJob : private boost::noncopyable
 {
 public:
@@ -283,7 +294,7 @@ public:
         String name;
         Metric metric_threads;
         Metric metric_active_threads;
-        size_t max_threads;
+        size_t max_threads; // Zero means use all CPU cores
         Priority priority;
     };
 
@@ -469,15 +480,7 @@ inline void waitLoad(size_t pool_id, const LoadTaskPtrs & tasks)
     waitLoad(tasks);
 }
 
-inline LoadJobSet getGoals(const LoadTaskPtrs & tasks)
-{
-    LoadJobSet result;
-    for (const auto & task : tasks)
-        result.insert(task->goals().begin(), task->goals().end());
-    return result;
-}
-
-inline LoadJobSet getGoalsOr(const LoadTaskPtrs & tasks, const LoadJobSet & alternative)
+inline LoadJobSet getGoals(const LoadTaskPtrs & tasks, const LoadJobSet & alternative = {})
 {
     LoadJobSet result;
     for (const auto & task : tasks)

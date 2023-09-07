@@ -1344,11 +1344,9 @@ try
             global_context->getMessageBrokerSchedulePool().increaseThreadsCount(server_settings_.background_message_broker_schedule_pool_size);
             global_context->getDistributedSchedulePool().increaseThreadsCount(server_settings_.background_distributed_schedule_pool_size);
 
-            auto fg_pool_size = server_settings_.async_loader_foreground_pool_size;
-            auto bg_pool_size = server_settings_.async_loader_background_pool_size;
-            global_context->getAsyncLoader().setMaxThreads(AsyncLoaderPoolId::Foreground, fg_pool_size ? fg_pool_size : getNumberOfPhysicalCPUCores());
-            global_context->getAsyncLoader().setMaxThreads(AsyncLoaderPoolId::BackgroundLoad, bg_pool_size ? bg_pool_size : getNumberOfPhysicalCPUCores());
-            global_context->getAsyncLoader().setMaxThreads(AsyncLoaderPoolId::BackgroundStartup, bg_pool_size ? bg_pool_size : getNumberOfPhysicalCPUCores());
+            global_context->getAsyncLoader().setMaxThreads(AsyncLoaderPoolId::Foreground, server_settings_.async_loader_foreground_pool_size);
+            global_context->getAsyncLoader().setMaxThreads(AsyncLoaderPoolId::BackgroundLoad, server_settings_.async_loader_background_pool_size);
+            global_context->getAsyncLoader().setMaxThreads(AsyncLoaderPoolId::BackgroundStartup, server_settings_.async_loader_background_pool_size);
 
             getIOThreadPool().reloadConfiguration(
                 server_settings.max_io_thread_pool_size,

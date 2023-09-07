@@ -1665,7 +1665,7 @@ Possible values:
 -   Any positive integer.
 -   Zero. Use all available CPUs.
 
-Default value: 16.
+Default value: 0.
 
 
 ## merge_tree {#server_configuration_parameters-merge_tree}
@@ -1987,7 +1987,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     <max_size_rows>1048576</max_size_rows>
     <reserved_size_rows>8192</reserved_size_rows>
-    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>  
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
 </query_thread_log>
 ```
@@ -2402,7 +2402,7 @@ This section contains the following parameters:
   * nearest_hostname - selects a ZooKeeper node with a hostname that is most similar to the server’s hostname.
   * first_or_random - selects the first ZooKeeper node, if it's not available then randomly selects one of remaining ZooKeeper nodes.
   * round_robin - selects the first ZooKeeper node, if reconnection happens selects the next.
-    
+
 **Example configuration**
 
 ``` xml

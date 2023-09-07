@@ -57,10 +57,10 @@ NamesAndTypesList StorageSystemAsyncLoader::getNamesAndTypes()
         { "is_blocked",         std::make_shared<DataTypeUInt8>() },
         { "is_ready",           std::make_shared<DataTypeUInt8>() },
         { "elapsed",            std::make_shared<DataTypeFloat64>()},
-        { "pool_id",            std::make_shared<DataTypeInt64>() },
+        { "pool_id",            std::make_shared<DataTypeUInt64>() },
         { "pool",               std::make_shared<DataTypeString>() },
         { "priority",           std::make_shared<DataTypeInt64>() },
-        { "execution_pool_id",  std::make_shared<DataTypeInt64>() },
+        { "execution_pool_id",  std::make_shared<DataTypeUInt64>() },
         { "execution_pool",     std::make_shared<DataTypeString>() },
         { "execution_priority", std::make_shared<DataTypeInt64>() },
         { "ready_seqno",        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()) },
@@ -103,13 +103,9 @@ void StorageSystemAsyncLoader::fillData(MutableColumns & res_columns, ContextPtr
             {
                 std::rethrow_exception(state.job->exception());
             }
-            catch (Exception & e)
+            catch (...)
             {
-                exception = e.message();
-            }
-            catch (...) // just in case
-            {
-                exception = String("unknown error");
+                exception = getCurrentExceptionMessage(false);
             }
         }
 

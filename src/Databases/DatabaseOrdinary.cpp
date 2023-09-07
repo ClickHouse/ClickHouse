@@ -213,7 +213,7 @@ LoadTaskPtr DatabaseOrdinary::startupTableAsync(
                 logAboutProgress(log, ++tables_started, total_tables_to_startup, startup_watch);
             }
             else
-                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist during startup",
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {}.{} doesn't exist during startup",
                     backQuote(name.database), backQuote(name.table));
         });
 

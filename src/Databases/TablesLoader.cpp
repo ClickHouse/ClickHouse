@@ -89,7 +89,7 @@ LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
         const auto & path_and_query = metadata.parsed_tables[table_name];
         auto task = databases[table_name.database]->loadTableFromMetadataAsync(
             async_loader,
-            getGoalsOr(load_dependency_tasks, load_after),
+            getGoals(load_dependency_tasks, load_after),
             load_context,
             path_and_query.path,
             table_name,
@@ -125,7 +125,7 @@ LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
     {
         auto task = databases[database_name]->startupDatabaseAsync(
             async_loader,
-            getGoalsOr(startup_database[database_name], startup_after),
+            getGoals(startup_database[database_name], startup_after),
             strictness_mode);
         result.push_back(task);
     }

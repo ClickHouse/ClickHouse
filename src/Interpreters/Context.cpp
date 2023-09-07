@@ -2085,8 +2085,6 @@ EmbeddedDictionaries & Context::getEmbeddedDictionaries()
 AsyncLoader & Context::getAsyncLoader() const
 {
     auto lock = getLock();
-    size_t fg_max_threads = shared->server_settings.async_loader_foreground_pool_size;
-    size_t bg_max_threads = shared->server_settings.async_loader_background_pool_size;
     if (!shared->async_loader)
         shared->async_loader = std::make_unique<AsyncLoader>(std::vector<AsyncLoader::PoolInitializer>{
                 // IMPORTANT: Pool declaration order should match the order in `AsyncLoaderPoolId.h` to get the indices right.
@@ -2094,21 +2092,21 @@ AsyncLoader & Context::getAsyncLoader() const
                     "FgLoad",
                     CurrentMetrics::AsyncLoaderForegroundThreads,
                     CurrentMetrics::AsyncLoaderForegroundThreadsActive,
-                    fg_max_threads ? fg_max_threads : getNumberOfPhysicalCPUCores(),
+                    shared->server_settings.async_loader_foreground_pool_size,
                     Priority{0}
                 },
                 { // AsyncLoaderPoolId::BackgroundLoad
                     "BgLoad",
                     CurrentMetrics::AsyncLoaderBackgroundThreads,
                     CurrentMetrics::AsyncLoaderBackgroundThreadsActive,
-                    bg_max_threads ? bg_max_threads : getNumberOfPhysicalCPUCores(),
+                    shared->server_settings.async_loader_background_pool_size,
                     Priority{1}
                 },
                 { // AsyncLoaderPoolId::BackgroundStartup
                     "BgStartup",
                     CurrentMetrics::AsyncLoaderBackgroundThreads,
                     CurrentMetrics::AsyncLoaderBackgroundThreadsActive,
-                    bg_max_threads ? bg_max_threads : getNumberOfPhysicalCPUCores(),
+                    shared->server_settings.async_loader_background_pool_size,
                     Priority{2}
                 }
             },

@@ -238,16 +238,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     auto load_tasks = loader.loadTablesAsync();
     auto startup_tasks = loader.startupTablesAsync();
 
-    if (!async_load_databases)
-    {
-        LOG_INFO(log, "Start synchronous loading of databases");
-
-        // Note that wait implicitly calls schedule
-        waitLoad(AsyncLoaderPoolId::Foreground, load_tasks); // First prioritize, schedule and wait all the load table tasks
-        waitLoad(AsyncLoaderPoolId::Foreground, startup_tasks); // Only then prioritize, schedule and wait all the startup tasks
-        return {};
-    }
-    else
+    if (async_load_databases)
     {
         LOG_INFO(log, "Start asynchronous loading of databases");
 
@@ -262,6 +253,15 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
 
         // Do NOT wait, just return tasks for continuation or later wait.
         return joinTasks(load_tasks, startup_tasks);
+    }
+    else
+    {
+        LOG_INFO(log, "Start synchronous loading of databases");
+
+        // Note that wait implicitly calls schedule
+        waitLoad(AsyncLoaderPoolId::Foreground, load_tasks); // First prioritize, schedule and wait all the load table tasks
+        waitLoad(AsyncLoaderPoolId::Foreground, startup_tasks); // Only then prioritize, schedule and wait all the startup tasks
+        return {};
     }
 }
 

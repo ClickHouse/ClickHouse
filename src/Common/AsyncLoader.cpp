@@ -10,6 +10,7 @@
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 
 namespace DB
 {
@@ -172,7 +173,7 @@ AsyncLoader::AsyncLoader(std::vector<PoolInitializer> pool_initializers, bool lo
                 /* max_free_threads = */ 0, // We do not require free threads
                 /* queue_size = */0), // Unlimited queue to avoid blocking during worker spawning
             .ready_queue = {},
-            .max_threads = init.max_threads
+            .max_threads = init.max_threads > 0 ? init.max_threads : getNumberOfPhysicalCPUCores()
         });
 }
 
@@ -227,7 +228,6 @@ void AsyncLoader::schedule(const LoadTaskPtr & task)
 
 void AsyncLoader::schedule(const LoadTaskPtrs & tasks)
 {
-    // TODO(serxa): optimize it to avoid creating new all_jobs - looks like unnecessary allocations
     LoadJobSet all_jobs;
     for (const auto & task : tasks)
     {
@@ -420,6 +420,8 @@ void AsyncLoader::remove(const LoadJobSet & jobs)
 
 void AsyncLoader::setMaxThreads(size_t pool, size_t value)
 {
+    if (value == 0)
+        value = getNumberOfPhysicalCPUCores();
     std::unique_lock lock{mutex};
     auto & p = pools[pool];
     // Note that underlying `ThreadPool` always has unlimited `queue_size` and `max_threads`.
@@ -633,7 +635,7 @@ void AsyncLoader::enqueue(Info & info, const LoadJobPtr & job, std::unique_lock<
 // Keep track of currently executing load jobs to be able to:
 // 1) Detect "wait dependent" deadlocks -- throw LOGICAL_ERROR
 //    (when job A function waits for job B that depends on job A)
-// 2) Resolve "wait not scheduled" deadlocks -- implicitly schedule job with all its dependencies
+// 2) Detect "wait not scheduled" deadlocks -- throw LOGICAL_ERROR
 //    (thread T is waiting on an assigned job A, but job A is not yet scheduled)
 // 3) Resolve "priority inversion" deadlocks -- apply priority inheritance
 //    (when high-priority job A function waits for a lower-priority job B, and B never starts due to its priority)
@@ -646,13 +648,13 @@ size_t currentPoolOr(size_t pool)
     return current_load_job ? current_load_job->executionPool() : pool;
 }
 
-bool DetectWaitDependentDeadlock(const LoadJobPtr & waited)
+bool detectWaitDependentDeadlock(const LoadJobPtr & waited)
 {
     if (waited.get() == current_load_job)
         return true;
     for (const auto & dep : waited->dependencies)
     {
-        if (DetectWaitDependentDeadlock(dep))
+        if (detectWaitDependentDeadlock(dep))
             return true;
     }
     return false;
@@ -662,17 +664,12 @@ void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr
 {
     // Ensure job we are going to wait was scheduled to avoid "wait not scheduled" deadlocks
     if (job->job_id == 0)
-    {
-        job_lock.unlock(); // Avoid reverse locking order
-        schedule(LoadJobSet{job});
-        job_lock.lock();
-        chassert(job->job_id != 0);
-    }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Load job '{}' waits for not scheduled load job '{}'", current_load_job->name, job->name);
 
     // Deadlock detection and resolution
     if (current_load_job && job->load_status == LoadStatus::PENDING)
     {
-        if (DetectWaitDependentDeadlock(job))
+        if (detectWaitDependentDeadlock(job))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Load job '{}' waits for dependent load job '{}'", current_load_job->name, job->name);
 
         auto worker_pool = current_load_job->executionPool();
