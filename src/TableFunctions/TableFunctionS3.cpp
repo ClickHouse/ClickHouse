@@ -58,6 +58,11 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context))
     {
         StorageS3::processNamedCollectionResult(configuration, *named_collection);
+        if (configuration.format == "auto")
+        {
+            String file_path = named_collection->getOrDefault<String>("filename", Poco::URI(named_collection->get<String>("url")).getPath());
+            configuration.format = FormatFactory::instance().getFormatFromFileName(file_path, true);
+        }
     }
     else
     {
