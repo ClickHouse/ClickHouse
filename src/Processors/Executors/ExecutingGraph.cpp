@@ -1,6 +1,7 @@
 #include <Processors/Executors/ExecutingGraph.h>
 #include <stack>
 #include <Common/Stopwatch.h>
+#include <Interpreters/PipelineTrace.h>
 
 namespace DB
 {
@@ -278,10 +279,16 @@ bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue
 
                 try
                 {
+                    UInt64 start_ns = PipelineLog::now_ns();
+                    
                     auto & processor = *node.processor;
                     IProcessor::Status last_status = node.last_processor_status;
                     IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
                     node.last_processor_status = status;
+                    
+                    UInt64 end_ns = PipelineLog::now_ns();
+                    PipelineLog::record(start_ns, end_ns, PipelineStageType::Prepare, &node);
+
 
                     if (profile_processors)
                     {

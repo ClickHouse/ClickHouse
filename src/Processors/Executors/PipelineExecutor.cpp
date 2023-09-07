@@ -15,6 +15,7 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Interpreters/PipelineTrace.h>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>
@@ -197,6 +198,16 @@ void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
 void PipelineExecutor::finalizeExecution()
 {
     checkTimeLimit();
+
+    if (process_list_element)
+    {
+        auto pipeline_trace_log = process_list_element->getContext()->getPipelineTraceLog();
+        if (pipeline_trace_log) {
+            pipeline_trace_log->flush(true);
+        }
+    }
+
+    //LOG_TRACE(log, "Dumping pipeline nodes:\n{}\n==================", dumpNodes());
 
     if (cancelled)
         return;

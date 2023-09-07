@@ -8,7 +8,6 @@
 #include <stack>
 #include <vector>
 
-
 namespace DB
 {
 
