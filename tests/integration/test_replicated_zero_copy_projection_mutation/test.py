@@ -116,7 +116,9 @@ def drop_table_guard(nodes, table):
             node.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
 
-def test_all_projection_files_are_dropped_when_part_is_dropped(cluster, first_cluster_node):
+def test_all_projection_files_are_dropped_when_part_is_dropped(
+    cluster, first_cluster_node
+):
     node = first_cluster_node
 
     with drop_table_guard([node], "test_all_projection_files_are_dropped"):
@@ -132,9 +134,11 @@ def test_all_projection_files_are_dropped_when_part_is_dropped(cluster, first_cl
         objects_empty_table = list_objects(cluster)
 
         node.query(
-            "ALTER TABLE test_all_projection_files_are_dropped ADD projection b_order (SELECT a, b ORDER BY b)")
+            "ALTER TABLE test_all_projection_files_are_dropped ADD projection b_order (SELECT a, b ORDER BY b)"
+        )
         node.query(
-            "ALTER TABLE test_all_projection_files_are_dropped MATERIALIZE projection b_order")
+            "ALTER TABLE test_all_projection_files_are_dropped MATERIALIZE projection b_order"
+        )
 
         node.query(
             """
@@ -151,10 +155,13 @@ def test_all_projection_files_are_dropped_when_part_is_dropped(cluster, first_cl
         assert objects_at_the_end == objects_empty_table
 
 
-def test_hardlinks_preserved_when_projection_dropped(cluster, all_cluster_nodes, first_cluster_node, second_cluster_node):
-    with drop_table_guard(all_cluster_nodes, "test_hardlinks_preserved_when_projection_dropped"):
-        create_query = (
-            """
+def test_hardlinks_preserved_when_projection_dropped(
+    cluster, all_cluster_nodes, first_cluster_node, second_cluster_node
+):
+    with drop_table_guard(
+        all_cluster_nodes, "test_hardlinks_preserved_when_projection_dropped"
+    ):
+        create_query = """
             CREATE TABLE test_hardlinks_preserved_when_projection_dropped
             (
                 a UInt32,
@@ -167,25 +174,20 @@ def test_hardlinks_preserved_when_projection_dropped(cluster, all_cluster_nodes,
             )
             ENGINE ReplicatedMergeTree('/clickhouse/tables/test_projection', '{instance}')
             ORDER BY a
-            """
-        )
+        """
 
-        first_node_settings = (
-            """
+        first_node_settings = """
             SETTINGS
                 storage_policy='s3',
                 old_parts_lifetime=0
-            """
-        )
+        """
 
         # big old_parts_lifetime value makes second node to hold outdated part for us, we make it as broken_on_start
-        second_node_settings = (
-            """
+        second_node_settings = """
             SETTINGS
                 storage_policy='s3',
                 old_parts_lifetime=10000
-            """
-        )
+        """
 
         first_cluster_node.query(create_query + first_node_settings)
         second_cluster_node.query(create_query + second_node_settings)
@@ -213,45 +215,43 @@ def test_hardlinks_preserved_when_projection_dropped(cluster, all_cluster_nodes,
             ALTER TABLE test_hardlinks_preserved_when_projection_dropped
             UPDATE c = 2 where c = 1
             """,
-            settings={"mutations_sync": "1"}
+            settings={"mutations_sync": "1"},
         )
 
-        assert_eq_with_retry(first_cluster_node, "SELECT COUNT() FROM system.replication_queue", "0")
+        assert_eq_with_retry(
+            first_cluster_node, "SELECT COUNT() FROM system.replication_queue", "0"
+        )
 
         # the mutated part is ready on first_cluster_node, second replica just fetches it
         second_cluster_node.query("SYSTEM START MERGES")
-
-        data = first_cluster_node.query(
-            """
-            SELECT * FROM system.parts
-            WHERE name = 'all_0_0_0'
-                AND table = 'test_hardlinks_preserved_when_projection_dropped'
-                AND not active
-            FORMAT Vertical
-            """
-        )
 
         # fist node removed outdated part
         assert_eq_with_retry(
             first_cluster_node,
             """
             SELECT removal_state FROM system.parts
-            WHERE name = 'all_0_0_0' AND table = 'test_hardlinks_preserved_when_projection_dropped' AND not active
+            WHERE name = 'all_0_0_0'
+                AND table = 'test_hardlinks_preserved_when_projection_dropped'
+                AND not active
             """,
             "",
             retry_count=300,
-            sleep_time=1
+            sleep_time=1,
         )
 
-        hardlinks = first_cluster_node.query(
-            f"""
-            SELECT value
-            FROM system.zookeeper
-            WHERE
-            path like '/clickhouse/zero_copy/zero_copy_s3/{table_uuid}' AND name = 'all_0_0_0'
-            """,
-            settings={"allow_unrestricted_reads_from_keeper": "1"}
-        ).strip().split()
+        hardlinks = (
+            first_cluster_node.query(
+                f"""
+                SELECT value
+                FROM system.zookeeper
+                WHERE
+                path like '/clickhouse/zero_copy/zero_copy_s3/{table_uuid}' AND name = 'all_0_0_0'
+                """,
+                settings={"allow_unrestricted_reads_from_keeper": "1"},
+            )
+            .strip()
+            .split()
+        )
         assert len(hardlinks) > 0, ",".join(hardlinks)
         assert any(["proj/" in x for x in hardlinks]), ",".join(hardlinks)
 
@@ -278,20 +278,28 @@ def test_hardlinks_preserved_when_projection_dropped(cluster, all_cluster_nodes,
         # corrupted outdatated part all_0_0_0 is detached as broken_on_start
         second_cluster_node.restart_clickhouse()
 
-        second_cluster_node.query("SYSTEM WAIT LOADING PARTS test_hardlinks_preserved_when_projection_dropped")
+        second_cluster_node.query(
+            "SYSTEM WAIT LOADING PARTS test_hardlinks_preserved_when_projection_dropped"
+        )
 
         second_cluster_node.query("SYSTEM FLUSH LOGS")
 
-        broken_parts = second_cluster_node.query(
-            """
-            SELECT name, reason, path FROM system.detached_parts
-            WHERE
-                table = 'test_hardlinks_preserved_when_projection_dropped'
-            """
-        ).strip().split('\n')
-
+        broken_parts = (
+            second_cluster_node.query(
+                """
+                SELECT name, reason, path FROM system.detached_parts
+                WHERE
+                    table = 'test_hardlinks_preserved_when_projection_dropped'
+                """
+            )
+            .strip()
+            .split("\n")
+        )
         assert len(broken_parts) == 1, broken_parts
-        broken_part_name, reason, broken_part_path_on_second_node = broken_parts[0].split('\t')
+        # style checker black asked to do this. It is crazy
+        broken_part_name, reason, broken_part_path_on_second_node = broken_parts[
+            0
+        ].split("\t")
         assert "broken-on-start" == reason
 
         script = (
@@ -307,7 +315,7 @@ def test_hardlinks_preserved_when_projection_dropped(cluster, all_cluster_nodes,
             ALTER TABLE test_hardlinks_preserved_when_projection_dropped
             DROP DETACHED PART '{broken_part_name}'
             """,
-            settings={"allow_drop_detached": "1"}
+            settings={"allow_drop_detached": "1"},
         )
 
         res = first_cluster_node.query(
@@ -328,7 +336,3 @@ def test_hardlinks_preserved_when_projection_dropped(cluster, all_cluster_nodes,
         ).split("\n")
 
         assert len(data) == 5, data
-
-
-
-
