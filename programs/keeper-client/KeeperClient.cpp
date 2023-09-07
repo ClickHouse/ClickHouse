@@ -173,6 +173,14 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
         Poco::Util::Option("log-level", "", "set log level")
             .argument("<level>")
             .binding("log-level"));
+
+    options.addOption(
+        Poco::Util::Option("no-confirmation", "", "if set, will not require a confirmation on several commands. default false for interactive and true for query")
+            .binding("no-confirmation"));
+
+    options.addOption(
+        Poco::Util::Option("tests-mode", "", "run keeper-client in a special mode for tests. all commands output are separated by special symbols. default false")
+            .binding("tests-mode"));
 }
 
 void KeeperClient::initialize(Poco::Util::Application & /* self */)
@@ -187,6 +195,7 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
         std::make_shared<CreateCommand>(),
         std::make_shared<TouchCommand>(),
         std::make_shared<GetCommand>(),
+        std::make_shared<ExistsCommand>(),
         std::make_shared<GetStatCommand>(),
         std::make_shared<FindSuperNodes>(),
         std::make_shared<DeleteStaleBackups>(),
@@ -194,6 +203,7 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
         std::make_shared<RMCommand>(),
         std::make_shared<RMRCommand>(),
         std::make_shared<ReconfigCommand>(),
+        std::make_shared<SyncCommand>(),
         std::make_shared<HelpCommand>(),
         std::make_shared<FourLetterWordCommand>(),
     });
@@ -232,7 +242,6 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
 
     EventNotifier::init();
 }
-
 
 bool KeeperClient::processQueryText(const String & text)
 {
@@ -287,7 +296,7 @@ bool KeeperClient::processQueryText(const String & text)
     return true;
 }
 
-void KeeperClient::runInteractive()
+void KeeperClient::runInteractiveReplxx()
 {
 
     LineReader::Patterns query_extenders = {"\\"};
@@ -319,6 +328,26 @@ void KeeperClient::runInteractive()
         if (!processQueryText(input))
             break;
     }
+}
+
+void KeeperClient::runInteractiveInputStream()
+{
+    for (String input; std::getline(std::cin, input);)
+    {
+        if (!processQueryText(input))
+            break;
+
+        std::cout << "\a\a\a\a" << std::endl;
+        std::cerr << std::flush;
+    }
+}
+
+void KeeperClient::runInteractive()
+{
+    if (config().hasOption("tests-mode"))
+        runInteractiveInputStream();
+    else
+        runInteractiveReplxx();
 }
 
 int KeeperClient::main(const std::vector<String> & /* args */)
@@ -370,9 +399,11 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
     zookeeper = std::make_unique<zkutil::ZooKeeper>(zk_args);
 
+    if (config().has("no-confirmation") || config().has("query"))
+        ask_confirmation = false;
+
     if (config().has("query"))
     {
-        ask_confirmation = false;
         processQueryText(config().getString("query"));
     }
     else

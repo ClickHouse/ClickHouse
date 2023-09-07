@@ -158,6 +158,21 @@ void GetCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) co
     std::cout << client->zookeeper->get(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
 }
 
+bool ExistsCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
+{
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
+        return false;
+    node->args.push_back(std::move(path));
+
+    return true;
+}
+
+void ExistsCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient * client) const
+{
+    std::cout << client->zookeeper->exists(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
+}
+
 bool GetStatCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String path;
@@ -398,6 +413,21 @@ void ReconfigCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient
 
     auto response = client->zookeeper->reconfig(joining, leaving, new_members);
     std::cout << response.value << '\n';
+}
+
+bool SyncCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
+{
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
+        return false;
+    node->args.push_back(std::move(path));
+
+    return true;
+}
+
+void SyncCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient * client) const
+{
+    std::cout << client->zookeeper->sync(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
 }
 
 bool HelpCommand::parse(IParser::Pos & /* pos */, std::shared_ptr<ASTKeeperQuery> & /* node */, Expected & /* expected */) const
