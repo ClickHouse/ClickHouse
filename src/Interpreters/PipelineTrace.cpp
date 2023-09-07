@@ -1,4 +1,7 @@
+#include <string>
+
 #include <Interpreters/PipelineTrace.h>
+#include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -37,6 +40,10 @@ void PipelineLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
     
+    columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
+    columns[i++]->insert(event_time);
+    columns[i++]->insert(event_time_microseconds);
+
     columns[i++]->insertData(query_id.data(), query_id.size());
     columns[i++]->insert(thread_id);
     columns[i++]->insertData(processor_name.data(), processor_name.size());
@@ -45,5 +52,57 @@ void PipelineLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(start_ns);
     columns[i++]->insert(end_ns);
 }
+
+static const unsigned int UUID_LEN = 36;
+
+void PipelineLog::record(UInt64 start_ns, UInt64 end_ns, PipelineStageType stage, ExecutingGraph::Node* node)
+{
+    if (!CurrentThread::isInitialized()) 
+    {
+        return;
+    }
+
+    ContextPtr query_context = CurrentThread::get().getQueryContext() ;
+    if (!query_context) 
+    {
+        return;
+    }
+
+    auto log = query_context->getPipelineTraceLog();
+    if (!log) 
+    {
+        return;
+    }
+    
+    UInt64 time = now_ns();
+    UInt64 time_in_microseconds = time / 1000;
+
+    std::string_view query_id = CurrentThread::getQueryId();
+    query_id.remove_suffix(query_id.size() - UUID_LEN);
+
+    UInt64 thread_id = CurrentThread::get().thread_id;
+
+    PipelineLogElement element {
+        time_t(time / 1000000000),
+        time_in_microseconds, 
+        std::string(query_id),
+        thread_id,
+        node->processor->getName(),
+        node->processors_id,
+        stage,
+        start_ns,
+        end_ns
+    };
+
+
+    log->add(std::move(element));
+}
+
+UInt64 PipelineLog::now_ns()
+{
+    std::chrono::time_point<std::chrono::system_clock> point = std::chrono::system_clock::now();
+
+    return timeInNanoseconds(point);
+} 
 
 }

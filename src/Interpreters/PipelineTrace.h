@@ -5,7 +5,7 @@
 #include <Interpreters/SystemLog.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
-
+#include <Processors/Executors/ExecutingGraph.h>
 
 namespace DB
 {
@@ -43,9 +43,14 @@ struct PipelineLogElement
     static const char * getCustomColumnList() { return nullptr; }
 };
 
+
 class PipelineLog : public SystemLog<PipelineLogElement>
 {
     using SystemLog<PipelineLogElement>::SystemLog;
+
+public:
+    static void record(UInt64 start_ns, UInt64 end_ns, PipelineStageType stage, ExecutingGraph::Node* node);
+    static UInt64 now_ns();
 };
 
 }
