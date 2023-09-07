@@ -17,6 +17,9 @@ SELECT tryBase64Decode('foo', 'excess argument'); -- { serverError NUMBER_OF_ARG
 SELECT base64Decode('Zm9vYmF=Zm9v'); -- { serverError INCORRECT_DATA }
 SELECT tryBase64Decode('Zm9vYmF=Zm9v');
 
+SELECT base64Decode('foo'); -- { serverError INCORRECT_DATA }
+SELECT tryBase64Decode('foo');
+
 select base64Encode(toFixedString('foo', 3));
 select base64Decode(toFixedString('Zm9v', 4));
 select tryBase64Decode(toFixedString('Zm9v', 4));
