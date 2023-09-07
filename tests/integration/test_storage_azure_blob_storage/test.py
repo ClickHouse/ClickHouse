@@ -35,7 +35,9 @@ def cluster():
         cluster.shutdown()
 
 
-def azure_query(node, query, expect_error="false", try_num=10, settings={}, query_on_retry = None):
+def azure_query(
+    node, query, expect_error="false", try_num=10, settings={}, query_on_retry = None
+):
     for i in range(try_num):
         try:
             if expect_error == "true":
@@ -763,13 +765,13 @@ def run_describe_query(instance, file, connection_string):
     azure_query(instance, query)
 
 
-def run_count_query(instance, file, connection_string, drop_cache_on_retry = False):
+def run_count_query(instance, file, connection_string, drop_cache_on_retry=False):
     query = f"select count() from azureBlobStorage('{connection_string}', 'cont', '{file}', auto, auto, 'x UInt64')"
     if drop_cache_on_retry:
         return azure_query(
             node=instance,
             query=query,
-            query_on_retry="system drop schema cache for azure"
+            query_on_retry="system drop schema cache for azure",
         )
 
     return azure_query(instance, query)
