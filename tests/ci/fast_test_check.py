@@ -150,7 +150,7 @@ def main():
     with TeePopen(run_cmd, run_log_path, timeout=timeout) as process:
         retcode = process.wait()
         if process.timeout_exceeded:
-            logging.info(f"Timeout expired for process execution: {run_cmd}")
+            logging.info(f"Timeout expired for command: {run_cmd}")
             timeout_expired = True
         elif retcode == 0:
             logging.info("Run successfully")
@@ -185,7 +185,7 @@ def main():
     else:
         state, description, test_results, additional_logs = process_results(output_path)
 
-    if timeout_expired is not None:
+    if timeout_expired:
         test_result_name = "Check timeout expired"
         test_results.append(TestResult(test_result_name, "FAIL", timeout))
         state = "failure"
