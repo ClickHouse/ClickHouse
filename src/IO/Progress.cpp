@@ -92,6 +92,7 @@ void ProgressValues::writeJSON(WriteBuffer & out, bool add_braces) const
     writeText(result_bytes, out);
     writeCString("\",\"elapsed_ns\":\"", out);
     writeText(elapsed_ns, out);
+    writeCString("\"", out);
     if (add_braces)
         writeCString("}", out);
 }
