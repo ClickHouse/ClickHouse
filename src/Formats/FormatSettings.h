@@ -201,6 +201,7 @@ struct FormatSettings
         bool validate_utf8 = false;
         bool allow_object_type = false;
         bool compact_allow_variable_number_of_columns = false;
+        bool try_infer_objects_as_tuples = false;
     } json;
 
     struct

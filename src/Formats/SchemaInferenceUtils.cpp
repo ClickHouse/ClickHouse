@@ -239,7 +239,7 @@ namespace
         updateTypeIndexes(data_types, type_indexes);
     }
 
-    /// If we have Tuple with the same nested types like Tuple(Int64, Int64),
+    /// If we have unnamed Tuple with the same nested types like Tuple(Int64, Int64),
     /// convert it to Array(Int64). It's used for JSON values.
     /// For example when we had type Tuple(Int64, Nullable(Nothing)) and we
     /// transformed it to Tuple(Nullable(Int64), Nullable(Int64)) we will
@@ -255,6 +255,9 @@ namespace
             if (isTuple(type))
             {
                 const auto * tuple_type = assert_cast<const DataTypeTuple *>(type.get());
+                if (tuple_type->haveExplicitNames())
+                    return;
+
                 if (checkIfTypesAreEqual(tuple_type->getElements()))
                     type = std::make_shared<DataTypeArray>(tuple_type->getElements().back());
                 else
@@ -269,7 +272,7 @@ namespace
     template <bool is_json>
     void transformInferredTypesIfNeededImpl(DataTypes & types, const FormatSettings & settings, JSONInferenceInfo * json_info = nullptr);
 
-    /// If we have Tuple and Array types, try to convert them all to Array
+    /// If we have unnamed Tuple and Array types, try to convert them all to Array
     /// if there is a common type for all nested types.
     /// For example, if we have [Tuple(Nullable(Nothing), String), Array(Date), Tuple(Date, String)]
     /// it will convert them all to Array(String)
@@ -286,7 +289,11 @@ namespace
         {
             if (isTuple(type))
             {
-                const auto & current_tuple_size = assert_cast<const DataTypeTuple &>(*type).getElements().size();
+                const auto & tuple_type = assert_cast<const DataTypeTuple &>(*type);
+                if (tuple_type.haveExplicitNames())
+                    return;
+
+                const auto & current_tuple_size = tuple_type.getElements().size();
                 if (!tuple_size)
                     tuple_size = current_tuple_size;
                 else
@@ -377,6 +384,57 @@ namespace
         type_indexes.erase(TypeIndex::Object);
     }
 
+    /// Merge all named Tuples and empty Maps (because empty JSON objects are inferred as empty Maps)
+    /// to single Tuple with elements from all tuples. It's used to infer named Tuples from JSON objects.
+    void mergeAllNamedTuplesAndEmptyMaps(DataTypes & data_types, TypeIndexesSet & type_indexes, const FormatSettings & settings, JSONInferenceInfo * json_info)
+    {
+        if (!type_indexes.contains(TypeIndex::Tuple))
+            return;
+
+        /// Collect all names and their types from all named tuples.
+        std::unordered_map<String, DataTypes> names_to_types;
+        /// Try to save original order of element names.
+        Names element_names;
+        for (auto & type : data_types)
+        {
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+            if (tuple_type && tuple_type->haveExplicitNames())
+            {
+                const auto & elements = tuple_type->getElements();
+                const auto & names = tuple_type->getElementNames();
+                for (size_t i = 0; i != elements.size(); ++i)
+                {
+                    if (!names_to_types.contains(names[i]))
+                        element_names.push_back(names[i]);
+                    names_to_types[names[i]].push_back(elements[i]);
+                }
+            }
+        }
+
+        /// Try to find common type for each tuple element.
+        DataTypes element_types;
+        element_types.reserve(names_to_types.size());
+        for (const auto & name : element_names)
+        {
+            auto types = names_to_types[name];
+            transformInferredTypesIfNeededImpl<true>(types, settings, json_info);
+            /// If some element have different types in different tuples, we can't do anything
+            if (!checkIfTypesAreEqual(types))
+                return;
+            element_types.push_back(types.front());
+        }
+
+        DataTypePtr result_tuple = std::make_shared<DataTypeTuple>(element_types, element_names);
+
+        for (auto & type : data_types)
+        {
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+            const auto * map_type = typeid_cast<const DataTypeMap *>(type.get());
+            if ((tuple_type && tuple_type->haveExplicitNames()) || (map_type && isNothing(map_type->getKeyType()) && isNothing(map_type->getValueType())))
+                type = result_tuple;
+        }
+    }
+
     template <bool is_json>
     void transformInferredTypesIfNeededImpl(DataTypes & types, const FormatSettings & settings, JSONInferenceInfo * json_info)
     {
@@ -435,6 +493,9 @@ namespace
 
             if (settings.json.read_objects_as_strings)
                 transformMapsObjectsAndStringsToStrings(data_types, type_indexes);
+
+            if (settings.json.try_infer_objects_as_tuples)
+                mergeAllNamedTuplesAndEmptyMaps(data_types, type_indexes, settings, json_info);
         };
 
         transformTypesRecursively(types, transform_simple_types, transform_complex_types);
@@ -719,7 +780,7 @@ namespace
     }
 
     template <bool is_json>
-    DataTypePtr tryInferString(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info)
+    DataTypePtr tryInferString(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, String * out_value = nullptr)
     {
         String field;
         bool ok = true;
@@ -732,6 +793,9 @@ namespace
             return nullptr;
 
         skipWhitespaceIfAny(buf);
+
+        if (out_value)
+            *out_value = field;
 
         /// If it's object key, we should just return String type.
         if constexpr (is_json)
@@ -764,6 +828,7 @@ namespace
         assertChar('{', buf);
         skipWhitespaceIfAny(buf);
 
+        Names json_keys;
         DataTypes key_types;
         DataTypes value_types;
         bool first = true;
@@ -784,7 +849,8 @@ namespace
             {
                 /// For JSON key type must be String.
                 json_info->is_object_key = true;
-                key_type = tryInferString<is_json>(buf, settings, json_info);
+                json_keys.emplace_back();
+                key_type = tryInferString<is_json>(buf, settings, json_info, &json_keys.back());
                 json_info->is_object_key = false;
             }
             else
@@ -840,6 +906,9 @@ namespace
                 if (isObject(value_type))
                     return std::make_shared<DataTypeObject>("json", true);
             }
+
+            if (settings.json.try_infer_objects_as_tuples)
+                return std::make_shared<DataTypeTuple>(value_types, json_keys);
 
             transformInferredTypesIfNeededImpl<is_json>(value_types, settings, json_info);
             if (!checkIfTypesAreEqual(value_types))
@@ -959,6 +1028,9 @@ void transformJSONTupleToArrayIfPossible(DataTypePtr & data_type, const FormatSe
 
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(data_type.get()))
     {
+        if (tuple_type->haveExplicitNames())
+            return;
+
         auto nested_types = tuple_type->getElements();
         for (auto & nested_type : nested_types)
             transformJSONTupleToArrayIfPossible(nested_type, settings, json_info);
