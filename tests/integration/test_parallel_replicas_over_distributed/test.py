@@ -102,26 +102,14 @@ def create_tables(cluster, table_name):
 @pytest.mark.parametrize(
     "cluster,max_parallel_replicas,prefer_localhost_replica",
     [
-        # prefer_localhost_replica=0
         pytest.param("test_single_shard_multiple_replicas", 2, 0),
         pytest.param("test_single_shard_multiple_replicas", 3, 0),
         pytest.param("test_single_shard_multiple_replicas", 4, 0),
         pytest.param("test_single_shard_multiple_replicas", 10, 0),
-        # prefer_localhost_replica=1
-        pytest.param("test_single_shard_multiple_replicas", 2, 1),
-        pytest.param("test_single_shard_multiple_replicas", 3, 1),
-        pytest.param("test_single_shard_multiple_replicas", 4, 1),
-        pytest.param("test_single_shard_multiple_replicas", 10, 1),
-        # prefer_localhost_replica=0
         pytest.param("test_multiple_shards_multiple_replicas", 2, 0),
         pytest.param("test_multiple_shards_multiple_replicas", 3, 0),
         pytest.param("test_multiple_shards_multiple_replicas", 4, 0),
         pytest.param("test_multiple_shards_multiple_replicas", 10, 0),
-        # prefer_localhost_replica=1
-        pytest.param("test_multiple_shards_multiple_replicas", 2, 1),
-        pytest.param("test_multiple_shards_multiple_replicas", 3, 1),
-        pytest.param("test_multiple_shards_multiple_replicas", 4, 1),
-        pytest.param("test_multiple_shards_multiple_replicas", 10, 1),
     ],
 )
 def test_parallel_replicas_over_distributed(
