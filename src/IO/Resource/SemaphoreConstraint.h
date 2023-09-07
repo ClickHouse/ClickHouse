@@ -121,7 +121,7 @@ public:
     size_t activeChildren() override
     {
         std::unique_lock lock(mutex);
-        return child_active ? 1 : 0;
+        return child_active;
     }
 
     bool isSatisfied() override

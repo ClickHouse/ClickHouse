@@ -41,7 +41,7 @@
             <node path="/prio/fair/dev"> <type>fifo</type><weight>1</weight></node>
         </network_write>
     </resources>
-    <classifiers>
+    <workload_classifiers>
         <admin>
             <network_read>/prio/admin</network_read>
             <network_write>/prio/admin</network_write>
@@ -58,5 +58,5 @@
             <network_read>/prio/fair/dev</network_read>
             <network_write>/prio/fair/dev</network_write>
         </default>
-    </classifiers>
+    </workload_classifiers>
 </clickhouse>
