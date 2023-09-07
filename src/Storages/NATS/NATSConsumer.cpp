@@ -66,6 +66,8 @@ void NATSConsumer::unsubscribe()
 
 ReadBufferPtr NATSConsumer::consume()
 {
+    std::unique_lock<std::mutex> lock(received_mutex);
+    received_cv.wait(lock, [this] { return stopped || !received.empty(); });
     if (stopped || !received.tryPop(current))
         return nullptr;
 
@@ -86,8 +88,11 @@ void NATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, vo
             .message = message_received,
             .subject = subject,
         };
+
+        std::unique_lock<std::mutex> lock(nats_consumer->received_mutex);
         if (!nats_consumer->received.push(std::move(data)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to received queue");
+        nats_consumer->received_cv.notify_one();
 
         nats_consumer->storage.startStreaming();
     }
