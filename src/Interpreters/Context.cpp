@@ -64,8 +64,6 @@
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
-#include <Interpreters/SystemLog.h>
-#include <Interpreters/SessionLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
@@ -2743,6 +2741,8 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
         Stopwatch watch;
         LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
         shared->zookeeper = shared->zookeeper->startNewSession();
+        if (isServerCompletelyStarted())
+            shared->zookeeper->setServerCompletelyStarted();
         LOG_DEBUG(shared->log, "Establishing a new connection with ZooKeeper took {} ms", watch.elapsedMilliseconds());
     }
 
@@ -3417,6 +3417,16 @@ std::shared_ptr<AsynchronousInsertLog> Context::getAsynchronousInsertLog() const
         return {};
 
     return shared->system_logs->asynchronous_insert_log;
+}
+
+std::shared_ptr<BackupLog> Context::getBackupLog() const
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->backup_log;
 }
 
 std::vector<ISystemLog *> Context::getSystemLogs() const

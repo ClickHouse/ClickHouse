@@ -87,7 +87,6 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
-#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterserverCredentials.h>
@@ -2512,7 +2511,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             renameTempPartAndReplace(part_desc->res_part, transaction);
             getCommitPartOps(ops, part_desc->res_part);
 
-            lockSharedData(*part_desc->res_part, false, part_desc->hardlinked_files);
+            lockSharedData(*part_desc->res_part, /* replace_existing_lock */ true, part_desc->hardlinked_files);
         }
 
 
@@ -7561,6 +7560,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
         String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range);
 
+        std::set<String> replaced_parts;
         for (const auto & src_part : src_all_parts)
         {
             /// We also make some kind of deduplication to avoid duplicated parts in case of ATTACH PARTITION
@@ -7573,13 +7573,15 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                                 "' has inconsistent granularity with table", partition_id, src_part->name);
 
             String hash_hex = src_part->checksums.getTotalChecksumHex();
+            const bool is_duplicated_part = replaced_parts.contains(hash_hex);
+            replaced_parts.insert(hash_hex);
 
             if (replace)
                 LOG_INFO(log, "Trying to replace {} with hash_hex {}", src_part->name, hash_hex);
             else
                 LOG_INFO(log, "Trying to attach {} with hash_hex {}", src_part->name, hash_hex);
 
-            String block_id_path = replace ? "" : (fs::path(zookeeper_path) / "blocks" / (partition_id + "_replace_from_" + hash_hex));
+            String block_id_path = (replace || is_duplicated_part) ? "" : (fs::path(zookeeper_path) / "blocks" / (partition_id + "_replace_from_" + hash_hex));
 
             auto lock = allocateBlockNumber(partition_id, zookeeper, block_id_path);
             if (!lock)
@@ -9679,6 +9681,15 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
     /// In rare case other replica can remove path between createAncestors and createIfNotExists
     /// So we make up to 5 attempts
 
+    auto is_ephemeral = [&](const String & node_path) -> bool
+    {
+        String dummy_res;
+        Coordination::Stat node_stat;
+        if (zookeeper->tryGet(node_path, dummy_res, &node_stat))
+            return node_stat.ephemeralOwner;
+        return false;
+    };
+
     bool created = false;
     for (int attempts = 5; attempts > 0; --attempts)
     {
@@ -9698,6 +9709,9 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
 
             if (error == Coordination::Error::ZNODEEXISTS)
             {
+                if (is_ephemeral(zookeeper_node))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} already exists, but it is ephemeral", zookeeper_node);
+
                 size_t failed_op = zkutil::getFailedOpIndex(error, responses);
                 /// Part was locked before, unfortunately it's possible during moves
                 if (ops[failed_op]->getPath() == zookeeper_node)

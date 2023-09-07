@@ -384,6 +384,16 @@ public:
         const ContextPtr & context,
         bool single_output_condition_node = true);
 
+    /// Check if `predicate` is a combination of AND functions.
+    /// Returns a list of nodes representing atomic predicates.
+    static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
+
+    /// Get a list of nodes. For every node, check if it can be compused using allowed subset of inputs.
+    /// Returns only those nodes from the list which can be computed.
+    static NodeRawConstPtrs filterNodesByAllowedInputs(
+        NodeRawConstPtrs nodes,
+        const std::unordered_set<const Node *> & allowed_inputs);
+
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
 
