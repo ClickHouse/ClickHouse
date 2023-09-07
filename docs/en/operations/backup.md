@@ -255,7 +255,29 @@ end_time:          2022-08-30 09:21:46
 1 row in set. Elapsed: 0.002 sec.
 ```
 
-`system.backups` is a persistent [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#mergetree)-based system table that has the same columns as its counterpart, [backup_log](../operations/system-tables/backup_log.md), except `event_date` and `event_time_microseconds`.
+`system.backups` is by default a persistent [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#mergetree)-based system table (default engine definition is `ENGINE = MergeTree PARTITION BY toYYYYMM(start_time) ORDER BY start_time SETTINGS index_granularity = 8192`) that has the same columns as its counterpart, [backup_log](../operations/system-tables/backup_log.md), except `event_date` and `event_time_microseconds`. You can also specify the engine and its parameters in the settings file:
+```xml
+<clickhouse>
+    <backups>
+        <system_table>
+            <engine>ENGINE = MergeTree ORDER BY start_time SETTINGS index_granularity = 1024</engine>
+        </system_table>
+    </backups>
+</clickhouse>
+```
+
+If you don't want to keep persistent information about backup and restore operations, you can specify the `Memory` engine:
+```xml
+<clickhouse>
+    <backups>
+        <system_table>
+            <engine>ENGINE = Memory</engine>
+        </system_table>
+    </backups>
+</clickhouse>
+```
+
+Currenttly, only two engines — `MergeTree` and `Memory` — can be specified for the `system.backups` table.
 
 ## Configuring BACKUP/RESTORE to use an S3 Endpoint
 

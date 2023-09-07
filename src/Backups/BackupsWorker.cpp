@@ -17,6 +17,7 @@
 #include <Interpreters/BackupLog.h>
 #include <Interpreters/BackupsStorage.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/getEngineDefinitionFromConfig.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/Exception.h>
@@ -219,10 +220,16 @@ namespace
 }
 
 
-BackupsWorker::BackupsWorker(ContextPtr global_context, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_, bool persistent_storage)
+static constexpr const char * DEFAULT_PARTITION_BY = "toYYYYMM(start_time)";
+static constexpr const char * DEFAULT_GROUP_BY = "start_time";
+static constexpr const char * TABLE_NAME = "backups";
+static constexpr const char * CONFIG_SECTION = "backups.system_table";
+static const std::set<String> allowed_engines = {"MergeTree", "Memory"};
+
+BackupsWorker::BackupsWorker(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_, bool persistent_storage)
     : backups_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::BackupsThreads, CurrentMetrics::BackupsThreadsActive, num_backup_threads, /* max_free_threads = */ 0, num_backup_threads))
     , restores_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::RestoreThreads, CurrentMetrics::RestoreThreadsActive, num_restore_threads, /* max_free_threads = */ 0, num_restore_threads))
-    , storage(persistent_storage ? std::make_unique<BackupsStorage>(global_context, DatabaseCatalog::SYSTEM_DATABASE, "backups", "ENGINE = MergeTree ORDER BY (start_time)", true) : nullptr)
+    , storage(persistent_storage ? std::make_unique<BackupsStorage>(global_context, DatabaseCatalog::SYSTEM_DATABASE, TABLE_NAME, getEngineDefinitionFromConfig(config, CONFIG_SECTION, DEFAULT_PARTITION_BY, DEFAULT_GROUP_BY, allowed_engines), true) : nullptr)
     , log(&Poco::Logger::get("BackupsWorker"))
     , allow_concurrent_backups(allow_concurrent_backups_)
     , allow_concurrent_restores(allow_concurrent_restores_)

@@ -33,7 +33,7 @@ class BackupsStorage;
 class BackupsWorker
 {
 public:
-    BackupsWorker(ContextPtr global_context, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_, bool persistent_storage);
+    BackupsWorker(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_, bool persistent_storage);
 
     ~BackupsWorker();
 

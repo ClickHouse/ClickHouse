@@ -3235,7 +3235,7 @@ void Context::initializeBackupsWorker(bool persistent_storage)
     UInt64 backup_threads = config.getUInt64("backup_threads", settings_ref.backup_threads);
     UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref.restore_threads);
 
-    shared->backups_worker = std::make_shared<BackupsWorker>(getGlobalContext(), backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores, persistent_storage);
+    shared->backups_worker = std::make_shared<BackupsWorker>(getGlobalContext(), getConfigRef(), backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores, persistent_storage);
 }
 
 /// Call after unexpected crash happen.
