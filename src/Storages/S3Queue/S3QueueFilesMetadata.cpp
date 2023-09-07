@@ -1,18 +1,18 @@
-#include "IO/VarInt.h"
 #include "config.h"
 
 #if USE_AWS_S3
-#    include <algorithm>
-#    include <IO/Operators.h>
-#    include <IO/ReadBufferFromString.h>
-#    include <IO/ReadHelpers.h>
-#    include <Storages/S3Queue/S3QueueFilesMetadata.h>
-#    include <Storages/S3Queue/StorageS3Queue.h>
-#    include <Storages/StorageS3Settings.h>
-#    include <Storages/StorageSnapshot.h>
-#    include <base/sleep.h>
-#    include <Common/ZooKeeper/ZooKeeper.h>
-
+#include <base/sleep.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <Storages/S3Queue/S3QueueFilesMetadata.h>
+#include <Storages/S3Queue/StorageS3Queue.h>
+#include <Storages/StorageS3Settings.h>
+#include <Storages/StorageSnapshot.h>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 
 namespace DB
 {
@@ -30,151 +30,6 @@ namespace
     }
 }
 
-void S3QueueFilesMetadata::S3QueueCollection::read(ReadBuffer & in)
-{
-    files = {};
-    if (in.eof())
-        return;
-
-    size_t files_num;
-    in >> files_num >> "\n";
-    while (files_num--)
-    {
-        TrackedCollectionItem item;
-        in >> item.file_path >> "\n";
-        in >> item.timestamp >> "\n";
-        in >> item.retries_count >> "\n";
-        in >> item.last_exception >> "\n";
-        files.push_back(item);
-    }
-}
-
-void S3QueueFilesMetadata::S3QueueCollection::write(WriteBuffer & out) const
-{
-    out << files.size() << "\n";
-    for (const auto & processed_file : files)
-    {
-        out << processed_file.file_path << "\n";
-        out << processed_file.timestamp << "\n";
-        out << processed_file.retries_count << "\n";
-        out << processed_file.last_exception << "\n";
-    }
-}
-
-String S3QueueFilesMetadata::S3QueueCollection::toString() const
-{
-    WriteBufferFromOwnString out;
-    write(out);
-    return out.str();
-}
-
-S3QueueFilesMetadata::S3FilesCollection S3QueueFilesMetadata::S3QueueCollection::getFileNames()
-{
-    S3FilesCollection keys = {};
-    for (const auto & pair : files)
-        keys.insert(pair.file_path);
-    return keys;
-}
-
-
-S3QueueFilesMetadata::S3QueueProcessedCollection::S3QueueProcessedCollection(const UInt64 & max_size_, const UInt64 & max_age_)
-    : max_size(max_size_), max_age(max_age_)
-{
-}
-
-void S3QueueFilesMetadata::S3QueueProcessedCollection::parse(const String & collection_str)
-{
-    ReadBufferFromString buf(collection_str);
-    read(buf);
-    if (max_age > 0) // Remove old items
-    {
-        std::erase_if(
-            files,
-            [timestamp = getCurrentTime(), this](const TrackedCollectionItem & processed_file)
-            { return (timestamp - processed_file.timestamp) > max_age; });
-    }
-}
-
-
-void S3QueueFilesMetadata::S3QueueProcessedCollection::add(const String & file_name)
-{
-    TrackedCollectionItem processed_file;
-    processed_file.file_path = file_name;
-    processed_file.timestamp = getCurrentTime();
-    files.push_back(processed_file);
-
-    /// TODO: it is strange that in parse() we take into account only max_age, but here only max_size.
-    while (files.size() > max_size)
-    {
-        files.pop_front();
-    }
-}
-
-
-S3QueueFilesMetadata::S3QueueFailedCollection::S3QueueFailedCollection(const UInt64 & max_retries_count_)
-    : max_retries_count(max_retries_count_)
-{
-}
-
-void S3QueueFilesMetadata::S3QueueFailedCollection::parse(const String & collection_str)
-{
-    ReadBufferFromString buf(collection_str);
-    read(buf);
-}
-
-
-bool S3QueueFilesMetadata::S3QueueFailedCollection::add(const String & file_name, const String & exception_message)
-{
-    auto failed_it = std::find_if(
-        files.begin(), files.end(),
-        [&file_name](const TrackedCollectionItem & s) { return s.file_path == file_name; });
-
-    if (failed_it == files.end())
-    {
-        files.emplace_back(file_name, 0, max_retries_count, exception_message);
-    }
-    else if (failed_it->retries_count == 0 || --failed_it->retries_count == 0)
-    {
-        return false;
-    }
-    return true;
-}
-
-S3QueueFilesMetadata::S3FilesCollection S3QueueFilesMetadata::S3QueueFailedCollection::getFileNames()
-{
-    S3FilesCollection failed_keys;
-    for (const auto & pair : files)
-    {
-        if (pair.retries_count == 0)
-            failed_keys.insert(pair.file_path);
-    }
-    return failed_keys;
-}
-
-void S3QueueFilesMetadata::S3QueueProcessingCollection::parse(const String & collection_str)
-{
-    ReadBufferFromString rb(collection_str);
-    Strings result;
-    readQuoted(result, rb);
-    files = S3FilesCollection(result.begin(), result.end());
-}
-
-void S3QueueFilesMetadata::S3QueueProcessingCollection::add(const Strings & file_names)
-{
-    files.insert(file_names.begin(), file_names.end());
-}
-
-void S3QueueFilesMetadata::S3QueueProcessingCollection::remove(const String & file_name)
-{
-    files.erase(file_name);
-}
-
-String S3QueueFilesMetadata::S3QueueProcessingCollection::toString() const
-{
-    return DB::toString(Strings(files.begin(), files.end()));
-}
-
-
 S3QueueFilesMetadata::S3QueueFilesMetadata(
     const StorageS3Queue * storage_,
     const S3QueueSettings & settings_)
@@ -183,169 +38,271 @@ S3QueueFilesMetadata::S3QueueFilesMetadata(
     , max_set_size(settings_.s3queue_tracked_files_limit.value)
     , max_set_age_sec(settings_.s3queue_tracked_file_ttl_sec.value)
     , max_loading_retries(settings_.s3queue_loading_retries.value)
-    , zookeeper_processing_path(fs::path(storage->getZooKeeperPath()) / "processing")
-    , zookeeper_processed_path(fs::path(storage->getZooKeeperPath()) / "processed")
-    , zookeeper_failed_path(fs::path(storage->getZooKeeperPath()) / "failed")
-    , zookeeper_lock_path(fs::path(storage->getZooKeeperPath()) / "lock")
+    , zookeeper_processing_path(storage->getZooKeeperPath() / "processing")
+    , zookeeper_processed_path(storage->getZooKeeperPath() / "processed")
+    , zookeeper_failed_path(storage->getZooKeeperPath() / "failed")
     , log(&Poco::Logger::get("S3QueueFilesMetadata"))
 {
 }
 
-void S3QueueFilesMetadata::setFileProcessed(const String & file_path)
+std::string S3QueueFilesMetadata::NodeMetadata::toString() const
 {
-    auto zookeeper = storage->getZooKeeper();
-    auto lock = acquireLock(zookeeper);
+    Poco::JSON::Object json;
+    json.set("file_path", file_path);
+    json.set("last_processed_timestamp", getCurrentTime());
+    json.set("last_exception", last_exception);
+    json.set("retries", retries);
 
+    std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
+    Poco::JSON::Stringifier::stringify(json, oss);
+    return oss.str();
+}
+
+S3QueueFilesMetadata::NodeMetadata S3QueueFilesMetadata::NodeMetadata::fromString(const std::string & metadata_str)
+{
+    Poco::JSON::Parser parser;
+    auto json = parser.parse(metadata_str).extract<Poco::JSON::Object::Ptr>();
+
+    NodeMetadata metadata;
+    metadata.file_path = json->getValue<String>("file_path");
+    metadata.last_processed_timestamp = json->getValue<UInt64>("last_processed_timestamp");
+    metadata.last_exception = json->getValue<String>("last_exception");
+    metadata.retries = json->getValue<UInt64>("retries");
+    return metadata;
+}
+
+std::string S3QueueFilesMetadata::getNodeName(const std::string & path)
+{
+    SipHash path_hash;
+    path_hash.update(path);
+    return toString(path_hash.get64());
+}
+
+S3QueueFilesMetadata::NodeMetadata S3QueueFilesMetadata::createNodeMetadata(
+    const std::string & path,
+    const std::string & exception,
+    size_t retries)
+{
+    NodeMetadata metadata;
+    metadata.file_path = path;
+    metadata.last_processed_timestamp = getCurrentTime();
+    metadata.last_exception = exception;
+    metadata.retries = retries;
+    return metadata;
+}
+
+bool S3QueueFilesMetadata::trySetFileAsProcessing(const std::string & path)
+{
     switch (mode)
     {
-        case S3QueueMode::UNORDERED:
-        {
-            S3QueueProcessedCollection processed_files(max_set_size, max_set_age_sec);
-            processed_files.parse(zookeeper->get(zookeeper_processed_path));
-            processed_files.add(file_path);
-            zookeeper->set(zookeeper_processed_path, processed_files.toString());
-            break;
-        }
         case S3QueueMode::ORDERED:
         {
-            // Check that we set in ZooKeeper node only maximum processed file path.
-            // This check can be useful, when multiple table engines consume in ordered mode.
-            String max_file = getMaxProcessedFile();
-            if (max_file.compare(file_path) <= 0)
-                zookeeper->set(zookeeper_processed_path, file_path);
-            break;
+            return trySetFileAsProcessingForOrderedMode(path);
         }
-    }
-    removeProcessingFile(file_path);
-}
-
-
-bool S3QueueFilesMetadata::setFileFailed(const String & file_path, const String & exception_message)
-{
-    auto zookeeper = storage->getZooKeeper();
-    auto lock = acquireLock(zookeeper);
-
-    S3QueueFailedCollection failed_collection(max_loading_retries);
-    failed_collection.parse(zookeeper->get(zookeeper_failed_path));
-    const bool can_be_retried = failed_collection.add(file_path, exception_message);
-    zookeeper->set(zookeeper_failed_path, failed_collection.toString());
-    removeProcessingFile(file_path);
-    return can_be_retried;
-}
-
-S3QueueFilesMetadata::S3FilesCollection S3QueueFilesMetadata::getFailedFiles()
-{
-    auto zookeeper = storage->getZooKeeper();
-    String failed_files = zookeeper->get(zookeeper_failed_path);
-
-    S3QueueFailedCollection failed_collection(max_loading_retries);
-    failed_collection.parse(failed_files);
-    return failed_collection.getFileNames();
-}
-
-String S3QueueFilesMetadata::getMaxProcessedFile()
-{
-    auto zookeeper = storage->getZooKeeper();
-    return zookeeper->get(zookeeper_processed_path);
-}
-
-S3QueueFilesMetadata::S3FilesCollection S3QueueFilesMetadata::getProcessingFiles()
-{
-    auto zookeeper = storage->getZooKeeper();
-    String processing_files;
-    if (!zookeeper->tryGet(zookeeper_processing_path, processing_files))
-        return {};
-
-    S3QueueProcessingCollection processing_collection;
-    if (!processing_files.empty())
-        processing_collection.parse(processing_files);
-    return processing_collection.getFileNames();
-}
-
-void S3QueueFilesMetadata::setFilesProcessing(const Strings & file_paths)
-{
-    auto zookeeper = storage->getZooKeeper();
-    String processing_files;
-    zookeeper->tryGet(zookeeper_processing_path, processing_files);
-
-    S3QueueProcessingCollection processing_collection;
-    if (!processing_files.empty())
-        processing_collection.parse(processing_files);
-    processing_collection.add(file_paths);
-
-    if (zookeeper->exists(zookeeper_processing_path))
-        zookeeper->set(zookeeper_processing_path, processing_collection.toString());
-    else
-        zookeeper->create(zookeeper_processing_path, processing_collection.toString(), zkutil::CreateMode::Ephemeral);
-}
-
-void S3QueueFilesMetadata::removeProcessingFile(const String & file_path)
-{
-    auto zookeeper = storage->getZooKeeper();
-    String processing_files;
-    zookeeper->tryGet(zookeeper_processing_path, processing_files);
-
-    S3QueueProcessingCollection processing_collection;
-    processing_collection.parse(processing_files);
-    processing_collection.remove(file_path);
-    zookeeper->set(zookeeper_processing_path, processing_collection.toString());
-}
-
-S3QueueFilesMetadata::S3FilesCollection S3QueueFilesMetadata::getUnorderedProcessedFiles()
-{
-    auto zookeeper = storage->getZooKeeper();
-    S3QueueProcessedCollection processed_collection(max_set_size, max_set_age_sec);
-    processed_collection.parse(zookeeper->get(zookeeper_processed_path));
-    return processed_collection.getFileNames();
-}
-
-S3QueueFilesMetadata::S3FilesCollection S3QueueFilesMetadata::getProcessedFailedAndProcessingFiles()
-{
-    S3FilesCollection processed_and_failed_files = getFailedFiles();
-    switch (mode)
-    {
         case S3QueueMode::UNORDERED:
         {
-            processed_and_failed_files.merge(getUnorderedProcessedFiles());
-            break;
-        }
-        case S3QueueMode::ORDERED:
-        {
-            processed_and_failed_files.insert(getMaxProcessedFile());
-            break;
+            return trySetFileAsProcessingForUnorderedMode(path);
         }
     }
-    processed_and_failed_files.merge(getProcessingFiles());
-    return processed_and_failed_files;
 }
 
-std::shared_ptr<zkutil::EphemeralNodeHolder> S3QueueFilesMetadata::acquireLock(zkutil::ZooKeeperPtr zookeeper)
+bool S3QueueFilesMetadata::trySetFileAsProcessingForUnorderedMode(const std::string & path)
 {
-    UInt32 retry_count = 200;
-    UInt32 sleep_ms = 100;
-    UInt32 retries = 0;
+    const auto node_name = getNodeName(path);
+    const auto node_metadata = createNodeMetadata(path).toString();
+    const auto zk_client = storage->getZooKeeper();
+
+    /// The following requests to the following:
+    /// If !exists(processed_node) && !exists(failed_node) && !exists(processing_node) => create(processing_node)
+    Coordination::Requests requests;
+    /// Check that processed node does not appear.
+    requests.push_back(zkutil::makeCreateRequest(zookeeper_processed_path / node_name, "", zkutil::CreateMode::Persistent));
+    requests.push_back(zkutil::makeRemoveRequest(zookeeper_processed_path / node_name, -1));
+    /// Check that failed node does not appear.
+    requests.push_back(zkutil::makeCreateRequest(zookeeper_failed_path / node_name, "", zkutil::CreateMode::Persistent));
+    requests.push_back(zkutil::makeRemoveRequest(zookeeper_failed_path / node_name, -1));
+    /// Check that processing node does not exist and create if not.
+    requests.push_back(zkutil::makeCreateRequest(zookeeper_processing_path / node_name, node_metadata, zkutil::CreateMode::Ephemeral));
+
+    Coordination::Responses responses;
+    auto code = zk_client->tryMulti(requests, responses);
+    return code == Coordination::Error::ZOK;
+}
+
+bool S3QueueFilesMetadata::trySetFileAsProcessingForOrderedMode(const std::string & path)
+{
+    const auto node_name = getNodeName(path);
+    const auto node_metadata = createNodeMetadata(path).toString();
+    const auto zk_client = storage->getZooKeeper();
 
     while (true)
     {
-        Coordination::Error code = zookeeper->tryCreate(zookeeper_lock_path, "", zkutil::CreateMode::Ephemeral);
-        if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZNODEEXISTS)
+        Coordination::Requests requests;
+        zkutil::addCheckNotExistsRequest(requests, zk_client, zookeeper_failed_path / node_name);
+        zkutil::addCheckNotExistsRequest(requests, zk_client, zookeeper_processing_path / node_name);
+        requests.push_back(zkutil::makeGetRequest(zookeeper_processed_path));
+
+        Coordination::Responses responses;
+        auto code = zk_client->tryMulti(requests, responses);
+
+        if (code != Coordination::Error::ZOK)
         {
-            retries++;
-            if (retries > retry_count)
+            if (responses[0]->error != Coordination::Error::ZOK
+                || responses[1]->error != Coordination::Error::ZOK)
             {
-                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Can't acquire zookeeper lock");
+                /// Path is already in Failed or Processing.
+                return false;
             }
-            sleepForMilliseconds(sleep_ms);
+            /// GetRequest for zookeeper_processed_path should never fail,
+            /// because this is persistent node created at the creation of S3Queue storage.
+            throw zkutil::KeeperException::fromPath(code, requests.back()->getPath());
         }
-        else if (code != Coordination::Error::ZOK)
+
+        Coordination::Stat processed_node_stat;
+        NodeMetadata processed_node_metadata;
+        if (const auto * get_response = dynamic_cast<const Coordination::GetResponse *>(responses.back().get()))
         {
-            throw Coordination::Exception::fromPath(code, zookeeper_lock_path);
+            processed_node_stat = get_response->stat;
+            if (!get_response->data.empty())
+                processed_node_metadata = NodeMetadata::fromString(get_response->data);
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected response type with error: {}", responses.back()->error);
+
+        auto max_processed_file_path = processed_node_metadata.file_path;
+        if (!max_processed_file_path.empty() && path <= max_processed_file_path)
+            return false;
+
+        requests.clear();
+        zkutil::addCheckNotExistsRequest(requests, *zk_client, zookeeper_failed_path / node_name);
+        requests.push_back(zkutil::makeCreateRequest(zookeeper_processing_path / node_name, node_metadata, zkutil::CreateMode::Ephemeral));
+        requests.push_back(zkutil::makeCheckRequest(zookeeper_processed_path, processed_node_stat.version));
+
+        code = zk_client->tryMulti(requests, responses);
+        if (code == Coordination::Error::ZOK)
+            return true;
+
+        if (responses[0]->error != Coordination::Error::ZOK
+            || responses[1]->error != Coordination::Error::ZOK)
+        {
+            /// Path is already in Failed or Processing.
+            return false;
+        }
+        /// Max processed path changed. Retry.
+    }
+}
+
+void S3QueueFilesMetadata::setFileProcessed(const String & path)
+{
+    switch (mode)
+    {
+        case S3QueueMode::ORDERED:
+        {
+            return setFileProcessedForOrderedMode(path);
+        }
+        case S3QueueMode::UNORDERED:
+        {
+            return setFileProcessedForUnorderedMode(path);
+        }
+    }
+}
+
+void S3QueueFilesMetadata::setFileProcessedForUnorderedMode(const String & path)
+{
+    /// List results in s3 are always returned in UTF-8 binary order.
+    /// (https://docs.aws.amazon.com/AmazonS3/latest/userguide/ListingKeysUsingAPIs.html)
+
+    const auto node_name = getNodeName(path);
+    const auto node_metadata = createNodeMetadata(path).toString();
+    const auto zk_client = storage->getZooKeeper();
+
+    Coordination::Requests requests;
+    requests.push_back(zkutil::makeRemoveRequest(zookeeper_processing_path / node_name, -1));
+    requests.push_back(zkutil::makeCreateRequest(zookeeper_processed_path / node_name, node_metadata, zkutil::CreateMode::Persistent));
+
+    Coordination::Responses responses;
+    auto code = zk_client->tryMulti(requests, responses);
+    if (code == Coordination::Error::ZOK)
+        return;
+
+    /// TODO this could be because of the expired session.
+    if (responses[0]->error != Coordination::Error::ZOK)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attemp to set file as processed but it is not processing");
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attemp to set file as processed but it is already processed");
+}
+
+void S3QueueFilesMetadata::setFileProcessedForOrderedMode(const String & path)
+{
+    const auto node_name = getNodeName(path);
+    const auto node_metadata = createNodeMetadata(path).toString();
+    const auto zk_client = storage->getZooKeeper();
+
+    while (true)
+    {
+        std::string res;
+        Coordination::Stat stat;
+        bool exists = zk_client->tryGet(zookeeper_processed_path, res, &stat);
+        Coordination::Requests requests;
+        if (exists)
+        {
+            if (!res.empty())
+            {
+                auto metadata = NodeMetadata::fromString(res);
+                if (metadata.file_path >= path)
+                    return;
+            }
+            requests.push_back(zkutil::makeSetRequest(zookeeper_processed_path, node_metadata, stat.version));
         }
         else
         {
-            return zkutil::EphemeralNodeHolder::existing(zookeeper_lock_path, *zookeeper);
+            requests.push_back(zkutil::makeCreateRequest(zookeeper_processed_path, node_metadata, zkutil::CreateMode::Persistent));
         }
+
+        Coordination::Responses responses;
+        auto code = zk_client->tryMulti(requests, responses);
+        if (code == Coordination::Error::ZOK)
+            return;
     }
+}
+
+void S3QueueFilesMetadata::setFileFailed(const String & path, const String & exception_message)
+{
+    const auto node_name = getNodeName(path);
+    auto node_metadata = createNodeMetadata(path, exception_message);
+    const auto zk_client = storage->getZooKeeper();
+
+    Coordination::Requests requests;
+    requests.push_back(zkutil::makeRemoveRequest(zookeeper_processing_path / node_name, -1));
+    requests.push_back(zkutil::makeCreateRequest(zookeeper_failed_path / node_name, node_metadata.toString(), zkutil::CreateMode::Persistent));
+
+    Coordination::Responses responses;
+    auto code = zk_client->tryMulti(requests, responses);
+    if (code == Coordination::Error::ZOK)
+        return;
+
+    if (responses[0]->error != Coordination::Error::ZOK)
+    {
+        /// TODO this could be because of the expired session.
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attemp to set file as filed but it is not processing");
+    }
+
+    Coordination::Stat stat;
+    auto failed_node_metadata = NodeMetadata::fromString(zk_client->get(zookeeper_failed_path / node_name, &stat));
+    node_metadata.retries = failed_node_metadata.retries + 1;
+
+    /// Failed node already exists, update it.
+    requests.clear();
+    requests.push_back(zkutil::makeRemoveRequest(zookeeper_processing_path / node_name, -1));
+    requests.push_back(zkutil::makeSetRequest(zookeeper_failed_path / node_name, node_metadata.toString(), stat.version));
+
+    responses.clear();
+    code = zk_client->tryMulti(requests, responses);
+    if (code == Coordination::Error::ZOK)
+        return;
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to set file as failed");
 }
 
 }
