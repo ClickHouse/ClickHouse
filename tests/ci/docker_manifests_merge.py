@@ -173,8 +173,7 @@ def create_manifest(image: str, tags: List[str], push: bool) -> Tuple[str, str]:
     return manifest, "OK"
 
 
-def enrich_images(changed_images: Dict[str, str]) -> Dict[str, str]:
-    new_changed_images = changed_images
+def enrich_images(changed_images: Dict[str, str]) -> None:
     all_image_names = get_image_names(GITHUB_WORKSPACE, IMAGES_FILE_PATH)
 
     images_to_find_tags_for = [
@@ -236,12 +235,10 @@ def enrich_images(changed_images: Dict[str, str]) -> Dict[str, str]:
             commit_sha = row["commit_sha"]
             # As we only get the SHAs of merge commits from master, the PR number will be always 0
             tag = f"0-{commit_sha}"
-            new_changed_images[image_name] = tag
+            changed_images[image_name] = tag
             images_to_find_tags_for.remove(image_name)
 
         batch_count += 1
-
-    return new_changed_images
 
 
 def main():
@@ -277,7 +274,7 @@ def main():
 
     try:
         # changed_images now contains all the images that are changed in this PR. Let's find the latest tag for the images that are not changed.
-        changed_images = enrich_images(changed_images)
+        enrich_images(changed_images)
     except CHException as ex:
         logging.warning("Couldn't get proper tags for not changed images: %s", ex)
 
