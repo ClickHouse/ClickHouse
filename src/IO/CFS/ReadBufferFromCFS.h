@@ -16,6 +16,8 @@ namespace DB
 /**
  * Accepts CFS path to file and opens it.
  * Closes file by himself (thus "owns" a file descriptor).
+ * The NFS protocol is compatible with most POSIX interface,
+ * but there are still differences in performance and local file systems.
  */
 class ReadBufferFromCFS : public ReadBufferFromFileBase
 {

@@ -7,10 +7,24 @@
 #include <base/errnoToString.h>
 #include <base/sleep.h>
 #include <base/hex.h>
-
 #include <sys/stat.h>
 #include <mutex>
 #include <unistd.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event ReadBufferFromFileDescriptorRead;
+    extern const Event ReadBufferFromFileDescriptorReadFailed;
+    extern const Event ReadBufferFromFileDescriptorReadBytes;
+    extern const Event DiskReadElapsedMicroseconds;
+    extern const Event Seek;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric Read;
+}
 
 namespace DB
 {
@@ -105,8 +119,9 @@ struct ReadBufferFromCFS::ReadBufferFromCFSImpl : public BufferWithOwnMemory<See
                 num_bytes_to_read = read_until_position - getPosition();
         }
 
-        ssize_t bytes_read = 0;
+        CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
 
+        ssize_t bytes_read = 0;
         if (use_pread)
             bytes_read = ::pread(fd, internal_buffer.begin(), num_bytes_to_read, file_offset_of_buffer_end);
         else
@@ -114,6 +129,7 @@ struct ReadBufferFromCFS::ReadBufferFromCFSImpl : public BufferWithOwnMemory<See
 
         if (bytes_read < 0 && errno != EINTR)
         {
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
             throw Exception(ErrorCodes::NETWORK_ERROR,
                 "Fail to read from CFS file path {}, fd {}, bytes_read {}."
                 " offset {}, internal_buffer size {}, num_bytes_to_read {}, file size {}."
@@ -128,6 +144,8 @@ struct ReadBufferFromCFS::ReadBufferFromCFSImpl : public BufferWithOwnMemory<See
             file_offset_of_buffer_end += bytes_read;
             working_buffer = internal_buffer;
             working_buffer.resize(bytes_read);
+
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
             return true;
         }
         else
@@ -139,11 +157,15 @@ struct ReadBufferFromCFS::ReadBufferFromCFSImpl : public BufferWithOwnMemory<See
     off_t seek(off_t offset_, int) override
     {
         resetWorkingBuffer();
+
+        ProfileEvents::increment(ProfileEvents::Seek);
         /// In case of using 'pread' we just update the info about the next position in file.
         /// In case of using 'read' we call 'lseek'.
         /// We account both cases as seek event as it leads to non-contiguous reads from file.
         if (!use_pread)
         {
+            Stopwatch watch;
+
             off_t res = ::lseek(fd, offset_, SEEK_SET);
             if (res == -1)
                 throwFromErrnoWithPath("Cannot seek through file " + cfs_file_path, cfs_file_path,
@@ -153,6 +175,9 @@ struct ReadBufferFromCFS::ReadBufferFromCFSImpl : public BufferWithOwnMemory<See
             if (res != offset_)
                 throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
                     "The 'lseek' syscall returned value ({}) that is not expected ({})", res, offset_);
+
+            watch.stop();
+            ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
         }
         file_offset_of_init = offset_;
         file_offset_of_buffer_end = offset_;
@@ -245,10 +270,17 @@ bool ReadBufferFromCFS::nextImpl()
         assert(!impl->hasPendingData());
     }
 
+    ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorRead);
+    Stopwatch watch;
+
     auto result = impl->next();
 
     if (result)
+    {
         BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset()); /// use the buffer returned by `impl`
+        watch.stop();
+        ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
+    }
 
     LOG_TEST(log, "nextImpl {}", getInfoForLog());
     return result;
