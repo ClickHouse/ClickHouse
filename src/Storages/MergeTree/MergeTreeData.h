@@ -828,21 +828,10 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
-    struct HardlinkedFiles
-    {
-        /// Shared table uuid where hardlinks live
-        std::string source_table_shared_id;
-        /// Hardlinked from part
-        std::string source_part_name;
-        /// Hardlinked files list
-        NameSet hardlinks_from_source_part;
-    };
-
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPartOnSameDisk(
         const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
         const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeTransactionPtr & txn, HardlinkedFiles * hardlinked_files,
-        bool copy_instead_of_hardlink, const NameSet & files_to_copy_instead_of_hardlinks);
+        const IDataPartStorage::ClonePartParams & params);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
@@ -1040,7 +1029,7 @@ public:
 
     /// Fetch part only if some replica has it on shared storage like S3
     /// Overridden in StorageReplicatedMergeTree
-    virtual MutableDataPartStoragePtr tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) { return nullptr; }
+    virtual MutableDataPartPtr tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) { return nullptr; }
 
     /// Check shared data usage on other replicas for detached/freezed part
     /// Remove local files and remote files if needed
