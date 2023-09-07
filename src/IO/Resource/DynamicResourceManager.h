@@ -30,7 +30,7 @@ public:
     DynamicResourceManager();
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config) override;
     ClassifierPtr acquire(const String & classifier_name) override;
-    void forEachNode(std::function<void(const String & resource, const String & path, const String & type, const SchedulerNodePtr & node)> visitor) override;
+    void forEachNode(VisitorFunc visitor) override;
 
 private:
     /// Holds everything required to work with one specific configuration

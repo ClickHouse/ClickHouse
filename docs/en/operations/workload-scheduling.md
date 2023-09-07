@@ -78,10 +78,10 @@ graph TD
 ```
 
 **Possible node types:**
-* inflight_limit (constraint) - blocks if either number of concurrent in-flight requests exceeds `max_requests`, or their total cost exceeds `max_cost`; must have a single child.
-* fair (policy) - selects the next request to serve from one of its children nodes according to max-min fairness; children nodes can specify `weight` (default is 1).
-* priority (policy) - selects the next request to serve from one of its children nodes according to static priorities (lower value means higher priority); children nodes can specify `priority` (default is 0).
-* fifo (queue) - leaf of the hierarchy capable of holding requests that exceed resource capacity.
+* `inflight_limit` (constraint) - blocks if either number of concurrent in-flight requests exceeds `max_requests`, or their total cost exceeds `max_cost`; must have a single child.
+* `fair` (policy) - selects the next request to serve from one of its children nodes according to max-min fairness; children nodes can specify `weight` (default is 1).
+* `priority` (policy) - selects the next request to serve from one of its children nodes according to static priorities (lower value means higher priority); children nodes can specify `priority` (default is 0).
+* `fifo` (queue) - leaf of the hierarchy capable of holding requests that exceed resource capacity.
 
 The following example shows how to define IO scheduling hierarchies shown in the picture:
 
@@ -124,14 +124,14 @@ The following example shows how to define IO scheduling hierarchies shown in the
 </clickhouse>
 ```
 
-## Workload classifiers {#classifiers}
+## Workload classifiers {#workload_classifiers}
 
 Workload classifiers are used to define mapping from `workload` specified by a query into leaf-queues that should be used for specific resources. At the moment, workload classification is simple: only static mapping is available.
 
 Example:
 ```xml
 <clickhouse>
-    <classifiers>
+    <workload_classifiers>
         <production>
             <network_read>/fair/prod</network_read>
             <network_write>/fair/prod</network_write>
@@ -144,7 +144,7 @@ Example:
             <network_read>/fair/dev</network_read>
             <network_write>/fair/dev</network_write>
         </default>
-    </classifiers>
+    </workload_classifiers>
 </clickhouse>
 ```
 

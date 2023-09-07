@@ -227,7 +227,7 @@ ClassifierPtr DynamicResourceManager::acquire(const String & classifier_name)
     return std::make_shared<Classifier>(state_ref, classifier_name);
 }
 
-void DynamicResourceManager::forEachNode(std::function<void(const String & resource, const String & path, const String & type, const SchedulerNodePtr & node)> visitor)
+void DynamicResourceManager::forEachNode(IResourceManager::VisitorFunc visitor)
 {
     // Acquire a reference to the current state
     StatePtr state_ref;
