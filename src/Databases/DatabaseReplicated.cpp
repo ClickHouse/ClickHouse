@@ -116,6 +116,8 @@ DatabaseReplicated::DatabaseReplicated(
 
     if (!db_settings.collection_name.value.empty())
         fillClusterAuthInfo(db_settings.collection_name.value, context_->getConfigRef());
+
+    cluster_path = zookeeper_path + "/" + getClusterGroup(context_->getConfigRef());
 }
 
 String DatabaseReplicated::getFullReplicaName(const String & shard, const String & replica)
@@ -186,7 +188,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
     {
         host_ids.resize(0);
         Coordination::Stat stat;
-        hosts = zookeeper->getChildren(zookeeper_path + "/replicas", &stat);
+        hosts = zookeeper->getChildren(cluster_path, &stat);
         if (hosts.empty())
             throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "No replicas of database {} found. "
                             "It's possible if the first replica is not fully created yet "
@@ -198,7 +200,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         futures.reserve(hosts.size());
         host_ids.reserve(hosts.size());
         for (const auto & host : hosts)
-            futures.emplace_back(zookeeper->asyncTryGet(zookeeper_path + "/replicas/" + host));
+            futures.emplace_back(zookeeper->asyncTryGet(cluster_path + "/" + host));
 
         success = true;
         for (auto & future : futures)
@@ -209,7 +211,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
             host_ids.emplace_back(res.data);
         }
 
-        zookeeper->get(zookeeper_path + "/replicas", &stat);
+        zookeeper->get(cluster_path, &stat);
         if (cversion != stat.cversion)
             success = false;
         if (success)
@@ -270,7 +272,7 @@ std::vector<UInt8> DatabaseReplicated::tryGetAreReplicasActive(const ClusterPtr 
         for (const auto & replica : addresses_with_failover[shard_index])
         {
             String full_name = getFullReplicaName(replica.database_shard_name, replica.database_replica_name);
-            paths.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "active");
+            paths.emplace_back(fs::path(cluster_path) / full_name / "active");
         }
     }
 
@@ -309,6 +311,16 @@ void DatabaseReplicated::fillClusterAuthInfo(String collection_name, const Poco:
     cluster_auth_info.cluster_secure_connection = config_ref.getBool(config_prefix + ".cluster_secure_connection", false);
 }
 
+String DatabaseReplicated::getClusterGroup(const Poco::Util::AbstractConfiguration & config_ref)
+{
+    const auto cluster_group = config_ref.getString("database_replicated_cluster_group", "");
+
+    if (cluster_group.empty())
+        return "replicas";
+
+    return "replicas_" + cluster_group;
+}
+
 void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode)
 {
     try
@@ -326,7 +338,16 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
             createDatabaseNodesInZooKeeper(current_zookeeper);
         }
 
-        replica_path = fs::path(zookeeper_path) / "replicas" / getFullReplicaName();
+        if (!current_zookeeper->exists(cluster_path))
+        {
+            /// Create new cluster group, multiple nodes can execute it concurrently
+            auto code = current_zookeeper->tryCreate(cluster_path, "", zkutil::CreateMode::Persistent);
+
+            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+                throw Coordination::Exception(code);
+        }
+
+        replica_path = fs::path(cluster_path) / getFullReplicaName();
         bool is_create_query = mode == LoadingStrictnessLevel::CREATE;
 
         String replica_host_id;
@@ -704,7 +725,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     entry.tracing_context = OpenTelemetry::CurrentContext();
     String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context);
 
-    Strings hosts_to_wait = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
+    Strings hosts_to_wait = getZooKeeper()->getChildren(cluster_path);
     return getDistributedDDLStatus(node_path, entry, query_context, &hosts_to_wait);
 }
 
@@ -1140,7 +1161,7 @@ void DatabaseReplicated::drop(ContextPtr context_)
 
     current_zookeeper->tryRemoveRecursive(replica_path);
     /// TODO it may leave garbage in ZooKeeper if the last node lost connection here
-    if (current_zookeeper->tryRemove(zookeeper_path + "/replicas") == Coordination::Error::ZOK)
+    if (current_zookeeper->tryRemove(cluster_path) == Coordination::Error::ZOK)
     {
         /// It was the last replica, remove all metadata
         current_zookeeper->tryRemoveRecursive(zookeeper_path);
