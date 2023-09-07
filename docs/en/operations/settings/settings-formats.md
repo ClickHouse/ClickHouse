@@ -404,6 +404,28 @@ Result:
 └────┴──────────────────────────┴────────────┘
 ```
 
+Enabled by default.
+
+## input_format_json_try_infer_named_tuples_from_objects {#input_format_json_try_infer_named_tuples_from_objects}
+
+If enabled, during schema inference ClickHouse will try to infer named Tuple from JSON objects.
+The resulting named Tuple will contain all elements from all corresponding JSON objects from sample data.
+
+Example:
+
+```sql
+SET input_format_json_try_infer_named_tuples_from_objects = 1;
+DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 43, "c" : [1, 2, 3]}}, {"obj" : {"d" : {"e" : 42}}}')
+```
+
+Result:
+
+```
+┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Tuple(e Nullable(Int64))) │              │                    │         │                  │                │
+└──────┴────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
 Disabled by default.
 
 ## input_format_json_validate_types_from_metadata {#input_format_json_validate_types_from_metadata}
