@@ -36,7 +36,7 @@ def cluster():
 
 
 def azure_query(
-    node, query, expect_error="false", try_num=10, settings={}, query_on_retry = None
+    node, query, expect_error="false", try_num=10, settings={}, query_on_retry=None
 ):
     for i in range(try_num):
         try:
