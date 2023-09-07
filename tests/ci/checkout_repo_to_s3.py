@@ -83,6 +83,9 @@ def main_download(args, commit_sha) -> None:
 
     exctract_archive(REPO_COPY, archive_local_path)
 
+    git_runner(f"git -C {REPO_COPY} submodule foreach --recursive sh -c \"git config --local --unset-all 'http.https://github.com/.extraheader' || :\"")
+    git_runner(f"git -C {REPO_COPY}  config --local --unset-all 'http.https://github.com/.extraheader'")
+
     git_runner(f"git -C {REPO_COPY} submodule update --init")
     git_runner(f"git -C {REPO_COPY} status")
 
