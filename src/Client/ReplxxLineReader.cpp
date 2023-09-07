@@ -370,7 +370,7 @@ ReplxxLineReader::ReplxxLineReader(
     /// By default C-w is KILL_TO_BEGINING_OF_WORD, while in readline it is unix-word-rubout
     rx.bind_key(Replxx::KEY::control('W'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::KILL_TO_WHITESPACE_ON_LEFT, code); });
 
-    rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(); return Replxx::ACTION_RESULT::CONTINUE; });
+    rx.bind_key(Replxx::KEY::control('E'), [this](char32_t) { openEditor(); return Replxx::ACTION_RESULT::CONTINUE; });
 
     /// readline insert-comment
     auto insert_comment_action = [this](char32_t code)
