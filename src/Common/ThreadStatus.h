@@ -122,7 +122,7 @@ private:
     std::unordered_set<UInt64> thread_ids TSA_GUARDED_BY(mutex);
 
     /// Count of simultaneously working threads
-    UInt64 active_thread_count TSA_GUARDED_BY(mutex) = 0;
+    size_t active_thread_count TSA_GUARDED_BY(mutex) = 0;
 
     /// Peak threads count in the group
     size_t peak_threads_usage TSA_GUARDED_BY(mutex) = 0;
