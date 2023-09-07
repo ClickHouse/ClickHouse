@@ -21,7 +21,7 @@ from commit_status_helper import (
     update_mergeable_check,
 )
 from docker_pull_helper import get_image_with_version
-from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP
+from env_helper import REPO_COPY, RUNNER_TEMP
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
 from git_helper import git_runner
@@ -144,7 +144,6 @@ def main():
 
     stopwatch = Stopwatch()
 
-    repo_path = GITHUB_WORKSPACE
     temp_path = os.path.join(RUNNER_TEMP, "style_check")
 
     pr_info = PRInfo()
@@ -173,7 +172,7 @@ def main():
 
     cmd = (
         f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
-        f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
+        f"--volume={REPO_COPY}:/ClickHouse --volume={temp_path}:/test_output "
         f"{docker_image}"
     )
 

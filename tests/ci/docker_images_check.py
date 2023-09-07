@@ -15,7 +15,7 @@ from github import Github
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import format_description, get_commit, post_commit_status
-from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP, GITHUB_RUN_URL
+from env_helper import REPO_COPY, RUNNER_TEMP, GITHUB_RUN_URL
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
 from report import TestResults, TestResult
@@ -38,7 +38,7 @@ class DockerImage:
         repo: str,
         only_amd64: bool,
         parent: Optional["DockerImage"] = None,
-        gh_repo_path: str = GITHUB_WORKSPACE,
+        gh_repo_path: str = REPO_COPY,
     ):
         self.path = path
         self.full_path = os.path.join(gh_repo_path, path)
@@ -410,7 +410,7 @@ def main():
         shutil.rmtree(TEMP_PATH)
     os.makedirs(TEMP_PATH)
 
-    images_dict = get_images_dict(GITHUB_WORKSPACE, "docker/images.json")
+    images_dict = get_images_dict(REPO_COPY, "docker/images.json")
 
     pr_info = PRInfo()
     if args.all:
