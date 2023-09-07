@@ -61,7 +61,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
     {
         auto out = disk->writeFile(std::filesystem::path(path_prefix) / file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
         *out << "format version: 1\n"
-            << "create time: " << LocalDateTime(create_time) << "\n";
+            << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n";
         *out << "commands: ";
         commands.writeText(*out, /* with_pure_metadata_commands = */ false);
         *out << "\n";
@@ -128,7 +128,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
 
     LocalDateTime create_time_dt;
     *buf >> "create time: " >> create_time_dt >> "\n";
-    create_time = DateLUT::instance().makeDateTime(
+    create_time = DateLUT::serverTimezoneInstance().makeDateTime(
         create_time_dt.year(), create_time_dt.month(), create_time_dt.day(),
         create_time_dt.hour(), create_time_dt.minute(), create_time_dt.second());
 

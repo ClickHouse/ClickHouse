@@ -20,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
-    extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
 }
 
 void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
@@ -138,12 +137,6 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function.name);
     if (!user_defined_function)
         return nullptr;
-
-    /// All UDFs are not parametric for now.
-    if (function.parameters)
-    {
-        throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", function.name);
-    }
 
     const auto & function_arguments_list = function.children.at(0)->as<ASTExpressionList>();
     auto & function_arguments = function_arguments_list->children;

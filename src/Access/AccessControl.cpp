@@ -6,6 +6,7 @@
 #include <Access/DiskAccessStorage.h>
 #include <Access/LDAPAccessStorage.h>
 #include <Access/ContextAccess.h>
+#include <Access/EnabledSettings.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/RoleCache.h>
 #include <Access/RowPolicyCache.h>
@@ -76,11 +77,13 @@ public:
         auto x = cache.get(params);
         if (x)
         {
-            if ((*x)->tryGetUser())
+            if ((*x)->getUserID() && !(*x)->tryGetUser())
+                cache.remove(params); /// The user has been dropped while it was in the cache.
+            else
                 return *x;
-            /// No user, probably the user has been dropped while it was in the cache.
-            cache.remove(params);
         }
+
+        /// TODO: There is no need to keep the `ContextAccessCache::mutex` locked while we're calculating access rights.
         auto res = std::make_shared<ContextAccess>(access_control, params);
         res->initialize();
         cache.add(params, res);
@@ -415,7 +418,7 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
         String type = key_in_user_directories;
         if (size_t bracket_pos = type.find('['); bracket_pos != String::npos)
             type.resize(bracket_pos);
-        if ((type == "users_xml") || (type == "users_config"))
+        if ((type == "users.xml") || (type == "users_config"))
             type = UsersConfigAccessStorage::STORAGE_TYPE;
         else if ((type == "local") || (type == "local_directory"))
             type = DiskAccessStorage::STORAGE_TYPE;
@@ -525,12 +528,14 @@ scope_guard AccessControl::subscribeForChanges(const std::vector<UUID> & ids, co
     return changes_notifier->subscribeForChanges(ids, handler);
 }
 
-std::optional<UUID> AccessControl::insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
+bool AccessControl::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
 {
-    auto id = MultipleAccessStorage::insertImpl(entity, replace_if_exists, throw_if_exists);
-    if (id)
+    if (MultipleAccessStorage::insertImpl(id, entity, replace_if_exists, throw_if_exists))
+    {
         changes_notifier->sendNotifications();
-    return id;
+        return true;
+    }
+    return false;
 }
 
 bool AccessControl::removeImpl(const UUID & id, bool throw_if_not_exists)
@@ -713,35 +718,6 @@ int AccessControl::getBcryptWorkfactor() const
 }
 
 
-std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(
-    const UUID & user_id,
-    const std::vector<UUID> & current_roles,
-    bool use_default_roles,
-    const Settings & settings,
-    const String & current_database,
-    const ClientInfo & client_info) const
-{
-    ContextAccessParams params;
-    params.user_id = user_id;
-    params.current_roles.insert(current_roles.begin(), current_roles.end());
-    params.use_default_roles = use_default_roles;
-    params.current_database = current_database;
-    params.readonly = settings.readonly;
-    params.allow_ddl = settings.allow_ddl;
-    params.allow_introspection = settings.allow_introspection_functions;
-    params.interface = client_info.interface;
-    params.http_method = client_info.http_method;
-    params.address = client_info.current_address.host();
-    params.quota_key = client_info.quota_key;
-
-    /// Extract the last entry from comma separated list of X-Forwarded-For addresses.
-    /// Only the last proxy can be trusted (if any).
-    params.forwarded_address = client_info.getLastForwardedFor();
-
-    return getContextAccess(params);
-}
-
-
 std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(const ContextAccessParams & params) const
 {
     return context_access_cache->getContextAccess(params);
@@ -753,6 +729,14 @@ std::shared_ptr<const EnabledRoles> AccessControl::getEnabledRoles(
     const std::vector<UUID> & current_roles_with_admin_option) const
 {
     return role_cache->getEnabledRoles(current_roles, current_roles_with_admin_option);
+}
+
+
+std::shared_ptr<const EnabledRolesInfo> AccessControl::getEnabledRolesInfo(
+    const std::vector<UUID> & current_roles,
+    const std::vector<UUID> & current_roles_with_admin_option) const
+{
+    return getEnabledRoles(current_roles, current_roles_with_admin_option)->getRolesInfo();
 }
 
 
@@ -797,6 +781,15 @@ std::shared_ptr<const EnabledSettings> AccessControl::getEnabledSettings(
     const SettingsProfileElements & settings_from_enabled_roles) const
 {
     return settings_profiles_cache->getEnabledSettings(user_id, settings_from_user, enabled_roles, settings_from_enabled_roles);
+}
+
+std::shared_ptr<const SettingsProfilesInfo> AccessControl::getEnabledSettingsInfo(
+    const UUID & user_id,
+    const SettingsProfileElements & settings_from_user,
+    const boost::container::flat_set<UUID> & enabled_roles,
+    const SettingsProfileElements & settings_from_enabled_roles) const
+{
+    return getEnabledSettings(user_id, settings_from_user, enabled_roles, settings_from_enabled_roles)->getInfo();
 }
 
 std::shared_ptr<const SettingsProfilesInfo> AccessControl::getSettingsProfileInfo(const UUID & profile_id)

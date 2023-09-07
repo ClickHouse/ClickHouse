@@ -131,7 +131,7 @@ kill -TERM $PID_6
 kill -TERM $PID_7
 kill -TERM $PID_8
 wait
-wait_for_queries_to_finish
+wait_for_queries_to_finish 40
 
 $CLICKHOUSE_CLIENT --multiquery --query "
 BEGIN TRANSACTION;

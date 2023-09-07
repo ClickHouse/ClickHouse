@@ -1,4 +1,3 @@
-#include <iostream>
 #include <stdexcept>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>

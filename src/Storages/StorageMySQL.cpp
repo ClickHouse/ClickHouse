@@ -19,6 +19,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/parseRemoteDescription.h>
+#include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Databases/MySQL/FetchTablesColumnsList.h>
@@ -32,16 +33,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
-}
-
-static String backQuoteMySQL(const String & x)
-{
-    String res(x.size(), '\0');
-    {
-        WriteBufferFromString wb(res);
-        writeBackQuotedStringMySQL(x, wb);
-    }
-    return res;
 }
 
 StorageMySQL::StorageMySQL(
@@ -113,6 +104,7 @@ Pipe StorageMySQL::read(
         column_names_,
         storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::BackticksMySQL,
+        LiteralEscapingStyle::Regular,
         remote_database_name,
         remote_table_name,
         context_);

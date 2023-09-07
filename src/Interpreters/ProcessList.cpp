@@ -37,8 +37,8 @@ static bool isUnlimitedQuery(const IAST * ast)
     if (!ast)
         return false;
 
-    /// It is KILL QUERY
-    if (ast->as<ASTKillQueryQuery>())
+    /// It is KILL QUERY or an async insert flush query
+    if (ast->as<ASTKillQueryQuery>() || ast->getQueryKind() == IAST::QueryKind::AsyncInsertFlush)
         return true;
 
     /// It is SELECT FROM system.processes
@@ -223,7 +223,10 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             {
                 /// Set up memory profiling
                 thread_group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
+
                 thread_group->memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
+                thread_group->memory_tracker.setSampleMinAllocationSize(settings.memory_profiler_sample_min_allocation_size);
+                thread_group->memory_tracker.setSampleMaxAllocationSize(settings.memory_profiler_sample_max_allocation_size);
                 thread_group->performance_counters.setTraceProfileEvents(settings.trace_profile_events);
             }
 
@@ -246,6 +249,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
                 priorities.insert(static_cast<int>(settings.priority)),
                 std::move(thread_group),
                 query_kind,
+                settings,
                 watch_start_nanoseconds));
 
         increaseQueryKindAmount(query_kind);
@@ -342,6 +346,7 @@ QueryStatus::QueryStatus(
     QueryPriorities::Handle && priority_handle_,
     ThreadGroupPtr && thread_group_,
     IAST::QueryKind query_kind_,
+    const Settings & query_settings_,
     UInt64 watch_start_nanoseconds)
     : WithContext(context_)
     , query(query_)
@@ -353,9 +358,11 @@ QueryStatus::QueryStatus(
     , query_kind(query_kind_)
     , num_queries_increment(CurrentMetrics::Query)
 {
-    auto settings = getContext()->getSettings();
-    limits.max_execution_time = settings.max_execution_time;
-    overflow_mode = settings.timeout_overflow_mode;
+    /// We have to pass `query_settings_` to this constructor because we can't use `context_->getSettings().max_execution_time` here:
+    /// a QueryStatus is created with `ProcessList::mutex` locked (see ProcessList::insert) and calling `context_->getSettings()`
+    /// would lock the context's lock too, whereas holding two those locks simultaneously is not good.
+    limits.max_execution_time = query_settings_.max_execution_time;
+    overflow_mode = query_settings_.timeout_overflow_mode;
 }
 
 QueryStatus::~QueryStatus()
@@ -589,10 +596,13 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
             res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
     }
 
-    if (get_settings && getContext())
+    if (get_settings)
     {
-        res.query_settings = std::make_shared<Settings>(getContext()->getSettings());
-        res.current_database = getContext()->getCurrentDatabase();
+        if (auto ctx = context.lock())
+        {
+            res.query_settings = std::make_shared<Settings>(ctx->getSettings());
+            res.current_database = ctx->getCurrentDatabase();
+        }
     }
 
     return res;
@@ -601,12 +611,18 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
 
 ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_events, bool get_settings) const
 {
+    /// We have to copy `processes` first because `process->getInfo()` below can access the context to get the query settings,
+    /// and it's better not to keep the process list's lock while doing that.
+    std::vector<QueryStatusPtr> processes_copy;
+
+    {
+        auto lock = safeLock();
+        processes_copy.assign(processes.begin(), processes.end());
+    }
+
     Info per_query_infos;
-
-    auto lock = safeLock();
-
-    per_query_infos.reserve(processes.size());
-    for (const auto & process : processes)
+    per_query_infos.reserve(processes_copy.size());
+    for (const auto & process : processes_copy)
         per_query_infos.emplace_back(process->getInfo(get_thread_list, get_profile_events, get_settings));
 
     return per_query_infos;

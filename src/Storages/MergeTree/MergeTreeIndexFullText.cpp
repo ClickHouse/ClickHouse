@@ -624,7 +624,11 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
     if (key_tuple_mapping.empty())
         return false;
 
-    auto prepared_set = right_argument.tryGetPreparedSet(data_types);
+    auto future_set = right_argument.tryGetPreparedSet(data_types);
+    if (!future_set)
+        return false;
+
+    auto prepared_set = future_set->buildOrderedSetInplace(right_argument.getTreeContext().getQueryContext());
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 
@@ -733,7 +737,7 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool /*attach*/)
             data_type = WhichDataType(low_cardinality.getDictionaryType());
         }
 
-        if (!data_type.isString() && !data_type.isFixedString())
+        if (!data_type.isString() && !data_type.isFixedString() && !data_type.isIPv6())
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Ngram and token bloom filter indexes can only be used with column types `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
     }

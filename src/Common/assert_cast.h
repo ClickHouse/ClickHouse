@@ -23,7 +23,7 @@ namespace DB
   * The exact match of the type is checked. That is, cast to the ancestor will be unsuccessful.
   */
 template <typename To, typename From>
-To assert_cast(From && from)
+inline To assert_cast(From && from)
 {
 #ifndef NDEBUG
     try

@@ -6,6 +6,7 @@
 
 namespace DB
 {
+
 struct NameHasTokenCaseInsensitive
 {
     static constexpr auto name = "hasTokenCaseInsensitive";
@@ -17,10 +18,9 @@ struct NameHasTokenCaseInsensitiveOrNull
 };
 
 using FunctionHasTokenCaseInsensitive
-    = DB::FunctionsStringSearch<DB::HasTokenImpl<NameHasTokenCaseInsensitive, DB::VolnitskyCaseInsensitiveToken, false>>;
-using FunctionHasTokenCaseInsensitiveOrNull = DB::FunctionsStringSearch<
-    DB::HasTokenImpl<NameHasTokenCaseInsensitiveOrNull, DB::VolnitskyCaseInsensitiveToken, false>,
-    DB::ExecutionErrorPolicy::Null>;
+    = FunctionsStringSearch<HasTokenImpl<NameHasTokenCaseInsensitive, VolnitskyCaseInsensitive, false>>;
+using FunctionHasTokenCaseInsensitiveOrNull
+    = FunctionsStringSearch<HasTokenImpl<NameHasTokenCaseInsensitiveOrNull, VolnitskyCaseInsensitive, false>, ExecutionErrorPolicy::Null>;
 
 REGISTER_FUNCTION(HasTokenCaseInsensitive)
 {

@@ -56,7 +56,7 @@ void BackupCoordinationStageSync::set(const String & current_host, const String 
         {
             auto code = zookeeper->trySet(zookeeper_path, new_stage);
             if (code != Coordination::Error::ZOK)
-                throw zkutil::KeeperException(code, zookeeper_path);
+                throw zkutil::KeeperException::fromPath(code, zookeeper_path);
         }
         else
         {
@@ -64,7 +64,7 @@ void BackupCoordinationStageSync::set(const String & current_host, const String 
             String alive_node_path = zookeeper_path + "/alive|" + current_host;
             auto code = zookeeper->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
             if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
-                throw zkutil::KeeperException(code, alive_node_path);
+                throw zkutil::KeeperException::fromPath(code, alive_node_path);
 
             zookeeper->createIfNotExists(zookeeper_path + "/started|" + current_host, "");
             zookeeper->createIfNotExists(zookeeper_path + "/current|" + current_host + "|" + new_stage, message);
@@ -90,7 +90,7 @@ void BackupCoordinationStageSync::setError(const String & current_host, const Ex
         /// so the following line tries to preserve the error status.
         auto code = zookeeper->trySet(zookeeper_path, Stage::ERROR);
         if (code != Coordination::Error::ZOK)
-            throw zkutil::KeeperException(code, zookeeper_path);
+            throw zkutil::KeeperException::fromPath(code, zookeeper_path);
     });
 }
 

@@ -13,13 +13,23 @@ namespace DB
 
 class Context;
 
-/* AzureBlob(source, [access_key_id, secret_access_key,] [format, structure, compression]) - creates a temporary storage for a file in AzureBlob.
+/* AzureBlob(source, [access_key_id, secret_access_key,] [format, compression, structure]) - creates a temporary storage for a file in AzureBlob.
  */
 class TableFunctionAzureBlobStorage : public ITableFunction
 {
 public:
     static constexpr auto name = "azureBlobStorage";
-    static constexpr auto signature = "- connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure]\n";
+
+    static constexpr auto signature = " - connection_string, container_name, blobpath\n"
+                                      " - connection_string, container_name, blobpath, structure \n"
+                                      " - connection_string, container_name, blobpath, format \n"
+                                      " - connection_string, container_name, blobpath, format, compression \n"
+                                      " - connection_string, container_name, blobpath, format, compression, structure \n"
+                                      " - storage_account_url, container_name, blobpath, account_name, account_key\n"
+                                      " - storage_account_url, container_name, blobpath, account_name, account_key, structure\n"
+                                      " - storage_account_url, container_name, blobpath, account_name, account_key, format\n"
+                                      " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression\n"
+                                      " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure\n";
 
     static size_t getMaxNumberOfArguments() { return 8; }
 
@@ -46,7 +56,9 @@ public:
         return {"_path", "_file"};
     }
 
-    static StorageAzureBlob::Configuration parseArgumentsImpl(ASTs & args, const ContextPtr & context, bool get_format_from_file = true);
+    virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context);
+
+    static void addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr & context);
 
 protected:
 
@@ -54,11 +66,12 @@ protected:
         const ASTPtr & ast_function,
         ContextPtr context,
         const std::string & table_name,
-        ColumnsDescription cached_columns) const override;
+        ColumnsDescription cached_columns,
+        bool is_insert_query) const override;
 
     const char * getStorageTypeName() const override { return "Azure"; }
 
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     mutable StorageAzureBlob::Configuration configuration;
