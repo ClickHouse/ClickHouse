@@ -30,7 +30,7 @@ from docker_pull_helper import get_image_with_version, DockerImage
 from env_helper import CI, TEMP_PATH as TEMP, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import TestResults, TestResult
+from report import TestResults, TestResult, FAILURE, FAIL, OK, SUCCESS
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -41,10 +41,6 @@ RPM_IMAGE = "clickhouse/install-rpm-test"
 DEB_IMAGE = "clickhouse/install-deb-test"
 TEMP_PATH = Path(TEMP)
 LOGS_PATH = TEMP_PATH / "tests_logs"
-SUCCESS = "success"
-FAILURE = "failure"
-OK = "OK"
-FAIL = "FAIL"
 
 
 def prepare_test_scripts():
@@ -197,10 +193,7 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> TestResults:
                 status = FAIL
             copy2(log_file, LOGS_PATH)
             archive_path = TEMP_PATH / f"{container_name}-{retry}.tar.gz"
-            compress_fast(
-                LOGS_PATH.as_posix(),
-                archive_path.as_posix(),
-            )
+            compress_fast(LOGS_PATH, archive_path)
             logs.append(archive_path)
 
         subprocess.check_call(f"docker kill -s 9 {container_id}", shell=True)
