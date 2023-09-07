@@ -43,7 +43,6 @@ jobs:
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/checkout_source_code/tmp
-          S3_BUILDS_BUCKET=vdimir-test-chrepo-fetch
           EOF
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
@@ -277,7 +276,6 @@ jobs:
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
           BUILD_NAME=package_release
-          S3_BUILDS_BUCKET=vdimir-test-chrepo-fetch
           EOF
       - name: Download changed images
         uses: actions/download-artifact@v3
@@ -324,7 +322,6 @@ jobs:
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
           BUILD_NAME=binary_release
-          S3_BUILDS_BUCKET=vdimir-test-chrepo-fetch
           EOF
       - name: Download changed images
         uses: actions/download-artifact@v3
