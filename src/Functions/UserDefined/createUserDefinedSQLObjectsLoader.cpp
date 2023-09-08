@@ -40,7 +40,7 @@ std::unique_ptr<IUserDefinedSQLObjectsLoader> createUserDefinedSQLObjectsLoader(
     String default_path = fs::path{global_context->getPath()} / "user_defined/";
     String path = config.getString(disk_path_key, default_path);
 
-    if(global_context->hasMetadataStoreFoundationDB())
+    if (global_context->hasMetadataStoreFoundationDB())
     {
         return std::make_unique<UserDefinedSQLObjectsLoaderFromFDB>(global_context, path);
     }

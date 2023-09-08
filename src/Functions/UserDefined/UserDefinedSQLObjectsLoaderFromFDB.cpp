@@ -59,7 +59,7 @@ UserDefinedSQLObjectsLoaderFromFDB::UserDefinedSQLObjectsLoaderFromFDB(const Con
     , dir_path{makeDirectoryPathCanonical(dir_path_)}
     , log{&Poco::Logger::get("UserDefinedSQLObjectsLoaderFromFDB")}
 {
-    if(!meta_store)
+    if (!meta_store)
     {
         meta_store = global_context->getMetadataStoreFoundationDB();
     }
