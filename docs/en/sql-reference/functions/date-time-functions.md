@@ -237,6 +237,11 @@ type_samoa: DateTime('US/Samoa')
 int32samoa: 1546300800
 ```
 
+**See Also**
+
+- [formatDateTime](#date_time_functions-formatDateTime) - supports non-constant timezone.
+- [toString](type-conversion-functions.md#tostring) - supports non-constant timezone.
+
 ## timeZoneOf
 
 Returns the timezone name of [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md) data types.
