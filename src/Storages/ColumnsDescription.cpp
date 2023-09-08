@@ -725,11 +725,13 @@ CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_
 
 CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name) const
 {
+    assert (column_name != BlockNumberColumn::name);
     return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
 }
 
 ASTPtr ColumnsDescription::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
+    assert (column_name != BlockNumberColumn::name);
     const auto it = columns.get<1>().find(column_name);
 
     if (it == columns.get<1>().end() || !it->codec)

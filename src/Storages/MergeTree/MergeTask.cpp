@@ -255,14 +255,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     if (local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
         ctx->need_remove_expired_values = true;
 
-    if (supportsBlockNumberColumn(global_ctx) && !global_ctx->storage_columns.contains(BlockNumberColumn.name))
+    if (supportsBlockNumberColumn(global_ctx) && !global_ctx->storage_columns.contains(BlockNumberColumn::name))
     {
-        global_ctx->storage_columns.emplace_back(BlockNumberColumn);
-        global_ctx->all_column_names.emplace_back(BlockNumberColumn.name);
-        global_ctx->gathering_columns.emplace_back(BlockNumberColumn);
-        global_ctx->gathering_column_names.emplace_back(BlockNumberColumn.name);
-        auto info = BlockNumberColumn.type->createSerializationInfo(info_settings);
-        infos.emplace(BlockNumberColumn.name, std::move(info));
+        global_ctx->storage_columns.emplace_back(NameAndTypePair{BlockNumberColumn::name,BlockNumberColumn::type});
+        global_ctx->all_column_names.emplace_back(BlockNumberColumn::name);
+        global_ctx->gathering_columns.emplace_back(NameAndTypePair{BlockNumberColumn::name,BlockNumberColumn::type});
+        global_ctx->gathering_column_names.emplace_back(BlockNumberColumn::name);
+        auto info = BlockNumberColumn::type->createSerializationInfo(info_settings);
+        infos.emplace(BlockNumberColumn::name, std::move(info));
     }
     global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
 
@@ -1013,7 +1013,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
         {
             for (const auto & col : global_ctx->merging_column_names)
             {
-                if (col != BlockNumberColumn.name)
+                if (col != BlockNumberColumn::name)
                     global_ctx->deduplicate_by_columns.emplace_back(col);
             }
         }

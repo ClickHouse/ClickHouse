@@ -456,15 +456,10 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
             const auto & columns = metadata_snapshot->getColumns();
 
             CompressionCodecPtr compression;
-            if (name_and_type.name == BlockNumberColumn.name)
-            {
-                auto data_bytes_size = BlockNumberColumn.type->getSizeOfValueInMemory();
-                compression = getCompressionCodecDelta(data_bytes_size);
-            }
+            if (name_and_type.name == BlockNumberColumn::name)
+                compression = BlockNumberColumn::compression_codec;
             else
-            {
                 compression = columns.getCodecOrDefault(name_and_type.name);
-            }
 
             it = streams.try_emplace(data_file.name, storage.disk, data_file.path,
                                      storage.file_checker.getFileSize(data_file.path),

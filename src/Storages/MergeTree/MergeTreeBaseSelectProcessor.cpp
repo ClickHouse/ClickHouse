@@ -526,7 +526,7 @@ static void injectNonConstVirtualColumns(
                 inserter.insertUInt8Column(column, virtual_column_name);
         }
 
-        if (virtual_column_name == BlockNumberColumn.name)
+        if (virtual_column_name == BlockNumberColumn::name)
         {
             ColumnPtr column;
             if (rows)
@@ -536,10 +536,10 @@ static void injectNonConstVirtualColumns(
                 {
                     value = task->data_part ? task->data_part->info.min_block : 0;
                 }
-                column = BlockNumberColumn.type->createColumnConst(rows, value)->convertToFullColumnIfConst();
+                column = BlockNumberColumn::type->createColumnConst(rows, value)->convertToFullColumnIfConst();
             }
             else
-                column = BlockNumberColumn.type->createColumn();
+                column = BlockNumberColumn::type->createColumn();
 
             inserter.insertUInt64Column(column, virtual_column_name);
         }

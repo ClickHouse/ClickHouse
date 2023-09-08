@@ -340,7 +340,7 @@ void fillMissingColumns(
         }
         else
         {
-            if (requested_column->name == BlockNumberColumn.name)
+            if (requested_column->name == BlockNumberColumn::name)
                 res_columns[i] = type->createColumnConst(num_rows, block_number)->convertToFullColumnIfConst();
             else
                 /// We must turn a constant column into a full column because the interpreter could infer

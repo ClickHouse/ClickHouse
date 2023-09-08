@@ -58,15 +58,10 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     for (const auto & column : columns_list)
     {
         ASTPtr compression;
-        if (column.name == BlockNumberColumn.name)
-        {
-            auto data_bytes_size = BlockNumberColumn.type->getSizeOfValueInMemory();
-            compression = getCompressionCodecDelta(data_bytes_size)->getFullCodecDesc();
-        }
+        if (column.name == BlockNumberColumn::name)
+            compression = BlockNumberColumn::compression_codec->getFullCodecDesc();
         else
-        {
             compression = storage_columns.getCodecDescOrDefault(column.name, default_codec);
-        }
         addStreams(column, compression);
     }
 }

@@ -1,10 +1,16 @@
 #pragma once
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Compression/CompressionFactory.h>
 
 namespace DB
 {
 
-const NameAndTypePair BlockNumberColumn {"_block_number", std::make_shared<DataTypeUInt64>()};
+struct BlockNumberColumn
+{
+    static const String name;
+    static const DataTypePtr type;
+    static const CompressionCodecPtr compression_codec;
+};
 
 }

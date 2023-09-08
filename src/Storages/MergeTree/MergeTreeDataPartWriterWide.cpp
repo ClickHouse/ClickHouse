@@ -92,15 +92,10 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     for (const auto & it : columns_list)
     {
         ASTPtr compression;
-        if (it.name == BlockNumberColumn.name)
-        {
-            auto data_bytes_size = BlockNumberColumn.type->getSizeOfValueInMemory();
-            compression = getCompressionCodecDelta(data_bytes_size)->getFullCodecDesc();
-        }
+        if (it.name == BlockNumberColumn::name)
+            compression = BlockNumberColumn::compression_codec->getFullCodecDesc();
         else
-        {
             compression = columns.getCodecDescOrDefault(it.name, default_codec);
-        }
         addStreams(it, compression);
     }
 }

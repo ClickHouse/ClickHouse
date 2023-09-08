@@ -418,7 +418,7 @@ static void validateUpdateColumns(
         }
 
         /// Dont allow to override value of block number virtual column
-        if (!found && column_name == BlockNumberColumn.name)
+        if (!found && column_name == BlockNumberColumn::name)
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Update is not supported for virtual column {} ", backQuote(column_name));
         }
@@ -519,7 +519,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         for (const auto & [name, _] : command.column_to_update_expression)
         {
             if (!available_columns_set.contains(name) && name != LightweightDeleteDescription::FILTER_COLUMN.name
-                && name != BlockNumberColumn.name)
+                && name != BlockNumberColumn::name)
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
                     "Column {} is updated but not requested to read", name);
 
@@ -621,8 +621,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                     type = physical_column->type;
                 else if (column == LightweightDeleteDescription::FILTER_COLUMN.name)
                     type = LightweightDeleteDescription::FILTER_COLUMN.type;
-                else if (column == BlockNumberColumn.name)
-                    type = BlockNumberColumn.type;
+                else if (column == BlockNumberColumn::name)
+                    type = BlockNumberColumn::type;
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column {}", column);
 
@@ -1097,12 +1097,12 @@ struct VirtualColumns
 
                 virtuals.emplace_back(ColumnAndPosition{.column = std::move(column), .position = i});
             }
-            else if (columns_to_read[i] == BlockNumberColumn.name)
+            else if (columns_to_read[i] == BlockNumberColumn::name)
             {
-                if (!part->getColumns().contains(BlockNumberColumn.name))
+                if (!part->getColumns().contains(BlockNumberColumn::name))
                 {
                     ColumnWithTypeAndName block_number_column;
-                    block_number_column.type = BlockNumberColumn.type;
+                    block_number_column.type = BlockNumberColumn::type;
                     block_number_column.column = block_number_column.type->createColumnConst(0, part->info.min_block);
                     block_number_column.name = std::move(columns_to_read[i]);
 
