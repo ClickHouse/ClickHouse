@@ -250,15 +250,14 @@ KeeperStateManager::KeeperStateManager(
     , log_store(nuraft::cs_new<KeeperLogStore>(
           LogFileSettings
           {
-            .force_sync = coordination_settings->force_sync,
-            .compress_logs = coordination_settings->compress_logs,
-            .rotate_interval = coordination_settings->rotate_log_storage_interval,
-            .max_size = coordination_settings->max_log_file_size,
-            .overallocate_size = coordination_settings->log_file_overallocate_size
-          },
+              .force_sync = coordination_settings->force_sync,
+              .compress_logs = coordination_settings->compress_logs,
+              .rotate_interval = coordination_settings->rotate_log_storage_interval,
+              .max_size = coordination_settings->max_log_file_size,
+              .overallocate_size = coordination_settings->log_file_overallocate_size},
           FlushSettings
           {
-            .max_flush_batch_size = coordination_settings->max_flush_batch_size,
+              .max_flush_batch_size = coordination_settings->max_flush_batch_size,
           },
           keeper_context_))
     , server_state_file_name(server_state_file_name_)

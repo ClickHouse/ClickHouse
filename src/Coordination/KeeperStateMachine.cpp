@@ -167,7 +167,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nur
         request_for_session->zxid = log_idx;
 
     preprocess(*request_for_session);
-    auto result = nuraft::buffer::alloc(8);
+    auto result = nuraft::buffer::alloc(sizeof(log_idx));
     nuraft::buffer_serializer ss(result);
     ss.put_u64(log_idx);
     return result;
