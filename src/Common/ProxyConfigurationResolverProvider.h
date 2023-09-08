@@ -18,7 +18,9 @@ public:
      * Returns appropriate ProxyConfigurationResolver based on current CH settings (Remote resolver or List resolver).
      * If no configuration is found, returns Environment Resolver.
      * */
-    static std::shared_ptr<ProxyConfigurationResolver> get(Protocol protocol);
+    static std::shared_ptr<ProxyConfigurationResolver> get(
+        Protocol protocol,
+        const Poco::Util::AbstractConfiguration & configuration);
 
     /*
      * This API exists exclusively for backward compatibility with old S3 storage specific proxy configuration.

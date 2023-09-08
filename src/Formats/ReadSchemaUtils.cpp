@@ -82,6 +82,7 @@ try
             bool is_eof = false;
             try
             {
+                read_buffer_iterator.setPreviousReadBuffer(std::move(buf));
                 buf = read_buffer_iterator.next();
                 if (!buf)
                     break;

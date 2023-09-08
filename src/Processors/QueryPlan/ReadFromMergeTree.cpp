@@ -1277,6 +1277,7 @@ static void buildIndexes(
     std::optional<ReadFromMergeTree::Indexes> & indexes,
     ActionsDAGPtr filter_actions_dag,
     const MergeTreeData & data,
+    const MergeTreeData::DataPartsVector & parts,
     const ContextPtr & context,
     const SelectQueryInfo & query_info,
     const StorageMetadataPtr & metadata_snapshot)
@@ -1299,7 +1300,7 @@ static void buildIndexes(
             context,
             primary_key_column_names,
             primary_key.expression,
-            array_join_name_set}, {}, {}, {}, false});
+            array_join_name_set}, {}, {}, {}, false, {}});
     }
     else
     {
@@ -1307,7 +1308,7 @@ static void buildIndexes(
             query_info,
             context,
             primary_key_column_names,
-            primary_key.expression}, {}, {}, {}, false});
+            primary_key.expression}, {}, {}, {}, false, {}});
     }
 
     if (metadata_snapshot->hasPartitionKey())
@@ -1319,6 +1320,9 @@ static void buildIndexes(
         indexes->minmax_idx_condition.emplace(filter_actions_dag, context, minmax_columns_names, minmax_expression_actions, NameSet());
         indexes->partition_pruner.emplace(metadata_snapshot, filter_actions_dag, context, false /* strict */);
     }
+
+    /// TODO Support row_policy_filter and additional_filters
+    indexes->part_values = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(data, parts, filter_actions_dag, context);
 
     indexes->use_skip_indexes = settings.use_skip_indexes;
     bool final = query_info.isFinal();
@@ -1397,7 +1401,7 @@ static void buildIndexes(
 void ReadFromMergeTree::applyFilters()
 {
     auto filter_actions_dag = buildFilterDAG(context, prewhere_info, filter_nodes, query_info);
-    buildIndexes(indexes, filter_actions_dag, data, context, query_info, metadata_for_reading);
+    buildIndexes(indexes, filter_actions_dag, data, prepared_parts, context, query_info, metadata_for_reading);
 }
 
 MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
@@ -1475,11 +1479,6 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
 
     size_t total_parts = parts.size();
 
-    /// TODO Support row_policy_filter and additional_filters
-    auto part_values = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(data, parts, query_info.query, context);
-    if (part_values && part_values->empty())
-        return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
-
     result.column_names_to_read = real_column_names;
 
     /// If there are only virtual columns in the query, you must request at least one non-virtual one.
@@ -1494,7 +1493,10 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
     const Names & primary_key_column_names = primary_key.column_names;
 
     if (!indexes)
-        buildIndexes(indexes, query_info.filter_actions_dag, data, context, query_info, metadata_snapshot);
+        buildIndexes(indexes, query_info.filter_actions_dag, data, parts, context, query_info, metadata_snapshot);
+
+    if (indexes->part_values && indexes->part_values->empty())
+        return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
 
     if (settings.force_primary_key && indexes->key_condition.alwaysUnknownOrTrue())
     {
@@ -1518,7 +1520,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
             indexes->minmax_idx_condition,
             parts,
             alter_conversions,
-            part_values,
+            indexes->part_values,
             metadata_snapshot_base,
             data,
             context,
