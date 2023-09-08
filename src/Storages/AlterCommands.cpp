@@ -1077,9 +1077,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (!command.if_exists)
                 {
-                    String exception_message = fmt::format("Wrong column. Cannot find column {} to modify", backQuote(column_name));
-                    all_columns.appendHintsMessage(exception_message, column_name);
-                    throw Exception::createDeprecated(exception_message, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+                    throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Wrong column. Cannot find column {} to modify{}",
+                                    backQuote(column_name), all_columns.getHintsMessage(column_name));
                 }
                 else
                     continue;
@@ -1351,9 +1350,14 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
 }
 
-bool AlterCommands::hasSettingsAlterCommand() const
+bool AlterCommands::hasNonReplicatedAlterCommand() const
 {
-    return std::any_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter(); });
+    return std::any_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter() || c.isCommentAlter(); });
+}
+
+bool AlterCommands::areNonReplicatedAlterCommands() const
+{
+    return std::all_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter() || c.isCommentAlter(); });
 }
 
 bool AlterCommands::isSettingsAlter() const
