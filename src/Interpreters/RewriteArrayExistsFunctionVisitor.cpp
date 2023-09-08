@@ -19,7 +19,7 @@ void RewriteArrayExistsFunctionMatcher::visit(ASTPtr & ast, Data & data)
     {
         if (join->using_expression_list)
         {
-            auto it = std::find(join->children.begin(), join->children.end(), join->using_expression_list);
+            auto * it = std::find(join->children.begin(), join->children.end(), join->using_expression_list);
 
             visit(join->using_expression_list, data);
 
@@ -29,7 +29,7 @@ void RewriteArrayExistsFunctionMatcher::visit(ASTPtr & ast, Data & data)
 
         if (join->on_expression)
         {
-            auto it = std::find(join->children.begin(), join->children.end(), join->on_expression);
+            auto * it = std::find(join->children.begin(), join->children.end(), join->on_expression);
 
             visit(join->on_expression, data);
 
