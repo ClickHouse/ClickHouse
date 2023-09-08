@@ -1210,6 +1210,7 @@ private:
     friend class ConvertingAggregatedToChunksSource;
     friend class ConvertingAggregatedToChunksWithMergingSource;
     friend class AggregatingInOrderTransform;
+    friend class AggregatingPartialResultTransform;
 
     /// Data structure of source blocks.
     Block header;
@@ -1391,6 +1392,7 @@ private:
         std::atomic<bool> * is_cancelled = nullptr) const;
 
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
+    Block prepareBlockAndFillWithoutKeySnapshot(AggregatedDataVariants & data_variants) const;
     BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, ThreadPool * thread_pool) const;
 
     template <bool return_single_block>
