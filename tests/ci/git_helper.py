@@ -14,7 +14,7 @@ RELEASE_BRANCH_REGEXP = r"\A\d+[.]\d+\Z"
 TAG_REGEXP = (
     r"\Av\d{2}[.][1-9]\d*[.][1-9]\d*[.][1-9]\d*-(testing|prestable|stable|lts)\Z"
 )
-SHA_REGEXP = r"\A([0-9]|[a-f]){40}\Z"
+SHA_REGEXP = re.compile(r"\A([0-9]|[a-f]){40}\Z")
 
 CWD = p.dirname(p.realpath(__file__))
 TWEAK = 1
@@ -34,8 +34,7 @@ def removesuffix(string: str, suffix: str) -> str:
 
 
 def commit(name: str) -> str:
-    r = re.compile(SHA_REGEXP)
-    if not r.match(name):
+    if not SHA_REGEXP.match(name):
         raise argparse.ArgumentTypeError(
             "commit hash should contain exactly 40 hex characters"
         )

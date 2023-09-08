@@ -7,10 +7,11 @@ from typing import Optional
 
 
 PIGZ = Path("/usr/bin/pigz")
+SUFFIX = ".zst"
 
 
 def compress_file_fast(path: Path, archive_path: Path) -> None:
-    if archive_path.suffix == ".zst":
+    if archive_path.suffix == SUFFIX:
         subprocess.check_call(f"zstd < {path} > {archive_path}", shell=True)
     elif PIGZ.exists():
         subprocess.check_call(f"pigz < {path} > {archive_path}", shell=True)
@@ -22,7 +23,7 @@ def compress_fast(
     path: Path, archive_path: Path, exclude: Optional[Path] = None
 ) -> None:
     program_part = ""
-    if archive_path.suffix == ".zst":
+    if archive_path.suffix == SUFFIX:
         logging.info("zstd will be used for compression")
         program_part = "--use-compress-program='zstd --threads=0'"
     elif PIGZ.exists():
@@ -50,7 +51,7 @@ def compress_fast(
 
 def decompress_fast(archive_path: Path, result_path: Optional[Path] = None) -> None:
     program_part = ""
-    if archive_path.suffix == ".zst":
+    if archive_path.suffix == SUFFIX:
         logging.info(
             "zstd will be used for decompression ('%s' -> '%s')",
             archive_path,
