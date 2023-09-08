@@ -4,6 +4,7 @@ import csv
 import os
 import time
 from typing import Dict, List, Optional, Union
+from collections import defaultdict
 import logging
 
 from github import Github
@@ -128,6 +129,28 @@ def post_commit_status(
             logging.error("Failed to update the status comment, continue anyway")
 
 
+STATUS_ICON_MAP = defaultdict(
+    str,
+    {
+        ERROR: "🔴",
+        FAILURE: "🔴",
+        PENDING: "🟡",
+        SUCCESS: "🟢",
+    },
+)
+
+
+def update_pr_title_icon(pr: Github.PullRequest, status: str) -> None:
+    new_title = pr.title
+    new_status_icon = STATUS_ICON_MAP[status]
+    if new_title and new_title[-1] != new_status_icon:
+        if new_title[-1] in set(STATUS_ICON_MAP.values()):
+            new_title = new_title[:-1] + " " + new_status_icon
+        else:
+            new_title = new_title + " " + new_status_icon
+        pr.edit(title=new_title)
+
+
 def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     """It adds or updates the comment status to all Pull Requests but for release
     one, so the method does nothing for simple pushes and pull requests with
@@ -167,6 +190,8 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
             comment = ic
             break
 
+    update_pr_title_icon(pr, get_worst_state(statuses))
+
     if comment is None:
         pr.create_issue_comment(comment_body)
         return
@@ -180,15 +205,6 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
 def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
     """The method generates the comment body, as well it updates the CI report"""
 
-    def beauty_state(state: str) -> str:
-        if state == SUCCESS:
-            return f"🟢 {state}"
-        if state == PENDING:
-            return f"🟡 {state}"
-        if state in [ERROR, FAILURE]:
-            return f"🔴 {state}"
-        return state
-
     report_url = create_ci_report(pr_info, statuses)
     worst_state = get_worst_state(statuses)
     if not worst_state:
@@ -196,14 +212,14 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
         # the function should not be used on empty statuses
         worst_state = "The commit doesn't have the statuses yet"
     else:
-        worst_state = f"The overall status of the commit is {beauty_state(worst_state)}"
+        worst_state = f"The overall status of the commit is {STATUS_ICON_MAP[worst_state]} {worst_state}"
 
     comment_body = (
         f"<!-- automatic status comment for PR #{pr_info.number} "
         f"from {pr_info.head_name}:{pr_info.head_ref} -->\n"
         f"*This is an automated comment for commit {pr_info.sha} with "
-        f"description of existing statuses. It's updated for the latest CI running*\n"
-        f"📄 [Click here]({report_url}) to open a full report in a separate page\n"
+        f"description of existing statuses. It's updated for the latest CI running*\n\n"
+        f"[📄 Click here]({report_url}) to open a full report in a separate page\n"
         f"{worst_state}\n\n"
     )
     # group checks by the name to get the worst one per each
@@ -244,29 +260,30 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
         state = get_worst_state(gs)
         table_row = (
             f"<tr><td>{desc.name}</td><td>{desc.description}</td>"
-            f"<td>{beauty_state(state)}</td></tr>\n"
+            f"<td>{STATUS_ICON_MAP[worst_state]} {worst_state}</td></tr>\n"
         )
         if state == SUCCESS:
             hidden_table_rows.append(table_row)
         else:
             visible_table_rows.append(table_row)
 
-    visible_table_rows.sort()
-    hidden_table_rows.sort()
+    result = [comment_body]
 
-    return "".join(
-        [
-            comment_body,
-            table_header,
-            *visible_table_rows,
-            table_footer,
-            details_header,
-            table_header,
-            *hidden_table_rows,
-            table_footer,
-            details_footer,
-        ]
-    )
+    if visible_table_rows:
+        visible_table_rows.sort()
+        result.append(table_header)
+        result.extend(visible_table_rows)
+        result.append(table_footer)
+
+    if hidden_table_rows:
+        hidden_table_rows.sort()
+        result.append(details_header)
+        result.append(table_header)
+        result.extend(hidden_table_rows)
+        result.append(table_footer)
+        result.append(details_footer)
+
+    return "".join(result)
 
 
 def get_worst_state(statuses: CommitStatuses) -> str:
