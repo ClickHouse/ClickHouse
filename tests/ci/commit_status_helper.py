@@ -298,7 +298,14 @@ def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
         log_urls = None
         if status.target_url is not None:
             log_urls = [status.target_url]
-        test_results.append(TestResult(status.context, status.state, log_urls=log_urls))
+        raw_logs = None
+        if status.description:
+            raw_logs = status.description
+        test_results.append(
+            TestResult(
+                status.context, status.state, log_urls=log_urls, raw_logs=raw_logs
+            )
+        )
     return upload_results(
         S3Helper(), pr_info.number, pr_info.sha, test_results, [], CI_STATUS_NAME
     )
