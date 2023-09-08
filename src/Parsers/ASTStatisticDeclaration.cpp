@@ -1,4 +1,5 @@
 #include <Parsers/ASTStatisticDeclaration.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
@@ -12,17 +13,27 @@ ASTPtr ASTStatisticDeclaration::clone() const
 {
     auto res = std::make_shared<ASTStatisticDeclaration>();
 
-    res->column_name = column_name;
+    res->set(res->columns, columns->clone());
     res->type = type;
 
     return res;
 }
 
-
-void ASTStatisticDeclaration::formatImpl(const FormatSettings & s, FormatState &, FormatStateStacked) const
+std::vector<String> ASTStatisticDeclaration::getColumnNames() const
 {
-    s.ostr << backQuoteIfNeed(column_name);
-    s.ostr << " ";
+    std::vector<String> result;
+    result.reserve(columns->children.size());
+    for (const ASTPtr & column_ast : columns->children)
+    {
+        result.push_back(column_ast->as<ASTIdentifier &>().name());
+    }
+    return result;
+
+}
+
+void ASTStatisticDeclaration::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+{
+    columns->formatImpl(s, state, frame);
     s.ostr << (s.hilite ? hilite_keyword : "") << " TYPE " << (s.hilite ? hilite_none : "");
     s.ostr << backQuoteIfNeed(type);
 }

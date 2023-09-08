@@ -135,7 +135,7 @@ StatisticPtr TDigestCreator(const StatisticDescription & stat)
     return StatisticPtr(new TDigestStatistic(stat));
 }
 
-void MergeTreeStatisticFactory::registerCreator(const std::string & stat_type, Creator creator)
+void MergeTreeStatisticFactory::registerCreator(StatisticType stat_type, Creator creator)
 {
     if (!creators.emplace(stat_type, std::move(creator)).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatisticFactory: the statistic creator type {} is not unique", stat_type);
@@ -143,7 +143,7 @@ void MergeTreeStatisticFactory::registerCreator(const std::string & stat_type, C
 
 MergeTreeStatisticFactory::MergeTreeStatisticFactory()
 {
-    registerCreator("tdigest", TDigestCreator);
+    registerCreator(TDigest, TDigestCreator);
 
     ///registerCreator("cm_sketch", CMSketchCreator);
 }
@@ -160,16 +160,7 @@ StatisticPtr MergeTreeStatisticFactory::get(const StatisticDescription & stat) c
     if (it == creators.end())
     {
         throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Unknown Statistic type '{}'. Available types: {}", stat.type,
-                std::accumulate(creators.cbegin(), creators.cend(), std::string{},
-                        [] (auto && left, const auto & right) -> std::string
-                        {
-                            if (left.empty())
-                                return right.first;
-                            else
-                                return left + ", " + right.first;
-                        })
-                );
+                "Unknown Statistic type '{}'. Available types: tdigest", stat.type);
     }
     return std::make_shared<TDigestStatistic>(stat);
 }

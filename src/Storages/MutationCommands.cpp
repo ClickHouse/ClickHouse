@@ -77,7 +77,11 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.type = MATERIALIZE_STATISTIC;
         res.partition = command->partition;
         res.predicate = nullptr;
-        res.statistic_column_name = command->statistic_decl->as<ASTStatisticDeclaration &>().column_name;
+        for (const ASTPtr & column_ast : command->statistic_decl->as<ASTStatisticDeclaration &>().columns->children)
+        {
+            const auto & column = column_ast->as<ASTIdentifier &>().getColumnName();
+            res.statistic_columns.push_back(column);
+        }
         return res;
     }
     else if (command->type == ASTAlterCommand::MATERIALIZE_PROJECTION)

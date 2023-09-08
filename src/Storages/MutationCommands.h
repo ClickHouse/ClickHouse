@@ -53,7 +53,7 @@ struct MutationCommand
     /// For MATERIALIZE INDEX and PROJECTION and STATISTIC
     String index_name = {};
     String projection_name = {};
-    String statistic_column_name = {};
+    std::vector<String> statistic_columns = {};
 
     /// For MATERIALIZE INDEX, UPDATE and DELETE.
     ASTPtr partition = {};

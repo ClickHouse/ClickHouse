@@ -7,13 +7,15 @@
 namespace DB
 {
 
+enum StatisticType
+{
+    TDigest = 0,
+};
+
 struct StatisticDescription
 {
-    /// Definition AST of statistic
-    ASTPtr definition_ast;
-
     /// the type of statistic, right now it's only tdigest.
-    String type;
+    StatisticType type;
 
     /// Names of statistic columns
     String column_name;
@@ -21,24 +23,22 @@ struct StatisticDescription
     /// Data types of statistic columns
     DataTypePtr data_type;
 
-    static StatisticDescription getStatisticFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context);
-
     StatisticDescription() = default;
 
-    /// We need custom copy constructors because we don't want
-    /// unintentionaly share AST variables and modify them.
-    StatisticDescription(const StatisticDescription & other);
-    StatisticDescription & operator=(const StatisticDescription & other);
+    static StatisticType stringToType(String type);
 };
 
 struct StatisticsDescriptions : public std::vector<StatisticDescription>
 {
+    std::vector<ASTPtr> definition_asts;
     /// Stat with name exists
     bool has(const String & name) const;
+    /// merge with other Statistics
+    void merge(const StatisticsDescriptions & other);
     /// Convert description to string
     String toString() const;
     /// Parse description from string
-    static StatisticsDescriptions parse(const String & str, const ColumnsDescription & columns, ContextPtr context);
+    static StatisticsDescriptions getStatisticsFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context);
 };
 
 }

@@ -580,9 +580,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
 
         if (args.query.columns_list && args.query.columns_list->stats)
-            for (const auto & stat : args.query.columns_list->stats->children)
-                metadata.statistics.push_back(
-                    StatisticDescription::getStatisticFromAST(stat, columns, args.getContext()));
+            for (const auto & stat_ast : args.query.columns_list->stats->children)
+            {
+                auto stats = StatisticsDescriptions::getStatisticsFromAST(stat_ast, columns, args.getContext());
+                metadata.statistics.merge(stats);
+            }
 
         if (args.query.columns_list && args.query.columns_list->projections)
             for (auto & projection_ast : args.query.columns_list->projections->children)

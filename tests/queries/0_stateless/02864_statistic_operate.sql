@@ -8,8 +8,7 @@ CREATE TABLE t1
     a Int64,
     b Float64,
     pk String,
-    STATISTIC a TYPE tdigest,
-    STATISTIC b TYPE tdigest
+    STATISTIC a, b TYPE tdigest,
 ) Engine = MergeTree() ORDER BY pk;
 
 SHOW CREATE TABLE t1;
@@ -20,18 +19,21 @@ SELECT 'After insert';
 EXPLAIN SYNTAX SELECT count(*) FROM t1 WHERE b < 10 and a < 10;
 SELECT count(*) FROM t1 WHERE b < 10 and a < 10;
 
-ALTER TABLE t1 DROP STATISTIC a TYPE tdigest;
-ALTER TABLE t1 DROP STATISTIC b TYPE tdigest;
+ALTER TABLE t1 DROP STATISTIC a, b TYPE tdigest;
 
 SELECT 'After drop statistic';
 EXPLAIN SYNTAX SELECT count(*) FROM t1 WHERE b < 10 and a < 10;
 SELECT count(*) FROM t1 WHERE b < 10 and a < 10;
 
-ALTER TABLE t1 ADD STATISTIC a TYPE tdigest;
-ALTER TABLE t1 ADD STATISTIC b TYPE tdigest;
+--SHOW CREATE TABLE t1;
 
-ALTER TABLE t1 MATERIALIZE STATISTIC a TYPE tdigest;
-ALTER TABLE t1 MATERIALIZE STATISTIC b TYPE tdigest;
+ALTER TABLE t1 ADD STATISTIC a, b TYPE tdigest;
+
+SELECT 'After add statistic';
+
+--SHOW CREATE TABLE t1;
+
+ALTER TABLE t1 MATERIALIZE STATISTIC a, b TYPE tdigest;
 INSERT INTO t1 select number, -number, generateUUIDv4() FROM system.numbers LIMIT 10000;
 
 SELECT 'After materialize statistic';

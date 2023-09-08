@@ -44,7 +44,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2],
     ...
     PROJECTION projection_name_1 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]),
-    PROJECTION projection_name_2 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY])
+    PROJECTION projection_name_2 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]),
+    ...
+    STATISTIC <COLUMN LIST> TYPE type1,
+    STATISTIC <COLUMN LIST> TYPE type2
 ) ENGINE = MergeTree()
 ORDER BY expr
 [PARTITION BY expr]
@@ -1353,3 +1356,22 @@ In this sample configuration:
 - `_part_uuid` — Unique part identifier (if enabled MergeTree setting `assign_part_uuids`).
 - `_partition_value` — Values (a tuple) of a `partition by` expression.
 - `_sample_factor` — Sample factor (from the query).
+
+## Column Statistics (Experimental) {#column-statistics}
+
+The statistic declaration is in the columns section of the `CREATE` query.
+
+``` sql
+STATISTIC <list of columns> TYPE type
+```
+
+For tables from the `*MergeTree` family, statistics can be specified.
+
+These lightweight statistics aggregate information about distribution of values in columns.
+They can be used for query optimization (At current time they are used for moving expressions to PREWHERE).
+
+#### Available Types of Column Statistics {#available-types-of-column-statistics}
+
+-   `tdigest`
+
+    Stores distribution of values from numeric columns in [TDigest](https://github.com/tdunning/t-digest) sketch.

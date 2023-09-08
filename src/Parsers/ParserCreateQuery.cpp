@@ -165,14 +165,13 @@ bool ParserStatisticDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 {
     ParserKeyword s_type("TYPE");
 
-    ParserIdentifier name_p;
+    ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserIdentifier type_p;
 
-    ASTPtr name;
-    ASTPtr column;
+    ASTPtr columns;
     ASTPtr type;
 
-    if (!name_p.parse(pos, name, expected))
+    if (!columns_p.parse(pos, columns, expected))
         return false;
 
     if (!s_type.ignore(pos, expected))
@@ -182,7 +181,7 @@ bool ParserStatisticDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         return false;
 
     auto stat = std::make_shared<ASTStatisticDeclaration>();
-    stat->column_name = name->as<ASTIdentifier &>().name();
+    stat->set(stat->columns, columns);
     stat->type = type->as<ASTIdentifier &>().name();
     node = stat;
 

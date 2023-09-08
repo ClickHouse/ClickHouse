@@ -1,0 +1,22 @@
+CREATE TABLE default.t1\n(\n    `a` Int64,\n    `b` Float64,\n    `pk` String,\n    STATISTIC a, b TYPE tdigest\n)\nENGINE = MergeTree\nORDER BY pk\nSETTINGS index_granularity = 8192
+After insert
+SELECT count()
+FROM t1
+PREWHERE (a < 10) AND (b < 10)
+10
+After drop statistic
+SELECT count()
+FROM t1
+PREWHERE (b < 10) AND (a < 10)
+10
+After add statistic
+After materialize statistic
+SELECT count()
+FROM t1
+PREWHERE (a < 10) AND (b < 10)
+20
+After merge
+SELECT count()
+FROM t1
+PREWHERE (a < 10) AND (b < 10)
+20

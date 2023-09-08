@@ -459,8 +459,8 @@ ASTPtr InterpreterCreateQuery::formatStatistics(const StatisticsDescriptions & s
 {
     auto res = std::make_shared<ASTExpressionList>();
 
-    for (const auto & statistic : statistics)
-        res->children.push_back(statistic.definition_ast->clone());
+    for (const auto & definition_ast : statistics.definition_asts)
+        res->children.push_back(definition_ast->clone());
 
     return res;
 }
@@ -721,8 +721,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             }
         if (create.columns_list->stats)
             for (const auto & statistic : create.columns_list->stats->children)
-                properties.stats.push_back(
-                    StatisticDescription::getStatisticFromAST(statistic->clone(), properties.columns, getContext()));
+            {
+                auto stats = StatisticsDescriptions::getStatisticsFromAST(statistic->clone(), properties.columns, getContext());
+                properties.stats.merge(stats);
+            }
 
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)

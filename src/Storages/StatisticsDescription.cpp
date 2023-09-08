@@ -10,6 +10,8 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/StatisticsDescription.h>
 
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 
@@ -19,57 +21,50 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 };
 
-StatisticDescription StatisticDescription::getStatisticFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context)
+StatisticType StatisticDescription::stringToType(String type)
+{
+    if (type.empty())
+        return TDigest;
+    if (type == "tdigest")
+        return TDigest;
+    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type: {}", type);
+}
+
+StatisticsDescriptions StatisticsDescriptions::getStatisticsFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context)
 {
     const auto * stat_definition = definition_ast->as<ASTStatisticDeclaration>();
     if (!stat_definition)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create statistic from non ASTStatisticDeclaration AST");
 
-    StatisticDescription stat;
-    stat.definition_ast = definition_ast->clone();
-    stat.type = Poco::toLower(stat_definition->type);
-    if (stat.type != "tdigest")
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Incorrect type name {}", stat.type);
-    String column_name = stat_definition->column_name;
+    LOG_INFO(&Poco::Logger::get("stats_desc"), "stat_def is like {}", stat_definition->dumpTree());
 
-    if (!columns.hasPhysical(column_name))
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Incorrect column name {}", column_name);
+    StatisticsDescriptions stats;
+    for (const auto & column_ast : stat_definition->columns->children)
+    {
+        StatisticDescription stat;
+        stat.type = StatisticDescription::stringToType(Poco::toLower(stat_definition->type));
+        String column_name = column_ast->as<ASTIdentifier &>().name();
 
-    const auto & column = columns.getPhysical(column_name);
-    stat.column_name = column.name;
-    /// TODO: check if it is numeric.
-    stat.data_type = column.type;
+        if (!columns.hasPhysical(column_name))
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Incorrect column name {}", column_name);
+
+        const auto & column = columns.getPhysical(column_name);
+        stat.column_name = column.name;
+        /// TODO: check if it is numeric.
+        stat.data_type = column.type;
+        stats.push_back(stat);
+    }
+    stats.definition_asts.push_back(definition_ast);
+
+    if (stats.empty())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Empty statistic column list");
+
+    LOG_INFO(&Poco::Logger::get("stats_desc"), "there are {} stats", stats.size());
 
     UNUSED(context);
 
-    return stat;
+    return stats;
 }
-
-StatisticDescription::StatisticDescription(const StatisticDescription & other)
-    : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
-    , type(other.type)
-    , column_name(other.column_name)
-    , data_type(other.data_type)
-{
-}
-
-StatisticDescription & StatisticDescription::operator=(const StatisticDescription & other)
-{
-    if (&other == this)
-        return *this;
-
-    if (other.definition_ast)
-        definition_ast = other.definition_ast->clone();
-    else
-        definition_ast.reset();
-
-    type = other.type;
-    column_name = other.column_name;
-    data_type = other.data_type;
-
-    return *this;
-}
-
 
 bool StatisticsDescriptions::has(const String & name) const
 {
@@ -79,31 +74,22 @@ bool StatisticsDescriptions::has(const String & name) const
     return false;
 }
 
+void StatisticsDescriptions::merge(const StatisticsDescriptions & other)
+{
+    insert(end(), other.begin(), other.end());
+    definition_asts.insert(definition_asts.end(), other.definition_asts.begin(), other.definition_asts.end());
+}
+
 String StatisticsDescriptions::toString() const
 {
     if (empty())
         return {};
 
     ASTExpressionList list;
-    for (const auto & statistic : *this)
-        list.children.push_back(statistic.definition_ast);
+    for (const auto & ast : definition_asts)
+        list.children.push_back(ast);
 
     return serializeAST(list);
-}
-
-StatisticsDescriptions StatisticsDescriptions::parse(const String & str, const ColumnsDescription & columns, ContextPtr context)
-{
-    StatisticsDescriptions result;
-    if (str.empty())
-        return result;
-
-    ParserStatisticDeclaration parser;
-    ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-
-    for (const auto & index : list->children)
-        result.emplace_back(StatisticDescription::getStatisticFromAST(index, columns, context));
-
-    return result;
 }
 
 }

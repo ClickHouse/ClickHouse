@@ -43,10 +43,10 @@ public:
         return stat.column_name;
     }
 
-    const String & type() const
-    {
-        return stat.type;
-    }
+    //const String & type() const
+    //{
+    //    return stat.type;
+    //}
 
     virtual void serialize(WriteBuffer & buf) = 0;
 
@@ -118,13 +118,13 @@ public:
 
     Statistics getMany(const std::vector<StatisticDescription> & stats) const;
 
-    void registerCreator(const std::string & type, Creator creator);
+    void registerCreator(StatisticType type, Creator creator);
 
 protected:
     MergeTreeStatisticFactory();
 
 private:
-    using Creators = std::unordered_map<std::string, Creator>;
+    using Creators = std::unordered_map<StatisticType, Creator>;
     Creators creators;
 };
 

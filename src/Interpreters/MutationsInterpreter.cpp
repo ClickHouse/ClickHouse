@@ -724,17 +724,20 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_STATISTIC)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
-            auto it = std::find_if(
-                    std::cbegin(statistics_desc), std::end(statistics_desc),
-                    [&](const StatisticDescription & statistic)
-                    {
-                        return statistic.column_name == command.statistic_column_name;
-                    });
-            if (it == std::cend(statistics_desc))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statistic column: {}", command.statistic_column_name);
+            for (const auto & stat_column_name: command.statistic_columns)
+            {
+                auto it = std::find_if(
+                        std::cbegin(statistics_desc), std::end(statistics_desc),
+                        [&](const StatisticDescription & statistic)
+                        {
+                            return statistic.column_name == stat_column_name;
+                        });
+                if (it == std::cend(statistics_desc))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statistic column: {}", stat_column_name);
 
-            dependencies.emplace(it->column_name, ColumnDependency::STATISTIC);
-            materialized_statistics.emplace(command.statistic_column_name);
+                dependencies.emplace(it->column_name, ColumnDependency::STATISTIC);
+                materialized_statistics.emplace(stat_column_name);
+            }
         }
         else if (command.type == MutationCommand::MATERIALIZE_PROJECTION)
         {
@@ -755,7 +758,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::DROP_STATISTIC)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
-            materialized_statistics.erase(command.statistic_column_name);
+            for (const auto & stat_column_name: command.statistic_columns)
+                materialized_statistics.erase(stat_column_name);
         }
         else if (command.type == MutationCommand::DROP_PROJECTION)
         {

@@ -121,7 +121,7 @@ struct AlterCommand
     String projection_name;
 
     ASTPtr statistic_decl = nullptr;
-    String statistic_column_name;
+    std::vector<String> statistic_columns;
     String statistic_type;
 
     /// For MODIFY TTL
