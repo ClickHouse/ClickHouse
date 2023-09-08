@@ -402,14 +402,20 @@ void ReconfigCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient
     String new_members;
 
     auto operation = query->args[0].get<ReconfigCommand::Operation>();
-    if (operation == static_cast<Int64>(ReconfigCommand::Operation::ADD))
-        joining = query->args[1].safeGet<DB::String>();
-    else if (operation == static_cast<Int64>(ReconfigCommand::Operation::REMOVE))
-        leaving = query->args[1].safeGet<DB::String>();
-    else if (operation == static_cast<Int64>(ReconfigCommand::Operation::SET))
-        new_members = query->args[1].safeGet<DB::String>();
-    else
-        UNREACHABLE();
+    switch (operation)
+    {
+        case static_cast<UInt8>(ReconfigCommand::Operation::ADD):
+            joining = query->args[1].safeGet<DB::String>();
+            break;
+        case static_cast<UInt8>(ReconfigCommand::Operation::REMOVE):
+            leaving = query->args[1].safeGet<DB::String>();
+            break;
+        case static_cast<UInt8>(ReconfigCommand::Operation::SET):
+            new_members = query->args[1].safeGet<DB::String>();
+            break;
+        default:
+            UNREACHABLE();
+    }
 
     auto response = client->zookeeper->reconfig(joining, leaving, new_members);
     std::cout << response.value << '\n';

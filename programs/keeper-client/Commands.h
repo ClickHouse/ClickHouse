@@ -190,7 +190,7 @@ class RMRCommand : public IKeeperClientCommand
 
 class ReconfigCommand : public IKeeperClientCommand
 {
-    enum class Operation : Int64
+    enum class Operation : UInt8
     {
         ADD = 0,
         REMOVE = 1,
