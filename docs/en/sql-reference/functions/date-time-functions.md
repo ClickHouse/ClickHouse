@@ -1494,6 +1494,33 @@ Result:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+Additionally, the `formatDateTime` function can take a third String argument containing the name of the time zone. Example: `Asia/Istanbul`. In this case, the time is formatted according to the specified time zone.
+
+**Example**
+
+```sql
+SELECT
+    time_zone,
+    now() AS ts,
+    formatDateTime(ts, '%T', time_zone) AS str_time_timezone
+FROM system.time_zones
+WHERE time_zone LIKE 'Europe%'
+LIMIT 10
+
+┌─time_zone─────────┬──────────────────ts─┬─str_time_timezone─┐
+│ Europe/Amsterdam  │ 2023-09-08 19:03:14 │ 21:03:14          │
+│ Europe/Andorra    │ 2023-09-08 19:03:14 │ 21:03:14          │
+│ Europe/Astrakhan  │ 2023-09-08 19:03:14 │ 23:03:14          │
+│ Europe/Athens     │ 2023-09-08 19:03:14 │ 22:03:14          │
+│ Europe/Belfast    │ 2023-09-08 19:03:14 │ 20:03:14          │
+│ Europe/Belgrade   │ 2023-09-08 19:03:14 │ 21:03:14          │
+│ Europe/Berlin     │ 2023-09-08 19:03:14 │ 21:03:14          │
+│ Europe/Bratislava │ 2023-09-08 19:03:14 │ 21:03:14          │
+│ Europe/Brussels   │ 2023-09-08 19:03:14 │ 21:03:14          │
+│ Europe/Bucharest  │ 2023-09-08 19:03:14 │ 22:03:14          │
+└───────────────────┴─────────────────────┴───────────────────┘
+```
+
 **See Also**
 
 - [formatDateTimeInJodaSyntax](##formatDateTimeInJodaSyntax)
