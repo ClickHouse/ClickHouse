@@ -155,7 +155,7 @@ Maximum query execution time in seconds.
 At this time, it is not checked for one of the sorting stages, or when merging and finalizing aggregate functions.
 
 The `max_execution_time` parameter can be a bit tricky to understand. 
-It operates based on interpolation relative to the current query execution speed (this behaviour is controlled by [timeout_before_checking_execution_speed](#timeout-before-checking-execution-speed). 
+It operates based on interpolation relative to the current query execution speed (this behaviour is controlled by [timeout_before_checking_execution_speed](#timeout-before-checking-execution-speed)). 
 ClickHouse will interrupt a query if the projected execution time exceeds the specified `max_execution_time`.
 By default, the timeout_before_checking_execution_speed is set to 1 second. This means that after just one second of query execution, ClickHouse will begin estimating the total execution time. 
 If, for example, `max_execution_time` is set to 3600 seconds (1 hour), ClickHouse will terminate the query if the estimated time exceeds this 3600-second limit.
