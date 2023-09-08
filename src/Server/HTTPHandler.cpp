@@ -481,7 +481,8 @@ bool HTTPHandler::authenticateUser(
     else if (request.getMethod() == HTTPServerRequest::HTTP_POST)
         http_method = ClientInfo::HTTPMethod::POST;
 
-    session->setHttpClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""));
+    // TODO: get server_name / sni from connection
+    session->setHttpClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""), request.get("Host", ""), "");
     session->setForwardedFor(request.get("X-Forwarded-For", ""));
     session->setQuotaClientKey(quota_key);
 

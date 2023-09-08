@@ -61,7 +61,7 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
             writeBinary(http_host, out);
 
         if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_TLS_SNI_IN_CLIENT_INFO)
-            writeBinary(peer_address, out);
+            writeBinary(tls_sni, out);
     }
 
     if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO)

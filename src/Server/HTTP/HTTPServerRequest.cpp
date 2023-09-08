@@ -33,7 +33,8 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     /// Now that we know socket is still connected, obtain addresses
     client_address = session.clientAddress();
     server_address = session.serverAddress();
-    peer_address = session.socket().peerAddress();
+    /// TODO: to extract and populate server_name from session.
+    tls_sni = "";
     secure = session.socket().secure();
 
     auto receive_timeout = context->getReceiveTimeout();

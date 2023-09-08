@@ -93,8 +93,8 @@ public:
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
     String http_user_agent;
     String http_referer;
-    String peer_address;
     String http_host;
+    String tls_sni;
 
     /// For mysql and postgresql
     UInt64 connection_id = 0;

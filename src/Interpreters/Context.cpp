@@ -3960,11 +3960,13 @@ void Context::setClientConnectionId(uint32_t connection_id_)
     client_info.connection_id = connection_id_;
 }
 
-void Context::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
+void Context::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer, const String & http_host, const String & tls_sni)
 {
     client_info.http_method = http_method;
     client_info.http_user_agent = http_user_agent;
     client_info.http_referer = http_referer;
+    client_info.http_host = http_host;
+    client_info.tls_sni = tls_sni;
     need_recalculate_access = true;
 }
 
