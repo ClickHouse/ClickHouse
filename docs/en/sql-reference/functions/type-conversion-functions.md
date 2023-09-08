@@ -892,16 +892,29 @@ Query:
 
 ``` sql
 SELECT
-    now() AS now_local,
-    toString(now(), 'Asia/Yekaterinburg') AS now_yekat;
+    time_zone,
+    now() AS ts,
+    toString(ts, time_zone)
+FROM system.time_zones
+WHERE time_zone LIKE 'Europe%'
+LIMIT 10
 ```
 
 Result:
 
 ```response
-┌───────────now_local─┬─now_yekat───────────┐
-│ 2016-06-15 00:11:21 │ 2016-06-15 02:11:21 │
-└─────────────────────┴─────────────────────┘
+┌─time_zone─────────┬──────────────────ts─┬─toString(now(), time_zone)─┐
+│ Europe/Amsterdam  │ 2023-09-08 18:51:22 │ 2023-09-08 20:51:22        │
+│ Europe/Andorra    │ 2023-09-08 18:51:22 │ 2023-09-08 20:51:22        │
+│ Europe/Astrakhan  │ 2023-09-08 18:51:22 │ 2023-09-08 22:51:22        │
+│ Europe/Athens     │ 2023-09-08 18:51:22 │ 2023-09-08 21:51:22        │
+│ Europe/Belfast    │ 2023-09-08 18:51:22 │ 2023-09-08 19:51:22        │
+│ Europe/Belgrade   │ 2023-09-08 18:51:22 │ 2023-09-08 20:51:22        │
+│ Europe/Berlin     │ 2023-09-08 18:51:22 │ 2023-09-08 20:51:22        │
+│ Europe/Bratislava │ 2023-09-08 18:51:22 │ 2023-09-08 20:51:22        │
+│ Europe/Brussels   │ 2023-09-08 18:51:22 │ 2023-09-08 20:51:22        │
+│ Europe/Bucharest  │ 2023-09-08 18:51:22 │ 2023-09-08 21:51:22        │
+└───────────────────┴─────────────────────┴────────────────────────────┘
 ```
 
 Also see the `toUnixTimestamp` function.
