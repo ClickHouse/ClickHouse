@@ -847,7 +847,9 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
         visitor.visit(parsed_query);
 
         /// Get new query after substitutions.
-        query = serializeAST(*parsed_query);
+        if (visitor.getNumberOfReplacedParameters())
+            query = serializeAST(*parsed_query);
+        chassert(!query.empty());
     }
 
     if (allow_merge_tree_settings && parsed_query->as<ASTCreateQuery>())
@@ -1145,7 +1147,18 @@ void ClientBase::onEndOfStream()
         bool is_running = false;
         output_format->setStartTime(
             clock_gettime_ns(CLOCK_MONOTONIC) - static_cast<UInt64>(progress_indication.elapsedSeconds() * 1000000000), is_running);
-        output_format->finalize();
+
+        try
+        {
+            output_format->finalize();
+        }
+        catch (...)
+        {
+            /// Format should be reset to make it work for subsequent query
+            /// (otherwise it will throw again in resetOutput())
+            output_format.reset();
+            throw;
+        }
     }
 
     resetOutput();
@@ -1332,7 +1345,9 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         visitor.visit(parsed_query);
 
         /// Get new query after substitutions.
-        query = serializeAST(*parsed_query);
+        if (visitor.getNumberOfReplacedParameters())
+            query = serializeAST(*parsed_query);
+        chassert(!query.empty());
     }
 
     /// Process the query that requires transferring data blocks to the server.
@@ -1467,8 +1482,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             sendDataFromPipe(
                 std::move(pipe),
                 parsed_query,
-                have_data_in_stdin
-            );
+                have_data_in_stdin);
         }
         catch (Exception & e)
         {
@@ -1811,7 +1825,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         }
         if (const auto * use_query = parsed_query->as<ASTUseQuery>())
         {
-            const String & new_database = use_query->database;
+            const String & new_database = use_query->getDatabase();
             /// If the client initiates the reconnection, it takes the settings from the config.
             config().setString("database", new_database);
             /// If the connection initiates the reconnection, it uses its variable.
@@ -2481,23 +2495,34 @@ void ClientBase::runNonInteractive()
         return;
     }
 
-    String text;
-    if (config().has("query"))
+    if (!queries.empty())
     {
-        text += config().getRawString("query"); /// Poco configuration should not process substitutions in form of ${...} inside query.
+        for (const auto & query : queries)
+        {
+            if (query_fuzzer_runs)
+            {
+                if (!processWithFuzzing(query))
+                    return;
+            }
+            else
+            {
+                if (!processQueryText(query))
+                    return;
+            }
+        }
     }
     else
     {
         /// If 'query' parameter is not set, read a query from stdin.
         /// The query is read entirely into memory (streaming is disabled).
         ReadBufferFromFileDescriptor in(STDIN_FILENO);
+        String text;
         readStringUntilEOF(text, in);
+        if (query_fuzzer_runs)
+            processWithFuzzing(text);
+        else
+            processQueryText(text);
     }
-
-    if (query_fuzzer_runs)
-        processWithFuzzing(text);
-    else
-        processQueryText(text);
 }
 
 
@@ -2666,8 +2691,8 @@ void ClientBase::init(int argc, char ** argv)
     stderr_is_a_tty = isatty(STDERR_FILENO);
     terminal_width = getTerminalWidth();
 
-    Arguments common_arguments{""}; /// 0th argument is ignored.
     std::vector<Arguments> external_tables_arguments;
+    Arguments common_arguments = {""}; /// 0th argument is ignored.
     std::vector<Arguments> hosts_and_ports_arguments;
 
     readArguments(argc, argv, common_arguments, external_tables_arguments, hosts_and_ports_arguments);
@@ -2685,7 +2710,6 @@ void ClientBase::init(int argc, char ** argv)
     }
 
 
-    po::variables_map options;
     OptionsDescription options_description;
     options_description.main_description.emplace(createOptionsDescription("Main options", terminal_width));
 
@@ -2697,9 +2721,8 @@ void ClientBase::init(int argc, char ** argv)
 
         ("config-file,C", po::value<std::string>(), "config-file path")
 
-        ("query,q", po::value<std::string>(), "query")
-        ("queries-file", po::value<std::vector<std::string>>()->multitoken(),
-            "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
+        ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(query; can be specified multiple times (--query "SELECT 1" --query "SELECT 2"...))")
+        ("queries-file", po::value<std::vector<std::string>>()->multitoken(), "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
         ("multiquery,n", "If specified, multiple queries separated by semicolons can be listed after --query. For convenience, it is also possible to omit --query and pass the queries directly after --multiquery.")
         ("multiline,m", "If specified, allow multiline queries (do not send the query on Enter)")
         ("database,d", po::value<std::string>(), "database")
@@ -2720,8 +2743,7 @@ void ClientBase::init(int argc, char ** argv)
         ("log-level", po::value<std::string>(), "log level")
         ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
 
-        ("suggestion_limit", po::value<int>()->default_value(10000),
-            "Suggestion limit for how many databases, tables and columns to fetch.")
+        ("suggestion_limit", po::value<int>()->default_value(10000), "Suggestion limit for how many databases, tables and columns to fetch.")
 
         ("format,f", po::value<std::string>(), "default output format")
         ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
@@ -2759,6 +2781,7 @@ void ClientBase::init(int argc, char ** argv)
         std::transform(external_options.begin(), external_options.end(), std::back_inserter(cmd_options), getter);
     }
 
+    po::variables_map options;
     parseAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
 
@@ -2786,7 +2809,7 @@ void ClientBase::init(int argc, char ** argv)
     if (options.count("time"))
         print_time_to_stderr = true;
     if (options.count("query"))
-        config().setString("query", options["query"].as<std::string>());
+        queries = options["query"].as<std::vector<std::string>>();
     if (options.count("query_id"))
         config().setString("query_id", options["query_id"].as<std::string>());
     if (options.count("database"))

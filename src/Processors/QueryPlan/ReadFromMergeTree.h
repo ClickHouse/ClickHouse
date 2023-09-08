@@ -78,10 +78,10 @@ public:
     struct IndexStat
     {
         IndexType type;
-        std::string name;
-        std::string description;
-        std::string condition;
-        std::vector<std::string> used_keys;
+        std::string name = {};
+        std::string description = {};
+        std::string condition = {};
+        std::vector<std::string> used_keys = {};
         size_t num_parts_after;
         size_t num_granules_after;
     };
@@ -171,6 +171,7 @@ public:
         std::optional<KeyCondition> minmax_idx_condition;
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
+        std::optional<std::unordered_set<String>> part_values;
     };
 
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(

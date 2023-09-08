@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string_view>
 #include "Common/NamePrompter.h"
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/ProgressIndication.h>
@@ -24,6 +25,7 @@ namespace po = boost::program_options;
 namespace DB
 {
 
+static constexpr std::string_view DEFAULT_CLIENT_NAME = "client";
 
 static const NameSet exit_strings
 {
@@ -200,6 +202,7 @@ protected:
     std::optional<Suggest> suggest;
     bool load_suggestions = false;
 
+    std::vector<String> queries; /// Queries passed via '--query'
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
     std::vector<String> interleave_queries_files; /// If not empty, run queries from these files before processing every file from 'queries_files'.
     std::vector<String> cmd_options;
