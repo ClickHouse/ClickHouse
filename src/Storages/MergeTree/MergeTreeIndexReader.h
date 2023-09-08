@@ -35,7 +35,7 @@ private:
     MergeTreeReaderSettings settings;
 
     std::unique_ptr<MergeTreeReaderStream> stream;
-    uint8_t version = 0;
+    MergeTreeIndexFormat index_format;
     size_t stream_mark = 0;
 
     void initStreamIfNeeded();

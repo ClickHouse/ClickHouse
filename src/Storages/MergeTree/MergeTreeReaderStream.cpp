@@ -29,7 +29,8 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
         clockid_t clock_type_,
         bool is_low_cardinality_dictionary_,
-        ThreadPool * load_marks_cache_threadpool_)
+        ThreadPool * load_marks_cache_threadpool_,
+        bool plain_file_)
     : settings(settings_)
     , profile_callback(profile_callback_)
     , clock_type(clock_type_)
@@ -40,6 +41,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     , path_prefix(path_prefix_)
     , data_file_extension(data_file_extension_)
     , is_low_cardinality_dictionary(is_low_cardinality_dictionary_)
+    , plain_file(plain_file_)
     , marks_count(marks_count_)
     , mark_cache(mark_cache_)
     , save_marks_in_cache(settings.save_marks_in_cache)
@@ -91,7 +93,21 @@ void MergeTreeReaderStream::init()
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
 
     /// Initialize the objects that shall be used to perform read operations.
-    if (uncompressed_cache)
+    if (plain_file)
+    {
+        auto buffer = data_part_storage->readFile(
+                path_prefix + data_file_extension,
+                read_settings,
+                estimated_sum_mark_range_bytes,
+                std::nullopt);
+
+        if (profile_callback)
+            buffer->setProfileCallback(profile_callback, clock_type);
+
+        data_buffer = buffer.get();
+        plain_data_buffer = buffer.get();
+        owned_buffer = std::move(buffer);
+    } else if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
             std::string(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)),
@@ -110,9 +126,9 @@ void MergeTreeReaderStream::init()
         if (!settings.checksum_on_read)
             buffer->disableChecksumming();
 
-        cached_buffer = std::move(buffer);
-        data_buffer = cached_buffer.get();
-        compressed_data_buffer = cached_buffer.get();
+        data_buffer = buffer.get();
+        compressed_data_buffer = buffer.get();
+        owned_buffer = std::move(buffer);
     }
     else
     {
@@ -129,9 +145,9 @@ void MergeTreeReaderStream::init()
         if (!settings.checksum_on_read)
             buffer->disableChecksumming();
 
-        non_cached_buffer = std::move(buffer);
-        data_buffer = non_cached_buffer.get();
-        compressed_data_buffer = non_cached_buffer.get();
+        data_buffer = buffer.get();
+        compressed_data_buffer = buffer.get();
+        owned_buffer = std::move(buffer);
     }
 }
 
@@ -231,7 +247,10 @@ void MergeTreeReaderStream::seekToMark(size_t index)
 
     try
     {
-        compressed_data_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
+        if (compressed_data_buffer)
+            compressed_data_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
+        else
+            plain_data_buffer->seek(mark.offset_in_compressed_file + mark.offset_in_decompressed_block, SEEK_SET);
     }
     catch (Exception & e)
     {
@@ -252,7 +271,10 @@ void MergeTreeReaderStream::seekToStart()
     init();
     try
     {
-        compressed_data_buffer->seek(0, 0);
+        if (compressed_data_buffer)
+            compressed_data_buffer->seek(0, 0);
+        else
+            plain_data_buffer->seek(0, SEEK_SET);
     }
     catch (Exception & e)
     {
@@ -298,10 +320,36 @@ ReadBuffer * MergeTreeReaderStream::getDataBuffer()
     return data_buffer;
 }
 
-CompressedReadBufferBase * MergeTreeReaderStream::getCompressedDataBuffer()
+MergeTreeReaderStream::RandomAccessGranule MergeTreeReaderStream::getRandomAccessForGranule(size_t mark_index, bool want_seekable_buffer, bool want_local_path)
 {
-    init();
-    return compressed_data_buffer;
+    if (!plain_file || (!want_seekable_buffer && !want_local_path))
+        return {};
+
+    RandomAccessGranule res;
+    res.file_size = file_size ? file_size : plain_data_buffer->getFileSize();
+    MarkInCompressedFile left_mark = marks_loader.getMark(mark_index);
+    MarkInCompressedFile right_mark = mark_index + 1 == marks_count
+        ? MarkInCompressedFile {res.file_size, 0}
+        : marks_loader.getMark(mark_index + 1);
+
+    res.offset = left_mark.offset_in_compressed_file + left_mark.offset_in_decompressed_block;
+    res.length = right_mark.offset_in_compressed_file + right_mark.offset_in_decompressed_block - res.offset;
+
+    size_t view_offset = 0;
+    if (want_local_path && plain_data_buffer->isRegularLocalFile(&view_offset))
+    {
+        res.local_path = plain_data_buffer->getFileName();
+        res.offset += view_offset;
+        res.file_size += view_offset;
+    }
+    else if (want_seekable_buffer)
+        res.seekable_buffer = data_part_storage->readFile(
+            path_prefix + data_file_extension,
+            settings.read_settings,
+            std::nullopt,
+            std::nullopt);
+
+    return res;
 }
 
 }

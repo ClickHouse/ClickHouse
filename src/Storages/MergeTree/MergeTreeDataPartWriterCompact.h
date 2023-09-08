@@ -6,7 +6,9 @@
 namespace DB
 {
 
-/// Writes data part in compact format.
+/// Writes data part in compact format: all columns go into one file, each granule contains a
+/// concatenation of all columns. Indexes and metadata still go into separate files
+/// (checksums.txt, columns.txt, primary.cidx, skp_idx_*.idx, etc).
 class MergeTreeDataPartWriterCompact : public MergeTreeDataPartWriterOnDisk
 {
 public:

@@ -10,6 +10,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <IO/MMappedFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -63,7 +64,10 @@ void USearchIndexWithSerialization<Metric>::serialize(WriteBuffer & ostr) const
         return true;
     };
 
-    Base::save_to_stream(callback);
+    auto r = Base::save_to_stream(callback);
+    if (!r)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to serialize usearch index: {}",
+            r.error.what());
 }
 
 template <unum::usearch::metric_kind_t Metric>
@@ -75,7 +79,22 @@ void USearchIndexWithSerialization<Metric>::deserialize(ReadBuffer & istr)
         return true;
     };
 
-    Base::load_from_stream(callback);
+    auto r = Base::load_from_stream(callback);
+    if (!r)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to deserialize usearch index: {}",
+            r.error.what());
+}
+
+template <unum::usearch::metric_kind_t Metric>
+void USearchIndexWithSerialization<Metric>::view(
+    std::shared_ptr<MMappedFile> file_, size_t offset, size_t length)
+{
+    file = file_;
+    unum::usearch::memory_mapped_file_t mapped(file->getData() + offset, length);
+    auto r = Base::view(std::move(mapped));
+    if (!r)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to create usearch index view: {}",
+            r.error.what());
 }
 
 template <unum::usearch::metric_kind_t Metric>
@@ -87,6 +106,7 @@ size_t USearchIndexWithSerialization<Metric>::getDimensions() const
 template <unum::usearch::metric_kind_t Metric>
 size_t USearchIndexWithSerialization<Metric>::memoryUsageBytes() const
 {
+    /// Note: for mmapped file, this doesn't include the file size.
     return Base::memory_usage();
 }
 
@@ -125,12 +145,23 @@ void MergeTreeIndexGranuleUSearch<Metric>::serializeBinary(WriteBuffer & ostr) c
 }
 
 template <unum::usearch::metric_kind_t Metric>
-void MergeTreeIndexGranuleUSearch<Metric>::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
+void MergeTreeIndexGranuleUSearch<Metric>::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion)
 {
     UInt64 dimension;
     readIntBinary(dimension, istr);
     index = std::make_shared<USearchIndexWithSerialization<Metric>>(dimension, scalar_kind);
     index->deserialize(istr);
+}
+
+template <unum::usearch::metric_kind_t Metric>
+void MergeTreeIndexGranuleUSearch<Metric>::viewFromMMappedFile(std::shared_ptr<MMappedFile> file, size_t offset, size_t length, MergeTreeIndexVersion)
+{
+    UInt64 dimension;
+    if (length < sizeof(dimension))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "usearch index granule too short: {} bytes", length);
+    memcpy(&dimension, file->getData() + offset, sizeof(dimension));
+    index = std::make_shared<USearchIndexWithSerialization<Metric>>(dimension, scalar_kind);
+    index->view(file, offset + sizeof(dimension), length - sizeof(dimension));
 }
 
 template <unum::usearch::metric_kind_t Metric>

@@ -26,13 +26,30 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
+
+class MMappedFile;
 
 using MergeTreeIndexVersion = uint8_t;
 struct MergeTreeIndexFormat
 {
     MergeTreeIndexVersion version;
     const char* extension;
+
+    /// Enabling either of these two flags disables compression and checksumming on the index file.
+    /// By convention, such indexes should use .uidx file extension (u for uncompressed).
+    /// Use viewFromSeekableFile() when possible.
+    bool supports_view_from_seekable_file = false;
+    /// Use viewFromMMappedFile() when possible.
+    bool supports_view_from_mmapped_file = false;
+
+    /// Disable compression and checksumming in the index file. The file contents will be exactly
+    /// what IMergeTreeIndexGranule::serializeBinary() produced (concatenated for all index granules).
+    bool plain_file() const
+    {
+        return supports_view_from_seekable_file || supports_view_from_mmapped_file;
+    }
 
     explicit operator bool() const { return version != 0; }
 };
@@ -45,24 +62,43 @@ struct IMergeTreeIndexGranule
     /// Serialize always last version.
     virtual void serializeBinary(WriteBuffer & ostr) const = 0;
 
-    /// Version of the index to deserialize:
+    /// Read the whole index into memory.
+    /// Alternatively, viewFromSeekableFile() or viewFromMMappedFile() can be used for big indexes
+    /// that don't require loading the entire index into memory.
     ///
-    /// - 2 -- minmax index for proper Nullable support,
-    /// - 1 -- everything else.
-    ///
+    /// Version of the index is determined by getDeserializedFormat() based on file extension.
     /// Implementation is responsible for version check,
     /// and throw LOGICAL_ERROR in case of unsupported version.
     ///
     /// See also:
-    /// - IMergeTreeIndex::getSerializedFileExtension()
+    /// - IMergeTreeIndex::getSerializedFormat()
     /// - IMergeTreeIndex::getDeserializedFormat()
-    /// - MergeTreeDataMergerMutator::collectFilesToSkip()
     /// - MergeTreeDataMergerMutator::collectFilesForRenames()
+    /// - IMergeTreeDataPart::hasSecondaryIndex()
     virtual void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
 
     virtual bool empty() const = 0;
 
     virtual size_t memoryUsageBytes() const = 0;
+
+    /// If supports_view_from_seekable_file is true, this method will be called instead
+    /// of deserializeBinary(). Allows the index to read chunks index file on demand instead of loading
+    /// the entire index into memory. The index granule will take ownership of the provided buffer and
+    /// may hold it for a very long time while sitting in secondary index cache.
+    virtual void viewFromSeekableFile(std::shared_ptr<SeekableReadBuffer>, size_t /* offset */, size_t /* length */, MergeTreeIndexVersion)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected viewFromSeekableFile() call");
+    }
+
+    /// If supports_view_from_mmapped_file is true, this method will be called instead
+    /// of deserializeBinary(). Takes precedence over viewFromSeekableFile().
+    /// The index can use this to mmap() the file (using MMappedFileCache).
+    /// Useful if the index does lots of small random reads. In particular for usearch index, where
+    /// search does many sequential steps through a graph, touching ~1K nodes.
+    virtual void viewFromMMappedFile(std::shared_ptr<MMappedFile>, size_t /* offset */, size_t /* length */, MergeTreeIndexVersion)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected viewFromMMappedFile() call");
+    }
 };
 
 using MergeTreeIndexGranulePtr = std::shared_ptr<IMergeTreeIndexGranule>;
@@ -145,11 +181,11 @@ struct IMergeTreeIndex
     /// Returns extension for serialization.
     /// Reimplement if you want new index format.
     ///
-    /// NOTE: In case getSerializedFileExtension() is reimplemented,
+    /// NOTE: In case getSerializedFormat() is reimplemented,
     /// getDeserializedFormat() should be reimplemented too,
     /// and check all previous extensions too
     /// (to avoid breaking backward compatibility).
-    virtual const char* getSerializedFileExtension() const { return ".idx"; }
+    virtual MergeTreeIndexFormat getSerializedFormat() const { return {1, ".idx"}; }
 
     /// Returns extension for deserialization.
     ///

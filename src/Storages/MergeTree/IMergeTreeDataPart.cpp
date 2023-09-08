@@ -1945,7 +1945,7 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk()
         auto index_name = index_ptr->getFileName();
         auto index_name_escaped = escapeForFileName(index_name);
 
-        auto index_file_name = index_name_escaped + index_ptr->getSerializedFileExtension();
+        auto index_file_name = index_name_escaped + index_ptr->getSerializedFormat().extension;
         auto index_marks_file_name = index_name_escaped + getMarksFileExtension();
 
         /// If part does not contain index
@@ -1987,7 +1987,7 @@ IndexSize IMergeTreeDataPart::getSecondaryIndexSize(const String & secondary_ind
 bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name) const
 {
     auto file_name = INDEX_FILE_PREFIX + index_name;
-    return checksums.has(file_name + ".idx") || checksums.has(file_name + ".idx2");
+    return checksums.has(file_name + ".idx") || checksums.has(file_name + ".idx2") || checksums.has(file_name + ".uidx");
 }
 
 void IMergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const

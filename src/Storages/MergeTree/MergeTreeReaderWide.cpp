@@ -236,7 +236,9 @@ void MergeTreeReaderWide::addStreams(
             data_part_info_for_read->getMarksCount(), all_mark_ranges, settings, mark_cache,
             uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
             &data_part_info_for_read->getIndexGranularityInfo(),
-            profile_callback, clock_type, is_lc_dict, load_marks_threadpool));
+            profile_callback, clock_type, is_lc_dict, load_marks_threadpool,
+            // plain_file - not used for columns, only for secondary indexes
+            false));
     };
 
     serialization->enumerateStreams(callback);

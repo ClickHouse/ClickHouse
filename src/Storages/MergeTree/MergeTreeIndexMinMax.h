@@ -84,7 +84,7 @@ public:
 
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 
-    const char* getSerializedFileExtension() const override { return ".idx2"; }
+    MergeTreeIndexFormat getSerializedFormat() const override { return {2, ".idx2"}; }
     MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & path_prefix) const override; /// NOLINT
 };
 

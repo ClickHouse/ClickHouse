@@ -31,6 +31,8 @@ struct MergeTreeReaderSettings
     bool use_asynchronous_read_from_pool = false;
     /// If PREWHERE has multiple conditions combined with AND, execute them in separate read/filtering steps.
     bool enable_multiple_prewhere_read_steps = false;
+    bool skip_index_allow_mmap = true;
+    bool skip_index_allow_seekable_read = true;
 };
 
 struct MergeTreeWriterSettings

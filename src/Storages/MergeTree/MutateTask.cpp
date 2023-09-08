@@ -562,8 +562,9 @@ static NameSet collectFilesToSkip(
 
     for (const auto & index : indices_to_recalc)
     {
-        /// Since MinMax index has .idx2 extension, we need to add correct extension.
-        files_to_skip.insert(index->getFileName() + index->getSerializedFileExtension());
+        /// Some index types use different file extensions for different formats, e.g.
+        /// MinMax index uses .idx2, and indexes requiring plain uncompressed file use .uidx
+        files_to_skip.insert(index->getFileName() + index->getSerializedFormat().extension);
         files_to_skip.insert(index->getFileName() + mrk_extension);
     }
 
@@ -630,12 +631,17 @@ static NameToNameVector collectFilesForRenames(
     {
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
+            if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".uidx"))
+            {
+                add_rename(INDEX_FILE_PREFIX + command.column_name + ".uidx", "");
+                add_rename(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
+            }
             if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx2"))
             {
                 add_rename(INDEX_FILE_PREFIX + command.column_name + ".idx2", "");
                 add_rename(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
             }
-            else if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx"))
+            if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx"))
             {
                 add_rename(INDEX_FILE_PREFIX + command.column_name + ".idx", "");
                 add_rename(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");

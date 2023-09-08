@@ -33,7 +33,8 @@ public:
         const ReadBufferFromFileBase::ProfileCallback & profile_callback,
         clockid_t clock_type,
         bool is_low_cardinality_dictionary_,
-        ThreadPool * load_marks_cache_threadpool_);
+        ThreadPool * load_marks_cache_threadpool_,
+        bool plain_file);
 
     void seekToMark(size_t index);
 
@@ -46,7 +47,23 @@ public:
     void adjustRightMark(size_t right_mark);
 
     ReadBuffer * getDataBuffer();
-    CompressedReadBufferBase * getCompressedDataBuffer();
+
+    struct RandomAccessGranule
+    {
+        /// Assigned if want_local_path is true, and we're reading from local file (not e.g. S3).
+        /// Otherwise empty.
+        std::string local_path;
+        /// Assigned if want_seekable_buffer is true, and local_path is empty.
+        std::shared_ptr<SeekableReadBuffer> seekable_buffer;
+        /// Range of file offsets corresponding to this granule.
+        size_t offset = 0;
+        size_t length = 0;
+        size_t file_size = 0;
+    };
+
+    /// Get information needed to be able to do random reads in the granule.
+    /// Useful for secondary indexes that implement external memory data structures.
+    RandomAccessGranule getRandomAccessForGranule(size_t mark_index, bool want_seekable_buffer, bool want_local_path);
 
 private:
     void init();
@@ -65,11 +82,16 @@ private:
 
     bool is_low_cardinality_dictionary = false;
 
+    /// The file is uncompresssed and contains no compression headers or checksums, just the data.
+    bool plain_file;
+
     size_t marks_count;
 
+    ReadBuffer * data_buffer = nullptr;
+    /// Exactly one of these is null.
+    ReadBufferFromFileBase * plain_data_buffer = nullptr;
+    CompressedReadBufferBase * compressed_data_buffer = nullptr;
 
-    ReadBuffer * data_buffer;
-    CompressedReadBufferBase * compressed_data_buffer;
     MarkCache * mark_cache;
     bool save_marks_in_cache;
     bool initialized = false;
@@ -78,8 +100,7 @@ private:
 
     const MergeTreeIndexGranularityInfo * index_granularity_info;
 
-    std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
-    std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
+    std::unique_ptr<ReadBuffer> owned_buffer;
 
     MergeTreeMarksLoader marks_loader;
 };

@@ -88,7 +88,7 @@ static constexpr auto DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_ROWS = 30'000'000uz;
 static constexpr auto DEFAULT_SECONDARY_INDEX_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_SECONDARY_INDEX_CACHE_MAX_SIZE = 5_GiB;
 static constexpr auto DEFAULT_SECONDARY_INDEX_CACHE_SIZE_RATIO = 0.5l;
-static constexpr auto DEFAULT_SECONDARY_INDEX_CACHE_MAX_COUNT = 10000000;
+static constexpr auto DEFAULT_SECONDARY_INDEX_CACHE_MAX_COUNT = DEFAULT_MMAP_CACHE_MAX_SIZE;
 
 /// Query profiler cannot work with sanitizers.
 /// Sanitizers are using quick "frame walking" stack unwinding (this implies -fno-omit-frame-pointer)

@@ -19,10 +19,13 @@ class USearchIndexWithSerialization : public USearchImplType
 {
     using Base = USearchImplType;
 
+    std::shared_ptr<MMappedFile> file;
+
 public:
     USearchIndexWithSerialization(size_t dimensions, unum::usearch::scalar_kind_t scalar_kind);
     void serialize(WriteBuffer & ostr) const;
     void deserialize(ReadBuffer & istr);
+    void view(std::shared_ptr<MMappedFile> file_, size_t offset, size_t length);
     size_t getDimensions() const;
     size_t memoryUsageBytes() const;
 };
@@ -41,6 +44,7 @@ struct MergeTreeIndexGranuleUSearch final : public IMergeTreeIndexGranule
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    void viewFromMMappedFile(std::shared_ptr<MMappedFile> file, size_t offset, size_t length, MergeTreeIndexVersion version) override;
 
     bool empty() const override { return !index.get(); }
 
@@ -106,6 +110,19 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const override { return false; }
+
+    MergeTreeIndexFormat getSerializedFormat() const override
+    {
+        return {.version = 1, .extension = ".uidx", .supports_view_from_mmapped_file = true};
+    }
+
+    MergeTreeIndexFormat getDeserializedFormat(
+        const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const override
+    {
+        if (data_part_storage.exists(relative_path_prefix + ".uidx"))
+            return getSerializedFormat();
+        return {0 /*unknown*/, ""};
+    }
 
 private:
     const String distance_function;

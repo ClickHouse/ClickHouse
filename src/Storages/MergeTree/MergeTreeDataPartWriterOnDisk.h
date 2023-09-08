@@ -59,7 +59,8 @@ public:
             size_t max_compress_block_size_,
             const CompressionCodecPtr & marks_compression_codec_,
             size_t marks_compress_block_size_,
-            const WriteSettings & query_write_settings);
+            const WriteSettings & query_write_settings,
+            bool is_plain_file_);
 
         String escaped_column_name;
         std::string data_file_extension;
@@ -68,8 +69,9 @@ public:
         /// compressed_hashing -> compressor -> plain_hashing -> plain_file
         std::unique_ptr<WriteBufferFromFileBase> plain_file;
         HashingWriteBuffer plain_hashing;
-        CompressedWriteBuffer compressor;
-        HashingWriteBuffer compressed_hashing;
+        /// If is_plain_file, these two are nullopt.
+        std::optional<CompressedWriteBuffer> compressor;
+        std::optional<HashingWriteBuffer> compressed_hashing;
 
         /// marks_compressed_hashing -> marks_compressor -> marks_hashing -> marks_file
         std::unique_ptr<WriteBufferFromFileBase> marks_file;
@@ -77,6 +79,7 @@ public:
         CompressedWriteBuffer marks_compressor;
         HashingWriteBuffer marks_compressed_hashing;
         bool compress_marks;
+        bool is_plain_file;
 
         bool is_prefinalized = false;
 

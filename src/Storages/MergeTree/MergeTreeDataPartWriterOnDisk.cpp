@@ -18,8 +18,11 @@ void MergeTreeDataPartWriterOnDisk::Stream::preFinalize()
     /// Otherwise some data might stuck in the buffers above plain_file and marks_file
     /// Also the order is important
 
-    compressed_hashing.finalize();
-    compressor.finalize();
+    if (!is_plain_file)
+    {
+        compressed_hashing->finalize();
+        compressor->finalize();
+    }
     plain_hashing.finalize();
 
     if (compress_marks)
@@ -62,29 +65,43 @@ MergeTreeDataPartWriterOnDisk::Stream::Stream(
     size_t max_compress_block_size_,
     const CompressionCodecPtr & marks_compression_codec_,
     size_t marks_compress_block_size_,
-    const WriteSettings & query_write_settings) :
+    const WriteSettings & query_write_settings,
+    bool is_plain_file_) :
     escaped_column_name(escaped_column_name_),
     data_file_extension{data_file_extension_},
     marks_file_extension{marks_file_extension_},
     plain_file(data_part_storage->writeFile(data_path_ + data_file_extension, max_compress_block_size_, query_write_settings)),
     plain_hashing(*plain_file),
-    compressor(plain_hashing, compression_codec_, max_compress_block_size_),
-    compressed_hashing(compressor),
     marks_file(data_part_storage->writeFile(marks_path_ + marks_file_extension, 4096, query_write_settings)),
     marks_hashing(*marks_file),
     marks_compressor(marks_hashing, marks_compression_codec_, marks_compress_block_size_),
     marks_compressed_hashing(marks_compressor),
-    compress_marks(MarkType(marks_file_extension).compressed)
+    compress_marks(MarkType(marks_file_extension).compressed),
+    is_plain_file(is_plain_file_)
 {
+    if (!is_plain_file)
+    {
+        compressor.emplace(plain_hashing, compression_codec_, max_compress_block_size_);
+        compressed_hashing.emplace(*compressor);
+    }
 }
 
 void MergeTreeDataPartWriterOnDisk::Stream::addToChecksums(MergeTreeData::DataPart::Checksums & checksums)
 {
     String name = escaped_column_name;
 
-    checksums.files[name + data_file_extension].is_compressed = true;
-    checksums.files[name + data_file_extension].uncompressed_size = compressed_hashing.count();
-    checksums.files[name + data_file_extension].uncompressed_hash = compressed_hashing.getHash();
+    if (is_plain_file)
+    {
+        checksums.files[name + data_file_extension].is_compressed = false;
+        checksums.files[name + data_file_extension].uncompressed_size = plain_hashing.count();
+        checksums.files[name + data_file_extension].uncompressed_hash = plain_hashing.getHash();
+    }
+    else
+    {
+        checksums.files[name + data_file_extension].is_compressed = true;
+        checksums.files[name + data_file_extension].uncompressed_size = compressed_hashing->count();
+        checksums.files[name + data_file_extension].uncompressed_hash = compressed_hashing->getHash();
+    }
     checksums.files[name + data_file_extension].file_size = plain_hashing.count();
     checksums.files[name + data_file_extension].file_hash = plain_hashing.getHash();
 
@@ -216,15 +233,16 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
     for (const auto & skip_index : skip_indices)
     {
         String stream_name = skip_index->getFileName();
+        MergeTreeIndexFormat format = skip_index->getSerializedFormat();
         skip_indices_streams.emplace_back(
                 std::make_unique<MergeTreeDataPartWriterOnDisk::Stream>(
                         stream_name,
                         data_part->getDataPartStoragePtr(),
-                        stream_name, skip_index->getSerializedFileExtension(),
+                        stream_name, format.extension,
                         stream_name, marks_file_extension,
                         default_codec, settings.max_compress_block_size,
                         marks_compression_codec, settings.marks_compress_block_size,
-                        settings.query_write_settings));
+                        settings.query_write_settings, format.plain_file()));
 
         GinIndexStorePtr store = nullptr;
         if (typeid_cast<const MergeTreeIndexInverted *>(&*skip_index) != nullptr)
@@ -302,7 +320,8 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
         {
             if (skip_index_accumulated_marks[i] == index_helper->index.granularity)
             {
-                skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed_hashing);
+                skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(
+                    stream.is_plain_file ? stream.plain_hashing : *stream.compressed_hashing);
                 skip_index_accumulated_marks[i] = 0;
             }
 
@@ -310,11 +329,19 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             {
                 skip_indices_aggregators[i] = index_helper->createIndexAggregatorForPart(store);
 
-                if (stream.compressed_hashing.offset() >= settings.min_compress_block_size)
-                    stream.compressed_hashing.next();
+                if (stream.is_plain_file)
+                {
+                    writeBinaryLittleEndian(stream.plain_hashing.count(), marks_out);
+                    writeBinaryLittleEndian(static_cast<UInt64>(0), marks_out);
+                }
+                else
+                {
+                    if (stream.compressed_hashing->offset() >= settings.min_compress_block_size)
+                        stream.compressed_hashing->next();
 
-                writeBinaryLittleEndian(stream.plain_hashing.count(), marks_out);
-                writeBinaryLittleEndian(stream.compressed_hashing.offset(), marks_out);
+                    writeBinaryLittleEndian(stream.plain_hashing.count(), marks_out);
+                    writeBinaryLittleEndian(stream.compressed_hashing->offset(), marks_out);
+                }
 
                 /// Actually this numbers is redundant, but we have to store them
                 /// to be compatible with the normal .mrk2 file format
@@ -395,7 +422,8 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
     {
         auto & stream = *skip_indices_streams[i];
         if (!skip_indices_aggregators[i]->empty())
-            skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed_hashing);
+            skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(
+                stream.is_plain_file ? stream.plain_hashing : *stream.compressed_hashing);
 
         /// Register additional files written only by the inverted index. Required because otherwise DROP TABLE complains about unknown
         /// files. Note that the provided actual checksums are bogus. The problem is that at this point the file writes happened already and
