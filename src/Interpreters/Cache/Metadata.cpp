@@ -226,6 +226,8 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
     if (it == end())
     {
         if (key_not_found_policy == KeyNotFoundPolicy::THROW)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key `{}` in cache", key);
+        else if (key_not_found_policy == KeyNotFoundPolicy::THROW_LOGICAL)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key);
         else if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
             return nullptr;

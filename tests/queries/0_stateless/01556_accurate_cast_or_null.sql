@@ -49,3 +49,10 @@ SELECT accurateCastOrNull('1xxx', 'Date');
 SELECT accurateCastOrNull('2023-05-30', 'Date');
 SELECT accurateCastOrNull('2180-01-01', 'Date');
 SELECT accurateCastOrNull(19, 'Date');
+
+SELECT 'Tests for issue #38585';
+select accurateCastOrNull('test', 'Bool');
+select accurateCast('test', 'Nullable(Bool)');
+
+select accurateCastOrNull('test', 'IPv4');
+select accurateCastOrNull('test', 'IPv6');

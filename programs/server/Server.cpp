@@ -42,6 +42,7 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
+#include <Common/FailPoint.h>
 #include <Server/waitServersToFinish.h>
 #include <Core/ServerUUID.h>
 #include <IO/ReadHelpers.h>
@@ -450,11 +451,11 @@ void checkForUsersNotInMainConfig(
 
 /// Unused in other builds
 #if defined(OS_LINUX)
-static String readString(const String & path)
+static String readLine(const String & path)
 {
     ReadBufferFromFile in(path);
     String contents;
-    readStringUntilEOF(contents, in);
+    readStringUntilNewlineInto(contents, in);
     return contents;
 }
 
@@ -479,9 +480,16 @@ static void sanityChecks(Server & server)
 #if defined(OS_LINUX)
     try
     {
+        const std::unordered_set<std::string> fastClockSources = {
+            // ARM clock
+            "arch_sys_counter",
+            // KVM guest clock
+            "kvm-clock",
+            // X86 clock
+            "tsc",
+        };
         const char * filename = "/sys/devices/system/clocksource/clocksource0/current_clocksource";
-        String clocksource = readString(filename);
-        if (clocksource.find("tsc") == std::string::npos && clocksource.find("kvm-clock") == std::string::npos)
+        if (!fastClockSources.contains(readLine(filename)))
             server.context()->addWarningMessage("Linux is not using a fast clock source. Performance can be degraded. Check " + String(filename));
     }
     catch (...)
@@ -501,7 +509,7 @@ static void sanityChecks(Server & server)
     try
     {
         const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
-        if (readString(filename).find("[always]") != std::string::npos)
+        if (readLine(filename).find("[always]") != std::string::npos)
             server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\". Check " + String(filename));
     }
     catch (...)
@@ -877,6 +885,8 @@ try
         }
     }
 
+    FailPointInjection::enableFromGlobalConfig(config());
+
     int default_oom_score = 0;
 
 #if !defined(NDEBUG)
@@ -1030,41 +1040,6 @@ try
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
         fs::create_directories(path / "metadata_dropped/");
     }
-
-#if USE_ROCKSDB
-    /// Initialize merge tree metadata cache
-    if (config().has("merge_tree_metadata_cache"))
-    {
-        global_context->addWarningMessage("The setting 'merge_tree_metadata_cache' is enabled."
-            " But the feature of 'metadata cache in RocksDB' is experimental and is not ready for production."
-            " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production."
-            " See the corresponding report at https://github.com/ClickHouse/ClickHouse/issues/51182");
-
-        fs::create_directories(path / "rocksdb/");
-        size_t size = config().getUInt64("merge_tree_metadata_cache.lru_cache_size", 256 << 20);
-        bool continue_if_corrupted = config().getBool("merge_tree_metadata_cache.continue_if_corrupted", false);
-        try
-        {
-            LOG_DEBUG(log, "Initializing MergeTree metadata cache, lru_cache_size: {} continue_if_corrupted: {}",
-                ReadableSize(size), continue_if_corrupted);
-            global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
-        }
-        catch (...)
-        {
-            if (continue_if_corrupted)
-            {
-                /// Rename rocksdb directory and reinitialize merge tree metadata cache
-                time_t now = time(nullptr);
-                fs::rename(path / "rocksdb", path / ("rocksdb.old." + std::to_string(now)));
-                global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
-            }
-            else
-            {
-                throw;
-            }
-        }
-    }
-#endif
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
         throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Both http and https interserver ports are specified");
