@@ -248,7 +248,7 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
     )
     table_footer = "<tbody>\n</table>\n"
 
-    details_header = "<details><summary>Successfull checks</summary>\n"
+    details_header = "<details><summary>Successful checks</summary>\n"
     details_footer = "</details>\n"
 
     visible_table_rows = []  # type: List[str]
