@@ -149,7 +149,8 @@ void KeeperDispatcher::requestThread()
                     };
 
                     /// Waiting until previous append will be successful, or batch is big enough
-                    while (!shutdown_called && !has_reconfig_request && !prev_result_done() && current_batch.size() <= max_batch_size
+                    while (!shutdown_called && !has_reconfig_request &&
+                           !prev_result_done() && current_batch.size() <= max_batch_size
                            && current_batch_bytes_size < max_batch_bytes_size)
                     {
                         try_get_request();
@@ -190,18 +191,24 @@ void KeeperDispatcher::requestThread()
                     if (prev_result)
                         result_buf = forceWaitAndProcessResult(prev_result, current_batch);
 
+                    /// In case of older version or disabled async replication, result buf will be set to value of `commit` function
+                    /// which always returns nullptr
+                    /// in that case we don't have to do manual wait because are already sure that the batch was committed when we get
+                    /// the result back
+                    /// otherwise, we need to manually wait until the batch is committed
                     if (result_buf)
                     {
                         nuraft::buffer_serializer bs(result_buf);
                         auto log_idx = bs.get_u64();
 
+                        /// we will wake up this thread on each commit so we need to run it in loop until the last request of batch is committed
                         while (true)
                         {
-                            auto current_last_committed_idx = last_committed_log_idx.load(std::memory_order_relaxed);
+                            auto current_last_committed_idx = our_last_committed_log_idx.load(std::memory_order_relaxed);
                             if (current_last_committed_idx >= log_idx)
                                 break;
 
-                            last_committed_log_idx.wait(current_last_committed_idx);
+                            our_last_committed_log_idx.wait(current_last_committed_idx);
                         }
                     }
                 }
@@ -397,8 +404,8 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
                 }
             }
 
-            last_committed_log_idx.store(log_idx, std::memory_order_relaxed);
-            last_committed_log_idx.notify_all();
+            our_last_committed_log_idx.store(log_idx, std::memory_order_relaxed);
+            our_last_committed_log_idx.notify_all();
         });
 
     try
