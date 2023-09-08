@@ -15,9 +15,9 @@ from github import Github
 
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import (
+    CiLogsCredentials,
     ClickHouseHelper,
     prepare_tests_results_for_clickhouse,
-    get_instance_type,
 )
 from commit_status_helper import (
     NotSet,
@@ -28,7 +28,7 @@ from commit_status_helper import (
     post_commit_status_to_file,
     update_mergeable_check,
 )
-from docker_pull_helper import get_image_with_version
+from docker_pull_helper import DockerImage, get_image_with_version
 from download_release_packages import download_last_release
 from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
@@ -74,19 +74,18 @@ def get_image_name(check_name):
 
 
 def get_run_command(
-    pr_info,
-    check_start_time,
-    check_name,
-    builds_path,
-    repo_path,
-    result_path,
-    server_log_path,
-    kill_timeout,
-    additional_envs,
-    image,
-    flaky_check,
-    tests_to_run,
-):
+    check_name: str,
+    builds_path: str,
+    repo_path: str,
+    result_path: str,
+    server_log_path: str,
+    kill_timeout: int,
+    additional_envs: List[str],
+    ci_logs_args: str,
+    image: DockerImage,
+    flaky_check: bool,
+    tests_to_run: List[str],
+) -> str:
     additional_options = ["--hung-check"]
     additional_options.append("--print-time")
 
@@ -104,39 +103,30 @@ def get_run_command(
     ]
 
     if flaky_check:
-        envs += ["-e NUM_TRIES=100", "-e MAX_RUN_TIME=1800"]
+        envs.append("-e NUM_TRIES=100")
+        envs.append("-e MAX_RUN_TIME=1800")
 
     envs += [f"-e {e}" for e in additional_envs]
 
-    instance_type = get_instance_type()
-
-    envs += [
-        "-e CLICKHOUSE_CI_LOGS_HOST",
-        "-e CLICKHOUSE_CI_LOGS_PASSWORD",
-        f"-e PULL_REQUEST_NUMBER='{pr_info.number}'",
-        f"-e COMMIT_SHA='{pr_info.sha}'",
-        f"-e CHECK_START_TIME='{check_start_time}'",
-        f"-e CHECK_NAME='{check_name}'",
-        f"-e INSTANCE_TYPE='{instance_type}'",
-    ]
-
     env_str = " ".join(envs)
     volume_with_broken_test = (
-        f"--volume={repo_path}/tests/analyzer_tech_debt.txt:/analyzer_tech_debt.txt"
+        f"--volume={repo_path}/tests/analyzer_tech_debt.txt:/analyzer_tech_debt.txt "
         if "analyzer" in check_name
         else ""
     )
 
     return (
         f"docker run --volume={builds_path}:/package_folder "
+        f"{ci_logs_args}"
         f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
-        f"{volume_with_broken_test} "
-        f"--volume={result_path}:/test_output --volume={server_log_path}:/var/log/clickhouse-server "
+        f"{volume_with_broken_test}"
+        f"--volume={result_path}:/test_output "
+        f"--volume={server_log_path}:/var/log/clickhouse-server "
         f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image}"
     )
 
 
-def get_tests_to_run(pr_info):
+def get_tests_to_run(pr_info: PRInfo) -> List[str]:
     result = set()
 
     if pr_info.changed_files is None:
@@ -346,9 +336,12 @@ def main():
     if validate_bugfix_check:
         additional_envs.append("GLOBAL_TAGS=no-random-settings")
 
+    ci_logs_credentials = CiLogsCredentials(Path(temp_path) / "export-logs-config.sh")
+    ci_logs_args = ci_logs_credentials.get_docker_arguments(
+        pr_info, stopwatch.start_time_str, check_name
+    )
+
     run_command = get_run_command(
-        pr_info,
-        stopwatch.start_time_str,
         check_name,
         packages_path,
         repo_path,
@@ -356,6 +349,7 @@ def main():
         server_log_path,
         kill_timeout,
         additional_envs,
+        ci_logs_args,
         docker_image,
         flaky_check,
         tests_to_run,
@@ -374,6 +368,7 @@ def main():
     except subprocess.CalledProcessError:
         logging.warning("Failed to change files owner in %s, ignoring it", temp_path)
 
+    ci_logs_credentials.clean_ci_logs_from_credentials(Path(run_log_path))
     s3_helper = S3Helper()
 
     state, description, test_results, additional_logs = process_results(
@@ -382,23 +377,6 @@ def main():
     state = override_status(state, check_name, invert=validate_bugfix_check)
 
     ch_helper = ClickHouseHelper()
-
-    # Cleanup run log from the credentials of CI logs database.
-    # Note: a malicious user can still print them by splitting the value into parts.
-    # But we will be warned when a malicious user modifies CI script.
-    # Although they can also print them from inside tests.
-    # Nevertheless, the credentials of the CI logs have limited scope
-    # and does not provide access to sensitive info.
-
-    ci_logs_host = os.getenv("CLICKHOUSE_CI_LOGS_HOST", "CLICKHOUSE_CI_LOGS_HOST")
-    ci_logs_password = os.getenv(
-        "CLICKHOUSE_CI_LOGS_PASSWORD", "CLICKHOUSE_CI_LOGS_PASSWORD"
-    )
-    if ci_logs_host not in ("CLICKHOUSE_CI_LOGS_HOST", ""):
-        subprocess.check_call(
-            f"sed -i -r -e 's!{ci_logs_host}!CLICKHOUSE_CI_LOGS_HOST!g; s!{ci_logs_password}!CLICKHOUSE_CI_LOGS_PASSWORD!g;' '{run_log_path}'",
-            shell=True,
-        )
 
     report_url = upload_results(
         s3_helper,
