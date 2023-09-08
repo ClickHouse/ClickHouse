@@ -22,19 +22,16 @@ void CoordinationSettings::loadFromConfig(const String & config_elem, const Poco
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_elem, config_keys);
 
-    for (const String & key : config_keys)
+    try
     {
-        try
-        {
+        for (const String & key : config_keys)
             set(key, config.getString(config_elem + "." + key));
-        }
-        catch (Exception & e)
-        {
-            if (e.code() == ErrorCodes::UNKNOWN_SETTING)
-                LOG_WARNING(&Poco::Logger::get("CoordinationSettings"), "Found unknown coordination setting in config: '{}'", key);
-            else
-                throw;
-        }
+    }
+    catch (Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_SETTING)
+            e.addMessage("in Coordination settings config");
+        throw;
     }
 }
 

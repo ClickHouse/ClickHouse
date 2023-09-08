@@ -1048,18 +1048,26 @@ void Changelog::writeThread()
             LOG_WARNING(log, "Changelog is shut down");
     };
 
+    /// NuRaft writes a batch of request by first calling multiple store requests, i.e. AppendLog
+    /// finished by a flush request
+    /// We assume that after some number of appends, we always get flush request
     while (true)
     {
         if (try_batch_flush)
         {
             try_batch_flush = false;
+            /// we have Flush request stored in write operation
+            /// but we try to get new append operations
+            /// if there are none, we apply the currently set Flush
+            chassert(std::holds_alternative<Flush>(write_operation));
             if (!write_operations.tryPop(write_operation))
             {
                 chassert(batch_append_ok);
                 const auto & flush = std::get<Flush>(write_operation);
                 flush_logs(flush);
                 notify_append_completion();
-                continue;
+                if (!write_operations.pop(write_operation))
+                    break;
             }
         }
         else if (!write_operations.pop(write_operation))
@@ -1092,10 +1100,12 @@ void Changelog::writeThread()
                     try_batch_flush = true;
                     continue;
                 }
+                /// we need to flush because we have maximum allowed pending records
                 flush_logs(flush);
             }
             else
             {
+                std::lock_guard lock{durable_idx_mutex};
                 *flush.failed = true;
             }
             notify_append_completion();
