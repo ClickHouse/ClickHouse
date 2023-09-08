@@ -134,6 +134,11 @@ X509Certificate SecureStreamSocket::peerCertificate() const
 	return static_cast<SecureStreamSocketImpl*>(impl())->peerCertificate();
 }
 
+std::string SecureStreamSocket::getTLSServerName() const
+{
+    return static_cast<SecureStreamSocketImpl*>(impl())->getTLSServerName();
+}
+
 
 void SecureStreamSocket::setPeerHostName(const std::string& hostName)
 {

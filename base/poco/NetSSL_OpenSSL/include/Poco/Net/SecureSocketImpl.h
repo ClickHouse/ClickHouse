@@ -144,6 +144,9 @@ namespace Net
         X509 * peerCertificate() const;
         /// Returns the peer's certificate.
 
+        std::string getTLSServerName() const;
+        /// Returns the tls server name
+
         Context::Ptr context() const;
         /// Returns the SSL context used for this socket.
 

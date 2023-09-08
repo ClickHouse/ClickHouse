@@ -207,6 +207,14 @@ X509Certificate SecureStreamSocketImpl::peerCertificate() const
 		throw SSLException("No certificate available");
 }
 
+std::string SecureStreamSocketImpl::getTLSServerName() const
+{
+    SSL * ssl = _impl._pSSL;
+    if (ssl)
+        return _impl.getTLSServerName();
+    else
+        throw SSLException("No tls server_name available");
+}
 
 void SecureStreamSocketImpl::setLazyHandshake(bool flag)
 {

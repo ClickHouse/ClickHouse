@@ -160,7 +160,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
             readBinary(http_host, in);
 
         if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_TLS_SNI_IN_CLIENT_INFO)
-            readBinary(peer_address, in);
+            readBinary(tls_sni, in);
     }
 
     if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO)

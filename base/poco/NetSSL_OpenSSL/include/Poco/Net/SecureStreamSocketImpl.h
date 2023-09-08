@@ -154,6 +154,9 @@ namespace Net
         /// Throws a SSLException if the peer did not
         /// present a certificate.
 
+        std::string getTLSServerName() const;
+        /// Returns the tls server name
+
         Context::Ptr context() const;
         /// Returns the SSL context used by this socket.
 

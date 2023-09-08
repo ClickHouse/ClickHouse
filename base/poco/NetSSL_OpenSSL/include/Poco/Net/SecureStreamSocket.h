@@ -154,6 +154,9 @@ namespace Net
         /// Throws a SSLException if the peer did not
         /// present a certificate.
 
+        std::string getTLSServerName() const;
+        /// Returns the tls server name
+
         void setPeerHostName(const std::string & hostName);
         /// Sets the peer's host name used for certificate validation.
 

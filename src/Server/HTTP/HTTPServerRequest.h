@@ -45,6 +45,7 @@ public:
 #if USE_SSL
     bool havePeerCertificate() const;
     Poco::Net::X509Certificate peerCertificate() const;
+    String getTLSServerName() const;
 #endif
 
 private:
