@@ -20,6 +20,9 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct StorageID;
 
+struct StorageLimits;
+using StorageLimitsList = std::list<StorageLimits>;
+
 namespace ClusterProxy
 {
 
@@ -66,7 +69,7 @@ void executeQueryWithParallelReplicas(
     SelectStreamFactory & stream_factory,
     const ASTPtr & query_ast,
     ContextPtr context,
-    const SelectQueryInfo & query_info,
+    std::shared_ptr<const StorageLimitsList> storage_limits,
     const ClusterPtr & not_optimized_cluster);
 }
 
